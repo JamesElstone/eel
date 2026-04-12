@@ -12,7 +12,7 @@ Its goal is simple:
 
 eel turns raw bank statement data into structured financial outputs suitable for statutory reporting.
 
-Instead of relying on bank APIs, eel works with **CSV statement uploads** (e.g. from Anna Money), making it simple, portable, and fully self-hosted.
+Instead of relying on bank APIs, eel works with **CSV statement uploads**, making it simple, portable, and fully self-hosted.
 
 ---
 

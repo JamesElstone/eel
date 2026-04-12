@@ -18,7 +18,7 @@ final class ApiCredentialCheckService
     }
 
     public function checkCompaniesHouse(string $mode): array {
-        $mode = ctrl_normalise_environment_mode($mode);
+        $mode = FrameworkHelper::normaliseEnvironmentMode($mode);
         $service = new CompaniesHouseService($mode, 10, $this->outboundRequest);
 
         try {
@@ -48,8 +48,8 @@ final class ApiCredentialCheckService
     }
 
     public function checkHmrc(string $mode): array {
-        $mode = ctrl_normalise_environment_mode($mode);
-        $config = is_array(FrameWorkHelper::config()['hmrc']['vat'] ?? null) ? FrameWorkHelper::config()['hmrc']['vat'] : [];
+        $mode = FrameworkHelper::normaliseEnvironmentMode($mode);
+        $config = is_array(FrameworkHelper::config()['hmrc']['vat'] ?? null) ? FrameworkHelper::config()['hmrc']['vat'] : [];
         $client = new HmrcVatApiClient(array_replace($config, [
             'mode' => $mode,
             'oauth_path' => '/oauth/token',

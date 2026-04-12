@@ -209,7 +209,7 @@ function db_connect_with_credentials(string $dsn, ?string $username = null, ?str
 }
 
 function connectDb(): PDO {
-    $config = FrameWorkHelper::config();
+    $config = FrameworkHelper::config();
     $dbConfig = is_array($config['db'] ?? null) ? $config['db'] : [];
     $dsn = trim((string)($dbConfig['dsn'] ?? ''));
 
@@ -1218,7 +1218,7 @@ function validateAccountingPeriodSequence(PDO $pdo, int $companyId, int $periodI
 
     $periods[] = [
         'id' => $periodId,
-            'label' => ctrl_accounting_period_label($periodStart, $periodEnd),
+            'label' => FrameworkHelper::accountingPeriodLabel($periodStart, $periodEnd),
         'period_start' => $periodStart,
         'period_end' => $periodEnd,
     ];
@@ -1244,7 +1244,7 @@ function validateAccountingPeriodSequence(PDO $pdo, int $companyId, int $periodI
 
 
 function createAccountingPeriod(PDO $pdo, int $companyId, string $periodStart, string $periodEnd, ?string $label = null): int {
-    $label = $label !== null && $label !== '' ? $label : ctrl_accounting_period_label($periodStart, $periodEnd);
+    $label = $label !== null && $label !== '' ? $label : FrameworkHelper::accountingPeriodLabel($periodStart, $periodEnd);
     $stmt = $pdo->prepare('SELECT COUNT(*) FROM tax_years WHERE company_id = ? AND period_start = ? AND period_end = ?');
     $stmt->execute([$companyId, $periodStart, $periodEnd]);
 

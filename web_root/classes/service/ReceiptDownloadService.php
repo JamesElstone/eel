@@ -360,7 +360,7 @@ final class ReceiptDownloadService
         }
 
         try {
-            $response = receiptOutboundDownloadToFile($url, $handle, $this->timeoutSeconds, $this->maxBytes);
+            $response = ReceiptOutbound::downloadToFile($url, $handle, $this->timeoutSeconds, $this->maxBytes);
         } catch (Throwable $exception) {
             fclose($handle);
             @unlink($tempPath);
@@ -452,11 +452,11 @@ final class ReceiptDownloadService
     }
 
     private function receiptDirectoryForCompany(int $companyId): string {
-        return ctrl_company_upload_subdirectory($companyId, 'transaction_receipts', $this->baseDirectory);
+        return FrameworkHelper::companyUploadSubdirectory($companyId, 'transaction_receipts', $this->baseDirectory);
     }
 
     private function relativeReceiptPath(int $companyId, string $filename): string {
-        return ctrl_company_upload_relative_path($companyId, 'transaction_receipts', $filename);
+        return FrameworkHelper::companyUploadRelativePath($companyId, 'transaction_receipts', $filename);
     }
 
     private function absolutePathFromRelative(string $relativePath): string {

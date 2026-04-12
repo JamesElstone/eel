@@ -1,11 +1,7 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . DIRECTORY_SEPARATOR . 'dashboard' . DIRECTORY_SEPARATOR . 'actions.php';
-require_once __DIR__ . DIRECTORY_SEPARATOR . 'dashboard' . DIRECTORY_SEPARATOR . 'context.php';
-require_once __DIR__ . DIRECTORY_SEPARATOR . 'dashboard' . DIRECTORY_SEPARATOR . 'helpers.php';
-
-final class _dashboard implements WebPageInterface
+final class _dashboard extends BaseWebPage
 {
     public function id(): string
     {
@@ -36,16 +32,65 @@ final class _dashboard implements WebPageInterface
         ];
     }
 
-    public function handle(WebRequest $request, WebPageServices $services): WebResponse
+    protected function buildContext(
+        WebRequest $request,
+        WebPageService $services,
+        WebActionResult $actionResult
+    ): array
     {
-        $actionResult = dashboard_handle_action($request, $services);
-        $context = dashboard_build_context($request, $services, $actionResult);
-        $renderer = new WebPageRenderer(new WebCardRenderer(new WebCardFactory()));
+        $companyAccountService = $services->get('company_account');
 
-        if ($request->isAjax()) {
-            return $renderer->renderDelta($this, $request, $context, $actionResult);
-        }
+        $stats = [
+            [
+                'label' => 'Runtime primitives',
+                'value' => '10',
+                'foot' => 'Request, response, page, card, factory, and renderer pieces.',
+            ],
+            [
+                'label' => 'Ownership model',
+                'value' => '1',
+                'foot' => 'Each page owns its own context, actions, and helpers, then selects shared cards.',
+            ],
+            [
+                'label' => 'AJAX mode',
+                'value' => 'XHR',
+                'foot' => 'Interactions now return card deltas instead of full reloads.',
+            ],
+            [
+                'label' => 'Resolution model',
+                'value' => '_page / _cardCard',
+                'foot' => 'Pages and cards now resolve through separate naming conventions.',
+            ],
+        ];
 
-        return $renderer->renderFull($this, $request, $context, $actionResult);
+        $activity = [
+            [
+                'title' => 'Thin front controller',
+                'detail' => 'Bootstrap, resolve page, load declared services, call page, send response.',
+            ],
+            [
+                'title' => 'No central registry',
+                'detail' => 'Page and card classes load directly from naming convention helpers.',
+            ],
+            [
+                'title' => 'Service boundary kept',
+                'detail' => 'Existing domain services remain in classes/service and are only injected.',
+            ],
+        ];
+
+        // $pageCards = ['hero', 'overview', 'activity'];
+        $pageCards = $this->cards();
+
+        return [
+            'page_id' => 'dashboard',
+            'stats' => $stats,
+            'activity' => $activity,
+            'service_class' => get_class($companyAccountService),
+            'page_cards' => $pageCards,
+            'cards_dom_ids' => array_map(
+                static fn(string $cardKey): string => FrameworkHelper::cardDomId('dashboard', $cardKey),
+                $pageCards
+            ),
+        ];
     }
 }

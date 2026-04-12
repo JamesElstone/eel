@@ -73,7 +73,7 @@ final class CompanyOrphanedFileCleanupService
     private function deleteOrphanedStatementFiles(int $companyId): array {
         $referencedFiles = $this->fetchReferencedStatementFiles($companyId);
         $directories = array_unique(array_filter([
-            ctrl_company_upload_subdirectory($companyId, 'statements', $this->uploadBaseDirectory),
+            FrameworkHelper::companyUploadSubdirectory($companyId, 'statements', $this->uploadBaseDirectory),
             $this->resolveLegacyStatementUploadDirectory($companyId),
         ]));
 
@@ -91,7 +91,7 @@ final class CompanyOrphanedFileCleanupService
         }
 
         $directories = array_unique([
-            ctrl_company_upload_subdirectory($companyId, 'transaction_receipts', $this->uploadBaseDirectory),
+            FrameworkHelper::companyUploadSubdirectory($companyId, 'transaction_receipts', $this->uploadBaseDirectory),
             $this->uploadBaseDirectory . DIRECTORY_SEPARATOR . $companyId . DIRECTORY_SEPARATOR . 'receipts',
         ]);
 
@@ -111,7 +111,7 @@ final class CompanyOrphanedFileCleanupService
         }
 
         $directories = array_unique([
-            ctrl_company_upload_subdirectory($companyId, 'expense_receipts', $this->uploadBaseDirectory),
+            FrameworkHelper::companyUploadSubdirectory($companyId, 'expense_receipts', $this->uploadBaseDirectory),
             $this->uploadBaseDirectory
                 . DIRECTORY_SEPARATOR
                 . 'company'

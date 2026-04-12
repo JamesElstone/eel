@@ -95,7 +95,7 @@ final class VatRegistrationService
             $warnings[] = 'The HMRC business name does not match the Companies House company name on file.';
         }
 
-        $storedAddress = $this->normaliseForComparison(implode(' ', companiesHouseStoredAddressLines($settings)));
+        $storedAddress = $this->normaliseForComparison(implode(' ', CompaniesHouseHelper::storedAddressLines($settings)));
         $returnedAddress = $this->normaliseForComparison((string)($result->address ?? ''));
 
         if ($storedAddress !== '' && $returnedAddress !== '' && !$this->stringsMatchLoosely($storedAddress, $returnedAddress)) {

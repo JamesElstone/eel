@@ -11,14 +11,14 @@ final class CompaniesHouseService
         private readonly int $timeoutSeconds = 20,
         ?callable $outboundRequest = null,
     ) {
-        $this->outboundRequest = $outboundRequest ?? fn(array $request): array => companiesHouseOutboundRequest($request, $this->environment);
+        $this->outboundRequest = $outboundRequest ?? fn(array $request): array => CompaniesHouseOutbound::request($request, $this->environment);
     }
 
     public function request(string $path, array $query = []): array {
         $response = ($this->outboundRequest)([
             'provider' => 'COMPANIESHOUSE',
             'tag' => 'COMPANY_LOOKUP',
-            'environment' => ctrl_normalise_environment_mode($this->environment),
+            'environment' => FrameworkHelper::normaliseEnvironmentMode($this->environment),
             'method' => 'GET',
             'path' => $path,
             'query' => $query,

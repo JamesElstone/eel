@@ -21,11 +21,7 @@ final class AntiFraudService
             return $this->config;
         }
 
-        if (!function_exists('ctrl_config')) {
-            require_once dirname(__DIR__) . DIRECTORY_SEPARATOR . 'lib' . DIRECTORY_SEPARATOR . 'helpers' . DIRECTORY_SEPARATOR . 'ctrl_helpers.php';
-        }
-
-        $appConfig = FrameWorkHelper::config();
+        $appConfig = FrameworkHelper::config();
         $antifraudConfig = is_array($appConfig['antifraud'] ?? null) ? $appConfig['antifraud'] : [];
 
         return $this->config = [

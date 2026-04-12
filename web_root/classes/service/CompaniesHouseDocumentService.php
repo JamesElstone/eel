@@ -13,7 +13,7 @@ final class CompaniesHouseDocumentService
         private readonly int $timeoutSeconds = 20,
         ?callable $outboundRequest = null,
     ) {
-        $this->outboundRequest = $outboundRequest ?? fn(array $request): array => companiesHouseOutboundRequest($request, $this->environment);
+        $this->outboundRequest = $outboundRequest ?? fn(array $request): array => CompaniesHouseOutbound::request($request, $this->environment);
     }
 
     public function fetchMetadata(string $metadataPathOrUrl): array {
@@ -139,7 +139,7 @@ final class CompaniesHouseDocumentService
         $response = ($this->outboundRequest)([
             'provider' => 'COMPANIESHOUSE',
             'tag' => 'COMPANY_LOOKUP',
-            'environment' => ctrl_normalise_environment_mode($this->environment),
+            'environment' => FrameworkHelper::normaliseEnvironmentMode($this->environment),
             'method' => 'GET',
             'url' => $url,
             'headers' => $headers,

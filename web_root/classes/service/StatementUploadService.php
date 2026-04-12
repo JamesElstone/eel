@@ -2343,20 +2343,7 @@ final class StatementUploadService
     }
 
     private function detectMimeType(string $filename): ?string {
-        if (!function_exists('finfo_open')) {
-            return null;
-        }
-
-        $finfo = finfo_open(FILEINFO_MIME_TYPE);
-
-        if ($finfo === false) {
-            return null;
-        }
-
-        $mimeType = finfo_file($finfo, $filename) ?: null;
-        finfo_close($finfo);
-
-        return is_string($mimeType) ? $mimeType : null;
+        return MimeTypeHelper::detectFromFile($filename);
     }
 
     private function sanitiseOriginalFilename(string $filename): string {
@@ -2411,7 +2398,7 @@ final class StatementUploadService
     }
 
     private function resolveUploadDirectory(int $companyId): string {
-        return ctrl_company_upload_subdirectory($companyId, 'statements', $this->uploadBaseDirectory);
+        return FrameworkHelper::companyUploadSubdirectory($companyId, 'statements', $this->uploadBaseDirectory);
     }
 
     private function buildStoredFilename(): string {

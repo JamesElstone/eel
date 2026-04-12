@@ -48,7 +48,13 @@ final class OutboundHelper
             while (($row = fgetcsv($handle, 0, ',', '"', '')) !== false) {
                 $lineNumber++;
 
-                if ($lineNumber === 1 && isset($row[0]) && strtoupper(trim((string)$row[0])) === 'PROVIDER') {
+                $firstField = trim((string)($row[0] ?? ''));
+
+                if ($firstField !== '' && str_starts_with($firstField, '#')) {
+                    continue;
+                }
+
+                if (strtoupper($firstField) === 'PROVIDER') {
                     continue;
                 }
 

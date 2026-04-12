@@ -16,10 +16,24 @@ Instead of relying on bank APIs, eel works with **CSV statement uploads**, makin
 
 ---
 
+## Company Requirements
+
+To use this system, the company must meet the following criteria:
+
+- Be registered with Companies House and have a valid company registration number  
+- Be active on Companies House (not dissolved or dormant)  
+- Have a valid UTR (Unique Taxpayer Reference) issued by HMRC  
+- Not be VAT registered and remain below VAT registration thresholds  
+- Have (free) developer API access configured for:
+  - HMRC  
+  - Companies House
+
+---
+
 ## Core Workflow
 
 1. **Upload bank statements (CSV)**
-   - Monthly files (e.g. 12 per year)
+   - Monthly files
    - Stored and parsed into a structured database
 
 2. **Deduplicate transactions**

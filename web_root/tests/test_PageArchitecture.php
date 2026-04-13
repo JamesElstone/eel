@@ -14,25 +14,26 @@ final class TestPageArchitectureHarness
         $this->runTest('card keys map to the expected card class name', [$this, 'testCardKeyConvention']);
         $this->runTest('page factory resolves the dashboard page', [$this, 'testPageFactoryResolvesDashboard']);
         $this->runTest('AJAX delta responses include only stale cards', [$this, 'testAjaxDeltaResponseReturnsOnlyStaleCards']);
-        $this->runTest('navigation builder sorts items without loading page files', [$this, 'testNavigationRendererBuildsSortedItemsWithoutLoadingPages']);
-        $this->runTest('navigation builder returns an empty array for missing directories', [$this, 'testNavigationRendererReturnsEmptyArrayForMissingDirectory']);
+        $this->runTest('test page shares context across cards during AJAX updates', [$this, 'testTestPageSharedContextAcrossCards']);
+        $this->runTest('navigation builder sorts items without loading page files', [$this, 'testNavigationFrameworkBuildsSortedItemsWithoutLoadingPages']);
+        $this->runTest('navigation builder returns an empty array for missing directories', [$this, 'testNavigationFrameworkReturnsEmptyArrayForMissingDirectory']);
     }
 
     private function testPageKeyConvention(): void
     {
-        $this->assertSame('_trial_balance', FrameworkHelper::pageKeyToClassName('trial-balance'));
+        $this->assertSame('_trial_balance', HelperFramework::pageKeyToClassName('trial-balance'));
     }
 
     private function testCardKeyConvention(): void
     {
-        $this->assertSame('_monthly_statusCard', FrameworkHelper::cardKeyToClassName('monthly-status'));
+        $this->assertSame('_monthly_statusCard', HelperFramework::cardKeyToClassName('monthly-status'));
     }
 
     private function testPageFactoryResolvesDashboard(): void
     {
         $this->loadPageCards('dashboard');
 
-        $page = (new WebPageFactory())->create('dashboard');
+        $page = (new PageFactoryFramework())->create('dashboard');
         $this->assertSame(_dashboard::class, $page::class);
         $this->assertSame(['company_account'], $page->services());
     }
@@ -53,8 +54,8 @@ final class TestPageArchitectureHarness
         $_SERVER['HTTP_ACCEPT'] = 'application/json';
 
         $response = $page->handle(
-            WebRequest::fromGlobals(),
-            new WebPageService(['company_account' => new stdClass()])
+            RequestFramework::fromGlobals(),
+            new PageServiceFramework($this->testPageServices())
         );
 
         ob_start();
@@ -68,23 +69,68 @@ final class TestPageArchitectureHarness
         $this->assertTrue(isset($payload['cards']['dashboard-activity']));
     }
 
-    private function loadPageCards(string $pageKey): WebPageInterface
+    private function testTestPageSharedContextAcrossCards(): void
     {
-        $page = (new WebPageFactory())->create($pageKey);
+        $page = $this->loadPageCards('test');
+
+        $_GET = ['page' => 'test', 'preset' => 'alpha'];
+        $_POST = [
+            'action' => 'set-test-context',
+            'preset' => 'beta',
+            'note' => 'Shared note from the source card',
+            'cards' => $page->cards(),
+            '_ajax' => '1',
+        ];
+        $_SERVER['REQUEST_METHOD'] = 'POST';
+        $_SERVER['HTTP_X_REQUESTED_WITH'] = 'XMLHttpRequest';
+        $_SERVER['HTTP_ACCEPT'] = 'application/json';
+
+        $response = $page->handle(
+            RequestFramework::fromGlobals(),
+            new PageServiceFramework($this->testPageServices())
+        );
+
+        ob_start();
+        $response->send();
+        $payload = json_decode((string)ob_get_clean(), true);
+
+        $this->assertTrue(is_array($payload));
+        $this->assertSame('test', $payload['page'] ?? null);
+        $this->assertTrue(isset($payload['cards']['test-test_source']));
+        $this->assertTrue(isset($payload['cards']['test-test_target']));
+        $this->assertTrue(isset($payload['cards']['test-context_dump']));
+        $this->assertContains('Beta handoff', (string)$payload['cards']['test-test_target']);
+        $this->assertContains('Shared note from the source card', (string)$payload['cards']['test-test_target']);
+        $this->assertContains('selected_preset', (string)$payload['cards']['test-context_dump']);
+    }
+
+    private function loadPageCards(string $pageKey): PageInterfaceFramework
+    {
+        $page = (new PageFactoryFramework())->create($pageKey);
 
         foreach ($page->cards() as $cardKey) {
-            $className = FrameworkHelper::cardKeyToClassName((string)$cardKey);
+            $className = HelperFramework::cardKeyToClassName((string)$cardKey);
             $this->assertTrue(class_exists($className));
         }
 
         return $page;
     }
 
-    private function testNavigationRendererBuildsSortedItemsWithoutLoadingPages(): void
+    private function testPageServices(): array
+    {
+        $companyAccount = new CompanyAccountService(new GeneratedServiceClassTestPdo());
+
+        return [
+            'company_account' => $companyAccount,
+            CompanyAccountService::class => $companyAccount,
+        ];
+    }
+
+    private function testNavigationFrameworkBuildsSortedItemsWithoutLoadingPages(): void
     {
         $this->assertTrue(is_dir(self::NAVIGATION_FIXTURES_DIRECTORY));
 
-        $items = (new NavigationRenderer(self::NAVIGATION_FIXTURES_DIRECTORY, 'trialBalance'))->build();
+        $items = (new NavigationFramework(self::NAVIGATION_FIXTURES_DIRECTORY, 'trialBalance'))->build();
 
         $this->assertSame(['uploads', 'directorLoan', 'trialBalance', 'zebra'], array_column($items, 'key'));
         $this->assertSame('Director Loan', $items[1]['label']);
@@ -94,9 +140,9 @@ final class TestPageArchitectureHarness
         $this->assertSame(1000, $items[3]['order']);
     }
 
-    private function testNavigationRendererReturnsEmptyArrayForMissingDirectory(): void
+    private function testNavigationFrameworkReturnsEmptyArrayForMissingDirectory(): void
     {
-        $items = (new NavigationRenderer(APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'missing-pages', 'dashboard'))->build();
+        $items = (new NavigationFramework(APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'missing-pages', 'dashboard'))->build();
         $this->assertSame([], $items);
     }
 
@@ -121,6 +167,16 @@ final class TestPageArchitectureHarness
             throw new RuntimeException('Assertion failed. Expected condition to be true.');
         }
     }
+
+    private function assertContains(string $needle, string $haystack): void
+    {
+        if (!str_contains($haystack, $needle)) {
+            throw new RuntimeException(
+                'Assertion failed. Expected to find ' . var_export($needle, true) . ' in ' . var_export($haystack, true) . '.'
+            );
+        }
+    }
 }
 
 (new TestPageArchitectureHarness())->run();
+

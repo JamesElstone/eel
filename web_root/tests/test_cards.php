@@ -12,14 +12,16 @@ final class TestCardsHarness
 
         foreach ($cardFiles as $cardFile) {
             $cardKey = basename($cardFile, '.php');
-            $className = FrameworkHelper::cardKeyToClassName($cardKey);
+            $className = HelperFramework::cardKeyToClassName($cardKey);
 
             $this->assertTrue(class_exists($className));
 
             $card = new $className();
-            $this->assertTrue($card instanceof WebCardInterface);
+            $this->assertTrue($card instanceof CardInterfaceFramework);
             $this->assertSame($cardKey, $card->key());
+            $this->assertTrue(is_array($card->services()));
             $this->assertTrue(is_array($card->invalidationFacts()));
+            $this->assertTrue(is_string($card->handleError('demo', ['type' => 'error', 'message' => 'Demo'], [])));
             $this->assertTrue(is_string($card->render([])));
 
             test_output_line('Cards: ' . $cardKey . ' meets the shared card contract.');
@@ -60,3 +62,4 @@ final class TestCardsHarness
 }
 
 (new TestCardsHarness())->run();
+

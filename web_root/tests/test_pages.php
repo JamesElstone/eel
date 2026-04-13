@@ -12,9 +12,9 @@ final class TestPagesHarness
 
         foreach ($pageFiles as $pageFile) {
             $pageKey = basename($pageFile, '.php');
-            $page = (new WebPageFactory())->create($pageKey);
+            $page = (new PageFactoryFramework())->create($pageKey);
 
-            $this->assertTrue($page instanceof WebPageInterface);
+            $this->assertTrue($page instanceof PageInterfaceFramework);
             $this->assertSame($pageKey, $page->id());
             $this->assertTrue(is_string($page->title()));
             $this->assertTrue(is_string($page->subtitle()));
@@ -23,15 +23,19 @@ final class TestPagesHarness
 
             foreach ($page->cards() as $cardKey) {
                 $this->assertTrue(is_string($cardKey));
-                $this->assertTrue(class_exists(FrameworkHelper::cardKeyToClassName($cardKey)));
+                $this->assertTrue(class_exists(HelperFramework::cardKeyToClassName($cardKey)));
             }
 
+            $companyAccount = new CompanyAccountService(new GeneratedServiceClassTestPdo());
             $response = $page->handle(
-                WebRequest::fromGlobals(),
-                new WebPageService(['company_account' => new stdClass()])
+                RequestFramework::fromGlobals(),
+                new PageServiceFramework([
+                    'company_account' => $companyAccount,
+                    CompanyAccountService::class => $companyAccount,
+                ])
             );
 
-            $this->assertTrue($response instanceof WebResponse);
+            $this->assertTrue($response instanceof ResponseFramework);
 
             test_output_line('Pages: ' . $pageKey . ' meets the shared page contract.');
         }
@@ -71,3 +75,4 @@ final class TestPagesHarness
 }
 
 (new TestPagesHarness())->run();
+

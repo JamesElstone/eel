@@ -229,11 +229,11 @@ final class ExpenseReceiptStorageService
     }
 
     private function receiptDirectoryForCompany(int $companyId): string {
-        return FrameworkHelper::companyUploadSubdirectory($companyId, 'expense_receipts', $this->uploadsRoot);
+        return HelperFramework::companyUploadSubdirectory($companyId, 'expense_receipts', $this->uploadsRoot);
     }
 
     private function relativePathForCompany(int $companyId, string $filename): string {
-        return FrameworkHelper::companyUploadRelativePath($companyId, 'expense_receipts', $filename);
+        return HelperFramework::companyUploadRelativePath($companyId, 'expense_receipts', $filename);
     }
 
     private function absolutePathFromStoredReference(int $companyId, string $companyNumber, string $storedReference): ?string {
@@ -298,7 +298,7 @@ final class ExpenseReceiptStorageService
     }
 
     private function defaultUploadsRoot(): string {
-        $config = FrameworkHelper::config();
+        $config = AppConfigurationStore::config();
         $configuredPath = trim((string)($config['uploads']['upload_base_dir'] ?? ''));
         if ($configuredPath !== '') {
             return $configuredPath;
@@ -340,3 +340,5 @@ final class ExpenseReceiptStorageService
         exit;
     }
 }
+
+

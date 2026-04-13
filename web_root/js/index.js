@@ -26,6 +26,16 @@
         return response.json();
     }
 
+    function formRequestUrl(form) {
+        const action = form.getAttribute('action');
+
+        if (typeof action === 'string' && action.trim() !== '') {
+            return action;
+        }
+
+        return window.location.href;
+    }
+
     function replaceCards(cards) {
         Object.entries(cards || {}).forEach(([domId, html]) => {
             const current = document.getElementById(domId);
@@ -62,7 +72,7 @@
         formData.set('_ajax', '1');
 
         try {
-            const payload = await sendAjax(form.action || window.location.href, {
+            const payload = await sendAjax(formRequestUrl(form), {
                 method: form.method || 'POST',
                 body: formData,
             });

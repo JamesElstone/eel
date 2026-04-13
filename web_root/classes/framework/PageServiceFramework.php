@@ -1,0 +1,29 @@
+<?php
+declare(strict_types=1);
+
+final class PageServiceFramework
+{
+    public function __construct(private readonly array $services)
+    {
+    }
+
+    public function get(string $key): object
+    {
+        if (!array_key_exists($key, $this->services)) {
+            foreach ($this->services as $service) {
+                if ($service instanceof $key) {
+                    return $service;
+                }
+            }
+
+            throw new InvalidArgumentException('Page service not provided: ' . $key);
+        }
+
+        return $this->services[$key];
+    }
+
+    public function all(): array
+    {
+        return $this->services;
+    }
+}

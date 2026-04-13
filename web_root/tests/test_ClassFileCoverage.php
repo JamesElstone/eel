@@ -7,13 +7,20 @@ $classDirectory = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'classes';
 $testsDirectory = __DIR__;
 $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($classDirectory));
 $missingTests = [];
+$testOverrides = [
+    'VatRegistrationFactoryService.php' => 'test_VatRegistrationServiceFactory.php',
+    'VatRegistrationViewDataService.php' => 'test_VatRegistrationViewData.php',
+    'VatValidationInterfaceService.php' => 'test_VatValidationServiceInterface.php',
+    'VatValidationResultService.php' => 'test_VatValidationResult.php',
+];
 
 foreach ($iterator as $fileInfo) {
     if (!$fileInfo->isFile() || strtolower($fileInfo->getExtension()) !== 'php') {
         continue;
     }
 
-    $expectedTest = $testsDirectory . DIRECTORY_SEPARATOR . 'test_' . $fileInfo->getBasename('.php') . '.php';
+    $expectedTestName = $testOverrides[$fileInfo->getFilename()] ?? ('test_' . $fileInfo->getBasename('.php') . '.php');
+    $expectedTest = $testsDirectory . DIRECTORY_SEPARATOR . $expectedTestName;
 
     if (!is_file($expectedTest)) {
         $missingTests[] = str_replace(dirname(__DIR__) . DIRECTORY_SEPARATOR, '', $fileInfo->getPathname());

@@ -21,7 +21,7 @@ final class AntiFraudService
             return $this->config;
         }
 
-        $appConfig = FrameworkHelper::config();
+        $appConfig = AppConfigurationStore::config();
         $antifraudConfig = is_array($appConfig['antifraud'] ?? null) ? $appConfig['antifraud'] : [];
 
         return $this->config = [
@@ -276,3 +276,5 @@ final class AntiFraudService
         return null;
     }
 }
+
+

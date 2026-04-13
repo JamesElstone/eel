@@ -139,7 +139,7 @@ final class CompaniesHouseDocumentService
         $response = ($this->outboundRequest)([
             'provider' => 'COMPANIESHOUSE',
             'tag' => 'COMPANY_LOOKUP',
-            'environment' => FrameworkHelper::normaliseEnvironmentMode($this->environment),
+            'environment' => HelperFramework::normaliseEnvironmentMode($this->environment),
             'method' => 'GET',
             'url' => $url,
             'headers' => $headers,
@@ -216,3 +216,4 @@ final class CompaniesHouseDocumentService
         return '';
     }
 }
+

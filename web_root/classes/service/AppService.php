@@ -3,7 +3,11 @@ declare(strict_types=1);
 
 final class AppService
 {
+    /** @var array<class-string, object> */
     private array $instances = [];
+
+    /** @var array<class-string, true> */
+    private array $resolving = [];
 
     public function __construct(
         private readonly PDO $pdo,
@@ -11,108 +15,178 @@ final class AppService
     ) {
     }
 
-    public function get(string $key): object {
-        return $this->instances[$key] ??= match ($key) {
-            'transaction_categorisation' => new TransactionCategorisationService($this->pdo),
-            'categorisation_rule' => new CategorisationRuleService($this->pdo),
-            'transaction_journal' => new TransactionJournalService($this->pdo),
-            'expense_claim' => new ExpenseClaimService(
-                $this->pdo,
-                $this->requireService('transaction_categorisation', TransactionCategorisationService::class),
-                $this->requireService('transaction_journal', TransactionJournalService::class)
-            ),
-            'asset' => new AssetService(
-                $this->pdo,
-                $this->requireService('transaction_categorisation', TransactionCategorisationService::class),
-                $this->requireService('transaction_journal', TransactionJournalService::class)
-            ),
-            'statement_upload' => new StatementUploadService(
-                $this->pdo,
-                $this->uploadBasePath,
-                $this->requireService('transaction_categorisation', TransactionCategorisationService::class),
-                new ReceiptDownloadService($this->pdo, $this->uploadBasePath)
-            ),
-            'company_account' => new CompanyAccountService($this->pdo),
-            'company_data_reset' => new CompanyDataResetService($this->pdo),
-            'company_orphaned_file_cleanup' => new CompanyOrphanedFileCleanupService(
-                $this->pdo,
-                $this->uploadBasePath,
-                $this->uploadBasePath,
-                $this->uploadBasePath
-            ),
-            'banking_reconciliation' => new BankingReconciliationService($this->pdo),
-            'year_end_metrics' => new YearEndMetricsService(
-                $this->pdo,
-                $this->requireService('banking_reconciliation', BankingReconciliationService::class)
-            ),
-            'year_end_tax_readiness' => new YearEndTaxReadinessService(
-                $this->pdo,
-                $this->requireService('year_end_metrics', YearEndMetricsService::class)
-            ),
-            'year_end_companies_house_comparison' => new YearEndCompaniesHouseComparisonService(
-                $this->pdo,
-                $this->requireService('year_end_metrics', YearEndMetricsService::class)
-            ),
-            'year_end_lock' => new YearEndLockService($this->pdo),
-            'director_loan' => new DirectorLoanService($this->pdo),
-            'trial_balance' => new TrialBalanceService(
-                $this->pdo,
-                $this->requireService('year_end_metrics', YearEndMetricsService::class),
-                $this->requireService('year_end_lock', YearEndLockService::class)
-            ),
-            'trial_balance_validation' => new TrialBalanceValidationService(
-                $this->pdo,
-                $this->requireService('trial_balance', TrialBalanceService::class),
-                $this->requireService('year_end_metrics', YearEndMetricsService::class),
-                $this->requireService('year_end_lock', YearEndLockService::class)
-            ),
-            'trial_balance_comparison' => new TrialBalanceComparisonService(
-                $this->pdo,
-                $this->requireService('year_end_metrics', YearEndMetricsService::class)
-            ),
-            'opening_balance' => new OpeningBalanceService(
-                $this->pdo,
-                null,
-                $this->requireService('year_end_metrics', YearEndMetricsService::class)
-            ),
-            'year_end_adjustment' => new YearEndAdjustmentService(
-                $this->pdo,
-                null,
-                $this->requireService('year_end_metrics', YearEndMetricsService::class)
-            ),
-            'corporation_tax_computation' => new CorporationTaxComputationService(
-                $this->pdo,
-                $this->requireService('year_end_metrics', YearEndMetricsService::class)
-            ),
-            'year_end_checklist' => new YearEndChecklistService(
-                $this->pdo,
-                $this->requireService('year_end_metrics', YearEndMetricsService::class),
-                $this->requireService('year_end_tax_readiness', YearEndTaxReadinessService::class),
-                $this->requireService('year_end_companies_house_comparison', YearEndCompaniesHouseComparisonService::class),
-                $this->requireService('year_end_lock', YearEndLockService::class)
-            ),
-            default => throw new InvalidArgumentException('Unknown service key: ' . $key),
-        };
+    public function get(string $className): object
+    {
+        $className = ltrim(trim($className), '\\');
+
+        if ($className === '') {
+            throw new InvalidArgumentException('Service class name must not be empty.');
+        }
+
+        if (isset($this->instances[$className])) {
+            return $this->instances[$className];
+        }
+
+        if (isset($this->resolving[$className])) {
+            throw new RuntimeException('Circular service dependency detected while resolving ' . $className . '.');
+        }
+
+        if (!class_exists($className)) {
+            throw new InvalidArgumentException('Unknown service class: ' . $className);
+        }
+
+        $reflection = new ReflectionClass($className);
+
+        if (!$reflection->isInstantiable()) {
+            throw new RuntimeException('Service class is not instantiable: ' . $className);
+        }
+
+        $this->resolving[$className] = true;
+
+        try {
+            $constructor = $reflection->getConstructor();
+
+            if ($constructor === null) {
+                return $this->instances[$className] = $reflection->newInstance();
+            }
+
+            $arguments = [];
+
+            foreach ($constructor->getParameters() as $parameter) {
+                if ($parameter->isVariadic()) {
+                    continue;
+                }
+
+                $arguments[] = $this->resolveParameter($parameter);
+            }
+
+            return $this->instances[$className] = $reflection->newInstanceArgs($arguments);
+        } finally {
+            unset($this->resolving[$className]);
+        }
     }
 
-    public function getMany(array $keys): array
+    public function getMany(array $classNames): array
     {
         $services = [];
 
-        foreach ($keys as $key) {
-            $services[(string)$key] = $this->get((string)$key);
+        foreach ($classNames as $className) {
+            $serviceClass = ltrim(trim((string)$className), '\\');
+            $services[$serviceClass] = $this->get($serviceClass);
         }
 
         return $services;
     }
 
-    private function requireService(string $key, string $expectedClass): object {
-        $service = $this->get($key);
+    private function resolveParameter(ReflectionParameter $parameter): mixed
+    {
+        $type = $parameter->getType();
 
-        if (!$service instanceof $expectedClass) {
-            throw new RuntimeException('Service ' . $key . ' did not resolve to ' . $expectedClass . '.');
+        if ($type instanceof ReflectionUnionType) {
+            foreach ($type->getTypes() as $namedType) {
+                if (!$namedType instanceof ReflectionNamedType || $namedType->getName() === 'null') {
+                    continue;
+                }
+
+                return $this->resolveNamedType($namedType, $parameter);
+            }
         }
 
-        return $service;
+        if ($type instanceof ReflectionNamedType) {
+            return $this->resolveNamedType($type, $parameter);
+        }
+
+        if ($parameter->isDefaultValueAvailable()) {
+            return $parameter->getDefaultValue();
+        }
+
+        if ($parameter->allowsNull()) {
+            return null;
+        }
+
+        throw new RuntimeException('Unable to resolve untyped constructor parameter $' . $parameter->getName() . '.');
+    }
+
+    private function resolveNamedType(ReflectionNamedType $type, ReflectionParameter $parameter): mixed
+    {
+        $typeName = ltrim($type->getName(), '\\');
+
+        if ($type->isBuiltin()) {
+            return $this->resolveBuiltinParameter($typeName, $parameter);
+        }
+
+        if ($typeName === PDO::class) {
+            return $this->pdo;
+        }
+
+        if (interface_exists($typeName)) {
+            if ($parameter->isDefaultValueAvailable()) {
+                return $parameter->getDefaultValue();
+            }
+
+            if ($parameter->allowsNull()) {
+                return null;
+            }
+
+            throw new RuntimeException('Unable to resolve interface dependency ' . $typeName . '.');
+        }
+
+        return $this->get($typeName);
+    }
+
+    private function resolveBuiltinParameter(string $typeName, ReflectionParameter $parameter): mixed
+    {
+        if ($parameter->isDefaultValueAvailable()) {
+            return $parameter->getDefaultValue();
+        }
+
+        if ($parameter->allowsNull()) {
+            return null;
+        }
+
+        $parameterName = strtolower($parameter->getName());
+
+        return match ($typeName) {
+            'string' => $this->resolveStringParameter($parameterName),
+            'int' => $this->resolveIntParameter($parameterName),
+            'bool' => false,
+            'array' => [],
+            'float' => 0.0,
+            'callable' => null,
+            default => throw new RuntimeException(
+                'Unable to resolve builtin dependency $' . $parameter->getName() . ' of type ' . $typeName . '.'
+            ),
+        };
+    }
+
+    private function resolveStringParameter(string $parameterName): string
+    {
+        if (
+            str_contains($parameterName, 'path')
+            || str_contains($parameterName, 'directory')
+            || str_contains($parameterName, 'root')
+            || str_contains($parameterName, 'base')
+        ) {
+            return $this->uploadBasePath;
+        }
+
+        return '';
+    }
+
+    private function resolveIntParameter(string $parameterName): int
+    {
+        if (str_contains($parameterName, 'timeout')) {
+            return 20;
+        }
+
+        if (str_contains($parameterName, 'bytes')) {
+            return 10485760;
+        }
+
+        if (str_contains($parameterName, 'items')) {
+            return 100;
+        }
+
+        return 0;
     }
 }

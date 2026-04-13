@@ -18,7 +18,7 @@ final class ApiCredentialCheckService
     }
 
     public function checkCompaniesHouse(string $mode): array {
-        $mode = FrameworkHelper::normaliseEnvironmentMode($mode);
+        $mode = HelperFramework::normaliseEnvironmentMode($mode);
         $service = new CompaniesHouseService($mode, 10, $this->outboundRequest);
 
         try {
@@ -48,9 +48,9 @@ final class ApiCredentialCheckService
     }
 
     public function checkHmrc(string $mode): array {
-        $mode = FrameworkHelper::normaliseEnvironmentMode($mode);
-        $config = is_array(FrameworkHelper::config()['hmrc']['vat'] ?? null) ? FrameworkHelper::config()['hmrc']['vat'] : [];
-        $client = new HmrcVatApiClient(array_replace($config, [
+        $mode = HelperFramework::normaliseEnvironmentMode($mode);
+        $config = is_array(AppConfigurationStore::config()['hmrc']['vat'] ?? null) ? AppConfigurationStore::config()['hmrc']['vat'] : [];
+        $client = new HmrcOutbound(array_replace($config, [
             'mode' => $mode,
             'oauth_path' => '/oauth/token',
             'token_scope' => 'read:vat',
@@ -79,3 +79,5 @@ final class ApiCredentialCheckService
         }
     }
 }
+
+

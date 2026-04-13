@@ -1,11 +1,16 @@
 <?php
 declare(strict_types=1);
 
-final class _activityCard implements WebCardInterface
+final class _activityCard implements CardInterfaceFramework
 {
     public function key(): string
     {
         return 'activity';
+    }
+
+    public function services(): array
+    {
+        return [];
     }
 
     public function invalidationFacts(): array
@@ -13,14 +18,20 @@ final class _activityCard implements WebCardInterface
         return ['dashboard.feed'];
     }
 
+    public function handleError(string $serviceKey, array $error, array $context): string
+    {
+        return '';
+    }
+
     public function render(array $context): string
     {
         $itemsHtml = '';
+        $page = (array)($context['page'] ?? []);
 
-        foreach ((array)($context['activity'] ?? []) as $item) {
+        foreach ((array)($page['activity'] ?? []) as $item) {
             $itemsHtml .= '<div class="list-item">
-                <strong>' . FrameworkHelper::escape((string)($item['title'] ?? '')) . '</strong>
-                <span>' . FrameworkHelper::escape((string)($item['detail'] ?? '')) . '</span>
+                <strong>' . HelperFramework::escape((string)($item['title'] ?? '')) . '</strong>
+                <span>' . HelperFramework::escape((string)($item['detail'] ?? '')) . '</span>
             </div>';
         }
 
@@ -34,3 +45,4 @@ final class _activityCard implements WebCardInterface
         </div>';
     }
 }
+

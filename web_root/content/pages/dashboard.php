@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-final class _dashboard extends BaseWebPage
+final class _dashboard extends BasePageFramework
 {
     public function id(): string
     {
@@ -33,9 +33,9 @@ final class _dashboard extends BaseWebPage
     }
 
     protected function buildContext(
-        WebRequest $request,
-        WebPageService $services,
-        WebActionResult $actionResult
+        RequestFramework $request,
+        PageServiceFramework $services,
+        ActionResultFramework $actionResult
     ): array
     {
         $companyAccountService = $services->get('company_account');
@@ -88,9 +88,10 @@ final class _dashboard extends BaseWebPage
             'service_class' => get_class($companyAccountService),
             'page_cards' => $pageCards,
             'cards_dom_ids' => array_map(
-                static fn(string $cardKey): string => FrameworkHelper::cardDomId('dashboard', $cardKey),
+                static fn(string $cardKey): string => HelperFramework::cardDomId('dashboard', $cardKey),
                 $pageCards
             ),
         ];
     }
 }
+

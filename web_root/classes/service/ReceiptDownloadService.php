@@ -452,11 +452,11 @@ final class ReceiptDownloadService
     }
 
     private function receiptDirectoryForCompany(int $companyId): string {
-        return FrameworkHelper::companyUploadSubdirectory($companyId, 'transaction_receipts', $this->baseDirectory);
+        return HelperFramework::companyUploadSubdirectory($companyId, 'transaction_receipts', $this->baseDirectory);
     }
 
     private function relativeReceiptPath(int $companyId, string $filename): string {
-        return FrameworkHelper::companyUploadRelativePath($companyId, 'transaction_receipts', $filename);
+        return HelperFramework::companyUploadRelativePath($companyId, 'transaction_receipts', $filename);
     }
 
     private function absolutePathFromRelative(string $relativePath): string {
@@ -537,3 +537,4 @@ final class ReceiptDownloadService
         ) !== false;
     }
 }
+

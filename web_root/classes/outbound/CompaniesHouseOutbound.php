@@ -9,7 +9,7 @@ final class CompaniesHouseOutbound
         return OutboundHelper::loadCredential(
             'COMPANIESHOUSE',
             'COMPANY_LOOKUP',
-            FrameworkHelper::normaliseEnvironmentMode($environment),
+            HelperFramework::normaliseEnvironmentMode($environment),
             $keysPath
         );
     }
@@ -23,7 +23,7 @@ final class CompaniesHouseOutbound
             'transport' => 'http',
             'provider' => 'COMPANIESHOUSE',
             'tag' => 'COMPANY_LOOKUP',
-            'environment' => FrameworkHelper::normaliseEnvironmentMode($environment),
+            'environment' => HelperFramework::normaliseEnvironmentMode($environment),
             'method' => 'GET',
             'headers' => array_replace($defaultHeaders, $requestHeaders),
             'auth' => 'basic_api_key',
@@ -31,3 +31,4 @@ final class CompaniesHouseOutbound
         ], $request));
     }
 }
+

@@ -73,7 +73,7 @@ final class CompanyOrphanedFileCleanupService
     private function deleteOrphanedStatementFiles(int $companyId): array {
         $referencedFiles = $this->fetchReferencedStatementFiles($companyId);
         $directories = array_unique(array_filter([
-            FrameworkHelper::companyUploadSubdirectory($companyId, 'statements', $this->uploadBaseDirectory),
+            HelperFramework::companyUploadSubdirectory($companyId, 'statements', $this->uploadBaseDirectory),
             $this->resolveLegacyStatementUploadDirectory($companyId),
         ]));
 
@@ -91,7 +91,7 @@ final class CompanyOrphanedFileCleanupService
         }
 
         $directories = array_unique([
-            FrameworkHelper::companyUploadSubdirectory($companyId, 'transaction_receipts', $this->uploadBaseDirectory),
+            HelperFramework::companyUploadSubdirectory($companyId, 'transaction_receipts', $this->uploadBaseDirectory),
             $this->uploadBaseDirectory . DIRECTORY_SEPARATOR . $companyId . DIRECTORY_SEPARATOR . 'receipts',
         ]);
 
@@ -111,7 +111,7 @@ final class CompanyOrphanedFileCleanupService
         }
 
         $directories = array_unique([
-            FrameworkHelper::companyUploadSubdirectory($companyId, 'expense_receipts', $this->uploadBaseDirectory),
+            HelperFramework::companyUploadSubdirectory($companyId, 'expense_receipts', $this->uploadBaseDirectory),
             $this->uploadBaseDirectory
                 . DIRECTORY_SEPARATOR
                 . 'company'
@@ -309,3 +309,4 @@ final class CompanyOrphanedFileCleanupService
         return preg_replace('/[^A-Z0-9_-]/', '', $normalised) ?? '';
     }
 }
+

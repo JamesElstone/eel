@@ -3,10 +3,10 @@ declare(strict_types=1);
 
 final class VatRegistrationService
 {
-    /** @var VatValidationServiceInterface[] */
+    /** @var VatValidationInterfaceService[] */
     private array $validators;
 
-    public function __construct(VatValidationServiceInterface ...$validators) {
+    public function __construct(VatValidationInterfaceService ...$validators) {
         $this->validators = $validators;
     }
 
@@ -38,7 +38,7 @@ final class VatRegistrationService
         return $settings;
     }
 
-    public function validate(array $settings): VatValidationResult {
+    public function validate(array $settings): VatValidationResultService {
         $countryCode = strtoupper(trim((string)($settings['vat_country_code'] ?? '')));
         $vatNumber = $this->normaliseVatNumber((string)($settings['vat_number'] ?? ''));
 
@@ -48,10 +48,10 @@ final class VatRegistrationService
             }
         }
 
-        return VatValidationResult::error('unknown', 'This VAT country/prefix is not supported yet.');
+        return VatValidationResultService::error('unknown', 'This VAT country/prefix is not supported yet.');
     }
 
-    public function updateSettingsFromResult(array $settings, VatValidationResult $result): array {
+    public function updateSettingsFromResult(array $settings, VatValidationResultService $result): array {
         if ($result->status === 'valid') {
             $settings['vat_validation_status'] = 'valid';
             $settings['vat_validated_at'] = gmdate('Y-m-d H:i:s');
@@ -81,7 +81,7 @@ final class VatRegistrationService
         return $settings;
     }
 
-    public function compareAgainstCompanyRecord(array $settings, VatValidationResult $result): array {
+    public function compareHmrcAndCompaniesHouse(array $settings, VatValidationResultService $result): array {
         $warnings = [];
 
         if ($result->source !== 'hmrc' || $result->status !== 'valid') {
@@ -95,7 +95,7 @@ final class VatRegistrationService
             $warnings[] = 'The HMRC business name does not match the Companies House company name on file.';
         }
 
-        $storedAddress = $this->normaliseForComparison(implode(' ', CompaniesHouseHelper::storedAddressLines($settings)));
+        $storedAddress = $this->normaliseForComparison(implode(' ', CompaniesHouseService::storedAddressLines($settings)));
         $returnedAddress = $this->normaliseForComparison((string)($result->address ?? ''));
 
         if ($storedAddress !== '' && $returnedAddress !== '' && !$this->stringsMatchLoosely($storedAddress, $returnedAddress)) {

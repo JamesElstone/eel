@@ -5,7 +5,7 @@ final class CompaniesHouseAccountsIngestionService
 {
     private readonly CompaniesHouseFilingService $filingService;
     private readonly CompaniesHouseDocumentService $documentService;
-    private readonly CompaniesHouseIxbrlParser $ixbrlParser;
+    private readonly IxbrlParserService $ixbrlParser;
     private readonly CompaniesHousePersistenceService $persistenceService;
 
     public function __construct(
@@ -16,7 +16,7 @@ final class CompaniesHouseAccountsIngestionService
         $companiesHouseService = new CompaniesHouseService($this->environment, $this->timeoutSeconds);
         $this->filingService = new CompaniesHouseFilingService($companiesHouseService);
         $this->documentService = new CompaniesHouseDocumentService($this->environment, $this->timeoutSeconds);
-        $this->ixbrlParser = new CompaniesHouseIxbrlParser();
+        $this->ixbrlParser = new IxbrlParserService();
         $this->persistenceService = new CompaniesHousePersistenceService($this->pdo);
     }
 

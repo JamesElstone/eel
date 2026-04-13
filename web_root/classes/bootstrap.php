@@ -14,7 +14,7 @@ define('APP_CSS', APP_ROOT . 'css' . DIRECTORY_SEPARATOR);
 const AF_HEADER_PREFIX = 'X-AntiFraud-';
 const AF_COOKIE_PREFIX = 'af_';
 
-require_once APP_CLASSES . 'helper' . DIRECTORY_SEPARATOR . 'FrameworkHelper.php';
+require_once APP_CLASSES . 'framework' . DIRECTORY_SEPARATOR . 'HelperFramework.php';
 require_once APP_ROOT . 'db' . DIRECTORY_SEPARATOR . 'db.php';
 
 spl_autoload_register(
@@ -84,12 +84,13 @@ set_exception_handler(static function (Throwable $exception): void {
         isset($_SERVER['HTTP_X_REQUESTED_WITH'])
         && strtolower((string)$_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest'
     ) {
-        FrameworkHelper::json_response(500, $payload);
+        HelperFramework::json_response(500, $payload);
         return;
     }
 
     header('Content-Type: text/html; charset=utf-8');
     echo '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Server error</title></head><body>';
-    echo '<h1>Server error</h1><p>' . FrameworkHelper::escape($exception->getMessage()) . '</p>';
+    echo '<h1>Server error</h1><p>' . HelperFramework::escape($exception->getMessage()) . '</p>';
     echo '</body></html>';
 });
+

@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 final class StatementUploadService
 {
-    public const SOURCE_TYPE_ANNA_MONEY = 'anna_money';
+    public const SOURCE_TYPE = '';
     public const CURRENCY_DEFAULT_OPTION_GBP = '__default_currency_gbp__';
     public const MAX_BATCH_UPLOAD_FILES = 12;
 
@@ -212,7 +212,7 @@ final class StatementUploadService
                 'company_id' => $companyId,
                 'tax_year_id' => null,
                 'account_id' => $accountId,
-                'source_type' => self::SOURCE_TYPE_ANNA_MONEY,
+                'source_type' => self::SOURCE_TYPE,
                 'workflow_status' => self::WORKFLOW_UPLOADED,
                 'statement_month' => (new DateTimeImmutable('first day of this month'))->format('Y-m-d'),
                 'original_filename' => $uploadedFile['original_name'],
@@ -453,7 +453,7 @@ final class StatementUploadService
         ];
     }
 
-    public function fetchAccountMappingPreview(int $companyId, int $accountId, string $sourceType = self::SOURCE_TYPE_ANNA_MONEY): array {
+    public function fetchAccountMappingPreview(int $companyId, int $accountId, string $sourceType = self::SOURCE_TYPE): array {
         $uploadId = $this->findLatestMappedUploadIdForAccount($companyId, $accountId, $sourceType);
 
         if ($uploadId === null) {
@@ -487,7 +487,7 @@ final class StatementUploadService
         $mappingRow = $this->fetchLatestAccountMappingRow(
             $companyId,
             (int)($upload['account_id'] ?? 0),
-            (string)($upload['source_type'] ?? self::SOURCE_TYPE_ANNA_MONEY),
+            (string)($upload['source_type'] ?? self::SOURCE_TYPE),
             $uploadId
         );
 
@@ -653,7 +653,7 @@ final class StatementUploadService
         return null;
     }
 
-    public static function buildAnnaRowHash(
+    public static function buildRowHash(
         int $companyId,
         string $chosenTxnDate,
         string $normalisedDescription,
@@ -1087,7 +1087,7 @@ final class StatementUploadService
                     'counterparty_name' => null,
                     'card' => null,
                     'dedupe_hash' => (string)$row['row_hash'],
-                    'source_type' => self::SOURCE_TYPE_ANNA_MONEY,
+                    'source_type' => self::SOURCE_TYPE,
                     'source_account_label' => $row['source_account'] !== null ? (string)$row['source_account'] : (($upload['account_name'] ?? null) !== null ? (string)$upload['account_name'] : null),
                     'source_created_at' => $sourceCreatedAt instanceof DateTimeImmutable ? $sourceCreatedAt->format('Y-m-d H:i:s') : null,
                     'source_processed_at' => $sourceProcessedAt instanceof DateTimeImmutable ? $sourceProcessedAt->format('Y-m-d H:i:s') : null,
@@ -1351,7 +1351,7 @@ final class StatementUploadService
                     continue;
                 }
 
-                $rowHash = self::buildAnnaRowHash(
+                $rowHash = self::buildRowHash(
                     $companyId,
                     $chosenTxnDate,
                     $normalisedDescription,
@@ -1587,7 +1587,7 @@ final class StatementUploadService
             && (float)$normalisedAmount !== 0.0
             && $normalisedCurrency !== null
         ) {
-            $rowHash = self::buildAnnaRowHash(
+            $rowHash = self::buildRowHash(
                 $companyId,
                 $chosenTxnDate,
                 $normalisedDescription,
@@ -1960,7 +1960,7 @@ final class StatementUploadService
     }
 
     private function resolveInitialMapping(int $companyId, int $accountId, array $sourceHeaders): array {
-        $savedMapping = $this->fetchLatestAccountMapping($companyId, $accountId, self::SOURCE_TYPE_ANNA_MONEY);
+        $savedMapping = $this->fetchLatestAccountMapping($companyId, $accountId, self::SOURCE_TYPE);
 
         if ($savedMapping === null) {
             return $this->buildAutoMappingFromHeaders($sourceHeaders);
@@ -2024,7 +2024,7 @@ final class StatementUploadService
             );
             $stmt->execute([
                 'upload_id' => $uploadId,
-                'source_type' => self::SOURCE_TYPE_ANNA_MONEY,
+                'source_type' => self::SOURCE_TYPE,
                 'original_headers_json' => $this->encodeJson($originalHeaders),
                 'mapping_json' => $this->encodeJson($mapping),
             ]);
@@ -2041,7 +2041,7 @@ final class StatementUploadService
         );
         $stmt->execute([
             'upload_id' => $uploadId,
-            'source_type' => self::SOURCE_TYPE_ANNA_MONEY,
+            'source_type' => self::SOURCE_TYPE,
             'original_headers_json' => $this->encodeJson($originalHeaders),
             'mapping_json' => $this->encodeJson($mapping),
         ]);
@@ -2343,7 +2343,20 @@ final class StatementUploadService
     }
 
     private function detectMimeType(string $filename): ?string {
-        return MimeTypeHelper::detectFromFile($filename);
+        if (!is_file($filename) || !function_exists('finfo_open')) {
+            return null;
+        }
+
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+
+        if ($finfo === false) {
+            return null;
+        }
+
+        $mimeType = finfo_file($finfo, $filename) ?: null;
+        finfo_close($finfo);
+
+        return is_string($mimeType) ? $mimeType : null;
     }
 
     private function sanitiseOriginalFilename(string $filename): string {
@@ -2398,7 +2411,7 @@ final class StatementUploadService
     }
 
     private function resolveUploadDirectory(int $companyId): string {
-        return FrameworkHelper::companyUploadSubdirectory($companyId, 'statements', $this->uploadBaseDirectory);
+        return HelperFramework::companyUploadSubdirectory($companyId, 'statements', $this->uploadBaseDirectory);
     }
 
     private function buildStoredFilename(): string {
@@ -2661,3 +2674,4 @@ final class StatementUploadService
         }
     }
 }
+

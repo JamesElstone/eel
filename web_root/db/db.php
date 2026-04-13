@@ -209,7 +209,7 @@ function db_connect_with_credentials(string $dsn, ?string $username = null, ?str
 }
 
 function connectDb(): PDO {
-    $config = FrameworkHelper::config();
+    $config = AppConfigurationStore::config();
     $dbConfig = is_array($config['db'] ?? null) ? $config['db'] : [];
     $dsn = trim((string)($dbConfig['dsn'] ?? ''));
 
@@ -1218,7 +1218,7 @@ function validateAccountingPeriodSequence(PDO $pdo, int $companyId, int $periodI
 
     $periods[] = [
         'id' => $periodId,
-            'label' => FrameworkHelper::accountingPeriodLabel($periodStart, $periodEnd),
+            'label' => HelperFramework::accountingPeriodLabel($periodStart, $periodEnd),
         'period_start' => $periodStart,
         'period_end' => $periodEnd,
     ];
@@ -1244,7 +1244,7 @@ function validateAccountingPeriodSequence(PDO $pdo, int $companyId, int $periodI
 
 
 function createAccountingPeriod(PDO $pdo, int $companyId, string $periodStart, string $periodEnd, ?string $label = null): int {
-    $label = $label !== null && $label !== '' ? $label : FrameworkHelper::accountingPeriodLabel($periodStart, $periodEnd);
+    $label = $label !== null && $label !== '' ? $label : HelperFramework::accountingPeriodLabel($periodStart, $periodEnd);
     $stmt = $pdo->prepare('SELECT COUNT(*) FROM tax_years WHERE company_id = ? AND period_start = ? AND period_end = ?');
     $stmt->execute([$companyId, $periodStart, $periodEnd]);
 
@@ -1485,7 +1485,7 @@ function buildAccountingGuidance(PDO $pdo, array $settings, array $accountingPer
         ? formatDisplayDate($guidance['incorporation_date'], $settings)
         : '';
 
-    $suggester = new AccountingPeriodSuggester();
+    $suggester = new TaxPeriodService();
     $companyId = (int)($settings['company_id'] !== '' ? $settings['company_id'] : 0);
     $companyNumber = (string)($settings['companies_house_number'] ?? '');
     $guidance['filed_periods'] = fetchCompaniesHouseFiledAccountingPeriods($pdo, $companyId, $companyNumber);
@@ -1530,7 +1530,7 @@ function buildAccountingGuidance(PDO $pdo, array $settings, array $accountingPer
     }
 
     if ($settings['period_start'] !== '' && $settings['period_end'] !== '') {
-        $ctDeriver = new CtPeriodDeriver();
+        $ctDeriver = new TaxPeriodService();
         $guidance['ct_periods'] = $ctDeriver->derive($settings['period_start'], $settings['period_end']);
 
         foreach ($guidance['ct_periods'] as &$period) {
@@ -2135,3 +2135,5 @@ function hasCompanySettingsRow(PDO $pdo, int $companyId): bool {
 
     return (int)$stmt->fetchColumn() > 0;
 }
+
+

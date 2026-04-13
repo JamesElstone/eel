@@ -12,7 +12,7 @@ final class OutboundHelper
             return $overridePath;
         }
 
-        $config = FrameworkHelper::config();
+        $config = AppConfigurationStore::config();
         $configuredPath = trim((string)($config['api_keys']['path'] ?? ''));
         if ($configuredPath !== '') {
             return $configuredPath;
@@ -70,7 +70,7 @@ final class OutboundHelper
                 }
 
                 if (count($row) >= 6) {
-                    $environment = FrameworkHelper::normaliseEnvironmentMode((string)$row[2]);
+                    $environment = HelperFramework::normaliseEnvironmentMode((string)$row[2]);
                     $credential = [
                         'provider' => $provider,
                         'tag' => $tag,
@@ -106,7 +106,7 @@ final class OutboundHelper
     {
         $provider = strtoupper(trim($provider));
         $tag = strtoupper(trim($tag));
-        $environment = FrameworkHelper::normaliseEnvironmentMode($environment);
+        $environment = HelperFramework::normaliseEnvironmentMode($environment);
         $catalog = self::credentialCatalog($keysPath);
         $providerCatalog = $catalog[$provider] ?? [];
         $tagCatalog = is_array($providerCatalog[$tag] ?? null) ? $providerCatalog[$tag] : [];
@@ -425,3 +425,5 @@ final class OutboundHelper
         return [$clientId, $clientSecret];
     }
 }
+
+

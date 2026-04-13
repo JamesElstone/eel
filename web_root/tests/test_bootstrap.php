@@ -19,10 +19,10 @@ $tests = [
         }
     },
     'autoloads classes from the classes directory structure' => static function (): void {
-        $suggester = new AccountingPeriodSuggester();
+        $suggester = new TaxPeriodService();
 
-        if (!$suggester instanceof AccountingPeriodSuggester) {
-            throw new RuntimeException('Autoloader did not resolve AccountingPeriodSuggester.');
+        if (!$suggester instanceof TaxPeriodService) {
+            throw new RuntimeException('Autoloader did not resolve TaxPeriodService.');
         }
     },
 ];

@@ -3,10 +3,7 @@ declare(strict_types=1);
 
 final class CompanyDataResetService
 {
-    private PDO $pdo;
-
-    public function __construct(PDO $pdo) {
-        $this->pdo = $pdo;
+    public function __construct() {
     }
 
     public function clearImportedAccountingData(int $companyId, string $confirmationValue, ?string $actor = null): array {
@@ -74,10 +71,10 @@ final class CompanyDataResetService
             'journals' => count($journalIds),
         ];
 
-        $ownsTransaction = !$this->pdo->inTransaction();
+        $ownsTransaction = !InterfaceDB::inTransaction();
 
         if ($ownsTransaction) {
-            $this->pdo->beginTransaction();
+            InterfaceDB::beginTransaction();
         }
 
         try {
@@ -94,11 +91,11 @@ final class CompanyDataResetService
             $this->deleteRowsByIds('statement_uploads', 'id', $uploadIds);
 
             if ($ownsTransaction) {
-                $this->pdo->commit();
+                InterfaceDB::commit();
             }
         } catch (Throwable $exception) {
-            if ($ownsTransaction && $this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
+            if ($ownsTransaction && InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
             }
 
             return [
@@ -129,25 +126,18 @@ final class CompanyDataResetService
             return null;
         }
 
-        $stmt = $this->pdo->prepare(
-            'SELECT id,
+        $row = InterfaceDB::fetchOne( 'SELECT id,
                     company_name,
                     company_number
              FROM companies
              WHERE id = :company_id
-             LIMIT 1'
-        );
-        $stmt->execute(['company_id' => $companyId]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+             LIMIT 1', ['company_id' => $companyId]);
 
         return is_array($row) ? $row : null;
     }
 
     private function fetchIds(string $sql, array $params): array {
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute($params);
-
-        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+        return array_map('intval', InterfaceDB::prepareExecute( $sql, $params)->fetchAll(PDO::FETCH_COLUMN));
     }
 
     private function countRowsByIds(string $table, string $column, array $ids): int {
@@ -159,7 +149,7 @@ final class CompanyDataResetService
 
         foreach (array_chunk($ids, 500) as $chunk) {
             $placeholders = implode(', ', array_fill(0, count($chunk), '?'));
-            $stmt = $this->pdo->prepare(
+            $stmt = InterfaceDB::prepare(
                 'SELECT COUNT(*)
                  FROM ' . $table . '
                  WHERE ' . $column . ' IN (' . $placeholders . ')'
@@ -178,7 +168,7 @@ final class CompanyDataResetService
 
         foreach (array_chunk($ids, 500) as $chunk) {
             $placeholders = implode(', ', array_fill(0, count($chunk), '?'));
-            $stmt = $this->pdo->prepare(
+            $stmt = InterfaceDB::prepare(
                 'DELETE FROM ' . $table . '
                  WHERE ' . $column . ' IN (' . $placeholders . ')'
             );
@@ -186,3 +176,5 @@ final class CompanyDataResetService
         }
     }
 }
+
+

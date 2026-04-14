@@ -3,13 +3,11 @@ declare(strict_types=1);
 
 final class CategorisationRuleService
 {
-    private PDO $pdo;
     private array $columnExistsCache = [];
     private ?string $lastSql = null;
     private array $lastParams = [];
 
-    public function __construct(PDO $pdo) {
-        $this->pdo = $pdo;
+    public function __construct() {
     }
 
     public function fetchRules(int $companyId): array {
@@ -821,10 +819,10 @@ final class CategorisationRuleService
             return $this->columnExistsCache[$cacheKey];
         }
 
-        $driver = strtolower((string)$this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME));
+        $driver = InterfaceDB::driverName();
 
         if ($driver === 'sqlite') {
-            $stmt = $this->pdo->query('PRAGMA table_info(' . $tableName . ')');
+            $stmt = InterfaceDB::query('PRAGMA table_info(' . $tableName . ')');
             $columns = $stmt !== false ? $stmt->fetchAll() : [];
 
             foreach ($columns as $column) {
@@ -837,7 +835,7 @@ final class CategorisationRuleService
         }
 
         try {
-            $stmt = $this->pdo->query('SHOW COLUMNS FROM `' . str_replace('`', '``', $tableName) . '`');
+            $stmt = InterfaceDB::query('SHOW COLUMNS FROM `' . str_replace('`', '``', $tableName) . '`');
             $columns = $stmt !== false ? $stmt->fetchAll() : [];
 
             foreach ($columns as $column) {
@@ -852,8 +850,7 @@ final class CategorisationRuleService
         }
 
         try {
-            $stmt = db_prepare_execute(
-                $this->pdo,
+            $stmt = InterfaceDB::prepareExecute(
                 'SELECT COUNT(*)
                  FROM INFORMATION_SCHEMA.COLUMNS
                  WHERE TABLE_SCHEMA = DATABASE()
@@ -870,7 +867,7 @@ final class CategorisationRuleService
         }
 
         try {
-            $stmt = $this->pdo->query('SELECT * FROM `' . str_replace('`', '``', $tableName) . '` WHERE 1 = 0');
+            $stmt = InterfaceDB::query('SELECT * FROM `' . str_replace('`', '``', $tableName) . '` WHERE 1 = 0');
             if ($stmt !== false) {
                 $columnCount = $stmt->columnCount();
                 for ($index = 0; $index < $columnCount; $index++) {
@@ -892,7 +889,7 @@ final class CategorisationRuleService
         $this->lastSql = $sql;
         $this->lastParams = $filteredParams;
 
-        return db_prepare_execute($this->pdo, $sql, $filteredParams);
+        return InterfaceDB::prepareExecute( $sql, $filteredParams);
     }
 
     private function filterParamsForSql(string $sql, array $params): array {
@@ -916,3 +913,5 @@ final class CategorisationRuleService
         return $filtered;
     }
 }
+
+

@@ -4,14 +4,13 @@ declare(strict_types=1);
 final class TrialBalanceComparisonService
 {
     public function __construct(
-        private readonly PDO $pdo,
         private readonly ?YearEndMetricsService $metricsService = null,
         private readonly ?CompaniesHouseStoredDataService $storedDataService = null,
     ) {
     }
 
     public function fetchComparison(int $companyId, int $taxYearId): array {
-        $metrics = $this->metricsService ?? new YearEndMetricsService($this->pdo);
+        $metrics = $this->metricsService ?? new YearEndMetricsService();
         $taxYear = $metrics->fetchTaxYear($companyId, $taxYearId);
         $company = $metrics->fetchCompanySummary($companyId);
 
@@ -30,7 +29,7 @@ final class TrialBalanceComparisonService
             ];
         }
 
-        $stored = $this->storedDataService ?? new CompaniesHouseStoredDataService($this->pdo);
+        $stored = $this->storedDataService ?? new CompaniesHouseStoredDataService();
         $summaries = $stored->fetchDocumentSummariesByCompanyNumber($companyNumber);
         $nearest = $this->findNearestSummary($summaries, (string)$taxYear['period_end']);
         if ($nearest === null) {
@@ -106,16 +105,13 @@ final class TrialBalanceComparisonService
 
     private function fetchMetricFacts(int $documentRowId): array {
         $placeholders = implode(', ', array_fill(0, count($this->factShortNameMap()), '?'));
-        $stmt = $this->pdo->prepare(
-            'SELECT c.short_name,
+        $stmt = InterfaceDB::prepareExecute( 'SELECT c.short_name,
                     f.normalised_numeric
              FROM companies_house_document_facts f
              INNER JOIN companies_house_taxonomy_concepts c ON c.id = f.concept_fk
              WHERE f.document_fk = ?
                AND c.short_name IN (' . $placeholders . ')
-               AND f.is_latest_year_fact = 1'
-        );
-        $stmt->execute(array_merge([$documentRowId], array_keys($this->factShortNameMap())));
+               AND f.is_latest_year_fact = 1', array_merge([$documentRowId], array_keys($this->factShortNameMap())));
 
         $facts = [];
         foreach ($stmt->fetchAll() ?: [] as $row) {
@@ -157,3 +153,5 @@ final class TrialBalanceComparisonService
         ];
     }
 }
+
+

@@ -67,11 +67,11 @@ final class _test_targetCard implements CardInterfaceFramework
         }
 
         return '<div class="card">
-            <div class="card-header">
+            <div class="card-header card-header-has-eyebrow">
                 <div>
-                    <p class="eyebrow">Card: ' . HelperFramework::escape($this->key()) . '</p>
                     <h2 class="card-title">Context consumer</h2>
                 </div>
+                <p class="eyebrow card-header-corner-eyebrow">Card: ' . HelperFramework::escape($this->key()) . '</p>
                 <span class="status-pill">' . HelperFramework::escape((string)($shared['status'] ?? 'Unknown')) . '</span>
             </div>
             <div class="card-body stack">

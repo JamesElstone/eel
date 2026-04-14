@@ -114,5 +114,15 @@ final class RequestFramework
 
         return '?' . http_build_query($query);
     }
+
+    public function companyId(): int
+    {
+        return max(0, (int)$this->input('company_id', 0));
+    }
+
+    public function taxYearId(): int
+    {
+        return max(0, (int)$this->input('tax_year_id', 0));
+    }
 }
 

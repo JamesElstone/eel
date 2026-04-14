@@ -10,12 +10,10 @@ final class ExpenseReceiptStorageService
         'application/pdf' => 'pdf',
     ];
 
-    private PDO $pdo;
     private string $uploadsRoot;
     private int $maxBytes;
 
-    public function __construct(PDO $pdo, ?string $uploadsRoot = null, int $maxBytes = 10485760) {
-        $this->pdo = $pdo;
+    public function __construct(?string $uploadsRoot = null, int $maxBytes = 10485760) {
         $this->uploadsRoot = rtrim($uploadsRoot ?? $this->defaultUploadsRoot(), '/\\');
         $this->maxBytes = max(1024, $maxBytes);
     }
@@ -63,7 +61,7 @@ final class ExpenseReceiptStorageService
             }
         }
 
-        $this->pdo->prepare(
+        InterfaceDB::prepare(
             'UPDATE expense_claim_lines
              SET receipt_reference = :receipt_reference,
                  updated_at = CURRENT_TIMESTAMP
@@ -103,7 +101,7 @@ final class ExpenseReceiptStorageService
             }
         }
 
-        $this->pdo->prepare(
+        InterfaceDB::prepare(
             'UPDATE expense_claim_lines
              SET receipt_reference = NULL,
                  updated_at = CURRENT_TIMESTAMP
@@ -176,7 +174,7 @@ final class ExpenseReceiptStorageService
 
         $sql .= ' LIMIT 1';
 
-        $stmt = $this->pdo->prepare($sql);
+        $stmt = InterfaceDB::prepare($sql);
         $stmt->execute($params);
         $row = $stmt->fetch();
 

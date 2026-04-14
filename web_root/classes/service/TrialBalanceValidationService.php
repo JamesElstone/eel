@@ -4,7 +4,6 @@ declare(strict_types=1);
 final class TrialBalanceValidationService
 {
     public function __construct(
-        private readonly PDO $pdo,
         private readonly ?TrialBalanceService $trialBalanceService = null,
         private readonly ?YearEndMetricsService $metricsService = null,
         private readonly ?YearEndLockService $lockService = null,
@@ -12,8 +11,8 @@ final class TrialBalanceValidationService
     }
 
     public function fetchValidation(int $companyId, int $taxYearId): array {
-        $trialBalanceService = $this->trialBalanceService ?? new TrialBalanceService($this->pdo);
-        $metrics = $this->metricsService ?? new YearEndMetricsService($this->pdo);
+        $trialBalanceService = $this->trialBalanceService ?? new TrialBalanceService();
+        $metrics = $this->metricsService ?? new YearEndMetricsService();
         $context = $trialBalanceService->fetchPageContext($companyId, $taxYearId);
 
         if ($context === null) {
@@ -32,7 +31,7 @@ final class TrialBalanceValidationService
         $unpostedCount = $this->countUnpostedJournals($companyId, $taxYearId);
         $missingPostingRoutes = $metrics->strandedCommittedSourceRowsCount($companyId, $taxYearId);
         $monthTiles = $metrics->buildMonthTiles($companyId, $taxYearId, $periodStart, $periodEnd);
-        $review = ($this->lockService ?? new YearEndLockService($this->pdo))->fetchReview($companyId, $taxYearId);
+        $review = ($this->lockService ?? new YearEndLockService())->fetchReview($companyId, $taxYearId);
 
         $bankCheck = $this->bankLedgerReasonableness($companyId, $taxYearId, (int)($context['settings']['default_bank_nominal_id'] ?? 0));
         $suspenseBalance = (float)($summary['uncategorised_exposure'] ?? 0);
@@ -40,7 +39,7 @@ final class TrialBalanceValidationService
         $monthAllGreen = $monthTiles !== [] && count(array_filter($monthTiles, static fn(array $tile): bool => (string)($tile['status'] ?? '') !== 'green')) === 0;
         $reviewWarningsAcknowledged = trim((string)($review['review_notes'] ?? '')) !== '';
         $comparisonDifferences = count(array_filter(
-            (array)((new TrialBalanceComparisonService($this->pdo))->fetchComparison($companyId, $taxYearId)['rows'] ?? []),
+            (array)((new TrialBalanceComparisonService())->fetchComparison($companyId, $taxYearId)['rows'] ?? []),
             static fn(array $row): bool => (string)($row['status'] ?? '') === 'differs'
         ));
 
@@ -123,7 +122,7 @@ final class TrialBalanceValidationService
     }
 
     private function countUnpostedJournals(int $companyId, int $taxYearId): int {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT COUNT(*)
              FROM journals
              WHERE company_id = :company_id
@@ -139,7 +138,7 @@ final class TrialBalanceValidationService
     }
 
     private function bankLedgerReasonableness(int $companyId, int $taxYearId, int $bankNominalId): array {
-        $txnStmt = $this->pdo->prepare(
+        $txnStmt = InterfaceDB::prepare(
             'SELECT COALESCE(SUM(amount), 0)
              FROM transactions
              WHERE company_id = :company_id
@@ -157,7 +156,7 @@ final class TrialBalanceValidationService
 
         $ledgerMovement = 0.0;
         if ($bankNominalId > 0) {
-            $ledgerStmt = $this->pdo->prepare(
+            $ledgerStmt = InterfaceDB::prepare(
                 'SELECT COALESCE(SUM(COALESCE(jl.debit, 0) - COALESCE(jl.credit, 0)), 0)
                  FROM journals j
                  INNER JOIN journal_lines jl ON jl.journal_id = j.id

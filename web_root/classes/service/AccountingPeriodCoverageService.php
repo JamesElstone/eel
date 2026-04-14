@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 final class AccountingPeriodCoverageService
 {
-    public function summarise(PDO $pdo, int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array {
+    public function summarise(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array {
         if ($companyId <= 0 || $periodStart === '' || $periodEnd === '') {
             return [
                 'months' => [],
@@ -13,17 +13,12 @@ final class AccountingPeriodCoverageService
         }
 
         $monthMap = $this->emptyMonthMap($periodStart, $periodEnd);
-        $stmt = $pdo->prepare(
-            "SELECT DATE_FORMAT(txn_date, '%Y-%m-01') AS month_key, COUNT(*) AS txn_count
+        foreach (InterfaceDB::fetchAll( "SELECT DATE_FORMAT(txn_date, '%Y-%m-01') AS month_key, COUNT(*) AS txn_count
              FROM transactions
              WHERE company_id = ?
                AND txn_date BETWEEN ? AND ?
              GROUP BY DATE_FORMAT(txn_date, '%Y-%m-01')
-             ORDER BY month_key"
-        );
-        $stmt->execute([$companyId, $periodStart, $periodEnd]);
-
-        foreach ($stmt->fetchAll() as $row) {
+             ORDER BY month_key", [$companyId, $periodStart, $periodEnd]) as $row) {
             $monthKey = (string)$row['month_key'];
 
             if (!isset($monthMap[$monthKey])) {
@@ -36,15 +31,11 @@ final class AccountingPeriodCoverageService
         $outsidePeriodCount = 0;
 
         if ($accountingPeriodId > 0) {
-            $outsideStmt = $pdo->prepare(
-                'SELECT COUNT(*)
+            $outsidePeriodCount = (int)InterfaceDB::fetchColumn( 'SELECT COUNT(*)
                  FROM transactions
                  WHERE company_id = ?
                    AND tax_year_id = ?
-                   AND (txn_date < ? OR txn_date > ?)'
-            );
-            $outsideStmt->execute([$companyId, $accountingPeriodId, $periodStart, $periodEnd]);
-            $outsidePeriodCount = (int)$outsideStmt->fetchColumn();
+                   AND (txn_date < ? OR txn_date > ?)', [$companyId, $accountingPeriodId, $periodStart, $periodEnd]);
         }
 
         $missingMonths = [];
@@ -82,3 +73,5 @@ final class AccountingPeriodCoverageService
         return $months;
     }
 }
+
+

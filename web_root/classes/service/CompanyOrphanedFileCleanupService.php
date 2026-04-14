@@ -3,16 +3,13 @@ declare(strict_types=1);
 
 final class CompanyOrphanedFileCleanupService
 {
-    private PDO $pdo;
     private string $uploadBaseDirectory;
 
     public function __construct(
-        PDO $pdo,
         string $defaultStatementDirectory,
         string $receiptDownloadBaseDirectory,
         string $expenseUploadsRoot
     ) {
-        $this->pdo = $pdo;
         $this->uploadBaseDirectory = rtrim($expenseUploadsRoot, '/\\');
     }
 
@@ -210,34 +207,26 @@ final class CompanyOrphanedFileCleanupService
             return null;
         }
 
-        $stmt = $this->pdo->prepare(
-            'SELECT id,
+        $row = InterfaceDB::fetchOne( 'SELECT id,
                     company_name,
                     company_number
              FROM companies
              WHERE id = :company_id
-             LIMIT 1'
-        );
-        $stmt->execute(['company_id' => $companyId]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+             LIMIT 1', ['company_id' => $companyId]);
 
         return is_array($row) ? $row : null;
     }
 
     private function resolveLegacyStatementUploadDirectory(int $companyId): string {
         try {
-            $stmt = $this->pdo->prepare(
-                'SELECT value
+            $path = InterfaceDB::fetchColumn( 'SELECT value
                  FROM company_settings
                  WHERE company_id = :company_id
                    AND setting = :setting
-                 LIMIT 1'
-            );
-            $stmt->execute([
+                 LIMIT 1', [
                 'company_id' => $companyId,
                 'setting' => 'uploads_path',
             ]);
-            $path = $stmt->fetchColumn();
 
             if (is_string($path) && trim($path) !== '') {
                 return rtrim(trim($path), '/\\') . DIRECTORY_SEPARATOR . 'statements';
@@ -249,49 +238,40 @@ final class CompanyOrphanedFileCleanupService
     }
 
     private function fetchReferencedStatementFiles(int $companyId): array {
-        $stmt = $this->pdo->prepare(
-            'SELECT stored_filename
+        return $this->fetchBasenameLookup(
+            InterfaceDB::prepareExecute( 'SELECT stored_filename
              FROM statement_uploads
              WHERE company_id = :company_id
                AND stored_filename IS NOT NULL
-               AND stored_filename <> \'\''
+               AND stored_filename <> \'\'', ['company_id' => $companyId])->fetchAll(PDO::FETCH_COLUMN)
         );
-        $stmt->execute(['company_id' => $companyId]);
-
-        return $this->fetchBasenameLookup($stmt);
     }
 
     private function fetchReferencedTransactionReceiptFiles(int $companyId): array {
-        $stmt = $this->pdo->prepare(
-            'SELECT local_document_path
+        return $this->fetchBasenameLookup(
+            InterfaceDB::prepareExecute( 'SELECT local_document_path
              FROM transactions
              WHERE company_id = :company_id
                AND local_document_path IS NOT NULL
-               AND local_document_path <> \'\''
+               AND local_document_path <> \'\'', ['company_id' => $companyId])->fetchAll(PDO::FETCH_COLUMN)
         );
-        $stmt->execute(['company_id' => $companyId]);
-
-        return $this->fetchBasenameLookup($stmt);
     }
 
     private function fetchReferencedExpenseReceiptFiles(int $companyId): array {
-        $stmt = $this->pdo->prepare(
-            'SELECT l.receipt_reference
+        return $this->fetchBasenameLookup(
+            InterfaceDB::prepareExecute( 'SELECT l.receipt_reference
              FROM expense_claim_lines l
              INNER JOIN expense_claims c ON c.id = l.expense_claim_id
              WHERE c.company_id = :company_id
                AND l.receipt_reference IS NOT NULL
-               AND l.receipt_reference <> \'\''
+               AND l.receipt_reference <> \'\'', ['company_id' => $companyId])->fetchAll(PDO::FETCH_COLUMN)
         );
-        $stmt->execute(['company_id' => $companyId]);
-
-        return $this->fetchBasenameLookup($stmt);
     }
 
-    private function fetchBasenameLookup(PDOStatement $stmt): array {
+    private function fetchBasenameLookup(array $paths): array {
         $lookup = [];
 
-        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $path) {
+        foreach ($paths as $path) {
             $basename = basename(str_replace(['/', '\\'], DIRECTORY_SEPARATOR, trim((string)$path)));
 
             if ($basename === '' || $basename === '.' || $basename === '..') {
@@ -309,4 +289,6 @@ final class CompanyOrphanedFileCleanupService
         return preg_replace('/[^A-Z0-9_-]/', '', $normalised) ?? '';
     }
 }
+
+
 

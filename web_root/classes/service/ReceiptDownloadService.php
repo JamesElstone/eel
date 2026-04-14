@@ -10,18 +10,15 @@ final class ReceiptDownloadService
         'application/pdf' => 'pdf',
     ];
 
-    private PDO $pdo;
     private string $baseDirectory;
     private int $timeoutSeconds;
     private int $maxBytes;
 
     public function __construct(
-        PDO $pdo,
         string $baseDirectory,
         int $timeoutSeconds = 10,
         int $maxBytes = 10485760
     ) {
-        $this->pdo = $pdo;
         $this->baseDirectory = rtrim($baseDirectory, '/\\');
         $this->timeoutSeconds = max(1, $timeoutSeconds);
         $this->maxBytes = max(1024, $maxBytes);
@@ -286,8 +283,7 @@ final class ReceiptDownloadService
     }
 
     private function fetchTransaction(int $transactionId): ?array {
-        $stmt = $this->pdo->prepare(
-            'SELECT id,
+        $row = InterfaceDB::fetchOne( 'SELECT id,
                     company_id,
                     txn_date,
                     amount,
@@ -298,10 +294,7 @@ final class ReceiptDownloadService
                     document_url_hash
              FROM transactions
              WHERE id = :id
-             LIMIT 1'
-        );
-        $stmt->execute(['id' => $transactionId]);
-        $row = $stmt->fetch();
+             LIMIT 1', ['id' => $transactionId]);
 
         return is_array($row) ? $row : null;
     }
@@ -311,8 +304,7 @@ final class ReceiptDownloadService
             return null;
         }
 
-        $stmt = $this->pdo->prepare(
-            'SELECT local_document_path
+        $path = InterfaceDB::fetchColumn( 'SELECT local_document_path
              FROM transactions
              WHERE company_id = :company_id
                AND document_url_hash = :document_url_hash
@@ -320,14 +312,11 @@ final class ReceiptDownloadService
                AND local_document_path IS NOT NULL
                AND local_document_path <> \'\'
              ORDER BY id ASC
-             LIMIT 1'
-        );
-        $stmt->execute([
+             LIMIT 1', [
             'company_id' => $companyId,
             'document_url_hash' => $documentUrlHash,
             'document_download_status' => 'success',
         ]);
-        $path = $stmt->fetchColumn();
 
         if (!is_string($path) || trim($path) === '') {
             return null;
@@ -443,7 +432,7 @@ final class ReceiptDownloadService
             return;
         }
 
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'UPDATE transactions
              SET ' . implode(', ', $fields) . '
              WHERE id = :id'
@@ -537,4 +526,6 @@ final class ReceiptDownloadService
         ) !== false;
     }
 }
+
+
 

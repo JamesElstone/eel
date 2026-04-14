@@ -3,6 +3,11 @@ declare(strict_types=1);
 
 abstract class BasePageFramework implements PageInterfaceFramework
 {
+    public function showsTaxYearSelector(): bool
+    {
+        return true;
+    }
+
     public function handle(RequestFramework $request, PageServiceFramework $services): ResponseFramework
     {
         $actionDispatcher = new ActionDispatcherFramework();
@@ -10,10 +15,16 @@ abstract class BasePageFramework implements PageInterfaceFramework
             $request,
             $services,
             fn(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
-                => $this->handlePageAction($request, $services)
+                => $this->dispatchPageAction($request, $services)
         );
 
-        $context = $this->buildContext($request, $services, $actionResult);
+        $pageContext = $this->buildContext($request, $services, $actionResult);
+        $selectorContext = $services->get(CompanyStore::class)->buildSelectorContext($request, $this);
+        $context = array_merge($pageContext, [
+            'selected_company_id' => $selectorContext['selected_company_id'] ?? 0,
+            'selected_tax_year_id' => $selectorContext['selected_tax_year_id'] ?? 0,
+            'show_tax_year_selector' => $selectorContext['show_tax_year_selector'] ?? true,
+        ]);
         $renderer = new PageRendererFramework(
             new CardRendererFramework(new CardFactoryFramework())
         );
@@ -31,6 +42,25 @@ abstract class BasePageFramework implements PageInterfaceFramework
     ): ActionResultFramework
     {
         return ActionResultFramework::none();
+    }
+
+    private function dispatchPageAction(
+        RequestFramework $request,
+        PageServiceFramework $services
+    ): ActionResultFramework
+    {
+        if ($request->action() === 'set-page-context') {
+            return ActionResultFramework::success(
+                ['page.context', 'page.selector_ui'],
+                [],
+                [
+                    'company_id' => $request->companyId() > 0 ? $request->companyId() : null,
+                    'tax_year_id' => $request->taxYearId() > 0 ? $request->taxYearId() : null,
+                ]
+            );
+        }
+
+        return $this->handlePageAction($request, $services);
     }
 
     abstract protected function buildContext(

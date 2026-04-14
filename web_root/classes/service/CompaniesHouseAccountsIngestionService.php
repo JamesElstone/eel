@@ -9,7 +9,6 @@ final class CompaniesHouseAccountsIngestionService
     private readonly CompaniesHousePersistenceService $persistenceService;
 
     public function __construct(
-        private readonly PDO $pdo,
         private readonly string $environment = 'TEST',
         private readonly int $timeoutSeconds = 20,
     ) {
@@ -17,7 +16,7 @@ final class CompaniesHouseAccountsIngestionService
         $this->filingService = new CompaniesHouseFilingService($companiesHouseService);
         $this->documentService = new CompaniesHouseDocumentService($this->environment, $this->timeoutSeconds);
         $this->ixbrlParser = new IxbrlParserService();
-        $this->persistenceService = new CompaniesHousePersistenceService($this->pdo);
+        $this->persistenceService = new CompaniesHousePersistenceService();
     }
 
     public function ingestForCompany(int $companyId, string $companyNumber): array {

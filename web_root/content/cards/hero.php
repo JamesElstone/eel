@@ -43,11 +43,11 @@ final class _heroCard implements CardInterfaceFramework
         }
 
         return '<div class="card">
-            <div class="card-header">
+            <div class="card-header card-header-has-eyebrow">
                 <div>
-                    <p class="eyebrow">Example page</p>
                     <h2 class="card-title">Convention-led dashboard module</h2>
                 </div>
+                <p class="eyebrow card-header-corner-eyebrow">Example page</p>
                 <span class="status-pill">Using ' . HelperFramework::escape($serviceClass) . '</span>
             </div>
             <div class="card-body stack">

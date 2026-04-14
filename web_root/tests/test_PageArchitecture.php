@@ -14,8 +14,13 @@ final class TestPageArchitectureHarness
         $this->runTest('card keys map to the expected card class name', [$this, 'testCardKeyConvention']);
         $this->runTest('page factory resolves the dashboard page', [$this, 'testPageFactoryResolvesDashboard']);
         $this->runTest('AJAX delta responses include only stale cards', [$this, 'testAjaxDeltaResponseReturnsOnlyStaleCards']);
+        $this->runTest('selector ajax responses include compact selector UI data', [$this, 'testSelectorAjaxResponseIncludesSelectorUi']);
+        $this->runTest('selector ui is excluded from shared card context', [$this, 'testSelectorUiIsNotSharedInCardContext']);
+        $this->runTest('card ajax responses omit selector UI data when it is unchanged', [$this, 'testCardAjaxResponseOmitsSelectorUiWhenUnchanged']);
+        $this->runTest('selector changes invalidate all current page cards', [$this, 'testSelectorChangesInvalidateAllCurrentPageCards']);
         $this->runTest('test page shares context across cards during AJAX updates', [$this, 'testTestPageSharedContextAcrossCards']);
         $this->runTest('navigation builder sorts items without loading page files', [$this, 'testNavigationFrameworkBuildsSortedItemsWithoutLoadingPages']);
+        $this->runTest('navigation builder resolves shared svg icons from display labels', [$this, 'testNavigationFrameworkResolvesSharedSvgIcons']);
         $this->runTest('navigation builder returns an empty array for missing directories', [$this, 'testNavigationFrameworkReturnsEmptyArrayForMissingDirectory']);
     }
 
@@ -35,7 +40,7 @@ final class TestPageArchitectureHarness
 
         $page = (new PageFactoryFramework())->create('dashboard');
         $this->assertSame(_dashboard::class, $page::class);
-        $this->assertSame(['company_account'], $page->services());
+        $this->assertSame([CompanyAccountService::class], $page->services());
     }
 
     private function testAjaxDeltaResponseReturnsOnlyStaleCards(): void
@@ -67,6 +72,131 @@ final class TestPageArchitectureHarness
         $this->assertTrue(isset($payload['cards']['dashboard-hero']));
         $this->assertTrue(isset($payload['cards']['dashboard-overview']));
         $this->assertTrue(isset($payload['cards']['dashboard-activity']));
+    }
+
+    private function testSelectorAjaxResponseIncludesSelectorUi(): void
+    {
+        $page = $this->loadPageCards('dashboard');
+
+        $_GET = ['page' => 'dashboard'];
+        $_POST = [
+            'action' => 'set-page-context',
+            'company_id' => '0',
+            'tax_year_id' => '',
+            'cards' => $page->cards(),
+            '_ajax' => '1',
+        ];
+        $_SERVER['REQUEST_METHOD'] = 'POST';
+        $_SERVER['HTTP_X_REQUESTED_WITH'] = 'XMLHttpRequest';
+        $_SERVER['HTTP_ACCEPT'] = 'application/json';
+
+        $response = $page->handle(
+            RequestFramework::fromGlobals(),
+            new PageServiceFramework($this->testPageServices())
+        );
+
+        ob_start();
+        $response->send();
+        $payload = json_decode((string)ob_get_clean(), true);
+
+        $this->assertTrue(is_array($payload));
+        $this->assertTrue(isset($payload['selector_ui']['companies']));
+        $this->assertTrue(isset($payload['selector_ui']['tax_years']));
+        $this->assertTrue(isset($payload['selector_ui']['selected_company_id']));
+        $this->assertTrue(isset($payload['selector_ui']['selected_tax_year_id']));
+        $this->assertTrue(is_array($payload['selector_ui']['companies']));
+        $this->assertTrue(is_array($payload['selector_ui']['tax_years']));
+    }
+
+    private function testSelectorUiIsNotSharedInCardContext(): void
+    {
+        $page = $this->loadPageCards('test');
+
+        $_GET = ['page' => 'test', 'preset' => 'alpha'];
+        $_POST = [
+            'action' => 'set-test-context',
+            'preset' => 'beta',
+            'note' => 'Shared note from the source card',
+            'cards' => $page->cards(),
+            '_ajax' => '1',
+        ];
+        $_SERVER['REQUEST_METHOD'] = 'POST';
+        $_SERVER['HTTP_X_REQUESTED_WITH'] = 'XMLHttpRequest';
+        $_SERVER['HTTP_ACCEPT'] = 'application/json';
+
+        $response = $page->handle(
+            RequestFramework::fromGlobals(),
+            new PageServiceFramework($this->testPageServices())
+        );
+
+        ob_start();
+        $response->send();
+        $payload = json_decode((string)ob_get_clean(), true);
+
+        $this->assertTrue(is_array($payload));
+        $this->assertNotContains('_selector_ui', (string)($payload['cards']['test-context_dump'] ?? ''));
+    }
+
+    private function testCardAjaxResponseOmitsSelectorUiWhenUnchanged(): void
+    {
+        $page = $this->loadPageCards('test');
+
+        $_GET = ['page' => 'test', 'preset' => 'alpha'];
+        $_POST = [
+            'action' => 'set-test-context',
+            'preset' => 'beta',
+            'note' => 'Shared note from the source card',
+            'cards' => $page->cards(),
+            '_ajax' => '1',
+        ];
+        $_SERVER['REQUEST_METHOD'] = 'POST';
+        $_SERVER['HTTP_X_REQUESTED_WITH'] = 'XMLHttpRequest';
+        $_SERVER['HTTP_ACCEPT'] = 'application/json';
+
+        $response = $page->handle(
+            RequestFramework::fromGlobals(),
+            new PageServiceFramework($this->testPageServices())
+        );
+
+        ob_start();
+        $response->send();
+        $payload = json_decode((string)ob_get_clean(), true);
+
+        $this->assertTrue(is_array($payload));
+        $this->assertSame(null, $payload['selector_ui'] ?? null);
+    }
+
+    private function testSelectorChangesInvalidateAllCurrentPageCards(): void
+    {
+        $page = $this->loadPageCards('test');
+
+        $_GET = ['page' => 'test'];
+        $_POST = [
+            'action' => 'set-page-context',
+            'company_id' => '22',
+            'tax_year_id' => '25',
+            'cards' => $page->cards(),
+            '_ajax' => '1',
+        ];
+        $_SERVER['REQUEST_METHOD'] = 'POST';
+        $_SERVER['HTTP_X_REQUESTED_WITH'] = 'XMLHttpRequest';
+        $_SERVER['HTTP_ACCEPT'] = 'application/json';
+
+        $response = $page->handle(
+            RequestFramework::fromGlobals(),
+            new PageServiceFramework($this->testPageServices())
+        );
+
+        ob_start();
+        $response->send();
+        $payload = json_decode((string)ob_get_clean(), true);
+
+        $this->assertTrue(is_array($payload));
+        $this->assertTrue(isset($payload['cards']['test-test_source']));
+        $this->assertTrue(isset($payload['cards']['test-test_target']));
+        $this->assertTrue(isset($payload['cards']['test-context_dump']));
+        $this->assertTrue(isset($payload['selector_ui']['companies']));
+        $this->assertTrue(isset($payload['selector_ui']['tax_years']));
     }
 
     private function testTestPageSharedContextAcrossCards(): void
@@ -118,11 +248,13 @@ final class TestPageArchitectureHarness
 
     private function testPageServices(): array
     {
-        $companyAccount = new CompanyAccountService(new GeneratedServiceClassTestPdo());
+        $companyAccount = new CompanyAccountService();
+        $companyStore = new CompanyStore();
 
         return [
             'company_account' => $companyAccount,
             CompanyAccountService::class => $companyAccount,
+            CompanyStore::class => $companyStore,
         ];
     }
 
@@ -138,6 +270,18 @@ final class TestPageArchitectureHarness
         $this->assertSame('/tests/fixtures/navigation_pages/trialBalance.svg', $items[2]['icon_path']);
         $this->assertTrue($items[2]['is_active']);
         $this->assertSame(1000, $items[3]['order']);
+    }
+
+    private function testNavigationFrameworkResolvesSharedSvgIcons(): void
+    {
+        $items = (new NavigationFramework(APP_PAGES, 'dashboard'))->build();
+        $itemsByKey = [];
+
+        foreach ($items as $item) {
+            $itemsByKey[(string)$item['key']] = $item;
+        }
+
+        $this->assertSame('/svg/dashboard.svg', $itemsByKey['dashboard']['icon_path'] ?? null);
     }
 
     private function testNavigationFrameworkReturnsEmptyArrayForMissingDirectory(): void
@@ -173,6 +317,15 @@ final class TestPageArchitectureHarness
         if (!str_contains($haystack, $needle)) {
             throw new RuntimeException(
                 'Assertion failed. Expected to find ' . var_export($needle, true) . ' in ' . var_export($haystack, true) . '.'
+            );
+        }
+    }
+
+    private function assertNotContains(string $needle, string $haystack): void
+    {
+        if (str_contains($haystack, $needle)) {
+            throw new RuntimeException(
+                'Assertion failed. Did not expect to find ' . var_export($needle, true) . ' in ' . var_export($haystack, true) . '.'
             );
         }
     }

@@ -3,12 +3,6 @@ declare(strict_types=1);
 
 final class TransactionCategorisationService
 {
-    private PDO $pdo;
-
-    public function __construct(PDO $pdo) {
-        $this->pdo = $pdo;
-    }
-
     public function applyAutoCategoryToTransaction(
         int $transactionId,
         string $changedBy = 'system',
@@ -94,10 +88,10 @@ final class TransactionCategorisationService
             'changed_transaction_ids' => [],
         ];
 
-        $ownsTransaction = !$this->pdo->inTransaction();
+        $ownsTransaction = !InterfaceDB::inTransaction();
 
         if ($ownsTransaction) {
-            $this->pdo->beginTransaction();
+            InterfaceDB::beginTransaction();
         }
 
         try {
@@ -135,11 +129,11 @@ final class TransactionCategorisationService
             }
 
             if ($ownsTransaction) {
-                $this->pdo->commit();
+                InterfaceDB::commit();
             }
         } catch (Throwable $exception) {
-            if ($ownsTransaction && $this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
+            if ($ownsTransaction && InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
             }
 
             throw $exception;
@@ -225,7 +219,7 @@ final class TransactionCategorisationService
     }
 
     private function assertPeriodUnlocked(array $transaction, string $actionLabel): void {
-        (new YearEndLockService($this->pdo))->assertUnlocked(
+        (new YearEndLockService())->assertUnlocked(
             (int)($transaction['company_id'] ?? 0),
             (int)($transaction['tax_year_id'] ?? 0),
             $actionLabel
@@ -241,7 +235,7 @@ final class TransactionCategorisationService
     }
 
     public function fetchTransaction(int $transactionId): ?array {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT t.id,
                     t.company_id,
                     t.tax_year_id,
@@ -289,7 +283,7 @@ final class TransactionCategorisationService
             return [];
         }
 
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT id,
                     company_id,
                     priority,
@@ -418,10 +412,10 @@ final class TransactionCategorisationService
     }
 
     private function persistCategorisation(array $transaction, array $nextState, string $changedBy, ?string $reason): void {
-        $ownsTransaction = !$this->pdo->inTransaction();
+        $ownsTransaction = !InterfaceDB::inTransaction();
 
         if ($ownsTransaction) {
-            $this->pdo->beginTransaction();
+            InterfaceDB::beginTransaction();
         }
 
         try {
@@ -436,11 +430,11 @@ final class TransactionCategorisationService
             );
 
             if ($ownsTransaction) {
-                $this->pdo->commit();
+                InterfaceDB::commit();
             }
         } catch (Throwable $exception) {
-            if ($ownsTransaction && $this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
+            if ($ownsTransaction && InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
             }
 
             throw $exception;
@@ -449,7 +443,7 @@ final class TransactionCategorisationService
 
     private function prepareCategorisationStatements(): array {
         return [
-            'update' => $this->pdo->prepare(
+            'update' => InterfaceDB::prepare(
                 'UPDATE transactions
                  SET nominal_account_id = :nominal_account_id,
                      transfer_account_id = :transfer_account_id,
@@ -459,7 +453,7 @@ final class TransactionCategorisationService
                      is_auto_excluded = :is_auto_excluded
                  WHERE id = :id'
             ),
-            'audit' => $this->pdo->prepare(
+            'audit' => InterfaceDB::prepare(
                 'INSERT INTO transaction_category_audit (
                     transaction_id,
                     old_nominal_account_id,
@@ -630,7 +624,7 @@ final class TransactionCategorisationService
             $params['month_end'] = $monthEnd->format('Y-m-d');
         }
 
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT t.id,
                     t.company_id,
                     t.tax_year_id,
@@ -695,7 +689,7 @@ final class TransactionCategorisationService
             return ['The transfer account must be different from the source account.'];
         }
 
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT company_id,
                     account_type,
                     is_active
@@ -726,7 +720,7 @@ final class TransactionCategorisationService
     }
 
     private function transactionHasDerivedJournal(int $transactionId): bool {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT EXISTS(
                 SELECT 1
                 FROM journals j

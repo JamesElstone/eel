@@ -4,14 +4,13 @@ declare(strict_types=1);
 final class YearEndAdjustmentService
 {
     public function __construct(
-        private readonly PDO $pdo,
         private readonly ?ManualJournalService $journalService = null,
         private readonly ?YearEndMetricsService $metricsService = null,
     ) {
     }
 
     public function fetchContext(int $companyId, int $taxYearId): array {
-        $metrics = $this->metricsService ?? new YearEndMetricsService($this->pdo);
+        $metrics = $this->metricsService ?? new YearEndMetricsService();
         $taxYear = $metrics->fetchTaxYear($companyId, $taxYearId);
         $company = $metrics->fetchCompanySummary($companyId);
 
@@ -28,7 +27,7 @@ final class YearEndAdjustmentService
             'tax_year' => $taxYear,
             'next_tax_year' => $this->fetchNextTaxYear($companyId, (string)$taxYear['period_end']),
             'nominals' => $this->fetchNominals(),
-            'adjustments' => ($this->journalService ?? new ManualJournalService($this->pdo))
+            'adjustments' => ($this->journalService ?? new ManualJournalService())
                 ->listJournalsByTags($companyId, $taxYearId, ['year_end_adjustment', 'year_end_adjustment_reversal']),
         ];
     }
@@ -49,13 +48,13 @@ final class YearEndAdjustmentService
         }
 
         $lines = $this->buildLinesFromPayload($payload, $template);
-        $ownsTransaction = !$this->pdo->inTransaction();
+        $ownsTransaction = !InterfaceDB::inTransaction();
         if ($ownsTransaction) {
-            $this->pdo->beginTransaction();
+            InterfaceDB::beginTransaction();
         }
 
         try {
-            $result = ($this->journalService ?? new ManualJournalService($this->pdo))->saveTaggedJournal(
+            $result = ($this->journalService ?? new ManualJournalService())->saveTaggedJournal(
                 $companyId,
                 $taxYearId,
                 'year_end_adjustment',
@@ -71,8 +70,8 @@ final class YearEndAdjustmentService
             );
 
             if (empty($result['success'])) {
-                if ($ownsTransaction && $this->pdo->inTransaction()) {
-                    $this->pdo->rollBack();
+                if ($ownsTransaction && InterfaceDB::inTransaction()) {
+                    InterfaceDB::rollBack();
                 }
 
                 return $result;
@@ -82,8 +81,8 @@ final class YearEndAdjustmentService
             if (!empty($payload['auto_reverse'])) {
                 $nextTaxYear = $context['next_tax_year'] ?? null;
                 if ($nextTaxYear === null) {
-                    if ($ownsTransaction && $this->pdo->inTransaction()) {
-                        $this->pdo->rollBack();
+                    if ($ownsTransaction && InterfaceDB::inTransaction()) {
+                        InterfaceDB::rollBack();
                     }
 
                     return [
@@ -101,7 +100,7 @@ final class YearEndAdjustmentService
                     ];
                 }, (array)($result['journal']['lines'] ?? []));
 
-                $reversal = ($this->journalService ?? new ManualJournalService($this->pdo))->saveTaggedJournal(
+                $reversal = ($this->journalService ?? new ManualJournalService())->saveTaggedJournal(
                     $companyId,
                     (int)$nextTaxYear['id'],
                     'year_end_adjustment_reversal',
@@ -117,8 +116,8 @@ final class YearEndAdjustmentService
                 );
 
                 if (empty($reversal['success'])) {
-                    if ($ownsTransaction && $this->pdo->inTransaction()) {
-                        $this->pdo->rollBack();
+                    if ($ownsTransaction && InterfaceDB::inTransaction()) {
+                        InterfaceDB::rollBack();
                     }
 
                     return $reversal;
@@ -128,7 +127,7 @@ final class YearEndAdjustmentService
             }
 
             if ($ownsTransaction) {
-                $this->pdo->commit();
+                InterfaceDB::commit();
             }
 
             return [
@@ -137,8 +136,8 @@ final class YearEndAdjustmentService
                 'reversal_journal' => $reversalJournal,
             ];
         } catch (Throwable $exception) {
-            if ($ownsTransaction && $this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
+            if ($ownsTransaction && InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
             }
 
             return [
@@ -180,7 +179,7 @@ final class YearEndAdjustmentService
     }
 
     private function fetchNominals(): array {
-        $stmt = $this->pdo->query(
+        $stmt = InterfaceDB::query(
             'SELECT na.id,
                     COALESCE(na.code, \'\') AS code,
                     COALESCE(na.name, \'\') AS name,
@@ -194,7 +193,7 @@ final class YearEndAdjustmentService
     }
 
     private function fetchNextTaxYear(int $companyId, string $periodEnd): ?array {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT id, label, period_start, period_end
              FROM tax_years
              WHERE company_id = :company_id

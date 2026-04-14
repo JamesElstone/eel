@@ -66,6 +66,47 @@
             margin-bottom: 28px;
         }
 
+        .selector-form {
+            margin: 0;
+        }
+
+        .selector-shell {
+            display: grid;
+            gap: 6px;
+        }
+
+        .selector-label {
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--muted);
+        }
+
+        .sidebar .selector-label {
+            color: #9fb0cc;
+        }
+
+        .selector-input {
+            width: 100%;
+            min-height: 42px;
+            padding: 10px 12px;
+            border-radius: 12px;
+            border: 1px solid var(--line);
+            background: var(--panel);
+            color: var(--text);
+            box-shadow: var(--shadow);
+        }
+
+        .sidebar-select {
+            background: rgba(255,255,255,0.08);
+            border-color: rgba(255,255,255,0.12);
+            color: #e5eefc;
+            box-shadow: none;
+        }
+
+        .topbar-select-shell {
+            min-width: 240px;
+        }
+
         .brand-toolbar {
             display: flex;
             justify-content: flex-end;
@@ -139,15 +180,17 @@
         }
 
         .nav-icon {
-            width: 18px;
-            height: 18px;
+            width: 100%;
+            height: 100%;
             flex: 0 0 auto;
+            display: block;
         }
 
         .nav-icon-wrap {
-            width: 18px;
-            height: 18px;
+            width: 40px;
+            height: 40px;
             flex: 0 0 auto;
+            padding: 3px;
             border-radius: 999px;
             background: rgba(255,255,255,0.12);
         }
@@ -235,6 +278,10 @@
 
         body.sidebar-collapsed .brand-toolbar {
             justify-content: center;
+        }
+
+        body.sidebar-collapsed .company-selector-label {
+            display: none;
         }
 
         body.sidebar-collapsed .nav-label {
@@ -555,6 +602,17 @@
             padding: 18px 20px 0;
         }
 
+        .card-header-has-eyebrow {
+            position: relative;
+        }
+
+        .card-header-corner-eyebrow {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            margin: 0;
+        }
+
         .card-title {
             margin: 0;
             font-size: 1.1rem;
@@ -826,6 +884,42 @@
             border-radius: 16px;
             background: var(--panel-soft);
             padding: 16px;
+        }
+
+        .preformatted-panel {
+            margin: 0;
+            overflow: auto;
+            white-space: pre-wrap;
+        }
+
+        .context-dump-classes-panel {
+            overflow: hidden;
+            padding: 1rem;
+        }
+
+        .context-dump-helper {
+            margin: 0 0 0.5rem;
+        }
+
+        .context-dump-helper:last-child {
+            margin-bottom: 0;
+        }
+
+        .class-list-empty {
+            margin: 0;
+        }
+
+        .class-list {
+            margin: 0;
+            padding-left: 1.5rem;
+        }
+
+        .class-list-highlight {
+            color: #166534;
+            background: #dcfce7;
+            padding: 0.125rem 0.375rem;
+            border-radius: 0.25rem;
+            display: inline-block;
         }
 
         .is-hidden {

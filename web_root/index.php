@@ -21,7 +21,7 @@ $config = AppConfigurationStore::config();
 $uploadBasePath = (string)($config['uploads']['upload_base_dir'] ?? '');
 
 
-$appServices = new AppService(db(), $uploadBasePath);
+$appServices = new AppService($uploadBasePath);
 
 
 $pageServices = new PageServiceFramework($appServices->getMany($page->services()));

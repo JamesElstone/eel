@@ -4,7 +4,6 @@ declare(strict_types=1);
 final class YearEndChecklistService
 {
     public function __construct(
-        private readonly PDO $pdo,
         private readonly ?YearEndMetricsService $metricsService = null,
         private readonly ?YearEndTaxReadinessService $taxReadinessService = null,
         private readonly ?YearEndCompaniesHouseComparisonService $companiesHouseComparisonService = null,
@@ -13,7 +12,7 @@ final class YearEndChecklistService
     }
 
     public function fetchDashboardSummary(int $companyId, ?int $taxYearId = null): array {
-        $metrics = $this->metricsService ?? new YearEndMetricsService($this->pdo);
+        $metrics = $this->metricsService ?? new YearEndMetricsService();
         $resolvedTaxYearId = $taxYearId !== null && $taxYearId > 0
             ? $taxYearId
             : $metrics->resolveLatestOpenTaxYearId($companyId);
@@ -78,7 +77,7 @@ final class YearEndChecklistService
             ];
         }
 
-        $lock = $this->lockService ?? new YearEndLockService($this->pdo);
+        $lock = $this->lockService ?? new YearEndLockService();
         $result = $lock->lockPeriod($companyId, $taxYearId, $lockedBy);
         if (empty($result['success'])) {
             return $result;
@@ -95,7 +94,7 @@ final class YearEndChecklistService
             return $checklistResult;
         }
 
-        $lock = $this->lockService ?? new YearEndLockService($this->pdo);
+        $lock = $this->lockService ?? new YearEndLockService();
         $result = $lock->saveNotes($companyId, $taxYearId, $notes, $changedBy);
         if (empty($result['success'])) {
             return $result;
@@ -112,7 +111,7 @@ final class YearEndChecklistService
             return $checklistResult;
         }
 
-        $lock = $this->lockService ?? new YearEndLockService($this->pdo);
+        $lock = $this->lockService ?? new YearEndLockService();
         $result = $lock->unlockPeriod($companyId, $taxYearId, $changedBy, $notes);
         if (empty($result['success'])) {
             return $result;
@@ -130,7 +129,7 @@ final class YearEndChecklistService
         }
 
         $checklist = (array)$checklistResult['checklist'];
-        ($this->lockService ?? new YearEndLockService($this->pdo))->writeAuditLog(
+        ($this->lockService ?? new YearEndLockService())->writeAuditLog(
             $companyId,
             $taxYearId,
             'recalculate',
@@ -146,10 +145,10 @@ final class YearEndChecklistService
     }
 
     public function fetchChecklist(int $companyId, int $taxYearId, bool $persist = true): ?array {
-        $metrics = $this->metricsService ?? new YearEndMetricsService($this->pdo);
-        $tax = $this->taxReadinessService ?? new YearEndTaxReadinessService($this->pdo, $metrics);
-        $comparison = $this->companiesHouseComparisonService ?? new YearEndCompaniesHouseComparisonService($this->pdo, $metrics);
-        $lock = $this->lockService ?? new YearEndLockService($this->pdo);
+        $metrics = $this->metricsService ?? new YearEndMetricsService();
+        $tax = $this->taxReadinessService ?? new YearEndTaxReadinessService(null, $metrics);
+        $comparison = $this->companiesHouseComparisonService ?? new YearEndCompaniesHouseComparisonService(null, $metrics);
+        $lock = $this->lockService ?? new YearEndLockService();
         $taxYear = $metrics->fetchTaxYear($companyId, $taxYearId);
 
         if ($taxYear === null) {

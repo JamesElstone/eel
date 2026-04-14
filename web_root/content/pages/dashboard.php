@@ -20,7 +20,7 @@ final class _dashboard extends BasePageFramework
 
     public function services(): array
     {
-        return ['company_account'];
+        return [CompanyAccountService::class];
     }
 
     public function cards(): array
@@ -38,7 +38,7 @@ final class _dashboard extends BasePageFramework
         ActionResultFramework $actionResult
     ): array
     {
-        $companyAccountService = $services->get('company_account');
+        $companyAccountService = $services->get(CompanyAccountService::class);
 
         $stats = [
             [

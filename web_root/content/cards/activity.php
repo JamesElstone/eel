@@ -36,8 +36,9 @@ final class _activityCard implements CardInterfaceFramework
         }
 
         return '<div class="card">
-            <div class="card-header">
+            <div class="card-header card-header-has-eyebrow">
                 <h2 class="card-title">What this example proves</h2>
+                <p class="eyebrow card-header-corner-eyebrow">Card: ' . HelperFramework::escape($this->key()) . '</p>
             </div>
             <div class="card-body">
                 <div class="list">' . $itemsHtml . '</div>

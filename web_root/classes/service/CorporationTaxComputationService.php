@@ -6,13 +6,12 @@ final class CorporationTaxComputationService
     private const DEFAULT_CORPORATION_TAX_RATE = 0.19;
 
     public function __construct(
-        private readonly PDO $pdo,
         private readonly ?YearEndMetricsService $metricsService = null,
     ) {
     }
 
     public function fetchSummary(int $companyId, int $taxYearId): array {
-        $metrics = $this->metricsService ?? new YearEndMetricsService($this->pdo);
+        $metrics = $this->metricsService ?? new YearEndMetricsService();
         $taxYear = $metrics->fetchTaxYear($companyId, $taxYearId);
         if ($taxYear === null) {
             return [
@@ -86,7 +85,7 @@ final class CorporationTaxComputationService
     }
 
     private function rebuildLossSchedule(int $companyId): array {
-        $metrics = $this->metricsService ?? new YearEndMetricsService($this->pdo);
+        $metrics = $this->metricsService ?? new YearEndMetricsService();
         $taxYears = array_reverse($metrics->fetchTaxYears($companyId));
         if ($taxYears === []) {
             return [];
@@ -95,14 +94,14 @@ final class CorporationTaxComputationService
         $schedule = [];
         $lossPool = [];
 
-        $ownsTransaction = !$this->pdo->inTransaction();
+        $ownsTransaction = !InterfaceDB::inTransaction();
         if ($ownsTransaction) {
-            $this->pdo->beginTransaction();
+            InterfaceDB::beginTransaction();
         }
 
         try {
             if ($this->tableExists('tax_loss_carryforwards')) {
-                $this->pdo->prepare('DELETE FROM tax_loss_carryforwards WHERE company_id = :company_id')
+                InterfaceDB::prepare('DELETE FROM tax_loss_carryforwards WHERE company_id = :company_id')
                     ->execute(['company_id' => $companyId]);
             }
 
@@ -189,7 +188,7 @@ final class CorporationTaxComputationService
 
             if ($this->tableExists('tax_loss_carryforwards')) {
                 foreach ($lossPool as $lossRow) {
-                    $stmt = $this->pdo->prepare(
+                    $stmt = InterfaceDB::prepare(
                         'INSERT INTO tax_loss_carryforwards (
                             company_id,
                             origin_tax_year_id,
@@ -222,11 +221,11 @@ final class CorporationTaxComputationService
             }
 
             if ($ownsTransaction) {
-                $this->pdo->commit();
+                InterfaceDB::commit();
             }
         } catch (Throwable $exception) {
-            if ($ownsTransaction && $this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
+            if ($ownsTransaction && InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
             }
 
             throw $exception;
@@ -240,23 +239,20 @@ final class CorporationTaxComputationService
             return ['depreciation_add_back' => 0.0, 'capital_allowances' => 0.0, 'warning' => ''];
         }
 
-        $stmt = $this->pdo->prepare(
-            'SELECT type,
+        $rows = InterfaceDB::fetchAll( 'SELECT type,
                     direction,
                     COALESCE(SUM(amount), 0) AS total_amount
              FROM tax_year_adjustments
              WHERE company_id = :company_id
                AND tax_year_id = :tax_year_id
-             GROUP BY type, direction'
-        );
-        $stmt->execute([
+             GROUP BY type, direction', [
             'company_id' => $companyId,
             'tax_year_id' => $taxYearId,
         ]);
 
         $depreciation = 0.0;
         $allowances = 0.0;
-        foreach ($stmt->fetchAll() ?: [] as $row) {
+        foreach ($rows as $row) {
             $type = (string)($row['type'] ?? '');
             $direction = (string)($row['direction'] ?? '');
             $amount = round((float)($row['total_amount'] ?? 0), 2);
@@ -286,7 +282,7 @@ final class CorporationTaxComputationService
             return;
         }
 
-        $delete = $this->pdo->prepare(
+        $delete = InterfaceDB::prepare(
             'DELETE FROM tax_loss_movement_history
              WHERE company_id = :company_id
                AND tax_year_id = :tax_year_id
@@ -298,7 +294,7 @@ final class CorporationTaxComputationService
             'computation_hash' => $computationHash,
         ]);
 
-        $insert = $this->pdo->prepare(
+        $insert = InterfaceDB::prepare(
             'INSERT INTO tax_loss_movement_history (
                 company_id,
                 tax_year_id,
@@ -341,14 +337,9 @@ final class CorporationTaxComputationService
             return 0;
         }
 
-        $stmt = $this->pdo->prepare(
-            'SELECT COUNT(*)
+        return (int)InterfaceDB::fetchColumn( 'SELECT COUNT(*)
              FROM asset_register
-             WHERE company_id = :company_id'
-        );
-        $stmt->execute(['company_id' => $companyId]);
-
-        return (int)$stmt->fetchColumn();
+             WHERE company_id = :company_id', ['company_id' => $companyId]);
     }
 
     private function tableExists(string $table): bool {
@@ -358,7 +349,7 @@ final class CorporationTaxComputationService
         }
 
         try {
-            $stmt = $this->pdo->query('SELECT 1 FROM ' . $table . ' WHERE 1 = 0');
+            $stmt = InterfaceDB::query('SELECT 1 FROM ' . $table . ' WHERE 1 = 0');
             $cache[$table] = $stmt !== false;
         } catch (Throwable) {
             $cache[$table] = false;
@@ -367,3 +358,5 @@ final class CorporationTaxComputationService
         return $cache[$table];
     }
 }
+
+

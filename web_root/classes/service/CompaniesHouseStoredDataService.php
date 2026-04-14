@@ -3,14 +3,8 @@ declare(strict_types=1);
 
 final class CompaniesHouseStoredDataService
 {
-    public function __construct(
-        private readonly PDO $pdo,
-    ) {
-    }
-
     public function fetchDocumentSummariesByCompanyNumber(string $companyNumber): array {
-        $stmt = $this->pdo->prepare(
-            'SELECT
+        return InterfaceDB::fetchAll( 'SELECT
                 d.id,
                 d.company_number,
                 d.filing_date,
@@ -40,16 +34,11 @@ final class CompaniesHouseStoredDataService
                 d.document_id,
                 d.classification,
                 d.parse_status
-            ORDER BY d.filing_date DESC, d.id DESC'
-        );
-        $stmt->execute([strtoupper(trim($companyNumber))]);
-
-        return $stmt->fetchAll();
+            ORDER BY d.filing_date DESC, d.id DESC', [strtoupper(trim($companyNumber))]);
     }
 
     public function fetchFactsByDocumentRowId(int $documentRowId): array {
-        $stmt = $this->pdo->prepare(
-            'SELECT
+        $rows = InterfaceDB::fetchAll( 'SELECT
                 f.id,
                 c.concept_name,
                 COALESCE(NULLIF(f.fact_name, \'\'), c.friendly_label) AS friendly_label,
@@ -67,10 +56,7 @@ final class CompaniesHouseStoredDataService
             INNER JOIN companies_house_taxonomy_concepts c ON c.id = f.concept_fk
             INNER JOIN companies_house_document_contexts ctx ON ctx.id = f.context_fk
             WHERE f.document_fk = ?
-            ORDER BY COALESCE(c.friendly_label, c.concept_name), ctx.context_ref, f.id'
-        );
-        $stmt->execute([$documentRowId]);
-        $rows = $stmt->fetchAll();
+            ORDER BY COALESCE(c.friendly_label, c.concept_name), ctx.context_ref, f.id', [$documentRowId]);
 
         foreach ($rows as &$row) {
             $row['period_or_instant'] = $this->periodSummary($row);
@@ -144,9 +130,7 @@ final class CompaniesHouseStoredDataService
         }
 
         $sql .= ' ORDER BY d.filing_date DESC, friendly_label, ctx.context_ref';
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute($params);
-        $rows = $stmt->fetchAll();
+        $rows = InterfaceDB::fetchAll( $sql, $params);
 
         foreach ($rows as &$row) {
             $row['period_or_instant'] = $this->periodSummary($row);
@@ -197,3 +181,5 @@ final class CompaniesHouseStoredDataService
         return implode('; ', array_filter($parts));
     }
 }
+
+

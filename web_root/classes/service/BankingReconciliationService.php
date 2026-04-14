@@ -3,12 +3,6 @@ declare(strict_types=1);
 
 final class BankingReconciliationService
 {
-    private PDO $pdo;
-
-    public function __construct(PDO $pdo) {
-        $this->pdo = $pdo;
-    }
-
     public function fetchBankAccountPanels(int $companyId, int $taxYearId, int $bankNominalId): array {
         if ($companyId <= 0 || $taxYearId <= 0) {
             return [];
@@ -59,8 +53,7 @@ final class BankingReconciliationService
     }
 
     private function fetchBankAccounts(int $companyId): array {
-        $stmt = $this->pdo->prepare(
-            'SELECT id,
+        return InterfaceDB::fetchAll( 'SELECT id,
                     company_id,
                     account_name,
                     account_type,
@@ -70,14 +63,10 @@ final class BankingReconciliationService
              FROM company_accounts
              WHERE company_id = :company_id
                AND account_type = :account_type
-             ORDER BY is_active DESC, account_name ASC, id ASC'
-        );
-        $stmt->execute([
+             ORDER BY is_active DESC, account_name ASC, id ASC', [
             'company_id' => $companyId,
             'account_type' => CompanyAccountService::TYPE_BANK,
         ]);
-
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     private function fetchUploadsByAccount(int $companyId, int $taxYearId, array $accountIds): array {
@@ -87,7 +76,7 @@ final class BankingReconciliationService
 
         $placeholders = implode(', ', array_fill(0, count($accountIds), '?'));
         $params = array_merge([$companyId, $taxYearId], array_map('intval', $accountIds));
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT id,
                     company_id,
                     tax_year_id,
@@ -138,7 +127,7 @@ final class BankingReconciliationService
 
         foreach (array_chunk($uploadIds, 500) as $chunk) {
             $placeholders = implode(', ', array_fill(0, count($chunk), '?'));
-            $stmt = $this->pdo->prepare(
+            $stmt = InterfaceDB::prepare(
                 'SELECT upload_id,
                         id,
                         `row_number`,
@@ -163,8 +152,7 @@ final class BankingReconciliationService
     }
 
     private function fetchLedgerBankDeltas(int $companyId, int $taxYearId, int $bankNominalId): array {
-        $stmt = $this->pdo->prepare(
-            'SELECT j.journal_date,
+        $rows = InterfaceDB::fetchAll( 'SELECT j.journal_date,
                     COALESCE(SUM(COALESCE(jl.debit, 0) - COALESCE(jl.credit, 0)), 0.00) AS day_delta,
                     SUM(CASE WHEN COALESCE(j.source_type, \'\') <> \'bank_csv\' THEN 1 ELSE 0 END) AS non_csv_lines
              FROM journals j
@@ -174,9 +162,7 @@ final class BankingReconciliationService
                AND jl.nominal_account_id = :bank_nominal_id
                AND j.is_posted = 1
              GROUP BY j.journal_date
-             ORDER BY j.journal_date ASC'
-        );
-        $stmt->execute([
+             ORDER BY j.journal_date ASC', [
             'company_id' => $companyId,
             'tax_year_id' => $taxYearId,
             'bank_nominal_id' => $bankNominalId,
@@ -186,7 +172,7 @@ final class BankingReconciliationService
         $runningBalance = 0.0;
         $runningNonCsv = 0;
 
-        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        foreach ($rows as $row) {
             $date = trim((string)$row['journal_date']);
             $runningBalance += (float)$row['day_delta'];
             $runningNonCsv += (int)$row['non_csv_lines'];
@@ -487,3 +473,5 @@ final class BankingReconciliationService
         return round($value, 2);
     }
 }
+
+

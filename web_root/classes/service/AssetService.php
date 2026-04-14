@@ -3,19 +3,16 @@ declare(strict_types=1);
 
 final class AssetService
 {
-    private PDO $pdo;
     private TransactionCategorisationService $categorisationService;
     private TransactionJournalService $transactionJournalService;
     private ?bool $schemaReady = null;
 
     public function __construct(
-        PDO $pdo,
         ?TransactionCategorisationService $categorisationService = null,
         ?TransactionJournalService $transactionJournalService = null
     ) {
-        $this->pdo = $pdo;
-        $this->categorisationService = $categorisationService ?? new TransactionCategorisationService($pdo);
-        $this->transactionJournalService = $transactionJournalService ?? new TransactionJournalService($pdo);
+        $this->categorisationService = $categorisationService ?? new TransactionCategorisationService();
+        $this->transactionJournalService = $transactionJournalService ?? new TransactionJournalService();
     }
 
     public static function assetCategoryOptions(): array {
@@ -77,8 +74,7 @@ final class AssetService
             return [];
         }
 
-        $stmt = $this->pdo->prepare(
-            'SELECT ar.*,
+        return InterfaceDB::fetchAll( 'SELECT ar.*,
                     COALESCE(cost, 0) - COALESCE((
                         SELECT SUM(ade.amount)
                         FROM asset_depreciation_entries ade
@@ -94,10 +90,7 @@ final class AssetService
              FROM asset_register ar
              LEFT JOIN nominal_accounts na ON na.id = ar.nominal_account_id
              WHERE ar.company_id = :company_id
-             ORDER BY ar.purchase_date DESC, ar.id DESC'
-        );
-        $stmt->execute(['company_id' => $companyId]);
-        return $stmt->fetchAll() ?: [];
+             ORDER BY ar.purchase_date DESC, ar.id DESC', ['company_id' => $companyId]);
     }
 
     public function createAssetFromTransaction(int $companyId, int $transactionId, array $payload, int $defaultBankNominalId): array {
@@ -109,7 +102,7 @@ final class AssetService
         if ($transaction === null || (int)($transaction['company_id'] ?? 0) !== $companyId) {
             return ['success' => false, 'errors' => ['The selected transaction could not be found for this company.']];
         }
-        (new YearEndLockService($this->pdo))->assertUnlocked($companyId, (int)($transaction['tax_year_id'] ?? 0), 'create assets from transactions in this period');
+        (new YearEndLockService())->assertUnlocked($companyId, (int)($transaction['tax_year_id'] ?? 0), 'create assets from transactions in this period');
 
         if ($defaultBankNominalId <= 0) {
             return ['success' => false, 'errors' => ['Set the default bank nominal before creating an asset from a transaction.']];
@@ -125,9 +118,9 @@ final class AssetService
             return ['success' => false, 'errors' => $normalised['errors']];
         }
 
-        $ownsTransaction = !$this->pdo->inTransaction();
+        $ownsTransaction = !InterfaceDB::inTransaction();
         if ($ownsTransaction) {
-            $this->pdo->beginTransaction();
+            InterfaceDB::beginTransaction();
         }
 
         try {
@@ -166,7 +159,7 @@ final class AssetService
             }
 
             if ($ownsTransaction) {
-                $this->pdo->commit();
+                InterfaceDB::commit();
             }
 
             return [
@@ -175,8 +168,8 @@ final class AssetService
                 'messages' => ['Asset created from the selected transaction and linked to the derived journal.'],
             ];
         } catch (Throwable $exception) {
-            if ($ownsTransaction && $this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
+            if ($ownsTransaction && InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
             }
 
             return ['success' => false, 'errors' => ['The asset could not be created: ' . $exception->getMessage()]];
@@ -191,7 +184,7 @@ final class AssetService
         if ($offsetNominalId <= 0) {
             return ['success' => false, 'errors' => ['Choose an offset nominal before posting a manual asset.']];
         }
-        (new YearEndLockService($this->pdo))->assertUnlocked($companyId, $taxYearId, 'post manual assets in this period');
+        (new YearEndLockService())->assertUnlocked($companyId, $taxYearId, 'post manual assets in this period');
 
         $normalised = $this->normaliseAssetPayload($companyId, $payload, ['tax_year_id' => $taxYearId]);
         if ($normalised['errors'] !== []) {
@@ -204,9 +197,9 @@ final class AssetService
             return ['success' => false, 'errors' => ['No accounting period exists for the chosen purchase date.']];
         }
 
-        $ownsTransaction = !$this->pdo->inTransaction();
+        $ownsTransaction = !InterfaceDB::inTransaction();
         if ($ownsTransaction) {
-            $this->pdo->beginTransaction();
+            InterfaceDB::beginTransaction();
         }
 
         try {
@@ -236,13 +229,13 @@ final class AssetService
             }
 
             if ($ownsTransaction) {
-                $this->pdo->commit();
+                InterfaceDB::commit();
             }
 
             return ['success' => true, 'asset' => $asset, 'messages' => ['Manual asset posted and added to the register.']];
         } catch (Throwable $exception) {
-            if ($ownsTransaction && $this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
+            if ($ownsTransaction && InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
             }
 
             return ['success' => false, 'errors' => ['The manual asset could not be posted: ' . $exception->getMessage()]];
@@ -258,13 +251,13 @@ final class AssetService
         if ($taxYear === null) {
             return ['success' => false, 'errors' => ['The selected accounting period could not be found.']];
         }
-        (new YearEndLockService($this->pdo))->assertUnlocked($companyId, $taxYearId, 'post depreciation in this period');
+        (new YearEndLockService())->assertUnlocked($companyId, $taxYearId, 'post depreciation in this period');
 
         $assets = $this->fetchDepreciableAssets($companyId, (string)$taxYear['period_start'], (string)$taxYear['period_end']);
         $summary = ['success' => true, 'created' => 0, 'skipped' => 0, 'errors' => []];
-        $ownsTransaction = !$this->pdo->inTransaction();
+        $ownsTransaction = !InterfaceDB::inTransaction();
         if ($ownsTransaction) {
-            $this->pdo->beginTransaction();
+            InterfaceDB::beginTransaction();
         }
 
         try {
@@ -303,7 +296,7 @@ final class AssetService
                 $this->insertJournalLine($journalId, $this->findNominalIdByCode('6200'), $amount, 0.0, $lineDescription);
                 $this->insertJournalLine($journalId, (int)$asset['accum_dep_nominal_id'], 0.0, $amount, $lineDescription);
 
-                $stmt = $this->pdo->prepare(
+                $stmt = InterfaceDB::prepare(
                     'INSERT INTO asset_depreciation_entries (
                         asset_id,
                         tax_year_id,
@@ -335,11 +328,11 @@ final class AssetService
             }
 
             if ($ownsTransaction) {
-                $this->pdo->commit();
+                InterfaceDB::commit();
             }
         } catch (Throwable $exception) {
-            if ($ownsTransaction && $this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
+            if ($ownsTransaction && InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
             }
 
             return ['success' => false, 'errors' => ['Depreciation could not be posted: ' . $exception->getMessage()]];
@@ -373,15 +366,15 @@ final class AssetService
         if ($taxYearId <= 0) {
             return ['success' => false, 'errors' => ['No accounting period exists for the disposal date.']];
         }
-        (new YearEndLockService($this->pdo))->assertUnlocked($companyId, $taxYearId, 'dispose assets in this period');
+        (new YearEndLockService())->assertUnlocked($companyId, $taxYearId, 'dispose assets in this period');
 
         $accumulatedDepreciation = $this->sumDepreciationToDate($assetId, $disposalDate);
         $nbv = round(max(0.0, (float)$asset['cost'] - $accumulatedDepreciation), 2);
         $profit = round($proceeds - $nbv, 2);
 
-        $ownsTransaction = !$this->pdo->inTransaction();
+        $ownsTransaction = !InterfaceDB::inTransaction();
         if ($ownsTransaction) {
-            $this->pdo->beginTransaction();
+            InterfaceDB::beginTransaction();
         }
 
         try {
@@ -410,7 +403,7 @@ final class AssetService
                 $this->insertJournalLine($journalId, $this->findNominalIdByCode('4200'), 0.0, $profit, 'Profit on disposal');
             }
 
-            $stmt = $this->pdo->prepare(
+            $stmt = InterfaceDB::prepare(
                 'UPDATE asset_register
                  SET status = :status,
                      disposal_date = :disposal_date,
@@ -428,11 +421,11 @@ final class AssetService
             ]);
 
             if ($ownsTransaction) {
-                $this->pdo->commit();
+                InterfaceDB::commit();
             }
         } catch (Throwable $exception) {
-            if ($ownsTransaction && $this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
+            if ($ownsTransaction && InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
             }
 
             return ['success' => false, 'errors' => ['The asset disposal could not be posted: ' . $exception->getMessage()]];
@@ -546,7 +539,7 @@ final class AssetService
         }
 
         foreach ($lossPool as $lossRow) {
-            $stmt = $this->pdo->prepare(
+            $stmt = InterfaceDB::prepare(
                 'INSERT INTO tax_loss_carryforwards (
                     company_id,
                     origin_tax_year_id,
@@ -581,14 +574,14 @@ final class AssetService
     }
 
     private function deleteDerivedTaxRows(int $companyId): void {
-        $this->pdo->prepare('DELETE FROM tax_year_adjustments WHERE company_id = :company_id')
+        InterfaceDB::prepare('DELETE FROM tax_year_adjustments WHERE company_id = :company_id')
             ->execute(['company_id' => $companyId]);
-        $this->pdo->prepare('DELETE FROM tax_loss_carryforwards WHERE company_id = :company_id')
+        InterfaceDB::prepare('DELETE FROM tax_loss_carryforwards WHERE company_id = :company_id')
             ->execute(['company_id' => $companyId]);
     }
 
     private function fetchDepreciationByAsset(int $companyId, int $taxYearId): array {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT ar.id AS asset_id, COALESCE(SUM(ade.amount), 0) AS amount
              FROM asset_register ar
              INNER JOIN asset_depreciation_entries ade ON ade.asset_id = ar.id
@@ -610,7 +603,7 @@ final class AssetService
     }
 
     private function calculateCapitalAllowancesByAsset(int $companyId, array $taxYear): array {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT id, category, cost
              FROM asset_register
              WHERE company_id = :company_id
@@ -639,7 +632,7 @@ final class AssetService
     }
 
     private function calculateAccountingProfit(int $companyId, int $taxYearId): float {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT na.account_type,
                     COALESCE(SUM(jl.debit), 0) AS total_debit,
                     COALESCE(SUM(jl.credit), 0) AS total_credit
@@ -672,7 +665,7 @@ final class AssetService
     }
 
     private function insertTaxYearAdjustment(int $companyId, int $taxYearId, string $type, string $direction, float $amount, int $assetId): void {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'INSERT INTO tax_year_adjustments (
                 company_id,
                 tax_year_id,
@@ -704,7 +697,7 @@ final class AssetService
     }
 
     private function fetchDepreciableAssets(int $companyId, string $periodStart, string $periodEnd): array {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT *
              FROM asset_register
              WHERE company_id = :company_id
@@ -721,7 +714,7 @@ final class AssetService
     }
 
     private function depreciationEntryExists(int $assetId, int $taxYearId, string $periodStart, string $periodEnd): bool {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT COUNT(*)
              FROM asset_depreciation_entries
              WHERE asset_id = :asset_id
@@ -763,7 +756,7 @@ final class AssetService
     }
 
     private function sumDepreciationToDate(int $assetId, string $toDate): float {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT COALESCE(SUM(amount), 0)
              FROM asset_depreciation_entries
              WHERE asset_id = :asset_id
@@ -851,7 +844,7 @@ final class AssetService
     }
 
     private function insertAssetRecord(array $values, array $links): void {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'INSERT INTO asset_register (
                 company_id,
                 asset_code,
@@ -915,35 +908,11 @@ final class AssetService
             return [];
         }
 
-        $stmt = $this->pdo->prepare(
-            'SELECT id, label, period_start, period_end
-             FROM tax_years
-             WHERE company_id = :company_id
-             ORDER BY period_start DESC, id DESC'
-        );
-        $stmt->execute(['company_id' => $companyId]);
-        return $stmt->fetchAll() ?: [];
+        return (new TaxYearRepository())->fetchTaxYears($companyId);
     }
 
     private function fetchTaxYear(int $companyId, int $taxYearId): ?array {
-        if ($companyId <= 0 || $taxYearId <= 0) {
-            return null;
-        }
-
-        $stmt = $this->pdo->prepare(
-            'SELECT id, label, period_start, period_end
-             FROM tax_years
-             WHERE company_id = :company_id
-               AND id = :id
-             LIMIT 1'
-        );
-        $stmt->execute([
-            'company_id' => $companyId,
-            'id' => $taxYearId,
-        ]);
-
-        $row = $stmt->fetch();
-        return is_array($row) ? $row : null;
+        return (new TaxYearRepository())->fetchTaxYear($companyId, $taxYearId);
     }
 
     private function resolveTaxYearIdForDate(int $companyId, string $date): int {
@@ -951,38 +920,29 @@ final class AssetService
             return 0;
         }
 
-        $stmt = $this->pdo->prepare(
-            'SELECT id
+        $value = InterfaceDB::fetchColumn( 'SELECT id
              FROM tax_years
              WHERE company_id = :company_id
                AND period_start <= :date_value
                AND period_end >= :date_value
              ORDER BY period_start DESC, id DESC
-             LIMIT 1'
-        );
-        $stmt->execute([
+             LIMIT 1', [
             'company_id' => $companyId,
             'date_value' => $date,
         ]);
-
-        $value = $stmt->fetchColumn();
         return $value !== false ? (int)$value : 0;
     }
 
     private function findNominalIdByCode(string $code): int {
-        $stmt = $this->pdo->prepare(
-            'SELECT id
+        $value = InterfaceDB::fetchColumn( 'SELECT id
              FROM nominal_accounts
              WHERE code = :code
-             LIMIT 1'
-        );
-        $stmt->execute(['code' => $code]);
-        $value = $stmt->fetchColumn();
+             LIMIT 1', ['code' => $code]);
         return $value !== false ? (int)$value : 0;
     }
 
     private function insertJournal(array $journal): int {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'INSERT INTO journals (
                 company_id,
                 tax_year_id,
@@ -1023,7 +983,7 @@ final class AssetService
     }
 
     private function insertJournalLine(int $journalId, int $nominalAccountId, float $debit, float $credit, string $description): void {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'INSERT INTO journal_lines (
                 journal_id,
                 nominal_account_id,
@@ -1048,52 +1008,40 @@ final class AssetService
     }
 
     private function findJournalIdBySourceRef(int $companyId, string $sourceType, string $sourceRef): ?int {
-        $stmt = $this->pdo->prepare(
-            'SELECT id
+        $value = InterfaceDB::fetchColumn( 'SELECT id
              FROM journals
              WHERE company_id = :company_id
                AND source_type = :source_type
                AND source_ref = :source_ref
-             LIMIT 1'
-        );
-        $stmt->execute([
+             LIMIT 1', [
             'company_id' => $companyId,
             'source_type' => $sourceType,
             'source_ref' => $sourceRef,
         ]);
-        $value = $stmt->fetchColumn();
         return $value !== false ? (int)$value : null;
     }
 
     private function fetchAsset(int $companyId, int $assetId): ?array {
-        $stmt = $this->pdo->prepare(
-            'SELECT *
+        $row = InterfaceDB::fetchOne( 'SELECT *
              FROM asset_register
              WHERE company_id = :company_id
                AND id = :id
-             LIMIT 1'
-        );
-        $stmt->execute([
+             LIMIT 1', [
             'company_id' => $companyId,
             'id' => $assetId,
         ]);
-        $row = $stmt->fetch();
         return is_array($row) ? $row : null;
     }
 
     private function fetchAssetByCode(int $companyId, string $assetCode): ?array {
-        $stmt = $this->pdo->prepare(
-            'SELECT *
+        $row = InterfaceDB::fetchOne( 'SELECT *
              FROM asset_register
              WHERE company_id = :company_id
                AND asset_code = :asset_code
-             LIMIT 1'
-        );
-        $stmt->execute([
+             LIMIT 1', [
             'company_id' => $companyId,
             'asset_code' => $assetCode,
         ]);
-        $row = $stmt->fetch();
         return is_array($row) ? $row : null;
     }
 
@@ -1124,10 +1072,10 @@ final class AssetService
         }
 
         try {
-            $this->pdo->query('SELECT 1 FROM asset_register WHERE 1 = 0');
-            $this->pdo->query('SELECT 1 FROM asset_depreciation_entries WHERE 1 = 0');
-            $this->pdo->query('SELECT 1 FROM tax_year_adjustments WHERE 1 = 0');
-            $this->pdo->query('SELECT 1 FROM tax_loss_carryforwards WHERE 1 = 0');
+            InterfaceDB::query('SELECT 1 FROM asset_register WHERE 1 = 0');
+            InterfaceDB::query('SELECT 1 FROM asset_depreciation_entries WHERE 1 = 0');
+            InterfaceDB::query('SELECT 1 FROM tax_year_adjustments WHERE 1 = 0');
+            InterfaceDB::query('SELECT 1 FROM tax_loss_carryforwards WHERE 1 = 0');
             $this->schemaReady = true;
         } catch (Throwable) {
             $this->schemaReady = false;
@@ -1136,3 +1084,5 @@ final class AssetService
         return $this->schemaReady;
     }
 }
+
+

@@ -15,12 +15,13 @@ final class PageRendererFramework
         PageServiceFramework $services
     ): ResponseFramework
     {
+        $selectorUi = $this->buildSelectorUi($page, $request, $services);
         $cardsHtml = [];
         foreach ($page->cards() as $cardKey) {
             $cardsHtml[] = $this->cards->render($page->id(), (string)$cardKey, $context, $services);
         }
 
-        $html = $this->renderLayout($page, $request, implode("\n", $cardsHtml), $actionResult);
+        $html = $this->renderLayout($page, $request, $context, $selectorUi, implode("\n", $cardsHtml), $actionResult);
 
         return ResponseFramework::html($html);
     }
@@ -40,21 +41,30 @@ final class PageRendererFramework
 
         $cards = [];
         $changedFacts = $actionResult->changedFacts();
+        $selectorUi = null;
+        $invalidateAllCards = in_array('page.context', $changedFacts, true);
 
         foreach ($currentCards as $cardKey) {
-            $facts = $this->cards->cardInvalidationFacts($cardKey);
+            if (!$invalidateAllCards) {
+                $facts = $this->cards->cardInvalidationFacts($cardKey);
 
-            if ($changedFacts !== [] && array_intersect($changedFacts, $facts) === []) {
-                continue;
+                if ($changedFacts !== [] && array_intersect($changedFacts, $facts) === []) {
+                    continue;
+                }
             }
 
             $cards[HelperFramework::cardDomId($page->id(), $cardKey)] = $this->cards->render($page->id(), $cardKey, $context, $services);
+        }
+
+        if (in_array('page.selector_ui', $changedFacts, true)) {
+            $selectorUi = $this->buildSelectorUi($page, $request, $services);
         }
 
         return ResponseFramework::json([
             'success' => $actionResult->isSuccess(),
             'page' => $page->id(),
             'cards' => $cards,
+            'selector_ui' => $selectorUi === null ? null : $this->buildSelectorDeltaPayload($page, $context, $selectorUi),
             'flash_html' => $this->renderFlashMessages($actionResult->flashMessages()),
             'url' => $request->pageUrl($actionResult->query()),
         ]);
@@ -63,6 +73,8 @@ final class PageRendererFramework
     private function renderLayout(
         PageInterfaceFramework $page,
         RequestFramework $request,
+        array $context,
+        array $selectorUi,
         string $cardsHtml,
         ActionResultFramework $actionResult
     ): string
@@ -82,14 +94,14 @@ final class PageRendererFramework
 </head>
 <body>
 <div class="layout">
-    ' . $this->renderSidebar($pageId) . '
+    ' . $this->renderSidebar($page, $context, $selectorUi) . '
     <main class="main" data-current-page="' . HelperFramework::escape($pageId) . '">
         <div class="topbar">
             <div>
                 <h1>' . $title . '</h1>
                 <p>' . $subtitle . '</p>
             </div>
-            <div class="topbar-cluster"></div>
+            <div class="topbar-cluster"><div id="tax-year-selector-slot">' . $this->renderTaxYearSelector($page, $context, $selectorUi) . '</div></div>
         </div>
         <div id="flash-messages" class="flash-messages">' . $this->renderFlashMessages($actionResult->flashMessages()) . '</div>
         <section class="page-stack" data-page-id="' . HelperFramework::escape($pageId) . '">' . $cardsHtml . '</section>
@@ -113,8 +125,9 @@ final class PageRendererFramework
         return $html;
     }
 
-    private function renderSidebar(string $currentPageId): string
+    private function renderSidebar(PageInterfaceFramework $page, array $context, array $selectorUi): string
     {
+        $currentPageId = $page->id();
         $items = (new NavigationFramework(APP_PAGES, $currentPageId, '/?page='))->build();
 
         $html = '<aside class="sidebar">
@@ -123,7 +136,7 @@ final class PageRendererFramework
                 <div class="brand-mark">E</div>
                 <div class="brand-copy">
                     <div class="brand-title">EEL Accounts</div>
-                    <div class="brand-subtitle">Bookkeeping without the fog bank</div>
+                    <div class="brand-subtitle">Bookkeeping without the fog and panic</div>
                 </div>
             </div>
             <div class="brand-toolbar">
@@ -134,6 +147,7 @@ final class PageRendererFramework
                     </svg>
                 </button>
             </div>
+            <div id="company-selector-slot">' . $this->renderCompanySelector($page, $context, $selectorUi) . '</div>
         </div>';
 
         $html .= '<div class="nav-group">';
@@ -161,7 +175,105 @@ final class PageRendererFramework
             return '';
         }
 
-        return '<img src="' . HelperFramework::escape($iconPath) . '" alt="" aria-hidden="true">';
+        return '<img class="nav-icon" src="' . HelperFramework::escape($iconPath) . '" alt="" aria-hidden="true">';
+    }
+
+    private function renderCompanySelector(PageInterfaceFramework $page, array $context, array $selectorUi): string
+    {
+        $selectedCompanyId = (string)($context['selected_company_id'] ?? '');
+        $disabled = !empty($selectorUi['company_selector_disabled']) ? ' disabled' : '';
+        $html = '<form class="selector-form" method="post" data-ajax="true">
+            <input type="hidden" name="action" value="set-page-context">
+            <input type="hidden" name="page" value="' . HelperFramework::escape($page->id()) . '">
+            <input type="hidden" name="tax_year_id" value="">
+            <input type="hidden" name="_ajax" value="1">';
+
+        foreach ($page->cards() as $cardKey) {
+            $html .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
+        }
+
+        $html .= '<div class="selector-shell sidebar-select-shell">
+                <label class="selector-label company-selector-label" for="company-selector">Company</label>
+                <select class="selector-input sidebar-select" id="company-selector" name="company_id" data-selector-kind="company"' . $disabled . '>';
+
+        foreach ((array)($selectorUi['companies'] ?? []) as $company) {
+            $value = (string)($company['value'] ?? '');
+            $selected = $value !== '' && $value === $selectedCompanyId ? ' selected' : '';
+            $optionDisabled = !empty($company['disabled']) ? ' disabled' : '';
+            $shortLabel = HelperFramework::escape((string)($company['short_label'] ?? ($company['label'] ?? '')));
+            $label = HelperFramework::escape((string)($company['label'] ?? ''));
+            $html .= '<option value="' . HelperFramework::escape($value) . '" data-short-label="' . $shortLabel . '"' . $selected . $optionDisabled . '>' . $label . '</option>';
+        }
+
+        $html .= '</select>
+            </div>
+        </form>';
+
+        return $html;
+    }
+
+    private function renderTaxYearSelector(PageInterfaceFramework $page, array $context, array $selectorUi): string
+    {
+        if (!$page->showsTaxYearSelector()) {
+            return '';
+        }
+
+        $selectedCompanyId = (string)($context['selected_company_id'] ?? '');
+        $selectedTaxYearId = (string)($context['selected_tax_year_id'] ?? '');
+        $disabled = !empty($selectorUi['tax_year_selector_disabled']) ? ' disabled' : '';
+        $html = '<form class="selector-form" method="post" data-ajax="true">
+            <input type="hidden" name="action" value="set-page-context">
+            <input type="hidden" name="page" value="' . HelperFramework::escape($page->id()) . '">
+            <input type="hidden" name="company_id" value="' . HelperFramework::escape($selectedCompanyId) . '">
+            <input type="hidden" name="_ajax" value="1">';
+
+        foreach ($page->cards() as $cardKey) {
+            $html .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
+        }
+
+        $html .= '<div class="selector-shell topbar-select-shell">
+                <label class="selector-label" for="tax-year-selector">Tax Period</label>
+                <select class="selector-input topbar-select" id="tax-year-selector" name="tax_year_id" data-selector-kind="tax-year"' . $disabled . '>';
+
+        foreach ((array)($selectorUi['tax_years'] ?? []) as $taxYear) {
+            $value = (string)($taxYear['value'] ?? '');
+            $selected = $value !== '' && $value === $selectedTaxYearId ? ' selected' : '';
+            $optionDisabled = !empty($taxYear['disabled']) ? ' disabled' : '';
+            $label = HelperFramework::escape((string)($taxYear['label'] ?? ''));
+            $html .= '<option value="' . HelperFramework::escape($value) . '"' . $selected . $optionDisabled . '>' . $label . '</option>';
+        }
+
+        $html .= '</select>
+            </div>
+        </form>';
+
+        return $html;
+    }
+
+    private function buildSelectorUi(
+        PageInterfaceFramework $page,
+        RequestFramework $request,
+        PageServiceFramework $services
+    ): array
+    {
+        return $services->get(CompanyStore::class)->buildSelectorContext($request, $page);
+    }
+
+    private function buildSelectorDeltaPayload(
+        PageInterfaceFramework $page,
+        array $context,
+        array $selectorUi
+    ): array
+    {
+        return [
+            'selected_company_id' => (string)($context['selected_company_id'] ?? ''),
+            'selected_tax_year_id' => (string)($context['selected_tax_year_id'] ?? ''),
+            'show_tax_year_selector' => $page->showsTaxYearSelector(),
+            'company_selector_disabled' => !empty($selectorUi['company_selector_disabled']),
+            'tax_year_selector_disabled' => !empty($selectorUi['tax_year_selector_disabled']),
+            'companies' => array_values((array)($selectorUi['companies'] ?? [])),
+            'tax_years' => array_values((array)($selectorUi['tax_years'] ?? [])),
+        ];
     }
 }
 

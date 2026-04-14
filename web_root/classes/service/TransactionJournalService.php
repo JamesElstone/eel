@@ -3,12 +3,6 @@ declare(strict_types=1);
 
 final class TransactionJournalService
 {
-    private PDO $pdo;
-
-    public function __construct(PDO $pdo) {
-        $this->pdo = $pdo;
-    }
-
     public function postCategorisedTransactions(
         int $companyId,
         int $taxYearId,
@@ -31,7 +25,7 @@ final class TransactionJournalService
         }
 
         $transactionIds = $this->fetchPostableTransactionIds($companyId, $taxYearId, $monthKey);
-        (new YearEndLockService($this->pdo))->assertUnlocked($companyId, $taxYearId, 'post categorised transactions');
+        (new YearEndLockService())->assertUnlocked($companyId, $taxYearId, 'post categorised transactions');
         $summary = [
             'success' => true,
             'errors' => [],
@@ -93,7 +87,7 @@ final class TransactionJournalService
             ];
         }
 
-        (new YearEndLockService($this->pdo))->assertUnlocked(
+        (new YearEndLockService())->assertUnlocked(
             (int)($transaction['company_id'] ?? 0),
             (int)($transaction['tax_year_id'] ?? 0),
             'post journals in this period'
@@ -159,10 +153,10 @@ final class TransactionJournalService
             ];
         }
 
-        $ownsTransaction = !$this->pdo->inTransaction();
+        $ownsTransaction = !InterfaceDB::inTransaction();
 
         if ($ownsTransaction) {
-            $this->pdo->beginTransaction();
+            InterfaceDB::beginTransaction();
         }
 
         try {
@@ -177,11 +171,11 @@ final class TransactionJournalService
             }
 
             if ($ownsTransaction) {
-                $this->pdo->commit();
+                InterfaceDB::commit();
             }
         } catch (Throwable $exception) {
-            if ($ownsTransaction && $this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
+            if ($ownsTransaction && InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
             }
 
             return [
@@ -204,7 +198,7 @@ final class TransactionJournalService
             return false;
         }
 
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT COUNT(*)
              FROM journals
              WHERE source_type = :source_type
@@ -224,7 +218,7 @@ final class TransactionJournalService
         }
 
         $limit = max(1, min($limit, 500));
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             "SELECT j.id,
                     j.company_id,
                     j.tax_year_id,
@@ -259,7 +253,7 @@ final class TransactionJournalService
     }
 
     private function fetchTransactionForPosting(int $transactionId): ?array {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT t.id,
                     t.company_id,
                     t.tax_year_id,
@@ -311,7 +305,7 @@ final class TransactionJournalService
             $params['month_end'] = $monthEnd->format('Y-m-d');
         }
 
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT t.id
              FROM transactions t
              WHERE ' . implode(' AND ', $where) . '
@@ -389,7 +383,7 @@ final class TransactionJournalService
     }
 
     private function fetchJournalBySourceRef(int $companyId, string $sourceRef): ?array {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT id,
                     company_id,
                     tax_year_id,
@@ -421,7 +415,7 @@ final class TransactionJournalService
     }
 
     private function fetchJournalLines(int $journalId): array {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT jl.id,
                     jl.nominal_account_id,
                     jl.company_account_id,
@@ -477,7 +471,7 @@ final class TransactionJournalService
 
     private function insertJournal(array $journal, string $changedBy): int {
         $now = (new DateTimeImmutable('now'))->format('Y-m-d H:i:s');
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'INSERT INTO journals (
                 company_id,
                 tax_year_id,
@@ -526,7 +520,7 @@ final class TransactionJournalService
     }
 
     private function insertJournalLine(int $journalId, array $line): void {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'INSERT INTO journal_lines (
                 journal_id,
                 nominal_account_id,
@@ -635,7 +629,7 @@ final class TransactionJournalService
     }
 
     private function findJournalId(int $companyId, string $sourceType, string $sourceRef): ?int {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT id
              FROM journals
              WHERE company_id = :company_id
@@ -654,7 +648,7 @@ final class TransactionJournalService
     }
 
     private function deleteJournal(int $journalId): void {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'DELETE FROM journals
              WHERE id = :id'
         );

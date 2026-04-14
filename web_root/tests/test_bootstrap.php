@@ -13,9 +13,34 @@ $tests = [
             }
         }
     },
-    'loads database helper functions' => static function (): void {
-        if (!function_exists('db')) {
-            throw new RuntimeException('bootstrap.php did not load db.php.');
+    'loads framework helpers directly required by bootstrap' => static function (): void {
+        if (!class_exists('HelperFramework', false)) {
+            throw new RuntimeException('bootstrap.php did not load HelperFramework.php.');
+        }
+
+        if (!method_exists('HelperFramework', 'escape')) {
+            throw new RuntimeException('HelperFramework::escape() was not available after bootstrap.');
+        }
+    },
+    'autoloads the configuration and database classes used by the new db architecture' => static function (): void {
+        if (!class_exists('AppConfigurationStore')) {
+            throw new RuntimeException('Autoloader did not resolve AppConfigurationStore.');
+        }
+
+        if (!class_exists('PdoDB')) {
+            throw new RuntimeException('Autoloader did not resolve PdoDB.');
+        }
+
+        if (!class_exists('InterfaceDB')) {
+            throw new RuntimeException('Autoloader did not resolve InterfaceDB.');
+        }
+
+        if (!method_exists('InterfaceDB', 'driverName')) {
+            throw new RuntimeException('InterfaceDB::driverName() was not available after bootstrap.');
+        }
+
+        if (!method_exists('InterfaceDB', 'fetchAll')) {
+            throw new RuntimeException('InterfaceDB::fetchAll() was not available after bootstrap.');
         }
     },
     'autoloads classes from the classes directory structure' => static function (): void {

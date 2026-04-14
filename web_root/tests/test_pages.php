@@ -18,6 +18,7 @@ final class TestPagesHarness
             $this->assertSame($pageKey, $page->id());
             $this->assertTrue(is_string($page->title()));
             $this->assertTrue(is_string($page->subtitle()));
+            $this->assertTrue(is_bool($page->showsTaxYearSelector()));
             $this->assertTrue(is_array($page->services()));
             $this->assertTrue(is_array($page->cards()));
 
@@ -26,12 +27,14 @@ final class TestPagesHarness
                 $this->assertTrue(class_exists(HelperFramework::cardKeyToClassName($cardKey)));
             }
 
-            $companyAccount = new CompanyAccountService(new GeneratedServiceClassTestPdo());
+            $companyAccount = new CompanyAccountService();
+            $companyStore = new CompanyStore();
             $response = $page->handle(
                 RequestFramework::fromGlobals(),
                 new PageServiceFramework([
                     'company_account' => $companyAccount,
                     CompanyAccountService::class => $companyAccount,
+                    CompanyStore::class => $companyStore,
                 ])
             );
 

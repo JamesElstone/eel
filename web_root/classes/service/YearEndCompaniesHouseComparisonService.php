@@ -6,14 +6,13 @@ final class YearEndCompaniesHouseComparisonService
     private const DEFAULT_SOFT_THRESHOLD = 1.00;
 
     public function __construct(
-        private readonly PDO $pdo,
         private readonly ?YearEndMetricsService $metricsService = null,
         private readonly ?CompaniesHouseStoredDataService $storedDataService = null,
     ) {
     }
 
     public function fetchComparison(int $companyId, int $taxYearId): array {
-        $metrics = $this->metricsService ?? new YearEndMetricsService($this->pdo);
+        $metrics = $this->metricsService ?? new YearEndMetricsService();
         $taxYear = $metrics->fetchTaxYear($companyId, $taxYearId);
         $company = $metrics->fetchCompanySummary($companyId);
 
@@ -32,7 +31,7 @@ final class YearEndCompaniesHouseComparisonService
             ];
         }
 
-        $stored = $this->storedDataService ?? new CompaniesHouseStoredDataService($this->pdo);
+        $stored = $this->storedDataService ?? new CompaniesHouseStoredDataService();
         $summaries = $stored->fetchDocumentSummariesByCompanyNumber($companyNumber);
         $nearest = $this->findNearestSummary($summaries, (string)$taxYear['period_end']);
         if ($nearest === null) {
@@ -129,7 +128,7 @@ final class YearEndCompaniesHouseComparisonService
 
     private function fetchMetricFacts(int $documentRowId): array {
         $placeholders = implode(', ', array_fill(0, count($this->factShortNameMap()), '?'));
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT c.short_name,
                     f.normalised_numeric
              FROM companies_house_document_facts f
@@ -181,7 +180,7 @@ final class YearEndCompaniesHouseComparisonService
     }
 
     private function comparisonThreshold(int $companyId): float {
-        $metrics = $this->metricsService ?? new YearEndMetricsService($this->pdo);
+        $metrics = $this->metricsService ?? new YearEndMetricsService();
         $settings = $metrics->fetchCompanySettings($companyId);
         $value = isset($settings['year_end_comparison_soft_threshold']) ? (float)$settings['year_end_comparison_soft_threshold'] : self::DEFAULT_SOFT_THRESHOLD;
 

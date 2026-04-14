@@ -10,7 +10,6 @@ final class AppService
     private array $resolving = [];
 
     public function __construct(
-        private readonly PDO $pdo,
         private readonly string $uploadBasePath,
     ) {
     }
@@ -75,6 +74,8 @@ final class AppService
             $services[$serviceClass] = $this->get($serviceClass);
         }
 
+        $services[CompanyStore::class] = $this->get(CompanyStore::class);
+
         return $services;
     }
 
@@ -113,10 +114,6 @@ final class AppService
 
         if ($type->isBuiltin()) {
             return $this->resolveBuiltinParameter($typeName, $parameter);
-        }
-
-        if ($typeName === PDO::class) {
-            return $this->pdo;
         }
 
         if (interface_exists($typeName)) {

@@ -3,18 +3,12 @@ declare(strict_types=1);
 
 final class YearEndLockService
 {
-    public function __construct(
-        private readonly PDO $pdo,
-    ) {
-    }
-
     public function fetchReview(int $companyId, int $taxYearId): ?array {
         if ($companyId <= 0 || $taxYearId <= 0 || !$this->hasReviewTable()) {
             return null;
         }
 
-        $stmt = $this->pdo->prepare(
-            'SELECT id,
+        $row = InterfaceDB::fetchOne( 'SELECT id,
                     company_id,
                     tax_year_id,
                     status,
@@ -28,14 +22,10 @@ final class YearEndLockService
              FROM year_end_reviews
              WHERE company_id = :company_id
                AND tax_year_id = :tax_year_id
-             LIMIT 1'
-        );
-        $stmt->execute([
+             LIMIT 1', [
             'company_id' => $companyId,
             'tax_year_id' => $taxYearId,
         ]);
-
-        $row = $stmt->fetch();
         return is_array($row) ? $row : null;
     }
 
@@ -68,15 +58,14 @@ final class YearEndLockService
         $now = (new DateTimeImmutable('now'))->format('Y-m-d H:i:s');
         $existing = $this->fetchReview($companyId, $taxYearId);
 
-        $ownsTransaction = !$this->pdo->inTransaction();
+        $ownsTransaction = !InterfaceDB::inTransaction();
         if ($ownsTransaction) {
-            $this->pdo->beginTransaction();
+            InterfaceDB::beginTransaction();
         }
 
         try {
             if ($existing === null) {
-                $insert = $this->pdo->prepare(
-                    'INSERT INTO year_end_reviews (
+                InterfaceDB::execute( 'INSERT INTO year_end_reviews (
                         company_id,
                         tax_year_id,
                         status,
@@ -94,9 +83,7 @@ final class YearEndLockService
                         :last_recalculated_at,
                         :created_at,
                         :updated_at
-                     )'
-                );
-                $insert->execute([
+                     )', [
                     'company_id' => $companyId,
                     'tax_year_id' => $taxYearId,
                     'status' => $status,
@@ -105,15 +92,13 @@ final class YearEndLockService
                     'updated_at' => $now,
                 ]);
             } else {
-                $update = $this->pdo->prepare(
-                    'UPDATE year_end_reviews
+                InterfaceDB::execute( 'UPDATE year_end_reviews
                      SET status = :status,
                          last_recalculated_at = :last_recalculated_at,
                          updated_at = :updated_at
                      WHERE company_id = :company_id
                        AND tax_year_id = :tax_year_id'
-                );
-                $update->execute([
+                , [
                     'status' => (int)($existing['is_locked'] ?? 0) === 1 ? 'locked' : $status,
                     'last_recalculated_at' => $now,
                     'updated_at' => $now,
@@ -122,18 +107,15 @@ final class YearEndLockService
                 ]);
             }
 
-            $delete = $this->pdo->prepare(
-                'DELETE FROM year_end_check_results
+            InterfaceDB::execute( 'DELETE FROM year_end_check_results
                  WHERE company_id = :company_id
                    AND tax_year_id = :tax_year_id'
-            );
-            $delete->execute([
+            , [
                 'company_id' => $companyId,
                 'tax_year_id' => $taxYearId,
             ]);
 
-            $insertCheck = $this->pdo->prepare(
-                'INSERT INTO year_end_check_results (
+            $insertCheckSql = 'INSERT INTO year_end_check_results (
                     company_id,
                     tax_year_id,
                     check_code,
@@ -155,11 +137,10 @@ final class YearEndLockService
                     :metric_value,
                     :action_url,
                     :calculated_at
-                 )'
-            );
+                 )';
 
             foreach ($checkRows as $row) {
-                $insertCheck->execute([
+                InterfaceDB::execute( $insertCheckSql, [
                     'company_id' => $companyId,
                     'tax_year_id' => $taxYearId,
                     'check_code' => (string)($row['check_code'] ?? ''),
@@ -174,11 +155,11 @@ final class YearEndLockService
             }
 
             if ($ownsTransaction) {
-                $this->pdo->commit();
+                InterfaceDB::commit();
             }
         } catch (Throwable $exception) {
-            if ($ownsTransaction && $this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
+            if ($ownsTransaction && InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
             }
 
             throw $exception;
@@ -202,14 +183,12 @@ final class YearEndLockService
         $existing = $this->fetchReview($companyId, $taxYearId);
         $notes = trim($notes);
 
-        $stmt = $this->pdo->prepare(
-            'UPDATE year_end_reviews
+        InterfaceDB::execute( 'UPDATE year_end_reviews
              SET review_notes = :review_notes,
                  updated_at = :updated_at
              WHERE company_id = :company_id
                AND tax_year_id = :tax_year_id'
-        );
-        $stmt->execute([
+        , [
             'review_notes' => $notes !== '' ? $notes : null,
             'updated_at' => (new DateTimeImmutable('now'))->format('Y-m-d H:i:s'),
             'company_id' => $companyId,
@@ -243,8 +222,7 @@ final class YearEndLockService
         $existing = $this->fetchReview($companyId, $taxYearId);
         $now = (new DateTimeImmutable('now'))->format('Y-m-d H:i:s');
 
-        $stmt = $this->pdo->prepare(
-            'UPDATE year_end_reviews
+        InterfaceDB::execute( 'UPDATE year_end_reviews
              SET status = :status,
                  is_locked = 1,
                  locked_at = :locked_at,
@@ -252,8 +230,7 @@ final class YearEndLockService
                  updated_at = :updated_at
              WHERE company_id = :company_id
                AND tax_year_id = :tax_year_id'
-        );
-        $stmt->execute([
+        , [
             'status' => 'locked',
             'locked_at' => $now,
             'locked_by' => $this->actorValue($lockedBy),
@@ -283,8 +260,7 @@ final class YearEndLockService
         $existing = $this->fetchReview($companyId, $taxYearId);
         $now = (new DateTimeImmutable('now'))->format('Y-m-d H:i:s');
 
-        $stmt = $this->pdo->prepare(
-            'UPDATE year_end_reviews
+        InterfaceDB::execute( 'UPDATE year_end_reviews
              SET is_locked = 0,
                  locked_at = NULL,
                  locked_by = NULL,
@@ -295,8 +271,7 @@ final class YearEndLockService
                  updated_at = :updated_at
              WHERE company_id = :company_id
                AND tax_year_id = :tax_year_id'
-        );
-        $stmt->execute([
+        , [
             'locked_status' => 'locked',
             'fallback_status' => 'in_progress',
             'updated_at' => $now,
@@ -326,8 +301,7 @@ final class YearEndLockService
             return;
         }
 
-        $stmt = $this->pdo->prepare(
-            'INSERT INTO year_end_audit_log (
+        InterfaceDB::execute( 'INSERT INTO year_end_audit_log (
                 company_id,
                 tax_year_id,
                 action,
@@ -345,9 +319,7 @@ final class YearEndLockService
                 :old_value_json,
                 :new_value_json,
                 :notes
-             )'
-        );
-        $stmt->execute([
+             )', [
             'company_id' => $companyId,
             'tax_year_id' => $taxYearId,
             'action' => trim($action) !== '' ? trim($action) : 'unknown',
@@ -365,8 +337,7 @@ final class YearEndLockService
         }
 
         $now = (new DateTimeImmutable('now'))->format('Y-m-d H:i:s');
-        $stmt = $this->pdo->prepare(
-            'INSERT INTO year_end_reviews (
+        InterfaceDB::execute( 'INSERT INTO year_end_reviews (
                 company_id,
                 tax_year_id,
                 status,
@@ -388,9 +359,7 @@ final class YearEndLockService
                 NULL,
                 :created_at,
                 :updated_at
-             )'
-        );
-        $stmt->execute([
+             )', [
             'company_id' => $companyId,
             'tax_year_id' => $taxYearId,
             'status' => 'not_started',
@@ -435,13 +404,10 @@ final class YearEndLockService
             return $cache[$table];
         }
 
-        try {
-            $stmt = $this->pdo->query('SELECT 1 FROM ' . $table . ' WHERE 1 = 0');
-            $cache[$table] = $stmt !== false;
-        } catch (Throwable) {
-            $cache[$table] = false;
-        }
+        $cache[$table] = InterfaceDB::tableExists( $table);
 
         return $cache[$table];
     }
 }
+
+

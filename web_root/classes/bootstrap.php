@@ -14,9 +14,6 @@ define('APP_CSS', APP_ROOT . 'css' . DIRECTORY_SEPARATOR);
 const AF_HEADER_PREFIX = 'X-AntiFraud-';
 const AF_COOKIE_PREFIX = 'af_';
 
-require_once APP_CLASSES . 'framework' . DIRECTORY_SEPARATOR . 'HelperFramework.php';
-require_once APP_ROOT . 'db' . DIRECTORY_SEPARATOR . 'db.php';
-
 spl_autoload_register(
     
     static function (string $className): void {

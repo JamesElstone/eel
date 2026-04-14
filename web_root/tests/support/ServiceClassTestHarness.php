@@ -8,14 +8,18 @@ final class GeneratedServiceClassTestHarness
 {
     /** @var array<class-string, object> */
     private array $instances = [];
-    private ?PDO $pdo = null;
 
     public function run(string $className, ?callable $customAssertions = null): void
     {
-        $instance = $this->instantiateClass($className);
+        try {
+            $instance = $this->instantiateClass($className);
 
-        $this->assertTrue($instance instanceof $className);
-        $this->reportPass($className, 'instantiates successfully');
+            $this->assertTrue($instance instanceof $className);
+            $this->reportPass($className, 'instantiates successfully');
+        } catch (Throwable $exception) {
+            $this->reportFailure($className, 'instantiates successfully', $exception);
+            return;
+        }
 
         if ($customAssertions !== null) {
             $customAssertions($this, $instance);
@@ -24,9 +28,14 @@ final class GeneratedServiceClassTestHarness
 
     public function runInterface(string $interfaceName, ?callable $customAssertions = null): void
     {
-        $this->ensureTypeLoaded($interfaceName);
-        $this->assertTrue(interface_exists($interfaceName, false));
-        $this->reportPass($interfaceName, 'loads successfully');
+        try {
+            $this->ensureTypeLoaded($interfaceName);
+            $this->assertTrue(interface_exists($interfaceName, false));
+            $this->reportPass($interfaceName, 'loads successfully');
+        } catch (Throwable $exception) {
+            $this->reportFailure($interfaceName, 'loads successfully', $exception);
+            return;
+        }
 
         if ($customAssertions !== null) {
             $customAssertions($this);
@@ -129,7 +138,6 @@ final class GeneratedServiceClassTestHarness
         }
 
         return match ($name) {
-            'PDO' => $this->testPdo(),
             'DateTimeImmutable' => new DateTimeImmutable('2024-01-15'),
             default => $this->instantiateClass($name),
         };
@@ -198,30 +206,40 @@ final class GeneratedServiceClassTestHarness
         return 'test';
     }
 
-    private function testPdo(): PDO
-    {
-        if ($this->pdo instanceof PDO) {
-            return $this->pdo;
-        }
-
-        try {
-            $this->pdo = new PDO('sqlite::memory:');
-        } catch (Throwable) {
-            $this->pdo = new GeneratedServiceClassTestPdo();
-        }
-
-        return $this->pdo;
-    }
-
     public function check(string $className, string $description, callable $callback): void
     {
-        $callback();
-        $this->reportPass($className, $description);
+        try {
+            $callback();
+            $this->reportPass($className, $description);
+        } catch (GeneratedServiceClassTestSkippedException $exception) {
+            $this->reportSkip($className, $description, $exception->getMessage());
+        } catch (Throwable $exception) {
+            $this->reportFailure($className, $description, $exception);
+        }
+    }
+
+    public function skip(string $reason = 'skipped'): never
+    {
+        throw new GeneratedServiceClassTestSkippedException($reason);
     }
 
     private function reportPass(string $className, string $description): void
     {
         test_output_line($className . ': ' . $description . '.');
+    }
+
+    private function reportFailure(string $className, string $description, Throwable $exception): void
+    {
+        test_output_failure_line(
+            $className . ': ' . $description . ' failed. ' . $exception->getMessage()
+        );
+    }
+
+    private function reportSkip(string $className, string $description, string $reason): void
+    {
+        test_output_skip_line(
+            $className . ': ' . $description . ' skipped. ' . $reason
+        );
     }
 
     public function assertCount(int $expected, array $values): void
@@ -246,39 +264,6 @@ final class GeneratedServiceClassTestHarness
     }
 }
 
-final class GeneratedServiceClassTestPdo extends PDO
+final class GeneratedServiceClassTestSkippedException extends RuntimeException
 {
-    public function __construct()
-    {
-    }
-
-    public function beginTransaction(): bool
-    {
-        return true;
-    }
-
-    public function commit(): bool
-    {
-        return true;
-    }
-
-    public function inTransaction(): bool
-    {
-        return false;
-    }
-
-    public function prepare(string $query, array $options = []): PDOStatement|false
-    {
-        return false;
-    }
-
-    public function query(string $query, ?int $fetchMode = null, mixed ...$fetchModeArgs): PDOStatement|false
-    {
-        return false;
-    }
-
-    public function rollBack(): bool
-    {
-        return true;
-    }
 }

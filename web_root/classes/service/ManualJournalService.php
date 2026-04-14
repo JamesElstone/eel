@@ -4,7 +4,6 @@ declare(strict_types=1);
 final class ManualJournalService
 {
     public function __construct(
-        private readonly PDO $pdo,
         private readonly ?YearEndLockService $lockService = null,
     ) {
     }
@@ -15,8 +14,7 @@ final class ManualJournalService
         }
 
         if ($this->hasMetadataTable()) {
-            $stmt = $this->pdo->prepare(
-                'SELECT j.id,
+            $row = InterfaceDB::fetchOne( 'SELECT j.id,
                         j.company_id,
                         j.tax_year_id,
                         j.source_type,
@@ -36,15 +34,12 @@ final class ManualJournalService
                    AND jem.tax_year_id = :tax_year_id
                    AND jem.journal_tag = :journal_tag
                    AND jem.journal_key = :journal_key
-                 LIMIT 1'
-            );
-            $stmt->execute([
+                 LIMIT 1', [
                 'company_id' => $companyId,
                 'tax_year_id' => $taxYearId,
                 'journal_tag' => trim($journalTag),
                 'journal_key' => trim($journalKey),
             ]);
-            $row = $stmt->fetch();
             if (is_array($row)) {
                 $row['lines'] = $this->fetchJournalLines((int)$row['id']);
                 return $row;
@@ -52,8 +47,7 @@ final class ManualJournalService
         }
 
         $sourceRef = $this->sourceRef(trim($journalTag), trim($journalKey));
-        $stmt = $this->pdo->prepare(
-            'SELECT id,
+        $row = InterfaceDB::fetchOne( 'SELECT id,
                     company_id,
                     tax_year_id,
                     source_type,
@@ -66,15 +60,12 @@ final class ManualJournalService
                AND tax_year_id = :tax_year_id
                AND source_type = :source_type
                AND source_ref = :source_ref
-             LIMIT 1'
-        );
-        $stmt->execute([
+             LIMIT 1', [
             'company_id' => $companyId,
             'tax_year_id' => $taxYearId,
             'source_type' => 'manual',
             'source_ref' => $sourceRef,
         ]);
-        $row = $stmt->fetch();
         if (!is_array($row)) {
             return null;
         }
@@ -102,7 +93,7 @@ final class ManualJournalService
 
         if ($this->hasMetadataTable()) {
             $placeholders = implode(', ', array_fill(0, count($tags), '?'));
-            $stmt = $this->pdo->prepare(
+            $stmt = InterfaceDB::prepare(
                 'SELECT j.id,
                         j.company_id,
                         j.tax_year_id,
@@ -135,7 +126,7 @@ final class ManualJournalService
                 $params[] = $sourceRefPrefix . '%';
             }
 
-            $stmt = $this->pdo->prepare(
+            $stmt = InterfaceDB::prepare(
                 'SELECT id,
                         company_id,
                         tax_year_id,
@@ -212,13 +203,13 @@ final class ManualJournalService
             return ['success' => false, 'errors' => $normalisedLines['errors']];
         }
 
-        ($this->lockService ?? new YearEndLockService($this->pdo))->assertUnlocked($companyId, $taxYearId, 'post journals in this period');
+        ($this->lockService ?? new YearEndLockService())->assertUnlocked($companyId, $taxYearId, 'post journals in this period');
 
         $existing = $this->fetchJournalByTag($companyId, $taxYearId, $journalTag, $journalKey);
-        $ownsTransaction = !$this->pdo->inTransaction();
+        $ownsTransaction = !InterfaceDB::inTransaction();
 
         if ($ownsTransaction) {
-            $this->pdo->beginTransaction();
+            InterfaceDB::beginTransaction();
         }
 
         try {
@@ -227,7 +218,7 @@ final class ManualJournalService
             }
 
             $sourceRef = $this->sourceRef($journalTag, $journalKey);
-            $insert = $this->pdo->prepare(
+            $insert = InterfaceDB::prepare(
                 'INSERT INTO journals (
                     company_id,
                     tax_year_id,
@@ -269,7 +260,7 @@ final class ManualJournalService
             }
 
             if ($this->hasMetadataTable()) {
-                $meta = $this->pdo->prepare(
+                $meta = InterfaceDB::prepare(
                     'INSERT INTO journal_entry_metadata (
                         journal_id,
                         company_id,
@@ -305,7 +296,7 @@ final class ManualJournalService
                 ]);
             }
 
-            ($this->lockService ?? new YearEndLockService($this->pdo))->writeAuditLog(
+            ($this->lockService ?? new YearEndLockService())->writeAuditLog(
                 $companyId,
                 $taxYearId,
                 $existing === null ? 'journal_created' : 'journal_replaced',
@@ -323,11 +314,11 @@ final class ManualJournalService
             );
 
             if ($ownsTransaction) {
-                $this->pdo->commit();
+                InterfaceDB::commit();
             }
         } catch (Throwable $exception) {
-            if ($ownsTransaction && $this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
+            if ($ownsTransaction && InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
             }
 
             return ['success' => false, 'errors' => [$exception->getMessage()]];
@@ -394,8 +385,7 @@ final class ManualJournalService
     }
 
     private function fetchJournalLines(int $journalId): array {
-        $stmt = $this->pdo->prepare(
-            'SELECT jl.id,
+        return InterfaceDB::fetchAll( 'SELECT jl.id,
                     jl.nominal_account_id,
                     jl.company_account_id,
                     jl.debit,
@@ -406,15 +396,11 @@ final class ManualJournalService
              FROM journal_lines jl
              LEFT JOIN nominal_accounts na ON na.id = jl.nominal_account_id
              WHERE jl.journal_id = :journal_id
-             ORDER BY jl.id ASC'
-        );
-        $stmt->execute(['journal_id' => $journalId]);
-
-        return $stmt->fetchAll() ?: [];
+             ORDER BY jl.id ASC', ['journal_id' => $journalId]);
     }
 
     private function insertJournalLine(int $journalId, array $line): void {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'INSERT INTO journal_lines (
                 journal_id,
                 nominal_account_id,
@@ -443,28 +429,24 @@ final class ManualJournalService
 
     private function deleteJournal(int $journalId): void {
         if ($this->hasMetadataTable()) {
-            $this->pdo->prepare('DELETE FROM journal_entry_metadata WHERE journal_id = :journal_id')
+            InterfaceDB::prepare('DELETE FROM journal_entry_metadata WHERE journal_id = :journal_id')
                 ->execute(['journal_id' => $journalId]);
         }
-        $this->pdo->prepare('DELETE FROM journals WHERE id = :id')
+        InterfaceDB::prepare('DELETE FROM journals WHERE id = :id')
             ->execute(['id' => $journalId]);
     }
 
     private function findJournalId(int $companyId, string $sourceType, string $sourceRef): ?int {
-        $stmt = $this->pdo->prepare(
-            'SELECT id
+        $value = InterfaceDB::fetchColumn( 'SELECT id
              FROM journals
              WHERE company_id = :company_id
                AND source_type = :source_type
                AND source_ref = :source_ref
-             LIMIT 1'
-        );
-        $stmt->execute([
+             LIMIT 1', [
             'company_id' => $companyId,
             'source_type' => $sourceType,
             'source_ref' => $sourceRef,
         ]);
-        $value = $stmt->fetchColumn();
 
         return $value !== false ? (int)$value : null;
     }
@@ -493,7 +475,7 @@ final class ManualJournalService
         }
 
         try {
-            $stmt = $this->pdo->query('SELECT 1 FROM ' . $table . ' WHERE 1 = 0');
+            $stmt = InterfaceDB::query('SELECT 1 FROM ' . $table . ' WHERE 1 = 0');
             $cache[$table] = $stmt !== false;
         } catch (Throwable) {
             $cache[$table] = false;
@@ -507,3 +489,5 @@ final class ManualJournalService
         return $date instanceof DateTimeImmutable && $date->format('Y-m-d') === $value;
     }
 }
+
+

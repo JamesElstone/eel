@@ -3,18 +3,15 @@ declare(strict_types=1);
 
 final class ExpenseClaimService
 {
-    private PDO $pdo;
     private TransactionCategorisationService $categorisationService;
     private TransactionJournalService $journalService;
 
     public function __construct(
-        PDO $pdo,
         ?TransactionCategorisationService $categorisationService = null,
         ?TransactionJournalService $journalService = null
     ) {
-        $this->pdo = $pdo;
-        $this->categorisationService = $categorisationService ?? new TransactionCategorisationService($pdo);
-        $this->journalService = $journalService ?? new TransactionJournalService($pdo);
+        $this->categorisationService = $categorisationService ?? new TransactionCategorisationService();
+        $this->journalService = $journalService ?? new TransactionJournalService();
     }
 
     public function fetchPageData(int $companyId, array $filters = []): array {
@@ -53,10 +50,7 @@ final class ExpenseClaimService
 
         $sql .= ' ORDER BY claimant_name ASC, id ASC';
 
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute(['company_id' => $companyId]);
-
-        return $stmt->fetchAll() ?: [];
+        return InterfaceDB::fetchAll( $sql, ['company_id' => $companyId]);
     }
 
     public function createClaimant(int $companyId, string $claimantName): array {
@@ -79,7 +73,7 @@ final class ExpenseClaimService
         $existing = $this->findClaimantByName($companyId, $claimantName);
         if ($existing !== null) {
             if ((int)($existing['is_active'] ?? 0) !== 1) {
-                $this->pdo->prepare(
+                InterfaceDB::prepare(
                     'UPDATE expense_claimants
                      SET is_active = 1,
                          updated_at = CURRENT_TIMESTAMP
@@ -96,7 +90,7 @@ final class ExpenseClaimService
             ];
         }
 
-        $this->pdo->prepare(
+        InterfaceDB::prepare(
             'INSERT INTO expense_claimants (
                 company_id,
                 claimant_name,
@@ -142,7 +136,7 @@ final class ExpenseClaimService
             ];
         }
 
-        $this->pdo->prepare(
+        InterfaceDB::prepare(
             'UPDATE expense_claimants
              SET is_active = :is_active,
                  updated_at = CURRENT_TIMESTAMP
@@ -185,8 +179,7 @@ final class ExpenseClaimService
             $params['status'] = $status;
         }
 
-        $stmt = $this->pdo->prepare(
-            'SELECT ec.id,
+        return array_map([$this, 'formatClaimSummary'], InterfaceDB::fetchAll( 'SELECT ec.id,
                     ec.company_id,
                     ec.tax_year_id,
                     ec.claimant_id,
@@ -208,11 +201,7 @@ final class ExpenseClaimService
              FROM expense_claims ec
              INNER JOIN expense_claimants c ON c.id = ec.claimant_id
              WHERE ' . implode(' AND ', $conditions) . '
-             ORDER BY ec.claim_year DESC, ec.claim_month DESC, ec.updated_at DESC, ec.id DESC'
-        );
-        $stmt->execute($params);
-
-        return array_map([$this, 'formatClaimSummary'], $stmt->fetchAll() ?: []);
+             ORDER BY ec.claim_year DESC, ec.claim_month DESC, ec.updated_at DESC, ec.id DESC', $params));
     }
 
     public function createClaim(int $companyId, array $payload): array {
@@ -254,7 +243,7 @@ final class ExpenseClaimService
         $derivedPeriod = $this->deriveMonthlyPeriod($period['year'], $period['month']);
         $resolvedTaxYearId = $this->resolveTaxYearIdForDate($companyId, $derivedPeriod['period_end']);
         if ($resolvedTaxYearId > 0) {
-            (new YearEndLockService($this->pdo))->assertUnlocked($companyId, $resolvedTaxYearId, 'create expense claims in this period');
+            (new YearEndLockService())->assertUnlocked($companyId, $resolvedTaxYearId, 'create expense claims in this period');
         }
         if ((int)($claimant['is_active'] ?? 0) !== 1) {
             return ['success' => false, 'errors' => ['Only active claimants can be used for new claims.']];
@@ -268,7 +257,7 @@ final class ExpenseClaimService
 
         $referenceCode = $this->generateUniqueReferenceCode($companyId, $period['year'], $period['month']);
 
-        $this->pdo->prepare(
+        InterfaceDB::prepare(
             'INSERT INTO expense_claims (
                 company_id,
                 tax_year_id,
@@ -338,20 +327,16 @@ final class ExpenseClaimService
             return null;
         }
 
-        $stmt = $this->pdo->prepare(
-            'SELECT ec.*,
+        $claim = InterfaceDB::fetchOne( 'SELECT ec.*,
                     c.claimant_name
              FROM expense_claims ec
              INNER JOIN expense_claimants c ON c.id = ec.claimant_id
              WHERE ec.company_id = :company_id
                AND ec.id = :id
-             LIMIT 1'
-        );
-        $stmt->execute([
+             LIMIT 1', [
             'company_id' => $companyId,
             'id' => $claimId,
         ]);
-        $claim = $stmt->fetch();
 
         if (!is_array($claim)) {
             return null;
@@ -378,19 +363,14 @@ final class ExpenseClaimService
             return null;
         }
 
-        $stmt = $this->pdo->prepare(
-            'SELECT id
+        $claimId = (int)InterfaceDB::fetchColumn( 'SELECT id
              FROM expense_claims
              WHERE company_id = :company_id
                AND claim_reference_code = :claim_reference_code
-             LIMIT 1'
-        );
-        $stmt->execute([
+             LIMIT 1', [
             'company_id' => $companyId,
             'claim_reference_code' => $referenceCode,
         ]);
-
-        $claimId = (int)$stmt->fetchColumn();
         return $claimId > 0 ? $this->fetchClaim($companyId, $claimId) : null;
     }
 
@@ -451,7 +431,7 @@ final class ExpenseClaimService
             return ['success' => false, 'errors' => ['No accounting period overlaps the selected claim month.']];
         }
 
-        $this->pdo->prepare(
+        InterfaceDB::prepare(
             'UPDATE expense_claims
              SET claimant_id = :claimant_id,
                  tax_year_id = :tax_year_id,
@@ -515,7 +495,7 @@ final class ExpenseClaimService
         $notes = trim((string)($payload['notes'] ?? ''));
 
         if ($lineId > 0) {
-            $this->pdo->prepare(
+            InterfaceDB::prepare(
                 'UPDATE expense_claim_lines
                  SET expense_date = :expense_date,
                      description = :description,
@@ -538,7 +518,7 @@ final class ExpenseClaimService
             ]);
         } else {
             $lineNumber = $this->nextLineNumber($claimId);
-            $this->pdo->prepare(
+            InterfaceDB::prepare(
                 'INSERT INTO expense_claim_lines (
                     expense_claim_id,
                     line_number,
@@ -593,7 +573,7 @@ final class ExpenseClaimService
             return ['success' => false, 'errors' => ['Posted claims are locked.']];
         }
 
-        $this->pdo->prepare(
+        InterfaceDB::prepare(
             'DELETE FROM expense_claim_lines
              WHERE id = :id
                AND expense_claim_id = :expense_claim_id'
@@ -617,7 +597,7 @@ final class ExpenseClaimService
         if ($claim === null) {
             return ['success' => false, 'errors' => ['The selected claim could not be found.']];
         }
-        (new YearEndLockService($this->pdo))->assertUnlocked($companyId, (int)($claim['tax_year_id'] ?? 0), 'link expense repayments in this period');
+        (new YearEndLockService())->assertUnlocked($companyId, (int)($claim['tax_year_id'] ?? 0), 'link expense repayments in this period');
 
         if ((string)$claim['status'] === 'posted') {
             return ['success' => false, 'errors' => ['Posted claims are locked.']];
@@ -655,15 +635,15 @@ final class ExpenseClaimService
             return ['success' => false, 'errors' => ['That transaction is already linked elsewhere for most of its value.']];
         }
 
-        $ownsTransaction = !$this->pdo->inTransaction();
+        $ownsTransaction = !InterfaceDB::inTransaction();
         if ($ownsTransaction) {
-            $this->pdo->beginTransaction();
+            InterfaceDB::beginTransaction();
         }
 
         try {
             $existingLink = $this->findPaymentLink($claimId, $transactionId);
             if ($existingLink !== null) {
-                $this->pdo->prepare(
+                InterfaceDB::prepare(
                     'UPDATE expense_claim_payment_links
                      SET linked_amount = :linked_amount
                      WHERE id = :id'
@@ -672,7 +652,7 @@ final class ExpenseClaimService
                     'id' => (int)$existingLink['id'],
                 ]);
             } else {
-                $this->pdo->prepare(
+                InterfaceDB::prepare(
                     'INSERT INTO expense_claim_payment_links (
                         expense_claim_id,
                         transaction_id,
@@ -724,11 +704,11 @@ final class ExpenseClaimService
             $this->recalculateClaimSeries($companyId, (int)$claim['claimant_id']);
 
             if ($ownsTransaction) {
-                $this->pdo->commit();
+                InterfaceDB::commit();
             }
         } catch (Throwable $exception) {
-            if ($ownsTransaction && $this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
+            if ($ownsTransaction && InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
             }
 
             return ['success' => false, 'errors' => [$exception->getMessage()]];
@@ -751,7 +731,7 @@ final class ExpenseClaimService
             return ['success' => false, 'errors' => ['Posted claims are locked.']];
         }
 
-        $this->pdo->prepare(
+        InterfaceDB::prepare(
             'DELETE FROM expense_claim_payment_links
              WHERE id = :id
                AND expense_claim_id = :expense_claim_id'
@@ -795,7 +775,7 @@ final class ExpenseClaimService
             $params[] = (string)$claim['period_end'];
         }
 
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT t.id,
                     t.txn_date,
                     t.description,
@@ -848,7 +828,7 @@ final class ExpenseClaimService
         if ($claim === null) {
             return ['success' => false, 'errors' => ['The selected claim could not be found.']];
         }
-        (new YearEndLockService($this->pdo))->assertUnlocked($companyId, (int)($claim['tax_year_id'] ?? 0), 'post expense claims in this period');
+        (new YearEndLockService())->assertUnlocked($companyId, (int)($claim['tax_year_id'] ?? 0), 'post expense claims in this period');
 
         if ((string)$claim['status'] === 'posted') {
             return ['success' => false, 'errors' => ['This claim has already been posted.']];
@@ -885,13 +865,13 @@ final class ExpenseClaimService
             return ['success' => false, 'errors' => ['An expense journal already exists for this claim reference.']];
         }
 
-        $ownsTransaction = !$this->pdo->inTransaction();
+        $ownsTransaction = !InterfaceDB::inTransaction();
         if ($ownsTransaction) {
-            $this->pdo->beginTransaction();
+            InterfaceDB::beginTransaction();
         }
 
         try {
-            $this->pdo->prepare(
+            InterfaceDB::prepare(
                 'INSERT INTO journals (
                     company_id,
                     tax_year_id,
@@ -945,7 +925,7 @@ final class ExpenseClaimService
                 'Director loan liability'
             );
 
-            $this->pdo->prepare(
+            InterfaceDB::prepare(
                 'UPDATE expense_claims
                  SET status = :status,
                      posted_journal_id = :posted_journal_id,
@@ -960,11 +940,11 @@ final class ExpenseClaimService
             ]);
 
             if ($ownsTransaction) {
-                $this->pdo->commit();
+                InterfaceDB::commit();
             }
         } catch (Throwable $exception) {
-            if ($ownsTransaction && $this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
+            if ($ownsTransaction && InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
             }
 
             return ['success' => false, 'errors' => ['The claim could not be posted: ' . $exception->getMessage()]];
@@ -978,7 +958,7 @@ final class ExpenseClaimService
     }
 
     public function fetchExpenseNominals(): array {
-        $stmt = $this->pdo->query(
+        $stmt = InterfaceDB::query(
             "SELECT id, code, name, account_type
              FROM nominal_accounts
              WHERE is_active = 1
@@ -1006,7 +986,7 @@ final class ExpenseClaimService
         $payments = $this->sumPayments($claimId);
         $carriedForward = round($broughtForward + $claimed - $payments, 2);
 
-        $this->pdo->prepare(
+        InterfaceDB::prepare(
             'UPDATE expense_claims
              SET brought_forward_amount = :brought_forward_amount,
                  claimed_amount = :claimed_amount,
@@ -1028,19 +1008,14 @@ final class ExpenseClaimService
             return;
         }
 
-        $stmt = $this->pdo->prepare(
-            'SELECT id
+        $claimIds = array_map('intval', InterfaceDB::fetchAll( 'SELECT id
              FROM expense_claims
              WHERE company_id = :company_id
                AND claimant_id = :claimant_id
-             ORDER BY period_start ASC, id ASC'
-        );
-        $stmt->execute([
+             ORDER BY period_start ASC, id ASC', [
             'company_id' => $companyId,
             'claimant_id' => $claimantId,
-        ]);
-
-        $claimIds = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN) ?: []);
+        ]));
         $broughtForward = 0.0;
 
         foreach ($claimIds as $seriesClaimId) {
@@ -1048,7 +1023,7 @@ final class ExpenseClaimService
             $payments = $this->sumPayments($seriesClaimId);
             $carriedForward = round($broughtForward + $claimed - $payments, 2);
 
-            $this->pdo->prepare(
+            InterfaceDB::prepare(
                 'UPDATE expense_claims
                  SET brought_forward_amount = :brought_forward_amount,
                      claimed_amount = :claimed_amount,
@@ -1069,27 +1044,6 @@ final class ExpenseClaimService
     }
 
     private function fetchClaimLines(int $claimId): array {
-        $stmt = $this->pdo->prepare(
-            'SELECT l.id,
-                    l.expense_claim_id,
-                    l.line_number,
-                    l.expense_date,
-                    l.description,
-                    l.amount,
-                    l.nominal_account_id,
-                    l.receipt_reference,
-                    l.notes,
-                    l.created_at,
-                    l.updated_at,
-                    n.code AS nominal_code,
-                    n.name AS nominal_name
-             FROM expense_claim_lines l
-             LEFT JOIN nominal_accounts n ON n.id = l.nominal_account_id
-             WHERE l.expense_claim_id = :expense_claim_id
-             ORDER BY l.line_number ASC, l.id ASC'
-        );
-        $stmt->execute(['expense_claim_id' => $claimId]);
-
         return array_map(
             static function (array $row): array {
                 return [
@@ -1107,28 +1061,27 @@ final class ExpenseClaimService
                         : (string)($row['nominal_name'] ?? ''),
                 ];
             },
-            $stmt->fetchAll() ?: []
+            InterfaceDB::fetchAll( 'SELECT l.id,
+                    l.expense_claim_id,
+                    l.line_number,
+                    l.expense_date,
+                    l.description,
+                    l.amount,
+                    l.nominal_account_id,
+                    l.receipt_reference,
+                    l.notes,
+                    l.created_at,
+                    l.updated_at,
+                    n.code AS nominal_code,
+                    n.name AS nominal_name
+             FROM expense_claim_lines l
+             LEFT JOIN nominal_accounts n ON n.id = l.nominal_account_id
+             WHERE l.expense_claim_id = :expense_claim_id
+             ORDER BY l.line_number ASC, l.id ASC', ['expense_claim_id' => $claimId])
         );
     }
 
     private function fetchPaymentLinks(int $claimId): array {
-        $stmt = $this->pdo->prepare(
-            'SELECT l.id,
-                    l.expense_claim_id,
-                    l.transaction_id,
-                    l.linked_amount,
-                    l.created_at,
-                    t.txn_date,
-                    t.description,
-                    t.reference,
-                    t.amount
-             FROM expense_claim_payment_links l
-             INNER JOIN transactions t ON t.id = l.transaction_id
-             WHERE l.expense_claim_id = :expense_claim_id
-             ORDER BY t.txn_date DESC, l.id DESC'
-        );
-        $stmt->execute(['expense_claim_id' => $claimId]);
-
         return array_map(
             static function (array $row): array {
                 return [
@@ -1142,119 +1095,96 @@ final class ExpenseClaimService
                     'transaction_amount' => round(abs((float)$row['amount']), 2),
                 ];
             },
-            $stmt->fetchAll() ?: []
+            InterfaceDB::fetchAll( 'SELECT l.id,
+                    l.expense_claim_id,
+                    l.transaction_id,
+                    l.linked_amount,
+                    l.created_at,
+                    t.txn_date,
+                    t.description,
+                    t.reference,
+                    t.amount
+             FROM expense_claim_payment_links l
+             INNER JOIN transactions t ON t.id = l.transaction_id
+             WHERE l.expense_claim_id = :expense_claim_id
+             ORDER BY t.txn_date DESC, l.id DESC', ['expense_claim_id' => $claimId])
         );
     }
 
     private function fetchClaimantById(int $companyId, int $claimantId): ?array {
-        $stmt = $this->pdo->prepare(
-            'SELECT id, company_id, claimant_name, is_active, created_at, updated_at
+        $row = InterfaceDB::fetchOne( 'SELECT id, company_id, claimant_name, is_active, created_at, updated_at
              FROM expense_claimants
              WHERE company_id = :company_id
                AND id = :id
-             LIMIT 1'
-        );
-        $stmt->execute([
+             LIMIT 1', [
             'company_id' => $companyId,
             'id' => $claimantId,
         ]);
-
-        $row = $stmt->fetch();
         return is_array($row) ? $row : null;
     }
 
     private function findClaimantByName(int $companyId, string $claimantName): ?array {
-        $stmt = $this->pdo->prepare(
-            'SELECT id, company_id, claimant_name, is_active, created_at, updated_at
+        $row = InterfaceDB::fetchOne( 'SELECT id, company_id, claimant_name, is_active, created_at, updated_at
              FROM expense_claimants
              WHERE company_id = :company_id
                AND claimant_name = :claimant_name
-             LIMIT 1'
-        );
-        $stmt->execute([
+             LIMIT 1', [
             'company_id' => $companyId,
             'claimant_name' => $claimantName,
         ]);
-
-        $row = $stmt->fetch();
         return is_array($row) ? $row : null;
     }
 
     private function findClaimByUniqueMonth(int $companyId, int $claimantId, int $claimYear, int $claimMonth): ?array {
-        $stmt = $this->pdo->prepare(
-            'SELECT id
+        $row = InterfaceDB::fetchOne( 'SELECT id
              FROM expense_claims
              WHERE company_id = :company_id
                AND claimant_id = :claimant_id
                AND claim_year = :claim_year
                AND claim_month = :claim_month
-             LIMIT 1'
-        );
-        $stmt->execute([
+             LIMIT 1', [
             'company_id' => $companyId,
             'claimant_id' => $claimantId,
             'claim_year' => $claimYear,
             'claim_month' => $claimMonth,
         ]);
-
-        $row = $stmt->fetch();
         return is_array($row) ? $row : null;
     }
 
     private function fetchClaimRow(int $claimId): ?array {
-        $stmt = $this->pdo->prepare(
-            'SELECT id, company_id, claimant_id, period_start
+        $row = InterfaceDB::fetchOne( 'SELECT id, company_id, claimant_id, period_start
              FROM expense_claims
              WHERE id = :id
-             LIMIT 1'
-        );
-        $stmt->execute(['id' => $claimId]);
-
-        $row = $stmt->fetch();
+             LIMIT 1', ['id' => $claimId]);
         return is_array($row) ? $row : null;
     }
 
     private function previousCarryForward(int $companyId, int $claimantId, int $claimId, string $periodStart): float {
-        $stmt = $this->pdo->prepare(
-            'SELECT carried_forward_amount
+        return round((float)InterfaceDB::fetchColumn( 'SELECT carried_forward_amount
              FROM expense_claims
              WHERE company_id = :company_id
                AND claimant_id = :claimant_id
                AND id <> :id
                AND period_start < :period_start
              ORDER BY period_start DESC, id DESC
-             LIMIT 1'
-        );
-        $stmt->execute([
+             LIMIT 1', [
             'company_id' => $companyId,
             'claimant_id' => $claimantId,
             'id' => $claimId,
             'period_start' => $periodStart,
-        ]);
-
-        return round((float)$stmt->fetchColumn(), 2);
+        ]), 2);
     }
 
     private function sumClaimLines(int $claimId): float {
-        $stmt = $this->pdo->prepare(
-            'SELECT COALESCE(SUM(amount), 0)
+        return round((float)InterfaceDB::fetchColumn( 'SELECT COALESCE(SUM(amount), 0)
              FROM expense_claim_lines
-             WHERE expense_claim_id = :expense_claim_id'
-        );
-        $stmt->execute(['expense_claim_id' => $claimId]);
-
-        return round((float)$stmt->fetchColumn(), 2);
+             WHERE expense_claim_id = :expense_claim_id', ['expense_claim_id' => $claimId]), 2);
     }
 
     private function sumPayments(int $claimId): float {
-        $stmt = $this->pdo->prepare(
-            'SELECT COALESCE(SUM(linked_amount), 0)
+        return round((float)InterfaceDB::fetchColumn( 'SELECT COALESCE(SUM(linked_amount), 0)
              FROM expense_claim_payment_links
-             WHERE expense_claim_id = :expense_claim_id'
-        );
-        $stmt->execute(['expense_claim_id' => $claimId]);
-
-        return round((float)$stmt->fetchColumn(), 2);
+             WHERE expense_claim_id = :expense_claim_id', ['expense_claim_id' => $claimId]), 2);
     }
 
     private function sumLinkedAmountForTransaction(int $transactionId, int $excludingClaimId = 0): float {
@@ -1268,14 +1198,14 @@ final class ExpenseClaimService
             $params['expense_claim_id'] = $excludingClaimId;
         }
 
-        $stmt = $this->pdo->prepare($sql);
+        $stmt = InterfaceDB::prepare($sql);
         $stmt->execute($params);
 
         return round((float)$stmt->fetchColumn(), 2);
     }
 
     private function findPaymentLink(int $claimId, int $transactionId): ?array {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT id, expense_claim_id, transaction_id, linked_amount
              FROM expense_claim_payment_links
              WHERE expense_claim_id = :expense_claim_id
@@ -1292,7 +1222,7 @@ final class ExpenseClaimService
     }
 
     private function nextLineNumber(int $claimId): int {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT COALESCE(MAX(line_number), 0)
              FROM expense_claim_lines
              WHERE expense_claim_id = :expense_claim_id'
@@ -1303,7 +1233,7 @@ final class ExpenseClaimService
     }
 
     private function resolveTaxYearIdForDate(int $companyId, string $date): int {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT id
              FROM tax_years
              WHERE company_id = :company_id
@@ -1321,7 +1251,7 @@ final class ExpenseClaimService
     }
 
     private function renumberLines(int $claimId): void {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT id
              FROM expense_claim_lines
              WHERE expense_claim_id = :expense_claim_id
@@ -1331,7 +1261,7 @@ final class ExpenseClaimService
 
         $lineNumber = 1;
         foreach ($stmt->fetchAll() ?: [] as $row) {
-            $this->pdo->prepare(
+            InterfaceDB::prepare(
                 'UPDATE expense_claim_lines
                  SET line_number = :line_number,
                      updated_at = CURRENT_TIMESTAMP
@@ -1390,7 +1320,7 @@ final class ExpenseClaimService
     }
 
     private function deriveTaxYearId(int $companyId, string $periodStart, string $periodEnd): int {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT id, period_start, period_end
              FROM tax_years
              WHERE company_id = :company_id
@@ -1443,7 +1373,7 @@ final class ExpenseClaimService
     }
 
     private function referenceCodeExists(int $companyId, string $referenceCode): bool {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT COUNT(*)
              FROM expense_claims
              WHERE company_id = :company_id
@@ -1458,7 +1388,7 @@ final class ExpenseClaimService
     }
 
     private function fetchExistingExpenseJournal(int $companyId, string $sourceRef): ?array {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT id, company_id, source_ref
              FROM journals
              WHERE company_id = :company_id
@@ -1477,7 +1407,7 @@ final class ExpenseClaimService
     }
 
     private function insertJournalLine(int $journalId, int $nominalAccountId, float $debit, float $credit, string $description): void {
-        $this->pdo->prepare(
+        InterfaceDB::prepare(
             'INSERT INTO journal_lines (
                 journal_id,
                 nominal_account_id,
@@ -1576,3 +1506,5 @@ final class ExpenseClaimService
         return $date instanceof DateTimeImmutable && $date->format('Y-m-d') === $value;
     }
 }
+
+

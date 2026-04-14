@@ -22,6 +22,14 @@ final class TestServiceGlobalFunctionDependencyHarness
         'unset',
     ];
 
+    /** @var array<string, true> */
+    private array $optionalFunctions = [];
+
+    /** @var array<string, list<string>> */
+    private array $optionalFunctionFamilies = [
+        'finfo_open' => ['finfo_open', 'finfo_file', 'finfo_close'],
+    ];
+
     public function run(): void
     {
         $serviceFiles = $this->serviceFiles();
@@ -81,6 +89,7 @@ final class TestServiceGlobalFunctionDependencyHarness
             throw new RuntimeException('Unable to read service file: ' . $serviceFile);
         }
 
+        $this->optionalFunctions = $this->optionalFunctionsForSource($source);
         $tokens = token_get_all($source);
         $calls = [];
         $count = count($tokens);
@@ -109,12 +118,43 @@ final class TestServiceGlobalFunctionDependencyHarness
                 continue;
             }
 
+            if (isset($this->optionalFunctions[$lowerName])) {
+                continue;
+            }
+
             $calls[$lowerName] = $functionName;
         }
 
         ksort($calls);
 
         return array_values($calls);
+    }
+
+    /**
+     * @return array<string, true>
+     */
+    private function optionalFunctionsForSource(string $source): array
+    {
+        $optionalFunctions = [];
+
+        if (
+            preg_match_all(
+                '/function_exists\s*\(\s*[\'"]([A-Za-z0-9_\\\\]+)[\'"]\s*\)/',
+                $source,
+                $matches
+            ) !== false
+        ) {
+            foreach ($matches[1] as $functionName) {
+                $lowerName = strtolower($functionName);
+                $optionalFunctions[$lowerName] = true;
+
+                foreach ($this->optionalFunctionFamilies[$lowerName] ?? [$lowerName] as $relatedFunction) {
+                    $optionalFunctions[strtolower($relatedFunction)] = true;
+                }
+            }
+        }
+
+        return $optionalFunctions;
     }
 
     private function isPossibleFunctionCall(mixed $previousMeaningful, mixed $nextMeaningful): bool

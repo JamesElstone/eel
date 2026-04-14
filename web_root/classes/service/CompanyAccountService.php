@@ -6,12 +6,6 @@ final class CompanyAccountService
     public const TYPE_BANK = 'bank';
     public const TYPE_TRADE = 'trade';
 
-    private PDO $pdo;
-
-    public function __construct(PDO $pdo) {
-        $this->pdo = $pdo;
-    }
-
     public static function accountTypes(): array {
         return [
             self::TYPE_BANK => 'Bank',
@@ -51,10 +45,7 @@ final class CompanyAccountService
 
         $sql .= ' ORDER BY is_active DESC, account_type ASC, account_name ASC, id ASC';
 
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute(['company_id' => $companyId]);
-
-        return $stmt->fetchAll();
+        return InterfaceDB::fetchAll( $sql, ['company_id' => $companyId]);
     }
 
     public function fetchAccount(int $companyId, int $accountId): ?array {
@@ -62,8 +53,7 @@ final class CompanyAccountService
             return null;
         }
 
-        $stmt = $this->pdo->prepare(
-            'SELECT id,
+        $row = InterfaceDB::fetchOne( 'SELECT id,
                     company_id,
                     account_name,
                     account_type,
@@ -84,13 +74,10 @@ final class CompanyAccountService
              FROM company_accounts
              WHERE company_id = :company_id
                AND id = :id
-             LIMIT 1'
-        );
-        $stmt->execute([
+             LIMIT 1', [
             'company_id' => $companyId,
             'id' => $accountId,
         ]);
-        $row = $stmt->fetch();
 
         return is_array($row) ? $row : null;
     }
@@ -113,7 +100,7 @@ final class CompanyAccountService
             ];
         }
 
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'INSERT INTO company_accounts (
                 company_id,
                 account_name,
@@ -166,21 +153,17 @@ final class CompanyAccountService
             'is_active' => $input['is_active'] ? 1 : 0,
         ]);
 
-        $reload = $this->pdo->prepare(
-            'SELECT id
+        $accountId = InterfaceDB::fetchColumn( 'SELECT id
              FROM company_accounts
              WHERE company_id = :company_id
                AND account_name = :account_name
                AND account_type = :account_type
              ORDER BY id DESC
-             LIMIT 1'
-        );
-        $reload->execute([
+             LIMIT 1', [
             'company_id' => $companyId,
             'account_name' => $input['account_name'],
             'account_type' => $input['account_type'],
         ]);
-        $accountId = $reload->fetchColumn();
 
         return [
             'success' => $accountId !== false,
@@ -211,7 +194,7 @@ final class CompanyAccountService
             ];
         }
 
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'UPDATE company_accounts
              SET account_name = :account_name,
                  account_type = :account_type,
@@ -290,7 +273,7 @@ final class CompanyAccountService
             ];
         }
 
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'DELETE FROM company_accounts
              WHERE company_id = :company_id
                AND id = :id'
@@ -375,10 +358,7 @@ final class CompanyAccountService
                 $params['account_id'] = $accountId;
             }
 
-            $stmt = $this->pdo->prepare($sql);
-            $stmt->execute($params);
-
-            if ((int)$stmt->fetchColumn() > 0) {
+            if ((int)InterfaceDB::fetchColumn( $sql, $params) > 0) {
                 $errors[] = 'An account with that name and type already exists for the selected company.';
             }
         }
@@ -392,14 +372,11 @@ final class CompanyAccountService
             'transactions' => 0,
         ];
 
-        $stmt = $this->pdo->prepare('SELECT COUNT(*) FROM statement_uploads WHERE account_id = :account_id');
-        $stmt->execute(['account_id' => $accountId]);
-        $usage['uploads'] = (int)$stmt->fetchColumn();
-
-        $stmt = $this->pdo->prepare('SELECT COUNT(*) FROM transactions WHERE account_id = :account_id');
-        $stmt->execute(['account_id' => $accountId]);
-        $usage['transactions'] = (int)$stmt->fetchColumn();
+        $usage['uploads'] = (int)InterfaceDB::fetchColumn( 'SELECT COUNT(*) FROM statement_uploads WHERE account_id = :account_id', ['account_id' => $accountId]);
+        $usage['transactions'] = (int)InterfaceDB::fetchColumn( 'SELECT COUNT(*) FROM transactions WHERE account_id = :account_id', ['account_id' => $accountId]);
 
         return $usage;
     }
 }
+
+

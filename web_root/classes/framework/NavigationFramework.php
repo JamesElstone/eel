@@ -18,6 +18,7 @@ final class NavigationFramework
     private readonly string $pagesDirectory;
     private readonly string $currentPageKey;
     private readonly string $baseUrl;
+    private ?array $availableIconPaths = null;
 
     public function __construct(string $pagesDirectory, string $currentPageKey, string $baseUrl = '/?page=')
     {
@@ -118,17 +119,121 @@ final class NavigationFramework
 
     private function iconPathForPageKey(string $pageKey): ?string
     {
-        $iconFile = $this->pagesDirectory . DIRECTORY_SEPARATOR . $pageKey . '.svg';
-        if (!is_file($iconFile)) {
-            return null;
+        $label = $this->labelFromPageKey($pageKey);
+        $availableIcons = $this->availableIconPaths();
+
+        foreach ($this->iconCandidates($pageKey, $label) as $iconKey) {
+            if (isset($availableIcons[$iconKey])) {
+                return $availableIcons[$iconKey];
+            }
         }
 
-        return $this->toWebPath($iconFile);
+        return null;
     }
 
     private function orderForPageKey(string $pageKey): int
     {
         return self::DEFAULT_ORDER[$pageKey] ?? 1000;
+    }
+
+    private function iconCandidates(string $pageKey, string $label): array
+    {
+        $candidates = [];
+
+        foreach ($this->iconDirectories() as $directory) {
+            foreach ($this->iconFileNames($pageKey, $label) as $filename) {
+                $path = $directory . DIRECTORY_SEPARATOR . $filename;
+                $normalisedPath = $this->normalisePath($path);
+                if ($normalisedPath === null) {
+                    continue;
+                }
+
+                $candidates[] = strtolower($normalisedPath);
+            }
+        }
+
+        return array_values(array_unique($candidates));
+    }
+
+    private function availableIconPaths(): array
+    {
+        if (is_array($this->availableIconPaths)) {
+            return $this->availableIconPaths;
+        }
+
+        $paths = [];
+
+        foreach ($this->iconDirectories() as $directory) {
+            if (!is_dir($directory)) {
+                continue;
+            }
+
+            $entries = scandir($directory);
+            if (!is_array($entries)) {
+                continue;
+            }
+
+            foreach ($entries as $entry) {
+                if (!is_string($entry) || !str_ends_with(strtolower($entry), '.svg')) {
+                    continue;
+                }
+
+                $path = $directory . DIRECTORY_SEPARATOR . $entry;
+                $normalisedPath = $this->normalisePath($path);
+                $webPath = $this->toWebPath($path);
+
+                if ($normalisedPath === null || $webPath === null) {
+                    continue;
+                }
+
+                $paths[strtolower($normalisedPath)] = $webPath;
+            }
+        }
+
+        return $this->availableIconPaths = $paths;
+    }
+
+    private function iconFileNames(string $pageKey, string $label): array
+    {
+        $names = [];
+        $slug = strtolower((string)preg_replace('/[^A-Za-z0-9]+/', '-', $label));
+        $slug = trim($slug, '-');
+
+        foreach ([
+            $label . '.svg',
+            strtolower($label) . '.svg',
+            $slug !== '' ? $slug . '.svg' : null,
+            $pageKey . '.svg',
+        ] as $filename) {
+            if (is_string($filename) && $filename !== '') {
+                $names[] = $filename;
+            }
+        }
+
+        return array_values(array_unique($names));
+    }
+
+    private function iconDirectories(): array
+    {
+        $directories = [rtrim($this->pagesDirectory, '\\/')];
+
+        if (defined('APP_ROOT')) {
+            $directories[] = rtrim(APP_ROOT, '\\/') . DIRECTORY_SEPARATOR . 'svg';
+        }
+
+        return array_values(array_unique(array_filter($directories, static fn (mixed $value): bool => is_string($value) && $value !== '')));
+    }
+
+    private function normalisePath(string $filesystemPath): ?string
+    {
+        $resolved = realpath($filesystemPath);
+        if ($resolved === false) {
+            $resolved = $filesystemPath;
+        }
+
+        $normalised = str_replace('\\', '/', $resolved);
+
+        return $normalised === '' ? null : $normalised;
     }
 
     private function toWebPath(string $filesystemPath): ?string

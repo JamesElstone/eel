@@ -9,6 +9,8 @@ interface PageInterfaceFramework
 
     public function subtitle(): string;
 
+    public function showsTaxYearSelector(): bool;
+
     public function services(): array;
 
     public function cards(): array;

@@ -3,13 +3,8 @@ declare(strict_types=1);
 
 final class DirectorLoanService
 {
-    private PDO $pdo;
     /** @var array<string, array<int, string>> */
     private array $tableColumns = [];
-
-    public function __construct(PDO $pdo) {
-        $this->pdo = $pdo;
-    }
 
     public function fetchPeriods(int $companyId): array {
         $validation = $this->validateCompany($companyId);
@@ -17,8 +12,7 @@ final class DirectorLoanService
             return $validation;
         }
 
-        $stmt = db_prepare_execute(
-            $this->pdo,
+        $stmt = InterfaceDB::prepareExecute(
             'SELECT id, label, period_start, period_end
              FROM tax_years
              WHERE company_id = :company_id
@@ -140,8 +134,7 @@ final class DirectorLoanService
 
     private function fetchOpeningBalance(int $companyId, int $nominalAccountId, string $periodStart): float {
         if ($this->tableExists('journal_entry_metadata')) {
-            $stmt = db_prepare_execute(
-                $this->pdo,
+            $stmt = InterfaceDB::prepareExecute(
                 'SELECT COALESCE(SUM(jl.credit - jl.debit), 0) AS balance
                  FROM journals j
                  INNER JOIN journal_lines jl ON jl.journal_id = j.id
@@ -165,8 +158,7 @@ final class DirectorLoanService
             return round((float)$stmt->fetchColumn(), 2);
         }
 
-        $stmt = db_prepare_execute(
-            $this->pdo,
+        $stmt = InterfaceDB::prepareExecute(
             'SELECT COALESCE(SUM(jl.credit - jl.debit), 0) AS balance
              FROM journals j
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
@@ -190,8 +182,7 @@ final class DirectorLoanService
     }
 
     private function fetchMovementRows(int $companyId, int $nominalAccountId, string $periodStart, string $periodEnd): array {
-        $stmt = db_prepare_execute(
-            $this->pdo,
+        $stmt = InterfaceDB::prepareExecute(
             'SELECT j.id AS journal_id,
                     j.journal_date,
                     j.description AS journal_description,
@@ -251,8 +242,7 @@ final class DirectorLoanService
             return null;
         }
 
-        $stmt = db_prepare_execute(
-            $this->pdo,
+        $stmt = InterfaceDB::prepareExecute(
             'SELECT id, label, period_start, period_end
              FROM tax_years
              WHERE id = :id
@@ -273,8 +263,7 @@ final class DirectorLoanService
             return null;
         }
 
-        $stmt = db_prepare_execute(
-            $this->pdo,
+        $stmt = InterfaceDB::prepareExecute(
             'SELECT id, code, name, account_type, is_active
              FROM nominal_accounts
              WHERE id = :id
@@ -291,8 +280,7 @@ final class DirectorLoanService
             return [];
         }
 
-        $stmt = db_prepare_execute(
-            $this->pdo,
+        $stmt = InterfaceDB::prepareExecute(
             'SELECT setting, type, value
              FROM company_settings
              WHERE company_id = :company_id',
@@ -323,7 +311,7 @@ final class DirectorLoanService
             return $this->errorResult('Select a company first.', 'company_required', 422);
         }
 
-        $stmt = db_prepare_execute($this->pdo, 'SELECT * FROM companies WHERE id = :id LIMIT 1', ['id' => $companyId]);
+        $stmt = InterfaceDB::prepareExecute( 'SELECT * FROM companies WHERE id = :id LIMIT 1', ['id' => $companyId]);
         $company = $stmt->fetch();
 
         if (!is_array($company)) {
@@ -380,9 +368,11 @@ final class DirectorLoanService
             return $this->tableColumns[$tableName];
         }
 
-        $this->pdo->query('SELECT 1 FROM ' . $tableName . ' WHERE 1 = 0');
+        InterfaceDB::query('SELECT 1 FROM ' . $tableName . ' WHERE 1 = 0');
         $this->tableColumns[$tableName] = [];
 
         return $this->tableColumns[$tableName];
     }
 }
+
+

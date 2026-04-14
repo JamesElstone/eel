@@ -39,18 +39,15 @@ final class StatementUploadService
         'document' => ['document', 'document url', 'receipt', 'receipt url', 'attachment', 'attachment url'],
     ];
 
-    private PDO $pdo;
     private string $uploadBaseDirectory;
     private ?TransactionCategorisationService $categorisationService;
     private ?ReceiptDownloadService $receiptDownloadService;
 
     public function __construct(
-        PDO $pdo,
         string $defaultUploadDirectory,
         ?TransactionCategorisationService $categorisationService = null,
         ?ReceiptDownloadService $receiptDownloadService = null
     ) {
-        $this->pdo = $pdo;
         $this->uploadBaseDirectory = rtrim($defaultUploadDirectory, DIRECTORY_SEPARATOR);
         $this->categorisationService = $categorisationService;
         $this->receiptDownloadService = $receiptDownloadService;
@@ -206,7 +203,7 @@ final class StatementUploadService
         }
 
         try {
-            $this->pdo->beginTransaction();
+            InterfaceDB::beginTransaction();
 
             $this->insertStatementUpload([
                 'company_id' => $companyId,
@@ -241,10 +238,10 @@ final class StatementUploadService
 
             $this->upsertStatementImportMapping($statementUploadId, $sourceHeaders, $autoMapping);
 
-            $this->pdo->commit();
+            InterfaceDB::commit();
         } catch (Throwable $exception) {
-            if ($this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
             }
 
             if (is_file($storedPath)) {
@@ -357,8 +354,7 @@ final class StatementUploadService
     }
 
     public function fetchUpload(int $companyId, int $uploadId): ?array {
-        $stmt = $this->pdo->prepare(
-            'SELECT su.*,
+        $row = InterfaceDB::fetchOne( 'SELECT su.*,
                     ty.period_start,
                     ty.period_end,
                     ca.account_name,
@@ -370,26 +366,19 @@ final class StatementUploadService
              LEFT JOIN company_accounts ca ON ca.id = su.account_id
              WHERE su.id = :id
                AND su.company_id = :company_id
-             LIMIT 1'
-        );
-        $stmt->execute([
+             LIMIT 1', [
             'id' => $uploadId,
             'company_id' => $companyId,
         ]);
-        $row = $stmt->fetch();
 
         return is_array($row) ? $row : null;
     }
 
     public function fetchUploadMapping(int $uploadId): ?array {
-        $stmt = $this->pdo->prepare(
-            'SELECT id, upload_id, source_type, original_headers_json, mapping_json, created_at, updated_at
+        $row = InterfaceDB::fetchOne( 'SELECT id, upload_id, source_type, original_headers_json, mapping_json, created_at, updated_at
              FROM statement_import_mappings
              WHERE upload_id = :upload_id
-             LIMIT 1'
-        );
-        $stmt->execute(['upload_id' => $uploadId]);
-        $row = $stmt->fetch();
+             LIMIT 1', ['upload_id' => $uploadId]);
 
         return is_array($row) ? $row : null;
     }
@@ -402,8 +391,7 @@ final class StatementUploadService
             return [];
         }
 
-        $rowsStmt = $this->pdo->prepare(
-            'SELECT tir.id,
+        $rows = InterfaceDB::fetchAll( 'SELECT tir.id,
                     tir.`row_number`,
                     source_account,
                     source_created,
@@ -432,15 +420,13 @@ final class StatementUploadService
              LEFT JOIN tax_years ty
                 ON ty.id = tir.tax_year_id
              WHERE tir.upload_id = :upload_id
-             ORDER BY tir.`row_number` ASC, tir.id ASC'
-        );
-        $rowsStmt->execute(['upload_id' => $uploadId]);
+             ORDER BY tir.`row_number` ASC, tir.id ASC', ['upload_id' => $uploadId]);
 
         return [
             'upload' => $upload,
             'mapping' => $mapping,
             'source_sample' => $this->readUploadSourceSample($upload, 2),
-            'rows' => $rowsStmt->fetchAll(),
+            'rows' => $rows,
             'summary' => [
                 'rows_parsed' => (int)($upload['rows_parsed'] ?? 0),
                 'rows_valid' => (int)($upload['rows_valid'] ?? 0),
@@ -828,12 +814,12 @@ final class StatementUploadService
             : (string)$upload['statement_month'];
 
         try {
-            $this->pdo->beginTransaction();
+            InterfaceDB::beginTransaction();
 
-            $deleteRows = $this->pdo->prepare('DELETE FROM statement_import_rows WHERE upload_id = :upload_id');
+            $deleteRows = InterfaceDB::prepare('DELETE FROM statement_import_rows WHERE upload_id = :upload_id');
             $deleteRows->execute(['upload_id' => $uploadId]);
 
-            $insertRow = $this->pdo->prepare(
+            $insertRow = InterfaceDB::prepare(
                 'INSERT INTO statement_import_rows (
                     upload_id,
                     `row_number`,
@@ -916,7 +902,7 @@ final class StatementUploadService
                 ]);
             }
 
-            $update = $this->pdo->prepare(
+            $update = InterfaceDB::prepare(
                 'UPDATE statement_uploads
                  SET workflow_status = :workflow_status,
                      tax_year_id = :tax_year_id,
@@ -952,10 +938,10 @@ final class StatementUploadService
                 'id' => $uploadId,
             ]);
 
-            $this->pdo->commit();
+            InterfaceDB::commit();
         } catch (Throwable $exception) {
-            if ($this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
             }
 
             return $this->failureResult(500, ['The import preview could not be staged: ' . $exception->getMessage()], $warnings);
@@ -990,9 +976,9 @@ final class StatementUploadService
         $rowsInserted = 0;
 
         try {
-            $this->pdo->beginTransaction();
+            InterfaceDB::beginTransaction();
 
-            $insertTransaction = $this->pdo->prepare(
+            $insertTransaction = InterfaceDB::prepare(
                 'INSERT IGNORE INTO transactions (
                     company_id,
                     tax_year_id,
@@ -1051,7 +1037,7 @@ final class StatementUploadService
                     :notes
                 )'
             );
-            $updateStagedRow = $this->pdo->prepare(
+            $updateStagedRow = InterfaceDB::prepare(
                 'UPDATE statement_import_rows
                  SET committed_transaction_id = :committed_transaction_id,
                      committed_at = :committed_at
@@ -1129,7 +1115,7 @@ final class StatementUploadService
             }
 
             $committedCount = $this->countCommittedRows($uploadId);
-            $updateUpload = $this->pdo->prepare(
+            $updateUpload = InterfaceDB::prepare(
                 'UPDATE statement_uploads
                  SET workflow_status = :workflow_status,
                      rows_inserted = :rows_inserted,
@@ -1147,10 +1133,10 @@ final class StatementUploadService
                 'id' => $uploadId,
             ]);
 
-            $this->pdo->commit();
+            InterfaceDB::commit();
         } catch (Throwable $exception) {
-            if ($this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
             }
 
             return $this->failureResult(500, ['The staged import could not be committed: ' . $exception->getMessage()], $warnings);
@@ -1227,7 +1213,7 @@ final class StatementUploadService
             return true;
         }
 
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT 1
              FROM transactions
              WHERE company_id = :company_id
@@ -1253,7 +1239,7 @@ final class StatementUploadService
             ];
         }
 
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT id
              FROM transactions
              WHERE id = :id
@@ -1282,8 +1268,7 @@ final class StatementUploadService
             return $this->failureResult(400, ['The selected company could not be found.'], $warnings);
         }
 
-        $stmt = $this->pdo->prepare(
-            'SELECT id,
+        $rows = InterfaceDB::fetchAll( 'SELECT id,
                     upload_id,
                     source_account,
                     chosen_txn_date,
@@ -1298,10 +1283,7 @@ final class StatementUploadService
                  FROM statement_uploads
                  WHERE company_id = :company_id
              )
-             ORDER BY upload_id ASC, `row_number` ASC, id ASC'
-        );
-        $stmt->execute(['company_id' => $companyId]);
-        $rows = $stmt->fetchAll();
+             ORDER BY upload_id ASC, `row_number` ASC, id ASC', ['company_id' => $companyId]);
 
         if (!is_array($rows) || $rows === []) {
             return [
@@ -1315,12 +1297,12 @@ final class StatementUploadService
             ];
         }
 
-        $updateRow = $this->pdo->prepare(
+        $updateRow = InterfaceDB::prepare(
             'UPDATE statement_import_rows
              SET row_hash = :row_hash
              WHERE id = :id'
         );
-        $updateTransaction = $this->pdo->prepare(
+        $updateTransaction = InterfaceDB::prepare(
             'UPDATE transactions
              SET dedupe_hash = :dedupe_hash
              WHERE id = :id
@@ -1331,7 +1313,7 @@ final class StatementUploadService
         $transactionsUpdated = 0;
 
         try {
-            $this->pdo->beginTransaction();
+            InterfaceDB::beginTransaction();
 
             foreach ($rows as $row) {
                 $chosenTxnDate = trim((string)($row['chosen_txn_date'] ?? ''));
@@ -1377,10 +1359,10 @@ final class StatementUploadService
                 }
             }
 
-            $this->pdo->commit();
+            InterfaceDB::commit();
         } catch (Throwable $exception) {
-            if ($this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
             }
 
             return $this->failureResult(500, ['Checksums could not be recalculated: ' . $exception->getMessage()], $warnings);
@@ -1669,8 +1651,7 @@ final class StatementUploadService
     }
 
     private function fetchEligibleRowsForCommit(int $uploadId): array {
-        $stmt = $this->pdo->prepare(
-            'SELECT id,
+        return InterfaceDB::fetchAll( 'SELECT id,
                     raw_json,
                     source_account,
                     source_created,
@@ -1692,26 +1673,17 @@ final class StatementUploadService
                AND is_duplicate_within_upload = 0
                AND is_duplicate_existing = 0
                AND committed_transaction_id IS NULL
-             ORDER BY `row_number` ASC, id ASC'
-        );
-        $stmt->execute([
+             ORDER BY `row_number` ASC, id ASC', [
             'upload_id' => $uploadId,
             'validation_status' => 'valid',
         ]);
-
-        return $stmt->fetchAll();
     }
 
     private function countCommittedRows(int $uploadId): int {
-        $stmt = $this->pdo->prepare(
-            'SELECT COUNT(*)
+        return (int)InterfaceDB::fetchColumn( 'SELECT COUNT(*)
              FROM statement_import_rows
              WHERE upload_id = :upload_id
-               AND committed_transaction_id IS NOT NULL'
-        );
-        $stmt->execute(['upload_id' => $uploadId]);
-
-        return (int)$stmt->fetchColumn();
+               AND committed_transaction_id IS NOT NULL', ['upload_id' => $uploadId]);
     }
 
     public function backfillTransactionTypesFromStagedImportJson(int $companyId): array {
@@ -1722,7 +1694,7 @@ final class StatementUploadService
             ];
         }
 
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT t.id,
                     t.txn_type,
                     t.account_id,
@@ -1749,17 +1721,17 @@ final class StatementUploadService
             'errors' => [],
         ];
 
-        $update = $this->pdo->prepare(
+        $update = InterfaceDB::prepare(
             'UPDATE transactions
              SET txn_type = :txn_type,
                  is_internal_transfer = :is_internal_transfer
              WHERE id = :id'
         );
 
-        $ownsTransaction = !$this->pdo->inTransaction();
+        $ownsTransaction = !InterfaceDB::inTransaction();
 
         if ($ownsTransaction) {
-            $this->pdo->beginTransaction();
+            InterfaceDB::beginTransaction();
         }
 
         try {
@@ -1793,11 +1765,11 @@ final class StatementUploadService
             }
 
             if ($ownsTransaction) {
-                $this->pdo->commit();
+                InterfaceDB::commit();
             }
         } catch (Throwable $exception) {
-            if ($ownsTransaction && $this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
+            if ($ownsTransaction && InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
             }
 
             return [
@@ -1867,7 +1839,7 @@ final class StatementUploadService
                     FROM transactions
                     WHERE company_id = ?
                       AND dedupe_hash IN (' . $placeholders . ')';
-            $stmt = $this->pdo->prepare($sql);
+            $stmt = InterfaceDB::prepare($sql);
             $stmt->execute(array_merge([$companyId], $chunk));
 
             foreach ($stmt->fetchAll() as $row) {
@@ -1879,7 +1851,7 @@ final class StatementUploadService
     }
 
     private function findTransactionIdByDedupeHash(int $companyId, string $dedupeHash): ?int {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT id
              FROM transactions
              WHERE company_id = :company_id
@@ -2009,7 +1981,7 @@ final class StatementUploadService
         $existing = $this->fetchUploadMapping($uploadId);
 
         if ($existing === null) {
-            $stmt = $this->pdo->prepare(
+            $stmt = InterfaceDB::prepare(
                 'INSERT INTO statement_import_mappings (
                     upload_id,
                     source_type,
@@ -2032,7 +2004,7 @@ final class StatementUploadService
             return;
         }
 
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'UPDATE statement_import_mappings
              SET source_type = :source_type,
                  original_headers_json = :original_headers_json,
@@ -2048,7 +2020,7 @@ final class StatementUploadService
     }
 
     private function updateUploadWorkflow(int $uploadId, string $workflowStatus): void {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'UPDATE statement_uploads
              SET workflow_status = :workflow_status
              WHERE id = :id'
@@ -2060,7 +2032,7 @@ final class StatementUploadService
     }
 
     private function updateUploadAccount(int $uploadId, int $accountId): void {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'UPDATE statement_uploads
              SET account_id = :account_id
              WHERE id = :id'
@@ -2083,7 +2055,7 @@ final class StatementUploadService
     }
 
     private function fetchCompanyTaxYear(int $companyId, int $taxYearId): ?array {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT ty.id, ty.period_start, ty.period_end
              FROM tax_years ty
              INNER JOIN companies c ON c.id = ty.company_id
@@ -2106,7 +2078,7 @@ final class StatementUploadService
             return [];
         }
 
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT id, label, period_start, period_end
              FROM tax_years
              WHERE company_id = :company_id
@@ -2151,7 +2123,7 @@ final class StatementUploadService
             return null;
         }
 
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT id,
                     company_id,
                     account_name,
@@ -2217,7 +2189,7 @@ final class StatementUploadService
         $sql .= ' ORDER BY su.uploaded_at DESC, su.id DESC
                   LIMIT 1';
 
-        $stmt = $this->pdo->prepare($sql);
+            $stmt = InterfaceDB::prepare($sql);
         $stmt->execute($params);
         $row = $stmt->fetch();
 
@@ -2386,7 +2358,7 @@ final class StatementUploadService
     }
 
     private function findUploadByFileHash(int $companyId, string $fileSha256): ?array {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT id,
                     workflow_status,
                     rows_parsed,
@@ -2442,7 +2414,7 @@ final class StatementUploadService
     }
 
     private function insertStatementUpload(array $data): void {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'INSERT INTO statement_uploads (
                 company_id,
                 tax_year_id,
@@ -2491,7 +2463,7 @@ final class StatementUploadService
     }
 
     private function findStatementUploadId(int $companyId, string $storedFilename): ?int {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT id
              FROM statement_uploads
              WHERE company_id = :company_id
@@ -2674,4 +2646,6 @@ final class StatementUploadService
         }
     }
 }
+
+
 

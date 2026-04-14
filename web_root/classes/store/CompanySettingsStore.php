@@ -2,7 +2,6 @@
 
 final class CompanySettingsStore
 {
-    private PDO $pdo;
     private int $companyId;
     private bool $loaded = false;
     private array $cache = [];
@@ -10,8 +9,7 @@ final class CompanySettingsStore
     private array $persistedTypes = [];
     private ?string $storageMode = null;
 
-    public function __construct(PDO $pdo, int $companyId) {
-        $this->pdo = $pdo;
+    public function __construct(int $companyId) {
         $this->companyId = $companyId;
     }
 
@@ -125,14 +123,14 @@ final class CompanySettingsStore
             throw new RuntimeException('The company_settings table is still using the legacy schema. Run db/eel_accounts.company_settings_kv.20260402.sql before saving settings.');
         }
 
-        $ownsTransaction = !$this->pdo->inTransaction();
+        $ownsTransaction = !InterfaceDB::inTransaction();
 
         if ($ownsTransaction) {
-            $this->pdo->beginTransaction();
+            InterfaceDB::beginTransaction();
         }
 
         try {
-            $stmt = $this->pdo->prepare('SELECT id, setting FROM company_settings WHERE company_id = ?');
+            $stmt = InterfaceDB::prepare('SELECT id, setting FROM company_settings WHERE company_id = ?');
             $stmt->execute([$this->companyId]);
 
             $existingRows = [];
@@ -146,7 +144,7 @@ final class CompanySettingsStore
                 $value = $this->serialiseValue($type, $payload['value']);
 
                 if (isset($existingRows[$setting])) {
-                    $update = $this->pdo->prepare(
+                    $update = InterfaceDB::prepare(
                         'UPDATE company_settings
                          SET type = ?, value = ?, updated_at = CURRENT_TIMESTAMP
                          WHERE id = ?'
@@ -157,7 +155,7 @@ final class CompanySettingsStore
                         $existingRows[$setting],
                     ]);
                 } else {
-                    $insert = $this->pdo->prepare(
+                    $insert = InterfaceDB::prepare(
                         'INSERT INTO company_settings (company_id, setting, type, value, created_at, updated_at)
                          VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)'
                     );
@@ -175,11 +173,11 @@ final class CompanySettingsStore
             $this->dirty = [];
 
             if ($ownsTransaction) {
-                $this->pdo->commit();
+                InterfaceDB::commit();
             }
         } catch (Throwable $e) {
-            if ($ownsTransaction && $this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
+            if ($ownsTransaction && InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
             }
 
             throw $e;
@@ -279,7 +277,7 @@ final class CompanySettingsStore
         }
 
         try {
-            $stmt = $this->pdo->query('SELECT setting, type, value FROM company_settings WHERE 1 = 0');
+            $stmt = InterfaceDB::query('SELECT setting, type, value FROM company_settings WHERE 1 = 0');
             $stmt->closeCursor();
 
             return true;
@@ -289,7 +287,7 @@ final class CompanySettingsStore
     }
 
     private function loadKeyValueRows(): void {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'SELECT setting, type, value
              FROM company_settings
              WHERE company_id = ?
@@ -311,7 +309,7 @@ final class CompanySettingsStore
     }
 
     private function loadLegacyWideRow(): void {
-        $stmt = $this->pdo->prepare('SELECT * FROM company_settings WHERE company_id = ?');
+        $stmt = InterfaceDB::prepare('SELECT * FROM company_settings WHERE company_id = ?');
         $stmt->execute([$this->companyId]);
         $row = $stmt->fetch();
 

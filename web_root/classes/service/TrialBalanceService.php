@@ -4,14 +4,13 @@ declare(strict_types=1);
 final class TrialBalanceService
 {
     public function __construct(
-        private readonly PDO $pdo,
         private readonly ?YearEndMetricsService $metricsService = null,
         private readonly ?YearEndLockService $lockService = null,
     ) {
     }
 
     public function fetchPageContext(int $companyId, int $taxYearId): ?array {
-        $metrics = $this->metricsService ?? new YearEndMetricsService($this->pdo);
+        $metrics = $this->metricsService ?? new YearEndMetricsService();
         $taxYear = $metrics->fetchTaxYear($companyId, $taxYearId);
         $company = $metrics->fetchCompanySummary($companyId);
 
@@ -20,7 +19,7 @@ final class TrialBalanceService
         }
 
         $settings = $metrics->fetchCompanySettings($companyId);
-        $review = ($this->lockService ?? new YearEndLockService($this->pdo))->fetchReview($companyId, $taxYearId);
+        $review = ($this->lockService ?? new YearEndLockService())->fetchReview($companyId, $taxYearId);
 
         return [
             'company' => $company,
@@ -229,14 +228,13 @@ final class TrialBalanceService
             GROUP BY na.id, na.code, na.name, na.account_type, na.tax_treatment, na.sort_order, nas.code, nas.name, agg.total_debit, agg.total_credit, agg.journal_count, agg.has_manual_journal, agg.has_activity
             ORDER BY COALESCE(na.sort_order, 100) ASC, COALESCE(na.code, \'\') ASC, COALESCE(na.name, \'\') ASC, na.id ASC';
 
-        $stmt = $this->pdo->prepare($sql);
-        $stmt->execute([
+        $rowsData = InterfaceDB::fetchAll( $sql, [
             'company_id' => $companyId,
             'tax_year_id' => $taxYearId,
         ]);
 
         $rows = [];
-        foreach ($stmt->fetchAll() ?: [] as $row) {
+        foreach ($rowsData as $row) {
             $debit = round((float)($row['total_debit'] ?? 0), 2);
             $credit = round((float)($row['total_credit'] ?? 0), 2);
             $net = round($debit - $credit, 2);
@@ -269,7 +267,7 @@ final class TrialBalanceService
 
     private function buildSummary(array $context, array $rows): array {
         $settings = (array)($context['settings'] ?? []);
-        $metrics = $this->metricsService ?? new YearEndMetricsService($this->pdo);
+        $metrics = $this->metricsService ?? new YearEndMetricsService();
         $companyId = (int)($context['company']['id'] ?? 0);
         $taxYearId = (int)($context['tax_year']['id'] ?? 0);
         $periodStart = (string)($context['tax_year']['period_start'] ?? '');
@@ -319,7 +317,7 @@ final class TrialBalanceService
         $isBalanced = abs($difference) < 0.005;
         $profitAndLoss = $metrics->profitAndLossSummary($companyId, $taxYearId, $periodStart, $periodEnd);
         $balanceSheet = $metrics->fetchBalanceSheetMetricValues($companyId, $taxYearId, $periodStart, $periodEnd);
-        $taxComputation = (new YearEndTaxReadinessService($this->pdo, $metrics))->fetchSummary($companyId, $taxYearId);
+        $taxComputation = (new YearEndTaxReadinessService($metrics))->fetchSummary($companyId, $taxYearId);
         $reviewNotes = trim((string)($context['review']['review_notes'] ?? ''));
 
         return [
@@ -460,8 +458,7 @@ final class TrialBalanceService
 
     private function fetchNominalLedgerEntries(int $companyId, int $taxYearId, int $nominalAccountId, bool $includeUnposted): array {
         $postingPredicate = $includeUnposted ? '' : 'AND j.is_posted = 1';
-        $stmt = $this->pdo->prepare(
-            'SELECT j.id AS journal_id,
+        return InterfaceDB::fetchAll( 'SELECT j.id AS journal_id,
                     j.journal_date,
                     j.source_type,
                     COALESCE(j.source_ref, \'\') AS source_ref,
@@ -476,20 +473,15 @@ final class TrialBalanceService
                AND j.tax_year_id = :tax_year_id
                ' . $postingPredicate . '
                AND jl.nominal_account_id = :nominal_account_id
-             ORDER BY j.journal_date ASC, j.id ASC, jl.id ASC'
-        );
-        $stmt->execute([
+             ORDER BY j.journal_date ASC, j.id ASC, jl.id ASC', [
             'company_id' => $companyId,
             'tax_year_id' => $taxYearId,
             'nominal_account_id' => $nominalAccountId,
         ]);
-
-        return $stmt->fetchAll() ?: [];
     }
 
     private function fetchNominalAccount(int $nominalAccountId): ?array {
-        $stmt = $this->pdo->prepare(
-            'SELECT na.id,
+        $row = InterfaceDB::fetchOne( 'SELECT na.id,
                     COALESCE(na.code, \'\') AS code,
                     COALESCE(na.name, \'\') AS name,
                     COALESCE(na.account_type, \'\') AS account_type,
@@ -498,10 +490,7 @@ final class TrialBalanceService
              FROM nominal_accounts na
              LEFT JOIN nominal_account_subtypes nas ON nas.id = na.account_subtype_id
              WHERE na.id = :id
-             LIMIT 1'
-        );
-        $stmt->execute(['id' => $nominalAccountId]);
-        $row = $stmt->fetch();
+             LIMIT 1', ['id' => $nominalAccountId]);
 
         return is_array($row) ? $row : null;
     }
@@ -528,3 +517,5 @@ final class TrialBalanceService
             . '.csv';
     }
 }
+
+

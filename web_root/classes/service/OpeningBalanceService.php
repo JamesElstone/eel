@@ -4,7 +4,6 @@ declare(strict_types=1);
 final class OpeningBalanceService
 {
     public function __construct(
-        private readonly PDO $pdo,
         private readonly ?ManualJournalService $journalService = null,
         private readonly ?YearEndMetricsService $metricsService = null,
         private readonly ?CompaniesHouseStoredDataService $companiesHouseData = null,
@@ -12,7 +11,7 @@ final class OpeningBalanceService
     }
 
     public function fetchContext(int $companyId, int $taxYearId): array {
-        $metrics = $this->metricsService ?? new YearEndMetricsService($this->pdo);
+        $metrics = $this->metricsService ?? new YearEndMetricsService();
         $taxYear = $metrics->fetchTaxYear($companyId, $taxYearId);
         $company = $metrics->fetchCompanySummary($companyId);
 
@@ -28,7 +27,7 @@ final class OpeningBalanceService
             'company' => $company,
             'tax_year' => $taxYear,
             'nominals' => $this->fetchNominals(),
-            'existing_journal' => ($this->journalService ?? new ManualJournalService($this->pdo))
+            'existing_journal' => ($this->journalService ?? new ManualJournalService())
                 ->fetchJournalByTag($companyId, $taxYearId, 'opening_balance'),
             'suggestions' => $this->buildSuggestionRows($companyId, $company, $taxYear),
         ];
@@ -58,7 +57,7 @@ final class OpeningBalanceService
             $description = 'Opening balances for ' . (string)($context['tax_year']['label'] ?? 'selected period');
         }
 
-        $result = ($this->journalService ?? new ManualJournalService($this->pdo))->saveTaggedJournal(
+        $result = ($this->journalService ?? new ManualJournalService())->saveTaggedJournal(
             $companyId,
             $taxYearId,
             'opening_balance',
@@ -85,7 +84,7 @@ final class OpeningBalanceService
     }
 
     private function fetchNominals(): array {
-        $stmt = $this->pdo->query(
+        $stmt = InterfaceDB::query(
             'SELECT na.id,
                     COALESCE(na.code, \'\') AS code,
                     COALESCE(na.name, \'\') AS name,
@@ -113,7 +112,7 @@ final class OpeningBalanceService
             return [];
         }
 
-        $service = $this->companiesHouseData ?? new CompaniesHouseStoredDataService($this->pdo);
+        $service = $this->companiesHouseData ?? new CompaniesHouseStoredDataService();
         $facts = $service->fetchFactsByCompanyPeriodEndAndConcept($companyNumber, (string)$previousTaxYear['period_end']);
         if ($facts === []) {
             $facts = $this->fetchFactsByContextPeriodEnd($companyNumber, (string)$previousTaxYear['period_end']);
@@ -132,7 +131,7 @@ final class OpeningBalanceService
             $factMap[$concept] = $value;
         }
 
-        $settings = ($this->metricsService ?? new YearEndMetricsService($this->pdo))->fetchCompanySettings($companyId);
+        $settings = ($this->metricsService ?? new YearEndMetricsService())->fetchCompanySettings($companyId);
         $nominals = $this->fetchNominals();
         $rows = [];
 
@@ -191,19 +190,15 @@ final class OpeningBalanceService
     }
 
     private function fetchPreviousTaxYear(int $companyId, string $periodStart): ?array {
-        $stmt = $this->pdo->prepare(
-            'SELECT id, label, period_start, period_end
+        $row = InterfaceDB::fetchOne( 'SELECT id, label, period_start, period_end
              FROM tax_years
              WHERE company_id = :company_id
                AND period_end < :period_start
              ORDER BY period_end DESC, id DESC
-             LIMIT 1'
-        );
-        $stmt->execute([
+             LIMIT 1', [
             'company_id' => $companyId,
             'period_start' => $periodStart,
         ]);
-        $row = $stmt->fetch();
 
         return is_array($row) ? $row : null;
     }
@@ -227,8 +222,7 @@ final class OpeningBalanceService
     }
 
     private function fetchFactsByContextPeriodEnd(string $companyNumber, string $periodEnd): array {
-        $stmt = $this->pdo->prepare(
-            'SELECT c.concept_name,
+        return InterfaceDB::fetchAll( 'SELECT c.concept_name,
                     f.normalised_numeric
              FROM companies_house_document_facts f
              INNER JOIN companies_house_documents d ON d.id = f.document_fk
@@ -237,13 +231,11 @@ final class OpeningBalanceService
              WHERE d.company_number = :company_number
                AND COALESCE(ctx.period_end, \'\') = :period_end
                AND f.is_latest_year_fact = 1
-             ORDER BY d.filing_date DESC, f.id ASC'
-        );
-        $stmt->execute([
+             ORDER BY d.filing_date DESC, f.id ASC', [
             'company_number' => strtoupper(trim($companyNumber)),
             'period_end' => $periodEnd,
         ]);
-
-        return $stmt->fetchAll() ?: [];
     }
 }
+
+

@@ -3,13 +3,11 @@ declare(strict_types=1);
 
 final class CompaniesHousePersistenceService
 {
-    public function __construct(
-        private readonly PDO $pdo,
-    ) {
+    public function __construct() {
     }
 
     public function persistDocument(array $document, ?array $parsedDocument = null): array {
-        $this->pdo->beginTransaction();
+        InterfaceDB::beginTransaction();
 
         try {
             $documentRowId = $this->upsertDocumentRow($document);
@@ -18,7 +16,7 @@ final class CompaniesHousePersistenceService
                 $this->replaceDocumentContextsAndFacts($documentRowId, $parsedDocument);
             }
 
-            $this->pdo->commit();
+            InterfaceDB::commit();
 
             return [
                 'document_row_id' => $documentRowId,
@@ -26,8 +24,8 @@ final class CompaniesHousePersistenceService
                 'latest_year_fact_count' => (int)($parsedDocument['summary']['latest_year_fact_count'] ?? 0),
             ];
         } catch (Throwable $e) {
-            if ($this->pdo->inTransaction()) {
-                $this->pdo->rollBack();
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
             }
 
             throw $e;
@@ -108,7 +106,7 @@ final class CompaniesHousePersistenceService
                     parse_status = VALUES(parse_status),
                     parse_error = VALUES(parse_error)';
 
-        $stmt = $this->pdo->prepare($sql);
+        $stmt = InterfaceDB::prepare($sql);
         $stmt->execute([
             'company_id' => $this->nullableInt($document['company_id'] ?? null),
             'company_number' => $this->requiredString($document['company_number'] ?? null, 'company_number'),
@@ -139,13 +137,13 @@ final class CompaniesHousePersistenceService
     }
 
     private function replaceDocumentContextsAndFacts(int $documentRowId, array $parsedDocument): void {
-        $deleteFacts = $this->pdo->prepare('DELETE FROM companies_house_document_facts WHERE document_fk = ?');
+        $deleteFacts = InterfaceDB::prepare('DELETE FROM companies_house_document_facts WHERE document_fk = ?');
         $deleteFacts->execute([$documentRowId]);
 
-        $deleteContexts = $this->pdo->prepare('DELETE FROM companies_house_document_contexts WHERE document_fk = ?');
+        $deleteContexts = InterfaceDB::prepare('DELETE FROM companies_house_document_contexts WHERE document_fk = ?');
         $deleteContexts->execute([$documentRowId]);
 
-        $contextInsert = $this->pdo->prepare(
+        $contextInsert = InterfaceDB::prepare(
             'INSERT INTO companies_house_document_contexts (
                 document_fk,
                 context_ref,
@@ -175,7 +173,7 @@ final class CompaniesHousePersistenceService
             $contextIdsByRef[(string)$context['context_ref']] = $this->findContextRowId($documentRowId, (string)$context['context_ref']);
         }
 
-        $factInsert = $this->pdo->prepare(
+        $factInsert = InterfaceDB::prepare(
             'INSERT INTO companies_house_document_facts (
                 document_fk,
                 context_fk,
@@ -228,7 +226,7 @@ final class CompaniesHousePersistenceService
     }
 
     private function upsertConcept(array $concept): int {
-        $stmt = $this->pdo->prepare(
+        $stmt = InterfaceDB::prepare(
             'INSERT INTO companies_house_taxonomy_concepts (
                 concept_name,
                 short_name,
@@ -250,7 +248,7 @@ final class CompaniesHousePersistenceService
             gmdate('Y-m-d H:i:s'),
         ]);
 
-        $find = $this->pdo->prepare('SELECT id FROM companies_house_taxonomy_concepts WHERE concept_name = ?');
+        $find = InterfaceDB::prepare('SELECT id FROM companies_house_taxonomy_concepts WHERE concept_name = ?');
         $find->execute([(string)$concept['concept_name']]);
         $id = $find->fetchColumn();
 
@@ -262,7 +260,7 @@ final class CompaniesHousePersistenceService
     }
 
     private function findDocumentRowId(string $documentId): int {
-        $find = $this->pdo->prepare('SELECT id FROM companies_house_documents WHERE document_id = ?');
+        $find = InterfaceDB::prepare('SELECT id FROM companies_house_documents WHERE document_id = ?');
         $find->execute([$documentId]);
         $id = $find->fetchColumn();
 
@@ -274,7 +272,7 @@ final class CompaniesHousePersistenceService
     }
 
     private function findContextRowId(int $documentRowId, string $contextRef): int {
-        $find = $this->pdo->prepare('SELECT id FROM companies_house_document_contexts WHERE document_fk = ? AND context_ref = ?');
+        $find = InterfaceDB::prepare('SELECT id FROM companies_house_document_contexts WHERE document_fk = ? AND context_ref = ?');
         $find->execute([$documentRowId, $contextRef]);
         $id = $find->fetchColumn();
 

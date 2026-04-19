@@ -17,7 +17,7 @@ final class PageRendererFramework
     {
         $selectorUi = $this->buildSelectorUi($page, $request, $services);
         $cardsHtml = [];
-        foreach ($page->cards() as $cardKey) {
+        foreach ($this->pageCards($page, $context) as $cardKey) {
             $cardsHtml[] = $this->cards->render($page->id(), (string)$cardKey, $context, $services);
         }
 
@@ -36,12 +36,15 @@ final class PageRendererFramework
     {
         $currentCards = $request->cardKeys();
         if ($currentCards === []) {
-            $currentCards = array_map('strval', $page->cards());
+            $currentCards = $this->pageCards($page, $context);
         }
+
+        $currentCards = array_values(array_intersect($currentCards, $this->pageCards($page, $context)));
 
         $cards = [];
         $changedFacts = $actionResult->changedFacts();
         $selectorUi = null;
+        $sidebarHtml = null;
         $invalidateAllCards = in_array('page.context', $changedFacts, true);
 
         foreach ($currentCards as $cardKey) {
@@ -60,11 +63,20 @@ final class PageRendererFramework
             $selectorUi = $this->buildSelectorUi($page, $request, $services);
         }
 
+        if (in_array('layout.sidebar', $changedFacts, true)) {
+            if ($selectorUi === null) {
+                $selectorUi = $this->buildSelectorUi($page, $request, $services);
+            }
+
+            $sidebarHtml = $this->renderSidebar($page, $context, $selectorUi);
+        }
+
         return ResponseFramework::json([
             'success' => $actionResult->isSuccess(),
             'page' => $page->id(),
             'cards' => $cards,
             'selector_ui' => $selectorUi === null ? null : $this->buildSelectorDeltaPayload($page, $context, $selectorUi),
+            'sidebar_html' => $sidebarHtml,
             'flash_html' => $this->renderFlashMessages($actionResult->flashMessages()),
             'url' => $request->pageUrl($actionResult->query()),
         ]);
@@ -82,6 +94,7 @@ final class PageRendererFramework
         $pageId = $page->id();
         $title = HelperFramework::escape($page->title());
         $subtitle = HelperFramework::escape($page->subtitle());
+        $contentHtml = trim($cardsHtml) !== '' ? $cardsHtml : $this->renderNoAccessState();
 
         return '<!DOCTYPE html>
 <html lang="en">
@@ -104,7 +117,8 @@ final class PageRendererFramework
             <div class="topbar-cluster"><div id="tax-year-selector-slot">' . $this->renderTaxYearSelector($page, $context, $selectorUi) . '</div></div>
         </div>
         <div id="flash-messages" class="flash-messages">' . $this->renderFlashMessages($actionResult->flashMessages()) . '</div>
-        <section class="page-stack" data-page-id="' . HelperFramework::escape($pageId) . '">' . $cardsHtml . '</section>
+        <section class="page-stack" data-page-id="' . HelperFramework::escape($pageId) . '">' . $contentHtml . '</section>
+        <div id="page-load-time" class="page-load-time" aria-live="polite"></div>
     </main>
 </div>
 <script src="js/index.js"></script>
@@ -119,7 +133,10 @@ final class PageRendererFramework
         foreach ($flashMessages as $message) {
             $type = strtolower((string)($message['type'] ?? 'success'));
             $class = $type === 'error' ? 'error' : 'success';
-            $html .= '<div class="alert ' . $class . '">' . HelperFramework::escape((string)($message['message'] ?? '')) . '</div>';
+            $messageHtml = array_key_exists('message_html', $message)
+                ? (string)($message['message_html'] ?? '')
+                : HelperFramework::escape((string)($message['message'] ?? ''));
+            $html .= '<div class="alert ' . $class . '">' . $messageHtml . '</div>';
         }
 
         return $html;
@@ -128,9 +145,11 @@ final class PageRendererFramework
     private function renderSidebar(PageInterfaceFramework $page, array $context, array $selectorUi): string
     {
         $currentPageId = $page->id();
-        $items = (new NavigationFramework(APP_PAGES, $currentPageId, '/?page='))->build();
+        $sessionAuthenticationService = new SessionAuthenticationService();
+        $items = $this->sidebarItems($sessionAuthenticationService, $currentPageId);
+        $displayName = $this->currentSidebarDisplayName($sessionAuthenticationService);
 
-        $html = '<aside class="sidebar">
+        $html = '<aside id="sidebar-shell" class="sidebar">
         <div class="brand-block">
             <div class="brand">
                 <div class="brand-mark">E</div>
@@ -140,6 +159,7 @@ final class PageRendererFramework
                 </div>
             </div>
             <div class="brand-toolbar">
+                <div class="brand-toolbar-user">' . HelperFramework::escape($displayName) . '</div>
                 <button class="sidebar-toggle" type="button" id="sidebar-toggle" aria-label="Toggle sidebar" aria-expanded="true">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
@@ -150,7 +170,9 @@ final class PageRendererFramework
             <div id="company-selector-slot">' . $this->renderCompanySelector($page, $context, $selectorUi) . '</div>
         </div>';
 
-        $html .= '<div class="nav-group">';
+        $html .= '<div class="nav-scroll-shell">
+            <div class="nav-scroll-hint top" aria-hidden="true"></div>
+            <div class="nav-group" aria-label="Sidebar navigation">';
 
         foreach ($items as $item) {
             $active = !empty($item['is_active']) ? ' active' : '';
@@ -163,9 +185,67 @@ final class PageRendererFramework
                 </a>';
         }
 
-        $html .= '</div></aside>';
+        $html .= '</div>
+            <div class="nav-scroll-hint bottom" aria-hidden="true"></div>
+        </div>';
+        $html .= $this->renderSidebarLogout($sessionAuthenticationService);
+        $html .= '</aside>';
 
         return $html;
+    }
+
+    private function renderSidebarLogout(SessionAuthenticationService $sessionAuthenticationService): string
+    {
+        return '<div class="sidebar-footer">
+            <form class="sidebar-logout-form" method="post" action="/">
+                <input type="hidden" name="auth_action" value="logout">
+                <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($sessionAuthenticationService->csrfToken()) . '">
+                <button class="sidebar-logout-button" type="submit">
+                    <span class="nav-icon-wrap sidebar-logout-icon" aria-hidden="true"></span>
+                    <span class="nav-link-text">Logout</span>
+                    <span class="nav-link-short" aria-hidden="true">Out</span>
+                </button>
+            </form>
+        </div>';
+    }
+
+    private function currentSidebarDisplayName(SessionAuthenticationService $sessionAuthenticationService): string
+    {
+        $sessionAuthenticationService->startSession();
+        $currentDeviceId = trim((string)AntiFraudService::instance()->requestValue('Client-Device-ID'));
+        $userId = $sessionAuthenticationService->authenticatedUserId($currentDeviceId);
+
+        if ($userId <= 0) {
+            return '';
+        }
+
+        $user = (new UserAuthenticationService())->userById($userId);
+
+        return trim((string)($user['display_name'] ?? ''));
+    }
+
+    private function sidebarItems(SessionAuthenticationService $sessionAuthenticationService, string $currentPageId): array
+    {
+        $items = (new NavigationFramework(APP_PAGES, $currentPageId, '/?page='))->build();
+        $currentDeviceId = trim((string)AntiFraudService::instance()->requestValue('Client-Device-ID'));
+        $userId = $sessionAuthenticationService->authenticatedUserId($currentDeviceId);
+
+        if ($userId <= 0) {
+            return array_values(array_filter(
+                $items,
+                static fn(array $item): bool => (string)($item['key'] ?? '') !== 'roles'
+            ));
+        }
+
+        $roleAssignmentService = new RoleAssignmentService();
+        if ($roleAssignmentService->isAdminUser($userId)) {
+            return $items;
+        }
+
+        return array_values(array_filter(
+            $items,
+            static fn(array $item): bool => (string)($item['key'] ?? '') !== 'roles'
+        ));
     }
 
     private function renderNavIcon(array $item): string
@@ -188,7 +268,7 @@ final class PageRendererFramework
             <input type="hidden" name="tax_year_id" value="">
             <input type="hidden" name="_ajax" value="1">';
 
-        foreach ($page->cards() as $cardKey) {
+        foreach ($this->pageCards($page, $context) as $cardKey) {
             $html .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
         }
 
@@ -227,7 +307,7 @@ final class PageRendererFramework
             <input type="hidden" name="company_id" value="' . HelperFramework::escape($selectedCompanyId) . '">
             <input type="hidden" name="_ajax" value="1">';
 
-        foreach ($page->cards() as $cardKey) {
+        foreach ($this->pageCards($page, $context) as $cardKey) {
             $html .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
         }
 
@@ -274,6 +354,29 @@ final class PageRendererFramework
             'companies' => array_values((array)($selectorUi['companies'] ?? [])),
             'tax_years' => array_values((array)($selectorUi['tax_years'] ?? [])),
         ];
+    }
+
+    private function pageCards(PageInterfaceFramework $page, array $context): array
+    {
+        $cards = $context['page_cards'] ?? $page->cards();
+
+        return array_values(array_map('strval', is_array($cards) ? $cards : []));
+    }
+
+    private function renderNoAccessState(): string
+    {
+        return '<section class="page-card" data-card-key="no_access">
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <h2 class="card-title">No Access</h2>
+                    </div>
+                </div>
+                <div class="card-body stack">
+                    <p class="helper">You do not currently have access to any content on this page.</p>
+                </div>
+            </div>
+        </section>';
     }
 }
 

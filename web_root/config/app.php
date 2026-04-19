@@ -6,6 +6,7 @@ return [
         'dsn' => 'odbc:platinum_mariadb_accounts',
         'user' => '',
         'pass' => '',
+        'logfile' => '',
     ],
     'uploads' => [
         'upload_base_dir' => 'C:\Users\James\Documents\elstone electricals limited\hmrc_account_app\uploads',
@@ -43,9 +44,9 @@ return [
         'path' => '../secure/api.keys',
     ],
     'antifraud' => [
-        'vendor_license_ids' => '',
-        'vendor_product_name' => 'HMRC Account App',
-        'vendor_public_ip' => '',
+        'vendor_license_ids' => '1234',
+        'vendor_product_name' => 'EEL Accounts',
+        'vendor_public_ip' => '80.235.222.101',
         'vendor_version' => 'dev',
     ],
 ];

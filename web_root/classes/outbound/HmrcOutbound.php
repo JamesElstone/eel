@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'OutboundHelper.php';
 
 final class HmrcOutbound implements VatValidationInterfaceService
 {
@@ -58,6 +59,53 @@ final class HmrcOutbound implements VatValidationInterfaceService
             'auth' => 'bearer',
             'timeout_seconds' => 10,
         ], $request));
+    }
+
+    public static function antiFraudValidationRequest(array $request): array
+    {
+        $defaultHeaders = [
+            'Accept' => (string)($request['accept_header'] ?? 'application/vnd.hmrc.1.0+json'),
+        ];
+        $requestHeaders = is_array($request['headers'] ?? null) ? $request['headers'] : [];
+
+        return OutboundHelper::request(array_replace([
+            'transport' => 'http',
+            'method' => strtoupper(trim((string)($request['validate_method'] ?? 'GET'))),
+            'headers' => array_replace($defaultHeaders, $requestHeaders),
+            'auth' => 'bearer',
+            'timeout_seconds' => 10,
+        ], $request));
+    }
+
+    public static function antiFraudValidatorConfig(?string $mode = null): array
+    {
+        $appConfig = AppConfigurationStore::config();
+        $config = is_array($appConfig['hmrc']['fraud_prevention_validator'] ?? null)
+            ? $appConfig['hmrc']['fraud_prevention_validator']
+            : [];
+
+        $config = array_replace([
+            'accept_header' => 'application/vnd.hmrc.1.0+json',
+            'credential_provider' => 'HMRC',
+            'credential_tag' => 'FPH_VALIDATOR',
+            'keys_path' => SecurityStore::apiKeysPath(),
+            'mode' => 'TEST',
+            'oauth_path' => '/oauth/token',
+            'timeout_seconds' => 10,
+            'token_scope' => '',
+            'validate_method' => 'GET',
+            'validate_path' => '/test/fraud-prevention-headers/validate',
+        ], $config);
+
+        if ($mode !== null && trim($mode) !== '') {
+            $config['mode'] = HelperFramework::normaliseEnvironmentMode($mode);
+        }
+
+        if (trim((string)($config['keys_path'] ?? '')) === '') {
+            $config['keys_path'] = SecurityStore::apiKeysPath();
+        }
+
+        return $config;
     }
 
     public function supports(string $countryCode): bool
@@ -206,6 +254,26 @@ final class HmrcOutbound implements VatValidationInterfaceService
             : self::vatLookupRequest($request);
     }
 
+    public function validateAntiFraudHeaders(?array $govHeaders = null): array
+    {
+        $request = [
+            'base_url' => $this->baseUrl(),
+            'path' => (string)($this->config['validate_path'] ?? '/test/fraud-prevention-headers/validate'),
+            'headers' => array_replace([
+                'Accept' => (string)($this->config['accept_header'] ?? 'application/vnd.hmrc.1.0+json'),
+            ], $govHeaders ?? AntiFraudService::instance()->buildGovHeaders()),
+            'auth' => 'bearer',
+            'bearer_token' => $this->resolveAccessToken(),
+            'timeout_seconds' => max(1, (int)($this->config['timeout_seconds'] ?? 10)),
+            'validate_method' => (string)($this->config['validate_method'] ?? 'GET'),
+            'accept_header' => (string)($this->config['accept_header'] ?? 'application/vnd.hmrc.1.0+json'),
+        ];
+
+        return is_callable($this->outboundRequest)
+            ? ($this->outboundRequest)($request)
+            : self::antiFraudValidationRequest($request);
+    }
+
     private function resolveAccessToken(): string
     {
         if ($this->accessToken !== null && $this->accessToken !== '') {
@@ -268,17 +336,6 @@ final class HmrcOutbound implements VatValidationInterfaceService
 
     private function baseUrl(): string
     {
-        $baseUrl = $this->baseUrlFromCredential();
-
-        if ($baseUrl === '') {
-            throw new RuntimeException('HMRC VAT validation is not configured.');
-        }
-
-        return $baseUrl;
-    }
-
-    private function baseUrlFromCredential(): string
-    {
         $configuredBaseUrl = $this->baseUrlFromConfig();
 
         if ($configuredBaseUrl !== '') {
@@ -292,19 +349,62 @@ final class HmrcOutbound implements VatValidationInterfaceService
 
         try {
             $credential = self::loadCredential($tag, $environment, $keysPath, $provider);
-        } catch (Throwable) {
-            return '';
+        } catch (Throwable $exception) {
+            throw new RuntimeException($this->missingCredentialMessage($provider, $tag, $environment, $exception), 0, $exception);
         }
 
         $host = trim((string)($credential['url'] ?? ''));
         if ($host === '') {
-            return '';
+            throw new RuntimeException($this->serviceLabel() . ' is not configured with a base URL.');
         }
 
         $schema = strtoupper(trim((string)($credential['schema'] ?? 'HTTPS')));
         $scheme = $schema === 'HTTP' ? 'http://' : 'https://';
 
         return rtrim($scheme . ltrim($host, '/'), '/');
+    }
+
+    private function serviceLabel(): string
+    {
+        if (array_key_exists('validate_path', $this->config)) {
+            return 'HMRC anti-fraud validator';
+        }
+
+        if (array_key_exists('lookup_path', $this->config)) {
+            return 'HMRC VAT validation';
+        }
+
+        return 'HMRC service';
+    }
+
+    private function missingCredentialMessage(string $provider, string $tag, string $environment, Throwable $exception): string
+    {
+        $reason = trim($exception->getMessage());
+        $prefix = sprintf(
+            '%s credentials are not configured (%s / %s / %s)',
+            $this->serviceLabel(),
+            strtoupper(trim($provider)),
+            strtoupper(trim($tag)),
+            strtoupper(trim($environment))
+        );
+
+        $duplicateNotFound = 'API credential not found for '
+            . strtoupper(trim($provider))
+            . ' / '
+            . strtoupper(trim($tag))
+            . ' / '
+            . strtoupper(trim($environment))
+            . '.';
+
+        if ($reason === $duplicateNotFound) {
+            return $prefix . '.';
+        }
+
+        return sprintf(
+            '%s: %s',
+            $prefix,
+            $reason
+        );
     }
 
     private function baseUrlFromConfig(): string

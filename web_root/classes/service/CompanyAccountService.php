@@ -342,23 +342,16 @@ final class CompanyAccountService
         }
 
         if (($input['account_name'] ?? null) !== null && isset(self::accountTypes()[$input['account_type'] ?? ''])) {
-            $params = [
+            $conditions = [
                 'company_id' => $companyId,
                 'account_name' => $input['account_name'],
                 'account_type' => $input['account_type'],
             ];
-            $sql = 'SELECT COUNT(*)
-                    FROM company_accounts
-                    WHERE company_id = :company_id
-                      AND account_name = :account_name
-                      AND account_type = :account_type';
+            $existingCount = $accountId !== null && $accountId > 0
+                ? InterfaceDB::countWhereCompare('company_accounts', 'id', '<>', $accountId, $conditions)
+                : InterfaceDB::countWhere('company_accounts', $conditions);
 
-            if ($accountId !== null && $accountId > 0) {
-                $sql .= ' AND id <> :account_id';
-                $params['account_id'] = $accountId;
-            }
-
-            if ((int)InterfaceDB::fetchColumn( $sql, $params) > 0) {
+            if ($existingCount > 0) {
                 $errors[] = 'An account with that name and type already exists for the selected company.';
             }
         }
@@ -372,8 +365,8 @@ final class CompanyAccountService
             'transactions' => 0,
         ];
 
-        $usage['uploads'] = (int)InterfaceDB::fetchColumn( 'SELECT COUNT(*) FROM statement_uploads WHERE account_id = :account_id', ['account_id' => $accountId]);
-        $usage['transactions'] = (int)InterfaceDB::fetchColumn( 'SELECT COUNT(*) FROM transactions WHERE account_id = :account_id', ['account_id' => $accountId]);
+        $usage['uploads'] = InterfaceDB::countWhere('statement_uploads', 'account_id', $accountId);
+        $usage['transactions'] = InterfaceDB::countWhere('transactions', 'account_id', $accountId);
 
         return $usage;
     }

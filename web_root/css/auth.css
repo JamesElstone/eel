@@ -1,0 +1,195 @@
+:root {
+  color-scheme: light;
+  --bg: #f4efe4;
+  --ink: #1d2430;
+  --muted: #596171;
+  --card: #fffdf9;
+  --line: #d8cfbf;
+  --accent: #123a63;
+  --danger: #9f2d2d;
+}
+@font-face {
+    font-family: "Inter";
+    src: url("/fonts/Inter/Inter-VariableFont_opsz_wght.ttf") format("truetype");
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: "Inter";
+    src: url("/fonts/Inter/Inter-Italic-VariableFont_opsz_wght.ttf") format("truetype");
+    font-weight: 100 900;
+    font-style: italic;
+    font-display: swap;
+}
+@font-face {
+    font-family: "Roboto";
+    src: url("/fonts/Roboto/Roboto-VariableFont_wdth_wght.ttf") format("truetype");
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: "Roboto";
+    src: url("/fonts/Roboto/Roboto-Italic-VariableFont_wdth_wght.ttf") format("truetype");
+    font-weight: 100 900;
+    font-style: italic;
+    font-display: swap;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top, rgba(215,141,47,0.18), transparent 28%),
+    linear-gradient(180deg, #faf5eb 0%, var(--bg) 100%);
+  color: var(--ink);
+  font-family: Inter, Roboto, Arial, Helvetica, sans-serif;
+}
+.numeric {
+    font-family: "Roboto", monospace;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+.auth-shell {
+  width: min(100%, 420px);
+  padding: 36px 32px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--card);
+  box-shadow: 0 24px 60px rgba(29, 36, 48, 0.12);
+}
+.auth-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.auth-logo-mark {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 30% 24%, rgba(255,255,255,0.58), rgba(255,255,255,0) 34%),
+    linear-gradient(180deg, rgba(255,255,255,0.30) 0%, rgba(255,255,255,0.06) 42%, rgba(18,50,110,0.18) 100%),
+    linear-gradient(155deg, #78bcff 0%, #4c97f5 45%, #2f6edb 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.4),
+    inset 0 -10px 16px rgba(16,49,109,0.18),
+    0 10px 24px rgba(18,54,120,0.22);
+  color: #fff;
+  font-size: 1.2rem;
+  font-weight: 700;
+  text-shadow: 0 1px 1px rgba(0,0,0,0.16);
+}
+.auth-logo-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.auth-logo-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.auth-logo-subtitle {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+h1 {
+  margin: 0 0 8px;
+  font-size: 1.8rem;
+}
+.auth-copy {
+  margin: 0 0 24px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.auth-form {
+  display: grid;
+  gap: 14px;
+}
+.auth-qr {
+  display: grid;
+  place-items: center;
+  margin-bottom: 18px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+}
+.auth-qr svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+.auth-secret {
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(18, 58, 99, 0.06);
+  border: 1px solid rgba(18, 58, 99, 0.14);
+}
+.auth-secret-label {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.auth-secret-value {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 0.95rem;
+}
+.auth-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.auth-input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+}
+.auth-input-code {
+  letter-spacing: 0.35em;
+  text-align: center;
+  font-size: 1.1rem;
+}
+.auth-button {
+  margin-top: 6px;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent), #245f99);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.auth-error {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(159, 45, 45, 0.08);
+  border: 1px solid rgba(159, 45, 45, 0.2);
+  color: var(--danger);
+}
+.auth-countdown {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(18, 58, 99, 0.08);
+  border: 1px solid rgba(18, 58, 99, 0.16);
+  color: var(--accent);
+  font-size: 0.95rem;
+}

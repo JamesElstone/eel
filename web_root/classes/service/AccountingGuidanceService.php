@@ -94,6 +94,7 @@ final class AccountingGuidanceService
         $suggester = new TaxPeriodService();
         $documentRepository = new CompaniesHouseDocumentRepository();
         $companyId = (int)(trim((string)($settings['company_id'] ?? '')) !== '' ? $settings['company_id'] : 0);
+        $dateFormat = trim((string)($settings['date_format'] ?? ''));
         $companyNumber = (string)($settings['companies_house_number'] ?? '');
         $guidance['filed_periods'] = $documentRepository->fetchFiledAccountingPeriods($companyId, $companyNumber);
 
@@ -106,13 +107,17 @@ final class AccountingGuidanceService
             $guidance['suggestion_basis'] = 'companies_house_filed_periods';
             $guidance['suggested_periods'] = $suggester->suggestFollowOnPeriodsThroughDate(
                 new DateTimeImmutable($guidance['latest_filed_period_end']),
-                new DateTimeImmutable('today')
+                new DateTimeImmutable('today'),
+                $companyId,
+                $dateFormat
             );
         } elseif ($guidance['incorporation_date'] !== '') {
             $guidance['suggestion_basis'] = 'incorporation_date';
             $guidance['suggested_periods'] = $suggester->suggestPeriodsThroughDate(
                 new DateTimeImmutable($guidance['incorporation_date']),
-                new DateTimeImmutable('today')
+                new DateTimeImmutable('today'),
+                $companyId,
+                $dateFormat
             );
         } else {
             $guidance['messages'][] = 'No incorporation date or filed iXBRL accounting periods are stored yet, so accounting-period guidance is limited.';
@@ -136,7 +141,7 @@ final class AccountingGuidanceService
         }
 
         if (($settings['period_start'] ?? '') !== '' && ($settings['period_end'] ?? '') !== '') {
-            $guidance['ct_periods'] = $suggester->derive((string)$settings['period_start'], (string)$settings['period_end']);
+            $guidance['ct_periods'] = $suggester->derive((string)$settings['period_start'], (string)$settings['period_end'], $companyId, $dateFormat);
 
             foreach ($guidance['ct_periods'] as &$period) {
                 $period['display_range'] = $this->formatDisplayDateRange((string)$period['start'], (string)$period['end'], $settings);
@@ -179,12 +184,9 @@ final class AccountingGuidanceService
             return '';
         }
 
-        $format = trim((string)($settings['date_format'] ?? 'd/m/Y'));
-        if ($format === '') {
-            $format = 'd/m/Y';
-        }
+        $companyId = (int)(trim((string)($settings['company_id'] ?? '')) !== '' ? $settings['company_id'] : 0);
 
-        return (new DateTimeImmutable($date))->format($format);
+        return HelperFramework::displayDate($date, $companyId, (string)($settings['date_format'] ?? ''));
     }
 
     private function formatDisplayDateRange(string $start, string $end, array $settings): string

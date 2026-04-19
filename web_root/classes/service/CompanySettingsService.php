@@ -209,9 +209,7 @@ final class CompanySettingsService
             return false;
         }
 
-        $stmt = InterfaceDB::prepareExecute('SELECT COUNT(*) FROM company_settings WHERE company_id = ?', [$companyId]);
-
-        return (int)$stmt->fetchColumn() > 0;
+        return InterfaceDB::countWhere('company_settings', 'company_id', $companyId) > 0;
     }
 
     private function defaultSettings(): array

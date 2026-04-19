@@ -545,43 +545,7 @@ final class StatementUploadService
     }
 
     public static function parseDateTimeValue(?string $value): ?DateTimeImmutable {
-        $value = trim((string)$value);
-
-        if ($value === '') {
-            return null;
-        }
-
-        $formats = [
-            '!Y-m-d\TH:i:sP',
-            '!Y-m-d\TH:i:s',
-            '!Y-m-d H:i:s',
-            '!Y-m-d H:i',
-            '!Y-m-d',
-            '!d/m/Y H:i:s',
-            '!d/m/Y H:i',
-            '!d/m/Y',
-            '!d-m-Y H:i:s',
-            '!d-m-Y H:i',
-            '!d-m-Y',
-        ];
-
-        foreach ($formats as $format) {
-            $date = DateTimeImmutable::createFromFormat($format, $value);
-
-            if ($date instanceof DateTimeImmutable) {
-                $errors = DateTimeImmutable::getLastErrors();
-
-                if (($errors['warning_count'] ?? 0) === 0 && ($errors['error_count'] ?? 0) === 0) {
-                    return $date;
-                }
-            }
-        }
-
-        try {
-            return new DateTimeImmutable($value);
-        } catch (Throwable $exception) {
-            return null;
-        }
+        return HelperFramework::parseDateTimeValue($value);
     }
 
     public static function normaliseMoneyValue($value): ?string {
@@ -1213,21 +1177,19 @@ final class StatementUploadService
             return true;
         }
 
-        $stmt = InterfaceDB::prepare(
+        return InterfaceDB::fetchColumn(
             'SELECT 1
              FROM transactions
              WHERE company_id = :company_id
                AND statement_upload_id <> :upload_id
                AND created_at > :last_staged_at
-             LIMIT 1'
-        );
-        $stmt->execute([
-            'company_id' => $companyId,
-            'upload_id' => $uploadId,
-            'last_staged_at' => $lastStagedAt,
-        ]);
-
-        return $stmt->fetchColumn() !== false;
+             LIMIT 1',
+            [
+                'company_id' => $companyId,
+                'upload_id' => $uploadId,
+                'last_staged_at' => $lastStagedAt,
+            ]
+        ) !== false;
     }
 
     public function retryReceiptDownload(int $companyId, int $transactionId): array {
@@ -1680,10 +1642,9 @@ final class StatementUploadService
     }
 
     private function countCommittedRows(int $uploadId): int {
-        return (int)InterfaceDB::fetchColumn( 'SELECT COUNT(*)
-             FROM statement_import_rows
-             WHERE upload_id = :upload_id
-               AND committed_transaction_id IS NOT NULL', ['upload_id' => $uploadId]);
+        return InterfaceDB::countWhereNotNull('statement_import_rows', 'committed_transaction_id', [
+            'upload_id' => $uploadId,
+        ]);
     }
 
     public function backfillTransactionTypesFromStagedImportJson(int $companyId): array {

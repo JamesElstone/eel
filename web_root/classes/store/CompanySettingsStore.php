@@ -7,7 +7,6 @@ final class CompanySettingsStore
     private array $cache = [];
     private array $dirty = [];
     private array $persistedTypes = [];
-    private ?string $storageMode = null;
 
     public function __construct(int $companyId) {
         $this->companyId = $companyId;
@@ -25,6 +24,7 @@ final class CompanySettingsStore
             'uncategorised_nominal_id' => ['type' => 'int', 'default' => ''],
             'uploads_path' => ['type' => 'char', 'default' => '/var/eel_accounts/uploads'],
             'date_format' => ['type' => 'char', 'default' => 'd/m/Y'],
+            'hmrc_mode' => ['type' => 'char', 'default' => 'TEST'],
             'enable_duplicate_file_check' => ['type' => 'bool', 'default' => true],
             'enable_duplicate_row_check' => ['type' => 'bool', 'default' => true],
             'auto_create_rule_prompt' => ['type' => 'bool', 'default' => true],
@@ -85,7 +85,7 @@ final class CompanySettingsStore
     public function persistMissingDefaults(): bool {
         $this->load();
 
-        if ($this->companyId <= 0 || $this->storageMode !== 'kv') {
+        if ($this->companyId <= 0) {
             return false;
         }
 
@@ -117,10 +117,6 @@ final class CompanySettingsStore
 
         if ($this->companyId <= 0 || empty($this->dirty)) {
             return;
-        }
-
-        if ($this->storageMode !== 'kv') {
-            throw new RuntimeException('The company_settings table is still using the legacy schema. Run db/eel_accounts.company_settings_kv.20260402.sql before saving settings.');
         }
 
         $ownsTransaction = !InterfaceDB::inTransaction();
@@ -195,18 +191,10 @@ final class CompanySettingsStore
         $this->loaded = true;
 
         if ($this->companyId <= 0) {
-            $this->storageMode = 'kv';
             return;
         }
 
-        if ($this->usesKeyValueSchema()) {
-            $this->storageMode = 'kv';
-            $this->loadKeyValueRows();
-            return;
-        }
-
-        $this->storageMode = 'legacy';
-        $this->loadLegacyWideRow();
+        $this->loadKeyValueRows();
     }
 
     private function resolveType(string $setting, ?string $type = null): string {
@@ -271,21 +259,6 @@ final class CompanySettingsStore
         return trim((string)$value);
     }
 
-    private function usesKeyValueSchema(): bool {
-        if ($this->storageMode !== null) {
-            return $this->storageMode === 'kv';
-        }
-
-        try {
-            $stmt = InterfaceDB::query('SELECT setting, type, value FROM company_settings WHERE 1 = 0');
-            $stmt->closeCursor();
-
-            return true;
-        } catch (Throwable $e) {
-            return false;
-        }
-    }
-
     private function loadKeyValueRows(): void {
         $stmt = InterfaceDB::prepare(
             'SELECT setting, type, value
@@ -308,23 +281,4 @@ final class CompanySettingsStore
         }
     }
 
-    private function loadLegacyWideRow(): void {
-        $stmt = InterfaceDB::prepare('SELECT * FROM company_settings WHERE company_id = ?');
-        $stmt->execute([$this->companyId]);
-        $row = $stmt->fetch();
-
-        if (!is_array($row)) {
-            return;
-        }
-
-        foreach (self::definitions() as $setting => $definition) {
-            if (!array_key_exists($setting, $row)) {
-                continue;
-            }
-
-            $type = (string)$definition['type'];
-            $this->cache[$setting] = $this->deserialiseValue($type, $row[$setting] ?? null);
-            $this->persistedTypes[$setting] = $type;
-        }
-    }
 }

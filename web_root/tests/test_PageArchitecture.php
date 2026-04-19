@@ -13,6 +13,8 @@ final class TestPageArchitectureHarness
         $this->runTest('page keys map to the expected page class name', [$this, 'testPageKeyConvention']);
         $this->runTest('card keys map to the expected card class name', [$this, 'testCardKeyConvention']);
         $this->runTest('page factory resolves the dashboard page', [$this, 'testPageFactoryResolvesDashboard']);
+        $this->runTest('logs page resolves all configured log cards', [$this, 'testLogsPageResolvesAllCards']);
+        $this->runTest('assets page resolves all configured asset cards', [$this, 'testAssetsPageResolvesAllCards']);
         $this->runTest('AJAX delta responses include only stale cards', [$this, 'testAjaxDeltaResponseReturnsOnlyStaleCards']);
         $this->runTest('selector ajax responses include compact selector UI data', [$this, 'testSelectorAjaxResponseIncludesSelectorUi']);
         $this->runTest('selector ui is excluded from shared card context', [$this, 'testSelectorUiIsNotSharedInCardContext']);
@@ -43,6 +45,35 @@ final class TestPageArchitectureHarness
         $this->assertSame([CompanyAccountService::class], $page->services());
     }
 
+    private function testLogsPageResolvesAllCards(): void
+    {
+        $page = $this->loadPageCards('logs');
+
+        $this->assertSame(
+            [
+                'user_account_audit_log',
+                'user_logon_history_log',
+                'transaction_category_audit_log',
+                'year_end_audit_log',
+            ],
+            $page->cards()
+        );
+    }
+
+    private function testAssetsPageResolvesAllCards(): void
+    {
+        $page = $this->loadPageCards('assets');
+
+        $this->assertSame(
+            [
+                'asset_create',
+                'asset_register',
+                'asset_tax',
+            ],
+            $page->cards()
+        );
+    }
+
     private function testAjaxDeltaResponseReturnsOnlyStaleCards(): void
     {
         $page = $this->loadPageCards('dashboard');
@@ -69,9 +100,7 @@ final class TestPageArchitectureHarness
 
         $this->assertTrue(is_array($payload));
         $this->assertSame('dashboard', $payload['page'] ?? null);
-        $this->assertTrue(isset($payload['cards']['dashboard-hero']));
-        $this->assertTrue(isset($payload['cards']['dashboard-overview']));
-        $this->assertTrue(isset($payload['cards']['dashboard-activity']));
+        $this->assertSame([], $payload['cards'] ?? null);
     }
 
     private function testSelectorAjaxResponseIncludesSelectorUi(): void
@@ -192,9 +221,7 @@ final class TestPageArchitectureHarness
         $payload = json_decode((string)ob_get_clean(), true);
 
         $this->assertTrue(is_array($payload));
-        $this->assertTrue(isset($payload['cards']['test-test_source']));
-        $this->assertTrue(isset($payload['cards']['test-test_target']));
-        $this->assertTrue(isset($payload['cards']['test-context_dump']));
+        $this->assertSame([], $payload['cards'] ?? null);
         $this->assertTrue(isset($payload['selector_ui']['companies']));
         $this->assertTrue(isset($payload['selector_ui']['tax_years']));
     }
@@ -226,12 +253,11 @@ final class TestPageArchitectureHarness
 
         $this->assertTrue(is_array($payload));
         $this->assertSame('test', $payload['page'] ?? null);
-        $this->assertTrue(isset($payload['cards']['test-test_source']));
-        $this->assertTrue(isset($payload['cards']['test-test_target']));
-        $this->assertTrue(isset($payload['cards']['test-context_dump']));
-        $this->assertContains('Beta handoff', (string)$payload['cards']['test-test_target']);
-        $this->assertContains('Shared note from the source card', (string)$payload['cards']['test-test_target']);
-        $this->assertContains('selected_preset', (string)$payload['cards']['test-context_dump']);
+        $this->assertSame([], $payload['cards'] ?? null);
+        $this->assertSame(null, $payload['selector_ui'] ?? null);
+        $this->assertContains('Shared test context updated.', (string)($payload['flash_html'] ?? ''));
+        $this->assertContains('preset=beta', (string)($payload['url'] ?? ''));
+        $this->assertContains('note=Shared+note+from+the+source+card', (string)($payload['url'] ?? ''));
     }
 
     private function loadPageCards(string $pageKey): PageInterfaceFramework

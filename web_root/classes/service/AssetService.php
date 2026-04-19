@@ -714,21 +714,12 @@ final class AssetService
     }
 
     private function depreciationEntryExists(int $assetId, int $taxYearId, string $periodStart, string $periodEnd): bool {
-        $stmt = InterfaceDB::prepare(
-            'SELECT COUNT(*)
-             FROM asset_depreciation_entries
-             WHERE asset_id = :asset_id
-               AND tax_year_id = :tax_year_id
-               AND period_start = :period_start
-               AND period_end = :period_end'
-        );
-        $stmt->execute([
+        return InterfaceDB::countWhere('asset_depreciation_entries', [
             'asset_id' => $assetId,
             'tax_year_id' => $taxYearId,
             'period_start' => $periodStart,
             'period_end' => $periodEnd,
-        ]);
-        return (int)$stmt->fetchColumn() > 0;
+        ]) > 0;
     }
 
     private function calculateDepreciationAmount(array $asset, string $periodStart, string $periodEnd): float {
@@ -1072,11 +1063,10 @@ final class AssetService
         }
 
         try {
-            InterfaceDB::query('SELECT 1 FROM asset_register WHERE 1 = 0');
-            InterfaceDB::query('SELECT 1 FROM asset_depreciation_entries WHERE 1 = 0');
-            InterfaceDB::query('SELECT 1 FROM tax_year_adjustments WHERE 1 = 0');
-            InterfaceDB::query('SELECT 1 FROM tax_loss_carryforwards WHERE 1 = 0');
-            $this->schemaReady = true;
+            $this->schemaReady = InterfaceDB::tableExists('asset_register')
+                && InterfaceDB::tableExists('asset_depreciation_entries')
+                && InterfaceDB::tableExists('tax_year_adjustments')
+                && InterfaceDB::tableExists('tax_loss_carryforwards');
         } catch (Throwable) {
             $this->schemaReady = false;
         }

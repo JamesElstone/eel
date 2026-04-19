@@ -10,17 +10,7 @@ final class _context_dumpCard implements CardInterfaceFramework
 
     public function services(): array
     {
-        return [
-            [
-                'key' => 'missingContext',
-                'service' => CompanyAccountService::class,
-                'method' => 'fetchAccounts',
-                'params' => [
-                    'companyId' => ':missing_company_id',
-                    'activeOnly' => true,
-                ],
-            ],
-        ];
+        return [];
     }
 
     public function invalidationFacts(): array

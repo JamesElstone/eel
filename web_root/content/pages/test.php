@@ -49,6 +49,9 @@ final class _test extends BasePageFramework
         return [
             'test_source',
             'test_target',
+            'otp_status_test',
+            'anti_fraud_test',
+            'hmrc_anti_fraud_test',
             'context_dump',
         ];
     }
@@ -58,6 +61,10 @@ final class _test extends BasePageFramework
         PageServiceFramework $services
     ): ActionResultFramework
     {
+        if ($request->action() === 'run-hmrc-antifraud-test') {
+            return $this->runHmrcAntiFraudTest($request);
+        }
+
         if ($request->action() !== 'set-test-context') {
             return ActionResultFramework::none();
         }
@@ -95,10 +102,12 @@ final class _test extends BasePageFramework
             'page_cards' => $pageCards,
             'service_class' => get_class($companyAccountService),
             'company_id' => $companyId,
+            'hmrc_mode' => $this->resolveHmrcMode((int)($request->input('company_id', 0) ?: ($request->query('company_id', 0) ?: 0))),
             'selected_preset' => $preset,
             'preset_options' => $this->presetOptions(),
             'note' => $note,
             'shared_demo_context' => $sharedCardContext,
+            'hmrc_antifraud_test_result' => $actionResult->query()['hmrc_antifraud_test_result'] ?? null,
             'cards_dom_ids' => array_map(
                 static fn(string $cardKey): string => HelperFramework::cardDomId('test', $cardKey),
                 $pageCards
@@ -151,6 +160,89 @@ final class _test extends BasePageFramework
         }
 
         return mb_substr($note, 0, 200);
+    }
+
+    private function runHmrcAntiFraudTest(RequestFramework $request): ActionResultFramework
+    {
+        $companyId = $request->companyId();
+
+        if ($companyId <= 0) {
+            return new ActionResultFramework(
+                false,
+                ['test.antifraud'],
+                [[
+                    'type' => 'error',
+                    'message' => 'Select a company before running the HMRC anti-fraud test.',
+                ]],
+                [
+                    'hmrc_antifraud_test_result' => [
+                        'success' => false,
+                        'error' => 'No company selected.',
+                    ],
+                ]
+            );
+        }
+
+        $hmrcMode = $this->resolveHmrcMode($companyId);
+
+        try {
+            $validatorConfig = HmrcOutbound::antiFraudValidatorConfig($hmrcMode);
+            $outbound = new HmrcOutbound($validatorConfig);
+            $afHeaders = AntiFraudService::instance()->getAntiFraudHeaders();
+            $govHeaders = AntiFraudService::instance()->buildGovHeaders();
+            $response = $outbound->validateAntiFraudHeaders($govHeaders);
+            $body = json_decode((string)($response['body'] ?? ''), true);
+
+            return ActionResultFramework::success(
+                ['test.antifraud'],
+                [[
+                    'type' => 'success',
+                    'message' => 'HMRC anti-fraud validator request completed.',
+                ]],
+                [
+                    'hmrc_antifraud_test_result' => [
+                        'success' => true,
+                        'company_id' => $companyId,
+                        'hmrc_mode' => $hmrcMode,
+                        'af_headers' => $afHeaders,
+                        'gov_headers' => $govHeaders,
+                        'status_code' => (int)($response['status_code'] ?? 0),
+                        'headers' => (array)($response['headers'] ?? []),
+                        'body' => is_array($body) ? $body : (string)($response['body'] ?? ''),
+                    ],
+                ]
+            );
+        } catch (Throwable $exception) {
+            return new ActionResultFramework(
+                false,
+                ['test.antifraud'],
+                [[
+                    'type' => 'error',
+                    'message' => 'HMRC anti-fraud validator request failed: ' . $exception->getMessage(),
+                ]],
+                [
+                    'hmrc_antifraud_test_result' => [
+                        'success' => false,
+                        'company_id' => $companyId,
+                        'hmrc_mode' => $hmrcMode,
+                        'error' => $exception->getMessage(),
+                        'af_headers' => AntiFraudService::instance()->getAntiFraudHeaders(),
+                        'gov_headers' => AntiFraudService::instance()->buildGovHeaders(),
+                    ],
+                ]
+            );
+        }
+    }
+
+    private function resolveHmrcMode(int $companyId): string
+    {
+        if ($companyId <= 0) {
+            return 'TEST';
+        }
+
+        return HelperFramework::normaliseEnvironmentMode(
+            (string)(new CompanySettingsStore($companyId))->get('hmrc_mode', 'TEST')
+        );
     }
 }
 

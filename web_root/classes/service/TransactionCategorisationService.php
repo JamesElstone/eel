@@ -720,20 +720,18 @@ final class TransactionCategorisationService
     }
 
     private function transactionHasDerivedJournal(int $transactionId): bool {
-        $stmt = InterfaceDB::prepare(
+        return (int)InterfaceDB::fetchColumn(
             'SELECT EXISTS(
                 SELECT 1
                 FROM journals j
                 WHERE j.source_type = :source_type
                   AND j.source_ref = :source_ref
-            )'
-        );
-        $stmt->execute([
-            'source_type' => 'bank_csv',
-            'source_ref' => 'transaction:' . $transactionId,
-        ]);
-
-        return (int)$stmt->fetchColumn() === 1;
+            )',
+            [
+                'source_type' => 'bank_csv',
+                'source_ref' => 'transaction:' . $transactionId,
+            ]
+        ) === 1;
     }
 
     private function ruleMatches(array $rule, array $transactionPayload): bool {

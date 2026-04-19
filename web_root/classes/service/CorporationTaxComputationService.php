@@ -337,9 +337,7 @@ final class CorporationTaxComputationService
             return 0;
         }
 
-        return (int)InterfaceDB::fetchColumn( 'SELECT COUNT(*)
-             FROM asset_register
-             WHERE company_id = :company_id', ['company_id' => $companyId]);
+        return InterfaceDB::countWhere('asset_register', 'company_id', $companyId);
     }
 
     private function tableExists(string $table): bool {
@@ -349,8 +347,7 @@ final class CorporationTaxComputationService
         }
 
         try {
-            $stmt = InterfaceDB::query('SELECT 1 FROM ' . $table . ' WHERE 1 = 0');
-            $cache[$table] = $stmt !== false;
+            $cache[$table] = InterfaceDB::tableExists($table);
         } catch (Throwable) {
             $cache[$table] = false;
         }

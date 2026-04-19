@@ -10,4 +10,11 @@ $harness->run(AppConfigurationStore::class, function (GeneratedServiceClassTestH
 
         $harness->assertTrue(is_array($config));
     });
+
+    $harness->check(AppConfigurationStore::class, 'merges anti-fraud and HMRC validator defaults', function () use ($harness): void {
+        $config = AppConfigurationStore::config();
+
+        $harness->assertSame('FPH_VALIDATOR', $config['hmrc']['fraud_prevention_validator']['credential_tag'] ?? null);
+        $harness->assertSame('GET', $config['hmrc']['fraud_prevention_validator']['validate_method'] ?? null);
+    });
 });

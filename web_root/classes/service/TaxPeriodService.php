@@ -3,7 +3,11 @@ declare(strict_types=1);
 
 final class TaxPeriodService
 {
-    public function suggestFirstPeriod(DateTimeImmutable $incorporationDate): array
+    public function suggestFirstPeriod(
+        DateTimeImmutable $incorporationDate,
+        ?int $companyId = null,
+        ?string $dateFormat = null
+    ): array
     {
         $start = $incorporationDate;
         $end = $this->firstPeriodEnd($incorporationDate);
@@ -11,14 +15,16 @@ final class TaxPeriodService
         return [
             'start' => $start->format('Y-m-d'),
             'end' => $end->format('Y-m-d'),
-            'label' => HelperFramework::accountingPeriodLabel($start, $end),
+            'label' => HelperFramework::accountingPeriodLabel($start, $end, $companyId, $dateFormat),
             'source' => 'suggested_first_period',
         ];
     }
 
     public function suggestPeriodsThroughDate(
         DateTimeImmutable $incorporationDate,
-        DateTimeImmutable $referenceDate
+        DateTimeImmutable $referenceDate,
+        ?int $companyId = null,
+        ?string $dateFormat = null
     ): array {
         $periods = [];
         $currentStart = $incorporationDate;
@@ -28,7 +34,7 @@ final class TaxPeriodService
             $periods[] = [
                 'start' => $currentStart->format('Y-m-d'),
                 'end' => $currentEnd->format('Y-m-d'),
-                'label' => HelperFramework::accountingPeriodLabel($currentStart, $currentEnd),
+                'label' => HelperFramework::accountingPeriodLabel($currentStart, $currentEnd, $companyId, $dateFormat),
                 'source' => empty($periods) ? 'suggested_first_period' : 'suggested_follow_on_period',
             ];
 
@@ -41,7 +47,9 @@ final class TaxPeriodService
 
     public function suggestFollowOnPeriodsThroughDate(
         DateTimeImmutable $previousPeriodEnd,
-        DateTimeImmutable $referenceDate
+        DateTimeImmutable $referenceDate,
+        ?int $companyId = null,
+        ?string $dateFormat = null
     ): array {
         $periods = [];
         $currentStart = $previousPeriodEnd->modify('+1 day');
@@ -51,7 +59,7 @@ final class TaxPeriodService
             $periods[] = [
                 'start' => $currentStart->format('Y-m-d'),
                 'end' => $currentEnd->format('Y-m-d'),
-                'label' => HelperFramework::accountingPeriodLabel($currentStart, $currentEnd),
+                'label' => HelperFramework::accountingPeriodLabel($currentStart, $currentEnd, $companyId, $dateFormat),
                 'source' => 'suggested_follow_on_period',
             ];
 
@@ -84,7 +92,12 @@ final class TaxPeriodService
         }));
     }
 
-    public function derive(string $accountingPeriodStart, string $accountingPeriodEnd): array {
+    public function derive(
+        string $accountingPeriodStart,
+        string $accountingPeriodEnd,
+        ?int $companyId = null,
+        ?string $dateFormat = null
+    ): array {
         $start = new DateTimeImmutable($accountingPeriodStart);
         $end = new DateTimeImmutable($accountingPeriodEnd);
 
@@ -102,7 +115,7 @@ final class TaxPeriodService
             $periods[] = [
                 'start' => $cursor->format('Y-m-d'),
                 'end' => $ctEnd->format('Y-m-d'),
-                'label' => $cursor->format('d/m/Y') . ' to ' . $ctEnd->format('d/m/Y'),
+                'label' => HelperFramework::accountingPeriodLabel($cursor, $ctEnd, $companyId, $dateFormat),
             ];
 
             $cursor = $ctEnd->modify('+1 day');

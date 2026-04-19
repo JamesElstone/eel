@@ -63,7 +63,7 @@ final class AccountingPeriodCoverageService
             $key = $cursor->format('Y-m-01');
             $months[$key] = [
                 'month_key' => $key,
-                'label' => $cursor->format('M Y'),
+                'label' => HelperFramework::displayMonthYear($cursor, $companyId),
                 'txn_count' => 0,
             ];
 

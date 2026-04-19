@@ -6,10 +6,19 @@ final class PdoStatementDB extends PDOStatement
     /** @var list<string> */
     private array $namedOrder;
     private bool $rewriteNamedParams;
+    private string $sql;
+    private string $logFile;
 
-    protected function __construct(array $namedOrder = [], bool $rewriteNamedParams = false) {
+    protected function __construct(
+        array $namedOrder = [],
+        bool $rewriteNamedParams = false,
+        string $sql = '',
+        string $logFile = ''
+    ) {
         $this->namedOrder = array_values($namedOrder);
         $this->rewriteNamedParams = $rewriteNamedParams;
+        $this->sql = $sql;
+        $this->logFile = $logFile;
     }
 
     private function rewriteExecuteParams(array $params): array {
@@ -51,6 +60,12 @@ final class PdoStatementDB extends PDOStatement
             $params = $this->rewriteExecuteParams($params);
         }
 
-        return parent::execute($params);
+        try {
+            return parent::execute($params);
+        } finally {
+            if ($this->logFile !== '') {
+                PdoDB::logSql($this->sql, $params);
+            }
+        }
     }
 }

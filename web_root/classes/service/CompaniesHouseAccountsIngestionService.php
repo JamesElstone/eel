@@ -129,7 +129,7 @@ final class CompaniesHouseAccountsIngestionService
             'company_id' => $companyId,
             'company_number' => $companyNumber,
             'transaction_id' => (string)($candidate['transaction_id'] ?? ''),
-            'filing_date' => $this->normaliseDate((string)($candidate['date'] ?? '')),
+            'filing_date' => HelperFramework::normaliseDate((string)($candidate['date'] ?? '')),
             'filing_type' => (string)($candidate['type'] ?? ''),
             'filing_category' => (string)($candidate['category'] ?? ''),
             'filing_description' => (string)($candidate['description'] ?? ''),
@@ -144,10 +144,10 @@ final class CompaniesHouseAccountsIngestionService
                 : $preferredContentType,
             'filename' => (string)($metadata['filename'] ?? ''),
             'classification' => (string)($metadata['classification'] ?? ''),
-            'significant_date' => $this->normaliseDate((string)($metadata['significant_date'] ?? '')),
+            'significant_date' => HelperFramework::normaliseDate((string)($metadata['significant_date'] ?? '')),
             'significant_date_type' => (string)($metadata['significant_date_type'] ?? ''),
             'pages' => $metadata['pages'] ?? $candidate['pages'] ?? null,
-            'created_at_utc' => $this->normaliseDateTime((string)($metadata['created_at'] ?? '')),
+            'created_at_utc' => HelperFramework::normaliseUtcDateTime((string)($metadata['created_at'] ?? '')),
             'fetched_at_utc' => gmdate('Y-m-d H:i:s'),
             'raw_metadata_json' => (string)($metadata['body'] ?? ''),
             'raw_content_hash' => $content !== null ? hash('sha256', (string)($content['body'] ?? '')) : null,
@@ -198,29 +198,4 @@ final class CompaniesHouseAccountsIngestionService
         return '';
     }
 
-    private function normaliseDate(?string $value): ?string {
-        $value = trim((string)$value);
-
-        if ($value === '') {
-            return null;
-        }
-
-        return preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) === 1 ? $value : substr($value, 0, 10);
-    }
-
-    private function normaliseDateTime(?string $value): ?string {
-        $value = trim((string)$value);
-
-        if ($value === '') {
-            return null;
-        }
-
-        try {
-            return (new DateTimeImmutable($value))
-                ->setTimezone(new DateTimeZone('UTC'))
-                ->format('Y-m-d H:i:s');
-        } catch (Throwable) {
-            return null;
-        }
-    }
 }

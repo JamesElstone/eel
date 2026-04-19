@@ -29,6 +29,10 @@ final class _dashboard extends BasePageFramework
             'hero',
             'overview',
             'activity',
+            'dashboard_year_end_readiness',
+            'dashboard_recent_transactions',
+            'dashboard_action_queue',
+            'dashboard_notes',
         ];
     }
 
@@ -40,51 +44,52 @@ final class _dashboard extends BasePageFramework
     {
         $companyAccountService = $services->get(CompanyAccountService::class);
 
+        $companyId = $request->companyId();
+        $taxYearId = $request->taxYearId();
+        $settings = $companyId > 0 ? (new CompanySettingsStore($companyId))->all() : CompanySettingsStore::defaults();
+        $dashboardRepository = new DashboardRepository();
+        $dashboardStats = $dashboardRepository->fetchStats($companyId, $taxYearId);
+        $activity = $dashboardRepository->fetchActionQueue($companyId, $taxYearId);
+
         $stats = [
             [
-                'label' => 'Runtime primitives',
-                'value' => '10',
-                'foot' => 'Request, response, page, card, factory, and renderer pieces.',
+                'label' => 'Bank accounts',
+                'value' => (string)(int)($dashboardStats['bank_accounts'] ?? 0),
+                'foot' => 'Active company accounts available for statement upload and reconciliation.',
             ],
             [
-                'label' => 'Ownership model',
-                'value' => '1',
-                'foot' => 'Each page owns its own context, actions, and helpers, then selects shared cards.',
+                'label' => 'Uncategorised',
+                'value' => (string)(int)($dashboardStats['unreconciled_items'] ?? 0),
+                'foot' => 'Transactions still waiting for nominal assignment.',
             ],
             [
-                'label' => 'AJAX mode',
-                'value' => 'XHR',
-                'foot' => 'Interactions now return card deltas instead of full reloads.',
+                'label' => 'Manual journals',
+                'value' => (string)(int)($dashboardStats['draft_journals'] ?? 0),
+                'foot' => 'Manual-source journals currently sitting in the selected period.',
             ],
             [
                 'label' => 'Resolution model',
                 'value' => '_page / _cardCard',
-                'foot' => 'Pages and cards now resolve through separate naming conventions.',
+                'foot' => 'Pages and cards continue resolving through naming convention helpers.',
             ],
         ];
 
-        $activity = [
-            [
-                'title' => 'Thin front controller',
-                'detail' => 'Bootstrap, resolve page, load declared services, call page, send response.',
-            ],
-            [
-                'title' => 'No central registry',
-                'detail' => 'Page and card classes load directly from naming convention helpers.',
-            ],
-            [
-                'title' => 'Service boundary kept',
-                'detail' => 'Existing domain services remain in classes/service and are only injected.',
-            ],
-        ];
-
-        // $pageCards = ['hero', 'overview', 'activity'];
         $pageCards = $this->cards();
 
         return [
             'page_id' => 'dashboard',
             'stats' => $stats,
             'activity' => $activity,
+            'settings' => $settings,
+            'action_queue' => $activity,
+            'recent_transactions' => $dashboardRepository->fetchRecentTransactions(
+                $companyId,
+                $taxYearId,
+                (int)($settings['default_bank_nominal_id'] ?? 0)
+            ),
+            'year_end_dashboard_summary' => ($companyId > 0)
+                ? (new YearEndChecklistService())->fetchDashboardSummary($companyId, $taxYearId > 0 ? $taxYearId : null)
+                : [],
             'service_class' => get_class($companyAccountService),
             'page_cards' => $pageCards,
             'cards_dom_ids' => array_map(

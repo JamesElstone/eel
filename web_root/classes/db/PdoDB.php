@@ -5,6 +5,8 @@ final class PdoDB
 {
     private static ?self $instance = null;
     private ?PDO $connection = null;
+    private ?array $dbConfig = null;
+    private ?string $logFile = null;
 
     private function __construct() {
     }
@@ -50,8 +52,7 @@ final class PdoDB
     }
 
     private static function connect(): PDO {
-        $config = AppConfigurationStore::config();
-        $dbConfig = is_array($config['db'] ?? null) ? $config['db'] : [];
+        $dbConfig = self::dbConfig();
         $dsn = trim((string)($dbConfig['dsn'] ?? ''));
 
         if ($dsn === '') {
@@ -67,6 +68,51 @@ final class PdoDB
             $password !== '' ? $password : null,
             []
         );
+    }
+
+    private static function dbConfig(): array {
+        $instance = self::getInstance();
+
+        if (is_array($instance->dbConfig)) {
+            return $instance->dbConfig;
+        }
+
+        $config = AppConfigurationStore::config();
+        $instance->dbConfig = is_array($config['db'] ?? null) ? $config['db'] : [];
+
+        return $instance->dbConfig;
+    }
+
+    private static function logFile(): string {
+        $instance = self::getInstance();
+
+        if ($instance->logFile !== null) {
+            return $instance->logFile;
+        }
+
+        $configuredPath = trim((string)(self::dbConfig()['logfile'] ?? ''));
+        if ($configuredPath === '') {
+            $instance->logFile = '';
+            return $instance->logFile;
+        }
+
+        $instance->logFile = self::normaliseLogPath($configuredPath);
+
+        return $instance->logFile;
+    }
+
+    private static function normaliseLogPath(string $path): string {
+        $path = trim($path);
+        if ($path === '') {
+            return '';
+        }
+
+        $normalised = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $path);
+        if (preg_match('/^(?:[A-Za-z]:[\\\\\\/]|[\\\\\\/]{2})/', $normalised) === 1) {
+            return $normalised;
+        }
+
+        return APP_ROOT . ltrim($normalised, '\\/');
     }
 
     private static function rewriteNamedPlaceholders(string $sql): array {
@@ -204,16 +250,23 @@ final class PdoDB
     }
 
     public static function preparePlanOn(PDO $pdo, string $sql, array $options = []): array {
-        if (self::driverNameFor($pdo) !== 'odbc' || array_key_exists(PDO::ATTR_STATEMENT_CLASS, $options)) {
+        if (array_key_exists(PDO::ATTR_STATEMENT_CLASS, $options)) {
             return [$sql, $options];
         }
 
-        [$rewrittenSql, $namedOrder] = self::rewriteNamedPlaceholders($sql);
-        if ($namedOrder === []) {
-            return [$sql, $options];
+        $rewrittenSql = $sql;
+        $namedOrder = [];
+        $rewriteNamedParams = false;
+
+        if (self::driverNameFor($pdo) === 'odbc') {
+            [$rewrittenSql, $namedOrder] = self::rewriteNamedPlaceholders($sql);
+            $rewriteNamedParams = $namedOrder !== [];
         }
 
-        $options[PDO::ATTR_STATEMENT_CLASS] = [PdoStatementDB::class, [$namedOrder, true]];
+        $options[PDO::ATTR_STATEMENT_CLASS] = [
+            PdoStatementDB::class,
+            [$namedOrder, $rewriteNamedParams, $sql, self::logFile()],
+        ];
 
         return [$rewrittenSql, $options];
     }
@@ -223,14 +276,99 @@ final class PdoDB
         if ($stmt === false) {
             throw new RuntimeException('Failed to prepare SQL statement.');
         }
-        $stmt->execute($params);
+        $stmt->execute(self::filterParamsForSql($sql, $params));
 
         return $stmt;
+    }
+
+    public static function filterParamsForSql(string $sql, array $params = []): array {
+        if ($params === []) {
+            return [];
+        }
+
+        if (function_exists('array_is_list') ? array_is_list($params) : self::isListArray($params)) {
+            return $params;
+        }
+
+        [, $namedOrder] = self::rewriteNamedPlaceholders($sql);
+        if ($namedOrder === []) {
+            return [];
+        }
+
+        $filtered = [];
+        foreach (array_values(array_unique($namedOrder)) as $placeholder) {
+            if (array_key_exists($placeholder, $params)) {
+                $filtered[$placeholder] = $params[$placeholder];
+            }
+        }
+
+        return $filtered;
     }
 
     public static function prepareOn(PDO $pdo, string $sql, array $options = []): PDOStatement|false {
         [$preparedSql, $preparedOptions] = self::preparePlanOn($pdo, $sql, $options);
 
         return $pdo->prepare($preparedSql, $preparedOptions);
+    }
+
+    public static function queryOn(PDO $pdo, string $sql, ?int $fetchMode = null, mixed ...$fetchModeArgs): PDOStatement|false {
+        try {
+            if ($fetchMode === null) {
+                return $pdo->query($sql);
+            }
+
+            return $pdo->query($sql, $fetchMode, ...$fetchModeArgs);
+        } finally {
+            self::logSql($sql);
+        }
+    }
+
+    public static function logSql(string $sql, ?array $params = null): void {
+        $logFile = self::logFile();
+        if ($logFile === '') {
+            return;
+        }
+
+        (new LogStore())->appendLine($logFile, self::formatLogLine($sql, $params));
+    }
+
+    private static function formatLogLine(string $sql, ?array $params = null): string {
+        return self::toCsvLine([
+            date('Y-m-d H:i:s'),
+            $sql,
+            self::stringifyParams($params),
+        ]);
+    }
+
+    private static function stringifyParams(?array $params): string {
+        if ($params === null || $params === []) {
+            return '';
+        }
+
+        $json = json_encode($params, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+        return $json === false ? '[unserializable params]' : $json;
+    }
+
+    private static function toCsvLine(array $fields): string {
+        $escaped = array_map(
+            static fn (mixed $field): string => '"' . str_replace('"', '""', (string)$field) . '"',
+            $fields
+        );
+
+        return implode(',', $escaped);
+    }
+
+    private static function isListArray(array $value): bool {
+        $expectedKey = 0;
+        foreach ($value as $key => $_) {
+            if ($key !== $expectedKey) {
+                return false;
+            }
+
+            $expectedKey++;
+        }
+
+        return true;
     }
 }

@@ -148,14 +148,7 @@ final class CompanyDataResetService
         $count = 0;
 
         foreach (array_chunk($ids, 500) as $chunk) {
-            $placeholders = implode(', ', array_fill(0, count($chunk), '?'));
-            $stmt = InterfaceDB::prepare(
-                'SELECT COUNT(*)
-                 FROM ' . $table . '
-                 WHERE ' . $column . ' IN (' . $placeholders . ')'
-            );
-            $stmt->execute($chunk);
-            $count += (int)$stmt->fetchColumn();
+            $count += InterfaceDB::countIn($table, $column, $chunk);
         }
 
         return $count;

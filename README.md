@@ -118,6 +118,14 @@ To provide a transparent, developer-friendly alternative to traditional accounti
 
 This project is open source and free to use.
 
+This project is licensed under the GNU Affero General Public License v3.0 (AGPLv3).  
+See the LICENSE file for full details.
+
+### Third-Party Assets
+
+This project uses the Inter and Roboto fonts, licensed under the SIL Open Font License 1.1 (OFL).  
+The font files and their license are included in the `/fonts` directory.
+
 ## Disclaimer
 
 This software is provided “as is”, without warranty of any kind.

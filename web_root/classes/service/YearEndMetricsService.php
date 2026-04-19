@@ -746,8 +746,7 @@ final class YearEndMetricsService
         }
 
         try {
-            $stmt = InterfaceDB::query('SELECT 1 FROM ' . $table . ' WHERE 1 = 0');
-            $cache[$table] = $stmt !== false;
+            $cache[$table] = InterfaceDB::tableExists($table);
         } catch (Throwable) {
             $cache[$table] = false;
         }

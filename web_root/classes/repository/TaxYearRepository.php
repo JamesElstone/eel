@@ -91,7 +91,7 @@ final class TaxYearRepository
 
         $periods[] = [
             'id' => $periodId,
-            'label' => HelperFramework::accountingPeriodLabel($periodStart, $periodEnd),
+            'label' => HelperFramework::accountingPeriodLabel($periodStart, $periodEnd, $companyId),
             'period_start' => $periodStart,
             'period_end' => $periodEnd,
         ];
@@ -117,10 +117,12 @@ final class TaxYearRepository
 
     public function createPeriod(int $companyId, string $periodStart, string $periodEnd, ?string $label = null): int
     {
-        $label = $label !== null && $label !== '' ? $label : HelperFramework::accountingPeriodLabel($periodStart, $periodEnd);
-        $stmt = InterfaceDB::prepareExecute('SELECT COUNT(*) FROM tax_years WHERE company_id = ? AND period_start = ? AND period_end = ?', [$companyId, $periodStart, $periodEnd]);
-
-        if ((int)$stmt->fetchColumn() > 0) {
+        $label = $label !== null && $label !== '' ? $label : HelperFramework::accountingPeriodLabel($periodStart, $periodEnd, $companyId);
+        if (InterfaceDB::countWhere('tax_years', [
+            'company_id' => $companyId,
+            'period_start' => $periodStart,
+            'period_end' => $periodEnd,
+        ]) > 0) {
             $find = InterfaceDB::prepareExecute('SELECT id FROM tax_years WHERE company_id = ? AND period_start = ? AND period_end = ? ORDER BY id DESC LIMIT 1', [$companyId, $periodStart, $periodEnd]);
 
             return (int)$find->fetchColumn();

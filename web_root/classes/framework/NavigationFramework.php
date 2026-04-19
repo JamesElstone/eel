@@ -5,13 +5,23 @@ final class NavigationFramework
 {
     private const DEFAULT_ORDER = [
         'dashboard' => 10,
+        'assets' => 15,
         'uploads' => 20,
+        'banking' => 25,
         'transactions' => 30,
         'expenses' => 40,
+        'journals' => 45,
+        'director_loan' => 50,
         'directorLoan' => 50,
+        'nominals' => 55,
         'trialBalance' => 60,
+        'year_end' => 70,
         'yearEnd' => 70,
         'companies' => 80,
+        'vat' => 82,
+        'users' => 85,
+        'roles' => 86,
+        'logs' => 87,
         'settings' => 90,
     ];
 
@@ -98,14 +108,14 @@ final class NavigationFramework
             return false;
         }
 
-        return preg_match('/^[A-Za-z][A-Za-z0-9]*$/', $basename) === 1;
+        return preg_match('/^[A-Za-z][A-Za-z0-9_]*$/', $basename) === 1;
     }
 
     private function pageKeyFromFilename(string $filename): string
     {
         $basename = pathinfo($filename, PATHINFO_FILENAME);
 
-        return preg_match('/^[A-Za-z][A-Za-z0-9]*$/', $basename) === 1 ? $basename : '';
+        return preg_match('/^[A-Za-z][A-Za-z0-9_]*$/', $basename) === 1 ? $basename : '';
     }
 
     private function labelFromPageKey(string $pageKey): string

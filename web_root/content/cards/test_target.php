@@ -34,7 +34,7 @@ final class _test_targetCard implements CardInterfaceFramework
         $type = (string)($error['type'] ?? 'error');
 
         return '<div class="panel-soft">
-            <strong>' . HelperFramework::escape(ucwords(str_replace('_', ' ', $type))) . '</strong>
+            <strong>' . HelperFramework::escape(HelperFramework::labelFromKey($type, '_')) . '</strong>
             <div class="helper">' . HelperFramework::escape($message) . '</div>
         </div>';
     }

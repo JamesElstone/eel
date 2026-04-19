@@ -50,7 +50,7 @@ try {
     $sqlitePdo->exec('CREATE TABLE sample_rows (id INTEGER PRIMARY KEY, name TEXT NOT NULL)');
     $sqlitePdo->exec("INSERT INTO sample_rows (id, name) VALUES (1, 'Alpha'), (2, 'Beta')");
 
-    $sqliteRows = InterfaceDB::fetchAllOn(
+    $sqliteRows = InterfaceDB::_fetchAllOn(
         $sqlitePdo,
         'SELECT id, name
          FROM sample_rows
@@ -63,7 +63,7 @@ try {
     }
     test_output_line('PdoDB: fetchAllOn() returned rows from a supplied PDO connection.');
 
-    $sqliteValue = InterfaceDB::fetchColumnOn(
+    $sqliteValue = InterfaceDB::_fetchColumnOn(
         $sqlitePdo,
         'SELECT name
          FROM sample_rows

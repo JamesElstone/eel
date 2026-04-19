@@ -368,7 +368,9 @@ final class DirectorLoanService
             return $this->tableColumns[$tableName];
         }
 
-        InterfaceDB::query('SELECT 1 FROM ' . $tableName . ' WHERE 1 = 0');
+        if (!InterfaceDB::tableExists($tableName)) {
+            throw new RuntimeException('Required table not found: ' . $tableName);
+        }
         $this->tableColumns[$tableName] = [];
 
         return $this->tableColumns[$tableName];

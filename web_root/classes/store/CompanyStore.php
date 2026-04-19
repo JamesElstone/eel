@@ -3,14 +3,27 @@ declare(strict_types=1);
 
 final class CompanyStore
 {
+    private ?array $cachedCompanies = null;
+    private array $cachedTaxYearsByCompanyId = [];
+    private array $selectorContextCache = [];
+
     public function buildSelectorContext(RequestFramework $request, PageInterfaceFramework $page): array
     {
+        $cacheKey = implode(':', [
+            $request->companyId(),
+            $request->taxYearId(),
+            $page->showsTaxYearSelector() ? '1' : '0',
+        ]);
+        if (isset($this->selectorContextCache[$cacheKey])) {
+            return $this->selectorContextCache[$cacheKey];
+        }
+
         $companies = $this->fetchCompanies();
         $selectedCompanyId = $this->resolveSelectedCompanyId($companies, $request->companyId());
         $taxYears = $selectedCompanyId > 0 ? $this->fetchTaxYears($selectedCompanyId) : [];
         $selectedTaxYearId = $this->resolveSelectedTaxYearId($taxYears, $request->taxYearId());
 
-        return [
+        return $this->selectorContextCache[$cacheKey] = [
             'companies' => $this->buildCompanyOptions($companies),
             'tax_years' => $this->buildTaxYearOptions($taxYears),
             'selected_company_id' => $selectedCompanyId,
@@ -23,12 +36,20 @@ final class CompanyStore
 
     private function fetchCompanies(): array
     {
-        return (new CompanyRepository())->fetchCompanies();
+        if ($this->cachedCompanies !== null) {
+            return $this->cachedCompanies;
+        }
+
+        return $this->cachedCompanies = (new CompanyRepository())->fetchCompanySelectorRows();
     }
 
     private function fetchTaxYears(int $companyId): array
     {
-        return (new TaxYearRepository())->fetchTaxYears($companyId);
+        if (!array_key_exists($companyId, $this->cachedTaxYearsByCompanyId)) {
+            $this->cachedTaxYearsByCompanyId[$companyId] = (new TaxYearRepository())->fetchTaxYears($companyId);
+        }
+
+        return $this->cachedTaxYearsByCompanyId[$companyId];
     }
 
     private function resolveSelectedCompanyId(array $companies, int $requestedCompanyId): int

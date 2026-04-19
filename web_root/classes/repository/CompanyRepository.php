@@ -8,66 +8,61 @@ final class CompanyRepository
         return InterfaceDB::fetchAll($this->fetchCompaniesSql());
     }
 
+    public function fetchCompanySelectorRows(): array
+    {
+        return InterfaceDB::fetchAll(
+            'SELECT id,
+                    company_name,
+                    company_number
+             FROM companies
+             ORDER BY company_name, id'
+        );
+    }
+
     public function fetchSettingsCompany(int $companyId): ?array
     {
         if ($companyId <= 0) {
             return null;
         }
 
-        $select = ['id', 'company_name', 'company_number'];
-
-        if ($this->hasIncorporationDate()) {
-            $select[] = 'incorporation_date';
-        }
-
-        if ($this->hasCompaniesHouseProfileColumns()) {
-            $select = array_merge($select, [
-                'company_status',
-                'registered_office_address_line_1',
-                'registered_office_address_line_2',
-                'registered_office_locality',
-                'registered_office_region',
-                'registered_office_postal_code',
-                'registered_office_country',
-                'registered_office_care_of',
-                'registered_office_po_box',
-                'registered_office_premises',
-                'can_file',
-                'has_charges',
-                'has_insolvency_history',
-                'has_been_liquidated',
-                'registered_office_is_in_dispute',
-                'undeliverable_registered_office_address',
-                'has_super_secure_pscs',
-                'companies_house_environment',
-                'companies_house_etag',
-                'companies_house_last_checked_at',
-                'companies_house_profile_json',
-            ]);
-        }
-
-        if ($this->hasVatRegistrationColumns()) {
-            $select = array_merge($select, [
-                'is_vat_registered',
-                'vat_country_code',
-                'vat_number',
-                'vat_validation_status',
-                'vat_validated_at',
-                'vat_validation_source',
-                'vat_validation_name',
-            ]);
-
-            if ($this->hasVatValidationDetailColumns()) {
-                $select[] = 'vat_validation_address_line1';
-                $select[] = 'vat_validation_postcode';
-            }
-
-            if ($this->hasVatValidationCountryColumn()) {
-                $select[] = 'vat_validation_country_code';
-            }
-
-            $select[] = 'vat_last_error';
-        }
+        $select = [
+            'id',
+            'company_name',
+            'company_number',
+            'incorporation_date',
+            'company_status',
+            'registered_office_address_line_1',
+            'registered_office_address_line_2',
+            'registered_office_locality',
+            'registered_office_region',
+            'registered_office_postal_code',
+            'registered_office_country',
+            'registered_office_care_of',
+            'registered_office_po_box',
+            'registered_office_premises',
+            'can_file',
+            'has_charges',
+            'has_insolvency_history',
+            'has_been_liquidated',
+            'registered_office_is_in_dispute',
+            'undeliverable_registered_office_address',
+            'has_super_secure_pscs',
+            'companies_house_environment',
+            'companies_house_etag',
+            'companies_house_last_checked_at',
+            'companies_house_profile_json',
+            'is_vat_registered',
+            'vat_country_code',
+            'vat_number',
+            'vat_validation_status',
+            'vat_validated_at',
+            'vat_validation_source',
+            'vat_validation_name',
+            'vat_validation_address_line1',
+            'vat_validation_postcode',
+            'vat_validation_country_code',
+            'vat_last_error',
+        ];
 
         $row = InterfaceDB::fetchOne(
             'SELECT ' . implode(', ', $select) . ' FROM companies WHERE id = :id',
@@ -88,10 +83,6 @@ final class CompanyRepository
 
     public function saveCompanySection(array $settings): void
     {
-        if (!$this->hasVatRegistrationColumns()) {
-            throw new RuntimeException('Run db/eel_accounts.company_vat_registration.20260403.sql before saving VAT registration details.');
-        }
-
         $isVatRegistered = !empty($settings['is_vat_registered']);
         $canPersistVatDetails = $isVatRegistered && in_array(
             trim((string)($settings['vat_validation_status'] ?? '')),
@@ -112,8 +103,6 @@ final class CompanyRepository
         $vatValidationPostcode = $canPersistVatDetails ? (trim((string)($settings['vat_validation_postcode'] ?? '')) !== '' ? trim((string)$settings['vat_validation_postcode']) : null) : null;
         $vatValidationCountryCode = $canPersistVatDetails ? (trim((string)($settings['vat_validation_country_code'] ?? '')) !== '' ? strtoupper(trim((string)$settings['vat_validation_country_code'])) : null) : null;
         $vatLastError = $canPersistVatDetails ? (trim((string)($settings['vat_last_error'] ?? '')) !== '' ? trim((string)$settings['vat_last_error']) : null) : null;
-        $hasVatValidationDetailColumns = $this->hasVatValidationDetailColumns();
-        $hasVatValidationCountryColumn = $this->hasVatValidationCountryColumn();
 
         $sql = 'UPDATE companies
              SET company_name = ?,
@@ -124,7 +113,10 @@ final class CompanyRepository
                  vat_validation_status = ?,
                  vat_validated_at = ?,
                  vat_validation_source = ?,
-                 vat_validation_name = ?';
+                 vat_validation_name = ?,
+                 vat_validation_address_line1 = ?,
+                 vat_validation_postcode = ?,
+                 vat_validation_country_code = ?';
         $params = [
             $settings['company_name'],
             $settings['companies_house_number'] !== '' ? $settings['companies_house_number'] : null,
@@ -135,21 +127,10 @@ final class CompanyRepository
             $vatValidatedAt,
             $vatValidationSource,
             $vatValidationName,
+            $vatValidationAddressLine1,
+            $vatValidationPostcode,
+            $vatValidationCountryCode,
         ];
-
-        if ($hasVatValidationDetailColumns) {
-            $sql .= ',
-                 vat_validation_address_line1 = ?,
-                 vat_validation_postcode = ?';
-            $params[] = $vatValidationAddressLine1;
-            $params[] = $vatValidationPostcode;
-        }
-
-        if ($hasVatValidationCountryColumn) {
-            $sql .= ',
-                 vat_validation_country_code = ?';
-            $params[] = $vatValidationCountryCode;
-        }
 
         $sql .= ',
                  vat_last_error = ?
@@ -158,46 +139,6 @@ final class CompanyRepository
         $params[] = (int)$settings['company_id'];
 
         InterfaceDB::prepareExecute($sql, $params);
-    }
-
-    public function hasIncorporationDate(): bool
-    {
-        return $this->hasColumn('incorporation_date');
-    }
-
-    public function hasCompaniesHouseProfileColumns(): bool
-    {
-        return $this->hasColumn('companies_house_profile_json');
-    }
-
-    public function hasVatRegistrationColumns(): bool
-    {
-        return $this->hasColumn('is_vat_registered');
-    }
-
-    public function hasVatValidationDetailColumns(): bool
-    {
-        return $this->hasColumn('vat_validation_address_line1')
-            && $this->hasColumn('vat_validation_postcode');
-    }
-
-    public function hasVatValidationCountryColumn(): bool
-    {
-        return $this->hasColumn('vat_validation_country_code');
-    }
-
-    public function hasColumn(string $columnName): bool
-    {
-        if (preg_match('/^[A-Za-z0-9_]+$/', $columnName) !== 1) {
-            return false;
-        }
-
-        try {
-            InterfaceDB::query('SELECT ' . $columnName . ' FROM companies WHERE 1 = 0');
-            return true;
-        } catch (Throwable) {
-            return false;
-        }
     }
 
     public function normaliseCompaniesHouseProfileForStorage(?array $profile, string $environment = ''): array
@@ -292,19 +233,16 @@ final class CompanyRepository
         $existingCompanyId = $this->findExistingCompanyId($companyName, $companyNumber);
 
         if ($existingCompanyId > 0) {
-            if (
-                ($incorporationDate !== null && $this->hasIncorporationDate())
-                || (!empty($storedProfile) && $this->hasCompaniesHouseProfileColumns())
-            ) {
+            if ($incorporationDate !== null || !empty($storedProfile)) {
                 $updateClauses = [];
                 $params = [];
 
-                if ($incorporationDate !== null && $this->hasIncorporationDate()) {
+                if ($incorporationDate !== null) {
                     $updateClauses[] = 'incorporation_date = ?';
                     $params[] = $incorporationDate;
                 }
 
-                if (!empty($storedProfile) && $this->hasCompaniesHouseProfileColumns()) {
+                if (!empty($storedProfile)) {
                     foreach ($storedProfile as $column => $value) {
                         $updateClauses[] = $column . ' = ?';
                         $params[] = $value;
@@ -328,13 +266,11 @@ final class CompanyRepository
             $placeholders = ['?', '?'];
             $payload = [$companyName, $companyNumber];
 
-            if ($this->hasIncorporationDate()) {
-                $columns[] = 'incorporation_date';
-                $placeholders[] = '?';
-                $payload[] = $incorporationDate;
-            }
+            $columns[] = 'incorporation_date';
+            $placeholders[] = '?';
+            $payload[] = $incorporationDate;
 
-            if (!empty($storedProfile) && $this->hasCompaniesHouseProfileColumns()) {
+            if (!empty($storedProfile)) {
                 foreach ($storedProfile as $column => $value) {
                     $columns[] = $column;
                     $placeholders[] = '?';

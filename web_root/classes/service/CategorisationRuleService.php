@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 final class CategorisationRuleService
 {
-    private array $columnExistsCache = [];
     private ?string $lastSql = null;
     private array $lastParams = [];
 
@@ -16,16 +15,7 @@ final class CategorisationRuleService
         }
 
         $stmt = $this->executeQuery($this->fetchRulesSql(), ['company_id' => $companyId]);
-        $rows = $stmt->fetchAll();
-
-        foreach ($rows as &$row) {
-            if (!isset($row['company_id']) || (int)$row['company_id'] <= 0) {
-                $row['company_id'] = $companyId;
-            }
-        }
-        unset($row);
-
-        return $rows;
+        return $stmt->fetchAll();
     }
 
     public function fetchRule(int $companyId, int $ruleId): ?array {
@@ -39,11 +29,6 @@ final class CategorisationRuleService
         ]);
 
         $row = $stmt->fetch();
-
-        if (is_array($row) && (!isset($row['company_id']) || (int)$row['company_id'] <= 0)) {
-            $row['company_id'] = $companyId;
-        }
-
         return is_array($row) ? $row : null;
     }
 
@@ -147,6 +132,7 @@ final class CategorisationRuleService
         }
 
         $params = [
+            'company_id' => $companyId,
             'is_active' => $normalised['is_active'] ? 1 : 0,
             'priority' => $normalised['priority'],
             'match_field' => $normalised['match_field'],
@@ -158,10 +144,6 @@ final class CategorisationRuleService
             'created_at' => $now,
             'updated_at' => $now,
         ];
-
-        if ($this->rulesHaveCompanyId()) {
-            $params['company_id'] = $companyId;
-        }
 
         $this->executeQuery($this->insertRuleSql(), $params);
 
@@ -414,24 +396,10 @@ final class CategorisationRuleService
     }
 
     private function nominalBelongsToCompany(int $companyId, int $nominalAccountId): bool {
-        $sql = $this->nominalAccountsHaveCompanyId()
-            ? 'SELECT COUNT(*)
-             FROM nominal_accounts
-             WHERE id = :id
-               AND company_id = :company_id
-               AND is_active = 1'
-            : 'SELECT COUNT(*)
-             FROM nominal_accounts
-             WHERE id = :id
-               AND is_active = 1';
-        $params = ['id' => $nominalAccountId];
-        if ($this->nominalAccountsHaveCompanyId()) {
-            $params['company_id'] = $companyId;
-        }
-
-        $stmt = $this->executeQuery($sql, $params);
-
-        return (int)$stmt->fetchColumn() === 1;
+        return InterfaceDB::countWhere('nominal_accounts', [
+            'id' => $nominalAccountId,
+            'is_active' => 1,
+        ]) === 1;
     }
 
     public function getLastQueryDebug(): ?string {
@@ -529,86 +497,45 @@ final class CategorisationRuleService
             return null;
         }
 
-        $sql = $this->nominalAccountsHaveCompanyId()
-            ? 'SELECT id, code, name
-               FROM nominal_accounts
-               WHERE id = :id
-                 AND company_id = :company_id
-               LIMIT 1'
-            : 'SELECT id, code, name
+        $sql = 'SELECT id, code, name
                FROM nominal_accounts
                WHERE id = :id
                LIMIT 1';
-        $params = ['id' => $nominalAccountId];
-        if ($this->nominalAccountsHaveCompanyId()) {
-            $params['company_id'] = $companyId;
-        }
-
-        $stmt = $this->executeQuery($sql, $params);
+        $stmt = $this->executeQuery($sql, ['id' => $nominalAccountId]);
         $row = $stmt->fetch();
 
         return is_array($row) ? $row : null;
     }
 
     private function findNominalAccountIdByCode(int $companyId, string $code): int {
-        $sql = $this->nominalAccountsHaveCompanyId()
-            ? 'SELECT id
-               FROM nominal_accounts
-               WHERE code = :code
-                 AND company_id = :company_id
-                 AND is_active = 1
-               ORDER BY id ASC
-               LIMIT 1'
-            : 'SELECT id
+        $sql = 'SELECT id
                FROM nominal_accounts
                WHERE code = :code
                  AND is_active = 1
                ORDER BY id ASC
                LIMIT 1';
-        $params = ['code' => $code];
-        if ($this->nominalAccountsHaveCompanyId()) {
-            $params['company_id'] = $companyId;
-        }
-
-        $stmt = $this->executeQuery($sql, $params);
+        $stmt = $this->executeQuery($sql, ['code' => $code]);
         $id = $stmt->fetchColumn();
 
         return $id !== false ? (int)$id : 0;
     }
 
     private function findNominalAccountIdByName(int $companyId, string $name): int {
-        $sql = $this->nominalAccountsHaveCompanyId()
-            ? 'SELECT id
-               FROM nominal_accounts
-               WHERE name = :name
-                 AND company_id = :company_id
-                 AND is_active = 1
-               ORDER BY id ASC
-               LIMIT 1'
-            : 'SELECT id
+        $sql = 'SELECT id
                FROM nominal_accounts
                WHERE name = :name
                  AND is_active = 1
                ORDER BY id ASC
                LIMIT 1';
-        $params = ['name' => $name];
-        if ($this->nominalAccountsHaveCompanyId()) {
-            $params['company_id'] = $companyId;
-        }
-
-        $stmt = $this->executeQuery($sql, $params);
+        $stmt = $this->executeQuery($sql, ['name' => $name]);
         $id = $stmt->fetchColumn();
 
         return $id !== false ? (int)$id : 0;
     }
 
     private function fetchRulesSql(): string {
-        $companySelect = $this->rulesHaveCompanyId()
-            ? 'cr.company_id'
-            : ($this->nominalAccountsHaveCompanyId() ? 'na.company_id' : '0');
-
         return 'SELECT cr.id,
-                    ' . $companySelect . ' AS company_id,
+                    cr.company_id,
                     cr.is_active,
                     cr.priority,
                     cr.match_field,
@@ -623,17 +550,13 @@ final class CategorisationRuleService
                     COALESCE(na.name, \'\') AS nominal_name
              FROM categorisation_rules cr
              LEFT JOIN nominal_accounts na ON na.id = cr.nominal_account_id
-             WHERE ' . $this->rulesCompanyScopeCondition('cr', 'na') . '
+             WHERE cr.company_id = :company_id
              ORDER BY cr.priority ASC, cr.id ASC';
     }
 
     private function fetchRuleSql(): string {
-        $companySelect = $this->rulesHaveCompanyId()
-            ? 'cr.company_id'
-            : ($this->nominalAccountsHaveCompanyId() ? 'na.company_id' : '0');
-
         return 'SELECT cr.id,
-                    ' . $companySelect . ' AS company_id,
+                    cr.company_id,
                     cr.is_active,
                     cr.priority,
                     cr.match_field,
@@ -646,7 +569,7 @@ final class CategorisationRuleService
                     cr.updated_at
              FROM categorisation_rules cr
              LEFT JOIN nominal_accounts na ON na.id = cr.nominal_account_id
-             WHERE ' . $this->rulesCompanyScopeCondition('cr', 'na') . '
+             WHERE cr.company_id = :company_id
                AND cr.id = :id
              LIMIT 1';
     }
@@ -663,39 +586,12 @@ final class CategorisationRuleService
                      nominal_account_id = :nominal_account_id,
                      updated_at = :updated_at
                  WHERE id = :id
-                   AND ' . $this->rulesCompanyScopeExistsCondition('categorisation_rules');
+                   AND company_id = :company_id';
     }
 
     private function insertRuleSql(): string {
-        if ($this->rulesHaveCompanyId()) {
-            return 'INSERT INTO categorisation_rules (
-                company_id,
-                is_active,
-                priority,
-                match_field,
-                match_type,
-                match_value,
-                source_category_value,
-                source_account_value,
-                nominal_account_id,
-                created_at,
-                updated_at
-            ) VALUES (
-                :company_id,
-                :is_active,
-                :priority,
-                :match_field,
-                :match_type,
-                :match_value,
-                :source_category_value,
-                :source_account_value,
-                :nominal_account_id,
-                :created_at,
-                :updated_at
-            )';
-        }
-
         return 'INSERT INTO categorisation_rules (
+            company_id,
             is_active,
             priority,
             match_field,
@@ -707,6 +603,7 @@ final class CategorisationRuleService
             created_at,
             updated_at
         ) VALUES (
+            :company_id,
             :is_active,
             :priority,
             :match_field,
@@ -723,7 +620,7 @@ final class CategorisationRuleService
     private function deleteRuleSql(): string {
         return 'DELETE FROM categorisation_rules
              WHERE id = :id
-               AND ' . $this->rulesCompanyScopeExistsCondition('categorisation_rules');
+               AND company_id = :company_id';
     }
 
     private function setRuleActiveSql(): string {
@@ -731,14 +628,14 @@ final class CategorisationRuleService
              SET is_active = :is_active,
                  updated_at = :updated_at
              WHERE id = :id
-               AND ' . $this->rulesCompanyScopeExistsCondition('categorisation_rules');
+               AND company_id = :company_id';
     }
 
     private function findCreatedRuleIdSql(): string {
         return 'SELECT cr.id
              FROM categorisation_rules cr
              LEFT JOIN nominal_accounts na ON na.id = cr.nominal_account_id
-             WHERE ' . $this->rulesCompanyScopeCondition('cr', 'na') . '
+             WHERE cr.company_id = :company_id
                AND cr.created_at = :created_at
                AND cr.priority = :priority
                AND cr.match_field = :match_field
@@ -759,158 +656,16 @@ final class CategorisationRuleService
     }
 
     private function nextPrioritySql(): string {
-        if ($this->rulesHaveCompanyId()) {
-            return 'SELECT MAX(priority)
+        return 'SELECT MAX(priority)
              FROM categorisation_rules
              WHERE company_id = :company_id';
-        }
-
-        if (!$this->nominalAccountsHaveCompanyId()) {
-            return 'SELECT MAX(priority)
-             FROM categorisation_rules';
-        }
-
-        return 'SELECT MAX(cr.priority)
-             FROM categorisation_rules cr
-             INNER JOIN nominal_accounts na ON na.id = cr.nominal_account_id
-             WHERE na.company_id = :company_id';
-    }
-
-    private function rulesHaveCompanyId(): bool {
-        return $this->tableHasColumn('categorisation_rules', 'company_id');
-    }
-
-    private function rulesCompanyScopeCondition(string $ruleAlias, string $nominalAlias): string {
-        if ($this->rulesHaveCompanyId()) {
-            return $ruleAlias . '.company_id = :company_id';
-        }
-
-        if (!$this->nominalAccountsHaveCompanyId()) {
-            return '1 = 1';
-        }
-
-        return $nominalAlias . '.company_id = :company_id';
-    }
-
-    private function rulesCompanyScopeExistsCondition(string $ruleTable): string {
-        if ($this->rulesHaveCompanyId()) {
-            return $ruleTable . '.company_id = :company_id';
-        }
-
-        if (!$this->nominalAccountsHaveCompanyId()) {
-            return '1 = 1';
-        }
-
-        return 'EXISTS (
-            SELECT 1
-            FROM nominal_accounts na
-            WHERE na.id = ' . $ruleTable . '.nominal_account_id
-              AND na.company_id = :company_id
-        )';
-    }
-
-    private function nominalAccountsHaveCompanyId(): bool {
-        return $this->tableHasColumn('nominal_accounts', 'company_id');
-    }
-
-    private function tableHasColumn(string $tableName, string $columnName): bool {
-        $cacheKey = strtolower($tableName . '.' . $columnName);
-        if (array_key_exists($cacheKey, $this->columnExistsCache)) {
-            return $this->columnExistsCache[$cacheKey];
-        }
-
-        $driver = InterfaceDB::driverName();
-
-        if ($driver === 'sqlite') {
-            $stmt = InterfaceDB::query('PRAGMA table_info(' . $tableName . ')');
-            $columns = $stmt !== false ? $stmt->fetchAll() : [];
-
-            foreach ($columns as $column) {
-                if (strcasecmp((string)($column['name'] ?? ''), $columnName) === 0) {
-                    return $this->columnExistsCache[$cacheKey] = true;
-                }
-            }
-
-            return $this->columnExistsCache[$cacheKey] = false;
-        }
-
-        try {
-            $stmt = InterfaceDB::query('SHOW COLUMNS FROM `' . str_replace('`', '``', $tableName) . '`');
-            $columns = $stmt !== false ? $stmt->fetchAll() : [];
-
-            foreach ($columns as $column) {
-                $fieldName = (string)($column['Field'] ?? $column['field'] ?? '');
-                if (strcasecmp($fieldName, $columnName) === 0) {
-                    return $this->columnExistsCache[$cacheKey] = true;
-                }
-            }
-
-            return $this->columnExistsCache[$cacheKey] = false;
-        } catch (Throwable) {
-        }
-
-        try {
-            $stmt = InterfaceDB::prepareExecute(
-                'SELECT COUNT(*)
-                 FROM INFORMATION_SCHEMA.COLUMNS
-                 WHERE TABLE_SCHEMA = DATABASE()
-                   AND TABLE_NAME = :table_name
-                   AND COLUMN_NAME = :column_name',
-                [
-                'table_name' => $tableName,
-                'column_name' => $columnName,
-                ]
-            );
-
-            return $this->columnExistsCache[$cacheKey] = ((int)$stmt->fetchColumn() > 0);
-        } catch (Throwable) {
-        }
-
-        try {
-            $stmt = InterfaceDB::query('SELECT * FROM `' . str_replace('`', '``', $tableName) . '` WHERE 1 = 0');
-            if ($stmt !== false) {
-                $columnCount = $stmt->columnCount();
-                for ($index = 0; $index < $columnCount; $index++) {
-                    $meta = $stmt->getColumnMeta($index);
-                    $name = (string)($meta['name'] ?? '');
-                    if (strcasecmp($name, $columnName) === 0) {
-                        return $this->columnExistsCache[$cacheKey] = true;
-                    }
-                }
-            }
-        } catch (Throwable) {
-        }
-
-        return $this->columnExistsCache[$cacheKey] = false;
     }
 
     private function executeQuery(string $sql, array $params = []): PDOStatement {
-        $filteredParams = $this->filterParamsForSql($sql, $params);
         $this->lastSql = $sql;
-        $this->lastParams = $filteredParams;
+        $this->lastParams = PdoDB::filterParamsForSql($sql, $params);
 
-        return InterfaceDB::prepareExecute( $sql, $filteredParams);
-    }
-
-    private function filterParamsForSql(string $sql, array $params): array {
-        if ($params === []) {
-            return [];
-        }
-
-        preg_match_all('/:([A-Za-z_][A-Za-z0-9_]*)/', $sql, $matches);
-        $placeholders = array_values(array_unique($matches[1] ?? []));
-        if ($placeholders === []) {
-            return [];
-        }
-
-        $filtered = [];
-        foreach ($placeholders as $placeholder) {
-            if (array_key_exists($placeholder, $params)) {
-                $filtered[$placeholder] = $params[$placeholder];
-            }
-        }
-
-        return $filtered;
+        return InterfaceDB::prepareExecute($sql, $params);
     }
 }
 

@@ -6,123 +6,17 @@ final class OutboundHelper
 {
     public static function keysPath(?string $overridePath = null): string
     {
-        $overridePath = trim((string)$overridePath);
-
-        if ($overridePath !== '') {
-            return $overridePath;
-        }
-
-        $config = AppConfigurationStore::config();
-        $configuredPath = trim((string)($config['api_keys']['path'] ?? ''));
-        if ($configuredPath !== '') {
-            return $configuredPath;
-        }
-
-        throw new RuntimeException('API keys path is not configured in config/app.php.');
+        return SecurityStore::apiKeysPath($overridePath);
     }
 
     public static function credentialCatalog(?string $keysPath = null): array
     {
-        static $catalogByPath = [];
-
-        $path = self::keysPath($keysPath);
-
-        if (isset($catalogByPath[$path])) {
-            return $catalogByPath[$path];
-        }
-
-        if (!is_file($path) || !is_readable($path)) {
-            throw new RuntimeException('API key file was not found or is not readable: ' . $path);
-        }
-
-        $handle = fopen($path, 'rb');
-
-        if ($handle === false) {
-            throw new RuntimeException('API key file could not be opened: ' . $path);
-        }
-
-        $catalog = [];
-        $lineNumber = 0;
-
-        try {
-            while (($row = fgetcsv($handle, 0, ',', '"', '')) !== false) {
-                $lineNumber++;
-
-                $firstField = trim((string)($row[0] ?? ''));
-
-                if ($firstField !== '' && str_starts_with($firstField, '#')) {
-                    continue;
-                }
-
-                if (strtoupper($firstField) === 'PROVIDER') {
-                    continue;
-                }
-
-                if (count($row) < 5) {
-                    continue;
-                }
-
-                $provider = strtoupper(trim((string)$row[0]));
-                $tag = strtoupper(trim((string)$row[1]));
-
-                if ($provider === '' || $tag === '') {
-                    continue;
-                }
-
-                if (count($row) >= 6) {
-                    $environment = HelperFramework::normaliseEnvironmentMode((string)$row[2]);
-                    $credential = [
-                        'provider' => $provider,
-                        'tag' => $tag,
-                        'environment' => $environment,
-                        'schema' => strtoupper(trim((string)$row[3])),
-                        'url' => trim((string)$row[4]),
-                        'api_key' => trim((string)$row[5]),
-                    ];
-                    $catalog[$provider][$tag][$environment] = $credential;
-                    continue;
-                }
-
-                $credential = [
-                    'provider' => $provider,
-                    'tag' => $tag,
-                    'environment' => 'TEST',
-                    'schema' => strtoupper(trim((string)$row[2])),
-                    'url' => trim((string)$row[3]),
-                    'api_key' => trim((string)$row[4]),
-                ];
-                $catalog[$provider][$tag]['DEFAULT'] = $credential;
-            }
-        } finally {
-            fclose($handle);
-        }
-
-        $catalogByPath[$path] = $catalog;
-
-        return $catalogByPath[$path];
+        return SecurityStore::credentialCatalog($keysPath);
     }
 
     public static function loadCredential(string $provider, string $tag, ?string $environment = null, ?string $keysPath = null): array
     {
-        $provider = strtoupper(trim($provider));
-        $tag = strtoupper(trim($tag));
-        $environment = HelperFramework::normaliseEnvironmentMode($environment);
-        $catalog = self::credentialCatalog($keysPath);
-        $providerCatalog = $catalog[$provider] ?? [];
-        $tagCatalog = is_array($providerCatalog[$tag] ?? null) ? $providerCatalog[$tag] : [];
-
-        if (is_array($tagCatalog[$environment] ?? null)) {
-            return $tagCatalog[$environment];
-        }
-
-        if (is_array($tagCatalog['DEFAULT'] ?? null)) {
-            $fallbackCredential = $tagCatalog['DEFAULT'];
-            $fallbackCredential['environment'] = $environment;
-
-            return $fallbackCredential;
-        }
-
-        throw new RuntimeException('API credential not found for ' . $provider . ' / ' . $tag . ' / ' . $environment . '.');
+        return SecurityStore::loadCredential($provider, $tag, $environment, $keysPath);
     }
 
     public static function request(array $request): array

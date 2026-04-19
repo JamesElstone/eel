@@ -198,18 +198,10 @@ final class TransactionJournalService
             return false;
         }
 
-        $stmt = InterfaceDB::prepare(
-            'SELECT COUNT(*)
-             FROM journals
-             WHERE source_type = :source_type
-               AND source_ref = :source_ref'
-        );
-        $stmt->execute([
+        return InterfaceDB::countWhere('journals', [
             'source_type' => 'bank_csv',
             'source_ref' => $this->sourceRefForTransaction($transactionId),
-        ]);
-
-        return (int)$stmt->fetchColumn() > 0;
+        ]) > 0;
     }
 
     public function fetchJournals(int $companyId, int $taxYearId, int $limit = 200): array {

@@ -1373,18 +1373,10 @@ final class ExpenseClaimService
     }
 
     private function referenceCodeExists(int $companyId, string $referenceCode): bool {
-        $stmt = InterfaceDB::prepare(
-            'SELECT COUNT(*)
-             FROM expense_claims
-             WHERE company_id = :company_id
-               AND claim_reference_code = :claim_reference_code'
-        );
-        $stmt->execute([
+        return InterfaceDB::countWhere('expense_claims', [
             'company_id' => $companyId,
             'claim_reference_code' => $referenceCode,
-        ]);
-
-        return (int)$stmt->fetchColumn() > 0;
+        ]) > 0;
     }
 
     private function fetchExistingExpenseJournal(int $companyId, string $sourceRef): ?array {

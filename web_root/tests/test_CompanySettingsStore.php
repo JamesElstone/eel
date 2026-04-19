@@ -9,11 +9,14 @@ $harness->run(CompanySettingsStore::class, function (GeneratedServiceClassTestHa
         $defaults = CompanySettingsStore::defaults();
 
         $harness->assertSame('GBP', $defaults['default_currency'] ?? null);
+        $harness->assertSame('d/m/Y', $defaults['date_format'] ?? null);
+        $harness->assertSame('TEST', $defaults['hmrc_mode'] ?? null);
         $harness->assertSame('/var/eel_accounts/uploads', $defaults['uploads_path'] ?? null);
     });
 
     $harness->check(CompanySettingsStore::class, 'includes duplicate row check in definitions', function () use ($harness): void {
         $definitions = CompanySettingsStore::definitions();
         $harness->assertTrue(isset($definitions['enable_duplicate_row_check']));
+        $harness->assertTrue(isset($definitions['hmrc_mode']));
     });
 });

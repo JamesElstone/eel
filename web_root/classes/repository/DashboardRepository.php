@@ -16,15 +16,24 @@ final class DashboardRepository
             return $stats;
         }
 
-        $stmt = InterfaceDB::prepareExecute("SELECT COUNT(*) FROM company_accounts WHERE company_id = ? AND is_active = 1 AND account_type = 'bank'", [$companyId]);
-        $stats['bank_accounts'] = (int)$stmt->fetchColumn();
+        $stats['bank_accounts'] = InterfaceDB::countWhere('company_accounts', [
+            'company_id' => $companyId,
+            'is_active' => 1,
+            'account_type' => 'bank',
+        ]);
 
         if ($taxYearId > 0) {
-            $stmt = InterfaceDB::prepareExecute("SELECT COUNT(*) FROM transactions WHERE company_id = ? AND tax_year_id = ? AND category_status = 'uncategorised'", [$companyId, $taxYearId]);
-            $stats['unreconciled_items'] = (int)$stmt->fetchColumn();
+            $stats['unreconciled_items'] = InterfaceDB::countWhere('transactions', [
+                'company_id' => $companyId,
+                'tax_year_id' => $taxYearId,
+                'category_status' => 'uncategorised',
+            ]);
 
-            $stmt = InterfaceDB::prepareExecute("SELECT COUNT(*) FROM journals WHERE company_id = ? AND tax_year_id = ? AND source_type = 'manual'", [$companyId, $taxYearId]);
-            $stats['draft_journals'] = (int)$stmt->fetchColumn();
+            $stats['draft_journals'] = InterfaceDB::countWhere('journals', [
+                'company_id' => $companyId,
+                'tax_year_id' => $taxYearId,
+                'source_type' => 'manual',
+            ]);
         }
 
         return $stats;
@@ -189,10 +198,10 @@ final class DashboardRepository
             }
 
             $months[] = [
-                'month' => $cursor->format('M'),
-                'year' => $cursor->format('Y'),
+                'month' => HelperFramework::displayMonthYear($cursor, $companyId),
+                'year' => '',
                 'month_key' => $monthKey,
-                'label' => $cursor->format('M Y'),
+                'label' => HelperFramework::displayMonthYear($cursor, $companyId),
                 'status' => $status,
                 'status_colour' => $status,
                 'transactions' => $txnCount,
@@ -336,13 +345,11 @@ final class DashboardRepository
 
         $items = [];
 
-        $stmt = InterfaceDB::prepare("SELECT COUNT(*)
-                               FROM transactions
-                               WHERE company_id = ?
-                                 AND tax_year_id = ?
-                                 AND category_status = 'uncategorised'");
-        $stmt->execute([$companyId, $taxYearId]);
-        $uncategorisedCount = (int)$stmt->fetchColumn();
+        $uncategorisedCount = InterfaceDB::countWhere('transactions', [
+            'company_id' => $companyId,
+            'tax_year_id' => $taxYearId,
+            'category_status' => 'uncategorised',
+        ]);
         if ($uncategorisedCount > 0) {
             $items[] = [
                 'title' => 'Categorise uncategorised transactions',
@@ -350,13 +357,10 @@ final class DashboardRepository
             ];
         }
 
-        $stmt = InterfaceDB::prepare("SELECT COUNT(*)
-                               FROM statement_uploads
-                               WHERE company_id = ?
-                                 AND tax_year_id = ?
-                                 AND rows_duplicate > 0");
-        $stmt->execute([$companyId, $taxYearId]);
-        $duplicateUploads = (int)$stmt->fetchColumn();
+        $duplicateUploads = InterfaceDB::countWhereCompare('statement_uploads', 'rows_duplicate', '>', 0, [
+            'company_id' => $companyId,
+            'tax_year_id' => $taxYearId,
+        ]);
         if ($duplicateUploads > 0) {
             $items[] = [
                 'title' => 'Review duplicate upload hits',
@@ -364,13 +368,11 @@ final class DashboardRepository
             ];
         }
 
-        $stmt = InterfaceDB::prepare("SELECT COUNT(*)
-                               FROM statement_uploads
-                               WHERE company_id = ?
-                                 AND tax_year_id = ?
-                                 AND rows_inserted = 0");
-        $stmt->execute([$companyId, $taxYearId]);
-        $emptyUploads = (int)$stmt->fetchColumn();
+        $emptyUploads = InterfaceDB::countWhere('statement_uploads', [
+            'company_id' => $companyId,
+            'tax_year_id' => $taxYearId,
+            'rows_inserted' => 0,
+        ]);
         if ($emptyUploads > 0) {
             $items[] = [
                 'title' => 'Check empty imports',
@@ -378,13 +380,11 @@ final class DashboardRepository
             ];
         }
 
-        $stmt = InterfaceDB::prepare("SELECT COUNT(*)
-                               FROM transactions
-                               WHERE company_id = ?
-                                 AND tax_year_id = ?
-                                 AND statement_upload_id IS NULL");
-        $stmt->execute([$companyId, $taxYearId]);
-        $manualTransactions = (int)$stmt->fetchColumn();
+        $manualTransactions = InterfaceDB::countWhere('transactions', [
+            'company_id' => $companyId,
+            'tax_year_id' => $taxYearId,
+            'statement_upload_id' => null,
+        ]);
         if ($manualTransactions > 0) {
             $items[] = [
                 'title' => 'Review manually added transactions',

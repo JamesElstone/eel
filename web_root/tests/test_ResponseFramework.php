@@ -11,6 +11,12 @@ $harness->check(ResponseFramework::class, 'builds HTML responses through the fac
     $harness->assertSame(201, $reflection->getProperty('statusCode')->getValue($response));
     $harness->assertSame('text/html; charset=utf-8', $reflection->getProperty('contentType')->getValue($response));
     $harness->assertSame('<p>Hello</p>', $reflection->getProperty('body')->getValue($response));
+    $harness->assertSame([
+        'X-Frame-Options' => 'SAMEORIGIN',
+        'Content-Security-Policy' => "frame-ancestors 'self'",
+        'X-Content-Type-Options' => 'nosniff',
+        'Referrer-Policy' => 'strict-origin-when-cross-origin',
+    ], $reflection->getProperty('headers')->getValue($response));
 });
 
 $harness->check(ResponseFramework::class, 'builds JSON responses through the factory', function () use ($harness): void {
@@ -20,4 +26,10 @@ $harness->check(ResponseFramework::class, 'builds JSON responses through the fac
     $harness->assertSame(202, $reflection->getProperty('statusCode')->getValue($response));
     $harness->assertSame('application/json; charset=utf-8', $reflection->getProperty('contentType')->getValue($response));
     $harness->assertSame('{"ok":true}', $reflection->getProperty('body')->getValue($response));
+    $harness->assertSame([
+        'X-Frame-Options' => 'SAMEORIGIN',
+        'Content-Security-Policy' => "frame-ancestors 'self'",
+        'X-Content-Type-Options' => 'nosniff',
+        'Referrer-Policy' => 'strict-origin-when-cross-origin',
+    ], $reflection->getProperty('headers')->getValue($response));
 });

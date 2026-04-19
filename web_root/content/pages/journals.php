@@ -1,0 +1,41 @@
+<?php
+declare(strict_types=1);
+
+final class _journals extends BaseModulePageFramework
+{
+    public function id(): string
+    {
+        return 'journals';
+    }
+
+    public function title(): string
+    {
+        return 'Journals';
+    }
+
+    public function subtitle(): string
+    {
+        return 'Review posted journals for the selected company and accounting period.';
+    }
+
+    public function cards(): array
+    {
+        return ['journals_list'];
+    }
+
+    protected function moduleContext(
+        RequestFramework $request,
+        PageServiceFramework $services,
+        ActionResultFramework $actionResult,
+        array $baseContext
+    ): array {
+        $companyId = (int)($baseContext['company_id'] ?? 0);
+        $taxYearId = (int)($baseContext['tax_year_id'] ?? 0);
+
+        return [
+            'journal_entries' => ($companyId > 0 && $taxYearId > 0)
+                ? (new TransactionJournalService())->fetchJournals($companyId, $taxYearId)
+                : [],
+        ];
+    }
+}

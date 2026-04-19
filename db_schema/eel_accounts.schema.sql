@@ -1,3 +1,9 @@
+/**
+ * EEL Accounts
+ * Copyright (c) 2026 James Elstone
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3)
+ * See LICENSE file for details.
+ */
 /*M!999999\- enable the sandbox mode */ 
 -- MariaDB dump 10.19  Distrib 10.11.14-MariaDB, for FreeBSD14.3 (amd64)
 --

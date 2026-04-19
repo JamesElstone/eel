@@ -1,3 +1,9 @@
+<!--
+  EEL Accounts
+  Copyright (c) 2026 James Elstone
+  Licensed under the GNU Affero General Public License v3.0 (AGPLv3)
+  See LICENSE file for details.
+-->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
   <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
   <rect x="4" y="4" width="7" height="7" rx="1"/>

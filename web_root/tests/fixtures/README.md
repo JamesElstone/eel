@@ -1,3 +1,9 @@
+<!--
+  EEL Accounts
+  Copyright (c) 2026 James Elstone
+  Licensed under the GNU Affero General Public License v3.0 (AGPLv3)
+  See LICENSE file for details.
+-->
 Test fixtures used by `web_root/tests/test_*.php`.
 
 `navigation_pages/` is a static sample pages directory for `test_PageArchitecture.php`.

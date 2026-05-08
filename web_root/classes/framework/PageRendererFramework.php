@@ -278,6 +278,7 @@ final class PageRendererFramework
             </div>
             <div class="brand-toolbar">
                 <div class="brand-toolbar-user">' . HelperFramework::escape($displayName) . '</div>
+                ' . $this->renderToolbarLogout($sessionAuthenticationService) . '
                 <button class="sidebar-toggle" type="button" id="sidebar-toggle" aria-label="Toggle sidebar" aria-expanded="true">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
@@ -309,6 +310,15 @@ final class PageRendererFramework
         $html .= '</aside>';
 
         return $html;
+    }
+
+    private function renderToolbarLogout(SessionAuthenticationService $sessionAuthenticationService): string
+    {
+        return '<form class="brand-toolbar-logout-form" method="post" action="/">
+            <input type="hidden" name="auth_action" value="logout">
+            <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($sessionAuthenticationService->csrfToken()) . '">
+            <button class="brand-toolbar-logout-button" type="submit">Logout</button>
+        </form>';
     }
 
     private function renderSidebarLogout(SessionAuthenticationService $sessionAuthenticationService): string

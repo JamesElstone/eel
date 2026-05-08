@@ -8,8 +8,9 @@
 declare(strict_types=1);
 
 define('APP_ROOT', rtrim((string)(realpath(dirname(__DIR__)) ?: dirname(__DIR__)), '\\/') . DIRECTORY_SEPARATOR);
+define('PROJECT_ROOT', rtrim(dirname(APP_ROOT), '\\/') . DIRECTORY_SEPARATOR);
 define('APP_CLASSES', APP_ROOT . 'classes' . DIRECTORY_SEPARATOR);
-define('APP_CONFIG', APP_ROOT . 'config' . DIRECTORY_SEPARATOR);
+define('APP_CONFIG', PROJECT_ROOT . 'secure' . DIRECTORY_SEPARATOR);
 define('APP_CONTENT', APP_ROOT . 'content' . DIRECTORY_SEPARATOR);
 define('APP_CARDS', APP_CONTENT . 'cards' . DIRECTORY_SEPARATOR);
 define('APP_PAGES', APP_CONTENT . 'pages' . DIRECTORY_SEPARATOR);

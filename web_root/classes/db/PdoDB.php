@@ -62,7 +62,7 @@ final class PdoDB
         $dsn = trim((string)($dbConfig['dsn'] ?? ''));
 
         if ($dsn === '') {
-            throw new RuntimeException('Database DSN is not configured in config/app.php.');
+            throw new RuntimeException('Database DSN is not configured in secure/app.php.');
         }
 
         $username = (string)($dbConfig['user'] ?? '');

@@ -14,6 +14,11 @@ ob_start();
 require_once $migrateDbToolPath;
 $includeOutput = ob_get_clean();
 
+$setupDbToolPath = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'tools' . DIRECTORY_SEPARATOR . 'setupDb.php';
+ob_start();
+require_once $setupDbToolPath;
+$setupIncludeOutput = ob_get_clean();
+
 $harness = new GeneratedServiceClassTestHarness();
 
 $harness->check('migrateDb.php', 'loads CLI helper functions without running migrations', function () use ($harness, $includeOutput): void {
@@ -22,6 +27,11 @@ $harness->check('migrateDb.php', 'loads CLI helper functions without running mig
     $harness->assertTrue(function_exists('eel_migration_hydrate_empty_database'));
     $harness->assertTrue(function_exists('eel_migration_database_has_no_application_tables'));
     $harness->assertTrue(function_exists('eel_migration_application_tables'));
+});
+
+$harness->check('setupDb.php', 'loads CLI helper functions without running setup', function () use ($harness, $setupIncludeOutput): void {
+    $harness->assertSame('', $setupIncludeOutput);
+    $harness->assertTrue(function_exists('eel_run_database_setup_tool'));
 });
 
 $harness->check('migrateDb.php', 'tracks expected application tables for empty database hydration', function () use ($harness): void {

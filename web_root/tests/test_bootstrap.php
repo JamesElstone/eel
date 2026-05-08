@@ -11,7 +11,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARAT
 
 $tests = [
     'defines expected application path constants' => static function (): void {
-        $required = ['APP_ROOT', 'APP_CLASSES', 'APP_CONFIG', 'APP_CONTENT', 'APP_PAGES', 'APP_JS', 'APP_CSS'];
+        $required = ['APP_ROOT', 'PROJECT_ROOT', 'APP_CLASSES', 'APP_CONFIG', 'APP_CONTENT', 'APP_PAGES', 'APP_JS', 'APP_CSS'];
 
         foreach ($required as $constant) {
             if (!defined($constant) || constant($constant) === '') {

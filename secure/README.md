@@ -1,10 +1,10 @@
 # secure
 
-This folder sits outside `web_root` and is used for local security files that must not be web-accessible, such as generated keys and first-user bootstrap codes.
+This folder sits outside `web_root` and is used for local security files that must not be web-accessible, such as `app.php`, generated keys, and first-user bootstrap codes.
 
 Do not serve this directory publicly. Keep secret files in this folder out of version control and restrict filesystem permissions in production.
 
-The PHP process must be able to create and remove local setup files in this
+The PHP process must be able to create and update `app.php`, and create and remove local setup files in this
 directory. On FreeBSD, PHP commonly runs as the `www` user, so a typical
 installation can use:
 

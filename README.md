@@ -30,7 +30,7 @@ The project is deliberately simple: no package manager is required for the curre
 - `web_root/content/pages` - page definitions.
 - `web_root/content/cards` - card definitions rendered inside pages.
 - `web_root/content/actions` - shared card action handlers.
-- `web_root/config/app.php` - application configuration.
+- `secure/app.php` - application configuration, hydrated automatically on first run.
 - `db_schema/eelKit.schema.sql` - full database schema for a new install.
 - `tools/reset_password.php` - A CLI password reset helper.
 - `tools/setExternalIP.php` - A CLI helper for storing external IP configuration.
@@ -50,7 +50,7 @@ The project is deliberately simple: no package manager is required for the curre
    CREATE DATABASE eelKit CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
    ```
 
-4. Configure a PDO DSN in `web_root/config/app.php`:
+4. Configure a PDO DSN in `secure/app.php`. If the file does not exist yet, visiting the app or running a tool will create it from the built-in defaults:
 
    ```php
    'db' => [
@@ -63,10 +63,10 @@ The project is deliberately simple: no package manager is required for the curre
 
    The default DSN is `odbc:eelkit`. If you use a different driver, update the DSN and credentials to match your environment.
 
-5. Run the migration tool. If the configured database has no eelKit application tables yet, it loads the baseline schema first. It then applies any pending incremental migrations:
+5. Run the database setup tool. It makes sure `secure/app.php` exists, then runs migrations. If the configured database has no eelKit application tables yet, it loads the baseline schema first. It then applies any pending incremental migrations:
 
    ```bash
-   php tools/migrateDb.php
+   php tools/setupDb.php
    ```
 
 6. Make sure the PHP process can write to:
@@ -83,7 +83,7 @@ The project is deliberately simple: no package manager is required for the curre
 
    Use that code on the first-account setup screen. The file is removed after the first user is created.
 
-8. Set `developer_options` to `false` in `web_root/config/app.php` for production use once setup and diagnostics are complete.
+8. Set `developer_options` to `false` in `secure/app.php` for production use once setup and diagnostics are complete.
 
 ## Database Schema Notes
 
@@ -105,6 +105,12 @@ Incremental upgrades live in `db_schema/migrations` and are applied in filename 
 
 ```bash
 php tools/migrateDb.php
+```
+
+For first-time setup, prefer:
+
+```bash
+php tools/setupDb.php
 ```
 
 The migration runner creates a `schema_migrations` table and records each applied SQL file. Keep migration filenames ordered with the date and a sequence number, for example:
@@ -143,6 +149,12 @@ Set or refresh external IP related configuration:
 
 ```bash
 php tools/setExternalIP.php
+```
+
+Hydrate `secure/app.php` and initialise or migrate the configured database:
+
+```bash
+php tools/setupDb.php
 ```
 
 ## Production Checklist

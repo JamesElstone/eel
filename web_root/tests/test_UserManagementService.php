@@ -134,6 +134,33 @@ $harness->check(UserManagementService::class, 'resets another user OTP as an adm
     });
 });
 
+$harness->check(UserManagementService::class, 'shows and resets locked out users as an administrator', function () use ($harness, $withTemporaryManagedUsers): void {
+    $withTemporaryManagedUsers(function (UserManagementService $service, UserAuthenticationService $authService, int $adminId, int $targetId, int $ordinaryId) use ($harness): void {
+        $target = $authService->userById($targetId);
+        $emailAddress = (string)($target['email_address'] ?? '');
+
+        for ($attempt = 0; $attempt < 10; $attempt++) {
+            $authService->recordFailedPasswordAttempt($emailAddress, 'locked-device');
+        }
+
+        $blocked = $service->resetUserLoginLockout($ordinaryId, $targetId);
+        $dashboardBeforeReset = $service->loginLockoutsDashboard($adminId);
+        $reset = $service->resetUserLoginLockout($adminId, $targetId);
+        $dashboardAfterReset = $service->loginLockoutsDashboard($adminId);
+
+        $harness->assertTrue(empty($blocked['success']));
+        $harness->assertSame($targetId, (int)(($dashboardBeforeReset['locked_users'][0] ?? [])['user_id'] ?? 0));
+        $harness->assertTrue(!empty($reset['success']));
+        $harness->assertTrue((int)($reset['cleared_rate_limit_rows'] ?? 0) > 0);
+        $harness->assertSame([], (array)($dashboardAfterReset['locked_users'] ?? []));
+        $harness->assertSame(1, InterfaceDB::countWhere('user_account_audit', [
+            'affected_user_id' => $targetId,
+            'actor_user_id' => $adminId,
+            'action_type' => 'login_lockout_reset_admin',
+        ]));
+    });
+});
+
 $harness->check(UserManagementService::class, 'requires another user to change password as an administrator', function () use ($harness, $withTemporaryManagedUsers): void {
     $withTemporaryManagedUsers(function (UserManagementService $service, UserAuthenticationService $authService, int $adminId, int $targetId, int $ordinaryId) use ($harness): void {
         $blocked = $service->requirePasswordChangeForUser($ordinaryId, $targetId);

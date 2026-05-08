@@ -117,6 +117,22 @@ final class UserManagementService
         ];
     }
 
+    public function loginLockoutsDashboard(int $currentUserId = 0): array
+    {
+        $currentUserId = $this->resolveCurrentUserId($currentUserId);
+        if ($currentUserId <= 0 || !$this->canManageUsers($currentUserId)) {
+            return [
+                'current_user' => [],
+                'locked_users' => [],
+            ];
+        }
+
+        return [
+            'current_user' => $this->currentUserDetails($currentUserId),
+            'locked_users' => $this->userAuthenticationService->listLockedOutUsers(),
+        ];
+    }
+
     public function passwordPolicyDescription(): string
     {
         return UserAuthenticationService::passwordPolicyDescription();
@@ -361,6 +377,32 @@ final class UserManagementService
         );
 
         return ['success' => true, 'errors' => []];
+    }
+
+    public function resetUserLoginLockout(int $actorUserId, int $targetUserId): array
+    {
+        $authorisationError = $this->authoriseUserManagementActor($actorUserId);
+        if ($authorisationError !== null) {
+            return ['success' => false, 'errors' => [$authorisationError]];
+        }
+
+        $targetUser = $this->userAuthenticationService->userById($targetUserId);
+        if ($targetUser === null) {
+            return ['success' => false, 'errors' => ['The selected user could not be found.']];
+        }
+
+        $clearedRows = $this->userAuthenticationService->clearLoginRateLimitForUser($targetUserId);
+
+        $this->userHistoryStore->recordAccountAudit(
+            $targetUserId,
+            $actorUserId,
+            'login_lockout_reset_admin',
+            'An administrator reset this user login lockout.',
+            ['cleared_rate_limit_rows' => $clearedRows],
+            $this->userSessionService->buildRequestMetadata()
+        );
+
+        return ['success' => true, 'errors' => [], 'cleared_rate_limit_rows' => $clearedRows];
     }
 
     public function assignRoleToUser(int $actorUserId, int $targetUserId, int $roleId): array

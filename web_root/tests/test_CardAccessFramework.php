@@ -48,6 +48,26 @@ $harness->run(CardAccessFramework::class, static function (GeneratedServiceClass
             }
         }
     });
+
+    $harness->check(CardAccessFramework::class, 'expands user-management card access to lockout management', static function () use ($harness, $framework, $service): void {
+        InterfaceDB::beginTransaction();
+
+        try {
+            $adminUserId = createCardAccessAdminTestUser();
+            $marker = 'Role ' . bin2hex(random_bytes(6));
+            $create = $service->createRole($adminUserId, $marker);
+            $roleId = (int)($create['role_id'] ?? 0);
+            $service->setCardAllowedForRole($adminUserId, $roleId, 'current_users', true);
+
+            $allowed = $framework->allowedCardsForRole($roleId, ['current_users', 'add_user', 'user_login_lockouts', 'role_assignment']);
+
+            $harness->assertSame(['current_users', 'add_user', 'user_login_lockouts'], $allowed);
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
 });
 
 function createCardAccessAdminTestUser(): int

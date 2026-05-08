@@ -19,6 +19,34 @@ $harness->check(AppConfigurationStore::class, 'exposes the active application co
     $harness->assertTrue(is_file(AppConfigurationStore::configPath()));
 });
 
+$harness->check(AppConfigurationStore::class, 'does not generate a default database DSN', function () use ($harness): void {
+    $method = new ReflectionMethod(AppConfigurationStore::class, 'defaults');
+    $defaults = $method->invoke(null);
+
+    $harness->assertSame('', $defaults['db']['dsn'] ?? null);
+});
+
+$harness->check(AppConfigurationStore::class, 'updates database connection settings without dropping other db options', function () use ($harness): void {
+    $path = AppConfigurationStore::configPath();
+    $original = file_get_contents($path);
+
+    if (!is_string($original)) {
+        throw new RuntimeException('Unable to read fixture config.');
+    }
+
+    try {
+        $updated = AppConfigurationStore::setDatabaseConfig('odbc:test_dsn', 'test_user', 'test_password');
+
+        $harness->assertSame('odbc:test_dsn', $updated['db']['dsn'] ?? null);
+        $harness->assertSame('test_user', $updated['db']['user'] ?? null);
+        $harness->assertSame('test_password', $updated['db']['pass'] ?? null);
+        $harness->assertSame('../db_schema/eelKit.schema.sql', $updated['db']['sqlite_schema'] ?? null);
+    } finally {
+        file_put_contents($path, $original, LOCK_EX);
+        AppConfigurationStore::config(true);
+    }
+});
+
 $harness->check(AppConfigurationStore::class, 'throws without emitting warnings when config writes fail', function () use ($harness): void {
     $method = new ReflectionMethod(AppConfigurationStore::class, 'writeConfigFile');
     $targetDirectory = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'eelkit-config-write-target';

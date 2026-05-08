@@ -76,6 +76,7 @@ CREATE TABLE `users` (
   `last_login_at` datetime DEFAULT NULL,
   `password_changed_at` datetime DEFAULT NULL,
   `must_change_password` tinyint(1) NOT NULL DEFAULT 0,
+  `otp_required` tinyint(1) NOT NULL DEFAULT 1,
   `is_active` tinyint(1) NOT NULL DEFAULT 1,
   `role_id` int(11) NOT NULL DEFAULT -1,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
@@ -152,7 +153,7 @@ CREATE TABLE `user_account_audit` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `affected_user_id` int(11) NOT NULL,
   `actor_user_id` int(11) DEFAULT NULL,
-  `action_type` enum('user_created','user_enabled','user_disabled','password_set_admin','password_change_required_admin','password_changed_self','email_changed','display_name_changed','otp_reset_admin','otp_rotation_started','otp_rotation_completed','mfa_authenticated','role_changed') NOT NULL,
+  `action_type` enum('user_created','user_enabled','user_disabled','password_set_admin','password_change_required_admin','password_changed_self','email_changed','display_name_changed','otp_requirement_changed','otp_reset_admin','otp_rotation_started','otp_rotation_completed','mfa_authenticated','role_changed') NOT NULL,
   `reason` varchar(255) DEFAULT NULL,
   `details_json` longtext DEFAULT NULL,
   `device_id` varchar(64) DEFAULT NULL,
@@ -229,7 +230,8 @@ CREATE TABLE `user_totp` (
 INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_05_07_001_initial_schema.sql'),
   ('2026_05_08_001_schema_integrity.sql'),
-  ('2026_05_08_002_force_password_change.sql');
+  ('2026_05_08_002_force_password_change.sql'),
+  ('2026_05_08_003_user_otp_optional.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

@@ -247,6 +247,7 @@ final class UserSessionService
                 last_login_at,
                 password_changed_at,
                 must_change_password,
+                otp_required,
                 created_at,
                 updated_at
              FROM users

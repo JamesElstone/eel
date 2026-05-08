@@ -266,6 +266,7 @@ final class PageRendererFramework
         $displayName = $this->currentSidebarDisplayName($sessionAuthenticationService);
         global $appName;
         $escapedAppName = HelperFramework::escape((string)($appName ?? 'eelKit Framework'));
+        $escapedBrandMark = HelperFramework::escape($this->brandMark());
         $appStrapline = trim((string)AppConfigurationStore::get('app_strapline', 'Bookkeeping without the fog and panic'));
         if ($appStrapline === '') {
             $appStrapline = 'Bookkeeping without the fog and panic';
@@ -275,7 +276,7 @@ final class PageRendererFramework
         $html = '<aside id="sidebar-shell" class="sidebar">
         <div class="brand-block">
             <div class="brand">
-                <div class="brand-mark">E</div>
+                <div class="brand-mark">' . $escapedBrandMark . '</div>
                 <div class="brand-copy">
                     <div class="brand-title">' . $escapedAppName . '</div>
                     <div class="brand-subtitle">' . $escapedAppStrapline . '</div>
@@ -315,6 +316,13 @@ final class PageRendererFramework
         $html .= '</aside>';
 
         return $html;
+    }
+
+    private function brandMark(): string
+    {
+        $brandMark = trim((string)AppConfigurationStore::get('brand-mark', 'E'));
+
+        return $brandMark !== '' ? $brandMark : 'E';
     }
 
     private function renderToolbarLogout(SessionAuthenticationService $sessionAuthenticationService): string

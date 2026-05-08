@@ -60,13 +60,14 @@ final class _current_usersCard extends CardBaseFramework
                 <td>' . HelperFramework::escape((string)($user['email_address'] ?? '')) . '</td>
                 <td>' . $this->roleSelectHtml($context, $user, $roles, $csrfToken) . '</td>
                 <td><span class="badge ' . ((int)($user['is_active'] ?? 0) === 1 ? 'success' : 'danger') . '">' . ((int)($user['is_active'] ?? 0) === 1 ? 'Enabled' : 'Disabled') . '</span>' . (!empty($user['must_change_password']) ? ' <span class="badge warning">Password change required</span>' : '') . '</td>
+                <td>' . $this->otpRequiredSelectHtml($context, $user, $csrfToken) . '</td>
                 <td>' . HelperFramework::escape($sessionSummary) . '</td>
                 <td>' . $this->actionsHtml($context, $user, $csrfToken) . '</td>
             </tr>';
         }
 
         if ($rowsHtml === '') {
-            $rowsHtml = '<tr><td colspan="6">No users were found.</td></tr>';
+            $rowsHtml = '<tr><td colspan="7">No users were found.</td></tr>';
         }
 
         return '
@@ -79,6 +80,7 @@ final class _current_usersCard extends CardBaseFramework
                             <th>Email</th>
                             <th>Role</th>
                             <th>Status</th>
+                            <th>OTP</th>
                             <th>Current Session</th>
                             <th>Actions</th>
                         </tr>
@@ -125,6 +127,28 @@ final class _current_usersCard extends CardBaseFramework
             <input type="hidden" name="target_user_id" value="' . HelperFramework::escape((string)$userId) . '">
             <select class="selector-input" name="target_role_id">
                 ' . $optionsHtml . '
+            </select>
+        </form>';
+    }
+
+    private function otpRequiredSelectHtml(array $context, array $user, string $csrfToken): string
+    {
+        $userId = max(0, (int)($user['id'] ?? 0));
+        if ($userId <= 0) {
+            return '';
+        }
+
+        $otpRequired = (int)($user['otp_required'] ?? 1) === 1;
+        $cards = $this->hiddenFields($context);
+
+        return '<form method="post" action="?page=users" data-ajax="true">
+            ' . $cards . '
+            <input type="hidden" name="action" value="users-set-otp-required">
+            <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
+            <input type="hidden" name="target_user_id" value="' . HelperFramework::escape((string)$userId) . '">
+            <select class="selector-input" name="otp_required">
+                <option value="1"' . ($otpRequired ? ' selected' : '') . '>Required</option>
+                <option value="0"' . (!$otpRequired ? ' selected' : '') . '>Optional</option>
             </select>
         </form>';
     }

@@ -88,7 +88,7 @@ function eel_set_external_ip_run_tool(): int
         eel_set_external_ip_writeln('Previous vendor public IP: ' . $result['previous']);
     }
 
-    eel_set_external_ip_writeln('Updated antifraud.vendor_public_ip in web_root/config/app.php');
+    eel_set_external_ip_writeln('Updated antifraud.vendor_public_ip in secure/app.php');
     eel_set_external_ip_writeln('-EOL-');
 
     return 0;

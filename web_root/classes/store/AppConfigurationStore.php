@@ -17,10 +17,35 @@ final class AppConfigurationStore
             return self::$config;
         }
 
-        $loaded = require APP_CONFIG . 'app.php';
+        self::ensureStoredConfig();
+
+        $loaded = require self::storedConfigPath();
         self::$config = array_replace_recursive(self::defaults(), is_array($loaded) ? $loaded : []);
 
         return self::$config;
+    }
+
+    public static function configPath(): string
+    {
+        return self::storedConfigPath();
+    }
+
+    public static function ensureStoredConfig(): string
+    {
+        $path = self::storedConfigPath();
+
+        if (is_file($path)) {
+            return $path;
+        }
+
+        $directory = dirname($path);
+        if (!is_dir($directory) && !mkdir($directory, 0777, true) && !is_dir($directory)) {
+            throw new RuntimeException('Unable to create application configuration directory: ' . $directory);
+        }
+
+        self::writeConfigFile($path, self::defaults());
+
+        return $path;
     }
 
     public static function setAntifraudVendorPublicIp(string $ip): array
@@ -84,6 +109,25 @@ final class AppConfigurationStore
     {
         return [
             'app_name' => 'eelKit Framework',
+            'developer_options' => true,
+            'db' => [
+                'dsn' => 'odbc:eelkit',
+                'user' => '',
+                'pass' => '',
+                'logfile' => '',
+            ],
+            'navigation' => [
+                'default_order' => [],
+                'developer_only_pages' => [
+                    'test',
+                ],
+            ],
+            'antifraud' => [
+                'vendor_license_ids' => '1234',
+                'vendor_product_name' => 'eelKit',
+                'vendor_public_ip' => '',
+                'vendor_version' => 'dev',
+            ],
             'api_keys' => [
                 'path' => '../secure/api.keys',
             ],
@@ -103,12 +147,20 @@ final class AppConfigurationStore
 
     private static function readStoredConfig(): array
     {
-        $loaded = require APP_CONFIG . 'app.php';
+        self::ensureStoredConfig();
+
+        $loaded = require self::storedConfigPath();
 
         return is_array($loaded) ? $loaded : [];
     }
 
     private static function writeStoredConfig(array $config): void
+    {
+        self::writeConfigFile(self::storedConfigPath(), $config);
+        self::$config = null;
+    }
+
+    private static function writeConfigFile(string $path, array $config): void
     {
         $content = "<?php\n"
             . "/**\n"
@@ -120,13 +172,16 @@ final class AppConfigurationStore
             . "declare(strict_types=1);\n\n"
             . 'return ' . var_export($config, true) . ";\n";
 
-        $result = file_put_contents(APP_CONFIG . 'app.php', $content, LOCK_EX);
+        $result = file_put_contents($path, $content, LOCK_EX);
 
         if ($result === false) {
             throw new RuntimeException('Unable to write application configuration file.');
         }
+    }
 
-        self::$config = null;
+    private static function storedConfigPath(): string
+    {
+        return APP_CONFIG . 'app.php';
     }
 
     private static function randomAsciiString(int $length): string

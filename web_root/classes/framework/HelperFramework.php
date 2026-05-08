@@ -389,18 +389,6 @@ final class HelperFramework
         return $environment === 'LIVE' ? 'LIVE' : 'TEST';
     }
 
-    public static function accountingPeriodLabel(
-        DateTimeInterface|string $periodStart,
-        DateTimeInterface|string $periodEnd
-    ): string
-    {
-        $start = $periodStart instanceof DateTimeInterface ? $periodStart : new DateTimeImmutable((string)$periodStart);
-        $end = $periodEnd instanceof DateTimeInterface ? $periodEnd : new DateTimeImmutable((string)$periodEnd);
-        $resolvedFormat = self::displayDateFormat();
-
-        return $start->format($resolvedFormat) . ' to ' . $end->format($resolvedFormat);
-    }
-
     public static function displayDate(DateTimeInterface|string $value): string
     {
         $date = $value instanceof DateTimeInterface ? $value : new DateTimeImmutable((string)$value);

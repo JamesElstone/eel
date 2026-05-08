@@ -6,7 +6,7 @@ This folder contains the small database layer used by eelKit.
 - `PdoDB.php` owns PDO connection setup, SQL logging, SQLite schema bootstrapping, and ODBC compatibility helpers.
 - `PdoStatementDB.php` wraps `PDOStatement` so named parameters can be rewritten for ODBC drivers that expect positional placeholders.
 
-Database settings are read from `config/app.php` under the `db` key. For MariaDB via ODBC, use an ODBC DSN such as `odbc:wccg` and keep real credentials out of version control.
+Database settings are read from `secure/app.php` under the `db` key. For MariaDB via ODBC, use an ODBC DSN such as `odbc:wccg` and keep real credentials out of version control.
 
 ## FreeBSD MariaDB ODBC Setup
 

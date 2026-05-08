@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 define('APP_ROOT', rtrim((string)(realpath(dirname(__DIR__, 2)) ?: dirname(__DIR__, 2)), '\\/') . DIRECTORY_SEPARATOR);
+define('PROJECT_ROOT', rtrim(dirname(APP_ROOT), '\\/') . DIRECTORY_SEPARATOR);
 define('APP_CLASSES', APP_ROOT . 'classes' . DIRECTORY_SEPARATOR);
 define('APP_CONFIG', APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'fixtures' . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR);
 define('APP_CONTENT', APP_ROOT . 'content' . DIRECTORY_SEPARATOR);

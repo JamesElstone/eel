@@ -13,3 +13,8 @@ $harness = new GeneratedServiceClassTestHarness();
 $harness->check(AppConfigurationStore::class, 'loads configuration from the test fixture', function () use ($harness): void {
     $harness->assertSame('eelKit Framework Test', AppConfigurationStore::get('app_name'));
 });
+
+$harness->check(AppConfigurationStore::class, 'exposes the active application config file path', function () use ($harness): void {
+    $harness->assertSame(APP_CONFIG . 'app.php', AppConfigurationStore::configPath());
+    $harness->assertTrue(is_file(AppConfigurationStore::configPath()));
+});

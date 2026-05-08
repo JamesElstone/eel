@@ -219,7 +219,7 @@ final class AuthPageRenderer
                             <div class="auth-logo-mark">E</div>
                             <div class="auth-logo-copy">
                                 <div class="auth-logo-title">' . $escapedAppName . '</div>
-                                <div class="auth-logo-subtitle">Secure accounting access</div>
+                                <div class="auth-logo-subtitle">Secured access</div>
                             </div>
                         </div>
                         <h1>' . $escapedTitle . '</h1>

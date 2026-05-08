@@ -311,6 +311,33 @@ final class UserManagementService
         return $result;
     }
 
+    public function setUserOtpRequired(int $actorUserId, int $targetUserId, bool $otpRequired): array
+    {
+        $authorisationError = $this->authoriseUserManagementActor($actorUserId);
+        if ($authorisationError !== null) {
+            return ['success' => false, 'errors' => [$authorisationError]];
+        }
+
+        $targetUser = $this->userAuthenticationService->userById($targetUserId);
+        $previousOtpRequired = (int)($targetUser['otp_required'] ?? 1) === 1;
+        $result = $this->userAuthenticationService->setOtpRequired($targetUserId, $otpRequired);
+
+        if (!empty($result['success']) && $previousOtpRequired !== $otpRequired) {
+            $this->userHistoryStore->recordAccountAudit(
+                $targetUserId,
+                $actorUserId,
+                'otp_requirement_changed',
+                $otpRequired
+                    ? 'An administrator required OTP setup for this user.'
+                    : 'An administrator allowed this user to skip OTP setup.',
+                ['otp_required' => $otpRequired],
+                $this->userSessionService->buildRequestMetadata()
+            );
+        }
+
+        return $result;
+    }
+
     public function resetUserOtp(int $actorUserId, int $targetUserId): array
     {
         $authorisationError = $this->authoriseUserManagementActor($actorUserId);

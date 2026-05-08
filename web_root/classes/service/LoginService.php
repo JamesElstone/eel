@@ -130,7 +130,7 @@ final class LoginService
             ];
         }
 
-        return $this->continueAfterPrimaryCredentials($userId, $deviceId, (string)($user['email_address'] ?? ''));
+        return $this->continueAfterPrimaryCredentials($user, $deviceId);
     }
 
     public function completeRequiredPasswordChange(string $password, string $passwordConfirmation, string $deviceId): array
@@ -177,11 +177,18 @@ final class LoginService
         );
         $this->sessionAuthenticationService->clearPendingPasswordChange();
 
-        return $this->continueAfterPrimaryCredentials($userId, $deviceId, (string)($user['email_address'] ?? ''));
+        return $this->continueAfterPrimaryCredentials($user ?? [], $deviceId);
     }
 
-    private function continueAfterPrimaryCredentials(int $userId, string $deviceId, string $emailAddress): array
+    private function continueAfterPrimaryCredentials(array $user, string $deviceId): array
     {
+        $userId = max(0, (int)($user['id'] ?? 0));
+        $emailAddress = (string)($user['email_address'] ?? '');
+
+        if ($userId <= 0) {
+            throw new RuntimeException('Authenticated user could not be resolved.');
+        }
+
         if ($this->otpService->isOTPenabled($userId)) {
             $this->sessionAuthenticationService->beginPendingOtp($userId, $deviceId);
 
@@ -189,6 +196,29 @@ final class LoginService
                 'success' => true,
                 'authenticated' => false,
                 'requires_otp' => true,
+                'errors' => [],
+            ];
+        }
+
+        if ((int)($user['otp_required'] ?? 1) !== 1) {
+            $session = $this->userSessionService->startAuthenticatedSession($userId, $deviceId, $emailAddress);
+            $this->userHistoryStore->attachSessionTokenHashToLatestLogonEvent(
+                $userId,
+                'login_succeeded',
+                (string)$session['session_token_hash']
+            );
+            $this->sessionAuthenticationService->completeAuthentication(
+                $userId,
+                $deviceId,
+                (string)$session['session_token_hash'],
+                $emailAddress
+            );
+
+            return [
+                'success' => true,
+                'authenticated' => true,
+                'requires_otp' => false,
+                'requires_otp_setup' => false,
                 'errors' => [],
             ];
         }

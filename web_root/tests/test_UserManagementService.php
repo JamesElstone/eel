@@ -150,3 +150,20 @@ $harness->check(UserManagementService::class, 'requires another user to change p
         ]));
     });
 });
+
+$harness->check(UserManagementService::class, 'allows administrators to make OTP setup optional for a user', function () use ($harness, $withTemporaryManagedUsers): void {
+    $withTemporaryManagedUsers(function (UserManagementService $service, UserAuthenticationService $authService, int $adminId, int $targetId, int $ordinaryId) use ($harness): void {
+        $blocked = $service->setUserOtpRequired($ordinaryId, $targetId, false);
+        $updated = $service->setUserOtpRequired($adminId, $targetId, false);
+        $target = $authService->userById($targetId);
+
+        $harness->assertTrue(empty($blocked['success']));
+        $harness->assertTrue(!empty($updated['success']));
+        $harness->assertSame(0, (int)($target['otp_required'] ?? 1));
+        $harness->assertSame(1, InterfaceDB::countWhere('user_account_audit', [
+            'affected_user_id' => $targetId,
+            'actor_user_id' => $adminId,
+            'action_type' => 'otp_requirement_changed',
+        ]));
+    });
+});

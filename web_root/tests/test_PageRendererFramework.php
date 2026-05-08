@@ -64,6 +64,8 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
     $shouldRenderTabs->setAccessible(true);
     $requestedVisibleCard = new ReflectionMethod(PageRendererFramework::class, 'requestedVisibleCard');
     $requestedVisibleCard->setAccessible(true);
+    $brandMark = new ReflectionMethod(PageRendererFramework::class, 'brandMark');
+    $brandMark->setAccessible(true);
 
     $harness->check(PageRendererFramework::class, 'normalises legacy cards to one stack layout without tabs', function () use ($harness, $instance, $resolveCardLayout, $shouldRenderTabs): void {
         $layout = $resolveCardLayout->invoke($instance, new PageRendererLegacyLayoutTestPage(), [
@@ -135,5 +137,9 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
                 ],
             ], $actionResult)
         );
+    });
+
+    $harness->check(PageRendererFramework::class, 'reads the sidebar brand mark from application config', function () use ($harness, $instance, $brandMark): void {
+        $harness->assertSame('T', $brandMark->invoke($instance));
     });
 });

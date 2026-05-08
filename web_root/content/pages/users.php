@@ -171,6 +171,17 @@ final class _users extends PageContextFramework
                 'Password change required. The user will be prompted after their next successful password check.',
                 ['current.users']
             ),
+            'users-set-otp-required' => $this->resultFromArray(
+                $canManageUsers
+                    ? $userManagementService->setUserOtpRequired(
+                        $currentUserId,
+                        max(0, (int)$request->input('target_user_id', 0)),
+                        (string)$request->input('otp_required', '1') === '1'
+                    )
+                    : ['success' => false, 'errors' => ['You do not have permission to manage users.']],
+                'OTP requirement updated.',
+                ['current.users']
+            ),
             'users-set-password' => $this->resultFromArray(
                 $canManageUsers
                     ? $userManagementService->setPasswordForUser(

@@ -678,6 +678,40 @@ final class UserAuthenticationService
         ];
     }
 
+    public function setOtpRequired(int $userId, bool $otpRequired): array
+    {
+        $existingUser = $this->loadUserById($userId);
+
+        if ($existingUser === null) {
+            return [
+                'success' => false,
+                'errors' => ['The selected user could not be found.'],
+                'user_id' => $userId,
+                'user' => null,
+            ];
+        }
+
+        InterfaceDB::prepareExecute(
+            'UPDATE users
+             SET otp_required = :otp_required,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = :id',
+            [
+                'id' => $userId,
+                'otp_required' => $otpRequired ? 1 : 0,
+            ]
+        );
+
+        self::invalidateUserByIdCache($userId);
+
+        return [
+            'success' => true,
+            'errors' => [],
+            'user_id' => $userId,
+            'user' => $this->userById($userId),
+        ];
+    }
+
     private function authenticateLoadedUser(array $user, string $password): array|false
     {
         $storedHash = (string)($user['password_hash'] ?? '');
@@ -781,6 +815,7 @@ final class UserAuthenticationService
             'email_address',
             'password_hash',
             'must_change_password',
+            'otp_required',
             'is_active',
             'role_id',
             'current_session_token_hash',

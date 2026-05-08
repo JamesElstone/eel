@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 return [
     'app_name' => 'eelKit Framework Test',
+    'brand-mark' => 'T',
     'app_strapline' => 'Test strapline',
     'db' => [
         'dsn' => 'sqlite::memory:',

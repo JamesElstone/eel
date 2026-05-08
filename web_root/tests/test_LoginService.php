@@ -67,6 +67,30 @@ $harness->check(LoginService::class, 'starts OTP setup after valid primary crede
     });
 });
 
+$harness->check(LoginService::class, 'authenticates without OTP setup when OTP is optional for the user', function () use ($harness, $withTemporaryLoginUser): void {
+    $withTemporaryLoginUser(function (UserAuthenticationService $authService, int $userId, string $emailAddress) use ($harness): void {
+        $_SESSION = [];
+        $harness->assertTrue(!empty($authService->setOtpRequired($userId, false)['success']));
+
+        $sessionService = new SessionAuthenticationService();
+        $loginService = new LoginService(
+            $authService,
+            new OtpService('eelKit Framework'),
+            new QrCodeService(),
+            $sessionService
+        );
+
+        $result = $loginService->startLogin($emailAddress, 'Strong Password 1!', 'device-a');
+
+        $harness->assertTrue(!empty($result['success']));
+        $harness->assertTrue(!empty($result['authenticated']));
+        $harness->assertTrue(empty($result['requires_otp']));
+        $harness->assertTrue(empty($result['requires_otp_setup']));
+        $harness->assertSame($userId, $sessionService->authenticatedUserId('device-a'));
+        $harness->assertSame(0, $sessionService->pendingOtpSetupUserId('device-a'));
+    });
+});
+
 $harness->check(LoginService::class, 'records failed primary credential attempts', function () use ($harness, $withTemporaryLoginUser): void {
     $withTemporaryLoginUser(function (UserAuthenticationService $authService, int $userId, string $emailAddress) use ($harness): void {
         $_SESSION = [];

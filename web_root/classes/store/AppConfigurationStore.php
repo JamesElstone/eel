@@ -130,6 +130,7 @@ final class AppConfigurationStore
     {
         return [
             'app_name' => 'eelKit Framework',
+            'brand-mark' => 'E',
             'app_strapline' => 'A php framework',
             'developer_options' => true,
             'db' => [

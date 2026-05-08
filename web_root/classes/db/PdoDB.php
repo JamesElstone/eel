@@ -68,16 +68,49 @@ final class PdoDB
         $username = (string)($dbConfig['user'] ?? '');
         $password = (string)($dbConfig['pass'] ?? '');
 
-        $pdo = self::connectWithCredentials(
-            $dsn,
-            $username !== '' ? $username : null,
-            $password !== '' ? $password : null,
-            []
-        );
+        try {
+            $pdo = self::connectWithCredentials(
+                $dsn,
+                $username !== '' ? $username : null,
+                $password !== '' ? $password : null,
+                []
+            );
+        } catch (PDOException $exception) {
+            throw new RuntimeException(self::connectionExceptionMessage($dsn, $exception), 0, $exception);
+        }
 
         self::initialiseConfiguredSqliteSchema($pdo, $dbConfig);
 
         return $pdo;
+    }
+
+    private static function connectionExceptionMessage(string $dsn, PDOException $exception): string
+    {
+        $message = $exception->getMessage();
+        if (!self::isMissingDriverException($exception)) {
+            return 'Database connection failed: ' . $message;
+        }
+
+        $driver = self::dsnDriverName($dsn);
+        $driverDescription = $driver === '' ? 'the configured DSN' : 'the "' . $driver . '" PDO driver';
+        $extensionHint = $driver === 'odbc' ? ' Enable the PHP pdo_odbc extension and install/configure the system ODBC driver manager and DSN.' : '';
+
+        return 'Database connection failed because ' . $driverDescription . ' is not installed or enabled.' . $extensionHint;
+    }
+
+    private static function isMissingDriverException(PDOException $exception): bool
+    {
+        return str_contains(strtolower($exception->getMessage()), 'could not find driver');
+    }
+
+    private static function dsnDriverName(string $dsn): string
+    {
+        $separatorPosition = strpos($dsn, ':');
+        if ($separatorPosition === false) {
+            return '';
+        }
+
+        return strtolower(trim(substr($dsn, 0, $separatorPosition)));
     }
 
     private static function initialiseConfiguredSqliteSchema(PDO $pdo, array $dbConfig): void

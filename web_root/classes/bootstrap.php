@@ -167,6 +167,10 @@ function eel_schema_exception_hint(Throwable $exception): ?string
 
 function eel_developer_options_enabled(): bool
 {
+    if (!is_file(APP_CONFIG . 'app.php')) {
+        return false;
+    }
+
     try {
         return (bool)AppConfigurationStore::get('developer_options', false);
     } catch (Throwable) {

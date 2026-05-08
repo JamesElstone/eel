@@ -38,6 +38,7 @@ final class _users extends PageContextFramework
     {
         return [
             'current_users',
+            'user_login_lockouts',
             'add_user',
             'user_logon_history_log',
             'current_user_details',
@@ -52,6 +53,7 @@ final class _users extends PageContextFramework
                 'tab' => 'System Users',
                 'cards' => [
                     'current_users',
+                    'user_login_lockouts',
                     'add_user',
                     'user_logon_history_log',
                 ],
@@ -160,6 +162,16 @@ final class _users extends PageContextFramework
                     : ['success' => false, 'errors' => ['You do not have permission to manage users.']],
                 'OTP reset. The user will be required to enroll OTP again on next sign-in.',
                 ['current.users']
+            ),
+            'users-reset-login-lockout' => $this->resultFromArray(
+                $canManageUsers
+                    ? $userManagementService->resetUserLoginLockout(
+                        $currentUserId,
+                        max(0, (int)$request->input('target_user_id', 0))
+                    )
+                    : ['success' => false, 'errors' => ['You do not have permission to manage users.']],
+                'Login lockout reset. The user can try signing in again.',
+                ['current.users', 'user.login.lockouts', 'user.logon.history.log']
             ),
             'users-require-password-change' => $this->resultFromArray(
                 $canManageUsers

@@ -422,6 +422,35 @@ final class UserAuthenticationService
         }
     }
 
+    public function clearLoginRateLimitForUser(int $userId): int
+    {
+        $user = $this->loadUserById($userId);
+
+        if ($user === null) {
+            return 0;
+        }
+
+        $emailAddress = $this->normaliseEmailAddress((string)($user['email_address'] ?? ''));
+
+        if ($emailAddress === '') {
+            return InterfaceDB::execute(
+                'DELETE FROM user_login_rate_limits
+                 WHERE user_id = :user_id',
+                ['user_id' => $userId]
+            );
+        }
+
+        return InterfaceDB::execute(
+            'DELETE FROM user_login_rate_limits
+             WHERE user_id = :user_id
+                OR email_address = :email_address',
+            [
+                'user_id' => $userId,
+                'email_address' => $emailAddress,
+            ]
+        );
+    }
+
     public function recordFailedPasswordAttempt(string $emailAddress, ?string $deviceId = null): array
     {
         $emailAddress = $this->normaliseEmailAddress($emailAddress);
@@ -604,6 +633,38 @@ final class UserAuthenticationService
         unset($user);
 
         return $users;
+    }
+
+    public function listLockedOutUsers(): array
+    {
+        if (!InterfaceDB::tableExists('users') || !InterfaceDB::tableExists('user_login_rate_limits')) {
+            return [];
+        }
+
+        return InterfaceDB::fetchAll(
+            'SELECT
+                users.id AS user_id,
+                users.display_name,
+                users.email_address,
+                MAX(limits.consecutive_failed_password_attempts) AS consecutive_failed_password_attempts,
+                MAX(limits.locked_at) AS locked_at,
+                MIN(limits.lock_expires_at) AS lock_expires_at,
+                GROUP_CONCAT(DISTINCT limits.scope_type) AS locked_scopes,
+                GROUP_CONCAT(DISTINCT limits.lock_reason) AS lock_reasons
+             FROM user_login_rate_limits limits
+             INNER JOIN users
+                ON users.id = limits.user_id
+                OR users.email_address = limits.email_address
+             WHERE limits.locked_at IS NOT NULL
+               AND limits.locked_at <> \'\'
+               AND (
+                   limits.lock_expires_at IS NULL
+                   OR limits.lock_expires_at = \'\'
+                   OR limits.lock_expires_at > CURRENT_TIMESTAMP
+               )
+             GROUP BY users.id, users.display_name, users.email_address
+             ORDER BY MAX(limits.locked_at) DESC, users.display_name ASC'
+        );
     }
 
     public function setUserActive(int $userId, bool $isActive): array

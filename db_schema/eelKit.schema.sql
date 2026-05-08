@@ -153,7 +153,7 @@ CREATE TABLE `user_account_audit` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `affected_user_id` int(11) NOT NULL,
   `actor_user_id` int(11) DEFAULT NULL,
-  `action_type` enum('user_created','user_enabled','user_disabled','password_set_admin','password_change_required_admin','password_changed_self','email_changed','display_name_changed','otp_requirement_changed','otp_reset_admin','otp_rotation_started','otp_rotation_completed','mfa_authenticated','role_changed') NOT NULL,
+  `action_type` enum('user_created','user_enabled','user_disabled','password_set_admin','password_change_required_admin','password_changed_self','email_changed','display_name_changed','otp_requirement_changed','otp_reset_admin','login_lockout_reset_admin','otp_rotation_started','otp_rotation_completed','mfa_authenticated','role_changed') NOT NULL,
   `reason` varchar(255) DEFAULT NULL,
   `details_json` longtext DEFAULT NULL,
   `device_id` varchar(64) DEFAULT NULL,

@@ -23,7 +23,7 @@ Use the `.sh` wrapper on Linux/macOS/Git Bash, or the `.bat` wrapper on Windows 
 Start by cloning eelKit into the new project directory:
 
 ```bash
-git clone https://github.com/JamesElstone/ellKit.git yourProjectRepo
+git clone https://github.com/JamesElstone/eelKit.git yourProjectRepo
 cd yourProjectRepo
 ```
 
@@ -49,7 +49,7 @@ After this, the remotes should look like:
 
 ```text
 origin    git@github.com:you/yourProjectRepo.git
-upstream  https://github.com/JamesElstone/ellKit.git
+upstream  https://github.com/JamesElstone/eelKit.git
 ```
 
 ## Import eelKit Updates
@@ -142,7 +142,7 @@ Then run `projectGit` again.
 Create the project:
 
 ```bash
-git clone https://github.com/JamesElstone/ellKit.git yourProjectRepo
+git clone https://github.com/JamesElstone/eelKit.git yourProjectRepo
 cd yourProjectRepo
 tools/projectGit.sh init git@github.com:you/yourProjectRepo.git
 ```

@@ -156,7 +156,7 @@ function eel_database_driver_exception_hint(Throwable $exception): ?string
         $message = strtolower($current->getMessage());
 
         if (str_contains($message, 'could not find driver')) {
-            return 'This looks like a missing PDO database driver. For the default ODBC DSN, enable the PHP pdo_odbc extension and install/configure the system ODBC driver manager and DSN.';
+            return 'This looks like a missing PDO database driver. For an ODBC DSN, enable the PHP pdo_odbc extension and install/configure the system ODBC driver manager and DSN.';
         }
     }
 

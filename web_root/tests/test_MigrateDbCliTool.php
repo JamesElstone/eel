@@ -19,6 +19,11 @@ ob_start();
 require_once $setupDbToolPath;
 $setupIncludeOutput = ob_get_clean();
 
+$setDbConfigToolPath = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'tools' . DIRECTORY_SEPARATOR . 'setDbConfig.php';
+ob_start();
+require_once $setDbConfigToolPath;
+$setDbConfigIncludeOutput = ob_get_clean();
+
 $harness = new GeneratedServiceClassTestHarness();
 
 $harness->check('migrateDb.php', 'loads CLI helper functions without running migrations', function () use ($harness, $includeOutput): void {
@@ -32,6 +37,67 @@ $harness->check('migrateDb.php', 'loads CLI helper functions without running mig
 $harness->check('setupDb.php', 'loads CLI helper functions without running setup', function () use ($harness, $setupIncludeOutput): void {
     $harness->assertSame('', $setupIncludeOutput);
     $harness->assertTrue(function_exists('eel_run_database_setup_tool'));
+});
+
+$harness->check('setDbConfig.php', 'loads CLI helper functions without running config update', function () use ($harness, $setDbConfigIncludeOutput): void {
+    $harness->assertSame('', $setDbConfigIncludeOutput);
+    $harness->assertTrue(function_exists('eel_set_db_config_run_tool'));
+    $harness->assertTrue(function_exists('eel_set_db_config_arguments'));
+    $harness->assertTrue(function_exists('eel_set_db_config_build_dsn'));
+});
+
+$harness->check('setDbConfig.php', 'parses named and positional connection arguments', function () use ($harness): void {
+    $named = eel_set_db_config_arguments([
+        'setDbConfig.php',
+        '--dsn=odbc:named',
+        '--user=named_user',
+        '--password=named_password',
+    ]);
+
+    $harness->assertSame('odbc:named', $named['dsn']);
+    $harness->assertSame('named_user', $named['user']);
+    $harness->assertSame('named_password', $named['password']);
+
+    $positional = eel_set_db_config_arguments([
+        'setDbConfig.php',
+        'odbc:positional',
+        'positional_user',
+        'positional_password',
+    ]);
+
+    $harness->assertSame('odbc:positional', $positional['dsn']);
+    $harness->assertSame('positional_user', $positional['user']);
+    $harness->assertSame('positional_password', $positional['password']);
+});
+
+$harness->check('setDbConfig.php', 'builds DSNs for supported database choices', function () use ($harness): void {
+    $harness->assertSame('odbc:eelkit_prod', eel_set_db_config_build_dsn([
+        'driver' => 'odbc',
+        'odbc_name' => 'eelkit_prod',
+    ]));
+
+    $harness->assertSame('mysql:host=db.example.test;port=3307;dbname=eelkit;charset=utf8mb4', eel_set_db_config_build_dsn([
+        'driver' => 'mysql',
+        'host' => 'db.example.test',
+        'port' => '3307',
+        'database' => 'eelkit',
+    ]));
+
+    $harness->assertSame('mysql:host=localhost;dbname=eelkit;charset=utf8mb4', eel_set_db_config_build_dsn([
+        'driver' => 'mariadb',
+        'host' => 'localhost',
+        'database' => 'eelkit',
+    ]));
+
+    $harness->assertSame('sqlite:../secure/eelkit.sqlite', eel_set_db_config_build_dsn([
+        'driver' => 'sqlite',
+        'sqlite_path' => '../secure/eelkit.sqlite',
+    ]));
+
+    $harness->assertSame('pgsql:host=localhost;dbname=eelkit', eel_set_db_config_build_dsn([
+        'driver' => 'custom',
+        'dsn' => 'pgsql:host=localhost;dbname=eelkit',
+    ]));
 });
 
 $harness->check('migrateDb.php', 'tracks expected application tables for empty database hydration', function () use ($harness): void {

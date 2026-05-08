@@ -63,6 +63,27 @@ final class AppConfigurationStore
         return self::config(true);
     }
 
+    public static function setDatabaseConfig(string $dsn, string $user, string $password): array
+    {
+        $dsn = trim($dsn);
+
+        if ($dsn === '') {
+            throw new RuntimeException('Database DSN cannot be empty.');
+        }
+
+        $config = self::readStoredConfig();
+        $db = is_array($config['db'] ?? null) ? $config['db'] : [];
+
+        $db['dsn'] = $dsn;
+        $db['user'] = $user;
+        $db['pass'] = $password;
+        $config['db'] = $db;
+
+        self::writeStoredConfig($config);
+
+        return self::config(true);
+    }
+
     public static function ensureUploadExportKey(int $length = 32): string
     {
         $config = self::readStoredConfig();
@@ -111,7 +132,7 @@ final class AppConfigurationStore
             'app_name' => 'eelKit Framework',
             'developer_options' => true,
             'db' => [
-                'dsn' => 'odbc:eelkit',
+                'dsn' => '',
                 'user' => '',
                 'pass' => '',
                 'logfile' => '',

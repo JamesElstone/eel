@@ -15,6 +15,11 @@ if ($appName === '') {
     $appName = 'eelKit Framework';
 }
 
+$appStrapline = trim((string)AppConfigurationStore::get('app_strapline', 'Bookkeeping without the fog and panic'));
+if ($appStrapline === '') {
+    $appStrapline = 'Bookkeeping without the fog and panic';
+}
+
 // *****************************
 //  Process variables passed in
 // *****************************
@@ -63,7 +68,7 @@ if ($authenticatedUserId > 0) {
     }
 }
 
-$authPageRenderer = new AuthPageRenderer($appName);
+$authPageRenderer = new AuthPageRenderer($appName, $appStrapline);
 $pageRequestGuard = new PageRequestGuard($appName, $authPageRenderer);
 
 $ajaxNonceResponse = $pageRequestGuard->ajaxNonceResponse(

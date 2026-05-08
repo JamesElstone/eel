@@ -9,7 +9,10 @@ declare(strict_types=1);
 
 final class AuthPageRenderer
 {
-    public function __construct(private readonly string $appName)
+    public function __construct(
+        private readonly string $appName,
+        private readonly string $appStrapline = 'Bookkeeping without the fog and panic',
+    )
     {
     }
 
@@ -197,6 +200,7 @@ final class AuthPageRenderer
         $escapedTitle = HelperFramework::escape($title);
         $escapedMessage = HelperFramework::escape($message);
         $escapedAppName = HelperFramework::escape($this->appName);
+        $escapedAppStrapline = HelperFramework::escape($this->appStrapline);
         $errorHtml = '';
 
         foreach ($errors as $error) {
@@ -219,7 +223,7 @@ final class AuthPageRenderer
                             <div class="auth-logo-mark">E</div>
                             <div class="auth-logo-copy">
                                 <div class="auth-logo-title">' . $escapedAppName . '</div>
-                                <div class="auth-logo-subtitle">Secured access</div>
+                                <div class="auth-logo-subtitle">' . $escapedAppStrapline . '</div>
                             </div>
                         </div>
                         <h1>' . $escapedTitle . '</h1>

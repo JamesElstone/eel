@@ -130,6 +130,7 @@ final class AppConfigurationStore
     {
         return [
             'app_name' => 'eelKit Framework',
+            'app_strapline' => 'A php framework',
             'developer_options' => true,
             'db' => [
                 'dsn' => '',

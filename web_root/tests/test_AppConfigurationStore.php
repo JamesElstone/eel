@@ -12,6 +12,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARAT
 $harness = new GeneratedServiceClassTestHarness();
 $harness->check(AppConfigurationStore::class, 'loads configuration from the test fixture', function () use ($harness): void {
     $harness->assertSame('eelKit Framework Test', AppConfigurationStore::get('app_name'));
+    $harness->assertSame('Test strapline', AppConfigurationStore::get('app_strapline'));
 });
 
 $harness->check(AppConfigurationStore::class, 'exposes the active application config file path', function () use ($harness): void {

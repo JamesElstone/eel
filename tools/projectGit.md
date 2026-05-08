@@ -23,20 +23,20 @@ Use the `.sh` wrapper on Linux/macOS/Git Bash, or the `.bat` wrapper on Windows 
 Start by cloning eelKit into the new project directory:
 
 ```bash
-git clone git@github.com:you/eelKit.git grocery
-cd grocery
+git clone https://github.com/JamesElstone/ellKit.git yourProjectRepo
+cd yourProjectRepo
 ```
 
 Then run:
 
 ```bash
-tools/projectGit.sh init git@github.com:you/grocery.git
+tools/projectGit.sh init git@github.com:you/yourProjectRepo.git
 ```
 
 On Windows Command Prompt:
 
 ```bat
-tools\projectGit.bat init git@github.com:you/grocery.git
+tools\projectGit.bat init git@github.com:you/yourProjectRepo.git
 ```
 
 This will:
@@ -48,8 +48,8 @@ This will:
 After this, the remotes should look like:
 
 ```text
-origin    git@github.com:you/grocery.git
-upstream  git@github.com:you/eelKit.git
+origin    git@github.com:you/yourProjectRepo.git
+upstream  https://github.com/JamesElstone/ellKit.git
 ```
 
 ## Import eelKit Updates
@@ -114,7 +114,7 @@ tools/projectGit.sh import upstream main --rebase
 During initial setup, you can also specify the upstream remote name and branch:
 
 ```bash
-tools/projectGit.sh init git@github.com:you/grocery.git upstream main
+tools/projectGit.sh init git@github.com:you/yourProjectRepo.git upstream main
 ```
 
 ## Safety Checks
@@ -142,16 +142,16 @@ Then run `projectGit` again.
 Create the project:
 
 ```bash
-git clone git@github.com:you/eelKit.git grocery
-cd grocery
-tools/projectGit.sh init git@github.com:you/grocery.git
+git clone https://github.com/JamesElstone/ellKit.git yourProjectRepo
+cd yourProjectRepo
+tools/projectGit.sh init git@github.com:you/yourProjectRepo.git
 ```
 
 Do project work as normal:
 
 ```bash
 git add .
-git commit -m "Build grocery dashboard"
+git commit -m "Build yourProjectRepo dashboard"
 git push
 ```
 

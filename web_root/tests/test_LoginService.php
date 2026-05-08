@@ -1,6 +1,6 @@
 <?php
 /**
- * EEL Accounts
+ * eelKit Framework
  * Copyright (c) 2026 James Elstone
  * Licensed under the BSD 3-Clause License
  * See LICENSE file for details.
@@ -53,7 +53,7 @@ $harness->check(LoginService::class, 'starts OTP setup after valid primary crede
         $_SESSION = [];
         $loginService = new LoginService(
             $authService,
-            new OtpService('EEL Accounts'),
+            new OtpService('eelKit Framework'),
             new QrCodeService(),
             new SessionAuthenticationService()
         );
@@ -72,7 +72,7 @@ $harness->check(LoginService::class, 'records failed primary credential attempts
         $_SESSION = [];
         $loginService = new LoginService(
             $authService,
-            new OtpService('EEL Accounts'),
+            new OtpService('eelKit Framework'),
             new QrCodeService(),
             new SessionAuthenticationService()
         );
@@ -89,7 +89,7 @@ $harness->check(LoginService::class, 'records failed primary credential attempts
 $harness->check(LoginService::class, 'requires forced password change before OTP challenge', function () use ($harness, $withTemporaryLoginUser): void {
     $withTemporaryLoginUser(function (UserAuthenticationService $authService, int $userId, string $emailAddress) use ($harness): void {
         $_SESSION = [];
-        $otpService = new OtpService('EEL Accounts');
+        $otpService = new OtpService('eelKit Framework');
         $secret = $otpService->generateOTPsecret($userId);
         $code = (new OtpVerificationService())->generateCodeForTimestep(
             6,
@@ -123,7 +123,7 @@ $harness->check(LoginService::class, 'requires forced password change before OTP
 $harness->check(LoginService::class, 'completes OTP challenge and clears excessive failures', function () use ($harness, $withTemporaryLoginUser): void {
     $withTemporaryLoginUser(function (UserAuthenticationService $authService, int $userId, string $emailAddress) use ($harness): void {
         $_SESSION = [];
-        $otpService = new OtpService('EEL Accounts');
+        $otpService = new OtpService('eelKit Framework');
         $secret = $otpService->generateOTPsecret($userId);
         $code = (new OtpVerificationService())->generateCodeForTimestep(
             6,

@@ -1,6 +1,6 @@
 <?php
 /**
- * EEL Accounts
+ * eelKit Framework
  * Copyright (c) 2026 James Elstone
  * Licensed under the BSD 3-Clause License
  * See LICENSE file for details.
@@ -50,7 +50,7 @@ final class _otp_status_testCard extends CardBaseFramework
                 <p class="helper">This card only renders OTP details when a user is currently signed in on this device.</p>
             </div>';
         } else {
-            $otpService = new OtpService('EEL Accounts');
+            $otpService = new OtpService('eelKit Framework');
             $hasSecret = $otpService->hasOTPsecret($userId);
             $isEnabled = $otpService->isOTPenabled($userId);
 

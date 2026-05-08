@@ -1,6 +1,6 @@
 <?php
 /**
- * EEL Accounts
+ * eelKit Framework
  * Copyright (c) 2026 James Elstone
  * Licensed under the BSD 3-Clause License
  * See LICENSE file for details.

@@ -1,6 +1,6 @@
 <?php
 /**
- * EEL Accounts
+ * eelKit Framework
  * Copyright (c) 2026 James Elstone
  * Licensed under the BSD 3-Clause License
  * See LICENSE file for details.
@@ -164,7 +164,7 @@ final class AppConfigurationStore
     {
         $content = "<?php\n"
             . "/**\n"
-            . " * EEL Accounts\n"
+            . " * eelKit Framework\n"
             . " * Copyright (c) 2026 James Elstone\n"
             . " * Licensed under the BSD 3-Clause License\n"
             . " * See LICENSE file for details.\n"

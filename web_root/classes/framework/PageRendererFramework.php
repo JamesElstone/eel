@@ -1,6 +1,6 @@
 <?php
 /**
- * EEL Accounts
+ * eelKit Framework
  * Copyright (c) 2026 James Elstone
  * Licensed under the BSD 3-Clause License
  * See LICENSE file for details.
@@ -168,7 +168,7 @@ final class PageRendererFramework
         $title = HelperFramework::escape($page->title());
         $subtitle = HelperFramework::escape($page->subtitle());
         global $appName;
-        $escapedAppName = HelperFramework::escape((string)($appName ?? 'EEL Accounts'));
+        $escapedAppName = HelperFramework::escape((string)($appName ?? 'eelKit Framework'));
         $pageStackClass = trim($page->pageStackClass());
         $pageStackClasses = 'page-stack' . ($pageStackClass !== '' ? ' ' . HelperFramework::escape($pageStackClass) : '');
         $contentHtml = $this->pageCards($page, $context) !== [] ? $cardsHtml : $this->renderNoAccessState();
@@ -265,7 +265,7 @@ final class PageRendererFramework
         $items = $this->sidebarItems($sessionAuthenticationService, $currentPageId);
         $displayName = $this->currentSidebarDisplayName($sessionAuthenticationService);
         global $appName;
-        $escapedAppName = HelperFramework::escape((string)($appName ?? 'EEL Accounts'));
+        $escapedAppName = HelperFramework::escape((string)($appName ?? 'eelKit Framework'));
 
         $html = '<aside id="sidebar-shell" class="sidebar">
         <div class="brand-block">

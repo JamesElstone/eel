@@ -1,6 +1,6 @@
 <?php
 /**
- * EEL Accounts
+ * eelKit Framework
  * Copyright (c) 2026 James Elstone
  * Licensed under the BSD 3-Clause License
  * See LICENSE file for details.
@@ -134,7 +134,7 @@ function eel_cli_run_reset_password_tool(): int
     eel_cli_writeln('Connected to database');
 
     $userAuthenticationService = new UserAuthenticationService();
-    $otpService = new OtpService('EEL Accounts');
+    $otpService = new OtpService('eelKit Framework');
 
     $username = eel_cli_prompt('Enter Username to work on: ');
     $user = eel_cli_find_user($userAuthenticationService, $username);

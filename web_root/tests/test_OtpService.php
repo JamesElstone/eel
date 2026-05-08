@@ -1,6 +1,6 @@
 <?php
 /**
- * EEL Accounts
+ * eelKit Framework
  * Copyright (c) 2026 James Elstone
  * Licensed under the BSD 3-Clause License
  * See LICENSE file for details.
@@ -63,7 +63,7 @@ $withTemporaryUser = function (callable $callback) use ($harness): void {
 
 $harness->check(OtpService::class, 'encrypts newly generated stored OTP secrets', function () use ($harness, $withTemporaryUser): void {
     $withTemporaryUser(function (int $userId) use ($harness): void {
-        $service = new OtpService('EEL Accounts');
+        $service = new OtpService('eelKit Framework');
         $secret = $service->generateOTPsecret($userId);
         $stored = (string)InterfaceDB::fetchColumn(
             'SELECT otp_secret
@@ -113,7 +113,7 @@ $harness->check(OtpService::class, 'migrates legacy plaintext OTP secrets when r
             ]
         );
 
-        $service = new OtpService('EEL Accounts');
+        $service = new OtpService('eelKit Framework');
         $harness->assertSame($legacySecret, $service->getManualEntrySecret($userId));
 
         $stored = (string)InterfaceDB::fetchColumn(
@@ -131,7 +131,7 @@ $harness->check(OtpService::class, 'migrates legacy plaintext OTP secrets when r
 
 $harness->check(OtpService::class, 'clears expired pending OTP secrets lazily', function () use ($harness, $withTemporaryUser): void {
     $withTemporaryUser(function (int $userId) use ($harness): void {
-        $service = new OtpService('EEL Accounts');
+        $service = new OtpService('eelKit Framework');
         $secret = $service->beginPendingOtpEnrollment($userId);
 
         $harness->assertTrue($secret !== '');

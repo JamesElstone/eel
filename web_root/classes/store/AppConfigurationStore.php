@@ -172,10 +172,10 @@ final class AppConfigurationStore
             . "declare(strict_types=1);\n\n"
             . 'return ' . var_export($config, true) . ";\n";
 
-        $result = file_put_contents($path, $content, LOCK_EX);
+        $result = @file_put_contents($path, $content, LOCK_EX);
 
         if ($result === false) {
-            throw new RuntimeException('Unable to write application configuration file.');
+            throw new RuntimeException('Unable to write application configuration file: ' . $path);
         }
     }
 

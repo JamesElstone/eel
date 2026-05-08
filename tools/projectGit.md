@@ -11,9 +11,9 @@ This is useful when:
 ## Files
 
 ```text
-tools/projectGit.php
-tools/projectGit.sh
-tools/projectGit.bat
+tools/php/projectGit.php
+tools/bin/projectGit.sh
+tools/bat/projectGit.bat
 ```
 
 Use the `.sh` wrapper on Linux/macOS/Git Bash, or the `.bat` wrapper on Windows Command Prompt.
@@ -30,13 +30,13 @@ cd yourProjectRepo
 Then run:
 
 ```bash
-tools/projectGit.sh init git@github.com:you/yourProjectRepo.git
+tools/bin/projectGit.sh init git@github.com:you/yourProjectRepo.git
 ```
 
 On Windows Command Prompt:
 
 ```bat
-tools\projectGit.bat init git@github.com:you/yourProjectRepo.git
+tools\bat\projectGit.bat init git@github.com:you/yourProjectRepo.git
 ```
 
 This will:
@@ -57,13 +57,13 @@ upstream  https://github.com/JamesElstone/eelKit.git
 From inside the project repo, run:
 
 ```bash
-tools/projectGit.sh import
+tools/bin/projectGit.sh import
 ```
 
 On Windows Command Prompt:
 
 ```bat
-tools\projectGit.bat import
+tools\bat\projectGit.bat import
 ```
 
 This will:
@@ -82,13 +82,13 @@ upstream/main
 If you prefer a linear history:
 
 ```bash
-tools/projectGit.sh import --rebase
+tools/bin/projectGit.sh import --rebase
 ```
 
 On Windows Command Prompt:
 
 ```bat
-tools\projectGit.bat import --rebase
+tools\bat\projectGit.bat import --rebase
 ```
 
 This fetches from `upstream`, then rebases the current branch onto `upstream/<current-branch>`.
@@ -102,19 +102,19 @@ The default branch is the current branch.
 To specify both:
 
 ```bash
-tools/projectGit.sh import upstream main
+tools/bin/projectGit.sh import upstream main
 ```
 
 To rebase against a specific upstream branch:
 
 ```bash
-tools/projectGit.sh import upstream main --rebase
+tools/bin/projectGit.sh import upstream main --rebase
 ```
 
 During initial setup, you can also specify the upstream remote name and branch:
 
 ```bash
-tools/projectGit.sh init git@github.com:you/yourProjectRepo.git upstream main
+tools/bin/projectGit.sh init git@github.com:you/yourProjectRepo.git upstream main
 ```
 
 ## Safety Checks
@@ -144,7 +144,7 @@ Create the project:
 ```bash
 git clone https://github.com/JamesElstone/eelKit.git yourProjectRepo
 cd yourProjectRepo
-tools/projectGit.sh init git@github.com:you/yourProjectRepo.git
+tools/bin/projectGit.sh init git@github.com:you/yourProjectRepo.git
 ```
 
 Do project work as normal:
@@ -158,6 +158,6 @@ git push
 Import eelKit updates later:
 
 ```bash
-tools/projectGit.sh import
+tools/bin/projectGit.sh import
 git push
 ```

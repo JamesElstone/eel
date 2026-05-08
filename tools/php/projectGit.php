@@ -20,13 +20,13 @@ function eel_project_git_error(string $message): void
 function eel_project_git_usage(): void
 {
     eel_project_git_writeln('Usage:');
-    eel_project_git_writeln('  php projectGit.php init <project-origin-url> [upstream-name] [branch]');
-    eel_project_git_writeln('  php projectGit.php import [upstream-name] [branch] [--rebase]');
+    eel_project_git_writeln('  php tools/php/projectGit.php init <project-origin-url> [upstream-name] [branch]');
+    eel_project_git_writeln('  php tools/php/projectGit.php import [upstream-name] [branch] [--rebase]');
     eel_project_git_writeln();
     eel_project_git_writeln('Examples:');
-    eel_project_git_writeln('  php projectGit.php init git@github.com:you/grocery.git');
-    eel_project_git_writeln('  php projectGit.php import');
-    eel_project_git_writeln('  php projectGit.php import upstream main --rebase');
+    eel_project_git_writeln('  php tools/php/projectGit.php init git@github.com:you/grocery.git');
+    eel_project_git_writeln('  php tools/php/projectGit.php import');
+    eel_project_git_writeln('  php tools/php/projectGit.php import upstream main --rebase');
 }
 
 function eel_project_git_run(array $arguments): int
@@ -36,7 +36,7 @@ function eel_project_git_run(array $arguments): int
         return 1;
     }
 
-    chdir(dirname(__DIR__));
+    chdir(dirname(__DIR__, 2));
 
     $command = (string)($arguments[1] ?? '');
 

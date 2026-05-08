@@ -8,7 +8,7 @@
 declare(strict_types=1);
 
 if (!defined('APP_ROOT')) {
-    require_once dirname(__DIR__) . DIRECTORY_SEPARATOR . 'web_root' . DIRECTORY_SEPARATOR . 'classes' . DIRECTORY_SEPARATOR . 'bootstrap.php';
+    require_once dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'web_root' . DIRECTORY_SEPARATOR . 'classes' . DIRECTORY_SEPARATOR . 'bootstrap.php';
 }
 
 function eel_set_db_config_writeln(string $message): void
@@ -62,11 +62,11 @@ function eel_set_db_config_usage(): string
 {
     return implode(PHP_EOL, [
         'Usage:',
-        '  php tools/setDbConfig.php --dsn=<dsn> [--user=<user>] [--password=<password>]',
-        '  php tools/setDbConfig.php --driver=odbc --odbc-name=<name> [--user=<user>] [--password=<password>]',
-        '  php tools/setDbConfig.php --driver=mysql --host=<host> --database=<database> [--port=<port>] [--user=<user>] [--password=<password>]',
-        '  php tools/setDbConfig.php --driver=sqlite --sqlite-path=<path>',
-        '  php tools/setDbConfig.php <dsn> [user] [password]',
+        '  php tools/php/setDbConfig.php --dsn=<dsn> [--user=<user>] [--password=<password>]',
+        '  php tools/php/setDbConfig.php --driver=odbc --odbc-name=<name> [--user=<user>] [--password=<password>]',
+        '  php tools/php/setDbConfig.php --driver=mysql --host=<host> --database=<database> [--port=<port>] [--user=<user>] [--password=<password>]',
+        '  php tools/php/setDbConfig.php --driver=sqlite --sqlite-path=<path>',
+        '  php tools/php/setDbConfig.php <dsn> [user] [password]',
         '',
         'If no DSN or driver options are supplied, the tool asks questions and builds the DSN.',
     ]);

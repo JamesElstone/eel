@@ -8,4 +8,5 @@ echo " Copyright (c) 2026 James Elstone"
 echo " Licensed under the BSD 3-Clause License"
 echo " See LICENSE file for details."
 echo
-php reset_password.php
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+php "$script_dir/../php/projectGit.php" "$@"

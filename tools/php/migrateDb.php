@@ -8,11 +8,11 @@
 declare(strict_types=1);
 
 if (!defined('APP_ROOT')) {
-    require_once dirname(__DIR__) . DIRECTORY_SEPARATOR . 'web_root' . DIRECTORY_SEPARATOR . 'classes' . DIRECTORY_SEPARATOR . 'bootstrap.php';
+    require_once dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'web_root' . DIRECTORY_SEPARATOR . 'classes' . DIRECTORY_SEPARATOR . 'bootstrap.php';
 }
 
-$schemaFile = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'eelKit.schema.sql';
-$migrationsDirectory = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations';
+$schemaFile = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'eelKit.schema.sql';
+$migrationsDirectory = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations';
 
 function eel_run_migration_tool(string $schemaFile, string $migrationsDirectory): int
 {

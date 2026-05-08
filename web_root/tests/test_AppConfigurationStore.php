@@ -18,3 +18,37 @@ $harness->check(AppConfigurationStore::class, 'exposes the active application co
     $harness->assertSame(APP_CONFIG . 'app.php', AppConfigurationStore::configPath());
     $harness->assertTrue(is_file(AppConfigurationStore::configPath()));
 });
+
+$harness->check(AppConfigurationStore::class, 'throws without emitting warnings when config writes fail', function () use ($harness): void {
+    $method = new ReflectionMethod(AppConfigurationStore::class, 'writeConfigFile');
+    $targetDirectory = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'eelkit-config-write-target';
+
+    if (!is_dir($targetDirectory) && !mkdir($targetDirectory) && !is_dir($targetDirectory)) {
+        $harness->skip('Unable to create temporary write target.');
+    }
+
+    $warnings = [];
+    set_error_handler(static function (int $severity, string $message) use (&$warnings): bool {
+        $warnings[] = $severity . ': ' . $message;
+        return true;
+    });
+
+    try {
+        $method->invoke(null, $targetDirectory, ['app_name' => 'write failure test']);
+    } catch (ReflectionException $exception) {
+        restore_error_handler();
+        throw $exception;
+    } catch (RuntimeException $exception) {
+        restore_error_handler();
+        $harness->assertSame([], $warnings);
+
+        if (!str_contains($exception->getMessage(), $targetDirectory)) {
+            throw new RuntimeException('Write failure did not include the target path.');
+        }
+
+        return;
+    }
+
+    restore_error_handler();
+    throw new RuntimeException('Config write failure did not throw.');
+});

@@ -39,7 +39,7 @@ final class AppConfigurationStore
         }
 
         $directory = dirname($path);
-        if (!is_dir($directory) && !mkdir($directory, 0777, true) && !is_dir($directory)) {
+        if (!is_dir($directory) && !@mkdir($directory, 0777, true) && !is_dir($directory)) {
             throw new RuntimeException('Unable to create application configuration directory: ' . $directory);
         }
 
@@ -162,6 +162,8 @@ final class AppConfigurationStore
 
     private static function writeConfigFile(string $path, array $config): void
     {
+        self::assertConfigPathWritable($path);
+
         $content = "<?php\n"
             . "/**\n"
             . " * eelKit Framework\n"
@@ -176,6 +178,34 @@ final class AppConfigurationStore
 
         if ($result === false) {
             throw new RuntimeException('Unable to write application configuration file: ' . $path);
+        }
+    }
+
+    private static function assertConfigPathWritable(string $path): void
+    {
+        clearstatcache(true, $path);
+
+        if (is_dir($path)) {
+            throw new RuntimeException('Application configuration file path is a directory: ' . $path);
+        }
+
+        if (is_file($path)) {
+            if (!is_writable($path)) {
+                throw new RuntimeException('Application configuration file is not writable: ' . $path);
+            }
+
+            return;
+        }
+
+        $directory = dirname($path);
+        clearstatcache(true, $directory);
+
+        if (!is_dir($directory)) {
+            throw new RuntimeException('Application configuration directory does not exist: ' . $directory);
+        }
+
+        if (!is_writable($directory)) {
+            throw new RuntimeException('Application configuration directory is not writable: ' . $directory);
         }
     }
 

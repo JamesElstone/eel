@@ -243,6 +243,11 @@ function eel_set_db_config_prompt_with_default(string $message, string $default 
     return $value === '' ? $default : $value;
 }
 
+function eel_set_db_config_default_mysql_host(): string
+{
+    return '127.0.0.1';
+}
+
 function eel_set_db_config_prompt_driver(): string
 {
     eel_set_db_config_writeln('Database type:');
@@ -270,7 +275,7 @@ function eel_set_db_config_prompt_dsn_builder(?string $driver = null): array
     if ($driver === 'mysql') {
         return [
             'driver' => $driver,
-            'host' => eel_set_db_config_prompt_with_default('Database host', 'localhost'),
+            'host' => eel_set_db_config_prompt_with_default('Database host', eel_set_db_config_default_mysql_host()),
             'port' => eel_set_db_config_prompt_with_default('Database port', '3306'),
             'database' => eel_set_db_config_prompt('Database name: '),
         ];
@@ -300,7 +305,7 @@ function eel_set_db_config_complete_builder_settings(array $settings): array
 
     if ($driver === 'mysql') {
         if (trim((string)($settings['host'] ?? '')) === '') {
-            $settings['host'] = eel_set_db_config_prompt_with_default('Database host', 'localhost');
+            $settings['host'] = eel_set_db_config_prompt_with_default('Database host', eel_set_db_config_default_mysql_host());
         }
 
         if (trim((string)($settings['port'] ?? '')) === '') {

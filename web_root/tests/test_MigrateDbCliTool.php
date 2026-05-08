@@ -44,6 +44,7 @@ $harness->check('setDbConfig.php', 'loads CLI helper functions without running c
     $harness->assertTrue(function_exists('eel_set_db_config_run_tool'));
     $harness->assertTrue(function_exists('eel_set_db_config_arguments'));
     $harness->assertTrue(function_exists('eel_set_db_config_build_dsn'));
+    $harness->assertTrue(function_exists('eel_set_db_config_default_mysql_host'));
 });
 
 $harness->check('setDbConfig.php', 'parses named and positional connection arguments', function () use ($harness): void {
@@ -98,6 +99,10 @@ $harness->check('setDbConfig.php', 'builds DSNs for supported database choices',
         'driver' => 'custom',
         'dsn' => 'pgsql:host=localhost;dbname=eelkit',
     ]));
+});
+
+$harness->check('setDbConfig.php', 'defaults MySQL builder prompts to TCP localhost', function () use ($harness): void {
+    $harness->assertSame('127.0.0.1', eel_set_db_config_default_mysql_host());
 });
 
 $harness->check('migrateDb.php', 'tracks expected application tables for empty database hydration', function () use ($harness): void {

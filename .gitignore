@@ -1,0 +1,10 @@
+/secure/*
+!/secure/README.md
+/file_logs/*
+!/file_logs/README.md
+/uploads/*
+!/uploads/README.md
+/sqldump
+/web_root/tests/tmp
+/notes
+/example_data

@@ -1,0 +1,139 @@
+<?php
+/**
+ * EEL Accounts
+ * Copyright (c) 2026 James Elstone
+ * Licensed under the BSD 3-Clause License
+ * See LICENSE file for details.
+ */
+declare(strict_types=1);
+
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+
+class PageRendererLegacyLayoutTestPage implements PageInterfaceFramework
+{
+    public function id(): string { return 'legacy_layout_test'; }
+    public function title(): string { return 'Legacy Layout Test'; }
+    public function subtitle(): string { return 'Legacy cards'; }
+    public function pageStackClass(): string { return ''; }
+    public function services(): array { return []; }
+    public function cards(): array { return ['alpha', 'beta']; }
+    public function handle(RequestFramework $request, PageServiceFramework $services): ResponseFramework
+    {
+        return ResponseFramework::html('');
+    }
+}
+
+final class PageRendererCardLayoutTestPage extends PageRendererLegacyLayoutTestPage
+{
+    public function id(): string { return 'card_layout_test'; }
+
+    public function cardLayout(): array
+    {
+        return [
+            [
+                'tab' => 'Details',
+                'cards' => ['alpha', 'beta'],
+            ],
+            [
+                'tab' => 'Review',
+                'layout' => 'split',
+                'cards' => ['gamma', 'denied'],
+            ],
+            [
+                'tab' => 'Empty',
+                'cards' => ['denied'],
+            ],
+            [
+                'tab' => 'Unsupported',
+                'layout' => 'wide',
+                'cards' => ['delta'],
+            ],
+        ];
+    }
+}
+
+$harness = new GeneratedServiceClassTestHarness();
+$harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestHarness $harness, object $instance): void {
+    if (!$instance instanceof PageRendererFramework) {
+        $harness->skip('Page renderer did not instantiate.');
+    }
+
+    $resolveCardLayout = new ReflectionMethod(PageRendererFramework::class, 'resolveCardLayout');
+    $resolveCardLayout->setAccessible(true);
+    $shouldRenderTabs = new ReflectionMethod(PageRendererFramework::class, 'shouldRenderTabs');
+    $shouldRenderTabs->setAccessible(true);
+    $requestedVisibleCard = new ReflectionMethod(PageRendererFramework::class, 'requestedVisibleCard');
+    $requestedVisibleCard->setAccessible(true);
+
+    $harness->check(PageRendererFramework::class, 'normalises legacy cards to one stack layout without tabs', function () use ($harness, $instance, $resolveCardLayout, $shouldRenderTabs): void {
+        $layout = $resolveCardLayout->invoke($instance, new PageRendererLegacyLayoutTestPage(), [
+            'page' => [
+                'page_cards' => ['alpha', 'beta'],
+            ],
+        ]);
+
+        $harness->assertSame([
+            [
+                'tab' => null,
+                'layout' => 'stack',
+                'cards' => ['alpha', 'beta'],
+                'explicit' => false,
+            ],
+        ], $layout);
+        $harness->assertSame(false, $shouldRenderTabs->invoke($instance, $layout));
+    });
+
+    $harness->check(PageRendererFramework::class, 'normalises cardLayout tabs and filters denied cards', function () use ($harness, $instance, $resolveCardLayout, $shouldRenderTabs): void {
+        $layout = $resolveCardLayout->invoke($instance, new PageRendererCardLayoutTestPage(), [
+            'page' => [
+                'page_cards' => ['alpha', 'beta', 'gamma', 'delta'],
+            ],
+        ]);
+
+        $harness->assertSame([
+            [
+                'tab' => 'Details',
+                'layout' => 'stack',
+                'cards' => ['alpha', 'beta'],
+                'explicit' => true,
+            ],
+            [
+                'tab' => 'Review',
+                'layout' => 'split',
+                'cards' => ['gamma'],
+                'explicit' => true,
+            ],
+            [
+                'tab' => 'Unsupported',
+                'layout' => 'stack',
+                'cards' => ['delta'],
+                'explicit' => true,
+            ],
+        ], $layout);
+        $harness->assertSame(true, $shouldRenderTabs->invoke($instance, $layout));
+    });
+
+    $harness->check(PageRendererFramework::class, 'uses action result show_card before requested show_card', function () use ($harness, $instance, $requestedVisibleCard): void {
+        $request = new RequestFramework(
+            ['page' => 'card_layout_test'],
+            ['show_card' => 'alpha'],
+            ['REQUEST_METHOD' => 'POST'],
+            [],
+            [],
+        );
+        $actionResult = ActionResultFramework::success(
+            ['page.reload'],
+            [],
+            ['show_card' => 'gamma'],
+        );
+
+        $harness->assertSame(
+            'gamma',
+            $requestedVisibleCard->invoke($instance, new PageRendererCardLayoutTestPage(), $request, [
+                'page' => [
+                    'page_cards' => ['alpha', 'beta', 'gamma', 'delta'],
+                ],
+            ], $actionResult)
+        );
+    });
+});

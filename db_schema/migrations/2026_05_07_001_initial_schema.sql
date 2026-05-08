@@ -1,0 +1,3 @@
+-- Baseline marker.
+-- New installs should import db_schema/eelKit.schema.sql before running migrations.
+-- Existing installs can mark this migration as applied after confirming the base schema exists.

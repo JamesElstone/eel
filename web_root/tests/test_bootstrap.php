@@ -69,6 +69,13 @@ $tests = [
             throw new RuntimeException('Migration tool hint was included for an unrelated exception.');
         }
     },
+    'suggests PDO driver setup for missing driver exceptions' => static function (): void {
+        $message = eel_public_exception_message(new PDOException('could not find driver'));
+
+        if (!str_contains($message, 'pdo_odbc')) {
+            throw new RuntimeException('PDO driver setup hint was not included for a missing driver exception.');
+        }
+    },
 ];
 
 foreach ($tests as $description => $callback) {

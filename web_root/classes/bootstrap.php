@@ -102,9 +102,13 @@ set_exception_handler(static function (Throwable $exception): void {
 function eel_public_exception_message(Throwable $exception): string
 {
     $schemaHint = eel_schema_exception_hint($exception);
+    $databaseDriverHint = eel_database_driver_exception_hint($exception);
 
     if (eel_developer_options_enabled()) {
         $message = 'Unexpected server error: ' . $exception->getMessage();
+        if ($databaseDriverHint !== null) {
+            $message .= ' ' . $databaseDriverHint;
+        }
 
         return $schemaHint === null ? $message : $message . ' ' . $schemaHint;
     }
@@ -112,8 +116,24 @@ function eel_public_exception_message(Throwable $exception): string
     error_log((string)$exception);
 
     $message = 'Sorry, something went wrong while processing your request. Please try again, or contact support if the problem continues.';
+    if ($databaseDriverHint !== null) {
+        $message .= ' ' . $databaseDriverHint;
+    }
 
     return $schemaHint === null ? $message : $message . ' ' . $schemaHint;
+}
+
+function eel_database_driver_exception_hint(Throwable $exception): ?string
+{
+    for ($current = $exception; $current instanceof Throwable; $current = $current->getPrevious()) {
+        $message = strtolower($current->getMessage());
+
+        if (str_contains($message, 'could not find driver')) {
+            return 'This looks like a missing PDO database driver. For the default ODBC DSN, enable the PHP pdo_odbc extension and install/configure the system ODBC driver manager and DSN.';
+        }
+    }
+
+    return null;
 }
 
 function eel_schema_exception_hint(Throwable $exception): ?string

@@ -1,6 +1,6 @@
 <?php
 /**
- * EEL Accounts
+ * eelKit Framework
  * Copyright (c) 2026 James Elstone
  * Licensed under the BSD 3-Clause License
  * See LICENSE file for details.
@@ -10,9 +10,9 @@ declare(strict_types=1);
 // Automatic Class Loader
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'classes' . DIRECTORY_SEPARATOR . 'bootstrap.php';
 
-$appName = trim((string)AppConfigurationStore::get('app_name', 'EEL Accounts'));
+$appName = trim((string)AppConfigurationStore::get('app_name', 'eelKit Framework'));
 if ($appName === '') {
-    $appName = 'EEL Accounts';
+    $appName = 'eelKit Framework';
 }
 
 // *****************************

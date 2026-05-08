@@ -1,6 +1,6 @@
 <?php
 /**
- * EEL Accounts
+ * eelKit Framework
  * Copyright (c) 2026 James Elstone
  * Licensed under the BSD 3-Clause License
  * See LICENSE file for details.
@@ -91,7 +91,7 @@ $harness->check('reset_password.php', 'resets password and completes a fresh OTP
     $withTemporaryUser(function (array $user) use ($harness): void {
         $userId = (int)$user['id'];
         $authService = new UserAuthenticationService();
-        $otpService = new OtpService('EEL Accounts');
+        $otpService = new OtpService('eelKit Framework');
         $verificationService = new OtpVerificationService();
 
         $passwordResult = eel_cli_reset_user_password($authService, $userId, 'Cli Reset Password 1!');

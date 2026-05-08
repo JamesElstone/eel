@@ -1,6 +1,6 @@
 <?php
 /**
- * EEL Accounts
+ * eelKit Framework
  * Copyright (c) 2026 James Elstone
  * Licensed under the BSD 3-Clause License
  * See LICENSE file for details.
@@ -28,7 +28,7 @@ final class UserManagementService
 
         $this->userAuthenticationService = $userAuthenticationService ?? new UserAuthenticationService();
         $this->roleAssignmentService = $roleAssignmentService ?? new RoleAssignmentService();
-        $this->otpService = $otpService ?? new OtpService((string)($appName ?? 'EEL Accounts'));
+        $this->otpService = $otpService ?? new OtpService((string)($appName ?? 'eelKit Framework'));
         $this->qrCodeService = $qrCodeService ?? new QrCodeService();
         $this->userHistoryStore = $userHistoryStore ?? new UserHistoryStore();
         $this->userSessionService = $userSessionService ?? new UserSessionService();

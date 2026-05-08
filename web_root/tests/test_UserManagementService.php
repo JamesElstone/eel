@@ -1,6 +1,6 @@
 <?php
 /**
- * EEL Accounts
+ * eelKit Framework
  * Copyright (c) 2026 James Elstone
  * Licensed under the BSD 3-Clause License
  * See LICENSE file for details.
@@ -115,7 +115,7 @@ $harness->check(UserManagementService::class, 'updates current user only with a 
 
 $harness->check(UserManagementService::class, 'resets another user OTP as an administrator', function () use ($harness, $withTemporaryManagedUsers): void {
     $withTemporaryManagedUsers(function (UserManagementService $service, UserAuthenticationService $authService, int $adminId, int $targetId, int $ordinaryId) use ($harness): void {
-        $otpService = new OtpService('EEL Accounts');
+        $otpService = new OtpService('eelKit Framework');
         $secret = $otpService->generateOTPsecret($targetId);
         $code = (new OtpVerificationService())->generateCodeForTimestep(
             6,

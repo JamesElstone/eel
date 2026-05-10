@@ -22,6 +22,7 @@
   --danger-soft: #fee2e2;
   --header-bg: #b0becf;
   --table-lines: #dbe4ee;
+  --toolbar: #d7e2f0;
   --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
   --radius: 18px;
 }
@@ -1130,6 +1131,10 @@ body.sidebar-collapsed .nav-link-short {
   .card-header-has-eyebrow > .status-pill {
     justify-self: start;
   }
+
+  .settings-order-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .card-title {
@@ -1179,6 +1184,21 @@ body.sidebar-collapsed .nav-link-short {
   color: var(--text);
 }
 
+.input-action-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.input-action-row .input {
+  min-width: 0;
+}
+
+.input-action-row .button {
+  flex: 0 0 auto;
+  margin-bottom: 0;
+}
+
 .select {
   width: fit-content;
 }
@@ -1209,6 +1229,41 @@ textarea[disabled] {
 
 .toolbar .input {
   max-width: 280px;
+}
+
+.card-toolbar {
+  align-items: center;
+  background: var(--toolbar);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding: 3px 5px;
+}
+
+.card-toolbar .toolbar {
+  align-items: center;
+}
+
+.card-toolbar .button {
+  margin-bottom: 0;
+}
+
+.card-toolbar .table-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 0;
+}
+
+.role-assignment-create {
+  justify-content: flex-end;
+  margin-left: auto;
+  flex-wrap: nowrap;
+}
+
+.role-assignment-create .input {
+  width: min(280px, 60vw);
 }
 
 table {
@@ -1291,13 +1346,19 @@ tbody tr:last-child td {
 }
 
 .user-account-audit-table td {
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.user-account-audit-table .badge {
+  white-space: nowrap;
 }
 
 .log-agent-cell {
   min-width: 0;
   max-width: 320px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .log-agent-preview {
@@ -1666,6 +1727,49 @@ label {
   font-size: 0.92rem;
 }
 
+.settings-fieldset {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 0;
+  padding: 14px;
+}
+
+.settings-fieldset legend {
+  padding: 0 6px;
+  font-weight: 800;
+}
+
+.settings-order-row {
+  align-items: center;
+  background: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: 8px;
+  color: #fff;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(12rem, 1fr) auto;
+  padding: 10px 12px;
+}
+
+.settings-order-label {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.settings-order-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.settings-order-actions .button {
+  margin-bottom: 0;
+  min-width: 38px;
+}
+
 .autofill-trap {
   position: absolute;
   left: -9999px;
@@ -1884,6 +1988,10 @@ label {
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.table-footer {
+  margin-top: 12px;
 }
 
 .status-badge {

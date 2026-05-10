@@ -27,13 +27,30 @@ final class _settings extends PageContextFramework
     public function cards(): array
     {
         return [
-            // 'dump_context'
+            'application_settings',
          ];
     }
 
     public function services(): array
     {
         return [];
+    }
+
+    protected function buildContext(
+        RequestFramework $request,
+        PageServiceFramework $services,
+        ActionResultFramework $actionResult
+    ): array {
+        $sessionAuthenticationService = new SessionAuthenticationService();
+        $sessionAuthenticationService->startSession();
+
+        return [
+            'page' => [
+                'page_id' => 'settings',
+                'page_cards' => $this->cards(),
+                'csrf_token' => $sessionAuthenticationService->csrfToken(),
+            ],
+        ];
     }
 
 }

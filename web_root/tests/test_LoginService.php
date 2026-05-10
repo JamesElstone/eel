@@ -91,6 +91,27 @@ $harness->check(LoginService::class, 'authenticates without OTP setup when OTP i
     });
 });
 
+$harness->check(LoginService::class, 'trims leading and trailing spaces from submitted login passwords', function () use ($harness, $withTemporaryLoginUser): void {
+    $withTemporaryLoginUser(function (UserAuthenticationService $authService, int $userId, string $emailAddress) use ($harness): void {
+        $_SESSION = [];
+        $harness->assertTrue(!empty($authService->setOtpRequired($userId, false)['success']));
+
+        $sessionService = new SessionAuthenticationService();
+        $loginService = new LoginService(
+            $authService,
+            new OtpService('eelKit Framework'),
+            new QrCodeService(),
+            $sessionService
+        );
+
+        $result = $loginService->startLogin($emailAddress, '  Strong Password 1!  ', 'device-a');
+
+        $harness->assertTrue(!empty($result['success']));
+        $harness->assertTrue(!empty($result['authenticated']));
+        $harness->assertSame($userId, $sessionService->authenticatedUserId('device-a'));
+    });
+});
+
 $harness->check(LoginService::class, 'records failed primary credential attempts', function () use ($harness, $withTemporaryLoginUser): void {
     $withTemporaryLoginUser(function (UserAuthenticationService $authService, int $userId, string $emailAddress) use ($harness): void {
         $_SESSION = [];
@@ -124,7 +145,44 @@ $harness->check(LoginService::class, 'records failed primary credential attempts
 
         $harness->assertTrue(is_array($log));
         $harness->assertSame($userId, (int)($log['user_id'] ?? 0));
-        $harness->assertSame('Password did not match the active user account.', (string)($log['reason'] ?? ''));
+        $harness->assertSame(
+            'Password did not match the active user account. Entered password length: 17; trimmed length: 17; leading/trailing whitespace removed: no.',
+            (string)($log['reason'] ?? '')
+        );
+    });
+});
+
+$harness->check(LoginService::class, 'records submitted and trimmed password lengths for failed login attempts', function () use ($harness, $withTemporaryLoginUser): void {
+    $withTemporaryLoginUser(function (UserAuthenticationService $authService, int $userId, string $emailAddress) use ($harness): void {
+        $_SESSION = [];
+        $loginService = new LoginService(
+            $authService,
+            new OtpService('eelKit Framework'),
+            new QrCodeService(),
+            new SessionAuthenticationService()
+        );
+
+        $result = $loginService->startLogin($emailAddress, '  Wrong Password 1!  ', 'device-a');
+
+        $harness->assertTrue(empty($result['success']));
+
+        $reason = (string)InterfaceDB::fetchColumn(
+            'SELECT reason
+             FROM user_logon_history
+             WHERE attempted_email_address = :email_address
+               AND event_type = :event_type
+             ORDER BY occurred_at DESC, id DESC
+             LIMIT 1',
+            [
+                'email_address' => $emailAddress,
+                'event_type' => 'login_failed',
+            ]
+        );
+
+        $harness->assertSame(
+            'Password did not match the active user account. Entered password length: 21; trimmed length: 17; leading/trailing whitespace removed: yes.',
+            $reason
+        );
     });
 });
 
@@ -159,7 +217,10 @@ $harness->check(LoginService::class, 'records unknown email address failures wit
 
         $harness->assertTrue(is_array($log));
         $harness->assertSame(0, (int)($log['user_id'] ?? 0));
-        $harness->assertSame('Email address was not recognised.', (string)($log['reason'] ?? ''));
+        $harness->assertSame(
+            'Email address was not recognised. Entered password length: 17; trimmed length: 17; leading/trailing whitespace removed: no.',
+            (string)($log['reason'] ?? '')
+        );
     });
 });
 

@@ -53,6 +53,8 @@ final class _test extends PageContextFramework
     public function cards(): array
     {
         return [
+            'chart_trends',
+            'chart_composition',
             'test_source',
             'test_target',
             'otp_status_test',

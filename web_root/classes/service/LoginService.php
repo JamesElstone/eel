@@ -25,6 +25,8 @@ final class LoginService
     {
         $this->sessionAuthenticationService->invalidateForDeviceMismatch($deviceId);
         $emailAddress = strtolower(trim($emailAddress));
+        $passwordDiagnostics = $this->passwordAttemptDiagnostics($password);
+        $password = trim($password);
         $rateLimit = $this->userAuthenticationService->loginRateLimitStatus($emailAddress, $deviceId);
 
         if (!empty($rateLimit['is_locked'])) {
@@ -82,7 +84,10 @@ final class LoginService
                 $emailAddress,
                 'login_failed',
                 false,
-                (string)($failureDetails['reason'] ?? 'Primary credentials were rejected.'),
+                $this->loginFailureReason(
+                    (string)($failureDetails['reason'] ?? 'Primary credentials were rejected.'),
+                    $passwordDiagnostics
+                ),
                 null,
                 $this->userSessionService->buildRequestMetadata($deviceId)
             );
@@ -132,6 +137,34 @@ final class LoginService
         }
 
         return $this->continueAfterPrimaryCredentials($user, $deviceId);
+    }
+
+    private function passwordAttemptDiagnostics(string $password): array
+    {
+        $trimmedPassword = trim($password);
+
+        return [
+            'entered_length' => mb_strlen($password),
+            'trimmed_length' => mb_strlen($trimmedPassword),
+            'trimmed_whitespace' => $password !== $trimmedPassword,
+        ];
+    }
+
+    private function loginFailureReason(string $reason, array $passwordDiagnostics): string
+    {
+        $reason = trim($reason);
+        $enteredLength = max(0, (int)($passwordDiagnostics['entered_length'] ?? 0));
+        $trimmedLength = max(0, (int)($passwordDiagnostics['trimmed_length'] ?? 0));
+        $trimmedWhitespace = !empty($passwordDiagnostics['trimmed_whitespace']) ? 'yes' : 'no';
+
+        return mb_substr(
+            $reason
+                . ' Entered password length: ' . $enteredLength
+                . '; trimmed length: ' . $trimmedLength
+                . '; leading/trailing whitespace removed: ' . $trimmedWhitespace . '.',
+            0,
+            255
+        );
     }
 
     public function completeRequiredPasswordChange(string $password, string $passwordConfirmation, string $deviceId): array

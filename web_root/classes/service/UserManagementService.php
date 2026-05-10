@@ -291,14 +291,25 @@ final class UserManagementService
         $result = $this->userAuthenticationService->setPasswordDirectly($targetUserId, $password);
 
         if (!empty($result['success'])) {
+            $requireChangeResult = $this->userAuthenticationService->requirePasswordChange($targetUserId);
+            if (empty($requireChangeResult['success'])) {
+                return $requireChangeResult;
+            }
+
+            $clearedRows = $this->userAuthenticationService->clearLoginRateLimitForUser($targetUserId);
             $this->userHistoryStore->recordAccountAudit(
                 $targetUserId,
                 $actorUserId,
                 'password_set_admin',
                 'An administrator set a new password for this user.',
-                [],
+                [
+                    'cleared_rate_limit_rows' => $clearedRows,
+                    'must_change_password' => true,
+                ],
                 $this->userSessionService->buildRequestMetadata()
             );
+            $result['cleared_rate_limit_rows'] = $clearedRows;
+            $result['must_change_password'] = true;
         }
 
         return $result;

@@ -141,7 +141,6 @@ final class _user_logon_history_logCard extends CardBaseFramework
                 'User logon events',
                 null,
                 [
-                    'card_action' => 'UserLogonHistory',
                     'logon_history_user_id' => (string)$selectedUserId,
                 ]
             ) . '
@@ -173,7 +172,6 @@ final class _user_logon_history_logCard extends CardBaseFramework
         }
 
         return '<form method="post" data-ajax="true" class="toolbar">
-            <input type="hidden" name="card_action" value="UserLogonHistory">
             <input type="hidden" name="_pagination" value="1">
             <input type="hidden" name="page" value="' . HelperFramework::escape((string)($context['page']['page_id'] ?? '')) . '">
             ' . $this->hiddenCardFields($context) . '

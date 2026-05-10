@@ -113,6 +113,29 @@ $harness->check(UserManagementService::class, 'updates current user only with a 
     });
 });
 
+$harness->check(UserManagementService::class, 'clears login lockouts when an administrator sets a password', function () use ($harness, $withTemporaryManagedUsers): void {
+    $withTemporaryManagedUsers(function (UserManagementService $service, UserAuthenticationService $authService, int $adminId, int $targetId): void {
+        $harness = new GeneratedServiceClassTestHarness();
+        $target = $authService->userById($targetId);
+        $emailAddress = (string)($target['email_address'] ?? '');
+
+        for ($attempt = 0; $attempt < 10; $attempt++) {
+            $authService->recordFailedPasswordAttempt($emailAddress, 'locked-device');
+        }
+
+        $reset = $service->setPasswordForUser($adminId, $targetId, 'New Strong Password 1!');
+        $lockouts = $service->loginLockoutsDashboard($adminId);
+
+        $harness->assertTrue(!empty($reset['success']));
+        $harness->assertTrue((int)($reset['cleared_rate_limit_rows'] ?? 0) > 0);
+        $harness->assertTrue(!empty($reset['must_change_password']));
+        $harness->assertSame([], (array)($lockouts['locked_users'] ?? []));
+        $harness->assertTrue(is_array($authService->authenticateByEmailAddress($emailAddress, 'New Strong Password 1!')));
+        $targetAfterReset = $authService->userById($targetId);
+        $harness->assertSame(1, (int)($targetAfterReset['must_change_password'] ?? 0));
+    });
+});
+
 $harness->check(UserManagementService::class, 'resets another user OTP as an administrator', function () use ($harness, $withTemporaryManagedUsers): void {
     $withTemporaryManagedUsers(function (UserManagementService $service, UserAuthenticationService $authService, int $adminId, int $targetId, int $ordinaryId) use ($harness): void {
         $otpService = new OtpService('eelKit Framework');

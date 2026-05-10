@@ -1167,7 +1167,6 @@ body.sidebar-collapsed .nav-link-short {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
-  margin-bottom: 16px;
 }
 
 .input,
@@ -1338,6 +1337,108 @@ tbody tr:last-child td {
   margin-top: 6px;
   font-size: 1.45rem;
   font-weight: 800;
+}
+
+.chart-demo-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.chart-panel {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  padding: 14px;
+}
+
+.chart-panel h3 {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+}
+
+.chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.chart-grid-line {
+  stroke: #dbe4ee;
+  stroke-width: 1;
+}
+
+.chart-axis-line {
+  stroke: #94a3b8;
+  stroke-width: 1.5;
+}
+
+.chart-axis-label,
+.chart-value-label,
+.chart-legend-label,
+.chart-gauge-label,
+.chart-empty-label {
+  fill: var(--muted);
+  font-family: Inter, Arial, Helvetica, sans-serif;
+  font-size: 12px;
+}
+
+.chart-value-label,
+.chart-gauge-number {
+  fill: var(--text);
+  font-weight: 800;
+}
+
+.chart-line-path {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chart-line-point {
+  fill: var(--panel);
+  stroke: var(--primary);
+  stroke-width: 2;
+}
+
+.chart-pie-slice {
+  stroke: var(--panel);
+  stroke-width: 2;
+}
+
+.chart-legend-swatch {
+  rx: 3;
+  ry: 3;
+}
+
+.chart-legend-line {
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.chart-gauge-track,
+.chart-gauge-value {
+  fill: none;
+  stroke-width: 24;
+  stroke-linecap: round;
+}
+
+.chart-gauge-track {
+  stroke: #dbe4ee;
+}
+
+.chart-gauge-number {
+  font-family: Roboto, monospace;
+  font-size: 42px;
+}
+
+.chart-empty-box {
+  fill: var(--panel-soft);
+  stroke: var(--line);
+  stroke-dasharray: 6 6;
 }
 
 .document-stack {
@@ -1630,7 +1731,6 @@ label {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
-  padding-bottom: inherit;
 }
 
 .actions-row-nowrap {
@@ -2342,6 +2442,7 @@ label {
   .page-stack.page-stack-uploads,
   .form-grid,
   .summary-grid,
+  .chart-demo-grid,
   .month-grid,
   .path-meta {
     grid-template-columns: 1fr;

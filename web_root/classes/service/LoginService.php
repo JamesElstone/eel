@@ -26,7 +26,7 @@ final class LoginService
         $this->sessionAuthenticationService->invalidateForDeviceMismatch($deviceId);
         $emailAddress = strtolower(trim($emailAddress));
         $passwordDiagnostics = $this->passwordAttemptDiagnostics($password);
-        $password = trim($password);
+        $password = $this->normaliseSubmittedLoginPassword($password);
         $rateLimit = $this->userAuthenticationService->loginRateLimitStatus($emailAddress, $deviceId);
 
         if (!empty($rateLimit['is_locked'])) {
@@ -142,12 +142,24 @@ final class LoginService
     private function passwordAttemptDiagnostics(string $password): array
     {
         $trimmedPassword = trim($password);
+        $normalisedPassword = $this->normaliseSubmittedLoginPassword($password);
 
         return [
             'entered_length' => mb_strlen($password),
             'trimmed_length' => mb_strlen($trimmedPassword),
+            'login_length' => mb_strlen($normalisedPassword),
             'trimmed_whitespace' => $password !== $trimmedPassword,
+            'removed_format_characters' => $trimmedPassword !== $normalisedPassword,
+            'contains_non_ascii' => preg_match('/[^\x20-\x7E]/', $password) === 1,
         ];
+    }
+
+    private function normaliseSubmittedLoginPassword(string $password): string
+    {
+        $password = trim($password);
+        $normalisedPassword = preg_replace('/^\p{Cf}+|\p{Cf}+$/u', '', $password);
+
+        return is_string($normalisedPassword) ? $normalisedPassword : $password;
     }
 
     private function loginFailureReason(string $reason, array $passwordDiagnostics): string
@@ -155,13 +167,19 @@ final class LoginService
         $reason = trim($reason);
         $enteredLength = max(0, (int)($passwordDiagnostics['entered_length'] ?? 0));
         $trimmedLength = max(0, (int)($passwordDiagnostics['trimmed_length'] ?? 0));
+        $loginLength = max(0, (int)($passwordDiagnostics['login_length'] ?? $trimmedLength));
         $trimmedWhitespace = !empty($passwordDiagnostics['trimmed_whitespace']) ? 'yes' : 'no';
+        $removedFormatCharacters = !empty($passwordDiagnostics['removed_format_characters']) ? 'yes' : 'no';
+        $containsNonAscii = !empty($passwordDiagnostics['contains_non_ascii']) ? 'yes' : 'no';
 
         return mb_substr(
             $reason
                 . ' Entered password length: ' . $enteredLength
                 . '; trimmed length: ' . $trimmedLength
-                . '; leading/trailing whitespace removed: ' . $trimmedWhitespace . '.',
+                . '; login length: ' . $loginLength
+                . '; whitespace removed: ' . $trimmedWhitespace
+                . '; invisible format chars removed: ' . $removedFormatCharacters
+                . '; non-ASCII present: ' . $containsNonAscii . '.',
             0,
             255
         );

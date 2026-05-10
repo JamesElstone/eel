@@ -112,6 +112,27 @@ $harness->check(LoginService::class, 'trims leading and trailing spaces from sub
     });
 });
 
+$harness->check(LoginService::class, 'removes leading and trailing invisible format characters from submitted login passwords', function () use ($harness, $withTemporaryLoginUser): void {
+    $withTemporaryLoginUser(function (UserAuthenticationService $authService, int $userId, string $emailAddress) use ($harness): void {
+        $_SESSION = [];
+        $harness->assertTrue(!empty($authService->setOtpRequired($userId, false)['success']));
+
+        $sessionService = new SessionAuthenticationService();
+        $loginService = new LoginService(
+            $authService,
+            new OtpService('eelKit Framework'),
+            new QrCodeService(),
+            $sessionService
+        );
+
+        $result = $loginService->startLogin($emailAddress, "\u{200B}Strong Password 1!\u{200B}", 'device-a');
+
+        $harness->assertTrue(!empty($result['success']));
+        $harness->assertTrue(!empty($result['authenticated']));
+        $harness->assertSame($userId, $sessionService->authenticatedUserId('device-a'));
+    });
+});
+
 $harness->check(LoginService::class, 'records failed primary credential attempts', function () use ($harness, $withTemporaryLoginUser): void {
     $withTemporaryLoginUser(function (UserAuthenticationService $authService, int $userId, string $emailAddress) use ($harness): void {
         $_SESSION = [];
@@ -146,7 +167,7 @@ $harness->check(LoginService::class, 'records failed primary credential attempts
         $harness->assertTrue(is_array($log));
         $harness->assertSame($userId, (int)($log['user_id'] ?? 0));
         $harness->assertSame(
-            'Password did not match the active user account. Entered password length: 17; trimmed length: 17; leading/trailing whitespace removed: no.',
+            'Password did not match the active user account. Entered password length: 17; trimmed length: 17; login length: 17; whitespace removed: no; invisible format chars removed: no; non-ASCII present: no.',
             (string)($log['reason'] ?? '')
         );
     });
@@ -180,7 +201,41 @@ $harness->check(LoginService::class, 'records submitted and trimmed password len
         );
 
         $harness->assertSame(
-            'Password did not match the active user account. Entered password length: 21; trimmed length: 17; leading/trailing whitespace removed: yes.',
+            'Password did not match the active user account. Entered password length: 21; trimmed length: 17; login length: 17; whitespace removed: yes; invisible format chars removed: no; non-ASCII present: no.',
+            $reason
+        );
+    });
+});
+
+$harness->check(LoginService::class, 'records invisible characters in failed login diagnostics', function () use ($harness, $withTemporaryLoginUser): void {
+    $withTemporaryLoginUser(function (UserAuthenticationService $authService, int $userId, string $emailAddress) use ($harness): void {
+        $_SESSION = [];
+        $loginService = new LoginService(
+            $authService,
+            new OtpService('eelKit Framework'),
+            new QrCodeService(),
+            new SessionAuthenticationService()
+        );
+
+        $result = $loginService->startLogin($emailAddress, "\u{200B}Wrong Password 1!\u{200B}", 'device-a');
+
+        $harness->assertTrue(empty($result['success']));
+
+        $reason = (string)InterfaceDB::fetchColumn(
+            'SELECT reason
+             FROM user_logon_history
+             WHERE attempted_email_address = :email_address
+               AND event_type = :event_type
+             ORDER BY occurred_at DESC, id DESC
+             LIMIT 1',
+            [
+                'email_address' => $emailAddress,
+                'event_type' => 'login_failed',
+            ]
+        );
+
+        $harness->assertSame(
+            'Password did not match the active user account. Entered password length: 19; trimmed length: 19; login length: 17; whitespace removed: no; invisible format chars removed: yes; non-ASCII present: yes.',
             $reason
         );
     });
@@ -218,7 +273,7 @@ $harness->check(LoginService::class, 'records unknown email address failures wit
         $harness->assertTrue(is_array($log));
         $harness->assertSame(0, (int)($log['user_id'] ?? 0));
         $harness->assertSame(
-            'Email address was not recognised. Entered password length: 17; trimmed length: 17; leading/trailing whitespace removed: no.',
+            'Email address was not recognised. Entered password length: 17; trimmed length: 17; login length: 17; whitespace removed: no; invisible format chars removed: no; non-ASCII present: no.',
             (string)($log['reason'] ?? '')
         );
     });

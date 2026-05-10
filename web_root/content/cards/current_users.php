@@ -199,13 +199,13 @@ final class _current_usersCard extends CardBaseFramework
             </form>
             ' . ($isCurrentUser
                 ? '<span class="badge info">Use Current User Details to change password</span>'
-                : '<form method="post" action="?page=users" data-ajax="true" class="toolbar">
+                : '<form method="post" action="?page=users" data-ajax="true" class="input-action-row">
                 ' . $cards . '
                 <input type="hidden" name="action" value="users-set-password">
                 <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
                 <input type="hidden" name="target_user_id" value="' . HelperFramework::escape((string)$userId) . '">
                 <input class="input" name="target_password" type="password" placeholder="New password" autocomplete="new-password" required>
-                <button class="button primary" type="submit">Set Password</button>
+                <button class="button button-inline primary" type="submit">Set Password</button>
             </form>') . '
         </div>';
     }

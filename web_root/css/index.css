@@ -557,6 +557,10 @@ body.sidebar-collapsed .nav-link-short {
   display: inline;
 }
 
+body.sidebar-collapsed .sidebar-hide-collapsed-link-initials .nav-link-short {
+  display: none;
+}
+
 .main {
   display: flex;
   flex-direction: column;

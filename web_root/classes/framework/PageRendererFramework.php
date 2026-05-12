@@ -268,9 +268,11 @@ final class PageRendererFramework
         $escapedAppName = HelperFramework::escape((string)($appName ?? 'eelKit Framework'));
         $escapedBrandMark = HelperFramework::escape($this->brandMark());
         $escapedAppStrapline = HelperFramework::escape(AppConfigurationStore::appStrapline());
-        $showCollapsedLinkInitials = !$this->hideCollapsedLinkInitials();
+        $hideCollapsedLinkInitials = $this->hideCollapsedLinkInitials();
+        $showCollapsedLinkInitials = !$hideCollapsedLinkInitials;
+        $sidebarClass = 'sidebar' . ($hideCollapsedLinkInitials ? ' sidebar-hide-collapsed-link-initials' : '');
 
-        $html = '<aside id="sidebar-shell" class="sidebar">
+        $html = '<aside id="sidebar-shell" class="' . $sidebarClass . '">
         <div class="brand-block">
             <div class="brand">
                 <div class="brand-mark">' . $escapedBrandMark . '</div>
@@ -309,7 +311,7 @@ final class PageRendererFramework
         $html .= '</div>
             <div class="nav-scroll-hint bottom" aria-hidden="true"></div>
         </div>';
-        $html .= $this->renderSidebarLogout($sessionAuthenticationService);
+        $html .= $this->renderSidebarLogout($sessionAuthenticationService, $showCollapsedLinkInitials);
         $html .= '</aside>';
 
         return $html;
@@ -324,7 +326,10 @@ final class PageRendererFramework
 
     private function hideCollapsedLinkInitials(): bool
     {
-        return AppConfigurationStore::get('navigation.hide_collapsed_link_initials', false) === true;
+        return filter_var(
+            AppConfigurationStore::get('navigation.hide_collapsed_link_initials', false),
+            FILTER_VALIDATE_BOOL
+        );
     }
 
     private function renderToolbarLogout(SessionAuthenticationService $sessionAuthenticationService): string
@@ -336,7 +341,7 @@ final class PageRendererFramework
         </form>';
     }
 
-    private function renderSidebarLogout(SessionAuthenticationService $sessionAuthenticationService): string
+    private function renderSidebarLogout(SessionAuthenticationService $sessionAuthenticationService, bool $showCollapsedLinkInitials): string
     {
         return '<div class="sidebar-footer">
             <form class="sidebar-logout-form" method="post" action="/">
@@ -345,7 +350,7 @@ final class PageRendererFramework
                 <button class="sidebar-logout-button" type="submit">
                     <span class="nav-icon-wrap sidebar-logout-icon" aria-hidden="true"></span>
                     <span class="nav-link-text">Logout</span>
-                    ' . (!$this->hideCollapsedLinkInitials() ? '<span class="nav-link-short" aria-hidden="true">Out</span>' : '') . '
+                    ' . ($showCollapsedLinkInitials ? '<span class="nav-link-short" aria-hidden="true">Out</span>' : '') . '
                 </button>
             </form>
         </div>';

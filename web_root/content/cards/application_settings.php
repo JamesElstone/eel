@@ -38,6 +38,7 @@ final class _application_settingsCard extends CardBaseFramework
         $csrfToken = (string)($context['page']['csrf_token'] ?? '');
         $cookieSecure = $this->cookieSecureDisplayValue($config['session']['cookie_secure'] ?? 'auto');
         $cookieSameSite = (string)($config['session']['cookie_samesite'] ?? 'Strict');
+        $hideCollapsedLinkInitials = !empty($config['navigation']['hide_collapsed_link_initials']);
 
         return '
             <form method="post" action="?page=settings" data-ajax="true" class="form-grid application-settings-form">
@@ -77,6 +78,12 @@ final class _application_settingsCard extends CardBaseFramework
 
                 <fieldset class="form-row full settings-fieldset">
                     <legend>Navigation order</legend>
+                    <label class="checkbox-item" for="settings-hide-collapsed-link-initials">
+                        <input id="settings-hide-collapsed-link-initials" name="hide_collapsed_link_initials" type="checkbox" value="1"' . ($hideCollapsedLinkInitials ? ' checked' : '') . '>
+                        <span class="checkbox-copy">
+                            <span>Hide collapsed sidebar link initials.</span>
+                        </span>
+                    </label>
                     <div class="checkbox-grid">
                         ' . $this->navigationOrderFields($navigationOrder) . '
                     </div>

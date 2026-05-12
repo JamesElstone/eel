@@ -24,5 +24,6 @@ return [
         'developer_only_pages' => [
             'test',
         ],
+        'hide_collapsed_link_initials' => false,
     ],
 ];

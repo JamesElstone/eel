@@ -66,6 +66,7 @@ final class ApplicationSettingsAction implements ActionInterfaceFramework
                 'developer_options' => (string)$request->input('developer_options', '') === '1',
                 'navigation' => array_replace($this->configArray('navigation'), [
                     'default_order' => $this->navigationOrderFromRequest($request),
+                    'hide_collapsed_link_initials' => (string)$request->input('hide_collapsed_link_initials', '') === '1',
                 ]),
                 'antifraud' => array_replace($this->configArray('antifraud'), [
                     'vendor_license_ids' => trim((string)$request->input('antifraud_vendor_license_ids', '')),

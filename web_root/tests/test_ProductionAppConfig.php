@@ -33,6 +33,8 @@ $harness->check('secure/app.php', 'parses and returns a configuration array when
     $harness->assertSame('', $output);
     $harness->assertTrue(is_array($config));
     $harness->assertTrue(array_key_exists('navigation', $config));
+    $harness->assertTrue(array_key_exists('hide_collapsed_link_initials', $config['navigation']));
+    $harness->assertTrue(is_bool($config['navigation']['hide_collapsed_link_initials']));
 
     if (array_key_exists('uploads', $config)) {
         $harness->assertTrue(is_array($config['uploads']));

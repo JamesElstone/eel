@@ -268,6 +268,7 @@ final class PageRendererFramework
         $escapedAppName = HelperFramework::escape((string)($appName ?? 'eelKit Framework'));
         $escapedBrandMark = HelperFramework::escape($this->brandMark());
         $escapedAppStrapline = HelperFramework::escape(AppConfigurationStore::appStrapline());
+        $showCollapsedLinkInitials = !$this->hideCollapsedLinkInitials();
 
         $html = '<aside id="sidebar-shell" class="sidebar">
         <div class="brand-block">
@@ -301,7 +302,7 @@ final class PageRendererFramework
             $html .= '<a class="nav-link' . $active . '" href="' . HelperFramework::escape((string)$item['url']) . '" data-ajax-link="true">
                     <span class="nav-icon-wrap">' . $iconHtml . '</span>
                     <span class="nav-link-text">' . HelperFramework::escape((string)$item['label']) . '</span>
-                    <span class="nav-link-short" aria-hidden="true">' . HelperFramework::escape((string)($item['short'] ?? '')) . '</span>
+                    ' . ($showCollapsedLinkInitials ? '<span class="nav-link-short" aria-hidden="true">' . HelperFramework::escape((string)($item['short'] ?? '')) . '</span>' : '') . '
                 </a>';
         }
 
@@ -319,6 +320,11 @@ final class PageRendererFramework
         $brandMark = trim((string)AppConfigurationStore::get('brand-mark', 'E'));
 
         return $brandMark !== '' ? $brandMark : 'E';
+    }
+
+    private function hideCollapsedLinkInitials(): bool
+    {
+        return AppConfigurationStore::get('navigation.hide_collapsed_link_initials', false) === true;
     }
 
     private function renderToolbarLogout(SessionAuthenticationService $sessionAuthenticationService): string
@@ -339,7 +345,7 @@ final class PageRendererFramework
                 <button class="sidebar-logout-button" type="submit">
                     <span class="nav-icon-wrap sidebar-logout-icon" aria-hidden="true"></span>
                     <span class="nav-link-text">Logout</span>
-                    <span class="nav-link-short" aria-hidden="true">Out</span>
+                    ' . (!$this->hideCollapsedLinkInitials() ? '<span class="nav-link-short" aria-hidden="true">Out</span>' : '') . '
                 </button>
             </form>
         </div>';

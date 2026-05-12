@@ -1346,6 +1346,13 @@ table.table-condensed td {
   padding: 8px 5px;
 }
 
+.table-scroll.table-condensed tbody td,
+.table-scroll.table-condensed tbody td *,
+table.table-condensed tbody td,
+table.table-condensed tbody td * {
+  font-size: 0.70rem;
+}
+
 .table-scroll.table-condensed .button,
 table.table-condensed .button {
   padding: 8px 5px;
@@ -1365,6 +1372,18 @@ table.table-condensed .input-action-row {
 .table-scroll.table-condensed .selector-input,
 table.table-condensed .selector-input {
   padding: 8px 5px;
+}
+
+.table-scroll.table-condensed .badge,
+table.table-condensed .badge {
+  font-size: 0.65rem;
+}
+
+.table-scroll.table-condensed .input,
+.table-scroll.table-condensed .select,
+table.table-condensed .input,
+table.table-condensed .select {
+  padding: 8px 10px;
 }
 
 .table-scroll-mini {

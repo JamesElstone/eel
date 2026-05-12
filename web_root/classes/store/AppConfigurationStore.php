@@ -176,6 +176,7 @@ final class AppConfigurationStore
                 'developer_only_pages' => [
                     'test',
                 ],
+                'hide_collapsed_link_initials' => false,
             ],
             'antifraud' => [
                 'vendor_license_ids' => '1234',

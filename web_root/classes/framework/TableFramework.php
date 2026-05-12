@@ -370,6 +370,7 @@ final class TableFramework
                 . $this->renderFilters()
             . '</div>
             <div class="actions-row">'
+                . $this->renderCondensedViewButton()
                 . $this->renderExportButtons($context, $exportHiddenFields)
             . '</div>
         </div>';
@@ -493,6 +494,17 @@ final class TableFramework
         }
 
         return $html;
+    }
+
+    private function renderCondensedViewButton(): string
+    {
+        if (!$this->exportsEnabled) {
+            return '';
+        }
+
+        return '<button class="button table-condensed-toggle" type="button" data-table-key="'
+            . HelperFramework::escape($this->key)
+            . '" aria-pressed="false">Condensed View</button>';
     }
 
     private function renderExportButton(array $context, string $format, string $label, array $hiddenFields): string

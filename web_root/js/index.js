@@ -15,6 +15,7 @@
     let activeChickenCheckButton = null;
     const afStorageKey = 'af_client_device_id';
     const afPersistentCookieName = 'af_client_device_id';
+    const tableCondensedStoragePrefix = 'table_condensed_view:';
     let afEphemeralDeviceId = null;
     const ajaxNonceBootstrapId = 'ajax-security-bootstrap';
     const ajaxNonceState = {
@@ -602,6 +603,101 @@
         }
 
         return String(value).replace(/["\\]/g, '\\$&');
+    }
+
+    function tableCondensedStorageKey(toggle) {
+        if (!(toggle instanceof HTMLButtonElement)) {
+            return '';
+        }
+
+        const tableKey = String(toggle.dataset.tableKey || '').trim();
+
+        return tableKey !== '' ? `${tableCondensedStoragePrefix}${tableKey}` : '';
+    }
+
+    function findCondensedTableTarget(toggle) {
+        if (!(toggle instanceof HTMLButtonElement)) {
+            return null;
+        }
+
+        const toolbar = toggle.closest('.card-toolbar');
+        let sibling = toolbar instanceof HTMLElement ? toolbar.nextElementSibling : null;
+
+        while (sibling instanceof HTMLElement) {
+            if (sibling.matches('.table-scroll, .table-scroll-mini, table')) {
+                return sibling;
+            }
+
+            const tableTarget = sibling.querySelector('.table-scroll, .table-scroll-mini, table');
+            if (tableTarget instanceof HTMLElement) {
+                return tableTarget;
+            }
+
+            sibling = sibling.nextElementSibling;
+        }
+
+        return null;
+    }
+
+    function tableCondensedEnabled(toggle) {
+        const key = tableCondensedStorageKey(toggle);
+        if (key === '' || !afStorageAvailable('localStorage')) {
+            return false;
+        }
+
+        try {
+            return window.localStorage.getItem(key) === '1';
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function setTableCondensed(toggle, condensed, persist = true) {
+        if (!(toggle instanceof HTMLButtonElement)) {
+            return;
+        }
+
+        const enabled = Boolean(condensed);
+        const target = findCondensedTableTarget(toggle);
+
+        if (target instanceof HTMLElement) {
+            target.classList.toggle('table-condensed', enabled);
+        }
+
+        toggle.classList.toggle('primary', enabled);
+        toggle.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+
+        const key = tableCondensedStorageKey(toggle);
+        if (!persist || key === '' || !afStorageAvailable('localStorage')) {
+            return;
+        }
+
+        try {
+            window.localStorage.setItem(key, enabled ? '1' : '0');
+        } catch (error) {
+            // Storage may be disabled; the current page state has still been updated.
+        }
+    }
+
+    function initialiseTableCondensedControls(root = document) {
+        const toggles = root.querySelectorAll ? root.querySelectorAll('.table-condensed-toggle') : [];
+
+        toggles.forEach((toggle) => {
+            if (!(toggle instanceof HTMLButtonElement)) {
+                return;
+            }
+
+            setTableCondensed(toggle, tableCondensedEnabled(toggle), false);
+
+            if (toggle.dataset.tableCondensedBound === '1') {
+                return;
+            }
+
+            toggle.addEventListener('click', () => {
+                setTableCondensed(toggle, !toggle.classList.contains('primary'));
+            });
+            toggle.dataset.tableCondensedBound = '1';
+        });
     }
 
     function renderErrorFlashHtml(payload) {
@@ -1422,6 +1518,7 @@
                     initDangerZoneConfirmationControls(replacement);
                     initialiseUploadDropzones(replacement);
                     initialisePasswordRequirementPanels(replacement);
+                    initialiseTableCondensedControls(replacement);
                     return;
                 }
 
@@ -1439,6 +1536,7 @@
                     initDangerZoneConfirmationControls(replacement);
                     initialiseUploadDropzones(replacement);
                     initialisePasswordRequirementPanels(replacement);
+                    initialiseTableCondensedControls(replacement);
                 }
             } catch (error) {
                 console.error(`Failed to replace AJAX card ${domId}.`, error);
@@ -2017,6 +2115,7 @@
     initDangerZoneConfirmationControls(document);
     initialiseUploadDropzones(document);
     initialisePasswordRequirementPanels(document);
+    initialiseTableCondensedControls(document);
     initialiseButtonTitleVisibility();
     logFlashMessages(document.getElementById('flash-messages'));
     scheduleFlashDismissals(document.getElementById('flash-messages'));

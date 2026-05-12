@@ -1339,6 +1339,34 @@ tbody tr:last-child td {
   overflow-x: auto;
 }
 
+.table-scroll.table-condensed th,
+.table-scroll.table-condensed td,
+table.table-condensed th,
+table.table-condensed td {
+  padding: 8px 5px;
+}
+
+.table-scroll.table-condensed .button,
+table.table-condensed .button {
+  padding: 8px 5px;
+  margin-bottom: 0;
+}
+
+.table-scroll.table-condensed .actions-row,
+table.table-condensed .actions-row {
+  gap: 6px;
+}
+
+.table-scroll.table-condensed .input-action-row,
+table.table-condensed .input-action-row {
+  gap: 5px;
+}
+
+.table-scroll.table-condensed .selector-input,
+table.table-condensed .selector-input {
+  padding: 8px 5px;
+}
+
 .table-scroll-mini {
   overflow-x: auto;
 }

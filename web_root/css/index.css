@@ -1280,6 +1280,12 @@ td {
   font-size: 0.95rem;
 }
 
+tbody td,
+tbody td * {
+  font-size: 0.95rem;
+  font-weight: 400;
+}
+
 th:last-child,
 td:last-child {
   border-right: none;

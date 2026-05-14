@@ -32,6 +32,7 @@ final class _logs extends PageContextFramework
     public function cards(): array
     {
         return [
+            'activity',
             'user_account_audit_log',
             'user_logon_history_log',
         ];

@@ -18,24 +18,26 @@ final class _activityCard extends CardBaseFramework
 
     public function services(): array
     {
-        return [];
+        return [
+            [
+                'key' => 'activity_rows',
+                'service' => LogsRepository::class,
+                'method' => 'fetchRecentFlashActivity',
+                'params' => [
+                    'limit' => 200,
+                ],
+            ],
+        ];
     }
 
-    public function handle(
-        RequestFramework $request,
-        PageServiceFramework $services,
-        array $pageContext,
-        ActionResultFramework $actionResult
-    ): array {
-        $pageContext = parent::handle($request, $services, $pageContext, $actionResult);
-        $pageContext['page']['activity_window'] = $this->normaliseWindow((string)$request->input('activity_window', '7_days'));
-
-        return $pageContext;
+    public function helper(array $context): string
+    {
+        return 'Recent success and error flash messages recorded from framework action results.';
     }
 
     protected function additionalInvalidationFacts(): array
     {
-        return ['dashboard.feed'];
+        return ['page.context'];
     }
 
     public function handleError(string $serviceKey, array $error, array $context): string
@@ -45,11 +47,12 @@ final class _activityCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $selectedWindow = $this->selectedWindow($context);
-        return $this->configuredTable($context)->render($context, [
-            'cards[]' => (array)($context['page']['page_cards'] ?? []),
-            'activity_window' => $selectedWindow,
-        ]);
+        return $this->configuredTable($context)->render(
+            $context,
+            [
+                'cards[]' => (array)($context['page']['page_cards'] ?? []),
+            ]
+        );
     }
 
     public function tables(array $context): array
@@ -59,7 +62,6 @@ final class _activityCard extends CardBaseFramework
 
     private function configuredTable(array $context): TableFramework
     {
-        $selectedWindow = $this->selectedWindow($context);
         $pagination = HelperFramework::paginateArray($this->rows($context), $this->paginationPage($context), self::PAGE_SIZE);
 
         return $this->table($context)
@@ -73,19 +75,6 @@ final class _activityCard extends CardBaseFramework
                     '_pagination' => '1',
                     '_invalidate_fact' => $this->tableInvalidationFact(),
                     'cards[]' => [$this->key()],
-                    'activity_window' => $selectedWindow,
-                ]
-            )
-            ->filterSelect(
-                'activity_window',
-                'Window',
-                $this->windowOptions(),
-                $selectedWindow,
-                [
-                    'page' => (string)($context['page']['page_id'] ?? ''),
-                    '_pagination' => '1',
-                    '_invalidate_fact' => $this->tableInvalidationFact(),
-                    'cards[]' => [$this->key()],
                 ]
             );
     }
@@ -93,53 +82,75 @@ final class _activityCard extends CardBaseFramework
     private function table(array $context): TableFramework
     {
         return TableFramework::make($this->key(), $this->rows($context))
-            ->filename('activity')
-            ->exportLimit(500)
-            ->empty('No audit or history events have been recorded yet.')
-            ->column(
-                'title',
-                'Title',
-                html: static fn(array $row): string => '<strong>' . HelperFramework::escape((string)($row['title'] ?? '')) . '</strong>',
-                export: static fn(array $row): string => (string)($row['title'] ?? '')
-            )
-            ->textColumn('detail', 'Detail')
+            ->filename('application-activity-flash-log')
+            ->exportLimit(200)
+            ->empty('No application activity flash messages have been recorded yet.')
+            ->classes(wrapperClass: 'table-scroll application-activity-table')
             ->textColumn('occurred_at', 'Time')
-            ->textColumn('meta', 'Meta');
+            ->textColumn('user_display_name', 'User', fallback: 'System')
+            ->primarySecondaryColumn(
+                'page_id',
+                'Page / Action',
+                secondaryKey: 'activity_action',
+                primaryFallback: 'Unknown page',
+                secondaryPreviewLength: 80
+            )
+            ->badgeColumn(
+                'message_type',
+                'Type',
+                badgeClassFormatter: static fn(array $row): string => (string)($row['message_type'] ?? '') === 'error' ? 'danger' : 'success'
+            )
+            ->primarySecondaryColumn(
+                'message_text',
+                'Message',
+                secondaryKey: 'message_html_text',
+                secondaryPreviewLength: 120
+            )
+            ->primarySecondaryColumn(
+                'ip_address',
+                'IP / User Agent',
+                secondaryKey: 'user_agent',
+                primaryFallback: 'Unknown IP',
+                secondaryPreviewLength: 96,
+                secondaryClass: 'helper',
+                secondaryPreviewClass: 'log-agent-preview',
+                cellClass: 'log-agent-cell'
+            )
+            ->textColumn('request_method', 'Method')
+            ->textColumn('request_uri', 'Request');
     }
 
     private function rows(array $context): array
     {
-        $page = (array)($context['page'] ?? []);
-
-        return array_values(array_filter(
-            (array)(($context['services'] ?? [])['activity_feed'] ?? ($page['activity'] ?? [])),
-            static fn(mixed $row): bool => is_array($row)
-        ));
-    }
-
-    private function selectedWindow(array $context): string
-    {
-        $page = (array)($context['page'] ?? []);
-
-        return $this->normaliseWindow((string)($page['activity_window'] ?? '7_days'));
-    }
-
-    private function windowOptions(): array
-    {
-        return [
-            '1_day' => '1 day',
-            '7_days' => '7 days',
-            'this_month' => 'This month',
-        ];
+        return array_map(
+            fn(array $row): array => $this->normaliseRow($row),
+            array_filter(
+                (array)(($context['services'] ?? [])['activity_rows'] ?? []),
+                static fn(mixed $row): bool => is_array($row)
+            )
+        );
     }
 
     private function tableInvalidationFact(): string
     {
-        return (string)($this->invalidationFacts()[0] ?? 'dashboard.feed');
+        return (string)($this->invalidationFacts()[0] ?? 'activity');
     }
 
-    private function normaliseWindow(string $window): string
+    private function normaliseRow(array $row): array
     {
-        return in_array($window, ['1_day', '7_days', 'this_month'], true) ? $window : '7_days';
+        $action = trim((string)($row['action_name'] ?? ''));
+        $cardAction = trim((string)($row['card_action_name'] ?? ''));
+
+        if ($action !== '' && $cardAction !== '') {
+            $row['activity_action'] = $action . ' / ' . $cardAction;
+        } elseif ($action !== '') {
+            $row['activity_action'] = $action;
+        } elseif ($cardAction !== '') {
+            $row['activity_action'] = $cardAction;
+        } else {
+            $row['activity_action'] = 'No action';
+        }
+
+        return $row;
     }
 }

@@ -135,6 +135,21 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARAT
             $harness->assertTrue(preg_match('/\son[a-z]+\s*=/i', $html) !== 1);
         });
 
+        $harness->check(ChartService::class, 'renders calendar heatmap with empty explicit range', static function () use ($harness, $service): void {
+            $html = $service->calendarHeatmap([], [
+                'title' => 'Empty calendar heatmap',
+                'start_date' => '2026-01-01',
+                'end_date' => '2026-12-31',
+            ]);
+
+            $harness->assertTrue(str_contains($html, 'calendar-heatmap'));
+            $harness->assertTrue(str_contains($html, '<h3>Empty calendar heatmap</h3>'));
+            $harness->assertTrue(str_contains($html, '<option value="2026" selected>2026</option>'));
+            $harness->assertTrue(str_contains($html, 'calendar-heatmap-day-level-0'));
+            $harness->assertTrue(str_contains($html, 'title="0 records on 1 January 2026"'));
+            $harness->assertTrue(!str_contains($html, 'calendar-heatmap-empty'));
+        });
+
         $harness->check(ChartService::class, 'renders calendar heatmap demo from context', static function () use ($harness, $service): void {
             $charts = $service->demoCalendarCharts([
                 'selected_year' => '2025',

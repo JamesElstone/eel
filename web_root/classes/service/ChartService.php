@@ -498,7 +498,8 @@ final class ChartService
         $gridStart = $start->modify('-' . ((int)$start->format('N') - 1) . ' days');
         $gridEnd = $end->modify('+' . (7 - (int)$end->format('N')) . ' days');
         $weekCount = max(1, (int)floor(((int)$gridStart->diff($gridEnd)->format('%a')) / 7) + 1);
-        $max = max(1.0, ...array_values(array_map(static fn(array $item): float => $item['value'], $valuesByDate)));
+        $values = array_values(array_map(static fn(array $item): float => $item['value'], $valuesByDate));
+        $max = max([1.0, ...$values]);
         $selectedDate = $this->calendarHeatmapDateOption($options, 'selected_date');
         $inputName = trim((string)($options['input_name'] ?? 'heatmap_date'));
         $yearInputName = trim((string)($options['year_input_name'] ?? 'heatmap_year'));

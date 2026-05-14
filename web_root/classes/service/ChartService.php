@@ -7,7 +7,7 @@
  */
 declare(strict_types=1);
 
-final class ChartSvgService
+final class ChartService
 {
     private const DEFAULT_COLORS = [
         '#1d4ed8',
@@ -454,6 +454,138 @@ final class ChartSvgService
     }
 
     /**
+     * Render a server-side HTML calendar heat map.
+     *
+     * The $days array should contain one item per date with a Y-m-d date and
+     * a non-negative numeric value. Missing dates inside the selected range are
+     * rendered as zero-value days. Optional label/title values override the
+     * generated accessible text and hover title for that day.
+     *
+     * Example:
+     * [
+     *     ['date' => '2026-05-12', 'value' => 1],
+     *     ['date' => '2026-05-13', 'value' => 2, 'title' => '2 records on 13 May 2026'],
+     *     ['date' => '2026-05-14', 'value' => 4, 'label' => 'Peak day: 4 records'],
+     * ]
+     *
+     * Supported options:
+     * - title: Visible heading and aria-label for the heat map.
+     * - id: Optional HTML id prefix used for internal labels and controls.
+     * - start_date/end_date: Y-m-d date range to render; inferred from $days when omitted.
+     * - selected_date: Y-m-d date to mark with the selected state.
+     * - input_name: Button name used when a day is submitted.
+     * - year_input_name: Select name used for the year picker.
+     * - years: Optional list of integer years to show in the year picker.
+     * - ajax_target: Optional target id/data value for the framework AJAX handler.
+     * - ajax_url: Optional formaction value applied to each day button.
+     * - value_label: Label used in generated day titles, for example "records".
+     * - legend: Set false to hide the Less/More legend.
+     *
+     * @param array<int, array{date?: string, value?: int|float|string, label?: string, title?: string}> $days
+     * @param array<string, mixed> $options
+     */
+    public function calendarHeatmap(array $days, array $options = []): string
+    {
+        $valuesByDate = $this->normaliseCalendarHeatmapDays($days);
+        $range = $this->calendarHeatmapRange($valuesByDate, $options);
+
+        if ($range === null) {
+            return '<div class="calendar-heatmap calendar-heatmap-empty">' . HelperFramework::escape((string)($options['empty_message'] ?? 'No calendar data')) . '</div>';
+        }
+
+        $start = $range['start'];
+        $end = $range['end'];
+        $gridStart = $start->modify('-' . ((int)$start->format('N') - 1) . ' days');
+        $gridEnd = $end->modify('+' . (7 - (int)$end->format('N')) . ' days');
+        $weekCount = max(1, (int)floor(((int)$gridStart->diff($gridEnd)->format('%a')) / 7) + 1);
+        $max = max(1.0, ...array_values(array_map(static fn(array $item): float => $item['value'], $valuesByDate)));
+        $selectedDate = $this->calendarHeatmapDateOption($options, 'selected_date');
+        $inputName = trim((string)($options['input_name'] ?? 'heatmap_date'));
+        $yearInputName = trim((string)($options['year_input_name'] ?? 'heatmap_year'));
+        $ajaxTarget = trim((string)($options['ajax_target'] ?? ''));
+        $ajaxUrl = trim((string)($options['ajax_url'] ?? ''));
+        $valueLabel = trim((string)($options['value_label'] ?? 'records'));
+        $chartTitle = trim((string)($options['title'] ?? 'Calendar heatmap'));
+        $controlId = $this->calendarHeatmapId($options, $inputName);
+
+        $headingHtml = '<div class="calendar-heatmap-heading">'
+            . '<h3>' . HelperFramework::escape($chartTitle !== '' ? $chartTitle : 'Calendar heatmap') . '</h3>'
+            . $this->calendarHeatmapYearSelect($start, $end, $selectedDate, $yearInputName, $options, $controlId)
+            . '</div>';
+        $monthHtml = $this->calendarHeatmapMonthLabels($gridStart, $gridEnd, $weekCount);
+        $dayHtml = '';
+        $cursor = $gridStart;
+
+        while ($cursor <= $gridEnd) {
+            $date = $cursor->format('Y-m-d');
+            $item = $valuesByDate[$date] ?? ['value' => 0.0, 'label' => '', 'title' => ''];
+            $value = $item['value'];
+            $level = $cursor < $start || $cursor > $end ? 0 : $this->calendarHeatmapLevel($value, $max);
+            $classes = [
+                'calendar-heatmap-day',
+                'calendar-heatmap-day-level-' . $level,
+            ];
+
+            if ($cursor < $start || $cursor > $end) {
+                $classes[] = 'is-outside-range';
+            }
+
+            if ($selectedDate !== null && $date === $selectedDate->format('Y-m-d')) {
+                $classes[] = 'is-selected';
+            }
+
+            $title = trim($item['title']) !== ''
+                ? $item['title']
+                : (trim($item['label']) !== '' ? $item['label'] : $this->calendarHeatmapTitle($cursor, $value, $valueLabel));
+            $attributes = [
+                'class' => implode(' ', $classes),
+                'type' => 'submit',
+                'name' => $inputName !== '' ? $inputName : 'heatmap_date',
+                'value' => $date,
+                'title' => $title,
+                'aria-label' => $title,
+                'data-preserve-title' => 'true',
+                'data-heatmap-date' => $date,
+                'data-heatmap-value' => $this->formatValue($value),
+            ];
+
+            if ($ajaxTarget !== '') {
+                $attributes['data-ajax-target'] = $ajaxTarget;
+            }
+
+            if ($ajaxUrl !== '') {
+                $attributes['formaction'] = $ajaxUrl;
+            }
+
+            $dayHtml .= '<button' . $this->htmlAttributes($attributes) . '><span class="sr-only">' . HelperFramework::escape($title) . '</span></button>';
+            $cursor = $cursor->modify('+1 day');
+        }
+
+        $legendHtml = '';
+        if (($options['legend'] ?? true) !== false) {
+            $legendHtml = '<div class="calendar-heatmap-legend"><span>Less</span>'
+                . '<span class="calendar-heatmap-legend-swatch calendar-heatmap-day-level-0"></span>'
+                . '<span class="calendar-heatmap-legend-swatch calendar-heatmap-day-level-1"></span>'
+                . '<span class="calendar-heatmap-legend-swatch calendar-heatmap-day-level-2"></span>'
+                . '<span class="calendar-heatmap-legend-swatch calendar-heatmap-day-level-3"></span>'
+                . '<span class="calendar-heatmap-legend-swatch calendar-heatmap-day-level-4"></span>'
+                . '<span>More</span></div>';
+        }
+
+        return '<div class="calendar-heatmap" role="group" aria-label="' . HelperFramework::escape($chartTitle !== '' ? $chartTitle : 'Calendar heatmap') . '">'
+            . $headingHtml
+            . '<div class="calendar-heatmap-grid-scroll">'
+            . '<div class="calendar-heatmap-months">' . $monthHtml . '</div>'
+            . '<div class="calendar-heatmap-body">'
+            . '<div class="calendar-heatmap-weekdays"><span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span><span>Sun</span></div>'
+            . '<div class="calendar-heatmap-days">' . $dayHtml . '</div>'
+            . '</div>'
+            . '</div>'
+            . $legendHtml
+            . '</div>';
+    }
+
+    /**
      * @return array<string, string>
      */
     public function demoTrendCharts(): array
@@ -629,6 +761,280 @@ final class ChartSvgService
                 'balance_node' => 'total_value',
             ]),
         ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function demoCalendarCharts(array $context = []): array
+    {
+        $selectedYear = $this->demoCalendarSelectedYear($context);
+        $selectedDate = $this->demoCalendarSelectedDate($context, $selectedYear);
+        $days = [];
+        $start = new DateTimeImmutable($selectedYear . '-01-01');
+        $end = new DateTimeImmutable($selectedYear . '-12-31');
+        $cursor = $start;
+
+        while ($cursor <= $end) {
+            $dayOfYear = (int)$cursor->format('z');
+            $weekday = (int)$cursor->format('N');
+            $value = (($dayOfYear * 7) + ($weekday * 3) + ((int)$selectedYear % 17)) % 42;
+
+            if ($weekday >= 6) {
+                $value = max(0, $value - 18);
+            }
+
+            $days[] = [
+                'date' => $cursor->format('Y-m-d'),
+                'value' => $value,
+            ];
+            $cursor = $cursor->modify('+1 day');
+        }
+
+        return [
+            'calendar_heatmap' => $this->calendarHeatmap($days, [
+                'title' => 'Calendar based Heat Map',
+                'id' => 'example-calendar-heatmap',
+                'start_date' => $selectedYear . '-01-01',
+                'end_date' => $selectedYear . '-12-31',
+                'selected_date' => $selectedDate,
+                'years' => [2024, 2025, 2026],
+                'value_label' => 'records',
+                'input_name' => 'calendar_heatmap_date',
+                'year_input_name' => 'calendar_heatmap_year',
+                'ajax_target' => 'calendar-heatmap-detail-table',
+            ]),
+        ];
+    }
+
+    private function demoCalendarSelectedYear(array $context): string
+    {
+        $year = (int)($context['selected_year'] ?? 2026);
+
+        return in_array($year, [2024, 2025, 2026], true) ? (string)$year : '2026';
+    }
+
+    private function demoCalendarSelectedDate(array $context, string $selectedYear): string
+    {
+        $selectedDate = $this->normaliseDateString((string)($context['selected_date'] ?? ''));
+
+        if ($selectedDate !== null && str_starts_with($selectedDate, $selectedYear . '-')) {
+            return $selectedDate;
+        }
+
+        return $selectedYear . '-05-14';
+    }
+
+    /**
+     * @param array<int, array{date?: string, value?: int|float|string, label?: string, title?: string}> $days
+     * @return array<string, array{value: float, label: string, title: string}>
+     */
+    private function normaliseCalendarHeatmapDays(array $days): array
+    {
+        $normalised = [];
+
+        foreach ($days as $day) {
+            if (!is_array($day)) {
+                continue;
+            }
+
+            $date = $this->normaliseDateString((string)($day['date'] ?? ''));
+            if ($date === null) {
+                continue;
+            }
+
+            $value = (float)($day['value'] ?? 0);
+            if (!is_finite($value) || $value < 0) {
+                $value = 0.0;
+            }
+
+            $normalised[$date] = [
+                'value' => $value,
+                'label' => trim((string)($day['label'] ?? '')),
+                'title' => trim((string)($day['title'] ?? '')),
+            ];
+        }
+
+        ksort($normalised);
+
+        return $normalised;
+    }
+
+    /**
+     * @param array<string, array{value: float, label: string, title: string}> $valuesByDate
+     * @param array<string, mixed> $options
+     * @return array{start: DateTimeImmutable, end: DateTimeImmutable}|null
+     */
+    private function calendarHeatmapRange(array $valuesByDate, array $options): ?array
+    {
+        $start = $this->calendarHeatmapDateOption($options, 'start_date');
+        $end = $this->calendarHeatmapDateOption($options, 'end_date');
+
+        if ($start === null && $valuesByDate !== []) {
+            $start = new DateTimeImmutable((string)array_key_first($valuesByDate));
+        }
+
+        if ($end === null && $valuesByDate !== []) {
+            $end = new DateTimeImmutable((string)array_key_last($valuesByDate));
+        }
+
+        if ($start === null || $end === null) {
+            return null;
+        }
+
+        if ($end < $start) {
+            [$start, $end] = [$end, $start];
+        }
+
+        return ['start' => $start, 'end' => $end];
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     */
+    private function calendarHeatmapDateOption(array $options, string $key): ?DateTimeImmutable
+    {
+        $date = $this->normaliseDateString((string)($options[$key] ?? ''));
+
+        return $date !== null ? new DateTimeImmutable($date) : null;
+    }
+
+    private function normaliseDateString(string $date): ?string
+    {
+        $date = trim($date);
+        if ($date === '') {
+            return null;
+        }
+
+        $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+        $errors = DateTimeImmutable::getLastErrors();
+
+        if (!$parsed instanceof DateTimeImmutable || (is_array($errors) && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))) {
+            return null;
+        }
+
+        return $parsed->format('Y-m-d');
+    }
+
+    private function calendarHeatmapLevel(float $value, float $max): int
+    {
+        if ($value <= 0) {
+            return 0;
+        }
+
+        return max(1, min(4, (int)ceil(($value / max(1.0, $max)) * 4)));
+    }
+
+    private function calendarHeatmapTitle(DateTimeImmutable $date, float $value, string $valueLabel): string
+    {
+        $label = trim($valueLabel) !== '' ? trim($valueLabel) : 'items';
+
+        return $this->formatValue($value) . ' ' . $label . ' on ' . $date->format('j M Y');
+    }
+
+    private function calendarHeatmapMonthLabels(DateTimeImmutable $gridStart, DateTimeImmutable $gridEnd, int $weekCount): string
+    {
+        $monthByWeek = [];
+        $monthCursor = new DateTimeImmutable($gridStart->format('Y-m-01'));
+
+        if ($monthCursor < $gridStart) {
+            $monthCursor = $monthCursor->modify('first day of next month');
+        }
+
+        while ($monthCursor <= $gridEnd) {
+            $week = (int)floor(((int)$gridStart->diff($monthCursor)->format('%a')) / 7) + 1;
+            $monthByWeek[$week] = $monthCursor->format('M');
+            $monthCursor = $monthCursor->modify('first day of next month');
+        }
+
+        $html = '';
+
+        for ($week = 1; $week <= $weekCount; $week++) {
+            $label = (string)($monthByWeek[$week] ?? '');
+            $class = 'calendar-heatmap-month' . ($label === '' ? ' is-empty' : '');
+
+            $html .= '<span class="' . HelperFramework::escape($class) . '">' . HelperFramework::escape($label) . '</span>';
+        }
+
+        return $html;
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     */
+    private function calendarHeatmapYearSelect(DateTimeImmutable $start, DateTimeImmutable $end, ?DateTimeImmutable $selectedDate, string $inputName, array $options, string $controlId): string
+    {
+        $years = $this->calendarHeatmapYearOptions((array)($options['years'] ?? []), $start, $end);
+        $selectedYear = $selectedDate instanceof DateTimeImmutable ? (int)$selectedDate->format('Y') : (int)$start->format('Y');
+        $name = $inputName !== '' ? $inputName : 'heatmap_year';
+        $yearSelectId = $controlId . '-year';
+        $html = '<label class="sr-only" for="' . HelperFramework::escape($yearSelectId) . '">Year</label>'
+            . '<select class="select calendar-heatmap-year-select" id="' . HelperFramework::escape($yearSelectId) . '" name="' . HelperFramework::escape($name) . '">';
+
+        foreach ($years as $year) {
+            $html .= '<option value="' . $year . '"' . ($year === $selectedYear ? ' selected' : '') . '>' . $year . '</option>';
+        }
+
+        return $html . '</select>';
+    }
+
+    /**
+     * @param array<int, mixed> $configuredYears
+     * @return array<int, int>
+     */
+    private function calendarHeatmapYearOptions(array $configuredYears, DateTimeImmutable $start, DateTimeImmutable $end): array
+    {
+        $years = [];
+
+        foreach ($configuredYears as $year) {
+            $year = (int)$year;
+            if ($year >= 1900 && $year <= 2200) {
+                $years[] = $year;
+            }
+        }
+
+        if ($years === []) {
+            $startYear = (int)$start->format('Y');
+            $endYear = (int)$end->format('Y');
+            for ($year = $startYear; $year <= $endYear; $year++) {
+                $years[] = $year;
+            }
+        }
+
+        $years = array_values(array_unique($years));
+        sort($years);
+
+        return $years;
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     */
+    private function calendarHeatmapId(array $options, string $inputName): string
+    {
+        $id = trim((string)($options['id'] ?? ''));
+        if ($id === '') {
+            $id = 'calendar-heatmap-' . ($inputName !== '' ? $inputName : 'chart');
+        }
+
+        $id = strtolower((string)preg_replace('/[^a-zA-Z0-9-]+/', '-', $id));
+        $id = trim($id, '-_');
+
+        return $id !== '' ? $id : 'calendar-heatmap-chart';
+    }
+
+    /**
+     * @param array<string, string|int|float> $attributes
+     */
+    private function htmlAttributes(array $attributes): string
+    {
+        $html = '';
+
+        foreach ($attributes as $name => $value) {
+            $html .= ' ' . $name . '="' . HelperFramework::escape((string)$value) . '"';
+        }
+
+        return $html;
     }
 
     /**

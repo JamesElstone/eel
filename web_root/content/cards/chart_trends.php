@@ -16,7 +16,7 @@ final class _chart_trendsCard extends CardBaseFramework
 
     public function helper(array $context): string
     {
-        return 'Standalone SVG bar, stacked bar, and multi-series line chart examples rendered by ChartSvgService.';
+        return 'Standalone SVG bar, stacked bar, and multi-series line chart examples rendered by ChartService.';
     }
 
     public function services(): array
@@ -24,7 +24,7 @@ final class _chart_trendsCard extends CardBaseFramework
         return [
             [
                 'key' => 'trend_charts',
-                'service' => ChartSvgService::class,
+                'service' => ChartService::class,
                 'method' => 'demoTrendCharts',
             ],
         ];

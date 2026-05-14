@@ -24,7 +24,7 @@ final class _chart_flowCard extends CardBaseFramework
         return [
             [
                 'key' => 'flow_charts',
-                'service' => ChartSvgService::class,
+                'service' => ChartService::class,
                 'method' => 'demoFlowCharts',
             ],
         ];

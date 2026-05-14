@@ -1428,6 +1428,10 @@
                 return;
             }
 
+            if (button.dataset.preserveTitle === 'true') {
+                return;
+            }
+
             const currentTitle = String(button.getAttribute('title') || '').trim();
             if (currentTitle !== '' && !button.dataset.disabledTitle) {
                 button.dataset.disabledTitle = currentTitle;

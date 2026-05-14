@@ -34,6 +34,7 @@ final class _example_graphs extends PageContextFramework
         return [
             'chart_trends',
             'chart_composition',
+            'chart_calendar_heatmap',
             'chart_flow',
         ];
     }

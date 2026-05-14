@@ -31,7 +31,7 @@ The project is deliberately simple: no package manager is required for the curre
 - `web_root/content/pages` - page definitions.
 - `web_root/content/cards` - card definitions rendered inside pages.
 - `web_root/content/actions` - shared card action handlers.
-- `web_root/classes/service/ChartSvgService.php` - internal SVG chart renderer.
+- `web_root/classes/service/ChartService.php` - internal chart renderer.
 - `secure/app.php` - application configuration, hydrated automatically on first run.
 - `db_schema/eelKit.schema.sql` - full database schema for a new install.
 - `tools/php/reset_password.php` - A CLI password reset helper.
@@ -130,9 +130,9 @@ INSERT INTO schema_migrations (migration)
 VALUES ('2026_05_07_001_initial_schema.sql');
 ```
 
-## SVG Graph Support
+## Graph Support
 
-eelKit includes an internal SVG chart service, `ChartSvgService`, for rendering graphs directly from PHP card output without external JavaScript charting libraries.
+eelKit includes an internal chart service, `ChartService`, for rendering graphs directly from PHP card output without external JavaScript charting libraries.
 
 Current graph types:
 
@@ -143,6 +143,7 @@ Current graph types:
 - Donut chart.
 - Gauge.
 - Sankey diagram for value flows, such as income sources flowing into total value and then into allocations.
+- Calendar heat map.
 
 The `Example Graphs` page demonstrates the available graph cards and can be used as a reference for adding chart output to application-specific cards.
 

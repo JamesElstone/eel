@@ -875,6 +875,30 @@
         }
     }
 
+    function resolveSelfVisibleCardField(form) {
+        if (!(form instanceof HTMLFormElement)) {
+            return;
+        }
+
+        const field = form.querySelector('input[name="show_card"]');
+        const requestedCard = field instanceof HTMLInputElement
+            ? String(field.value || '').trim()
+            : '';
+
+        if (requestedCard !== '.self') {
+            return;
+        }
+
+        const card = form.closest('.card[data-card-key]');
+        const cardKey = card instanceof HTMLElement
+            ? String(card.dataset.cardKey || '').trim()
+            : '';
+
+        if (cardKey !== '') {
+            field.value = cardKey;
+        }
+    }
+
     function formDataToJsonPayload(formData) {
         const payload = {};
 
@@ -1981,7 +2005,13 @@
 
     document.addEventListener('submit', async (event) => {
         const form = event.target;
-        if (!(form instanceof HTMLFormElement) || form.dataset.ajax !== 'true') {
+        if (!(form instanceof HTMLFormElement)) {
+            return;
+        }
+
+        resolveSelfVisibleCardField(form);
+
+        if (form.dataset.ajax !== 'true') {
             return;
         }
 

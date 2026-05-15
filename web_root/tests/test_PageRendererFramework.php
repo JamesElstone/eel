@@ -62,6 +62,8 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
     $resolveCardLayout->setAccessible(true);
     $shouldRenderTabs = new ReflectionMethod(PageRendererFramework::class, 'shouldRenderTabs');
     $shouldRenderTabs->setAccessible(true);
+    $selectedTabIndex = new ReflectionMethod(PageRendererFramework::class, 'selectedTabIndex');
+    $selectedTabIndex->setAccessible(true);
     $requestedVisibleCard = new ReflectionMethod(PageRendererFramework::class, 'requestedVisibleCard');
     $requestedVisibleCard->setAccessible(true);
     $brandMark = new ReflectionMethod(PageRendererFramework::class, 'brandMark');
@@ -137,6 +139,68 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
                 ],
             ], $actionResult)
         );
+    });
+
+    $harness->check(PageRendererFramework::class, 'selects full render tab containing requested show_card', function () use ($harness, $instance, $selectedTabIndex): void {
+        $layout = [
+            [
+                'tab' => 'Details',
+                'layout' => 'stack',
+                'cards' => ['alpha', 'beta'],
+                'explicit' => true,
+            ],
+            [
+                'tab' => 'Review',
+                'layout' => 'split',
+                'cards' => ['gamma'],
+                'explicit' => true,
+            ],
+        ];
+        $request = new RequestFramework(
+            ['page' => 'card_layout_test'],
+            ['show_card' => 'gamma'],
+            ['REQUEST_METHOD' => 'POST'],
+            [],
+            [],
+        );
+
+        $harness->assertSame(1, $selectedTabIndex->invoke(
+            $instance,
+            $layout,
+            $request,
+            ActionResultFramework::success()
+        ));
+    });
+
+    $harness->check(PageRendererFramework::class, 'falls back to first tab when requested show_card is unavailable', function () use ($harness, $instance, $selectedTabIndex): void {
+        $layout = [
+            [
+                'tab' => 'Details',
+                'layout' => 'stack',
+                'cards' => ['alpha', 'beta'],
+                'explicit' => true,
+            ],
+            [
+                'tab' => 'Review',
+                'layout' => 'split',
+                'cards' => ['gamma'],
+                'explicit' => true,
+            ],
+        ];
+        $request = new RequestFramework(
+            ['page' => 'card_layout_test'],
+            ['show_card' => 'denied'],
+            ['REQUEST_METHOD' => 'POST'],
+            [],
+            [],
+        );
+
+        $harness->assertSame(0, $selectedTabIndex->invoke(
+            $instance,
+            $layout,
+            $request,
+            ActionResultFramework::success()
+        ));
     });
 
     $harness->check(PageRendererFramework::class, 'reads the sidebar brand mark from application config', function () use ($harness, $instance, $brandMark): void {

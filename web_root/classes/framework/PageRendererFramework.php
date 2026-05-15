@@ -21,7 +21,7 @@ final class PageRendererFramework
         PageServiceFramework $services
     ): ResponseFramework
     {
-        $cardsHtml = $this->renderCardLayout($page, $context, $services);
+        $cardsHtml = $this->renderCardLayout($page, $request, $context, $actionResult, $services);
 
         $html = $this->renderLayout($page, $request, $context, $cardsHtml, $actionResult);
 
@@ -30,7 +30,9 @@ final class PageRendererFramework
 
     private function renderCardLayout(
         PageInterfaceFramework $page,
+        RequestFramework $request,
         array $context,
+        ActionResultFramework $actionResult,
         PageServiceFramework $services
     ): string {
         $layout = $this->resolveCardLayout($page, $context);
@@ -48,10 +50,12 @@ final class PageRendererFramework
         $tabPanels = [];
         $pageId = HelperFramework::escape($page->id());
 
+        $selectedTabIndex = $this->selectedTabIndex($layout, $request, $actionResult);
+
         foreach ($layout as $index => $entry) {
             $tabId = $pageId . '-layout-tab-' . (string)$index;
             $panelId = $pageId . '-layout-panel-' . (string)$index;
-            $selected = $index === 0;
+            $selected = $index === $selectedTabIndex;
             $tabLabel = HelperFramework::escape((string)($entry['tab'] ?? 'Tab ' . ($index + 1)));
             $layoutClass = (string)($entry['layout'] ?? 'stack') === 'split'
                 ? 'page-card-tab-panel-layout split'
@@ -481,6 +485,29 @@ final class PageRendererFramework
         }
 
         return !empty($layout[0]['explicit']);
+    }
+
+    private function selectedTabIndex(array $layout, RequestFramework $request, ActionResultFramework $actionResult): int
+    {
+        $requestedCard = trim((string)($actionResult->query()['show_card'] ?? ''));
+
+        if ($requestedCard === '') {
+            $requestedCard = trim((string)$request->input('show_card', ''));
+        }
+
+        if ($requestedCard === '') {
+            return 0;
+        }
+
+        foreach ($layout as $index => $entry) {
+            $cards = is_array($entry['cards'] ?? null) ? $entry['cards'] : [];
+
+            if (in_array($requestedCard, array_map('strval', $cards), true)) {
+                return (int)$index;
+            }
+        }
+
+        return 0;
     }
 
     private function requestedVisibleCard(PageInterfaceFramework $page, RequestFramework $request, array $context, ActionResultFramework $actionResult): ?string

@@ -991,6 +991,163 @@
         });
     }
 
+    function isFormControl(node) {
+        return node instanceof HTMLInputElement
+            || node instanceof HTMLSelectElement
+            || node instanceof HTMLTextAreaElement
+            || node instanceof HTMLButtonElement;
+    }
+
+    function visibleWhenFieldSelector(fieldName) {
+        const escapedAttributeValue = String(fieldName).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        const escapedFieldName = escapeCssIdentifier(fieldName);
+
+        return `[name="${escapedAttributeValue}"], #${escapedFieldName}`;
+    }
+
+    function visibleWhenSourceScope(target) {
+        if (!(target instanceof HTMLElement)) {
+            return document;
+        }
+
+        const form = target.closest('form');
+
+        return form instanceof HTMLFormElement ? form : document;
+    }
+
+    function visibleWhenSourceControls(target) {
+        if (!(target instanceof HTMLElement)) {
+            return [];
+        }
+
+        const fieldName = String(target.dataset.visibleWhenField || '').trim();
+        if (fieldName === '') {
+            return [];
+        }
+
+        try {
+            return Array.from(visibleWhenSourceScope(target).querySelectorAll(visibleWhenFieldSelector(fieldName)))
+                .filter((node) => isFormControl(node));
+        } catch (error) {
+            console.error('Failed to resolve visible-when source field.', error);
+
+            return [];
+        }
+    }
+
+    function visibleWhenControlValues(control) {
+        if (control instanceof HTMLSelectElement && control.multiple) {
+            return Array.from(control.selectedOptions).map((option) => option.value);
+        }
+
+        if (control instanceof HTMLInputElement && (control.type === 'checkbox' || control.type === 'radio')) {
+            return control.checked ? [control.value] : [];
+        }
+
+        return [control.value ?? ''];
+    }
+
+    function visibleWhenFieldMatches(target) {
+        const expectedValue = String(target.dataset.visibleWhenValue ?? '');
+        const controls = visibleWhenSourceControls(target);
+
+        return controls.some((control) => visibleWhenControlValues(control).includes(expectedValue));
+    }
+
+    function restoreVisibleWhenControl(control) {
+        if (!isFormControl(control) || control.dataset.visibleWhenDisabled !== '1') {
+            return;
+        }
+
+        control.disabled = control.dataset.visibleWhenWasDisabled === 'true';
+        delete control.dataset.visibleWhenDisabled;
+        delete control.dataset.visibleWhenWasDisabled;
+    }
+
+    function syncVisibleWhenTarget(target) {
+        if (!(target instanceof HTMLElement)) {
+            return;
+        }
+
+        const visible = visibleWhenFieldMatches(target);
+        const disableNestedControls = String(target.dataset.visibleWhenDisableControls || '').trim().toLowerCase() !== 'false';
+        const nestedControls = target.querySelectorAll('input, select, textarea, button');
+
+        target.hidden = !visible;
+        target.setAttribute('aria-hidden', visible ? 'false' : 'true');
+
+        nestedControls.forEach((control) => {
+            if (!isFormControl(control)) {
+                return;
+            }
+
+            if (visible || !disableNestedControls) {
+                restoreVisibleWhenControl(control);
+                return;
+            }
+
+            if (control.dataset.visibleWhenDisabled !== '1') {
+                control.dataset.visibleWhenWasDisabled = control.disabled ? 'true' : 'false';
+            }
+
+            control.dataset.visibleWhenDisabled = '1';
+            control.disabled = true;
+        });
+    }
+
+    function syncVisibleWhenField(field) {
+        if (!isFormControl(field)) {
+            return;
+        }
+
+        const identifiers = new Set();
+        const fieldName = String(field.getAttribute('name') || '').trim();
+        const fieldId = String(field.id || '').trim();
+
+        if (fieldName !== '') {
+            identifiers.add(fieldName);
+        }
+
+        if (fieldId !== '') {
+            identifiers.add(fieldId);
+        }
+
+        if (identifiers.size === 0) {
+            return;
+        }
+
+        document.querySelectorAll('[data-visible-when-field]').forEach((target) => {
+            if (!(target instanceof HTMLElement)) {
+                return;
+            }
+
+            const targetFieldName = String(target.dataset.visibleWhenField || '').trim();
+            if (identifiers.has(targetFieldName)) {
+                syncVisibleWhenTarget(target);
+            }
+        });
+    }
+
+    function initialiseVisibleWhenControls(root = document) {
+        const targets = [];
+
+        if (root instanceof HTMLElement && root.matches('[data-visible-when-field]')) {
+            targets.push(root);
+        }
+
+        if (root.querySelectorAll) {
+            root.querySelectorAll('[data-visible-when-field]').forEach((node) => {
+                targets.push(node);
+            });
+        }
+
+        targets.forEach((target) => {
+            if (target instanceof HTMLElement) {
+                syncVisibleWhenTarget(target);
+            }
+        });
+    }
+
     function initialiseDirtyActionControls(root = document) {
         const fields = root.querySelectorAll ? root.querySelectorAll('[data-dirty-action-target]') : [];
 
@@ -1543,6 +1700,7 @@
                     current.replaceWith(replacement);
                     initialiseCardToggles(replacement);
                     initStateWatchers(replacement);
+                    initialiseVisibleWhenControls(replacement);
                     initialiseDirtyActionControls(replacement);
                     initDangerZoneConfirmationControls(replacement);
                     initialiseUploadDropzones(replacement);
@@ -1562,6 +1720,7 @@
                     initialisePageCardTabs(replacement);
                     initialiseCardToggles(replacement);
                     initStateWatchers(replacement);
+                    initialiseVisibleWhenControls(replacement);
                     initialiseDirtyActionControls(replacement);
                     initDangerZoneConfirmationControls(replacement);
                     initialiseUploadDropzones(replacement);
@@ -1573,6 +1732,8 @@
                 console.error(`Failed to replace AJAX card ${domId}.`, error);
             }
         });
+
+        initialiseVisibleWhenControls(document);
     }
 
     function cardAutoRefreshNodes(root) {
@@ -2216,6 +2377,10 @@
     });
 
     document.addEventListener('change', (event) => {
+        if (isFormControl(event.target)) {
+            syncVisibleWhenField(event.target);
+        }
+
         const select = event.target;
         if (!(select instanceof HTMLSelectElement)) {
             return;
@@ -2229,10 +2394,17 @@
         form.requestSubmit();
     });
 
+    document.addEventListener('input', (event) => {
+        if (isFormControl(event.target)) {
+            syncVisibleWhenField(event.target);
+        }
+    });
+
     initialiseSidebar(document);
     initialisePageCardTabs(document);
     initialiseCardToggles();
     initStateWatchers(document);
+    initialiseVisibleWhenControls(document);
     initialiseDirtyActionControls(document);
     initDangerZoneConfirmationControls(document);
     initialiseUploadDropzones(document);

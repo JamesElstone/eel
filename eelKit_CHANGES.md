@@ -1,5 +1,55 @@
 # eelKit Changes
 
+## Conditional field visibility helper
+
+Feature name: `data-visible-when-field`.
+
+eelKit now includes a generic frontend helper for showing or hiding a field, field group, or any other HTML container based on another form control's current value. This lets cards express simple conditional form behaviour in markup without inline JavaScript or card-specific selectors.
+
+Add the helper attributes to the element that should be conditionally visible:
+
+```html
+<div
+  data-visible-when-field="charging_model"
+  data-visible-when-value="weight">
+  <label for="cost_per_kg_pence">Cost per kg, pence</label>
+  <input id="cost_per_kg_pence" name="cost_per_kg_pence" type="number">
+</div>
+```
+
+The value in `data-visible-when-field` should match the controlling field's `name` or `id`. The value in `data-visible-when-value` is compared with the controlling field's current value.
+
+Full example:
+
+```html
+<select name="charging_model">
+  <option value="row_price">Row price</option>
+  <option value="weight">Weight</option>
+  <option value="manual">Manual</option>
+</select>
+
+<div
+  data-visible-when-field="charging_model"
+  data-visible-when-value="weight">
+  <input name="cost_per_kg_pence" type="number">
+</div>
+```
+
+The helper runs on initial page load and after AJAX card replacement. It supports `input`, `select`, `textarea`, checkbox, and radio controls as the source field.
+
+When the condition is not met, eelKit sets `hidden` and `aria-hidden="true"` on the target. Nested `input`, `select`, `textarea`, and `button` controls are disabled while hidden so hidden values are not submitted by default. Previously disabled nested controls are restored to their previous disabled state when the target becomes visible again.
+
+To hide the target but leave nested controls enabled, opt out explicitly:
+
+```html
+<div
+  data-visible-when-field="charging_model"
+  data-visible-when-value="manual"
+  data-visible-when-disable-controls="false">
+  ...
+</div>
+```
+
 ## Flash message activity history
 
 Feature name: `ActivityStore::recordFlashMessages()`.

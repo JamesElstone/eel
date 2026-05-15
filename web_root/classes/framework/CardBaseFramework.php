@@ -63,6 +63,11 @@ abstract class CardBaseFramework implements CardInterfaceFramework
         return array_values(array_unique($facts));
     }
 
+    public function refreshIntervalMs(array $context): ?int
+    {
+        return null;
+    }
+
     public function handleError(string $serviceKey, array $error, array $context): string
     {
         return '[' . $serviceKey . '] ' . (string)($error['type'] ?? 'error') . ': ' . (string)($error['message'] ?? '');

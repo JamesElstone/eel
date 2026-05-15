@@ -28,6 +28,10 @@ final class ActionDispatcherFramework
                 return ActionResultFramework::success([$this->paginationInvalidationFact($request)]);
             }
 
+            if ((string)$request->input('_card_refresh', '') === '1') {
+                return ActionResultFramework::success([$this->refreshInvalidationFact($request)]);
+            }
+
             return ActionResultFramework::none();
         }
 
@@ -57,6 +61,16 @@ final class ActionDispatcherFramework
     }
 
     private function paginationInvalidationFact(RequestFramework $request): string
+    {
+        return $this->requestInvalidationFact($request);
+    }
+
+    private function refreshInvalidationFact(RequestFramework $request): string
+    {
+        return $this->requestInvalidationFact($request);
+    }
+
+    private function requestInvalidationFact(RequestFramework $request): string
     {
         $fact = trim((string)$request->input('_invalidate_fact', ''));
 

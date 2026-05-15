@@ -30,6 +30,8 @@ interface CardInterfaceFramework
 
     public function invalidationFacts(): array;
 
+    public function refreshIntervalMs(array $context): ?int;
+
     public function handleError(string $serviceKey, array $error, array $context): string;
 
     public function render(array $context): string;

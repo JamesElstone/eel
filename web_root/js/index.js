@@ -22,6 +22,7 @@
         available: [],
         inFlight: new Set(),
     };
+    const cardAutoRefreshState = new WeakMap();
     const afHeaderMap = {
         'Client-Browser-JS-User-Agent': 'X-AntiFraud-Client-Browser-JS-User-Agent',
         'Client-Device-ID': 'X-AntiFraud-Client-Device-ID',
@@ -1547,6 +1548,7 @@
                     initialiseUploadDropzones(replacement);
                     initialisePasswordRequirementPanels(replacement);
                     initialiseTableCondensedControls(replacement);
+                    initialiseCardAutoRefresh(replacement);
                     return;
                 }
 
@@ -1565,10 +1567,96 @@
                     initialiseUploadDropzones(replacement);
                     initialisePasswordRequirementPanels(replacement);
                     initialiseTableCondensedControls(replacement);
+                    initialiseCardAutoRefresh(replacement);
                 }
             } catch (error) {
                 console.error(`Failed to replace AJAX card ${domId}.`, error);
             }
+        });
+    }
+
+    function cardAutoRefreshNodes(root) {
+        const nodes = [];
+
+        if (root instanceof HTMLElement && root.matches('.card[data-card-refresh-ms][data-card-key]')) {
+            nodes.push(root);
+        }
+
+        if (root && typeof root.querySelectorAll === 'function') {
+            root.querySelectorAll('.card[data-card-refresh-ms][data-card-key]').forEach((node) => {
+                if (node instanceof HTMLElement) {
+                    nodes.push(node);
+                }
+            });
+        }
+
+        return nodes;
+    }
+
+    function initialiseCardAutoRefresh(root = document) {
+        cardAutoRefreshNodes(root).forEach((card) => {
+            if (cardAutoRefreshState.has(card)) {
+                return;
+            }
+
+            const intervalMs = Math.max(5000, Number.parseInt(String(card.dataset.cardRefreshMs || ''), 10));
+            const cardKey = String(card.dataset.cardKey || '').trim();
+            if (!Number.isFinite(intervalMs) || cardKey === '') {
+                return;
+            }
+
+            const state = {
+                inFlight: false,
+                timerId: null,
+            };
+            cardAutoRefreshState.set(card, state);
+
+            const schedule = () => {
+                if (!card.isConnected) {
+                    return;
+                }
+
+                state.timerId = window.setTimeout(refresh, intervalMs);
+            };
+
+            const refresh = async () => {
+                if (!card.isConnected) {
+                    return;
+                }
+
+                if (document.hidden || state.inFlight) {
+                    schedule();
+                    return;
+                }
+
+                state.inFlight = true;
+                const payload = {
+                    _ajax: '1',
+                    _card_refresh: '1',
+                    cards: [cardKey],
+                };
+                const refreshFact = String(card.dataset.cardRefreshFact || '').trim();
+                if (refreshFact !== '') {
+                    payload._invalidate_fact = refreshFact;
+                }
+
+                try {
+                    const response = await sendAjax(window.location.href, {
+                        method: 'POST',
+                        body: JSON.stringify(payload),
+                        headers: { 'Content-Type': 'application/json' },
+                    });
+
+                    applyAjaxPayloadFragment('cards', () => replaceCards(response.cards));
+                } catch (error) {
+                    console.error(`Failed to refresh card ${cardKey}.`, error);
+                } finally {
+                    state.inFlight = false;
+                    schedule();
+                }
+            };
+
+            schedule();
         });
     }
 
@@ -2150,6 +2238,7 @@
     initialiseUploadDropzones(document);
     initialisePasswordRequirementPanels(document);
     initialiseTableCondensedControls(document);
+    initialiseCardAutoRefresh(document);
     initialiseButtonTitleVisibility();
     logFlashMessages(document.getElementById('flash-messages'));
     scheduleFlashDismissals(document.getElementById('flash-messages'));

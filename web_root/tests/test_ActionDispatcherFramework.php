@@ -85,6 +85,27 @@ $harness->check(ActionDispatcherFramework::class, 'uses scoped invalidation fact
     $harness->assertSame(['table.export.demo'], $result->changedFacts());
 });
 
+$harness->check(ActionDispatcherFramework::class, 'uses scoped invalidation facts for card refresh requests', function () use ($harness, $pageServices): void {
+    $request = new RequestFramework(
+        [],
+        [
+            '_card_refresh' => '1',
+            '_invalidate_fact' => 'intake.queue',
+        ],
+        ['REQUEST_METHOD' => 'POST'],
+        [],
+        []
+    );
+
+    $result = (new ActionDispatcherFramework())->dispatch(
+        $request,
+        $pageServices,
+        static fn(): ActionResultFramework => ActionResultFramework::success(['unexpected'])
+    );
+
+    $harness->assertSame(['intake.queue'], $result->changedFacts());
+});
+
 $harness->check(ActionDispatcherFramework::class, 'does not dispatch table export prepare as a page action', function () use ($harness, $pageServices): void {
     $request = new RequestFramework(
         [],

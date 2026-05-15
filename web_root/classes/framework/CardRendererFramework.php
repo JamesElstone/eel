@@ -38,9 +38,10 @@ final class CardRendererFramework
             : '';
 
         $errorSummary = $this->renderErrorSummaryMarkup((array)($cardContext['service_errors'] ?? []));
+        $refreshAttributes = $this->renderRefreshAttributes($card, $cardContext);
 
         return '
-            <section id="' . HelperFramework::escape($domId) . '" class="card" data-card-key="' . HelperFramework::escape($cardKey) . '">
+            <section id="' . HelperFramework::escape($domId) . '" class="card" data-card-key="' . HelperFramework::escape($cardKey) . '"' . $refreshAttributes . '>
                 <div class="card-header card-header-has-eyebrow">
                     <div>
                         <h2 class="card-title card-title-toggle"
@@ -366,6 +367,21 @@ final class CardRendererFramework
         }
 
         return HelperFramework::escape($helper);
+    }
+
+    private function renderRefreshAttributes(CardInterfaceFramework $card, array $context): string
+    {
+        $intervalMs = $card->refreshIntervalMs($context);
+        if ($intervalMs === null || $intervalMs <= 0) {
+            return '';
+        }
+
+        $intervalMs = max(5000, $intervalMs);
+        $facts = $card->invalidationFacts();
+        $fact = trim((string)($facts[0] ?? ''));
+
+        return ' data-card-refresh-ms="' . HelperFramework::escape((string)$intervalMs) . '"'
+            . ($fact !== '' ? ' data-card-refresh-fact="' . HelperFramework::escape($fact) . '"' : '');
     }
 
     private function renderErrorSummaryMarkup(array $serviceErrors): string

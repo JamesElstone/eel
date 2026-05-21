@@ -1,129 +1,158 @@
-# EEL Accounts
+<!--
+  EEL Accounts
+  Copyright (c) 2026 James Elstone
+  Licensed under the GNU Affero General Public License v3.0 (AGPLv3)
+  See LICENSE file for details.
+-->
+# eel
 
-EEL Accounts is a PHP accounting application for small company bookkeeping,
-corporation tax preparation, VAT checks, Companies House data, HMRC
-submission workflows, and year-end accounting review.
+**eel** is an open-source bookkeeping and corporation tax preparation tool designed for small UK companies.
 
-The application now consumes eelKit as its upstream framework. eelKit owns the
-shared page, card, action, service, authentication, rendering, configuration,
-and AJAX plumbing. EEL Accounts adds the accounting-specific pages, cards,
-services, repositories, schema, migrations, and site context for selected
-company and accounting period.
+Its goal is simple:
 
-## Main Features
+> Upload bank statements -> categorise transactions -> produce an iXBRL file for electronic CT600 submission to HMRC and Companies House Web Filing.
 
-- Company management, including Companies House lookup and stored company data.
-- Company and accounting period selectors via eelKit site context slots.
-- Bank account setup, statement upload, transaction categorisation, and receipt
-  attachment.
-- Double-entry journal support and nominal ledger reporting.
-- Trial balance, profit and loss, year-end readiness, and corporation tax
-  computation workflows.
-- Director loan, expenses, assets, dividends, VAT, and HMRC obligation screens.
-- CT600/iXBRL preparation support and HMRC submission controls.
-- Application settings, API mode checks, setup health checks, user management,
-  roles, logs, activity feed, and developer diagnostics.
+---
 
-## Requirements
+## Overview
 
-- PHP 8.4 or newer is recommended.
-- MariaDB 10.11 or compatible MySQL/MariaDB server.
-- PDO with the database driver used by the configured DSN.
-- A web server that serves `web_root` as the public document root.
-- Writable local paths for `secure`, `uploads`, and optional file logs.
+eel turns raw bank statement data into structured financial outputs suitable for statutory reporting.
 
-## Project Layout
+Instead of relying on bank APIs, eel works with **CSV statement uploads**, making it simple, portable, and fully self-hosted.
 
-- `web_root/index.php` - eelKit-owned web entrypoint.
-- `web_root/classes/framework` - eelKit framework layer.
-- `web_root/classes/service` - shared and EEL Accounts service classes.
-- `web_root/classes/repository` - database-facing repositories.
-- `web_root/classes/store` - configuration and persistence stores.
-- `web_root/content/pages` - page definitions.
-- `web_root/content/cards` - card definitions rendered inside pages.
-- `web_root/content/actions` - shared card and page action handlers.
-- `db_schema/eel_accounts.schema.sql` - EEL Accounts database baseline.
-- `db_schema/eel_accounts.nominals.sql` - nominal account seed data.
-- `db_schema/eelKit.schema.sql` - eelKit framework database baseline.
-- `db_schema/migrations` - incremental database migrations.
-- `secure/app.php` - local runtime configuration.
-- `tools` - setup, migration, password reset, IP refresh, and upstream import
-  helpers.
-- `uploads` - local company upload storage.
-- `web_root/tests` - project test runner and tests.
+eel now uses **eelKit** as its upstream application framework. eelKit provides the shared page, card, action, service, authentication, rendering, configuration, and AJAX plumbing. eel keeps the accounting-specific pages, cards, services, repositories, database schema, migrations, and selected company/accounting period context.
 
-## Configuration
+---
 
-Runtime configuration is stored outside the public document root in
-`secure/app.php`. The application expects EEL Accounts settings such as:
+## Company Requirements
 
-- database DSN and credentials under `db`;
-- upload storage paths under `uploads`;
-- API key and security key file paths;
-- HMRC and Companies House runtime modes;
-- eelKit `site_context` configured to use `AccountingContextService`.
+To use this system, the company must meet the following criteria:
 
-Do not serve `secure`, `uploads`, `db_schema`, `tools`, or `file_logs` as
-public web directories.
+- Be registered with Companies House and have a valid company registration number
+- Be active on Companies House (not dissolved or dormant)
+- Have a valid UTR (Unique Taxpayer Reference) issued by HMRC
+- Not be VAT registered and remain below VAT registration thresholds
+- Have (free) developer API access configured for:
+  - HMRC
+  - Companies House
 
-## Database Setup
+---
 
-For a new install, configure the database connection and run the setup tool
-from the project root:
+## Core Workflow
 
-```bash
-php tools/php/setupDb.php
-```
+1. **Upload bank statements (CSV)**
+   - Monthly files
+   - Stored and parsed into a structured database
 
-The setup tool creates or hydrates `secure/app.php` where needed, loads the
-baseline schema for an empty database, applies pending migrations, and refreshes
-the stored external IP setting used by anti-fraud headers.
+2. **Deduplicate transactions**
+   - Prevents duplicate imports if files are uploaded twice
+   - Uses row-level hashing for safety
 
-To apply pending migrations only:
+3. **Categorise transactions**
+   - Assign each transaction to a nominal account
+   - Supports:
+     - Auto-rules (pattern matching)
+     - Manual categorisation
 
-```bash
-php tools/php/setupDb.php --migrate-only
-```
+4. **Build the ledger**
+   - Transactions are converted into double-entry journals
+   - Supports multiple sources:
+     - Bank CSV imports
+     - Director's loan entries
+     - Expense claims
+     - Manual journals
 
-On Windows Command Prompt, wrapper scripts are available under `tools\bat`.
-On Unix-like shells, wrappers are available under `tools/bin`.
+5. **Generate financial outputs**
+   - Trial Balance
+   - Profit & Loss
+   - Balance Sheet
 
-## Local Development
+6. **Produce iXBRL**
+   - Structured output suitable for CT600 submission
 
-Serve `web_root` as the document root. In the local Codex environment this app
-is usually available through:
+---
 
-```powershell
-Invoke-WebRequest -Uri 'http://127.0.0.1/' -Headers @{ Host = 'eel.localhost' }
-```
+## Key Features
 
-Developer diagnostics and the test runner require `developer_options` to be
-enabled in configuration.
+- CSV-based workflow (no bank API dependency)
+- Transaction deduplication (file + row level)
+- Rule-based categorisation engine
+- Manual override with audit trail
+- Double-entry accounting model
+- Director's Loan support
+- Expense claim support
+- Tax year/accounting period management
+- iXBRL generation pipeline
 
-## Tests
+---
 
-Run the full local suite with:
+## Architecture
 
-```bash
-php web_root/tests/index.php
-```
+- **Backend:** PHP
+- **Database:** MariaDB
+- **Framework:** eelKit
+- **Frontend:** Web UI (upload, categorise, review)
+- **API:** Self-hosted REST endpoints
 
-The runner returns a non-zero exit code if any test fails.
+The system is built around a central ledger model, with multiple input sources feeding into journals and nominal accounts.
+
+---
+
+## Data Model Highlights
+
+- `statement_uploads` -> tracks uploaded files
+- `statement_import_rows` -> raw parsed data
+- `transactions` -> deduplicated records
+- `journals` + `journal_lines` -> double-entry ledger
+- `nominal_accounts` -> chart of accounts
+- `categorisation_rules` -> automation layer
+- `tax_years` -> accounting periods
+
+This structure enables a clean progression from raw data to statutory outputs.
+
+---
+
+## Project Goal
+
+To provide a transparent, developer-friendly alternative to traditional accounting software by:
+
+- Keeping full control of financial data
+- Avoiding vendor lock-in
+- Making tax logic explicit and inspectable
+- Producing compliant outputs for HMRC submission
+
+---
 
 ## Upstream eelKit
 
-eelKit is maintained separately and is imported into this repository as an
-upstream framework. Framework-level changes should be made in the eelKit
-project first, then merged back into EEL Accounts.
+eelKit is maintained separately and imported into this repository as the upstream framework. Framework-level changes should be made in the eelKit project first, then merged back into eel.
 
-EEL Accounts should keep accounting behaviour in app-owned services,
-repositories, pages, cards, and actions. Generic framework behaviour belongs in
-eelKit.
+eel should keep accounting behaviour in app-owned services, repositories, pages, cards, actions, schema, and migrations. Generic framework behaviour belongs in eelKit.
+
+---
 
 ## License
 
-This repository is mixed-licensed. EEL Accounts application-specific files are
-licensed under AGPLv3, eelKit framework files are licensed under the BSD
-3-Clause License, and bundled fonts are licensed under the SIL Open Font
-License 1.1. See `LICENSE` for the licence index and file-level notices for the
-licence that applies to each file.
+This repository is mixed-licensed.
+
+- EEL Accounts application-specific files are licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+- eelKit framework files are licensed under the BSD 3-Clause License.
+- Bundled font files are licensed under the SIL Open Font License 1.1 (OFL).
+
+See `LICENSE` for the licence index and file-level notices for the licence that applies to each file.
+
+Separate project, support, hosting, consultancy, or commercial terms are set out in `TERMS.md`.
+
+### Third-Party Assets
+
+This project uses the Inter and Roboto fonts, licensed under the SIL Open Font License 1.1 (OFL). The font files and their licences are included in `web_root/fonts`.
+
+---
+
+## Disclaimer
+
+This software is provided "as is", without warranty of any kind.
+
+It is not accounting or tax advice. Users are responsible for verifying outputs and ensuring compliance with HMRC requirements.
+
+> This project is currently in **alpha**. Expect rough edges and ongoing changes.

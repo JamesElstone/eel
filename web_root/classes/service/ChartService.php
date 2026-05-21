@@ -930,7 +930,7 @@ final class ChartService
     {
         $label = trim($valueLabel) !== '' ? trim($valueLabel) : 'items';
 
-        return $this->formatValue($value) . ' ' . $label . ' on ' . $date->format('j M Y');
+        return $this->formatValue($value) . ' ' . $label . ' on ' . $date->format('j F Y');
     }
 
     private function calendarHeatmapMonthLabels(DateTimeImmutable $gridStart, DateTimeImmutable $gridEnd, int $weekCount): string

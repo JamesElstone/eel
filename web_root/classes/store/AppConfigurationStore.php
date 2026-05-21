@@ -194,6 +194,9 @@ final class AppConfigurationStore
                 'cookie_secure' => 'auto',
                 'cookie_samesite' => 'Strict',
             ],
+            'site_context' => [
+                'service' => '',
+            ],
             'totp' => [
                 'encryption_key_fact' => 'totp_encryption_key',
                 'pending_secret_lifetime_seconds' => 300,

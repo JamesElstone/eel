@@ -9,9 +9,13 @@ declare(strict_types=1);
 
 final class PageServiceFramework
 {
+    private ?SiteContextCoordinatorFramework $siteContextCoordinator = null;
+
     public function __construct(
-        private readonly AppService $appServices
+        private readonly AppService $appServices,
+        ?SiteContextCoordinatorFramework $siteContextCoordinator = null
     ) {
+        $this->siteContextCoordinator = $siteContextCoordinator;
     }
 
     public function get(string $serviceClass): object
@@ -47,5 +51,19 @@ final class PageServiceFramework
         } catch (Throwable) {
             return false;
         }
+    }
+
+    public function setSiteContextCoordinator(SiteContextCoordinatorFramework $siteContextCoordinator): void
+    {
+        $this->siteContextCoordinator = $siteContextCoordinator;
+    }
+
+    public function siteContextCoordinator(): SiteContextCoordinatorFramework
+    {
+        if ($this->siteContextCoordinator === null) {
+            $this->siteContextCoordinator = SiteContextCoordinatorFramework::fromConfiguration($this->appServices);
+        }
+
+        return $this->siteContextCoordinator;
     }
 }

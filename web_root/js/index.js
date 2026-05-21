@@ -1808,6 +1808,7 @@
                         headers: { 'Content-Type': 'application/json' },
                     });
 
+                    applyAjaxPayloadFragment('site context', () => replaceSiteContextSlots(response.site_context_html));
                     applyAjaxPayloadFragment('cards', () => replaceCards(response.cards));
                 } catch (error) {
                     console.error(`Failed to refresh card ${cardKey}.`, error);
@@ -2135,6 +2136,26 @@
         }
     }
 
+    function replaceSiteContextSlots(slotHtml) {
+        if (!slotHtml || typeof slotHtml !== 'object') {
+            return;
+        }
+
+        Object.entries(slotHtml).forEach(([slot, html]) => {
+            const slotName = String(slot || '').trim();
+            if (slotName === '') {
+                return;
+            }
+
+            const current = document.getElementById(`site-context-${slotName}-slot`);
+            if (!(current instanceof HTMLElement)) {
+                return;
+            }
+
+            current.innerHTML = typeof html === 'string' ? html : '';
+        });
+    }
+
     function applyAjaxPayloadFragment(name, callback) {
         try {
             callback();
@@ -2320,6 +2341,7 @@
             }
 
             applyAjaxPayloadFragment('sidebar', () => replaceSidebar(payload.sidebar_html));
+            applyAjaxPayloadFragment('site context', () => replaceSiteContextSlots(payload.site_context_html));
             applyAjaxPayloadFragment('cards', () => replaceCards(payload.cards));
             applyAjaxPayloadFragment('flash', () => replaceFlash(payload.flash_html));
             applyAjaxPayloadFragment('visible card', () => showPageCardTabForCard(payload.show_card));

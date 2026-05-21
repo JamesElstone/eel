@@ -71,6 +71,14 @@ $harness->check('reset_password.php', 'loads CLI helper functions', function () 
     $harness->assertTrue(function_exists('eel_cli_reset_user_password'));
     $harness->assertTrue(function_exists('eel_cli_start_user_otp_reset'));
     $harness->assertTrue(function_exists('eel_cli_finish_user_otp_reset'));
+    $harness->assertTrue(function_exists('eel_cli_app_name'));
+});
+
+$harness->check('reset_password.php', 'uses the configured app name for OTP setup', function () use ($harness): void {
+    $appName = trim((string)AppConfigurationStore::get('app_name', 'eelKit Framework'));
+    $expected = $appName !== '' ? $appName : 'eelKit Framework';
+
+    $harness->assertSame($expected, eel_cli_app_name());
 });
 
 $harness->check('reset_password.php', 'finds a user by email address and display name', function () use ($harness, $withTemporaryUser): void {

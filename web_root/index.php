@@ -161,6 +161,7 @@ $uploadBasePath = (string)(AppConfigurationStore::get('uploads.upload_base_dir')
 // Load services required by pages and cards
 $appServices = new AppService($uploadBasePath);
 $pageServices = new PageServiceFramework($appServices);
+$pageServices->setSiteContextCoordinator(SiteContextCoordinatorFramework::fromConfiguration($appServices));
 
 // Call the page / card(s) html renderer
 $response = $page->handle($request, $pageServices);

@@ -23,7 +23,7 @@ final class PageRendererFramework
     {
         $cardsHtml = $this->renderCardLayout($page, $request, $context, $actionResult, $services);
 
-        $html = $this->renderLayout($page, $request, $context, $cardsHtml, $actionResult);
+        $html = $this->renderLayout($page, $request, $context, $cardsHtml, $actionResult, $services);
 
         return ResponseFramework::html($html);
     }
@@ -126,6 +126,7 @@ final class PageRendererFramework
         $cards = [];
         $changedFacts = $actionResult->changedFacts();
         $sidebarHtml = null;
+        $siteContextHtml = [];
         $invalidateAllCards = in_array('page.reload', $changedFacts, true);
 
         foreach ($currentCards as $cardKey) {
@@ -145,7 +146,12 @@ final class PageRendererFramework
         }
 
         if (in_array('layout.sidebar', $changedFacts, true)) {
-            $sidebarHtml = $this->renderSidebar($page, $context);
+            $siteContextSlots = $services->siteContextCoordinator()->renderSlotHtml($page, $request, $context);
+            $sidebarHtml = $this->renderSidebar($page, $context, (string)($siteContextSlots['sidebar'] ?? ''));
+        }
+
+        if ($services->siteContextCoordinator()->shouldRenderAjaxSlots($changedFacts)) {
+            $siteContextHtml = $services->siteContextCoordinator()->renderSlotHtml($page, $request, $context);
         }
 
         return ResponseFramework::json([
@@ -153,6 +159,7 @@ final class PageRendererFramework
             'page' => $page->id(),
             'cards' => $cards,
             'sidebar_html' => $sidebarHtml,
+            'site_context_html' => $siteContextHtml,
             'flash_html' => $this->renderFlashMessages($actionResult->flashMessages()),
             'url' => $request->pageUrl($actionResult->query()),
             'show_card' => $this->requestedVisibleCard($page, $request, $context, $actionResult),
@@ -165,12 +172,14 @@ final class PageRendererFramework
         RequestFramework $request,
         array $context,
         string $cardsHtml,
-        ActionResultFramework $actionResult
+        ActionResultFramework $actionResult,
+        PageServiceFramework $services
     ): string
     {
         $pageId = $page->id();
         $title = HelperFramework::escape($page->title());
         $subtitle = HelperFramework::escape($page->subtitle());
+        $siteContextHtml = $services->siteContextCoordinator()->renderSlotHtml($page, $request, $context);
         global $appName;
         $escapedAppName = HelperFramework::escape((string)($appName ?? 'eelKit Framework'));
         $pageStackClass = trim($page->pageStackClass());
@@ -190,7 +199,7 @@ final class PageRendererFramework
             </head>
             <body>
                 <div class="layout">
-                    ' . $this->renderSidebar($page, $context) . '
+                    ' . $this->renderSidebar($page, $context, (string)($siteContextHtml['sidebar'] ?? '')) . '
                     <main class="main" data-current-page="' . HelperFramework::escape($pageId) . '">
                         <div class="topbar">
 
@@ -200,8 +209,10 @@ final class PageRendererFramework
                                 <p>' . $subtitle . '</p>
                             </div>
 
-                            <div class="float">
+                            <div class="topbar-right">
                                 <div class="badge warning">' . HelperFramework::escape($developerOptionsLabel) . '</div>
+                                <div id="site-context-summary-slot" class="site-context-slot site-context-summary-slot">' . (string)($siteContextHtml['summary'] ?? '') . '</div>
+                                <div id="site-context-topbar-slot" class="site-context-slot site-context-topbar-slot">' . (string)($siteContextHtml['topbar'] ?? '') . '</div>
                             </div>
 
                         </div>
@@ -262,7 +273,7 @@ final class PageRendererFramework
         return $html;
     }
 
-    private function renderSidebar(PageInterfaceFramework $page, array $context): string
+    private function renderSidebar(PageInterfaceFramework $page, array $context, string $siteContextSidebarHtml = ''): string
     {
         $currentPageId = $page->id();
         $sessionAuthenticationService = new SessionAuthenticationService();
@@ -295,6 +306,7 @@ final class PageRendererFramework
                     </svg>
                 </button>
             </div>
+            <div id="site-context-sidebar-slot" class="site-context-slot site-context-sidebar-slot">' . $siteContextSidebarHtml . '</div>
         </div>';
 
         $html .= '<div class="nav-scroll-shell">

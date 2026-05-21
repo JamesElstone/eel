@@ -1,5 +1,221 @@
 # eelKit Changes
 
+## Generic site context extension point
+
+Feature name: `site_context`.
+
+eelKit now has a generic framework socket for application/site context selectors and resolved context injection. The framework does not know about any domain-specific concepts such as companies, tax years, periods, finance data, or consuming-app service names. It only understands:
+
+- a configured site context provider service
+- resolved context arrays
+- structured selector definitions
+- framework-owned selector slots
+- a generic `set-site-context` action
+
+This is intended for consuming apps that need to resolve a current application context, render one or more selectors in page chrome, and make the selected values available to page/cards and card service params.
+
+### Configure a provider
+
+Add an optional provider service to app config:
+
+```php
+'site_context' => [
+    'service' => YourAppSiteContextService::class,
+],
+```
+
+If `site_context.service` is blank or omitted, eelKit uses `NullSiteContextProviderFramework` and behaves as it did before: empty slots are rendered with no selector UI, no context is injected, and no app-specific assumptions are made.
+
+The configured provider is resolved through `AppService`, so normal eelKit service construction and constructor dependency resolution still apply.
+
+### Implement the provider
+
+The provider must implement `SiteContextProviderInterface`:
+
+```php
+final class YourAppSiteContextService implements SiteContextProviderInterface
+{
+    public function resolveSiteContext(
+        RequestFramework $request,
+        PageInterfaceFramework $page,
+        PageServiceFramework $services,
+        array $pageContext
+    ): SiteContextResultFramework {
+        return new SiteContextResultFramework(
+            context: [
+                'site_context' => [
+                    'workspace_id' => 123,
+                    'reporting_window_id' => 456,
+                ],
+                'workspace' => [
+                    'id' => 123,
+                    'name' => 'Example Workspace',
+                ],
+            ],
+            selectors: [
+                [
+                    'key' => 'workspace_id',
+                    'slot' => 'sidebar',
+                    'label' => 'Workspace',
+                    'value' => '123',
+                    'options' => [
+                        ['value' => '123', 'label' => 'Example Workspace', 'short_label' => 'Example'],
+                    ],
+                    'disabled' => false,
+                    'visible' => true,
+                ],
+                [
+                    'key' => 'reporting_window_id',
+                    'slot' => 'topbar',
+                    'label' => 'Reporting Window',
+                    'value' => '456',
+                    'options' => [
+                        ['value' => '456', 'label' => 'Current Window'],
+                    ],
+                    'disabled' => false,
+                    'visible' => true,
+                ],
+            ]
+        );
+    }
+
+    public function handleSiteContextAction(
+        RequestFramework $request,
+        PageInterfaceFramework $page,
+        PageServiceFramework $services
+    ): ActionResultFramework {
+        $key = (string)$request->input('site_context_key', '');
+        $value = (string)$request->input('site_context_value', '');
+
+        // Validate and persist the selected value in the app-owned way,
+        // for example session state or a user preference table.
+
+        return ActionResultFramework::success();
+    }
+}
+```
+
+Provider responsibilities:
+
+- Resolve canonical app context from the request, session, current page, services, or app storage.
+- Handle `action=set-site-context` updates using the generic `site_context_key` and `site_context_value` form fields.
+- Return context arrays to merge into the page context.
+- Return structured selector definitions for eelKit to render.
+
+The context array is merged before card handling, so card service params can reference injected values:
+
+```php
+[
+    'key' => 'example_lookup',
+    'service' => ExampleLookupService::class,
+    'method' => 'fetch',
+    'params' => [
+        'workspaceId' => ':site_context.workspace_id',
+    ],
+]
+```
+
+eelKit does not interpret the keys under `site_context`; the consuming app owns their meaning.
+
+### Selector slots
+
+Selectors are rendered by `SiteContextRendererFramework` from structured selector data. Supported slots are:
+
+- `sidebar`
+- `topbar`
+- `summary`
+
+The full layout always includes these framework-owned DOM slots:
+
+```html
+<div id="site-context-sidebar-slot"></div>
+<div id="site-context-summary-slot"></div>
+<div id="site-context-topbar-slot"></div>
+```
+
+The sidebar slot is inside the sidebar brand block, after the brand toolbar and before navigation. The topbar and summary slots are in the page chrome above cards, inside `.topbar-right`; they are not inside `.page-stack` or any card.
+
+Selector definitions use this shape:
+
+```php
+[
+    'key' => 'workspace_id',
+    'slot' => 'sidebar',
+    'label' => 'Workspace',
+    'value' => '123',
+    'options' => [
+        [
+            'value' => '123',
+            'label' => 'Example Workspace',
+            'short_label' => 'Example',
+        ],
+    ],
+    'disabled' => false,
+    'visible' => true,
+]
+```
+
+Selectors render as normal eelKit AJAX forms with:
+
+- `method="post"`
+- `data-ajax="true"`
+- hidden `action=set-site-context`
+- hidden `page`
+- hidden `_ajax=1`
+- hidden `cards[]` values for the current page cards
+- hidden `site_context_key`
+- select field `site_context_value`
+
+The renderer reuses existing selector classes: `selector-form`, `selector-shell`, `selector-label`, `selector-input`, and `sidebar-select` for sidebar selectors. No inline JavaScript is required; existing frontend change handling auto-submits AJAX selector forms.
+
+### Page-level selector suppression
+
+Pages can hide named selectors without changing `PageInterfaceFramework` by adding an optional method:
+
+```php
+public function hiddenSiteContextSelectors(): array
+{
+    return ['reporting_window_id'];
+}
+```
+
+Only selectors whose `key` appears in the returned array are suppressed. Other selectors continue to render in their configured slots.
+
+### AJAX behaviour
+
+When the provider handles `action=set-site-context`, `SiteContextCoordinatorFramework` adds broad invalidation facts:
+
+```php
+page.reload
+site-context.ui
+```
+
+This refreshes relevant cards and the selector UI for whole-app context changes. AJAX delta responses can include:
+
+```json
+{
+  "site_context_html": {
+    "sidebar": "...",
+    "topbar": "...",
+    "summary": "..."
+  }
+}
+```
+
+`web_root/js/index.js` applies `site_context_html` directly to the slot elements, so a selector change does not require replacing the whole sidebar. Existing `sidebar_html` remains available for navigation/sidebar layout changes.
+
+### Framework classes
+
+The extension point is implemented by:
+
+- `SiteContextProviderInterface`
+- `SiteContextResultFramework`
+- `NullSiteContextProviderFramework`
+- `SiteContextCoordinatorFramework`
+- `SiteContextRendererFramework`
+
+`PageServiceFramework::siteContextCoordinator()` exposes the coordinator to framework page handling. `web_root/index.php` initialises it after auth, page access, and `PageServiceFramework` construction. `PageBaseFramework` calls it before normal action dispatch for `set-site-context`, and injects resolved context before card handling.
+
 ## Conditional field visibility helper
 
 Feature name: `data-visible-when-field`.

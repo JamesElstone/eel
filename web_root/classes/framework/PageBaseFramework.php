@@ -16,13 +16,16 @@ abstract class PageBaseFramework implements PageInterfaceFramework
 
     public function handle(RequestFramework $request, PageServiceFramework $services): ResponseFramework
     {
-        $actionDispatcher = new ActionDispatcherFramework();
-        $actionResult = $actionDispatcher->dispatch(
-            $request,
-            $services,
-            fn(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
-                => $this->handlePageAction($request, $services)
-        );
+        $actionResult = $services->siteContextCoordinator()->handleAction($request, $this, $services);
+        if (!$actionResult instanceof ActionResultFramework) {
+            $actionDispatcher = new ActionDispatcherFramework();
+            $actionResult = $actionDispatcher->dispatch(
+                $request,
+                $services,
+                fn(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
+                    => $this->handlePageAction($request, $services)
+            );
+        }
         $this->recordFlashActivity($request, $actionResult);
 
         $context = $this->buildContextForRequest($request, $services, $actionResult);
@@ -55,6 +58,8 @@ abstract class PageBaseFramework implements PageInterfaceFramework
             $pageContext,
             $actionResult->context()
         );
+
+        $context = $services->siteContextCoordinator()->injectContext($request, $this, $services, $context);
 
         $context['page']['page_cards'] = $this->allowedPageCards($context, $services);
 

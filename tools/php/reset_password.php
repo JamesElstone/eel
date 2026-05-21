@@ -117,6 +117,13 @@ function eel_cli_connect_database(): void
     InterfaceDB::fetchColumn('SELECT 1');
 }
 
+function eel_cli_app_name(): string
+{
+    $appName = trim((string)AppConfigurationStore::get('app_name', 'eelKit Framework'));
+
+    return $appName !== '' ? $appName : 'eelKit Framework';
+}
+
 function eel_cli_run_reset_password_tool(): int
 {
     if (PHP_SAPI !== 'cli') {
@@ -133,8 +140,9 @@ function eel_cli_run_reset_password_tool(): int
 
     eel_cli_writeln('Connected to database');
 
+    $appName = eel_cli_app_name();
     $userAuthenticationService = new UserAuthenticationService();
-    $otpService = new OtpService('eelKit Framework');
+    $otpService = new OtpService($appName);
 
     $username = eel_cli_prompt('Enter Username to work on: ');
     $user = eel_cli_find_user($userAuthenticationService, $username);
@@ -182,7 +190,7 @@ function eel_cli_run_reset_password_tool(): int
     eel_cli_writeln('Here is the OTP Secret String: ' . $secret);
     eel_cli_writeln('FreeOTP manual entry settings:');
     eel_cli_writeln('- Email: ' . (string)($user['email_address'] ?? $username));
-    eel_cli_writeln('- Display Name: eelKit Framework');
+    eel_cli_writeln('- Display Name: ' . $appName);
     eel_cli_writeln('- Secret (Base32): ' . $secret);
     eel_cli_writeln('- Type: TOTP');
     eel_cli_writeln('- Digits: 6');

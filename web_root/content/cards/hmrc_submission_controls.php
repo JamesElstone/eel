@@ -1,0 +1,58 @@
+<?php
+declare(strict_types=1);
+
+final class _hmrc_submission_controlsCard extends CardBaseFramework
+{
+    public function key(): string { return 'hmrc_submission_controls'; }
+    public function title(): string { return 'Submission Controls'; }
+    protected function additionalInvalidationFacts(): array { return ['page.context']; }
+
+    public function render(array $context): string
+    {
+        $company = (array)($context['company'] ?? []);
+        $data = (array)($context['hmrc_submission'] ?? []);
+        $companyId = (int)($company['id'] ?? 0);
+        $taxYearId = (int)($company['tax_year_id'] ?? 0);
+        $mode = (string)($data['mode'] ?? 'TEST');
+        $liveDisabled = $mode === 'LIVE' ? '' : ' disabled';
+
+        return '<div class="settings-stack">
+            ' . $this->form('hmrc_validate_package', 'Validate package', 'primary', $companyId, $taxYearId, $mode) . '
+            ' . $this->form('hmrc_test_fraud_headers', 'Test fraud prevention headers', '', $companyId, $taxYearId, 'TEST') . '
+            ' . $this->form('hmrc_submit_test', 'Submit to HMRC sandbox', '', $companyId, $taxYearId, 'TEST', true) . '
+            <form method="post" action="?page=hmrc_submission" data-ajax="true" data-hmrc-stream-form="true" class="form-grid">
+                ' . $this->hidden($companyId, $taxYearId, 'LIVE', 'hmrc_submit_live') . '
+                ' . $this->authorityConfirmation('hmrc_live_authority_confirmed', $liveDisabled) . '
+                <div class="form-row"><label for="hmrc_live_confirmation">Type SUBMIT LIVE CT600</label><input class="input" id="hmrc_live_confirmation" name="live_confirmation" autocomplete="off"' . $liveDisabled . '></div>
+                <div class="actions-row"><button class="button danger" type="submit"' . $liveDisabled . '>Submit to HMRC live</button></div>
+            </form>
+            <div class="helper">LIVE submission is disabled unless the company HMRC API mode is LIVE and the confirmation phrase is typed exactly.</div>
+        </div>';
+    }
+
+    private function form(string $intent, string $label, string $buttonClass, int $companyId, int $taxYearId, string $mode, bool $requiresAuthority = false): string
+    {
+        return '<form method="post" action="?page=hmrc_submission" data-ajax="true" data-hmrc-stream-form="true" class="' . ($requiresAuthority ? 'form-grid' : 'actions-row') . '">'
+            . $this->hidden($companyId, $taxYearId, $mode, $intent)
+            . ($requiresAuthority ? $this->authorityConfirmation('hmrc_test_authority_confirmed') : '')
+            . '<button class="button ' . HelperFramework::escape($buttonClass) . '" type="submit">' . HelperFramework::escape($label) . '</button></form>';
+    }
+
+    private function hidden(int $companyId, int $taxYearId, string $mode, string $intent): string
+    {
+        return '<input type="hidden" name="card_action" value="HmrcSubmission">
+            <input type="hidden" name="stream_log" value="1">
+            <input type="hidden" name="intent" value="' . HelperFramework::escape($intent) . '">
+            <input type="hidden" name="mode" value="' . HelperFramework::escape($mode) . '">
+            <input type="hidden" name="company_id" value="' . $companyId . '">
+            <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">';
+    }
+
+    private function authorityConfirmation(string $id, string $disabled = ''): string
+    {
+        return '<label class="checkbox-row" for="' . HelperFramework::escape($id) . '">
+            <input id="' . HelperFramework::escape($id) . '" type="checkbox" name="hmrc_authority_confirmed" value="1"' . $disabled . '>
+            <span>I confirm I am authorised to submit on behalf of this company.</span>
+        </label>';
+    }
+}

@@ -1,0 +1,34 @@
+<?php
+/**
+ * EEL Accounts
+ * Copyright (c) 2026 James Elstone
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3)
+ * See LICENSE file for details.
+ */
+declare(strict_types=1);
+
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+
+$harness = new GeneratedServiceClassTestHarness();
+$harness->run(LogsRepository::class, static function (GeneratedServiceClassTestHarness $harness, LogsRepository $repository): void {
+    $harness->check(LogsRepository::class, 'returns an array for recent logon history', static function () use ($harness, $repository): void {
+        $rows = $repository->fetchRecentLogonHistory(5);
+
+        $harness->assertTrue(is_array($rows));
+    });
+
+});
+
+$harness->run(AccountingAuditRepository::class, static function (GeneratedServiceClassTestHarness $harness, AccountingAuditRepository $repository): void {
+    $harness->check(AccountingAuditRepository::class, 'returns an array for recent transaction category audit', static function () use ($harness, $repository): void {
+        $rows = $repository->fetchRecentTransactionCategoryAudit(5);
+
+        $harness->assertTrue(is_array($rows));
+    });
+
+    $harness->check(AccountingAuditRepository::class, 'returns an array for recent year end audit', static function () use ($harness, $repository): void {
+        $rows = $repository->fetchRecentYearEndAudit(5);
+
+        $harness->assertTrue(is_array($rows));
+    });
+});

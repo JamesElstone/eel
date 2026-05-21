@@ -24,6 +24,11 @@ final class _settings extends PageContextFramework
         return 'Application Settings.';
     }
 
+    public function hiddenSiteContextSelectors(): array
+    {
+        return ['tax_year_id'];
+    }
+
     public function cards(): array
     {
         return [

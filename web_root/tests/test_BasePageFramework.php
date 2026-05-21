@@ -1,0 +1,19 @@
+<?php
+/**
+ * EEL Accounts
+ * Copyright (c) 2026 James Elstone
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3)
+ * See LICENSE file for details.
+ */
+declare(strict_types=1);
+
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+
+$harness = new GeneratedServiceClassTestHarness();
+
+$harness->check(PageBaseFramework::class, 'loads as an abstract framework page base', function () use ($harness): void {
+    $reflection = new ReflectionClass(PageBaseFramework::class);
+
+    $harness->assertTrue($reflection->isAbstract());
+    $harness->assertTrue($reflection->implementsInterface(PageInterfaceFramework::class));
+});

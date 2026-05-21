@@ -1,0 +1,72 @@
+<?php
+/**
+ * EEL Accounts
+ * Copyright (c) 2026 James Elstone
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3)
+ * See LICENSE file for details.
+ */
+declare(strict_types=1);
+
+final class _dashboard_action_queueCard extends CardBaseFramework
+{
+    public function key(): string
+    {
+        return 'dashboard_action_queue';
+    }
+
+    public function services(): array
+    {
+        return [
+            [
+                'key' => 'dashboard_data',
+                'service' => DashboardRepository::class,
+                'method' => 'fetchDashboardData',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'taxYearId' => ':company.tax_year_id',
+                ],
+            ],
+        ];
+    }
+
+    protected function additionalInvalidationFacts(): array
+    {
+        return ['page.context'];
+    }
+
+    public function helper(array $context): string {
+        return 'This is a to-do list for this application. Check back here to see what to do next.';
+    }
+
+    public function title():string {
+        return 'Actions requiring attention';
+    }
+
+    public function handleError(string $serviceKey, array $error, array $context): string
+    {
+        return '';
+    }
+
+    public function render(array $context): string
+    {
+        $dashboardData = (array)(($context['services'] ?? [])['dashboard_data'] ?? []);
+        $actionQueue = (array)($dashboardData['activity'] ?? (($context['page'] ?? [])['action_queue'] ?? []));
+        $itemsHtml = '';
+
+        foreach ($actionQueue as $item) {
+            $itemsHtml .= '<div class="list-item">
+                <strong>' . HelperFramework::escape((string)($item['title'] ?? '')) . '</strong>
+                <span>' . HelperFramework::escape((string)($item['detail'] ?? '')) . '</span>
+            </div>';
+        }
+
+        if ($itemsHtml === '') {
+            $itemsHtml = '<div class="list-item">
+                <strong>No queued actions</strong>
+                <span>The dashboard has nothing urgent to surface right now.</span>
+            </div>';
+        }
+
+        return '<div class="list">' . $itemsHtml . '</div>';
+    }
+}

@@ -7,19 +7,19 @@
  */
 declare(strict_types=1);
 
-define('APP_ROOT', rtrim((string)(realpath(dirname(__DIR__, 2)) ?: dirname(__DIR__, 2)), '\\/') . DIRECTORY_SEPARATOR);
-define('PROJECT_ROOT', rtrim(dirname(APP_ROOT), '\\/') . DIRECTORY_SEPARATOR);
-define('APP_CLASSES', APP_ROOT . 'classes' . DIRECTORY_SEPARATOR);
-define('APP_CONFIG', APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'fixtures' . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR);
-define('APP_CONTENT', APP_ROOT . 'content' . DIRECTORY_SEPARATOR);
-define('APP_CARDS', APP_CONTENT . 'cards' . DIRECTORY_SEPARATOR);
-define('APP_PAGES', APP_CONTENT . 'pages' . DIRECTORY_SEPARATOR);
-define('APP_ACTIONS', APP_CONTENT . 'actions' . DIRECTORY_SEPARATOR);
-define('APP_JS', APP_ROOT . 'js' . DIRECTORY_SEPARATOR);
-define('APP_CSS', APP_ROOT . 'css' . DIRECTORY_SEPARATOR);
+defined('APP_ROOT') || define('APP_ROOT', rtrim((string)(realpath(dirname(__DIR__, 2)) ?: dirname(__DIR__, 2)), '\\/') . DIRECTORY_SEPARATOR);
+defined('PROJECT_ROOT') || define('PROJECT_ROOT', rtrim(dirname(APP_ROOT), '\\/') . DIRECTORY_SEPARATOR);
+defined('APP_CLASSES') || define('APP_CLASSES', APP_ROOT . 'classes' . DIRECTORY_SEPARATOR);
+defined('APP_CONFIG') || define('APP_CONFIG', APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'fixtures' . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR);
+defined('APP_CONTENT') || define('APP_CONTENT', APP_ROOT . 'content' . DIRECTORY_SEPARATOR);
+defined('APP_CARDS') || define('APP_CARDS', APP_CONTENT . 'cards' . DIRECTORY_SEPARATOR);
+defined('APP_PAGES') || define('APP_PAGES', APP_CONTENT . 'pages' . DIRECTORY_SEPARATOR);
+defined('APP_ACTIONS') || define('APP_ACTIONS', APP_CONTENT . 'actions' . DIRECTORY_SEPARATOR);
+defined('APP_JS') || define('APP_JS', APP_ROOT . 'js' . DIRECTORY_SEPARATOR);
+defined('APP_CSS') || define('APP_CSS', APP_ROOT . 'css' . DIRECTORY_SEPARATOR);
 
-const AF_HEADER_PREFIX = 'X-AntiFraud-';
-const AF_COOKIE_PREFIX = 'af_';
+defined('AF_HEADER_PREFIX') || define('AF_HEADER_PREFIX', 'X-AntiFraud-');
+defined('AF_COOKIE_PREFIX') || define('AF_COOKIE_PREFIX', 'af_');
 
 spl_autoload_register(
     static function (string $className): void {

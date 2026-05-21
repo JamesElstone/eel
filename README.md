@@ -189,4 +189,8 @@ php tools/php/setupDb.php
 
 ## License
 
-eelKit is licensed under the BSD 3-Clause License. See `LICENSE` for details.
+This repository is mixed-licensed. EEL Accounts application-specific files are
+licensed under AGPLv3, eelKit framework files are licensed under the BSD
+3-Clause License, and bundled fonts are licensed under the SIL Open Font
+License 1.1. See `LICENSE` for the licence index and file-level notices for the
+licence that applies to each file.

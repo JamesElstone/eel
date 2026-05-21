@@ -115,6 +115,19 @@ final class RequestFramework
         return new self($query, $post, $server, $this->files, $this->headers, null, $this->cookies);
     }
 
+    public function withMergedPostValues(array $values): self
+    {
+        return new self(
+            $this->query,
+            array_merge($this->postValues(), $values),
+            $this->server,
+            $this->files,
+            $this->headers,
+            null,
+            $this->cookies
+        );
+    }
+
     public function cookie(string $key, mixed $default = null): mixed
     {
         return $this->cookies[$key] ?? $default;

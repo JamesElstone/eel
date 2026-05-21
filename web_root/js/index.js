@@ -935,8 +935,10 @@
                 return;
             }
 
+            const inputName = normaliseSiteContextInputName(select.dataset.siteContextInputName);
             selections.push({
                 key,
+                inputName,
                 value: String(select.value ?? ''),
             });
         });
@@ -944,7 +946,13 @@
         return selections;
     }
 
-    function appendSiteContextSelectionsToFormData(formData) {
+    function normaliseSiteContextInputName(inputName) {
+        const value = String(inputName || '').trim();
+
+        return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value) ? value : '';
+    }
+
+    function appendSiteContextSelectionsToFormData(formData, form = null) {
         if (!(formData instanceof FormData)) {
             return;
         }
@@ -957,6 +965,10 @@
         collectSiteContextSelections().forEach((selection) => {
             formData.append('site_context_keys[]', selection.key);
             formData.append('site_context_values[]', selection.value);
+
+            if (selection.inputName !== '' && !formHasEnabledNamedField(form, selection.inputName)) {
+                formData.set(selection.inputName, selection.value);
+            }
         });
     }
 
@@ -983,6 +995,15 @@
             valueField.dataset.siteContextSubmitField = 'true';
 
             form.append(keyField, valueField);
+
+            if (selection.inputName !== '' && !formHasEnabledNamedField(form, selection.inputName)) {
+                const namedField = document.createElement('input');
+                namedField.type = 'hidden';
+                namedField.name = selection.inputName;
+                namedField.value = selection.value;
+                namedField.dataset.siteContextSubmitField = 'true';
+                form.append(namedField);
+            }
         });
     }
 
@@ -1000,6 +1021,32 @@
 
         payload.site_context_keys = selections.map((selection) => selection.key);
         payload.site_context_values = selections.map((selection) => selection.value);
+
+        selections.forEach((selection) => {
+            if (selection.inputName !== '' && !Object.prototype.hasOwnProperty.call(payload, selection.inputName)) {
+                payload[selection.inputName] = selection.value;
+            }
+        });
+    }
+
+    function formHasEnabledNamedField(form, fieldName) {
+        if (!(form instanceof HTMLFormElement)) {
+            return false;
+        }
+
+        const escapedName = escapeCssIdentifier(fieldName);
+        const fields = form.querySelectorAll(`[name="${escapedName}"]`);
+
+        return Array.from(fields).some((field) => {
+            if (!(field instanceof HTMLInputElement)
+                && !(field instanceof HTMLSelectElement)
+                && !(field instanceof HTMLTextAreaElement)
+                && !(field instanceof HTMLButtonElement)) {
+                return false;
+            }
+
+            return !field.disabled && field.dataset.siteContextSubmitField !== 'true';
+        });
     }
 
     function resolveSelfVisibleCardField(form) {
@@ -2427,7 +2474,7 @@
         formData.set('_ajax', '1');
         appendCurrentPageCardKeys(formData, form);
         appendRequestedVisibleCard(formData, event.submitter);
-        appendSiteContextSelectionsToFormData(formData);
+        appendSiteContextSelectionsToFormData(formData, form);
 
         const method = (form.method || 'POST').toUpperCase();
 

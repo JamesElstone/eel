@@ -65,6 +65,8 @@ final class SiteContextRendererFramework
         $key = $this->selectorKey($selector);
         $label = $this->selectorLabel($selector, $key);
         $value = (string)($selector['value'] ?? '');
+        $inputName = $this->selectorInputName($selector);
+        $fieldName = $inputName !== '' ? $inputName : 'site_context_value';
         $disabled = $this->selectorDisabled($selector);
         $selectClass = 'selector-input' . ($slot === 'sidebar' ? ' sidebar-select' : '');
         $shellClass = $slot === 'topbar'
@@ -77,6 +79,10 @@ final class SiteContextRendererFramework
             . '<input type="hidden" name="_ajax" value="1">'
             . '<input type="hidden" name="site_context_key" value="' . HelperFramework::escape($key) . '">';
 
+        if ($inputName !== '') {
+            $hiddenInputs .= '<input type="hidden" name="site_context_input_name" value="' . HelperFramework::escape($inputName) . '">';
+        }
+
         foreach ($cards as $cardKey) {
             $hiddenInputs .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape($cardKey) . '">';
         }
@@ -87,7 +93,9 @@ final class SiteContextRendererFramework
             . $hiddenInputs
             . '<label class="' . HelperFramework::escape($shellClass) . '">'
             . '<span class="selector-label">' . HelperFramework::escape($label) . '</span>'
-            . '<select class="' . HelperFramework::escape($selectClass) . '" name="site_context_value" data-site-context-key="' . HelperFramework::escape($key) . '"' . ($disabled ? ' disabled' : '') . '>'
+            . '<select class="' . HelperFramework::escape($selectClass) . '" name="' . HelperFramework::escape($fieldName) . '" data-site-context-key="' . HelperFramework::escape($key) . '"'
+            . ($inputName !== '' ? ' data-site-context-input-name="' . HelperFramework::escape($inputName) . '"' : '')
+            . ($disabled ? ' disabled' : '') . '>'
             . $this->renderOptions($selector, $value)
             . '</select>'
             . '</label>'
@@ -176,6 +184,13 @@ final class SiteContextRendererFramework
     private function selectorDisabled(array $selector): bool
     {
         return array_key_exists('disabled', $selector) && (bool)$selector['disabled'];
+    }
+
+    private function selectorInputName(array $selector): string
+    {
+        $inputName = trim((string)($selector['input_name'] ?? ''));
+
+        return preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $inputName) === 1 ? $inputName : '';
     }
 
     private function formAction(RequestFramework $request, PageInterfaceFramework $page): string

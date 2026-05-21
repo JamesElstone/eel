@@ -268,6 +268,106 @@ try {
         $harness->assertTrue(str_contains($html, 'name="action" value="set-site-context"'));
     });
 
+    $harness->check(SiteContextRendererFramework::class, 'renders generic selector field name when input_name is omitted', function () use ($harness, $createSiteContextTestRequest): void {
+        $page = new SiteContextTestPage();
+        $request = $createSiteContextTestRequest();
+        $slots = (new SiteContextRendererFramework())->renderSlots(
+            new SiteContextResultFramework([], [
+                [
+                    'key' => 'workspace_id',
+                    'slot' => 'sidebar',
+                    'label' => 'Workspace',
+                    'value' => '321',
+                    'options' => [
+                        ['value' => '321', 'label' => 'Example Workspace'],
+                    ],
+                ],
+            ]),
+            $page,
+            $request,
+            [
+                'page' => [
+                    'page_id' => $page->id(),
+                    'page_cards' => [],
+                ],
+            ]
+        );
+        $html = (string)($slots['sidebar'] ?? '');
+
+        $harness->assertTrue(str_contains($html, 'name="site_context_value"'));
+        $harness->assertTrue(str_contains($html, 'data-site-context-key="workspace_id"'));
+        $harness->assertSame(false, str_contains($html, 'site_context_input_name'));
+        $harness->assertSame(false, str_contains($html, 'data-site-context-input-name'));
+    });
+
+    $harness->check(SiteContextRendererFramework::class, 'renders named selector field when input_name is valid', function () use ($harness, $createSiteContextTestRequest): void {
+        $page = new SiteContextTestPage();
+        $request = $createSiteContextTestRequest();
+        $slots = (new SiteContextRendererFramework())->renderSlots(
+            new SiteContextResultFramework([], [
+                [
+                    'key' => 'workspace_id',
+                    'input_name' => 'workspace_id',
+                    'slot' => 'sidebar',
+                    'label' => 'Workspace',
+                    'value' => '321',
+                    'options' => [
+                        ['value' => '321', 'label' => 'Example Workspace'],
+                    ],
+                ],
+            ]),
+            $page,
+            $request,
+            [
+                'page' => [
+                    'page_id' => $page->id(),
+                    'page_cards' => [],
+                ],
+            ]
+        );
+        $html = (string)($slots['sidebar'] ?? '');
+
+        $harness->assertTrue(str_contains($html, 'name="workspace_id"'));
+        $harness->assertTrue(str_contains($html, 'name="site_context_key" value="workspace_id"'));
+        $harness->assertTrue(str_contains($html, 'name="site_context_input_name" value="workspace_id"'));
+        $harness->assertTrue(str_contains($html, 'data-site-context-key="workspace_id"'));
+        $harness->assertTrue(str_contains($html, 'data-site-context-input-name="workspace_id"'));
+        $harness->assertSame(false, str_contains($html, 'name="site_context_value"'));
+    });
+
+    $harness->check(SiteContextRendererFramework::class, 'falls back to generic selector field when input_name is invalid', function () use ($harness, $createSiteContextTestRequest): void {
+        $page = new SiteContextTestPage();
+        $request = $createSiteContextTestRequest();
+        $slots = (new SiteContextRendererFramework())->renderSlots(
+            new SiteContextResultFramework([], [
+                [
+                    'key' => 'workspace_id',
+                    'input_name' => 'workspace-id',
+                    'slot' => 'sidebar',
+                    'label' => 'Workspace',
+                    'value' => '321',
+                    'options' => [
+                        ['value' => '321', 'label' => 'Example Workspace'],
+                    ],
+                ],
+            ]),
+            $page,
+            $request,
+            [
+                'page' => [
+                    'page_id' => $page->id(),
+                    'page_cards' => [],
+                ],
+            ]
+        );
+        $html = (string)($slots['sidebar'] ?? '');
+
+        $harness->assertTrue(str_contains($html, 'name="site_context_value"'));
+        $harness->assertSame(false, str_contains($html, 'name="workspace-id"'));
+        $harness->assertSame(false, str_contains($html, 'site_context_input_name'));
+        $harness->assertSame(false, str_contains($html, 'data-site-context-input-name'));
+    });
+
     $harness->check(SiteContextRendererFramework::class, 'hides only selectors named by the page', function () use ($harness, $setSiteContextTestConfig, $createSiteContextTestServices, $createSiteContextTestRequest, $renderSiteContextTestFull): void {
         $setSiteContextTestConfig(SiteContextFakeProvider::class);
         $services = $createSiteContextTestServices();
@@ -309,6 +409,24 @@ try {
         ], SiteContextFakeProvider::$handledActions);
         $harness->assertTrue(in_array('page.reload', $result->changedFacts(), true));
         $harness->assertTrue(in_array(SiteContextCoordinatorFramework::UI_INVALIDATION_FACT, $result->changedFacts(), true));
+    });
+
+    $harness->check(SiteContextCoordinatorFramework::class, 'handles set-site-context value from valid named input', function () use ($harness, $setSiteContextTestConfig, $createSiteContextTestServices, $createSiteContextTestRequest): void {
+        SiteContextFakeProvider::$handledActions = [];
+        $setSiteContextTestConfig(SiteContextFakeProvider::class);
+        $services = $createSiteContextTestServices();
+        $page = new SiteContextTestPage();
+        $request = $createSiteContextTestRequest([
+            'action' => SiteContextCoordinatorFramework::ACTION,
+            'site_context_key' => 'workspace_id',
+            'site_context_input_name' => 'workspace_id',
+            'workspace_id' => '777',
+        ]);
+
+        $result = $services->siteContextCoordinator()->handleAction($request, $page, $services);
+
+        $harness->assertTrue($result instanceof ActionResultFramework);
+        $harness->assertSame('777', SiteContextFakeProvider::$handledActions[0]['value'] ?? null);
     });
 
     $harness->check(PageRendererFramework::class, 'includes site context slot html in AJAX deltas', function () use ($harness, $setSiteContextTestConfig, $createSiteContextTestServices, $createSiteContextTestRequest): void {
@@ -356,12 +474,17 @@ try {
         $harness->assertTrue(str_contains($script, 'collectSiteContextSelections'));
         $harness->assertTrue(str_contains($script, 'ajaxOptionsWithSiteContext(options)'));
         $harness->assertTrue(str_contains($script, 'syncSiteContextFieldsToForm(form)'));
-        $harness->assertTrue(str_contains($script, 'appendSiteContextSelectionsToFormData(formData)'));
+        $harness->assertTrue(str_contains($script, 'appendSiteContextSelectionsToFormData(formData, form)'));
         $harness->assertTrue(str_contains($script, 'appendSiteContextSelectionsToPayload(payload)'));
+        $harness->assertTrue(str_contains($script, 'normaliseSiteContextInputName'));
+        $harness->assertTrue(str_contains($script, 'formHasEnabledNamedField'));
+        $harness->assertTrue(str_contains($script, '!formHasEnabledNamedField(form, selection.inputName)'));
         $harness->assertTrue(str_contains($script, "site_context_keys[]"));
         $harness->assertTrue(str_contains($script, "site_context_values[]"));
         $harness->assertTrue(str_contains($script, 'payload.site_context_keys'));
         $harness->assertTrue(str_contains($script, 'payload.site_context_values'));
+        $harness->assertTrue(str_contains($script, 'payload[selection.inputName]'));
+        $harness->assertTrue(str_contains($script, "field.dataset.siteContextSubmitField !== 'true'"));
     });
 } finally {
     AppConfigurationStore::config(true);

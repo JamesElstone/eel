@@ -55,6 +55,7 @@ final class SiteContextCoordinatorFramework
             return null;
         }
 
+        $request = $this->requestWithNormalisedSiteContextValue($request);
         $result = $this->provider->handleSiteContextAction($request, $page, $services);
         $changedFacts = $result->changedFacts();
 
@@ -134,5 +135,27 @@ final class SiteContextCoordinatorFramework
             static fn(mixed $key): string => trim((string)$key),
             $hiddenKeys
         ), static fn(string $key): bool => $key !== '')));
+    }
+
+    private function requestWithNormalisedSiteContextValue(RequestFramework $request): RequestFramework
+    {
+        $genericValue = $request->input('site_context_value', null);
+        if ($genericValue !== null && trim((string)$genericValue) !== '') {
+            return $request;
+        }
+
+        $inputName = trim((string)$request->input('site_context_input_name', ''));
+        if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $inputName) !== 1) {
+            return $request;
+        }
+
+        $namedValue = $request->input($inputName, null);
+        if ($namedValue === null || is_array($namedValue) || is_object($namedValue)) {
+            return $request;
+        }
+
+        return $request->withMergedPostValues([
+            'site_context_value' => $namedValue,
+        ]);
     }
 }

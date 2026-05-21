@@ -55,6 +55,7 @@ final class YourAppSiteContextService implements SiteContextProviderInterface
             selectors: [
                 [
                     'key' => 'workspace_id',
+                    'input_name' => 'workspace_id',
                     'slot' => 'sidebar',
                     'label' => 'Workspace',
                     'value' => '123',
@@ -66,6 +67,7 @@ final class YourAppSiteContextService implements SiteContextProviderInterface
                 ],
                 [
                     'key' => 'reporting_window_id',
+                    'input_name' => 'reporting_window_id',
                     'slot' => 'topbar',
                     'label' => 'Reporting Window',
                     'value' => '456',
@@ -86,6 +88,10 @@ final class YourAppSiteContextService implements SiteContextProviderInterface
     ): ActionResultFramework {
         $key = (string)$request->input('site_context_key', '');
         $value = (string)$request->input('site_context_value', '');
+        if ($value === '') {
+            $inputName = (string)$request->input('site_context_input_name', '');
+            $value = $inputName !== '' ? (string)$request->input($inputName, '') : '';
+        }
 
         // Validate and persist the selected value in the app-owned way,
         // for example session state or a user preference table.
@@ -98,7 +104,7 @@ final class YourAppSiteContextService implements SiteContextProviderInterface
 Provider responsibilities:
 
 - Resolve canonical app context from the request, session, current page, services, or app storage.
-- Handle `action=set-site-context` updates using the generic `site_context_key` and `site_context_value` form fields.
+- Handle `action=set-site-context` updates using the generic `site_context_key` and `site_context_value` form fields, or the optional rendered `input_name` field when present.
 - Return context arrays to merge into the page context.
 - Return structured selector definitions for eelKit to render.
 
@@ -140,6 +146,7 @@ Selector definitions use this shape:
 ```php
 [
     'key' => 'workspace_id',
+    'input_name' => 'workspace_id',
     'slot' => 'sidebar',
     'label' => 'Workspace',
     'value' => '123',
@@ -155,6 +162,22 @@ Selector definitions use this shape:
 ]
 ```
 
+`key` is the canonical generic site-context identity. `input_name` is optional and controls the rendered/submitted HTML field name. If `input_name` is omitted, the visible selector uses the generic `name="site_context_value"` field. If `input_name` is present and valid, the visible selector uses that field name and eelKit also emits hidden metadata:
+
+```html
+<input type="hidden" name="site_context_key" value="workspace_id">
+<input type="hidden" name="site_context_input_name" value="workspace_id">
+<select name="workspace_id" data-site-context-key="workspace_id" data-site-context-input-name="workspace_id">
+```
+
+Accepted `input_name` values must match:
+
+```text
+^[A-Za-z_][A-Za-z0-9_]*$
+```
+
+Invalid names are ignored and eelKit falls back to `name="site_context_value"`.
+
 Selectors render as normal eelKit AJAX forms with:
 
 - `method="post"`
@@ -164,7 +187,8 @@ Selectors render as normal eelKit AJAX forms with:
 - hidden `_ajax=1`
 - hidden `cards[]` values for the current page cards
 - hidden `site_context_key`
-- select field `site_context_value`
+- hidden `site_context_input_name`, when a valid selector `input_name` is configured
+- select field `site_context_value`, or the configured `input_name`
 
 The renderer reuses existing selector classes: `selector-form`, `selector-shell`, `selector-label`, `selector-input`, and `sidebar-select` for sidebar selectors. No inline JavaScript is required; existing frontend change handling auto-submits AJAX selector forms.
 
@@ -175,14 +199,19 @@ For normal form posts and AJAX form posts, `web_root/js/index.js` injects hidden
 ```html
 <input type="hidden" name="site_context_keys[]" value="workspace_id">
 <input type="hidden" name="site_context_values[]" value="123">
+<input type="hidden" name="workspace_id" value="123">
 ```
+
+Named hidden fields are added only for selectors with a valid `input_name`, and only when the submitting form does not already contain an enabled field with that name. This keeps app-owned form fields from being duplicated or overwritten.
 
 For non-form AJAX requests, such as card auto-refresh, the JSON payload carries the same data as parallel arrays:
 
 ```json
 {
   "site_context_keys": ["workspace_id", "reporting_window_id"],
-  "site_context_values": ["123", "456"]
+  "site_context_values": ["123", "456"],
+  "workspace_id": "123",
+  "reporting_window_id": "456"
 }
 ```
 

@@ -1,8 +1,8 @@
 <?php
 /**
- * eelKit Framework
+ * EEL Accounts
  * Copyright (c) 2026 James Elstone
- * Licensed under the BSD 3-Clause License
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3)
  * See LICENSE file for details.
  */
 declare(strict_types=1);
@@ -21,7 +21,7 @@ final class _settings extends PageContextFramework
 
     public function subtitle(): string
     {
-        return 'Application Settings.';
+        return 'Review API mode, import controls, storage paths, setup checks, and application settings.';
     }
 
     public function hiddenSiteContextSelectors(): array
@@ -32,6 +32,11 @@ final class _settings extends PageContextFramework
     public function cards(): array
     {
         return [
+            'api_mode',
+            'settings_import_review',
+            'api_connectivity_test',
+            'check_file_paths',
+            'settings_setup_health',
             'application_settings',
          ];
     }

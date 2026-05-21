@@ -49,7 +49,6 @@ final class CompanySettingsService
                 $settings['companies_house_environment'] = (string)($company['companies_house_environment'] ?? '');
                 $settings['companies_house_etag'] = (string)($company['companies_house_etag'] ?? '');
                 $settings['companies_house_last_checked_at'] = (string)($company['companies_house_last_checked_at'] ?? '');
-                $settings['companies_house_profile_json'] = (string)($company['companies_house_profile_json'] ?? '');
                 $settings['is_vat_registered'] = !empty($company['is_vat_registered']);
                 $settings['vat_country_code'] = strtoupper(trim((string)($company['vat_country_code'] ?? '')));
                 $settings['vat_number'] = (string)($company['vat_number'] ?? '');
@@ -260,7 +259,6 @@ final class CompanySettingsService
             'companies_house_environment' => '',
             'companies_house_etag' => '',
             'companies_house_last_checked_at' => '',
-            'companies_house_profile_json' => '',
             'is_vat_registered' => false,
             'vat_country_code' => '',
             'vat_number' => '',

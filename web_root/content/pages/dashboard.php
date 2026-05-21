@@ -1,8 +1,8 @@
 <?php
 /**
- * eelKit Framework
+ * EEL Accounts
  * Copyright (c) 2026 James Elstone
- * Licensed under the BSD 3-Clause License
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3)
  * See LICENSE file for details.
  */
 declare(strict_types=1);
@@ -26,14 +26,17 @@ final class _dashboard extends PageContextFramework
 
     public function services(): array
     {
-        return [];
+        return [CompanyAccountService::class];
     }
 
     public function cards(): array
     {
         return [
+            'overview',
+            'dashboard_action_queue',
+            'dashboard_year_end_readiness',
+            'dashboard_recent_transactions',
             'activity',
-            'dashboard_notes',
             // 'dump_context',
         ];
     }

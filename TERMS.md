@@ -4,15 +4,21 @@ These terms apply to any separate project terms, support arrangements, hosting
 arrangements, consultancy arrangements, commercial terms, or other agreements
 expressly made between you and the project owner.
 
-## Open Source Licence
+## Open Source Licensing
 
-The software is licensed under the GNU Affero General Public License version 3
-(AGPLv3), as set out in the `LICENSE` file.
+This repository contains code and assets under multiple open source licences,
+as set out in the `LICENSE` file and the file-level notices.
+
+EEL Accounts application-specific files are licensed under the GNU Affero
+General Public License version 3 (AGPLv3). eelKit framework files are licensed
+under the BSD 3-Clause License. Bundled font files are licensed under the SIL
+Open Font License version 1.1.
 
 Nothing in these terms is intended to replace, amend, restrict, or override any
-rights granted under the AGPLv3. If there is any conflict between these terms
-and the AGPLv3 in relation to copying, modifying, propagating, conveying, or
-running the software under the open source licence, the AGPLv3 applies.
+rights granted under those open source licences. If there is any conflict
+between these terms and the applicable open source licence for a file in
+relation to copying, modifying, propagating, conveying, or running that file,
+the applicable open source licence applies.
 
 ## Jurisdiction
 

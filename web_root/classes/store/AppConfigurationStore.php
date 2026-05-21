@@ -109,6 +109,32 @@ final class AppConfigurationStore
         return self::config(true);
     }
 
+    public static function set(string $path, mixed $value): array
+    {
+        $segments = self::configPathSegments($path);
+        $lastIndex = count($segments) - 1;
+        $config = self::readStoredConfig();
+        $target =& $config;
+
+        foreach ($segments as $index => $segment) {
+            if ($index === $lastIndex) {
+                $target[$segment] = $value;
+                continue;
+            }
+
+            if (!array_key_exists($segment, $target) || !is_array($target[$segment])) {
+                $target[$segment] = [];
+            }
+
+            $target =& $target[$segment];
+        }
+
+        unset($target);
+        self::writeStoredConfig($config);
+
+        return self::config(true);
+    }
+
     public static function ensureUploadExportKey(int $length = 32): string
     {
         $config = self::readStoredConfig();
@@ -211,6 +237,25 @@ final class AppConfigurationStore
         $loaded = require self::storedConfigPath();
 
         return is_array($loaded) ? $loaded : [];
+    }
+
+    private static function configPathSegments(string $path): array
+    {
+        $path = trim($path);
+
+        if ($path === '') {
+            throw new RuntimeException('Configuration path cannot be empty.');
+        }
+
+        $segments = explode('.', $path);
+
+        foreach ($segments as $segment) {
+            if ($segment === '') {
+                throw new RuntimeException('Configuration path cannot contain empty segments: ' . $path);
+            }
+        }
+
+        return $segments;
     }
 
     private static function writeStoredConfig(array $config): void

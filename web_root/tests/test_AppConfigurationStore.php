@@ -132,6 +132,63 @@ $harness->check(AppConfigurationStore::class, 'updates editable application sett
     }
 });
 
+$harness->check(AppConfigurationStore::class, 'sets nested configuration paths without dropping other config', function () use ($harness): void {
+    $path = AppConfigurationStore::configPath();
+    $original = file_get_contents($path);
+
+    if (!is_string($original)) {
+        throw new RuntimeException('Unable to read fixture config.');
+    }
+
+    try {
+        $updated = AppConfigurationStore::set('accounting.hmrc.mode', 'LIVE');
+        $stored = require $path;
+
+        if (!is_array($stored)) {
+            throw new RuntimeException('Fixture config did not return an array.');
+        }
+
+        $harness->assertSame('LIVE', $updated['accounting']['hmrc']['mode'] ?? null);
+        $harness->assertSame('LIVE', AppConfigurationStore::get('accounting.hmrc.mode'));
+        $harness->assertSame('LIVE', $stored['accounting']['hmrc']['mode'] ?? null);
+        $harness->assertSame('../db_schema/eelKit.schema.sql', $updated['db']['sqlite_schema'] ?? null);
+    } finally {
+        file_put_contents($path, $original, LOCK_EX);
+        AppConfigurationStore::config(true);
+    }
+});
+
+$harness->check(AppConfigurationStore::class, 'sets nested paths over existing scalar values', function () use ($harness): void {
+    $path = AppConfigurationStore::configPath();
+    $original = file_get_contents($path);
+
+    if (!is_string($original)) {
+        throw new RuntimeException('Unable to read fixture config.');
+    }
+
+    try {
+        AppConfigurationStore::set('accounting', 'disabled');
+        $updated = AppConfigurationStore::set('accounting.hmrc.mode', 'TEST');
+
+        $harness->assertSame('TEST', $updated['accounting']['hmrc']['mode'] ?? null);
+    } finally {
+        file_put_contents($path, $original, LOCK_EX);
+        AppConfigurationStore::config(true);
+    }
+});
+
+$harness->check(AppConfigurationStore::class, 'rejects empty configuration set paths', function () use ($harness): void {
+    foreach (['', '   ', 'accounting..hmrc', '.accounting', 'accounting.'] as $path) {
+        try {
+            AppConfigurationStore::set($path, 'invalid');
+        } catch (RuntimeException) {
+            continue;
+        }
+
+        throw new RuntimeException('Configuration path was accepted: ' . var_export($path, true));
+    }
+});
+
 $harness->check(AppConfigurationStore::class, 'throws without emitting warnings when config writes fail', function () use ($harness): void {
     $method = new ReflectionMethod(AppConfigurationStore::class, 'writeConfigFile');
     $targetDirectory = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'eelkit-config-write-target';

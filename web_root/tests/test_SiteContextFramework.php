@@ -66,6 +66,18 @@ final class SiteContextFakeProvider implements SiteContextProviderInterface
                     'disabled' => false,
                     'visible' => true,
                 ],
+                [
+                    'key' => 'display_scope',
+                    'slot' => 'summary',
+                    'label' => 'Display Scope',
+                    'value' => 'team',
+                    'options' => [
+                        ['value' => 'team', 'label' => 'Team'],
+                        ['value' => 'personal', 'label' => 'Personal'],
+                    ],
+                    'disabled' => false,
+                    'visible' => true,
+                ],
             ]
         );
     }
@@ -251,6 +263,8 @@ try {
         $harness->assertTrue(str_contains($html, 'selector-input sidebar-select'));
         $harness->assertTrue(str_contains($html, 'id="site-context-topbar-slot"'));
         $harness->assertTrue(str_contains($html, 'Reporting Window'));
+        $harness->assertTrue(str_contains($html, 'id="site-context-summary-slot"'));
+        $harness->assertTrue(str_contains($html, 'Display Scope'));
         $harness->assertTrue(str_contains($html, 'name="action" value="set-site-context"'));
     });
 
@@ -329,7 +343,25 @@ try {
         $harness->assertTrue(is_array($payload));
         $harness->assertTrue(str_contains((string)($payload['site_context_html']['sidebar'] ?? ''), 'Workspace'));
         $harness->assertTrue(str_contains((string)($payload['site_context_html']['topbar'] ?? ''), 'Reporting Window'));
-        $harness->assertTrue(array_key_exists('summary', $payload['site_context_html'] ?? []));
+        $harness->assertTrue(str_contains((string)($payload['site_context_html']['summary'] ?? ''), 'Display Scope'));
+    });
+
+    $harness->check(SiteContextRendererFramework::class, 'frontend submits rendered selectors with every form and AJAX request', function () use ($harness): void {
+        $script = file_get_contents(APP_JS . 'index.js');
+
+        if (!is_string($script)) {
+            throw new RuntimeException('Unable to read frontend script.');
+        }
+
+        $harness->assertTrue(str_contains($script, 'collectSiteContextSelections'));
+        $harness->assertTrue(str_contains($script, 'ajaxOptionsWithSiteContext(options)'));
+        $harness->assertTrue(str_contains($script, 'syncSiteContextFieldsToForm(form)'));
+        $harness->assertTrue(str_contains($script, 'appendSiteContextSelectionsToFormData(formData)'));
+        $harness->assertTrue(str_contains($script, 'appendSiteContextSelectionsToPayload(payload)'));
+        $harness->assertTrue(str_contains($script, "site_context_keys[]"));
+        $harness->assertTrue(str_contains($script, "site_context_values[]"));
+        $harness->assertTrue(str_contains($script, 'payload.site_context_keys'));
+        $harness->assertTrue(str_contains($script, 'payload.site_context_values'));
     });
 } finally {
     AppConfigurationStore::config(true);

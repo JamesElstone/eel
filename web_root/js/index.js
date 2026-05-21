@@ -757,6 +757,8 @@
     }
 
     async function sendAjax(url, options = {}) {
+        options = ajaxOptionsWithSiteContext(options);
+
         if (options.transport === 'xhr') {
             return sendXhr(url, options);
         }
@@ -775,6 +777,49 @@
         }
 
         return payload;
+    }
+
+    function ajaxOptionsWithSiteContext(options = {}) {
+        const method = String(options.method || 'GET').toUpperCase();
+        if (method === 'GET' || typeof options.body !== 'string') {
+            return options;
+        }
+
+        const contentType = ajaxOptionsContentType(options.headers);
+        if (!contentType.includes('application/json')) {
+            return options;
+        }
+
+        try {
+            const payload = JSON.parse(options.body || '{}');
+            if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+                return options;
+            }
+
+            appendSiteContextSelectionsToPayload(payload);
+
+            return {
+                ...options,
+                body: JSON.stringify(payload),
+            };
+        } catch (error) {
+            return options;
+        }
+    }
+
+    function ajaxOptionsContentType(headers) {
+        if (headers instanceof Headers) {
+            return String(headers.get('Content-Type') || '').toLowerCase();
+        }
+
+        if (!headers || typeof headers !== 'object') {
+            return '';
+        }
+
+        const entries = Object.entries(headers);
+        const match = entries.find(([name]) => String(name).toLowerCase() === 'content-type');
+
+        return String(match ? match[1] : '').toLowerCase();
     }
 
     function formRequestUrl(form) {
@@ -874,6 +919,87 @@
         if (cardKey !== '') {
             formData.set('show_card', cardKey);
         }
+    }
+
+    function collectSiteContextSelections() {
+        const selections = [];
+        const selects = document.querySelectorAll('.site-context-slot select[data-site-context-key]');
+
+        selects.forEach((select) => {
+            if (!(select instanceof HTMLSelectElement)) {
+                return;
+            }
+
+            const key = String(select.dataset.siteContextKey || '').trim();
+            if (key === '') {
+                return;
+            }
+
+            selections.push({
+                key,
+                value: String(select.value ?? ''),
+            });
+        });
+
+        return selections;
+    }
+
+    function appendSiteContextSelectionsToFormData(formData) {
+        if (!(formData instanceof FormData)) {
+            return;
+        }
+
+        formData.delete('site_context_keys[]');
+        formData.delete('site_context_keys');
+        formData.delete('site_context_values[]');
+        formData.delete('site_context_values');
+
+        collectSiteContextSelections().forEach((selection) => {
+            formData.append('site_context_keys[]', selection.key);
+            formData.append('site_context_values[]', selection.value);
+        });
+    }
+
+    function syncSiteContextFieldsToForm(form) {
+        if (!(form instanceof HTMLFormElement)) {
+            return;
+        }
+
+        form.querySelectorAll('input[data-site-context-submit-field="true"]').forEach((node) => {
+            node.remove();
+        });
+
+        collectSiteContextSelections().forEach((selection) => {
+            const keyField = document.createElement('input');
+            keyField.type = 'hidden';
+            keyField.name = 'site_context_keys[]';
+            keyField.value = selection.key;
+            keyField.dataset.siteContextSubmitField = 'true';
+
+            const valueField = document.createElement('input');
+            valueField.type = 'hidden';
+            valueField.name = 'site_context_values[]';
+            valueField.value = selection.value;
+            valueField.dataset.siteContextSubmitField = 'true';
+
+            form.append(keyField, valueField);
+        });
+    }
+
+    function appendSiteContextSelectionsToPayload(payload) {
+        if (!payload || typeof payload !== 'object') {
+            return;
+        }
+
+        const selections = collectSiteContextSelections();
+        if (selections.length === 0) {
+            delete payload.site_context_keys;
+            delete payload.site_context_values;
+            return;
+        }
+
+        payload.site_context_keys = selections.map((selection) => selection.key);
+        payload.site_context_values = selections.map((selection) => selection.value);
     }
 
     function resolveSelfVisibleCardField(form) {
@@ -1800,6 +1926,7 @@
                 if (refreshFact !== '') {
                     payload._invalidate_fact = refreshFact;
                 }
+                appendSiteContextSelectionsToPayload(payload);
 
                 try {
                     const response = await sendAjax(window.location.href, {
@@ -2280,6 +2407,7 @@
         }
 
         resolveSelfVisibleCardField(form);
+        syncSiteContextFieldsToForm(form);
 
         if (form.dataset.ajax !== 'true') {
             return;
@@ -2299,6 +2427,7 @@
         formData.set('_ajax', '1');
         appendCurrentPageCardKeys(formData, form);
         appendRequestedVisibleCard(formData, event.submitter);
+        appendSiteContextSelectionsToFormData(formData);
 
         const method = (form.method || 'POST').toUpperCase();
 

@@ -168,6 +168,26 @@ Selectors render as normal eelKit AJAX forms with:
 
 The renderer reuses existing selector classes: `selector-form`, `selector-shell`, `selector-label`, `selector-input`, and `sidebar-select` for sidebar selectors. No inline JavaScript is required; existing frontend change handling auto-submits AJAX selector forms.
 
+Whenever site-context selector `<select>` elements are rendered in the UI DOM, eelKit also submits their current values with every form submit and every eelKit AJAX request. This includes selectors in the `sidebar`, `topbar`, and `summary` slots, and includes disabled selectors because their current value may still describe the active app context.
+
+For normal form posts and AJAX form posts, `web_root/js/index.js` injects hidden fields into the submitting form before submission:
+
+```html
+<input type="hidden" name="site_context_keys[]" value="workspace_id">
+<input type="hidden" name="site_context_values[]" value="123">
+```
+
+For non-form AJAX requests, such as card auto-refresh, the JSON payload carries the same data as parallel arrays:
+
+```json
+{
+  "site_context_keys": ["workspace_id", "reporting_window_id"],
+  "site_context_values": ["123", "456"]
+}
+```
+
+The shared frontend `sendAjax()` helper augments JSON AJAX payloads with the same arrays, so new eelKit AJAX callers using that helper inherit the behaviour. Providers should still treat their own session/app storage as canonical, but these submitted arrays let app-specific actions and card services see the visible selector state on any request. The arrays are ordered pairs: `site_context_keys[0]` matches `site_context_values[0]`.
+
 ### Page-level selector suppression
 
 Pages can hide named selectors without changing `PageInterfaceFramework` by adding an optional method:

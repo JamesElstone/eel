@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EEL Layout Examples</title>
+  <link rel="stylesheet" href="/css/index.css">
+  <style>
+    body {
+      padding: 24px;
+    }
+
+    .example-page {
+      display: grid;
+      gap: 24px;
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+
+    .example-heading {
+      display: grid;
+      gap: 6px;
+    }
+
+    .example-heading h1,
+    .example-heading p {
+      margin: 0;
+    }
+
+    .example-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      align-items: start;
+    }
+
+    .example-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .example-card-wide {
+      grid-column: 1 / -1;
+    }
+
+    .example-card h2 {
+      margin: 0;
+      padding: 12px 14px;
+      background: var(--header-bg);
+      font-size: 1rem;
+    }
+
+    .example-body {
+      padding: 16px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .example-note {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.45;
+    }
+
+    .example-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 38px;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-soft);
+      font-weight: 700;
+      font-size: 0.9rem;
+    }
+
+    .example-box {
+      min-height: 44px;
+      padding: 10px 12px;
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      background: var(--panel-soft);
+      font-weight: 700;
+    }
+
+    .example-wide {
+      min-width: 260px;
+    }
+
+    .example-dropzone {
+      width: 360px;
+      max-width: 100%;
+    }
+
+    .example-upload-row-nowrap {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+    }
+
+    .example-upload-row-nowrap .form-row {
+      padding-bottom: 0;
+    }
+
+    .example-upload-row-nowrap .button {
+      margin-bottom: 0;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 900px) {
+      .example-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .example-upload-row-nowrap {
+        flex-wrap: wrap;
+        overflow-x: visible;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="example-page">
+    <header class="example-heading">
+      <h1>Layout Examples</h1>
+      <p class="example-note">These examples use the layout classes already present in <code>/css/index.css</code>, with light demo-only styling for labels and sample boxes.</p>
+    </header>
+
+    <section class="example-grid">
+      <article class="example-card">
+        <h2><code>.form-grid</code></h2>
+        <div class="example-body">
+          <p class="example-note">Two-column CSS Grid. Elements with <code>.form-row.full</code> span both columns.</p>
+          <div class="form-grid">
+            <div class="form-row">
+              <label>Account</label>
+              <select class="select">
+                <option>Current account</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label>Date</label>
+              <input class="input" type="date">
+            </div>
+            <div class="form-row full">
+              <label>CSV files</label>
+              <input class="input" type="file">
+            </div>
+            <div class="form-row full">
+              <div class="upload-box">
+                <h3>Drop CSV files here</h3>
+                <div class="helper">Full-width drop zone.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="example-card">
+        <h2><code>.toolbar</code></h2>
+        <div class="example-body">
+          <p class="example-note">Flex row with wrapping and a bottom margin. Inputs inside a toolbar are capped at 280px.</p>
+          <div class="toolbar">
+            <input class="input" type="text" value="Search text">
+            <select class="select">
+              <option>Filter</option>
+            </select>
+            <button class="button primary" type="button">Apply</button>
+            <button class="button" type="button">Reset</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="example-card">
+        <h2><code>.actions-row</code></h2>
+        <div class="example-body">
+          <p class="example-note">Flex row with wrapping. Useful for command buttons and small grouped controls.</p>
+          <div class="actions-row">
+            <button class="button primary" type="button">Primary action</button>
+            <button class="button" type="button">Secondary action</button>
+            <span class="example-chip">Inline status</span>
+          </div>
+        </div>
+      </article>
+
+      <article class="example-card">
+        <h2><code>.actions-row.actions-row-nowrap</code></h2>
+        <div class="example-body">
+          <p class="example-note">Same flex row, but no wrapping. Buttons keep their text on one line.</p>
+          <div class="actions-row actions-row-nowrap">
+            <button class="button primary" type="button">Upload CSV</button>
+            <button class="button" type="button">Preview import</button>
+            <span class="example-chip example-wide">Longer fixed content</span>
+          </div>
+        </div>
+      </article>
+
+      <article class="example-card">
+        <h2><code>.mini-form</code></h2>
+        <div class="example-body">
+          <p class="example-note">Flex row with wrapping, bottom-aligned controls, padding, border, radius, and shadow already included.</p>
+          <div class="mini-form">
+            <div class="mini-field">
+              <label>Account</label>
+              <select class="select">
+                <option>Current account</option>
+              </select>
+            </div>
+            <div class="mini-field">
+              <label>Reference</label>
+              <input class="input" type="text" value="CSV upload">
+            </div>
+            <button class="button primary" type="button">Save</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="example-card">
+        <h2><code>.flex-controls</code></h2>
+        <div class="example-body">
+          <p class="example-note">Generic flex row with wrapping, bottom-aligned controls, and zeroed form-row/button bottom spacing.</p>
+          <div class="flex-controls">
+            <div class="example-box">Control group</div>
+            <div class="example-box example-wide">Wider summary/control area</div>
+            <button class="button primary" type="button">Action</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="example-card">
+        <h2><code>.segmented-control</code></h2>
+        <div class="example-body">
+          <p class="example-note">Inline flex group with wrapping for option-like controls.</p>
+          <div class="segmented-control">
+            <label class="segmented-option"><input type="radio" name="example-segment" checked> All</label>
+            <label class="segmented-option"><input type="radio" name="example-segment"> Matched</label>
+            <label class="segmented-option"><input type="radio" name="example-segment"> Needs review</label>
+          </div>
+        </div>
+      </article>
+
+      <article class="example-card">
+        <h2><code>.status-head</code></h2>
+        <div class="example-body">
+          <p class="example-note">Flex row that spaces content apart and wraps when needed.</p>
+          <div class="status-head">
+            <strong>Import status</strong>
+            <span class="status-badge success">Ready</span>
+          </div>
+        </div>
+      </article>
+
+      <article class="example-card">
+        <h2><code>.pill-row</code> and <code>.legend</code></h2>
+        <div class="example-body">
+          <p class="example-note">Small wrapping flex rows for badges, pills, and visual keys.</p>
+          <div class="pill-row">
+            <span class="pill">bank_csv</span>
+            <span class="pill">manual</span>
+            <span class="pill danger">needs review</span>
+          </div>
+          <div class="legend">
+            <span class="legend-item"><span class="legend-swatch" style="background:#16a34a"></span> Complete</span>
+            <span class="legend-item"><span class="legend-swatch" style="background:#d97706"></span> Review</span>
+            <span class="legend-item"><span class="legend-swatch" style="background:#dc2626"></span> Missing</span>
+          </div>
+        </div>
+      </article>
+
+      <article class="example-card example-card-wide">
+        <h2>Upload row candidate: wrapping flex</h2>
+        <div class="example-body">
+          <p class="example-note">This uses the generic <code>.flex-controls</code> class. The upload drop zone gets a defined width when it appears in this layout.</p>
+          <div class="flex-controls">
+            <div class="form-row">
+              <label for="example-account-wrap">Upload for account</label>
+              <select class="select" id="example-account-wrap">
+                <option>Current account</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label for="example-file-wrap">CSV files</label>
+              <div class="upload-box upload-dropzone example-dropzone">
+                <h3>Drop CSV files here</h3>
+                <input class="input" id="example-file-wrap" type="file">
+                <div class="helper">Defined width: 360px.</div>
+              </div>
+            </div>
+            <button class="button primary" type="button">Upload CSV</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="example-card example-card-wide">
+        <h2>Upload row candidate: no-wrap flex</h2>
+        <div class="example-body">
+          <p class="example-note">This keeps the four controls on one line on wider screens and falls back to wrapping below 900px in this demo.</p>
+          <div class="flex-controls example-upload-row-nowrap">
+            <div class="form-row">
+              <label for="example-account-nowrap">Upload for account</label>
+              <select class="select" id="example-account-nowrap">
+                <option>Current account</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label for="example-file-nowrap">CSV files</label>
+              <div class="upload-box upload-dropzone example-dropzone">
+                <h3>Drop CSV files here</h3>
+                <input class="input" id="example-file-nowrap" type="file">
+                <div class="helper">Defined width: 360px.</div>
+              </div>
+            </div>
+            <button class="button primary" type="button">Upload CSV</button>
+          </div>
+        </div>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

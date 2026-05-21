@@ -24,6 +24,11 @@ final class _roles extends PageContextFramework
         return 'Define role-based access and keep editing permissions organised in one place.';
     }
 
+    public function hiddenSiteContextSelectors(): array
+    {
+        return ['tax_year_id'];
+    }
+
     public function services(): array
     {
         return [];

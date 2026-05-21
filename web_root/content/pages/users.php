@@ -24,9 +24,9 @@ final class _users extends PageContextFramework
         return 'Review access history, manage user accounts, and maintain OTP security in one place.';
     }
 
-    public function showsTaxYearSelector(): bool
+    public function hiddenSiteContextSelectors(): array
     {
-        return false;
+        return ['tax_year_id'];
     }
 
     public function services(): array

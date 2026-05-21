@@ -10,6 +10,10 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'TestBootstrap.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'TestOutput.php';
 
+if (class_exists('GeneratedServiceClassTestHarness', false)) {
+    return;
+}
+
 final class GeneratedServiceClassTestHarness
 {
     /** @var array<class-string, object> */

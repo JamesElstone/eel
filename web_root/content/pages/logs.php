@@ -24,6 +24,11 @@ final class _logs extends PageContextFramework
         return 'Review system audit and history activity recorded by the application.';
     }
 
+    public function hiddenSiteContextSelectors(): array
+    {
+        return ['tax_year_id'];
+    }
+
     public function services(): array
     {
         return parent::services();

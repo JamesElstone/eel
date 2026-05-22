@@ -99,6 +99,18 @@ $harness->run(StatementUploadService::class, function (GeneratedServiceClassTest
         $harness->assertTrue(str_contains($sql, 'GROUP BY COALESCE(su.tax_year_id, ty.id),'));
         $harness->assertTrue(str_contains($sql, "COALESCE(NULLIF(su.file_sha256, ''), CONCAT('upload:', su.id))"));
     });
+
+    $harness->check(StatementUploadService::class, 'upload history period filter constrains unassigned uploads by statement dates', function () use ($harness, $service): void {
+        $method = (new ReflectionClass($service))->getMethod('uploadHistoryTaxYearFilterClause');
+        $method->setAccessible(true);
+
+        $sql = $method->invoke($service);
+
+        $harness->assertTrue(str_contains($sql, 'su.tax_year_id = ?'));
+        $harness->assertTrue(str_contains($sql, 'su.tax_year_id IS NULL'));
+        $harness->assertTrue(str_contains($sql, 'COALESCE(su.date_range_start, su.statement_month) <= ?'));
+        $harness->assertTrue(str_contains($sql, 'COALESCE(su.date_range_end, su.statement_month) >= ?'));
+    });
 });
 
 function statement_upload_test_row(int $rowNumber, string $amount, string $balance): array

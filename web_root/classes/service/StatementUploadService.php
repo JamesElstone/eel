@@ -3425,25 +3425,65 @@ final class StatementUploadService
         $filter = trim($filter);
 
 
-        if (!in_array($filter, ['all', 'action_required', 'ready', 'imported'], true)) {
+        if (!in_array($filter, ['all', 'action_required', 'ready', 'imported', 'duplicate_files', 'zero_row_csv'], true)) {
             $filter = 'all';
         }
 
+        $uploadHistory = self::annotateDuplicateFileUploads($this->fetchUploadHistory(respectSelectedTaxYear: $filter !== 'zero_row_csv'));
+
         if ($filter === 'all') {
-            return $this->fetchUploadHistory();
+            return $uploadHistory;
         }
 
-        return array_values(array_filter($this->fetchUploadHistory(), static function (array $row) use ($filter): bool {
-            
-            $status = (string)($row['workflow_status'] ?? '');
+        if ($filter === 'duplicate_files') {
+            return array_values(array_filter($uploadHistory, static fn(array $row): bool => !empty($row['duplicate_file'])));
+        }
 
-            return match ($filter) {
-                'action_required' => $status === 'uploaded',
-                'ready' => in_array($status, ['mapped', 'staged'], true),
-                'imported' => in_array($status, ['committed', 'completed'], true),
-                default => true,
-            };
-        }));
+        return array_values(array_filter($uploadHistory, static fn(array $row): bool => self::uploadMatchesHistoryFilter($row, $filter)));
+    }
+
+    private static function uploadMatchesHistoryFilter(array $row, string $filter): bool
+    {
+        $status = (string)($row['workflow_status'] ?? '');
+
+        return match ($filter) {
+            'action_required' => in_array($status, ['uploaded', 'needs_tax_year'], true),
+            'ready' => in_array($status, ['mapped', 'staged'], true),
+            'imported' => in_array($status, ['committed', 'completed'], true),
+            'zero_row_csv' => (int)($row['rows_parsed'] ?? 0) === 0,
+            default => true,
+        };
+    }
+
+    private static function annotateDuplicateFileUploads(array $rows): array
+    {
+        $counts = [];
+
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $fileHash = trim((string)($row['file_sha256'] ?? ''));
+
+            if ($fileHash === '') {
+                continue;
+            }
+
+            $counts[$fileHash] = ($counts[$fileHash] ?? 0) + 1;
+        }
+
+        foreach ($rows as &$row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $fileHash = trim((string)($row['file_sha256'] ?? ''));
+            $row['duplicate_file'] = $fileHash !== '' && (int)($counts[$fileHash] ?? 0) > 1;
+        }
+        unset($row);
+
+        return $rows;
     }
 
     public function fetchUploadSummaryByTaxYear(int $companyId): array
@@ -3519,7 +3559,7 @@ final class StatementUploadService
              GROUP BY upload_tax_year_id';
     }
 
-    public function fetchUploadHistory(?int $limit = null, int $offset = 0): array
+    public function fetchUploadHistory(?int $limit = null, int $offset = 0, bool $respectSelectedTaxYear = true): array
     {
 
         $accountingContext = new AccountingContextService();
@@ -3550,6 +3590,7 @@ final class StatementUploadService
                        su.rows_ready_to_import,
                        su.rows_parsed,
                        su.stored_filename AS stored_filename,
+                       su.file_sha256,
                        su.source_headers_json,
                        su.account_id,
                        COALESCE(ca.account_name, '') AS account_name,
@@ -3565,9 +3606,24 @@ final class StatementUploadService
 
         $params = [$companyId];
 
-        if ($taxYearId > 0) {
-            $sql .= " AND (su.tax_year_id = ? OR su.tax_year_id IS NULL)";
+        if ($respectSelectedTaxYear && $taxYearId > 0) {
+            $taxYear = (new TaxYearRepository())->fetchTaxYear($companyId, $taxYearId);
+
+            if ($taxYear === null) {
+                return [];
+            }
+
+            $periodStart = (string)($taxYear['period_start'] ?? '');
+            $periodEnd = (string)($taxYear['period_end'] ?? '');
+
+            if ($periodStart === '' || $periodEnd === '') {
+                return [];
+            }
+
+            $sql .= $this->uploadHistoryTaxYearFilterClause();
             $params[] = $taxYearId;
+            $params[] = $periodEnd;
+            $params[] = $periodStart;
         }
 
         $sql .= "
@@ -3594,6 +3650,18 @@ final class StatementUploadService
         return $rows;
     }
 
+    private function uploadHistoryTaxYearFilterClause(): string
+    {
+        return " AND (
+                            su.tax_year_id = ?
+                            OR (
+                                su.tax_year_id IS NULL
+                                AND COALESCE(su.date_range_start, su.statement_month) <= ?
+                                AND COALESCE(su.date_range_end, su.statement_month) >= ?
+                            )
+                        )";
+    }
+
     public function uploadsHistoryFilterOptions(): array
     {
         return [
@@ -3601,6 +3669,8 @@ final class StatementUploadService
             'action_required' => 'Action required',
             'ready' => 'Ready to import',
             'imported' => 'Imported',
+            'duplicate_files' => 'Duplicate files',
+            'zero_row_csv' => 'Zero-row CSVs',
         ];
     }
 }

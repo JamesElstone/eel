@@ -168,8 +168,9 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARAT
                         'month_key' => '2022-11-01',
                         'label' => 'Nov 2022',
                         'status' => 'warning',
-                        'value' => 3,
-                        'tooltip' => '3 rows uploaded. Continuity cannot be confirmed.',
+                        'value' => 5,
+                        'stat_value' => 3,
+                        'tooltip' => '5 rows uploaded. 3 rows need review.',
                     ],
                 ],
                 'legend' => [
@@ -189,6 +190,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARAT
             $harness->assertTrue(str_contains($html, 'data-month-key="2022-10-01"'));
             $harness->assertTrue(str_contains($html, 'title="No data supplied for October 2022."'));
             $harness->assertTrue(str_contains($html, 'aria-label="Sep 2022: Gap. No CSV rows found for September 2022."'));
+            $harness->assertTrue(str_contains($html, '5<br><span class="month-heatmap-cell-secondary-value">(3)</span>'));
+            $harness->assertTrue(str_contains($html, 'data-month-secondary-value="3"'));
             $harness->assertTrue(str_contains($html, 'data-preserve-title="true"'));
             $harness->assertTrue(str_contains($html, 'month-heatmap-legend'));
             $harness->assertTrue(str_contains($html, 'Needs review'));

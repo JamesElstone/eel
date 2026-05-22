@@ -593,7 +593,7 @@ final class ChartService
      * - title/label: Visible heading and aria-label for the heat map.
      * - id: Optional HTML id for the root element.
      * - start/start_date and end/end_date: Y-m-d range to render; inferred from months when omitted.
-     * - months: Items keyed by month_key with label, status, value, and tooltip/title.
+     * - months: Items keyed by month_key with label, status, value, secondary_value/stat_value, and tooltip/title.
      * - legend: Array of status => label values, true for defaults, or false to hide.
      * - missing_status: Status used for months inside the range with no supplied data.
      *
@@ -623,12 +623,18 @@ final class ChartService
                 'label' => $cursor->format('M Y'),
                 'status' => $missingStatus,
                 'value' => 0.0,
+                'secondary_value' => null,
                 'tooltip' => 'No data supplied for ' . $cursor->format('F Y') . '.',
             ];
             $status = $this->monthHeatmapStatus($item['status']);
             $statusLabel = $statusLabels[$status] ?? ucfirst($status);
             $label = trim($item['label']) !== '' ? $item['label'] : $cursor->format('M Y');
             $value = $this->formatValue($item['value']);
+            $displayValue = trim((string)($item['display_value'] ?? '')) !== ''
+                ? trim((string)$item['display_value'])
+                : $value;
+            $secondaryValue = $item['secondary_value'] ?? null;
+            $displaySecondaryValue = $secondaryValue === null ? '' : $this->formatValue($secondaryValue);
             $tooltip = trim($item['tooltip']) !== ''
                 ? $item['tooltip']
                 : $label . ': ' . $statusLabel . ' (' . $value . ')';
@@ -648,9 +654,12 @@ final class ChartService
                 'data-month-key' => $monthKey,
                 'data-month-status' => $status,
                 'data-month-value' => $value,
-            ]) . '>'
+            ] + ($displaySecondaryValue !== '' ? ['data-month-secondary-value' => $displaySecondaryValue] : [])) . '>'
                 . '<span class="month-heatmap-cell-label" aria-hidden="true">' . HelperFramework::escape($shortLabel) . '</span>'
-                . '<span class="month-heatmap-cell-value" aria-hidden="true">' . HelperFramework::escape($value) . '</span>'
+                . '<span class="month-heatmap-cell-value" aria-hidden="true">'
+                . HelperFramework::escape($displayValue)
+                . ($displaySecondaryValue !== '' ? '<br><span class="month-heatmap-cell-secondary-value">(' . HelperFramework::escape($displaySecondaryValue) . ')</span>' : '')
+                . '</span>'
                 . '<span class="sr-only">' . HelperFramework::escape($ariaLabel) . '</span>'
                 . '</button>';
 
@@ -962,6 +971,7 @@ final class ChartService
                         'label' => 'May 2023',
                         'status' => 'pass',
                         'value' => 6,
+                        'stat_value' => 2,
                         'tooltip' => '6 rows uploaded. Opening balance matches previous closing balance.',
                     ],
                     [
@@ -1058,7 +1068,7 @@ final class ChartService
 
     /**
      * @param array<int, mixed> $months
-     * @return array<string, array{label: string, status: string, value: float, tooltip: string}>
+     * @return array<string, array{label: string, status: string, value: float, display_value: string, secondary_value: float|null, tooltip: string}>
      */
     private function normaliseMonthHeatmapMonths(array $months): array
     {
@@ -1079,15 +1089,34 @@ final class ChartService
                 $value = 0.0;
             }
 
+            $secondaryValue = $this->normaliseOptionalMonthHeatmapValue($month['secondary_value'] ?? $month['stat_value'] ?? null);
+
             $normalised[$monthKey] = [
                 'label' => trim((string)($month['label'] ?? '')),
                 'status' => $this->monthHeatmapStatus((string)($month['status'] ?? 'muted')),
                 'value' => $value,
+                'display_value' => trim((string)($month['display_value'] ?? '')),
+                'secondary_value' => $secondaryValue,
                 'tooltip' => trim((string)($month['tooltip'] ?? $month['title'] ?? '')),
             ];
         }
 
         ksort($normalised);
+
+        return $normalised;
+    }
+
+    private function normaliseOptionalMonthHeatmapValue(mixed $value): ?float
+    {
+        if ($value === null || trim((string)$value) === '') {
+            return null;
+        }
+
+        $normalised = (float)$value;
+
+        if (!is_finite($normalised) || $normalised < 0) {
+            return null;
+        }
 
         return $normalised;
     }

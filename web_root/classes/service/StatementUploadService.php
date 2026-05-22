@@ -3418,6 +3418,95 @@ final class StatementUploadService
         return $months;
     }
 
+    public function buildUniqueUploadedRowsByMonth(?int $companyId = null, ?int $taxYearId = null): array
+    {
+        $accountingContext = new AccountingContextService();
+        $companyId = HelperFramework::sanitiseId($companyId, $accountingContext->companyId());
+        $taxYearId = HelperFramework::sanitiseId($taxYearId, $accountingContext->taxYearId());
+
+        if ($companyId <= 0 || $taxYearId <= 0) {
+            return [];
+        }
+
+        $taxYear = (new TaxYearRepository())->fetchTaxYear($companyId, $taxYearId);
+
+        if ($taxYear === null || empty($taxYear['period_start']) || empty($taxYear['period_end'])) {
+            return [];
+        }
+
+        $stmt = InterfaceDB::prepare($this->uniqueUploadedRowsByMonthSql());
+        $stmt->execute([
+            $companyId,
+            $taxYearId,
+            (string)$taxYear['period_start'],
+            (string)$taxYear['period_end'],
+            $companyId,
+            $taxYearId,
+            (string)$taxYear['period_start'],
+            (string)$taxYear['period_end'],
+            (string)$taxYear['period_start'],
+            (string)$taxYear['period_end'],
+        ]);
+
+        $rowsByMonth = [];
+
+        foreach ($stmt->fetchAll() as $row) {
+            $monthKey = (string)($row['month_key'] ?? '');
+
+            if ($monthKey !== '') {
+                $rowsByMonth[$monthKey] = (int)($row['raw_row_count'] ?? 0);
+            }
+        }
+
+        return $rowsByMonth;
+    }
+
+    private function uniqueUploadedRowsByMonthSql(): string
+    {
+        return "SELECT month_key,
+                       SUM(raw_row_count) AS raw_row_count
+                FROM (
+                    SELECT month_key,
+                           COUNT(*) AS raw_row_count
+                    FROM (
+                        SELECT DATE_FORMAT(sir.chosen_txn_date, '%Y-%m-01') AS month_key,
+                               COALESCE(NULLIF(su.file_sha256, ''), CONCAT('upload:', su.id)) AS file_key,
+                               sir.`row_number`
+                        FROM statement_import_rows sir
+                        INNER JOIN statement_uploads su
+                           ON su.id = sir.upload_id
+                          AND su.company_id = ?
+                        WHERE sir.tax_year_id = ?
+                          AND sir.chosen_txn_date BETWEEN ? AND ?
+                        GROUP BY DATE_FORMAT(sir.chosen_txn_date, '%Y-%m-01'),
+                                 COALESCE(NULLIF(su.file_sha256, ''), CONCAT('upload:', su.id)),
+                                 sir.`row_number`
+                    ) unique_import_rows
+                    GROUP BY month_key
+                    UNION ALL
+                    SELECT DATE_FORMAT(su.statement_month, '%Y-%m-01') AS month_key,
+                           MAX(su.rows_parsed) AS raw_row_count
+                    FROM statement_uploads su
+                    LEFT JOIN statement_import_rows sir
+                       ON sir.upload_id = su.id
+                    WHERE su.company_id = ?
+                      AND sir.id IS NULL
+                      AND su.rows_parsed > 0
+                      AND (
+                          su.tax_year_id = ?
+                          OR (
+                              su.tax_year_id IS NULL
+                              AND su.statement_month BETWEEN ? AND ?
+                          )
+                      )
+                      AND su.statement_month BETWEEN ? AND ?
+                    GROUP BY DATE_FORMAT(su.statement_month, '%Y-%m-01'),
+                             COALESCE(NULLIF(su.file_sha256, ''), CONCAT('upload:', su.id))
+                ) monthly_unique_rows
+                GROUP BY month_key
+                ORDER BY month_key";
+    }
+
     public function filterUploadHistory(string $filter = 'all'): array
     {
     

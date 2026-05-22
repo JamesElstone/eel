@@ -10,6 +10,14 @@ declare(strict_types=1);
 final class BankingReconciliationService
 {
     public function fetchBankAccountPanels(int $companyId, int $taxYearId, int $bankNominalId): array {
+        return $this->fetchBankAccountPanelsInternal($companyId, $taxYearId, $bankNominalId, false);
+    }
+
+    public function fetchBankAccountPanelsWithAdjacentStatements(int $companyId, int $taxYearId, int $bankNominalId): array {
+        return $this->fetchBankAccountPanelsInternal($companyId, $taxYearId, $bankNominalId, true);
+    }
+
+    private function fetchBankAccountPanelsInternal(int $companyId, int $taxYearId, int $bankNominalId, bool $includeAdjacentStatements): array {
         if ($companyId <= 0 || $taxYearId <= 0) {
             return [];
         }
@@ -20,7 +28,8 @@ final class BankingReconciliationService
             return [];
         }
 
-        $uploadsByAccount = $this->fetchUploadsByAccount($companyId, $taxYearId, array_column($accounts, 'id'));
+        $taxYear = $includeAdjacentStatements ? (new TaxYearRepository())->fetchTaxYear($companyId, $taxYearId) : null;
+        $uploadsByAccount = $this->fetchUploadsByAccount($companyId, $taxYearId, array_column($accounts, 'id'), $taxYear);
         $rowsByUpload = $this->fetchRowsByUpload($this->flattenUploadIds($uploadsByAccount));
         $ledgerDeltas = $bankNominalId > 0
             ? $this->fetchLedgerBankDeltas($companyId, $taxYearId, $bankNominalId)
@@ -75,9 +84,13 @@ final class BankingReconciliationService
         ]);
     }
 
-    private function fetchUploadsByAccount(int $companyId, int $taxYearId, array $accountIds): array {
+    private function fetchUploadsByAccount(int $companyId, int $taxYearId, array $accountIds, ?array $continuityWindowTaxYear = null): array {
         if ($accountIds === []) {
             return [];
+        }
+
+        if ($continuityWindowTaxYear !== null) {
+            return $this->fetchUploadsByAccountWithAdjacentStatements($companyId, $taxYearId, $accountIds, $continuityWindowTaxYear);
         }
 
         $placeholders = implode(', ', array_fill(0, count($accountIds), '?'));
@@ -110,6 +123,121 @@ final class BankingReconciliationService
         }
 
         return $grouped;
+    }
+
+    private function fetchUploadsByAccountWithAdjacentStatements(int $companyId, int $taxYearId, array $accountIds, array $taxYear): array {
+        $periodStart = trim((string)($taxYear['period_start'] ?? ''));
+        $periodEnd = trim((string)($taxYear['period_end'] ?? ''));
+
+        if ($periodStart === '' || $periodEnd === '') {
+            return $this->fetchUploadsByAccount($companyId, $taxYearId, $accountIds);
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($accountIds), '?'));
+        $params = array_merge(
+            [$companyId, $taxYearId, $periodStart, $periodEnd],
+            array_map('intval', $accountIds)
+        );
+        $stmt = InterfaceDB::prepare(
+            'SELECT id,
+                    company_id,
+                    tax_year_id,
+                    account_id,
+                    original_filename,
+                    statement_month,
+                    date_range_start,
+                    date_range_end,
+                    workflow_status,
+                    rows_parsed,
+                    rows_ready_to_import,
+                    rows_committed
+             FROM statement_uploads
+             WHERE company_id = ?
+               AND (
+                    tax_year_id = ?
+                    OR COALESCE(date_range_end, date_range_start, statement_month) < ?
+                    OR COALESCE(date_range_start, statement_month, date_range_end) > ?
+               )
+               AND account_id IN (' . $placeholders . ')
+             ORDER BY account_id ASC, COALESCE(date_range_start, statement_month, date_range_end) ASC, id ASC'
+        );
+        $stmt->execute($params);
+
+        $selected = [];
+        $previous = [];
+        $next = [];
+
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $accountId = (int)$row['account_id'];
+
+            if ((int)($row['tax_year_id'] ?? 0) === $taxYearId) {
+                $selected[$accountId][] = $row;
+                continue;
+            }
+
+            $endDate = $this->uploadEndDate($row);
+            if ($endDate !== '' && $endDate < $periodStart) {
+                if (!isset($previous[$accountId]) || $endDate > $this->uploadEndDate($previous[$accountId])) {
+                    $previous[$accountId] = $row;
+                }
+
+                continue;
+            }
+
+            $startDate = $this->uploadStartDate($row);
+            if ($startDate !== '' && $startDate > $periodEnd) {
+                if (!isset($next[$accountId]) || $startDate < $this->uploadStartDate($next[$accountId])) {
+                    $next[$accountId] = $row;
+                }
+            }
+        }
+
+        $grouped = [];
+        foreach ($accountIds as $accountId) {
+            $accountId = (int)$accountId;
+            $uploads = [];
+
+            if (isset($previous[$accountId])) {
+                $uploads[] = $previous[$accountId];
+            }
+
+            foreach ($selected[$accountId] ?? [] as $upload) {
+                $uploads[] = $upload;
+            }
+
+            if (isset($next[$accountId])) {
+                $uploads[] = $next[$accountId];
+            }
+
+            usort($uploads, fn(array $left, array $right): int => strcmp($this->uploadStartDate($left), $this->uploadStartDate($right)) ?: ((int)$left['id'] <=> (int)$right['id']));
+            $grouped[$accountId] = $uploads;
+        }
+
+        return $grouped;
+    }
+
+    private function uploadStartDate(array $upload): string {
+        foreach (['date_range_start', 'statement_month', 'date_range_end'] as $field) {
+            $value = trim((string)($upload[$field] ?? ''));
+
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return '';
+    }
+
+    private function uploadEndDate(array $upload): string {
+        foreach (['date_range_end', 'date_range_start', 'statement_month'] as $field) {
+            $value = trim((string)($upload[$field] ?? ''));
+
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return '';
     }
 
     private function flattenUploadIds(array $uploadsByAccount): array {

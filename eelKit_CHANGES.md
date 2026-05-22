@@ -1,5 +1,107 @@
 # eelKit Changes
 
+## Month Heat Map component
+
+Feature name: `month_heatmap`.
+
+eelKit now has a compact, server-rendered month-level heatmap for showing status coverage across arbitrary accounting or reporting periods. It is intended for flows such as statement uploads where users need to spot missing months, balance-continuity gaps, or months that need manual review at a glance.
+
+The component lives in `ChartService` as `monthHeatmap(array $options): string`.
+
+### Basic usage
+
+```php
+$html = $chartService->monthHeatmap([
+    'id' => 'statement-coverage',
+    'label' => 'Statement coverage',
+    'start' => '2022-09-05',
+    'end' => '2023-09-30',
+    'months' => [
+        [
+            'month_key' => '2022-09-01',
+            'label' => 'Sep 2022',
+            'status' => 'fail',
+            'value' => 0,
+            'tooltip' => 'No CSV rows found for September 2022. Upload the missing statement or confirm this month had no transactions.',
+        ],
+        [
+            'month_key' => '2022-10-01',
+            'label' => 'Oct 2022',
+            'status' => 'pass',
+            'value' => 5,
+            'tooltip' => '5 rows uploaded. Opening balance matches previous closing balance.',
+        ],
+    ],
+    'legend' => [
+        'pass' => 'Covered',
+        'warning' => 'Needs review',
+        'fail' => 'Gap',
+        'muted' => 'No data',
+    ],
+]);
+```
+
+`start`/`end` and `start_date`/`end_date` are both supported. The renderer normalises those dates to month boundaries and renders every month between them, so periods such as September to September, short quarters, and periods longer than 12 months all work without Jan-Dec assumptions.
+
+If `start` or `end` are omitted, the range is inferred from the first and last valid `month_key` values in `months`. If a month inside the rendered range has no supplied item, it is rendered with `missing_status`, which defaults to `fail`.
+
+### Month item fields
+
+Each `months` item supports:
+
+- `month_key`: Any valid `Y-m-d` date in the month. It is normalised to `Y-m-01`.
+- `label`: Visible/a11y month label, for example `Sep 2022`.
+- `status`: One of `pass`, `warning`, `fail`, or `muted`. Unknown statuses fall back to `muted`.
+- `value`: Non-negative numeric count/value displayed inside the cell. Invalid or negative values become `0`.
+- `tooltip` or `title`: Native hover/focus tooltip text. `tooltip` takes precedence.
+
+Status meanings used by the example:
+
+- `pass`: Month covered and continuity OK.
+- `warning`: Rows exist but continuity cannot be confirmed.
+- `fail`: Missing month or balance mismatch.
+- `muted`: Outside selected range, unavailable, future, or intentionally no data.
+
+### Markup and accessibility
+
+The component renders plain HTML and no JavaScript. Each month is a keyboard-focusable `<button type="button">` with:
+
+- `title` for native tooltip behaviour
+- `aria-label` containing the month, legend label, and tooltip detail
+- `data-preserve-title="true"` to match the existing calendar heatmap tooltip pattern
+- `data-month-key`, `data-month-status`, and `data-month-value` for downstream behaviour if needed
+
+The root element uses `role="group"` and an accessible label derived from `label` or `title`.
+
+### CSS hooks
+
+The styling is in `web_root/css/index.css` and uses these semantic classes:
+
+- `.month-heatmap`
+- `.month-heatmap-scroll`
+- `.month-heatmap-cell`
+- `.month-heatmap-cell--pass`
+- `.month-heatmap-cell--warning`
+- `.month-heatmap-cell--fail`
+- `.month-heatmap-cell--muted`
+- `.month-heatmap-legend`
+- `.month-heatmap-legend-swatch`
+
+The default layout is a compact single horizontal row. It uses horizontal scrolling when the rendered period is wider than the available card space.
+
+### Demo and tests
+
+`ChartService::demoCalendarCharts()` now returns a `month_heatmap` demo alongside the existing `calendar_heatmap`. The example is rendered directly below the calendar heatmap in `web_root/content/cards/chart_calendar_heatmap.php`.
+
+Test coverage is in `web_root/tests/test_ChartService.php` and checks:
+
+- range rendering over odd accounting-period dates
+- status class output
+- missing-month fallback output
+- `title`, `aria-label`, and `data-preserve-title`
+- demo output includes all four statuses
+- no inline styles, scripts, or event handler attributes
+
 ## Generic site context extension point
 
 Feature name: `site_context`.

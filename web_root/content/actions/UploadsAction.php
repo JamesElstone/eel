@@ -37,10 +37,10 @@ final class UploadsAction implements ActionInterfaceFramework
             'page' => $request->input('page'),
         ], $_FILES);
 
-        [$flashMessages, $flashErrors] = $this->messagesFromResult($result);
+        $isBatchUpload = !empty($result['batch_upload']);
+        [$flashMessages, $flashErrors] = $isBatchUpload ? [[], []] : $this->messagesFromResult($result);
 
         if (!empty($result['success'])) {
-            $isBatchUpload = !empty($result['batch_upload']);
             $selectedUploadId = (int)($result['statement_upload_id'] ?? 0);
             $autoStaged = false;
 
@@ -57,30 +57,35 @@ final class UploadsAction implements ActionInterfaceFramework
 
             if ($isBatchUpload && is_array($result['items'] ?? null)) {
                 foreach ($result['items'] as $item) {
-                    if (!is_array($item) || empty($item['success'])) {
+                    if (!is_array($item)) {
                         continue;
                     }
 
+                    $itemMessages = array_values(array_map('strval', (array)($item['warnings'] ?? [])));
+                    $itemErrors = array_values(array_map('strval', (array)($item['errors'] ?? [])));
+
                     $itemUploadId = (int)($item['statement_upload_id'] ?? 0);
-                    if ($itemUploadId > 0 && (string)($item['workflow_status'] ?? '') === 'uploaded') {
+                    if (!empty($item['success']) && $itemUploadId > 0 && (string)($item['workflow_status'] ?? '') === 'uploaded') {
                         $this->attemptAutoStageUpload(
                             $request,
                             $services,
                             $itemUploadId,
-                            $flashMessages,
-                            $flashErrors,
-                            (string)($item['filename'] ?? 'CSV')
+                            $itemMessages,
+                            $itemErrors
                         );
                     }
 
-                    $filename = (string)($item['filename'] ?? 'CSV');
-                    $flashMessages[] = !empty($item['already_uploaded'])
-                        ? $filename . ': already uploaded, existing record reopened.'
-                        : $filename . ': uploaded successfully.';
+                    [$itemFlashMessage, $itemFlashErrors] = $this->batchUploadItemFlash($item, $itemMessages, $itemErrors);
+                    if ($itemFlashMessage !== '') {
+                        $flashMessages[] = $itemFlashMessage;
+                    }
+                    if ($itemFlashErrors !== '') {
+                        $flashErrors[] = $itemFlashErrors;
+                    }
                 }
             }
 
-            if (!$autoStaged) {
+            if (!$autoStaged && !$isBatchUpload) {
                 if (!empty($result['offline_update']) && $selectedUploadId <= 0) {
                     return $this->actionResult(
                         $request,
@@ -113,6 +118,28 @@ final class UploadsAction implements ActionInterfaceFramework
             $flashErrors,
             ['upload_id' => (int)($result['statement_upload_id'] ?? 0)]
         );
+    }
+
+    private function batchUploadItemFlash(array $item, array $messages, array $errors): array
+    {
+        $filename = (string)($item['filename'] ?? 'CSV');
+        $success = !empty($item['success']);
+        $status = $success
+            ? (!empty($item['already_uploaded'])
+                ? 'already uploaded, existing record reopened.'
+                : 'uploaded successfully.')
+            : 'upload failed.';
+        $details = array_values(array_filter(
+            array_map('trim', array_map('strval', array_merge($messages, $errors))),
+            static fn(string $message): bool => $message !== ''
+        ));
+        $message = $filename . ': ' . $status;
+
+        if ($details !== []) {
+            $message .= ' ' . implode(' ', $details);
+        }
+
+        return $success ? [$message, ''] : ['', $message];
     }
 
     private function previewUpload(RequestFramework $request, PageServiceFramework $services): ActionResultFramework

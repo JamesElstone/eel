@@ -203,6 +203,21 @@ final class StatementUploadService
 
         if ($existingUpload !== null) {
             $warnings[] = $this->buildDuplicateFileWarning($existingUpload);
+            return [
+                'http_status' => 200,
+                'success' => true,
+                'already_uploaded' => true,
+                'matched_existing_file_hash' => true,
+                'resume_allowed' => true,
+                'statement_upload_id' => (int)($existingUpload['id'] ?? 0),
+                'rows_parsed' => (int)($existingUpload['rows_parsed'] ?? 0),
+                'rows_inserted' => (int)($existingUpload['rows_inserted'] ?? 0),
+                'rows_duplicate' => (int)($existingUpload['rows_duplicate'] ?? 0),
+                'workflow_status' => (string)($existingUpload['workflow_status'] ?? ''),
+                'source_headers' => $this->decodeJsonArray((string)($existingUpload['source_headers_json'] ?? '')),
+                'warnings' => $warnings,
+                'errors' => [],
+            ];
         }
 
         $sourceHeaders = $this->readSourceHeaders($uploadedFile['tmp_name'], $errors);
@@ -2858,13 +2873,13 @@ final class StatementUploadService
 
         if ($rowsParsed === 0 && $rowsCommitted === 0) {
             return sprintf(
-                'This exact file matches earlier upload #%d. That earlier upload also contained no transaction rows, so this usually means the CSV only has headers. A fresh upload record will still be created.',
+                'This exact file matches earlier upload #%d. That earlier upload also contained no transaction rows, so this usually means the CSV only has headers. Existing upload record reopened; no duplicate record was created.',
                 $existingUploadId
             );
         }
 
         return sprintf(
-            'This exact file has already been uploaded before as upload #%d. A fresh upload record will be created, and duplicate transactions will still be filtered using row checksums when you preview or commit.',
+            'This exact file has already been uploaded before as upload #%d. Existing upload record reopened; no duplicate record was created.',
             $existingUploadId
         );
     }
@@ -2882,6 +2897,7 @@ final class StatementUploadService
              FROM statement_uploads
              WHERE company_id = :company_id
                AND file_sha256 = :file_sha256
+             ORDER BY id ASC
              LIMIT 1'
         );
         $stmt->execute([
@@ -3444,20 +3460,7 @@ final class StatementUploadService
             return [];
         }
 
-        $rows = InterfaceDB::fetchAll(
-            'SELECT COALESCE(su.tax_year_id, ty.id) AS tax_year_id,
-                    COUNT(*) AS upload_count,
-                    SUM(su.rows_parsed) AS row_count
-             FROM statement_uploads su
-             LEFT JOIN tax_years ty
-                ON su.tax_year_id IS NULL
-               AND ty.company_id = su.company_id
-               AND su.statement_month BETWEEN ty.period_start AND ty.period_end
-             WHERE su.company_id = :company_id
-               AND COALESCE(su.tax_year_id, ty.id) IS NOT NULL
-             GROUP BY COALESCE(su.tax_year_id, ty.id)',
-            ['company_id' => $companyId]
-        );
+        $rows = InterfaceDB::fetchAll($this->uploadSummaryByTaxYearSql(), ['company_id' => $companyId]);
 
         $summaryByTaxYearId = [];
         foreach ($rows as $row) {
@@ -3492,6 +3495,28 @@ final class StatementUploadService
         }
 
         return $summary;
+    }
+
+    private function uploadSummaryByTaxYearSql(): string
+    {
+        return 'SELECT upload_tax_year_id AS tax_year_id,
+                    COUNT(*) AS upload_count,
+                    SUM(rows_parsed) AS row_count
+             FROM (
+                 SELECT COALESCE(su.tax_year_id, ty.id) AS upload_tax_year_id,
+                        COALESCE(NULLIF(su.file_sha256, \'\'), CONCAT(\'upload:\', su.id)) AS upload_identity,
+                        MAX(su.rows_parsed) AS rows_parsed
+                 FROM statement_uploads su
+                 LEFT JOIN tax_years ty
+                    ON su.tax_year_id IS NULL
+                   AND ty.company_id = su.company_id
+                   AND su.statement_month BETWEEN ty.period_start AND ty.period_end
+                 WHERE su.company_id = :company_id
+                   AND COALESCE(su.tax_year_id, ty.id) IS NOT NULL
+                 GROUP BY COALESCE(su.tax_year_id, ty.id),
+                          COALESCE(NULLIF(su.file_sha256, \'\'), CONCAT(\'upload:\', su.id))
+             ) unique_uploads
+             GROUP BY upload_tax_year_id';
     }
 
     public function fetchUploadHistory(?int $limit = null, int $offset = 0): array

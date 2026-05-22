@@ -21,7 +21,7 @@ final class _dashboard extends PageContextFramework
 
     public function subtitle(): string
     {
-        return 'Track the new page architecture with convention-led cards, shared rendering, and AJAX-only card updates.';
+        return 'At a glance view of your accounts.';
     }
 
     public function services(): array

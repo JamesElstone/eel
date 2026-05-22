@@ -106,6 +106,30 @@ $harness->run(DashboardRepository::class, function (GeneratedServiceClassTestHar
         $harness->assertCount(0, $activity);
     });
 
+    $harness->check(DashboardRepository::class, 'adds missing transaction action when selected year has no transactions', function () use ($harness): void {
+        $repository = new DashboardRepository();
+        $method = new ReflectionMethod(DashboardRepository::class, 'appendMissingTransactionAction');
+        $method->setAccessible(true);
+        $activity = [];
+
+        $method->invokeArgs($repository, [&$activity, 0]);
+
+        $harness->assertCount(1, $activity);
+        $harness->assertSame('Import transactions for this year', $activity[0]['title'] ?? '');
+        $harness->assertSame('The selected tax year is missing any transaction records.', $activity[0]['detail'] ?? '');
+    });
+
+    $harness->check(DashboardRepository::class, 'skips missing transaction action when selected year has transactions', function () use ($harness): void {
+        $repository = new DashboardRepository();
+        $method = new ReflectionMethod(DashboardRepository::class, 'appendMissingTransactionAction');
+        $method->setAccessible(true);
+        $activity = [];
+
+        $method->invokeArgs($repository, [&$activity, 1]);
+
+        $harness->assertCount(0, $activity);
+    });
+
     $harness->check('_dashboard_action_queueCard', 'renders action queue from page context', function () use ($harness): void {
         $card = new _dashboard_action_queueCard();
         $html = $card->render([

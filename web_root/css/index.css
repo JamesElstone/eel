@@ -1838,6 +1838,116 @@ table.table-condensed .select {
   border-radius: 3px;
 }
 
+.month-heatmap {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding-bottom: 2px;
+}
+
+.month-heatmap-heading h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.month-heatmap-scroll {
+  display: flex;
+  gap: 5px;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 2px 2px 4px;
+}
+
+.month-heatmap-cell {
+  appearance: none;
+  width: 38px;
+  height: 32px;
+  flex: 0 0 auto;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 1px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  cursor: help;
+  font: inherit;
+  padding: 2px;
+}
+
+.month-heatmap-cell-label {
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.month-heatmap-cell-value {
+  font-family: Roboto, monospace;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.month-heatmap-cell--pass {
+  background: var(--success-soft);
+  border-color: #86d39d;
+  color: var(--success);
+}
+
+.month-heatmap-cell--warning {
+  background: var(--warning-soft);
+  border-color: #f1c46f;
+  color: var(--warning);
+}
+
+.month-heatmap-cell--fail {
+  background: var(--danger-soft);
+  border-color: #f0a3a3;
+  color: var(--danger);
+}
+
+.month-heatmap-cell--muted {
+  background: var(--panel-soft);
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+.month-heatmap-cell:hover,
+.month-heatmap-cell:focus-visible {
+  border-color: var(--accent);
+}
+
+.month-heatmap-cell:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.month-heatmap-legend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  flex-wrap: wrap;
+}
+
+.month-heatmap-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.month-heatmap-legend-swatch {
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  flex: 0 0 auto;
+}
+
 .document-stack {
   display: grid;
   gap: 8px;

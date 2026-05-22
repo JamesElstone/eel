@@ -73,6 +73,7 @@ final class _chart_calendar_heatmapCard extends CardBaseFramework
 
         return '<div class="chart-demo-grid chart-demo-grid-wide">'
             . $this->chartPanel((string)($charts['calendar_heatmap'] ?? ''), $selectedDate, $context)
+            . $this->monthChartPanel((string)($charts['month_heatmap'] ?? ''))
             . '</div>';
     }
 
@@ -88,6 +89,13 @@ final class _chart_calendar_heatmapCard extends CardBaseFramework
             . $chartHtml
             . '</form>'
             . '<p class="helper calendar-heatmap-selection">Selected Day: ' . HelperFramework::escape($selectedDate) . '</p>'
+            . '</div>';
+    }
+
+    private function monthChartPanel(string $chartHtml): string
+    {
+        return '<div class="chart-panel chart-panel-wide">'
+            . $chartHtml
             . '</div>';
     }
 

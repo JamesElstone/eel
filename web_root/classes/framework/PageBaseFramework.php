@@ -9,6 +9,11 @@ declare(strict_types=1);
 
 abstract class PageBaseFramework implements PageInterfaceFramework
 {
+    public function cards(): array
+    {
+        return [];
+    }
+
     public function pageStackClass(): string
     {
         return '';
@@ -178,6 +183,10 @@ abstract class PageBaseFramework implements PageInterfaceFramework
             }
         }
 
-        return $cards;
+        foreach ($this->cards() as $cardKey) {
+            $cards[] = (string)$cardKey;
+        }
+
+        return array_values(array_unique($cards));
     }
 }

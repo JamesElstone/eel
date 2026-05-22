@@ -14,3 +14,14 @@ $harness->check(PageBaseFramework::class, 'loads as an abstract base class', fun
     $reflection = new ReflectionClass(PageBaseFramework::class);
     $harness->assertTrue($reflection->isAbstract());
 });
+
+$harness->check(PageBaseFramework::class, 'provides empty default cards list', function () use ($harness): void {
+    $page = new class extends PageBaseFramework {
+        public function id(): string { return 'default_cards_test'; }
+        public function title(): string { return 'Default Cards Test'; }
+        public function subtitle(): string { return ''; }
+        public function services(): array { return []; }
+    };
+
+    $harness->assertSame([], $page->cards());
+});

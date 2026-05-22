@@ -26,6 +26,7 @@ class PageRendererLegacyLayoutTestPage implements PageInterfaceFramework
 final class PageRendererCardLayoutTestPage extends PageRendererLegacyLayoutTestPage
 {
     public function id(): string { return 'card_layout_test'; }
+    public function cards(): array { return ['alpha', 'beta', 'epsilon']; }
 
     public function cardLayout(): array
     {
@@ -90,7 +91,7 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
     $harness->check(PageRendererFramework::class, 'normalises cardLayout tabs and filters denied cards', function () use ($harness, $instance, $resolveCardLayout, $shouldRenderTabs): void {
         $layout = $resolveCardLayout->invoke($instance, new PageRendererCardLayoutTestPage(), [
             'page' => [
-                'page_cards' => ['alpha', 'beta', 'gamma', 'delta'],
+                'page_cards' => ['alpha', 'beta', 'gamma', 'delta', 'epsilon'],
             ],
         ]);
 
@@ -98,7 +99,7 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
             [
                 'tab' => 'Details',
                 'layout' => 'stack',
-                'cards' => ['alpha', 'beta'],
+                'cards' => ['alpha', 'beta', 'epsilon'],
                 'explicit' => true,
             ],
             [

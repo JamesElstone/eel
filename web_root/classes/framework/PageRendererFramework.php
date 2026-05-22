@@ -487,6 +487,20 @@ final class PageRendererFramework
             ];
         }
 
+        if ($usesCardLayout && $layout !== []) {
+            $placedCards = [];
+            foreach ($layout as $entry) {
+                foreach ((array)($entry['cards'] ?? []) as $cardKey) {
+                    $placedCards[] = (string)$cardKey;
+                }
+            }
+
+            $unplacedCards = array_values(array_diff($allowedCards, $placedCards));
+            if ($unplacedCards !== []) {
+                $layout[0]['cards'] = array_values(array_merge($layout[0]['cards'], $unplacedCards));
+            }
+        }
+
         return $layout;
     }
 

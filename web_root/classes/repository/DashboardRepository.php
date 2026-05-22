@@ -57,6 +57,11 @@ final class DashboardRepository
         );
 
         if ($taxYearId > 0) {
+            $transactionCount = InterfaceDB::countWhere('transactions', [
+                'company_id' => $companyId,
+                'tax_year_id' => $taxYearId,
+            ]);
+
             $stats['unreconciled_items'] = InterfaceDB::countWhere('transactions', [
                 'company_id' => $companyId,
                 'tax_year_id' => $taxYearId,
@@ -69,6 +74,8 @@ final class DashboardRepository
                 'source_type' => 'manual',
             ]);
             $stats['staged_upload_rows'] = $this->countStagedUploadRows($companyId, $taxYearId);
+
+            $this->appendMissingTransactionAction($data['activity'], (int)$transactionCount);
         }
 
         $data['stats'] = $stats;
@@ -199,6 +206,18 @@ final class DashboardRepository
                 'detail' => 'No bank statement files have been uploaded for this company yet.',
             ];
         }
+    }
+
+    private function appendMissingTransactionAction(array &$activity, int $transactionCount): void
+    {
+        if ($transactionCount > 0) {
+            return;
+        }
+
+        $activity[] = [
+            'title' => 'Import transactions for this year',
+            'detail' => 'The selected tax year is missing any transaction records.',
+        ];
     }
 
     private function countStagedUploadRows(int $companyId, int $taxYearId): int

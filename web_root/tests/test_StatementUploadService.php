@@ -72,6 +72,33 @@ $harness->run(StatementUploadService::class, function (GeneratedServiceClassTest
         $harness->assertSame(3, $break['break_row_number'] ?? null);
         $harness->assertSame([1, 2], $break['trusted_row_numbers'] ?? null);
     });
+
+    $harness->check(StatementUploadService::class, 'duplicate file warning states no new upload record is created', function () use ($harness, $service): void {
+        $method = (new ReflectionClass($service))->getMethod('buildDuplicateFileWarning');
+        $method->setAccessible(true);
+
+        $message = $method->invoke($service, [
+            'id' => 42,
+            'rows_parsed' => 93,
+            'rows_committed' => 0,
+        ]);
+
+        $harness->assertTrue(str_contains($message, 'upload #42'));
+        $harness->assertTrue(str_contains($message, 'no duplicate record was created'));
+        $harness->assertSame(false, str_contains($message, 'A fresh upload record will be created'));
+    });
+
+    $harness->check(StatementUploadService::class, 'upload summary query deduplicates exact file hashes', function () use ($harness, $service): void {
+        $method = (new ReflectionClass($service))->getMethod('uploadSummaryByTaxYearSql');
+        $method->setAccessible(true);
+
+        $sql = $method->invoke($service);
+
+        $harness->assertTrue(str_contains($sql, 'unique_uploads'));
+        $harness->assertTrue(str_contains($sql, 'su.file_sha256'));
+        $harness->assertTrue(str_contains($sql, 'GROUP BY COALESCE(su.tax_year_id, ty.id),'));
+        $harness->assertTrue(str_contains($sql, "COALESCE(NULLIF(su.file_sha256, ''), CONCAT('upload:', su.id))"));
+    });
 });
 
 function statement_upload_test_row(int $rowNumber, string $amount, string $balance): array

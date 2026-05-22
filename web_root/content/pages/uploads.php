@@ -28,13 +28,7 @@ final class _uploads extends PageContextFramework
     public function cards(): array
     {
         return [
-            'uploads_bank_transactions', 
-            'uploads_details', 
-            // 'dump_context', 
-            'statement_field_mapping', 
-            'uploads_validate_commit', 
-            'transactions_monthly_status', 
-            'csv_export',
+            'dump_context', 
         ];
     }
 

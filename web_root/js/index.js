@@ -2541,6 +2541,23 @@
     });
 
     document.addEventListener('click', async (event) => {
+        const taxYearSummaryButton = event.target instanceof Element
+            ? event.target.closest('[data-tax-year-summary-button="true"]')
+            : null;
+
+        if (taxYearSummaryButton instanceof HTMLButtonElement) {
+            event.preventDefault();
+            const taxYearId = String(taxYearSummaryButton.dataset.taxYearId || '').trim();
+            const taxYearSelect = document.querySelector('.site-context-slot select[data-site-context-key="tax_year_id"]');
+
+            if (taxYearId !== '' && taxYearSelect instanceof HTMLSelectElement) {
+                taxYearSelect.value = taxYearId;
+                taxYearSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+
+            return;
+        }
+
         const link = event.target instanceof Element ? event.target.closest('[data-ajax-link="true"]') : null;
         if (!(link instanceof HTMLAnchorElement)) {
             const title = event.target instanceof Element ? event.target.closest('.card-title-toggle') : null;

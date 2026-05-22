@@ -169,7 +169,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARAT
                         'label' => 'Nov 2022',
                         'status' => 'warning',
                         'value' => 5,
-                        'stat_value' => 3,
+                        'secondary_value' => 3,
                         'tooltip' => '5 rows uploaded. 3 rows need review.',
                     ],
                 ],

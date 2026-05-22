@@ -593,7 +593,7 @@ final class ChartService
      * - title/label: Visible heading and aria-label for the heat map.
      * - id: Optional HTML id for the root element.
      * - start/start_date and end/end_date: Y-m-d range to render; inferred from months when omitted.
-     * - months: Items keyed by month_key with label, status, value, secondary_value/stat_value, and tooltip/title.
+     * - months: Items keyed by month_key with label, status, value, secondary_value, and tooltip/title.
      * - legend: Array of status => label values, true for defaults, or false to hide.
      * - missing_status: Status used for months inside the range with no supplied data.
      *
@@ -971,7 +971,7 @@ final class ChartService
                         'label' => 'May 2023',
                         'status' => 'pass',
                         'value' => 6,
-                        'stat_value' => 2,
+                        'secondary_value' => 2,
                         'tooltip' => '6 rows uploaded. Opening balance matches previous closing balance.',
                     ],
                     [
@@ -1089,7 +1089,7 @@ final class ChartService
                 $value = 0.0;
             }
 
-            $secondaryValue = $this->normaliseOptionalMonthHeatmapValue($month['secondary_value'] ?? $month['stat_value'] ?? null);
+            $secondaryValue = $this->normaliseOptionalMonthHeatmapValue($month['secondary_value'] ?? null);
 
             $normalised[$monthKey] = [
                 'label' => trim((string)($month['label'] ?? '')),

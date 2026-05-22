@@ -144,6 +144,7 @@ Current graph types:
 - Gauge.
 - Sankey diagram for value flows, such as income sources flowing into total value and then into allocations.
 - Calendar heat map.
+- Monthly heat map.
 
 The `Example Graphs` page demonstrates the available graph cards and can be used as a reference for adding chart output to application-specific cards.
 

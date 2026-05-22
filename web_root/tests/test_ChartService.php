@@ -150,6 +150,64 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARAT
             $harness->assertTrue(!str_contains($html, 'calendar-heatmap-empty'));
         });
 
+        $harness->check(ChartService::class, 'renders month heatmap HTML', static function () use ($harness, $service): void {
+            $html = $service->monthHeatmap([
+                'id' => 'statement-coverage',
+                'label' => 'Statement coverage',
+                'start' => '2022-09-05',
+                'end' => '2022-11-30',
+                'months' => [
+                    [
+                        'month_key' => '2022-09-01',
+                        'label' => 'Sep 2022',
+                        'status' => 'fail',
+                        'value' => 0,
+                        'tooltip' => 'No CSV rows found for September 2022.',
+                    ],
+                    [
+                        'month_key' => '2022-11-01',
+                        'label' => 'Nov 2022',
+                        'status' => 'warning',
+                        'value' => 3,
+                        'tooltip' => '3 rows uploaded. Continuity cannot be confirmed.',
+                    ],
+                ],
+                'legend' => [
+                    'pass' => 'Covered',
+                    'warning' => 'Needs review',
+                    'fail' => 'Gap',
+                    'muted' => 'No data',
+                ],
+            ]);
+
+            $harness->assertTrue(str_contains($html, 'class="month-heatmap"'));
+            $harness->assertTrue(str_contains($html, 'id="statement-coverage"'));
+            $harness->assertTrue(str_contains($html, '<h3>Statement coverage</h3>'));
+            $harness->assertTrue(substr_count($html, 'month-heatmap-cell ') === 3);
+            $harness->assertTrue(str_contains($html, 'month-heatmap-cell--fail'));
+            $harness->assertTrue(str_contains($html, 'month-heatmap-cell--warning'));
+            $harness->assertTrue(str_contains($html, 'data-month-key="2022-10-01"'));
+            $harness->assertTrue(str_contains($html, 'title="No data supplied for October 2022."'));
+            $harness->assertTrue(str_contains($html, 'aria-label="Sep 2022: Gap. No CSV rows found for September 2022."'));
+            $harness->assertTrue(str_contains($html, 'data-preserve-title="true"'));
+            $harness->assertTrue(str_contains($html, 'month-heatmap-legend'));
+            $harness->assertTrue(str_contains($html, 'Needs review'));
+            $harness->assertTrue(!str_contains($html, 'style='));
+            $harness->assertTrue(!str_contains(strtolower($html), '<script'));
+            $harness->assertTrue(preg_match('/\son[a-z]+\s*=/i', $html) !== 1);
+        });
+
+        $harness->check(ChartService::class, 'renders month heatmap demo from context', static function () use ($harness, $service): void {
+            $charts = $service->demoCalendarCharts([]);
+            $html = (string)($charts['month_heatmap'] ?? '');
+
+            $harness->assertTrue(str_contains($html, 'Statement coverage by month'));
+            $harness->assertTrue(str_contains($html, 'month-heatmap-cell--pass'));
+            $harness->assertTrue(str_contains($html, 'month-heatmap-cell--warning'));
+            $harness->assertTrue(str_contains($html, 'month-heatmap-cell--fail'));
+            $harness->assertTrue(str_contains($html, 'month-heatmap-cell--muted'));
+        });
+
         $harness->check(ChartService::class, 'renders calendar heatmap demo from context', static function () use ($harness, $service): void {
             $charts = $service->demoCalendarCharts([
                 'selected_year' => '2025',

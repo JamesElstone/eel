@@ -83,4 +83,115 @@ $harness->run(_uploads_detailsCard::class, static function (GeneratedServiceClas
 
         $harness->assertTrue(str_contains($html, '93 (0 ready, 0 committed)'));
     });
+
+    $harness->check(_uploads_detailsCard::class, 'labels missing accounting period uploads as requiring action', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => [
+                'id' => 12,
+            ],
+            'uploads' => [
+                'filter' => 'action_required',
+                'page' => 1,
+            ],
+            'services' => [
+                'filter_terms' => [
+                    'all' => 'All uploads',
+                    'action_required' => 'Action required',
+                ],
+                'upload_history' => [
+                    [
+                        'id' => 89,
+                        'uploaded_at' => '2026-05-01 13:09',
+                        'filename' => 'example.csv',
+                        'month' => '01/10/2026 to 02/10/2026',
+                        'account_name' => 'Example Bank - Current Account',
+                        'account_type' => 'bank',
+                        'workflow_status' => 'needs_tax_year',
+                        'rows_parsed' => 2,
+                        'rows_ready_to_import' => 0,
+                        'inserted' => 0,
+                    ],
+                ],
+                'upload_summary_by_tax_year' => [],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, 'Needs Accounting Period'));
+        $harness->assertSame(false, str_contains($html, 'Preview Ready'));
+    });
+
+    $harness->check(_uploads_detailsCard::class, 'hides preview actions for zero-row uploads', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => [
+                'id' => 12,
+            ],
+            'uploads' => [
+                'filter' => 'zero_row_csv',
+                'page' => 1,
+            ],
+            'services' => [
+                'filter_terms' => [
+                    'zero_row_csv' => 'Zero-row CSVs',
+                ],
+                'upload_history' => [
+                    [
+                        'id' => 90,
+                        'uploaded_at' => '2026-05-01 13:09',
+                        'filename' => 'empty.csv',
+                        'month' => 'May 2026',
+                        'account_name' => 'Example Bank - Current Account',
+                        'account_type' => 'bank',
+                        'workflow_status' => 'staged',
+                        'rows_parsed' => 0,
+                        'rows_ready_to_import' => 0,
+                        'inserted' => 0,
+                    ],
+                ],
+                'upload_summary_by_tax_year' => [],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, 'No Rows Found'));
+        $harness->assertTrue(str_contains($html, 'No rows to preview.'));
+        $harness->assertSame(false, str_contains($html, 'Field Mappings'));
+        $harness->assertSame(false, str_contains($html, 'Preview And Validate'));
+    });
+
+    $harness->check(_uploads_detailsCard::class, 'hides preview actions for duplicate file uploads', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => [
+                'id' => 12,
+            ],
+            'uploads' => [
+                'filter' => 'duplicate_files',
+                'page' => 1,
+            ],
+            'services' => [
+                'filter_terms' => [
+                    'duplicate_files' => 'Duplicate files',
+                ],
+                'upload_history' => [
+                    [
+                        'id' => 91,
+                        'uploaded_at' => '2026-05-01 13:09',
+                        'filename' => 'duplicate.csv',
+                        'month' => 'May 2026',
+                        'account_name' => 'Example Bank - Current Account',
+                        'account_type' => 'bank',
+                        'workflow_status' => 'staged',
+                        'rows_parsed' => 12,
+                        'rows_ready_to_import' => 12,
+                        'inserted' => 0,
+                        'duplicate_file' => true,
+                    ],
+                ],
+                'upload_summary_by_tax_year' => [],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, 'Duplicate File'));
+        $harness->assertTrue(str_contains($html, 'Duplicate file already uploaded.'));
+        $harness->assertSame(false, str_contains($html, 'Field Mappings'));
+        $harness->assertSame(false, str_contains($html, 'Preview And Validate'));
+    });
 });

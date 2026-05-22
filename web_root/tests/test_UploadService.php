@@ -22,6 +22,48 @@ $harness->run(StatementUploadService::class, static function (GeneratedServiceCl
         $harness->assertSame('Action required', $options['action_required'] ?? null);
         $harness->assertSame('Ready to import', $options['ready'] ?? null);
         $harness->assertSame('Imported', $options['imported'] ?? null);
+        $harness->assertSame('Duplicate files', $options['duplicate_files'] ?? null);
+        $harness->assertSame('Zero-row CSVs', $options['zero_row_csv'] ?? null);
+    });
+
+    $harness->check(StatementUploadService::class, 'treats missing accounting period uploads as action required', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod(StatementUploadService::class, 'uploadMatchesHistoryFilter');
+        $method->setAccessible(true);
+
+        $harness->assertSame(true, $method->invoke(null, ['workflow_status' => 'uploaded'], 'action_required'));
+        $harness->assertSame(true, $method->invoke(null, ['workflow_status' => 'needs_tax_year'], 'action_required'));
+        $harness->assertSame(false, $method->invoke(null, ['workflow_status' => 'staged'], 'action_required'));
+        $harness->assertSame(true, $method->invoke(null, ['workflow_status' => 'staged'], 'ready'));
+    });
+
+    $harness->check(StatementUploadService::class, 'matches zero-row uploads in the upload history filter', static function () use ($harness): void {
+        $method = new ReflectionMethod(StatementUploadService::class, 'uploadMatchesHistoryFilter');
+        $method->setAccessible(true);
+
+        $harness->assertSame(true, $method->invoke(null, ['rows_parsed' => 0], 'zero_row_csv'));
+        $harness->assertSame(false, $method->invoke(null, ['rows_parsed' => 1], 'zero_row_csv'));
+    });
+
+    $harness->check(StatementUploadService::class, 'can fetch upload history without selected accounting period filtering', static function () use ($harness): void {
+        $method = new ReflectionMethod(StatementUploadService::class, 'fetchUploadHistory');
+        $parameters = $method->getParameters();
+
+        $harness->assertSame('respectSelectedTaxYear', $parameters[2]->getName() ?? null);
+        $harness->assertSame(true, $parameters[2]->getDefaultValue() ?? null);
+    });
+
+    $harness->check(StatementUploadService::class, 'marks duplicate file uploads by file hash', static function () use ($harness): void {
+        $method = new ReflectionMethod(StatementUploadService::class, 'annotateDuplicateFileUploads');
+        $method->setAccessible(true);
+
+        $rows = $method->invoke(null, [
+            ['id' => 1, 'file_sha256' => 'same'],
+            ['id' => 2, 'file_sha256' => 'unique'],
+            ['id' => 3, 'file_sha256' => 'same'],
+            ['id' => 4, 'file_sha256' => ''],
+        ]);
+
+        $harness->assertSame([true, false, true, false], array_map(static fn(array $row): bool => !empty($row['duplicate_file']), $rows));
     });
 
     $harness->check(StatementUploadService::class, 'counts uploaded CSV data rows without requiring field mapping', static function () use ($harness, $service): void {

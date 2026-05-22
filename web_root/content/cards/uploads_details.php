@@ -112,26 +112,32 @@ final class _uploads_detailsCard extends CardBaseFramework
                 $mappingStatus = is_array($upload['mapping_status'] ?? null) ? $upload['mapping_status'] : [];
                 $uploadExtraHeaders = is_array($mappingStatus['extra_headers'] ?? null) ? $mappingStatus['extra_headers'] : [];
                 $accountType = (string)($upload['account_type'] ?? '');
-                $canPreviewAndValidate = !empty($mappingStatus['can_preview']);
+                $hasParsedRows = (int)($upload['rows_parsed'] ?? 0) > 0;
+                $isDuplicateFile = !empty($upload['duplicate_file']);
+                $canPreviewAndValidate = $hasParsedRows && !$isDuplicateFile && !empty($mappingStatus['can_preview']);
                 $statusLabel = $this->uploadWorkflowStatusLabel($upload, $mappingStatus);
                 $statusClass = $this->uploadWorkflowStatusClass($upload, $mappingStatus);
 
-                $previewActions = '<form method="post" action="?page=uploads" data-ajax="true">
-                    <input type="hidden" name="card_action" value="Uploads">
-                    <input type="hidden" name="intent" value="preview_upload">
-                    <input type="hidden" name="upload_id" value="' . (int)($upload['id'] ?? 0) . '">
-                    <input type="hidden" name="filter" value="' . HelperFramework::escape($selectedUploadHistoryFilter) . '">
-                    <input type="hidden" name="page" value="' . $selectedUploadHistoryPage . '">
-                    <button class="button" type="submit" data-show-card="statement_field_mapping" data-page-card-switch-tab="Field Mappings">Field Mappings</button>
-                </form>
-                <form method="post" action="?page=uploads" data-ajax="true">
-                    <input type="hidden" name="card_action" value="Uploads">
-                    <input type="hidden" name="intent" value="stage_account_upload">
-                    <input type="hidden" name="upload_id" value="' . (int)($upload['id'] ?? 0) . '">
-                    <input type="hidden" name="filter" value="' . HelperFramework::escape($selectedUploadHistoryFilter) . '">
-                    <input type="hidden" name="page" value="' . $selectedUploadHistoryPage . '">
-                    <button class="button primary" type="submit" data-page-card-switch-tab="Commit Transactions"' . ($canPreviewAndValidate ? '' : ' disabled title="Save field mappings before previewing and validating rows."') . '>Preview And Validate</button>
-                </form>';
+                $previewActions = !$hasParsedRows
+                    ? '<span class="helper">No rows to preview.</span>'
+                    : ($isDuplicateFile
+                        ? '<span class="helper">Duplicate file already uploaded.</span>'
+                        : '<form method="post" action="?page=uploads" data-ajax="true">
+                            <input type="hidden" name="card_action" value="Uploads">
+                            <input type="hidden" name="intent" value="preview_upload">
+                            <input type="hidden" name="upload_id" value="' . (int)($upload['id'] ?? 0) . '">
+                            <input type="hidden" name="filter" value="' . HelperFramework::escape($selectedUploadHistoryFilter) . '">
+                            <input type="hidden" name="page" value="' . $selectedUploadHistoryPage . '">
+                            <button class="button" type="submit" data-show-card="statement_field_mapping" data-page-card-switch-tab="Field Mappings">Field Mappings</button>
+                        </form>
+                        <form method="post" action="?page=uploads" data-ajax="true">
+                            <input type="hidden" name="card_action" value="Uploads">
+                            <input type="hidden" name="intent" value="stage_account_upload">
+                            <input type="hidden" name="upload_id" value="' . (int)($upload['id'] ?? 0) . '">
+                            <input type="hidden" name="filter" value="' . HelperFramework::escape($selectedUploadHistoryFilter) . '">
+                            <input type="hidden" name="page" value="' . $selectedUploadHistoryPage . '">
+                            <button class="button primary" type="submit" data-page-card-switch-tab="Commit Transactions"' . ($canPreviewAndValidate ? '' : ' disabled title="Save field mappings before previewing and validating rows."') . '>Preview And Validate</button>
+                        </form>');
 
                 if ($developerOptions) {
                     $previewActions .= '<form method="post" action="?page=uploads" data-ajax="true">
@@ -340,7 +346,19 @@ final class _uploads_detailsCard extends CardBaseFramework
             return 'Imported';
         }
 
-        if (in_array($workflowStatus, ['staged', 'needs_tax_year'], true) || (int)($upload['rows_ready_to_import'] ?? 0) > 0) {
+        if ((int)($upload['rows_parsed'] ?? 0) === 0) {
+            return 'No Rows Found';
+        }
+
+        if (!empty($upload['duplicate_file'])) {
+            return 'Duplicate File';
+        }
+
+        if ($workflowStatus === 'needs_tax_year') {
+            return 'Needs Accounting Period';
+        }
+
+        if ($workflowStatus === 'staged' || (int)($upload['rows_ready_to_import'] ?? 0) > 0) {
             return 'Preview Ready';
         }
 
@@ -356,7 +374,19 @@ final class _uploads_detailsCard extends CardBaseFramework
             return 'success';
         }
 
-        if (in_array($workflowStatus, ['staged', 'needs_tax_year'], true) || (int)($upload['rows_ready_to_import'] ?? 0) > 0) {
+        if ((int)($upload['rows_parsed'] ?? 0) === 0) {
+            return 'muted';
+        }
+
+        if (!empty($upload['duplicate_file'])) {
+            return 'warning';
+        }
+
+        if ($workflowStatus === 'needs_tax_year') {
+            return 'warning';
+        }
+
+        if ($workflowStatus === 'staged' || (int)($upload['rows_ready_to_import'] ?? 0) > 0) {
             return 'info';
         }
 

@@ -100,6 +100,18 @@ $harness->run(StatementUploadService::class, function (GeneratedServiceClassTest
         $harness->assertTrue(str_contains($sql, "COALESCE(NULLIF(su.file_sha256, ''), CONCAT('upload:', su.id))"));
     });
 
+    $harness->check(StatementUploadService::class, 'unique monthly row count query deduplicates exact file hashes by source row', function () use ($harness, $service): void {
+        $method = (new ReflectionClass($service))->getMethod('uniqueUploadedRowsByMonthSql');
+        $method->setAccessible(true);
+
+        $sql = $method->invoke($service);
+
+        $harness->assertTrue(str_contains($sql, "COALESCE(NULLIF(su.file_sha256, ''), CONCAT('upload:', su.id))"));
+        $harness->assertTrue(str_contains($sql, "sir.`row_number`"));
+        $harness->assertTrue(str_contains($sql, 'unique_import_rows'));
+        $harness->assertTrue(str_contains($sql, 'MAX(su.rows_parsed) AS raw_row_count'));
+    });
+
     $harness->check(StatementUploadService::class, 'upload history period filter constrains unassigned uploads by statement dates', function () use ($harness, $service): void {
         $method = (new ReflectionClass($service))->getMethod('uploadHistoryTaxYearFilterClause');
         $method->setAccessible(true);

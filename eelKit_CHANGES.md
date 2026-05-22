@@ -29,6 +29,7 @@ $html = $chartService->monthHeatmap([
             'label' => 'Oct 2022',
             'status' => 'pass',
             'value' => 5,
+            'secondary_value' => 3,
             'tooltip' => '5 rows uploaded. Opening balance matches previous closing balance.',
         ],
     ],
@@ -53,7 +54,16 @@ Each `months` item supports:
 - `label`: Visible/a11y month label, for example `Sep 2022`.
 - `status`: One of `pass`, `warning`, `fail`, or `muted`. Unknown statuses fall back to `muted`.
 - `value`: Non-negative numeric count/value displayed inside the cell. Invalid or negative values become `0`.
+- `secondary_value`: Optional non-negative numeric second-line value for `ChartService::monthHeatmap()`. When present, the cell renders the main `value` on the first line and the secondary value below it in parentheses, for example `5<br>(3)`.
 - `tooltip` or `title`: Native hover/focus tooltip text. `tooltip` takes precedence.
+
+When a secondary value is present, the visible month cell value is rendered on two lines:
+
+```html
+5<br><span class="month-heatmap-cell-secondary-value">(3)</span>
+```
+
+The same value is also emitted as `data-month-secondary-value`, so consuming apps can attach later behaviour without reparsing the visible label.
 
 Status meanings used by the example:
 

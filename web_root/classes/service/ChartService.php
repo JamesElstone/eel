@@ -587,6 +587,96 @@ final class ChartService
     }
 
     /**
+     * Render a compact server-side HTML month status heat map.
+     *
+     * Supported options:
+     * - title/label: Visible heading and aria-label for the heat map.
+     * - id: Optional HTML id for the root element.
+     * - start/start_date and end/end_date: Y-m-d range to render; inferred from months when omitted.
+     * - months: Items keyed by month_key with label, status, value, and tooltip/title.
+     * - legend: Array of status => label values, true for defaults, or false to hide.
+     * - missing_status: Status used for months inside the range with no supplied data.
+     *
+     * @param array<string, mixed> $options
+     */
+    public function monthHeatmap(array $options = []): string
+    {
+        $monthsByKey = $this->normaliseMonthHeatmapMonths((array)($options['months'] ?? []));
+        $range = $this->monthHeatmapRange($monthsByKey, $options);
+        $chartTitle = trim((string)($options['label'] ?? $options['title'] ?? 'Month heatmap'));
+
+        if ($range === null) {
+            return '<div class="month-heatmap month-heatmap-empty">' . HelperFramework::escape((string)($options['empty_message'] ?? 'No month data')) . '</div>';
+        }
+
+        $start = $range['start'];
+        $end = $range['end'];
+        $id = $this->monthHeatmapId($options);
+        $missingStatus = $this->monthHeatmapStatus((string)($options['missing_status'] ?? 'fail'));
+        $statusLabels = $this->monthHeatmapStatusLabels($options['legend'] ?? true);
+        $cellHtml = '';
+        $cursor = $start;
+
+        while ($cursor <= $end) {
+            $monthKey = $cursor->format('Y-m-01');
+            $item = $monthsByKey[$monthKey] ?? [
+                'label' => $cursor->format('M Y'),
+                'status' => $missingStatus,
+                'value' => 0.0,
+                'tooltip' => 'No data supplied for ' . $cursor->format('F Y') . '.',
+            ];
+            $status = $this->monthHeatmapStatus($item['status']);
+            $statusLabel = $statusLabels[$status] ?? ucfirst($status);
+            $label = trim($item['label']) !== '' ? $item['label'] : $cursor->format('M Y');
+            $value = $this->formatValue($item['value']);
+            $tooltip = trim($item['tooltip']) !== ''
+                ? $item['tooltip']
+                : $label . ': ' . $statusLabel . ' (' . $value . ')';
+            $ariaLabel = $label . ': ' . $statusLabel . '. ' . $tooltip;
+            $shortLabel = $this->monthHeatmapShortLabel($label, $cursor);
+            $classes = [
+                'month-heatmap-cell',
+                'month-heatmap-cell--' . $status,
+            ];
+
+            $cellHtml .= '<button' . $this->htmlAttributes([
+                'class' => implode(' ', $classes),
+                'type' => 'button',
+                'title' => $tooltip,
+                'aria-label' => $ariaLabel,
+                'data-preserve-title' => 'true',
+                'data-month-key' => $monthKey,
+                'data-month-status' => $status,
+                'data-month-value' => $value,
+            ]) . '>'
+                . '<span class="month-heatmap-cell-label" aria-hidden="true">' . HelperFramework::escape($shortLabel) . '</span>'
+                . '<span class="month-heatmap-cell-value" aria-hidden="true">' . HelperFramework::escape($value) . '</span>'
+                . '<span class="sr-only">' . HelperFramework::escape($ariaLabel) . '</span>'
+                . '</button>';
+
+            $cursor = $cursor->modify('+1 month');
+        }
+
+        $legendHtml = '';
+        if (($options['legend'] ?? true) !== false) {
+            $legendHtml = '<div class="month-heatmap-legend">';
+            foreach ($statusLabels as $status => $label) {
+                $legendHtml .= '<span class="month-heatmap-legend-item">'
+                    . '<span class="month-heatmap-legend-swatch month-heatmap-cell--' . HelperFramework::escape($status) . '"></span>'
+                    . HelperFramework::escape($label)
+                    . '</span>';
+            }
+            $legendHtml .= '</div>';
+        }
+
+        return '<div class="month-heatmap" id="' . HelperFramework::escape($id) . '" role="group" aria-label="' . HelperFramework::escape($chartTitle !== '' ? $chartTitle : 'Month heatmap') . '">'
+            . '<div class="month-heatmap-heading"><h3>' . HelperFramework::escape($chartTitle !== '' ? $chartTitle : 'Month heatmap') . '</h3></div>'
+            . '<div class="month-heatmap-scroll">' . $cellHtml . '</div>'
+            . $legendHtml
+            . '</div>';
+    }
+
+    /**
      * @return array<string, string>
      */
     public function demoTrendCharts(): array
@@ -805,6 +895,111 @@ final class ChartService
                 'year_input_name' => 'calendar_heatmap_year',
                 'ajax_target' => 'calendar-heatmap-detail-table',
             ]),
+            'month_heatmap' => $this->monthHeatmap([
+                'id' => 'example-statement-coverage',
+                'label' => 'Statement coverage by month',
+                'start' => '2022-09-05',
+                'end' => '2023-09-30',
+                'months' => [
+                    [
+                        'month_key' => '2022-09-01',
+                        'label' => 'Sep 2022',
+                        'status' => 'fail',
+                        'value' => 0,
+                        'tooltip' => 'No CSV rows found for September 2022. Upload the missing statement or confirm this month had no transactions.',
+                    ],
+                    [
+                        'month_key' => '2022-10-01',
+                        'label' => 'Oct 2022',
+                        'status' => 'pass',
+                        'value' => 5,
+                        'tooltip' => '5 rows uploaded. Opening balance matches previous closing balance.',
+                    ],
+                    [
+                        'month_key' => '2022-11-01',
+                        'label' => 'Nov 2022',
+                        'status' => 'warning',
+                        'value' => 3,
+                        'tooltip' => '3 rows uploaded. Continuity cannot be confirmed because the previous closing balance is unavailable.',
+                    ],
+                    [
+                        'month_key' => '2022-12-01',
+                        'label' => 'Dec 2022',
+                        'status' => 'pass',
+                        'value' => 8,
+                        'tooltip' => '8 rows uploaded. Opening balance matches previous closing balance.',
+                    ],
+                    [
+                        'month_key' => '2023-01-01',
+                        'label' => 'Jan 2023',
+                        'status' => 'pass',
+                        'value' => 12,
+                        'tooltip' => '12 rows uploaded. Opening balance matches previous closing balance.',
+                    ],
+                    [
+                        'month_key' => '2023-02-01',
+                        'label' => 'Feb 2023',
+                        'status' => 'fail',
+                        'value' => 4,
+                        'tooltip' => '4 rows uploaded, but the opening balance does not match the previous closing balance.',
+                    ],
+                    [
+                        'month_key' => '2023-03-01',
+                        'label' => 'Mar 2023',
+                        'status' => 'pass',
+                        'value' => 7,
+                        'tooltip' => '7 rows uploaded. Opening balance matches previous closing balance.',
+                    ],
+                    [
+                        'month_key' => '2023-04-01',
+                        'label' => 'Apr 2023',
+                        'status' => 'muted',
+                        'value' => 0,
+                        'tooltip' => 'Statement data is not yet available for April 2023.',
+                    ],
+                    [
+                        'month_key' => '2023-05-01',
+                        'label' => 'May 2023',
+                        'status' => 'pass',
+                        'value' => 6,
+                        'tooltip' => '6 rows uploaded. Opening balance matches previous closing balance.',
+                    ],
+                    [
+                        'month_key' => '2023-06-01',
+                        'label' => 'Jun 2023',
+                        'status' => 'warning',
+                        'value' => 2,
+                        'tooltip' => '2 rows uploaded. Balance continuity needs manual review.',
+                    ],
+                    [
+                        'month_key' => '2023-07-01',
+                        'label' => 'Jul 2023',
+                        'status' => 'pass',
+                        'value' => 9,
+                        'tooltip' => '9 rows uploaded. Opening balance matches previous closing balance.',
+                    ],
+                    [
+                        'month_key' => '2023-08-01',
+                        'label' => 'Aug 2023',
+                        'status' => 'pass',
+                        'value' => 10,
+                        'tooltip' => '10 rows uploaded. Opening balance matches previous closing balance.',
+                    ],
+                    [
+                        'month_key' => '2023-09-01',
+                        'label' => 'Sep 2023',
+                        'status' => 'fail',
+                        'value' => 0,
+                        'tooltip' => 'No CSV rows found for September 2023. Upload the missing statement.',
+                    ],
+                ],
+                'legend' => [
+                    'pass' => 'Covered',
+                    'warning' => 'Needs review',
+                    'fail' => 'Gap',
+                    'muted' => 'No data',
+                ],
+            ]),
         ];
     }
 
@@ -859,6 +1054,127 @@ final class ChartService
         ksort($normalised);
 
         return $normalised;
+    }
+
+    /**
+     * @param array<int, mixed> $months
+     * @return array<string, array{label: string, status: string, value: float, tooltip: string}>
+     */
+    private function normaliseMonthHeatmapMonths(array $months): array
+    {
+        $normalised = [];
+
+        foreach ($months as $month) {
+            if (!is_array($month)) {
+                continue;
+            }
+
+            $monthKey = $this->normaliseMonthKey((string)($month['month_key'] ?? $month['date'] ?? ''));
+            if ($monthKey === null) {
+                continue;
+            }
+
+            $value = (float)($month['value'] ?? 0);
+            if (!is_finite($value) || $value < 0) {
+                $value = 0.0;
+            }
+
+            $normalised[$monthKey] = [
+                'label' => trim((string)($month['label'] ?? '')),
+                'status' => $this->monthHeatmapStatus((string)($month['status'] ?? 'muted')),
+                'value' => $value,
+                'tooltip' => trim((string)($month['tooltip'] ?? $month['title'] ?? '')),
+            ];
+        }
+
+        ksort($normalised);
+
+        return $normalised;
+    }
+
+    private function normaliseMonthKey(string $date): ?string
+    {
+        $normalised = $this->normaliseDateString($date);
+
+        if ($normalised === null) {
+            return null;
+        }
+
+        return (new DateTimeImmutable($normalised))->format('Y-m-01');
+    }
+
+    /**
+     * @param array<string, array{label: string, status: string, value: float, tooltip: string}> $monthsByKey
+     * @param array<string, mixed> $options
+     * @return array{start: DateTimeImmutable, end: DateTimeImmutable}|null
+     */
+    private function monthHeatmapRange(array $monthsByKey, array $options): ?array
+    {
+        $start = $this->normaliseMonthKey((string)($options['start'] ?? $options['start_date'] ?? ''));
+        $end = $this->normaliseMonthKey((string)($options['end'] ?? $options['end_date'] ?? ''));
+
+        if ($start === null && $monthsByKey !== []) {
+            $start = (string)array_key_first($monthsByKey);
+        }
+
+        if ($end === null && $monthsByKey !== []) {
+            $end = (string)array_key_last($monthsByKey);
+        }
+
+        if ($start === null || $end === null) {
+            return null;
+        }
+
+        $startDate = new DateTimeImmutable($start);
+        $endDate = new DateTimeImmutable($end);
+
+        if ($endDate < $startDate) {
+            [$startDate, $endDate] = [$endDate, $startDate];
+        }
+
+        return ['start' => $startDate, 'end' => $endDate];
+    }
+
+    private function monthHeatmapStatus(string $status): string
+    {
+        $status = strtolower(trim($status));
+
+        return in_array($status, ['pass', 'warning', 'fail', 'muted'], true) ? $status : 'muted';
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function monthHeatmapStatusLabels(mixed $legend): array
+    {
+        $labels = [
+            'pass' => 'Covered',
+            'warning' => 'Needs review',
+            'fail' => 'Gap',
+            'muted' => 'No data',
+        ];
+
+        if (is_array($legend)) {
+            foreach ($labels as $status => $fallback) {
+                $label = trim((string)($legend[$status] ?? ''));
+                $labels[$status] = $label !== '' ? $label : $fallback;
+            }
+        }
+
+        return $labels;
+    }
+
+    private function monthHeatmapShortLabel(string $label, DateTimeImmutable $month): string
+    {
+        $label = trim($label);
+
+        if ($label === '') {
+            return $month->format('M');
+        }
+
+        $parts = preg_split('/\s+/', $label);
+
+        return substr((string)($parts[0] ?? $label), 0, 3);
     }
 
     /**
@@ -1022,6 +1338,22 @@ final class ChartService
         $id = trim($id, '-_');
 
         return $id !== '' ? $id : 'calendar-heatmap-chart';
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     */
+    private function monthHeatmapId(array $options): string
+    {
+        $id = trim((string)($options['id'] ?? ''));
+        if ($id === '') {
+            $id = 'month-heatmap-chart';
+        }
+
+        $id = strtolower((string)preg_replace('/[^a-zA-Z0-9-]+/', '-', $id));
+        $id = trim($id, '-_');
+
+        return $id !== '' ? $id : 'month-heatmap-chart';
     }
 
     /**

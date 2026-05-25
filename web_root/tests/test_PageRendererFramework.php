@@ -69,6 +69,8 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
     $requestedVisibleCard->setAccessible(true);
     $brandMark = new ReflectionMethod(PageRendererFramework::class, 'brandMark');
     $brandMark->setAccessible(true);
+    $renderDeveloperOptionsStatus = new ReflectionMethod(PageRendererFramework::class, 'renderDeveloperOptionsStatus');
+    $renderDeveloperOptionsStatus->setAccessible(true);
 
     $harness->check(PageRendererFramework::class, 'normalises legacy cards to one stack layout without tabs', function () use ($harness, $instance, $resolveCardLayout, $shouldRenderTabs): void {
         $layout = $resolveCardLayout->invoke($instance, new PageRendererLegacyLayoutTestPage(), [
@@ -206,5 +208,25 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
 
     $harness->check(PageRendererFramework::class, 'reads the sidebar brand mark from application config', function () use ($harness, $instance, $brandMark): void {
         $harness->assertSame('T', $brandMark->invoke($instance));
+    });
+
+    $harness->check(PageRendererFramework::class, 'renders developer options badge only when enabled', function () use ($harness, $instance, $renderDeveloperOptionsStatus): void {
+        $path = AppConfigurationStore::configPath();
+        $original = file_get_contents($path);
+
+        if (!is_string($original)) {
+            throw new RuntimeException('Unable to read fixture config.');
+        }
+
+        try {
+            AppConfigurationStore::set('developer_options', true);
+            $harness->assertTrue(str_contains((string)$renderDeveloperOptionsStatus->invoke($instance), 'Developer Options: On'));
+
+            AppConfigurationStore::set('developer_options', false);
+            $harness->assertSame('', $renderDeveloperOptionsStatus->invoke($instance));
+        } finally {
+            file_put_contents($path, $original, LOCK_EX);
+            AppConfigurationStore::config(true);
+        }
     });
 });

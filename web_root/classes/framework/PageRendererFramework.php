@@ -160,6 +160,7 @@ final class PageRendererFramework
             'cards' => $cards,
             'sidebar_html' => $sidebarHtml,
             'site_context_html' => $siteContextHtml,
+            'developer_options_status_html' => $this->renderDeveloperOptionsStatus(),
             'flash_html' => $this->renderFlashMessages($actionResult->flashMessages()),
             'url' => $request->pageUrl($actionResult->query()),
             'show_card' => $this->requestedVisibleCard($page, $request, $context, $actionResult),
@@ -185,8 +186,6 @@ final class PageRendererFramework
         $pageStackClass = trim($page->pageStackClass());
         $pageStackClasses = 'page-stack' . ($pageStackClass !== '' ? ' ' . HelperFramework::escape($pageStackClass) : '');
         $contentHtml = $this->pageCards($page, $context) !== [] ? $cardsHtml : $this->renderNoAccessState();
-        $developerOptionsEnabled = (bool)AppConfigurationStore::get('developer_options', false);
-        $developerOptionsLabel = $developerOptionsEnabled ? 'Developer Options: On' : 'Developer Options: Off';
 
         return '<!DOCTYPE html>
         <html lang="en">
@@ -210,7 +209,7 @@ final class PageRendererFramework
                             </div>
 
                             <div class="topbar-right">
-                                <div class="badge warning">' . HelperFramework::escape($developerOptionsLabel) . '</div>
+                                <div id="developer-options-status-slot">' . $this->renderDeveloperOptionsStatus() . '</div>
                                 <div id="site-context-summary-slot" class="site-context-slot site-context-summary-slot">' . (string)($siteContextHtml['summary'] ?? '') . '</div>
                                 <div id="site-context-topbar-slot" class="site-context-slot site-context-topbar-slot">' . (string)($siteContextHtml['topbar'] ?? '') . '</div>
                             </div>
@@ -243,6 +242,15 @@ final class PageRendererFramework
         return '<div id="ajax-security-bootstrap" hidden data-nonce-payload="'
             . HelperFramework::escape($json)
             . '"></div>';
+    }
+
+    private function renderDeveloperOptionsStatus(): string
+    {
+        if (!(bool)AppConfigurationStore::get('developer_options', false)) {
+            return '';
+        }
+
+        return '<div class="badge warning">Developer Options: On</div>';
     }
 
     private function ajaxNonceRefresh(): ?string

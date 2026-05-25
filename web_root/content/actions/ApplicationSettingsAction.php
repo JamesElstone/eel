@@ -63,10 +63,10 @@ final class ApplicationSettingsAction implements ActionInterfaceFramework
                 'app_name' => $appName,
                 'app_strapline' => trim((string)$request->input('app_strapline', '')),
                 'brand-mark' => $brandMark,
-                'developer_options' => (string)$request->input('developer_options', '') === '1',
+                'developer_options' => $this->checkboxValue($request, 'developer_options'),
                 'navigation' => array_replace($this->configArray('navigation'), [
                     'default_order' => $this->navigationOrderFromRequest($request),
-                    'hide_collapsed_link_initials' => (string)$request->input('hide_collapsed_link_initials', '') === '1',
+                    'hide_collapsed_link_initials' => $this->checkboxValue($request, 'hide_collapsed_link_initials'),
                 ]),
                 'antifraud' => array_replace($this->configArray('antifraud'), [
                     'vendor_license_ids' => trim((string)$request->input('antifraud_vendor_license_ids', '')),
@@ -119,6 +119,16 @@ final class ApplicationSettingsAction implements ActionInterfaceFramework
         $value = AppConfigurationStore::get($path, []);
 
         return is_array($value) ? $value : [];
+    }
+
+    private function checkboxValue(RequestFramework $request, string $name): bool
+    {
+        $value = $request->input($name, '0');
+        if (is_array($value)) {
+            $value = end($value);
+        }
+
+        return (string)$value === '1';
     }
 
     private function navigationOrderFromRequest(RequestFramework $request): array

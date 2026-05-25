@@ -2579,6 +2579,18 @@
             syncVisibleWhenField(event.target);
         }
 
+        const submitOnChangeControl = event.target instanceof Element
+            ? event.target.closest('[data-submit-on-change="true"]')
+            : null;
+
+        if (submitOnChangeControl instanceof HTMLElement) {
+            const form = submitOnChangeControl.closest('form[data-ajax="true"]');
+            if (form instanceof HTMLFormElement) {
+                form.requestSubmit();
+                return;
+            }
+        }
+
         const select = event.target;
         if (!(select instanceof HTMLSelectElement)) {
             return;

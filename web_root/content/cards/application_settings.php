@@ -70,7 +70,7 @@ final class _application_settingsCard extends CardBaseFramework
                     <legend>Developer Options</legend>
                     <label class="checkbox-item" for="settings-developer-options">
                         <input type="hidden" name="developer_options" value="0">
-                        <input id="settings-developer-options" name="developer_options" type="checkbox" value="1"' . (!empty($config['developer_options']) ? ' checked' : '') . '>
+                        <input id="settings-developer-options" name="developer_options" type="checkbox" value="1" data-submit-on-change="true"' . (!empty($config['developer_options']) ? ' checked' : '') . '>
                         <span class="checkbox-copy">
                             <span>Show developer-only tools, cards, and diagnostics where enabled.</span>
                         </span>

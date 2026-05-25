@@ -59,69 +59,90 @@ final class _banking_accountsCard extends CardBaseFramework
         $company = (array)($context['company'] ?? []);
         $companyAccounts = (array)($context['services']['companyAccounts'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
-        $taxYearId = (int)($company['tax_year_id'] ?? 0);
 
         if ($companyId <= 0) {
             return '<div class="helper">No company accounts can be displayed before a company is added.</div>';
         }
 
-        $rowsHtml = '';
-
-        if ( $companyAccounts === [] ) {
+        if ($companyAccounts === []) {
             return '
                 <div class="helper">No company accounts have been added to this company yet.</div>
                 <button class="button primary" type="button" data-page-card-switch-tab="Add New Account">Add Account</button>
             ';
         }
 
+        return $this->table($context)->render($context, [
+            'cards[]' => (array)($context['page']['page_cards'] ?? []),
+        ]);
+    }
 
-        foreach ($companyAccounts as $account) {
-            $accountId = (int)($account['id'] ?? 0);
-            $rowsHtml .= '<tr>
-                <td>
-                    <div>' . HelperFramework::escape((string)($account['account_name'] ?? '')) . '</div>'
-                    . (trim((string)($account['account_identifier'] ?? '')) !== ''
-                        ? '<div class="helper">' . HelperFramework::escape((string)$account['account_identifier']) . '</div>'
-                        : '') . '
-                </td>
-                <td>' . HelperFramework::escape(CompanyAccountService::accountTypes()[(string)($account['account_type'] ?? '')] ?? ucfirst((string)($account['account_type'] ?? ''))) . '</td>
-                <td>' . HelperFramework::escape((string)($account['institution_name'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape((string)($account['account_type'] ?? '') === CompanyAccountService::TYPE_BANK ? (string)($account['internal_transfer_marker'] ?? '') : '') . '</td>
-                <td>' . HelperFramework::escape((string)($account['phone_number'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape($this->companyAccountAddressSummary((array)$account)) . '</td>
-                <td>' . ((int)($account['is_active'] ?? 0) === 1 ? 'Active' : 'Inactive') . '</td>
-                <td>
-                    <div>
-                        <form method="post" class="actions-row actions-row-nowrap" data-ajax="true">
-                            <input type="hidden" name="account_id" value="' . $accountId . '">
-                            <input type="hidden" name="field_mapping_account_id" value="' . $accountId . '">
-                            <input type="hidden" name="card_action" value="Banking">
-                            <button class="button button-inline" name="intent" value="edit" data-show-card="banking_account_form" data-ajax-link="true">Edit</button>
-                            <button class="button button-inline" name="intent" value="select_field_mapping" data-show-card="statement_field_mapping" data-ajax-link="true">Field Mappings</button>
-                            <button class="button button-inline danger" name="intent" value="delete" data-ajax-link="true" data-chicken-check="true" data-chicken-message="Confirm this logical bank account and all related transactions should be deleted.<br><br>This does not delete data with your bank or any third party." data-chicken-confirm-text="Delete">Delete</button>
-                        </form>
-                    </div>
-                </td>
-            </tr>';
+    public function tables(array $context): array
+    {
+        return [$this->table($context)];
+    }
+
+    private function table(array $context): TableFramework
+    {
+        return TableFramework::make($this->key(), $this->rows($context))
+            ->filename('company-accounts')
+            ->exportLimit(1000)
+            ->empty('No company accounts have been added to this company yet.')
+            ->primarySecondaryColumn(
+                'account_name',
+                'Name',
+                secondaryKey: 'account_identifier'
+            )
+            ->textColumn('account_type_label', 'Type')
+            ->textColumn('institution_name', 'Institution')
+            ->textColumn('transfer_marker', 'Transfer Marker')
+            ->textColumn('phone_number', 'Phone')
+            ->textColumn('address_summary', 'Address')
+            ->textColumn('status_label', 'Status')
+            ->column(
+                'actions',
+                '',
+                html: fn(array $row): string => $this->actionsHtml($row),
+                exportable: false
+            );
+    }
+
+    private function actionsHtml(array $account): string
+    {
+        $accountId = (int)($account['id'] ?? 0);
+
+        return '<div>
+            <form method="post" class="actions-row actions-row-nowrap" data-ajax="true">
+                <input type="hidden" name="account_id" value="' . HelperFramework::escape((string)$accountId) . '">
+                <input type="hidden" name="field_mapping_account_id" value="' . HelperFramework::escape((string)$accountId) . '">
+                <input type="hidden" name="card_action" value="Banking">
+                <button class="button button-inline" name="intent" value="edit" data-show-card="banking_account_form" data-ajax-link="true">Edit</button>
+                <button class="button button-inline" name="intent" value="select_field_mapping" data-show-card="statement_field_mapping" data-ajax-link="true">Field Mappings</button>
+                <button class="button button-inline danger" name="intent" value="delete" data-ajax-link="true" data-chicken-check="true" data-chicken-message="Confirm this logical bank account and all related transactions should be deleted.<br><br>This does not delete data with your bank or any third party." data-chicken-confirm-text="Delete">Delete</button>
+            </form>
+        </div>';
+    }
+
+    private function rows(array $context): array
+    {
+        $rows = [];
+
+        foreach ((array)($context['services']['companyAccounts'] ?? []) as $account) {
+            if (!is_array($account)) {
+                continue;
+            }
+
+            $accountType = (string)($account['account_type'] ?? '');
+            $account['account_type_label'] = CompanyAccountService::accountTypes()[$accountType] ?? ucfirst($accountType);
+            $account['transfer_marker'] = $accountType === CompanyAccountService::TYPE_BANK
+                ? (string)($account['internal_transfer_marker'] ?? '')
+                : '';
+            $account['address_summary'] = $this->companyAccountAddressSummary($account);
+            $account['status_label'] = (int)($account['is_active'] ?? 0) === 1 ? 'Active' : 'Inactive';
+
+            $rows[] = $account;
         }
-    
-        return '
-            <table>
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Type</th>
-                        <th>Institution</th>
-                        <th>Transfer Marker</th>
-                        <th>Phone</th>
-                        <th>Address</th>
-                        <th>Status</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>' . $rowsHtml . '</tbody>
-            </table>
-        ';
+
+        return $rows;
     }
 
     private function companyAccountAddressSummary(array $account): string

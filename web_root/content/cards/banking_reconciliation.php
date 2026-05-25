@@ -95,7 +95,7 @@ final class _banking_reconciliationCard extends CardBaseFramework
                         <div class="indexed-section-body">'
                             . ($accountType === CompanyAccountService::TYPE_TRADE
                                 ? $this->renderTradePanel($panel, $taxYearLabel)
-                                : $this->renderBankPanel($panel, $taxYearLabel))
+                                : $this->renderBankPanel($panel, $taxYearLabel, $index, $context))
                         . '</div>
                     </div>
                 </section>';
@@ -104,41 +104,28 @@ final class _banking_reconciliationCard extends CardBaseFramework
         return $panelsHtml;
     }
 
-    private function renderBankPanel(array $panel, string $taxYearLabel): string
+    public function tables(array $context): array
+    {
+        $tables = [];
+
+        foreach ((array)($context['services']['reconciliationPanels'] ?? []) as $index => $panel) {
+            if (!is_array($panel)) {
+                continue;
+            }
+
+            $account = is_array($panel['account'] ?? null) ? $panel['account'] : [];
+            $accountType = (string)($panel['account_type'] ?? $account['account_type'] ?? '');
+            if ($accountType !== CompanyAccountService::TYPE_TRADE) {
+                $tables[] = $this->bankUploadsTable($panel, (int)$index);
+            }
+        }
+
+        return $tables;
+    }
+
+    private function renderBankPanel(array $panel, string $taxYearLabel, int $index, array $context): string
     {
         $account = is_array($panel['account'] ?? null) ? $panel['account'] : [];
-        $accountName = trim((string)($account['account_name'] ?? 'Bank account'));
-        $uploadsHtml = '';
-
-        foreach ((array)($panel['uploads'] ?? []) as $uploadCheck) {
-            $uploadsHtml .= '<tr>
-                <td>
-                    <div>' . HelperFramework::escape((string)($uploadCheck['statement_month'] ?? '')) . '</div>
-                    <div class="helper">' . HelperFramework::escape((string)($uploadCheck['upload']['original_filename'] ?? '')) . '</div>
-                </td>
-                <td>' . HelperFramework::escape(FormattingFramework::nullableMoney($uploadCheck['opening_balance'] ?? null)) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::nullableMoney($uploadCheck['closing_balance'] ?? null)) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::nullableMoney($uploadCheck['previous_statement_closing_balance'] ?? null)) . '</td>
-                <td>
-                    <span class="badge ' . HelperFramework::escape($this->reconciliationStatusBadgeClass((string)($uploadCheck['continuity_status'] ?? 'not_available'))) . '">' . HelperFramework::escape($this->reconciliationStatusLabel((string)($uploadCheck['continuity_status'] ?? 'not_available'))) . '</span>
-                    <div class="helper">' . HelperFramework::escape((string)($uploadCheck['continuity_note'] ?? '')) . '</div>
-                </td>
-                <td>
-                    <span class="badge ' . HelperFramework::escape($this->reconciliationStatusBadgeClass((string)($uploadCheck['running_balance_status'] ?? 'not_available'))) . '">' . HelperFramework::escape($this->reconciliationStatusLabel((string)($uploadCheck['running_balance_status'] ?? 'not_available'))) . '</span>
-                    <div class="helper">' . HelperFramework::escape((string)($uploadCheck['running_balance_note'] ?? '')) . '</div>
-                </td>
-                <td>
-                    <form method="post" action="?page=uploads">
-                        <button class="button" type="submit">Open Upload</button>
-                    </form>
-                </td>
-            </tr>';
-        }
-
-        if ($uploadsHtml === '') {
-            $uploadsHtml = '<tr><td colspan="7">No bank statement uploads are available for ' . HelperFramework::escape($accountName) . ' in the selected tax year.</td></tr>';
-        }
-
         $ledgerSummary = is_array($panel['ledger_summary'] ?? null) ? $panel['ledger_summary'] : [];
 
         return '
@@ -160,22 +147,9 @@ final class _banking_reconciliationCard extends CardBaseFramework
                     <div class="summary-value"><span class="badge ' . HelperFramework::escape($this->reconciliationStatusBadgeClass((string)($panel['ledger_reconciliation_status'] ?? 'not_available'))) . '">' . HelperFramework::escape($this->reconciliationStatusLabel((string)($panel['ledger_reconciliation_status'] ?? 'not_available'))) . '</span></div>
                 </div>
             </div>
-            <div class="table-scroll panel-soft">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Statement</th>
-                            <th>Opening</th>
-                            <th>Closing</th>
-                            <th>Previous closing</th>
-                            <th>Continuity</th>
-                            <th>Running check</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>' . $uploadsHtml . '</tbody>
-                </table>
-            </div>
+            ' . $this->bankUploadsTable($panel, $index)->render($context, [
+                'cards[]' => (array)($context['page']['page_cards'] ?? []),
+            ]) . '
             <h4 class="card-title">Ledger Reconciliation</h4>
             <div class="panel-soft">
                 <div class="summary-grid">
@@ -254,6 +228,123 @@ final class _banking_reconciliationCard extends CardBaseFramework
                     <button class="button" type="submit">View Journals</button>
                 </form>
             </div>';
+    }
+
+    private function bankUploadsTable(array $panel, int $index): TableFramework
+    {
+        $account = is_array($panel['account'] ?? null) ? $panel['account'] : [];
+        $accountName = trim((string)($account['account_name'] ?? 'Bank account'));
+        $key = $this->key() . '_uploads_' . $this->panelTableSuffix($panel, $index);
+        $filename = 'bank-statement-checks-' . $this->panelTableSuffix($panel, $index);
+
+        return TableFramework::make($key, $this->bankUploadRows($panel))
+            ->filename($filename)
+            ->exportLimit(1000)
+            ->empty('No bank statement uploads are available for ' . $accountName . ' in the selected tax year.')
+            ->classes(wrapperClass: 'table-scroll panel-soft')
+            ->primarySecondaryColumn(
+                'statement_month',
+                'Statement',
+                secondaryKey: 'upload_filename'
+            )
+            ->column(
+                'opening_balance',
+                'Opening',
+                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::nullableMoney($row['opening_balance'] ?? null)),
+                export: static fn(array $row): string => FormattingFramework::nullableMoney($row['opening_balance'] ?? null)
+            )
+            ->column(
+                'closing_balance',
+                'Closing',
+                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::nullableMoney($row['closing_balance'] ?? null)),
+                export: static fn(array $row): string => FormattingFramework::nullableMoney($row['closing_balance'] ?? null)
+            )
+            ->column(
+                'previous_statement_closing_balance',
+                'Previous closing',
+                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::nullableMoney($row['previous_statement_closing_balance'] ?? null)),
+                export: static fn(array $row): string => FormattingFramework::nullableMoney($row['previous_statement_closing_balance'] ?? null)
+            )
+            ->column(
+                'continuity_label',
+                'Continuity',
+                html: fn(array $row): string => $this->statusWithNoteHtml(
+                    (string)($row['continuity_status'] ?? 'not_available'),
+                    (string)($row['continuity_note'] ?? '')
+                ),
+                export: fn(array $row): string => $this->joinExportParts([
+                    (string)($row['continuity_label'] ?? ''),
+                    (string)($row['continuity_note'] ?? ''),
+                ])
+            )
+            ->column(
+                'running_balance_label',
+                'Running check',
+                html: fn(array $row): string => $this->statusWithNoteHtml(
+                    (string)($row['running_balance_status'] ?? 'not_available'),
+                    (string)($row['running_balance_note'] ?? '')
+                ),
+                export: fn(array $row): string => $this->joinExportParts([
+                    (string)($row['running_balance_label'] ?? ''),
+                    (string)($row['running_balance_note'] ?? ''),
+                ])
+            )
+            ->column(
+                'actions',
+                '',
+                html: static fn(array $row): string => '<form method="post" action="?page=uploads">
+                    <button class="button" type="submit">Open Upload</button>
+                </form>',
+                exportable: false
+            );
+    }
+
+    private function bankUploadRows(array $panel): array
+    {
+        $rows = [];
+
+        foreach ((array)($panel['uploads'] ?? []) as $uploadCheck) {
+            if (!is_array($uploadCheck)) {
+                continue;
+            }
+
+            $upload = is_array($uploadCheck['upload'] ?? null) ? $uploadCheck['upload'] : [];
+            $uploadCheck['upload_filename'] = (string)($upload['original_filename'] ?? '');
+            $uploadCheck['continuity_label'] = $this->reconciliationStatusLabel((string)($uploadCheck['continuity_status'] ?? 'not_available'));
+            $uploadCheck['running_balance_label'] = $this->reconciliationStatusLabel((string)($uploadCheck['running_balance_status'] ?? 'not_available'));
+            $rows[] = $uploadCheck;
+        }
+
+        return $rows;
+    }
+
+    private function statusWithNoteHtml(string $status, string $note): string
+    {
+        return '<span class="badge ' . HelperFramework::escape($this->reconciliationStatusBadgeClass($status)) . '">'
+            . HelperFramework::escape($this->reconciliationStatusLabel($status))
+            . '</span>'
+            . '<div class="helper">' . HelperFramework::escape($note) . '</div>';
+    }
+
+    private function panelTableSuffix(array $panel, int $index): string
+    {
+        $account = is_array($panel['account'] ?? null) ? $panel['account'] : [];
+        $accountId = (int)($account['id'] ?? 0);
+        if ($accountId > 0) {
+            return 'account_' . $accountId;
+        }
+
+        return 'panel_' . ($index + 1);
+    }
+
+    private function joinExportParts(array $parts): string
+    {
+        $parts = array_values(array_filter(
+            array_map(static fn(mixed $part): string => trim((string)$part), $parts),
+            static fn(string $part): bool => $part !== ''
+        ));
+
+        return implode(' | ', $parts);
     }
 
     private function accountHelper(array $account): string

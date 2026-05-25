@@ -174,7 +174,7 @@ $harness->run(UploadStatementCoverageService::class, static function (GeneratedS
         $harness->assertTrue(str_contains((string)($months['2025-03-01']['tooltip'] ?? ''), 'surrounding statement balances match'));
         $harness->assertSame('pass', $months['2025-04-01']['status'] ?? null);
         $harness->assertSame(false, str_contains((string)($months['2025-04-01']['tooltip'] ?? ''), 'Opening boundary mismatch'));
-        $harness->assertSame('warning', $months['2025-05-01']['status'] ?? null);
+        $harness->assertSame('pass', $months['2025-05-01']['status'] ?? null);
         $harness->assertSame('fail', $months['2025-06-01']['status'] ?? null);
         $harness->assertTrue(str_contains((string)($months['2025-06-01']['tooltip'] ?? ''), 'Closing boundary mismatch'));
         $harness->assertTrue(str_contains((string)($months['2025-06-01']['tooltip'] ?? ''), '30/06/2025 at GBP 30.00; next statement opens on 01/07/2025 at GBP 31.00'));

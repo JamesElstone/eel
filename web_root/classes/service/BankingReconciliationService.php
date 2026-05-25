@@ -17,7 +17,7 @@ final class BankingReconciliationService
         return $this->fetchBankAccountPanelsInternal($companyId, $taxYearId, $bankNominalId, true);
     }
 
-    private function fetchBankAccountPanelsInternal(int $companyId, int $taxYearId, int $bankNominalId, bool $includeAdjacentStatements): array {
+    private function fetchBankAccountPanelsInternal(int $companyId, int $taxYearId, int $bankNominalId, bool $returnAdjacentStatements): array {
         if ($companyId <= 0 || $taxYearId <= 0) {
             return [];
         }
@@ -28,7 +28,7 @@ final class BankingReconciliationService
             return [];
         }
 
-        $taxYear = $includeAdjacentStatements ? (new TaxYearRepository())->fetchTaxYear($companyId, $taxYearId) : null;
+        $taxYear = (new TaxYearRepository())->fetchTaxYear($companyId, $taxYearId);
         $uploadsByAccount = $this->fetchUploadsByAccount($companyId, $taxYearId, array_column($accounts, 'id'), $taxYear);
         $rowsByUpload = $this->fetchRowsByUpload($this->flattenUploadIds($uploadsByAccount));
         $ledgerDeltas = $bankNominalId > 0
@@ -47,8 +47,11 @@ final class BankingReconciliationService
             }
 
             $uploadAnalyses = $this->applyContinuityChecks($uploadAnalyses);
+            $visibleUploadAnalyses = $returnAdjacentStatements
+                ? $uploadAnalyses
+                : $this->filterUploadAnalysesForTaxYear($uploadAnalyses, $taxYearId);
             $ledgerSummary = $this->buildLedgerReconciliationSummary(
-                $uploadAnalyses,
+                $visibleUploadAnalyses,
                 $ledgerDeltas,
                 $bankNominalId
             );
@@ -56,10 +59,10 @@ final class BankingReconciliationService
             $panels[] = [
                 'account' => $account,
                 'tax_year_id' => $taxYearId,
-                'statement_continuity_status' => $this->aggregateStatus($uploadAnalyses, 'continuity_status'),
-                'running_balance_status' => $this->aggregateStatus($uploadAnalyses, 'running_balance_status'),
+                'statement_continuity_status' => $this->aggregateStatus($visibleUploadAnalyses, 'continuity_status'),
+                'running_balance_status' => $this->aggregateStatus($visibleUploadAnalyses, 'running_balance_status'),
                 'ledger_reconciliation_status' => (string)$ledgerSummary['status'],
-                'uploads' => $uploadAnalyses,
+                'uploads' => $visibleUploadAnalyses,
                 'ledger_summary' => $ledgerSummary,
             ];
         }
@@ -425,6 +428,17 @@ final class BankingReconciliationService
         }
 
         return $uploads;
+    }
+
+    private function filterUploadAnalysesForTaxYear(array $uploads, int $taxYearId): array {
+        return array_values(array_filter(
+            $uploads,
+            static function (array $uploadCheck) use ($taxYearId): bool {
+                $upload = is_array($uploadCheck['upload'] ?? null) ? $uploadCheck['upload'] : [];
+
+                return (int)($upload['tax_year_id'] ?? 0) === $taxYearId;
+            }
+        ));
     }
 
     private function buildLedgerReconciliationSummary(array $uploadAnalyses, array $ledgerDeltas, int $bankNominalId): array {

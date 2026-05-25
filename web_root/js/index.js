@@ -2330,6 +2330,15 @@
         });
     }
 
+    function replaceDeveloperOptionsStatus(html) {
+        const current = document.getElementById('developer-options-status-slot');
+        if (!(current instanceof HTMLElement)) {
+            return;
+        }
+
+        current.innerHTML = typeof html === 'string' ? html : '';
+    }
+
     function applyAjaxPayloadFragment(name, callback) {
         try {
             callback();
@@ -2518,6 +2527,7 @@
 
             applyAjaxPayloadFragment('sidebar', () => replaceSidebar(payload.sidebar_html));
             applyAjaxPayloadFragment('site context', () => replaceSiteContextSlots(payload.site_context_html));
+            applyAjaxPayloadFragment('developer options status', () => replaceDeveloperOptionsStatus(payload.developer_options_status_html));
             applyAjaxPayloadFragment('cards', () => replaceCards(payload.cards));
             applyAjaxPayloadFragment('flash', () => replaceFlash(payload.flash_html));
             applyAjaxPayloadFragment('visible card', () => showPageCardTabForCard(payload.show_card));

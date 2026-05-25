@@ -7,6 +7,10 @@
  */
 declare(strict_types=1);
 
+if (!headers_sent()) {
+    header_remove('X-Powered-By');
+}
+
 define('APP_ROOT', rtrim((string)(realpath(dirname(__DIR__)) ?: dirname(__DIR__)), '\\/') . DIRECTORY_SEPARATOR);
 define('PROJECT_ROOT', rtrim(dirname(APP_ROOT), '\\/') . DIRECTORY_SEPARATOR);
 define('APP_CLASSES', APP_ROOT . 'classes' . DIRECTORY_SEPARATOR);

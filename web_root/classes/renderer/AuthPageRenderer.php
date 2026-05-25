@@ -69,9 +69,9 @@ final class AuthPageRenderer
                 <input type="hidden" name="auth_action" value="login">
                 <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($sessionAuthenticationService->csrfToken()) . '">
                 <label class="auth-label" for="email_address">Email address</label>
-                <input class="auth-input" id="email_address" name="email_address" type="email" autocomplete="username" autofocus required>
+                <input class="auth-input" id="email_address" name="email_address" type="email" autocomplete="username" maxlength="254" autofocus required>
                 <label class="auth-label" for="password">Password</label>
-                <input class="auth-input" id="password" name="password" type="password" autocomplete="current-password" required>
+                <input class="auth-input" id="password" name="password" type="password" autocomplete="current-password" maxlength="4096" required>
                 ' . $countdownHtml . '
                 <button class="auth-button" type="submit"' . (($retryAfterSeconds > 0 && !$isLocked) ? ' disabled data-login-submit-disabled="true"' : '') . '>Continue</button>
             </form>'
@@ -101,7 +101,7 @@ final class AuthPageRenderer
                 <input type="hidden" name="auth_action" value="verify_otp_setup">
                 <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($sessionAuthenticationService->csrfToken()) . '">
                 <label class="auth-label" for="otp_code">OTP code</label>
-                <input class="auth-input auth-input-code" id="otp_code" name="otp_code" type="text" inputmode="numeric" pattern="\\d{6}" maxlength="6" autocomplete="one-time-code" autofocus required>
+                <input class="auth-input auth-input-code" id="otp_code" name="otp_code" type="text" inputmode="numeric" pattern="\\d{6}" maxlength="6" autocomplete="one-time-code" data-digits-only="true" autofocus required>
                 <button class="auth-button" type="submit">Enable OTP</button>
             </form>'
         );
@@ -178,7 +178,7 @@ final class AuthPageRenderer
                 <input type="hidden" name="auth_action" value="verify_otp">
                 <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($sessionAuthenticationService->csrfToken()) . '">
                 <label class="auth-label" for="otp_code">OTP code</label>
-                <input class="auth-input auth-input-code" id="otp_code" name="otp_code" type="text" inputmode="numeric" pattern="\\d{6}" maxlength="6" autocomplete="one-time-code" autofocus required>
+                <input class="auth-input auth-input-code" id="otp_code" name="otp_code" type="text" inputmode="numeric" pattern="\\d{6}" maxlength="6" autocomplete="one-time-code" data-digits-only="true" autofocus required>
                 <button class="auth-button" type="submit">Verify code</button>
             </form>'
         );

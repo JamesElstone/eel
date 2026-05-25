@@ -788,6 +788,7 @@ body.sidebar-collapsed .sidebar-hide-collapsed-link-initials .nav-link-short {
   font-size: 0.95rem;
   font-weight: 700;
   line-height: 1.4;
+  white-space: pre-line;
 }
 
 .chicken-check-actions {

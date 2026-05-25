@@ -1,5 +1,21 @@
 # eelKit Changes
 
+## DOM text rendering hardening
+
+Feature name: `dom_text_rendering_hardening`.
+
+eelKit now renders several plain-text JavaScript UI messages with `textContent` instead of `innerHTML`. This reduces latent DOM XSS leverage where downstream projects provide confirmation or status text through `data-*` attributes.
+
+Changed in `web_root/js/index.js`:
+
+- Upload selection summaries now use `textContent`.
+- Flash history's empty state is built with DOM nodes and `textContent`.
+- Chicken-check confirmation messages now use `textContent` instead of `innerHTML`.
+
+For compatibility, `data-chicken-message` values containing `<br>` or `<br />` are converted to newline characters before rendering. `web_root/css/index.css` now applies `white-space: pre-line` to `.chicken-check-message`, so existing downstream messages that used `<br>` for line breaks should continue to display as multi-line text.
+
+Downstream projects should avoid relying on HTML markup inside `data-chicken-message`. Treat it as plain text. If rich confirmation content is needed, implement a dedicated trusted renderer rather than putting HTML in a `data-*` message attribute.
+
 ## Indexed section blocks
 
 Feature name: `indexed_section`.

@@ -398,6 +398,20 @@
         tick();
     }
 
+    function normaliseDigitsOnlyInput(input) {
+        if (!(input instanceof HTMLInputElement) || input.dataset.digitsOnly !== 'true') {
+            return;
+        }
+
+        const maxLength = Number.parseInt(input.getAttribute('maxlength') || '0', 10);
+        const digits = input.value.replace(/\D/g, '');
+        const nextValue = maxLength > 0 ? digits.substring(0, maxLength) : digits;
+
+        if (input.value !== nextValue) {
+            input.value = nextValue;
+        }
+    }
+
     function afFormatTimezone() {
         const offsetMinutes = -new Date().getTimezoneOffset();
         const sign = offsetMinutes >= 0 ? '+' : '-';
@@ -1502,11 +1516,11 @@
 
         if (summary instanceof HTMLElement) {
             if (files.length === 0) {
-                summary.innerHTML = 'No files selected yet.';
+                summary.textContent = 'No files selected yet.';
             } else if (maxReached) {
-                summary.innerHTML = `Too many files selected.<br>Please keep it to ${String(maxFiles)} CSV files or fewer.`;
+                summary.textContent = `Too many files selected.\nPlease keep it to ${String(maxFiles)} CSV files or fewer.`;
             } else {
-                summary.innerHTML = `${String(files.length)} file${files.length > 1 ? 's' : ''} selected:`;
+                summary.textContent = `${String(files.length)} file${files.length > 1 ? 's' : ''} selected:`;
             }
         }
 
@@ -2232,7 +2246,10 @@
         }
 
         if (flashHistory.length === 0) {
-            popover.innerHTML = '<div class="flash-history-empty">No flash messages yet.</div>';
+            const empty = document.createElement('div');
+            empty.className = 'flash-history-empty';
+            empty.textContent = 'No flash messages yet.';
+            popover.replaceChildren(empty);
             return;
         }
 
@@ -2424,7 +2441,8 @@
 
         const message = document.createElement('div');
         message.className = 'chicken-check-message';
-        message.innerHTML = String(submitter.dataset.chickenMessage || 'Press the button again to confirm.');
+        message.textContent = String(submitter.dataset.chickenMessage || 'Press the button again to confirm.')
+            .replace(/<br\s*\/?>/gi, '\n');
 
         const actions = document.createElement('div');
         actions.className = 'chicken-check-actions';
@@ -2632,6 +2650,8 @@
     });
 
     document.addEventListener('input', (event) => {
+        normaliseDigitsOnlyInput(event.target);
+
         if (isFormControl(event.target)) {
             syncVisibleWhenField(event.target);
         }

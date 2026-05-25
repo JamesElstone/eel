@@ -32,17 +32,52 @@ $harness->check(ApplicationSettingsAction::class, 'reads checkbox values from aj
     $harness->assertSame(false, $method->invoke($action, $request, 'missing'));
 });
 
-$harness->check(ApplicationSettingsAction::class, 'explains when developer options are turned off', function () use ($harness): void {
+$harness->check(ApplicationSettingsAction::class, 'explains application setting changes in plain language', function () use ($harness): void {
     $action = new ApplicationSettingsAction();
     $method = new ReflectionMethod(ApplicationSettingsAction::class, 'successFlashMessage');
     $method->setAccessible(true);
 
+    $previousConfig = [
+        'app_name' => 'eelKit Framework',
+        'app_strapline' => 'Old strapline',
+        'brand-mark' => 'E',
+        'developer_options' => true,
+        'navigation' => [
+            'default_order' => [
+                'dashboard' => 10,
+            ],
+            'hide_collapsed_link_initials' => false,
+        ],
+        'antifraud' => [
+            'vendor_license_ids' => 'old',
+            'vendor_product_name' => 'eelKit',
+            'vendor_public_ip' => '',
+            'vendor_version' => 'dev',
+        ],
+        'session' => [
+            'cookie_secure' => 'auto',
+            'cookie_samesite' => 'Strict',
+        ],
+    ];
+
+    $settings = $previousConfig;
+    $settings['developer_options'] = false;
+    $settings['navigation']['hide_collapsed_link_initials'] = true;
+
     $harness->assertSame(
-        'Application settings saved. Developer options are now off.',
-        $method->invoke($action, false, false)
+        'Developer options are now off. Collapsed sidebar link initials are now hidden.',
+        $method->invoke($action, $previousConfig, $settings, false)
+    );
+
+    $settings['developer_options'] = true;
+    $settings['navigation']['hide_collapsed_link_initials'] = false;
+    $settings['antifraud']['vendor_public_ip'] = '203.0.113.10';
+    $harness->assertSame(
+        'Anti-fraud header defaults updated. Vendor public IP looked up.',
+        $method->invoke($action, $previousConfig, $settings, true)
     );
     $harness->assertSame(
-        'Application settings saved. Developer options are now off. Vendor public IP looked up.',
-        $method->invoke($action, true, false)
+        'No changes needed; application settings are already up to date.',
+        $method->invoke($action, $previousConfig, $previousConfig, false)
     );
 });

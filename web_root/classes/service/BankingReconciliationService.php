@@ -10,26 +10,34 @@ declare(strict_types=1);
 final class BankingReconciliationService
 {
     public function fetchBankAccountPanels(int $companyId, int $taxYearId, int $bankNominalId): array {
-        return $this->fetchBankAccountPanelsInternal($companyId, $taxYearId, $bankNominalId, false);
+        return $this->fetchAccountPanelsInternal($companyId, $taxYearId, $bankNominalId, false);
     }
 
     public function fetchBankAccountPanelsWithAdjacentStatements(int $companyId, int $taxYearId, int $bankNominalId): array {
-        return $this->fetchBankAccountPanelsInternal($companyId, $taxYearId, $bankNominalId, true);
+        return $this->fetchAccountPanelsInternal($companyId, $taxYearId, $bankNominalId, true);
     }
 
-    private function fetchBankAccountPanelsInternal(int $companyId, int $taxYearId, int $bankNominalId, bool $returnAdjacentStatements): array {
+    public function fetchAccountPanels(int $companyId, int $taxYearId, int $bankNominalId): array {
+        return $this->fetchAccountPanelsInternal($companyId, $taxYearId, $bankNominalId, false);
+    }
+
+    private function fetchAccountPanelsInternal(int $companyId, int $taxYearId, int $bankNominalId, bool $returnAdjacentStatements): array {
         if ($companyId <= 0 || $taxYearId <= 0) {
             return [];
         }
 
-        $accounts = $this->fetchBankAccounts($companyId);
+        $accounts = $this->fetchCompanyAccounts($companyId);
 
         if ($accounts === []) {
             return [];
         }
 
+        $bankAccounts = array_values(array_filter(
+            $accounts,
+            static fn(array $account): bool => (string)($account['account_type'] ?? '') === CompanyAccountService::TYPE_BANK
+        ));
         $taxYear = (new TaxYearRepository())->fetchTaxYear($companyId, $taxYearId);
-        $uploadsByAccount = $this->fetchUploadsByAccount($companyId, $taxYearId, array_column($accounts, 'id'), $taxYear);
+        $uploadsByAccount = $this->fetchUploadsByAccount($companyId, $taxYearId, array_column($bankAccounts, 'id'), $taxYear);
         $rowsByUpload = $this->fetchRowsByUpload($this->flattenUploadIds($uploadsByAccount));
         $ledgerDeltas = $bankNominalId > 0
             ? $this->fetchLedgerBankDeltas($companyId, $taxYearId, $bankNominalId)
@@ -39,11 +47,14 @@ final class BankingReconciliationService
 
         foreach ($accounts as $account) {
             $accountId = (int)$account['id'];
+            $accountType = (string)($account['account_type'] ?? '');
             $uploadAnalyses = [];
 
-            foreach ($uploadsByAccount[$accountId] ?? [] as $upload) {
-                $uploadId = (int)$upload['id'];
-                $uploadAnalyses[] = $this->analyseUpload($upload, $rowsByUpload[$uploadId] ?? []);
+            if ($accountType === CompanyAccountService::TYPE_BANK) {
+                foreach ($uploadsByAccount[$accountId] ?? [] as $upload) {
+                    $uploadId = (int)$upload['id'];
+                    $uploadAnalyses[] = $this->analyseUpload($upload, $rowsByUpload[$uploadId] ?? []);
+                }
             }
 
             $uploadAnalyses = $this->applyContinuityChecks($uploadAnalyses);
@@ -55,22 +66,27 @@ final class BankingReconciliationService
                 $ledgerDeltas,
                 $bankNominalId
             );
+            $tradeSummary = $accountType === CompanyAccountService::TYPE_TRADE
+                ? $this->buildTradeLedgerSummary($companyId, $taxYearId, $accountId)
+                : null;
 
             $panels[] = [
                 'account' => $account,
+                'account_type' => $accountType,
                 'tax_year_id' => $taxYearId,
                 'statement_continuity_status' => $this->aggregateStatus($visibleUploadAnalyses, 'continuity_status'),
                 'running_balance_status' => $this->aggregateStatus($visibleUploadAnalyses, 'running_balance_status'),
-                'ledger_reconciliation_status' => (string)$ledgerSummary['status'],
+                'ledger_reconciliation_status' => $tradeSummary !== null ? (string)$tradeSummary['status'] : (string)$ledgerSummary['status'],
                 'uploads' => $visibleUploadAnalyses,
                 'ledger_summary' => $ledgerSummary,
+                'trade_summary' => $tradeSummary,
             ];
         }
 
         return $panels;
     }
 
-    private function fetchBankAccounts(int $companyId): array {
+    private function fetchCompanyAccounts(int $companyId): array {
         return InterfaceDB::fetchAll( 'SELECT id,
                     company_id,
                     account_name,
@@ -80,11 +96,64 @@ final class BankingReconciliationService
                     is_active
              FROM company_accounts
              WHERE company_id = :company_id
-               AND account_type = :account_type
-             ORDER BY is_active DESC, account_name ASC, id ASC', [
+             ORDER BY is_active DESC, account_type ASC, account_name ASC, id ASC', [
             'company_id' => $companyId,
-            'account_type' => CompanyAccountService::TYPE_BANK,
         ]);
+    }
+
+    private function buildTradeLedgerSummary(int $companyId, int $taxYearId, int $accountId): array {
+        $row = InterfaceDB::fetchOne( 'SELECT COUNT(jl.id) AS line_count,
+                    COALESCE(SUM(COALESCE(jl.debit, 0)), 0.00) AS debit_total,
+                    COALESCE(SUM(COALESCE(jl.credit, 0)), 0.00) AS credit_total,
+                    MIN(j.journal_date) AS first_journal_date,
+                    MAX(j.journal_date) AS last_journal_date
+             FROM journals j
+             INNER JOIN journal_lines jl ON jl.journal_id = j.id
+             WHERE j.company_id = :company_id
+               AND j.tax_year_id = :tax_year_id
+               AND j.is_posted = 1
+               AND jl.company_account_id = :company_account_id', [
+            'company_id' => $companyId,
+            'tax_year_id' => $taxYearId,
+            'company_account_id' => $accountId,
+        ]);
+
+        $lineCount = (int)($row['line_count'] ?? 0);
+        $debitTotal = round((float)($row['debit_total'] ?? 0), 2);
+        $creditTotal = round((float)($row['credit_total'] ?? 0), 2);
+        $netBalance = $this->roundMoney($debitTotal - $creditTotal);
+
+        if ($lineCount <= 0) {
+            return [
+                'status' => 'not_available',
+                'line_count' => 0,
+                'debit_total' => 0.0,
+                'credit_total' => 0.0,
+                'net_balance' => 0.0,
+                'balance_label' => 'None',
+                'first_journal_date' => null,
+                'last_journal_date' => null,
+                'note' => 'No posted ledger lines are tagged to this trade account yet.',
+                'scope_note' => 'Trade checks use journal_lines.company_account_id, so supplier balances become visible once postings are tagged to the trade account.',
+            ];
+        }
+
+        $status = $netBalance > 0.0 ? 'warning' : 'pass';
+
+        return [
+            'status' => $status,
+            'line_count' => $lineCount,
+            'debit_total' => $debitTotal,
+            'credit_total' => $creditTotal,
+            'net_balance' => abs($netBalance),
+            'balance_label' => $netBalance < 0.0 ? 'Credit' : ($netBalance > 0.0 ? 'Debit' : 'Nil'),
+            'first_journal_date' => $row['first_journal_date'] ?? null,
+            'last_journal_date' => $row['last_journal_date'] ?? null,
+            'note' => $status === 'pass'
+                ? 'Posted ledger lines tagged to this trade account produce a nil or creditor balance.'
+                : 'This trade account currently has a debit balance. Review whether it is a supplier prepayment, refund, or mis-posting.',
+            'scope_note' => 'Supplier statement matching is not implemented yet; this is a ledger-tagged trade account check.',
+        ];
     }
 
     private function fetchUploadsByAccount(int $companyId, int $taxYearId, array $accountIds, ?array $continuityWindowTaxYear = null): array {

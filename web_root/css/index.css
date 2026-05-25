@@ -198,6 +198,7 @@ body.sidebar-collapsed .layout {
 
 .sidebar .selector-label {
   color: #9fb0cc;
+  font-size: 0.68rem;
 }
 
 .selector-input {
@@ -216,10 +217,17 @@ body.sidebar-collapsed .layout {
 }
 
 .sidebar-select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  font-size: 0.78rem;
+  line-height: 1.25;
+  padding: 8px 10px;
   background: rgba(255,255,255,0.08);
   border-color: rgba(255,255,255,0.12);
   color: #e5eefc;
   box-shadow: none;
+  text-overflow: ellipsis;
 }
 
 .sidebar-select option {
@@ -477,6 +485,7 @@ body.sidebar-collapsed .layout {
   border-radius: 14px;
   color: #d7e3f8;
   transition: 0.2s ease;
+  font-size: 0.92rem;
 }
 
 .nav-icon {

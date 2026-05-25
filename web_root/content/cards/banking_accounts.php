@@ -34,6 +34,11 @@ final class _banking_accountsCard extends CardBaseFramework
         return ['page.context'];
     }
 
+    public function title(): string
+    {
+        return 'Company Accounts';
+    }
+
     public function handleError(string $serviceKey, array $error, array $context): string
     {
         return '';
@@ -57,14 +62,14 @@ final class _banking_accountsCard extends CardBaseFramework
         $taxYearId = (int)($company['tax_year_id'] ?? 0);
 
         if ($companyId <= 0) {
-            return '<div class="helper">No banks accounts can be displayed before a company is added.</div>';
+            return '<div class="helper">No company accounts can be displayed before a company is added.</div>';
         }
 
         $rowsHtml = '';
 
         if ( $companyAccounts === [] ) {
             return '
-                <div class="helper">No banks accounts have been added to this company yet.</div>
+                <div class="helper">No company accounts have been added to this company yet.</div>
                 <button class="button primary" type="button" data-page-card-switch-tab="Add New Account">Add Account</button>
             ';
         }

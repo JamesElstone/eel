@@ -313,7 +313,7 @@ final class YearEndChecklistService
                 ? 'At least one bank account has running-balance or continuity breaks.'
                 : 'Statement continuity checks passed where statement balance data exists.',
             (string)$continuityWarningCount,
-            '?page=bank_accounts&company_id=' . $companyId . '&tax_year_id=' . $taxYearId
+            '?page=company_accounts&company_id=' . $companyId . '&tax_year_id=' . $taxYearId
         );
         $sections['bank_source_completeness'][] = $this->makeCheck(
             'duplicate_import_audit',

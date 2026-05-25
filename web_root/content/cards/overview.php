@@ -71,6 +71,11 @@ final class _overviewCard extends CardBaseFramework
                 'foot' => 'Active company accounts available for statement upload and reconciliation.',
             ],
             [
+                'label' => 'Trade accounts',
+                'value' => (string)(int)($dashboardStats['trade_accounts'] ?? 0),
+                'foot' => 'Active trade accounts used for supplier, customer, or ledger activity.',
+            ],
+            [
                 'label' => 'Uncategorised',
                 'value' => (string)(int)($dashboardStats['unreconciled_items'] ?? 0),
                 'foot' => 'Transactions still waiting for nominal assignment.',

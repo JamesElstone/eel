@@ -65,6 +65,11 @@ final class ResponseFramework
 
     public function send(): void
     {
+        if (!headers_sent()) {
+            header_remove('X-Powered-By');
+            header_remove('X-XSS-Protection');
+        }
+
         http_response_code($this->statusCode);
         header('Content-Type: ' . $this->contentType);
         foreach ($this->headers as $header => $value) {
@@ -90,6 +95,10 @@ final class ResponseFramework
             ]),
             'X-Content-Type-Options' => 'nosniff',
             'Referrer-Policy' => 'strict-origin-when-cross-origin',
+            'Permissions-Policy' => 'accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()',
+            'X-Permitted-Cross-Domain-Policies' => 'none',
+            'Cross-Origin-Opener-Policy' => 'same-origin',
+            'Cross-Origin-Resource-Policy' => 'same-origin',
         ];
     }
 }

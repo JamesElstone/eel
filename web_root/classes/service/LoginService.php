@@ -9,6 +9,9 @@ declare(strict_types=1);
 
 final class LoginService
 {
+    private const MAX_LOGIN_EMAIL_LENGTH = 254;
+    private const MAX_LOGIN_PASSWORD_LENGTH = 4096;
+
     private ?string $pepper = null;
 
     public function __construct(
@@ -25,6 +28,23 @@ final class LoginService
     {
         $this->sessionAuthenticationService->invalidateForDeviceMismatch($deviceId);
         $emailAddress = strtolower(trim($emailAddress));
+
+        if (mb_strlen($emailAddress) > self::MAX_LOGIN_EMAIL_LENGTH || mb_strlen($password) > self::MAX_LOGIN_PASSWORD_LENGTH) {
+            $this->sessionAuthenticationService->clearPendingOtpSetup();
+            $this->sessionAuthenticationService->clearPendingOtp();
+
+            return [
+                'success' => false,
+                'authenticated' => false,
+                'requires_otp' => false,
+                'retry_after_seconds' => 0,
+                'rate_limit' => $this->userAuthenticationService->loginRateLimitStatus('', $deviceId),
+                'account_locked' => false,
+                'throttled' => false,
+                'errors' => ['Invalid email address or password.'],
+            ];
+        }
+
         $passwordDiagnostics = $this->passwordAttemptDiagnostics($password);
         $password = $this->normaliseSubmittedLoginPassword($password);
         $rateLimit = $this->userAuthenticationService->loginRateLimitStatus($emailAddress, $deviceId);

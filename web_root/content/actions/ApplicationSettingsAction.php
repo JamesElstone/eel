@@ -59,11 +59,12 @@ final class ApplicationSettingsAction implements ActionInterfaceFramework
             $vendorPublicIp = $lookedUpVendorPublicIp
                 ? (new ExternalIpLookupOutbound())->lookupPublicIp()
                 : trim((string)$request->input('antifraud_vendor_public_ip', ''));
+            $developerOptions = $this->checkboxValue($request, 'developer_options');
             $settings = [
                 'app_name' => $appName,
                 'app_strapline' => trim((string)$request->input('app_strapline', '')),
                 'brand-mark' => $brandMark,
-                'developer_options' => $this->checkboxValue($request, 'developer_options'),
+                'developer_options' => $developerOptions,
                 'navigation' => array_replace($this->configArray('navigation'), [
                     'default_order' => $this->navigationOrderFromRequest($request),
                     'hide_collapsed_link_initials' => $this->checkboxValue($request, 'hide_collapsed_link_initials'),
@@ -98,9 +99,7 @@ final class ApplicationSettingsAction implements ActionInterfaceFramework
             ['application.settings', 'layout.sidebar'],
             [[
                 'type' => 'success',
-                'message' => $lookedUpVendorPublicIp
-                    ? 'Application settings saved. Vendor public IP looked up.'
-                    : 'Application settings saved.',
+                'message' => $this->successFlashMessage($lookedUpVendorPublicIp, $developerOptions),
             ]]
         );
     }
@@ -129,6 +128,21 @@ final class ApplicationSettingsAction implements ActionInterfaceFramework
         }
 
         return (string)$value === '1';
+    }
+
+    private function successFlashMessage(bool $lookedUpVendorPublicIp, bool $developerOptions): string
+    {
+        $message = 'Application settings saved.';
+
+        if (!$developerOptions) {
+            $message .= ' Developer options are now off.';
+        }
+
+        if ($lookedUpVendorPublicIp) {
+            $message .= ' Vendor public IP looked up.';
+        }
+
+        return $message;
     }
 
     private function navigationOrderFromRequest(RequestFramework $request): array

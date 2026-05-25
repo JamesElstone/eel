@@ -31,3 +31,18 @@ $harness->check(ApplicationSettingsAction::class, 'reads checkbox values from aj
     $harness->assertSame(false, $method->invoke($action, $request, 'unchecked'));
     $harness->assertSame(false, $method->invoke($action, $request, 'missing'));
 });
+
+$harness->check(ApplicationSettingsAction::class, 'explains when developer options are turned off', function () use ($harness): void {
+    $action = new ApplicationSettingsAction();
+    $method = new ReflectionMethod(ApplicationSettingsAction::class, 'successFlashMessage');
+    $method->setAccessible(true);
+
+    $harness->assertSame(
+        'Application settings saved. Developer options are now off.',
+        $method->invoke($action, false, false)
+    );
+    $harness->assertSame(
+        'Application settings saved. Developer options are now off. Vendor public IP looked up.',
+        $method->invoke($action, true, false)
+    );
+});

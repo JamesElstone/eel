@@ -48,33 +48,118 @@ final class _dashboard_year_end_readinessCard extends CardBaseFramework
     {
         $summary = (array)(($context['services'] ?? [])['year_end_dashboard_summary'] ?? (($context['page'] ?? [])['year_end_dashboard_summary'] ?? []));
         $status = (string)($summary['status'] ?? 'not_started');
+        $topIssues = (array)($summary['top_issues'] ?? []);
+        $periodLabel = (string)(($summary['period_label'] ?? '') ?: 'No accounting period selected');
 
-        $issuesHtml = '';
-        foreach ((array)($summary['top_issues'] ?? []) as $issue) {
-            $issuesHtml .= '
-                <div class="list-item">
-                    <strong>' . HelperFramework::escape((string)($issue['title'] ?? '')) . '</strong>
-                    <span>' . HelperFramework::escape((string)($issue['detail'] ?? '')) . '</span>
-                </div>
-            ';
+        $statsHtml = $this->statCard(
+            'Year end status',
+            $this->statusLabel($status),
+            $periodLabel,
+            $this->statusCardClass($status)
+        );
+        $statsHtml .= $this->statCard(
+            'Issues surfaced',
+            (string)count($topIssues),
+            $topIssues === [] ? 'No blocking checks are currently surfaced.' : 'Top checks needing attention.',
+            $this->issuesCardClass($topIssues)
+        );
+
+        foreach ($topIssues as $issue) {
+            if (!is_array($issue)) {
+                continue;
+            }
+
+            $statsHtml .= $this->statCard(
+                (string)($issue['title'] ?? 'Year end check'),
+                $this->issueValue($issue),
+                $this->issueFoot($issue),
+                $this->statusCardClass((string)($issue['status'] ?? 'warning'))
+            );
         }
 
-        if ($issuesHtml === '') {
-            $issuesHtml = '
-                <div class="list-item">
-                    <strong>No issues surfaced yet</strong>
-                    <span>Open the Year End To Do page to calculate the detailed checklist.</span>
-                </div>
-            ';
+        if ($topIssues === []) {
+            $statsHtml .= $this->statCard(
+                'Next step',
+                'Review',
+                'Open the Year End To Do page to calculate the detailed checklist.',
+                'warn'
+            );
         }
 
         return '
             <div class="panel-soft">
-                <div class="list">' . $issuesHtml . '</div>
+                <div class="grid-stats">' . $statsHtml . '</div>
                 <div class="mini-field">
                     <a class="button primary" href="' . HelperFramework::escape((string)($summary['action_url'] ?? '?page=year-end')) . '">Open Year End To Do</a>
                 </div>
             </div>
         ';
+    }
+
+    private function statCard(string $label, string $value, string $foot, string $state): string
+    {
+        return '<article class="card stat-card stat-card-status-' . HelperFramework::escape($state) . '">
+            <div class="eyebrow">' . HelperFramework::escape($label) . '</div>
+            <div class="stat-value">' . HelperFramework::escape($value) . '</div>
+            <div class="stat-foot">' . HelperFramework::escape($foot) . '</div>
+        </article>';
+    }
+
+    private function statusLabel(string $status): string
+    {
+        return match ($status) {
+            'locked' => 'Locked',
+            'ready_for_review', 'pass' => 'Ready',
+            'in_progress', 'warning' => 'Warning',
+            'needs_attention', 'fail' => 'Missing',
+            default => 'Not started',
+        };
+    }
+
+    private function issueFoot(array $issue): string
+    {
+        $detail = trim((string)($issue['detail'] ?? ''));
+        $metricValue = trim((string)($issue['metric_value'] ?? ''));
+
+        if ($detail === '') {
+            return $metricValue;
+        }
+
+        return $detail;
+    }
+
+    private function issueValue(array $issue): string
+    {
+        $metricValue = trim((string)($issue['metric_value'] ?? ''));
+
+        if ($metricValue !== '' && !is_numeric($metricValue)) {
+            return $metricValue;
+        }
+
+        return $this->statusLabel((string)($issue['status'] ?? 'warning'));
+    }
+
+    private function statusCardClass(string $status): string
+    {
+        return match ($status) {
+            'locked', 'ready_for_review', 'pass' => 'ok',
+            'needs_attention', 'fail' => 'bad',
+            default => 'warn',
+        };
+    }
+
+    private function issuesCardClass(array $topIssues): string
+    {
+        if ($topIssues === []) {
+            return 'ok';
+        }
+
+        foreach ($topIssues as $issue) {
+            if (is_array($issue) && (string)($issue['status'] ?? '') === 'fail') {
+                return 'bad';
+            }
+        }
+
+        return 'warn';
     }
 }

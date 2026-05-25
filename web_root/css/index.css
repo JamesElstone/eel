@@ -1117,6 +1117,36 @@ body.sidebar-collapsed .sidebar-hide-collapsed-link-initials .nav-link-short {
   padding: 20px;
 }
 
+.stat-card-status-ok {
+  background: var(--success-soft);
+  border-color: #86d39d;
+}
+
+.stat-card-status-ok .stat-value,
+.stat-card-status-ok .eyebrow {
+  color: var(--success);
+}
+
+.stat-card-status-warn {
+  background: var(--warning-soft);
+  border-color: #f1c46f;
+}
+
+.stat-card-status-warn .stat-value,
+.stat-card-status-warn .eyebrow {
+  color: var(--warning);
+}
+
+.stat-card-status-bad {
+  background: var(--danger-soft);
+  border-color: #f0a3a3;
+}
+
+.stat-card-status-bad .stat-value,
+.stat-card-status-bad .eyebrow {
+  color: var(--danger);
+}
+
 .eyebrow {
   color: var(--muted);
   font-size: 0.85rem;
@@ -1216,6 +1246,7 @@ body.sidebar-collapsed .sidebar-hide-collapsed-link-initials .nav-link-short {
 
 .card-title {
   margin: 0;
+  padding-bottom: 10px;
   font-size: 1.1rem;
   font-weight: 700;
 }
@@ -1414,6 +1445,15 @@ textarea[disabled] {
   align-items: center;
   gap: 10px;
   padding-bottom: 0;
+}
+
+.transactions-imported-controls {
+  justify-content: flex-start;
+}
+
+.transactions-imported-controls .toolbar,
+.transactions-imported-controls .pill-row {
+  align-items: center;
 }
 
 .role-assignment-create {

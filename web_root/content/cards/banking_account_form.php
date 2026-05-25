@@ -48,7 +48,7 @@ final class _banking_account_formCard extends CardBaseFramework
     }
 
     public function title() : string {
-        return 'Add or Edit a new bank or trade account.';
+        return 'Add or Edit a company account.';
     }
 
     public function contextTitle(array $context): string
@@ -57,7 +57,7 @@ final class _banking_account_formCard extends CardBaseFramework
             return 'Edit bank or trade account.';
         }
 
-        return 'Add a new bank or trade account.';
+        return 'Add a new company account.';
     }
 
     public function render(array $context): string
@@ -65,7 +65,7 @@ final class _banking_account_formCard extends CardBaseFramework
 
 
         if ((string)($context['company']['id'] ?? 0) <= 0) {
-            return '<div class="helper">Adding a bank account is not possible without adding a company first.</div>';
+            return '<div class="helper">Adding a company account is not possible without adding a company first.</div>';
         }
 
         $page = (array)($context['page'] ?? []);

@@ -11,9 +11,9 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'PageServiceTestFactory.php';
 
 $harness = new GeneratedServiceClassTestHarness();
-$harness->run(_bank_accounts::class, static function (GeneratedServiceClassTestHarness $harness, _bank_accounts $page): void {
-    $harness->check(_bank_accounts::class, 'maps field mapping account id from banking request context', static function () use ($harness, $page): void {
-        $_GET = ['page' => 'bank_accounts'];
+$harness->run(_company_accounts::class, static function (GeneratedServiceClassTestHarness $harness, _company_accounts $page): void {
+    $harness->check(_company_accounts::class, 'maps field mapping account id from banking request context', static function () use ($harness, $page): void {
+        $_GET = ['page' => 'company_accounts'];
         $_POST = [
             'field_mapping_account_id' => '47',
         ];
@@ -21,15 +21,15 @@ $harness->run(_bank_accounts::class, static function (GeneratedServiceClassTestH
         $_SERVER['HTTP_X_REQUESTED_WITH'] = '';
         $_SERVER['HTTP_ACCEPT'] = 'text/html';
 
-        $reflection = new ReflectionMethod(_bank_accounts::class, 'buildContext');
+        $reflection = new ReflectionMethod(_company_accounts::class, 'buildContext');
         $reflection->setAccessible(true);
         $context = $reflection->invoke($page, RequestFramework::fromGlobals(), createTestPageServiceFramework(), ActionResultFramework::none());
 
         $harness->assertSame(47, $context['field_mapping']['account_id'] ?? null);
     });
 
-    $harness->check(_bank_accounts::class, 'preserves selected mapping account after save requests', static function () use ($harness, $page): void {
-        $_GET = ['page' => 'bank_accounts'];
+    $harness->check(_company_accounts::class, 'preserves selected mapping account after save requests', static function () use ($harness, $page): void {
+        $_GET = ['page' => 'company_accounts'];
         $_POST = [
             'mapping_account_id' => '47',
         ];
@@ -37,15 +37,15 @@ $harness->run(_bank_accounts::class, static function (GeneratedServiceClassTestH
         $_SERVER['HTTP_X_REQUESTED_WITH'] = '';
         $_SERVER['HTTP_ACCEPT'] = 'text/html';
 
-        $reflection = new ReflectionMethod(_bank_accounts::class, 'buildContext');
+        $reflection = new ReflectionMethod(_company_accounts::class, 'buildContext');
         $reflection->setAccessible(true);
         $context = $reflection->invoke($page, RequestFramework::fromGlobals(), createTestPageServiceFramework(), ActionResultFramework::none());
 
         $harness->assertSame(47, $context['field_mapping']['account_id'] ?? null);
     });
 
-    $harness->check(_bank_accounts::class, 'maps edit account id from banking edit request context', static function () use ($harness, $page): void {
-        $_GET = ['page' => 'bank_accounts'];
+    $harness->check(_company_accounts::class, 'maps edit account id from banking edit request context', static function () use ($harness, $page): void {
+        $_GET = ['page' => 'company_accounts'];
         $_POST = [
             'intent' => 'edit',
             'account_id' => '47',
@@ -54,21 +54,21 @@ $harness->run(_bank_accounts::class, static function (GeneratedServiceClassTestH
         $_SERVER['HTTP_X_REQUESTED_WITH'] = '';
         $_SERVER['HTTP_ACCEPT'] = 'text/html';
 
-        $reflection = new ReflectionMethod(_bank_accounts::class, 'buildContext');
+        $reflection = new ReflectionMethod(_company_accounts::class, 'buildContext');
         $reflection->setAccessible(true);
         $context = $reflection->invoke($page, RequestFramework::fromGlobals(), createTestPageServiceFramework(), ActionResultFramework::none());
 
         $harness->assertSame(47, $context['edit_account_id'] ?? null);
     });
 
-    $harness->check(_bank_accounts::class, 'maps edit account id from action query context', static function () use ($harness, $page): void {
-        $_GET = ['page' => 'bank_accounts'];
+    $harness->check(_company_accounts::class, 'maps edit account id from action query context', static function () use ($harness, $page): void {
+        $_GET = ['page' => 'company_accounts'];
         $_POST = [];
         $_SERVER['REQUEST_METHOD'] = 'POST';
         $_SERVER['HTTP_X_REQUESTED_WITH'] = '';
         $_SERVER['HTTP_ACCEPT'] = 'text/html';
 
-        $reflection = new ReflectionMethod(_bank_accounts::class, 'buildContext');
+        $reflection = new ReflectionMethod(_company_accounts::class, 'buildContext');
         $reflection->setAccessible(true);
         $actionResult = ActionResultFramework::success(
             ['page.context'],

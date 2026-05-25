@@ -74,7 +74,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
 
     public function helper(array $context): string
     {
-        return 'Map CSV columns to import fields before staging rows, or maintain the saved mapping for a bank account.';
+        return 'Map bank CSV columns to import fields before staging rows, or maintain the saved mapping for a bank account.';
     }
 
     public function handleError(string $serviceKey, array $error, array $context): string
@@ -121,7 +121,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
         $uploadId = (int)($upload['id'] ?? $selectedUploadId);
         $accountId = (int)($upload['account_id'] ?? $bankingMappingAccountId);
         $action = $pageId !== '' ? '?page=' . rawurlencode($pageId) : '';
-        $cardAction = in_array($pageId, ['bank_accounts', 'banking'], true) ? 'Banking' : 'Uploads';
+        $cardAction = in_array($pageId, ['company_accounts', 'bank_accounts', 'banking'], true) ? 'Banking' : 'Uploads';
 
         $summaryHtml = $this->renderSummary($mode, $upload, $mappingRow, $hasConfirmedMapping, $extraHeaders);
         $sampleHtml = $this->renderSourceSample($sourceSample);

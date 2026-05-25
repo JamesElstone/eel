@@ -7,27 +7,22 @@
  */
 declare(strict_types=1);
 
-final class _bank_accounts extends PageContextFramework
+final class _company_accounts extends PageContextFramework
 {
     public function id(): string
     {
-        return 'bank_accounts';
+        return 'company_accounts';
     }
 
     public function title(): string
     {
-        return 'Bank Accounts';
+        return 'Company Accounts';
     }
 
     public function subtitle(): string
     {
-        return 'Maintain company accounts, field mappings, and reconciliation panels in one place.';
+        return 'Maintain company accounts, bank CSV mappings, and account checks in one place.';
     }
-
-    // public function pageStackClass(): string
-    // {
-    //     return 'page-stack-banking';
-    // }
 
     public function cards(): array
     {
@@ -35,7 +30,7 @@ final class _bank_accounts extends PageContextFramework
             'banking_accounts',
             'banking_account_form',
             'statement_field_mapping',
-            'banking_reconciliation'
+            'banking_reconciliation',
         ];
     }
 
@@ -56,7 +51,7 @@ final class _bank_accounts extends PageContextFramework
                 ],
             ],
             [
-                'tab' => 'CSV Mappings',
+                'tab' => 'Bank CSV Mappings',
                 'cards' => [
                     'statement_field_mapping',
                 ],

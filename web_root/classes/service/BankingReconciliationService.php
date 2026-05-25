@@ -39,16 +39,17 @@ final class BankingReconciliationService
         $taxYear = (new TaxYearRepository())->fetchTaxYear($companyId, $taxYearId);
         $uploadsByAccount = $this->fetchUploadsByAccount($companyId, $taxYearId, array_column($bankAccounts, 'id'), $taxYear);
         $rowsByUpload = $this->fetchRowsByUpload($this->flattenUploadIds($uploadsByAccount));
-        $ledgerDeltas = $bankNominalId > 0
-            ? $this->fetchLedgerBankDeltas($companyId, $taxYearId, $bankNominalId)
-            : [];
-
         $panels = [];
 
         foreach ($accounts as $account) {
             $accountId = (int)$account['id'];
             $accountType = (string)($account['account_type'] ?? '');
+            $accountNominalId = (int)($account['nominal_account_id'] ?? 0);
             $uploadAnalyses = [];
+            $ledgerNominalId = $accountNominalId > 0 ? $accountNominalId : $bankNominalId;
+            $ledgerDeltas = $accountType === CompanyAccountService::TYPE_BANK && $ledgerNominalId > 0
+                ? $this->fetchLedgerBankDeltas($companyId, $taxYearId, $ledgerNominalId)
+                : [];
 
             if ($accountType === CompanyAccountService::TYPE_BANK) {
                 foreach ($uploadsByAccount[$accountId] ?? [] as $upload) {
@@ -64,7 +65,8 @@ final class BankingReconciliationService
             $ledgerSummary = $this->buildLedgerReconciliationSummary(
                 $visibleUploadAnalyses,
                 $ledgerDeltas,
-                $bankNominalId
+                $ledgerNominalId,
+                $accountNominalId > 0
             );
             $tradeSummary = $accountType === CompanyAccountService::TYPE_TRADE
                 ? $this->buildTradeLedgerSummary($companyId, $taxYearId, $accountId)
@@ -87,16 +89,20 @@ final class BankingReconciliationService
     }
 
     private function fetchCompanyAccounts(int $companyId): array {
-        return InterfaceDB::fetchAll( 'SELECT id,
-                    company_id,
-                    account_name,
-                    account_type,
-                    institution_name,
-                    account_identifier,
-                    is_active
-             FROM company_accounts
-             WHERE company_id = :company_id
-             ORDER BY is_active DESC, account_type ASC, account_name ASC, id ASC', [
+        return InterfaceDB::fetchAll( 'SELECT ca.id,
+                    ca.company_id,
+                    ca.account_name,
+                    ca.account_type,
+                    ca.institution_name,
+                    ca.account_identifier,
+                    ca.nominal_account_id,
+                    COALESCE(na.code, \'\') AS nominal_code,
+                    COALESCE(na.name, \'\') AS nominal_name,
+                    ca.is_active
+             FROM company_accounts ca
+             LEFT JOIN nominal_accounts na ON na.id = ca.nominal_account_id
+             WHERE ca.company_id = :company_id
+             ORDER BY ca.is_active DESC, ca.account_type ASC, ca.account_name ASC, ca.id ASC', [
             'company_id' => $companyId,
         ]);
     }
@@ -510,7 +516,7 @@ final class BankingReconciliationService
         ));
     }
 
-    private function buildLedgerReconciliationSummary(array $uploadAnalyses, array $ledgerDeltas, int $bankNominalId): array {
+    private function buildLedgerReconciliationSummary(array $uploadAnalyses, array $ledgerDeltas, int $bankNominalId, bool $usesAccountNominal = true): array {
         $latestStatement = null;
 
         foreach ($uploadAnalyses as $upload) {
@@ -530,7 +536,7 @@ final class BankingReconciliationService
                 'difference' => null,
                 'note' => 'No statement closing balance is available yet for this bank account.',
                 'scope_note' => $bankNominalId > 0
-                    ? 'Ledger reconciliation is still company-bank-wide because journal posting currently uses one generic Bank nominal.'
+                    ? ($usesAccountNominal ? 'Ledger reconciliation uses this company account nominal.' : 'Ledger reconciliation is using the default Bank nominal fallback.')
                     : 'Set the default Bank nominal to enable ledger reconciliation.',
             ];
         }
@@ -543,7 +549,7 @@ final class BankingReconciliationService
                 'ledger_balance' => null,
                 'difference' => null,
                 'note' => 'Set the default Bank nominal before ledger reconciliation can run.',
-                'scope_note' => 'Ledger reconciliation is still company-bank-wide because journal posting currently uses one generic Bank nominal.',
+                'scope_note' => 'Assign a nominal to this bank account to enable account-level ledger reconciliation.',
             ];
         }
 
@@ -557,7 +563,7 @@ final class BankingReconciliationService
                 'ledger_balance' => 0.0,
                 'difference' => $latestStatement['closing_balance'] !== null ? $this->roundMoney(0.0 - (float)$latestStatement['closing_balance']) : null,
                 'note' => 'No posted ledger activity hits the configured Bank nominal by the statement closing date.',
-                'scope_note' => 'Ledger reconciliation is still company-bank-wide because journal posting currently uses one generic Bank nominal.',
+                'scope_note' => $usesAccountNominal ? 'Ledger reconciliation uses this company account nominal.' : 'Ledger reconciliation is using the default Bank nominal fallback.',
             ];
         }
 
@@ -578,7 +584,7 @@ final class BankingReconciliationService
             'ledger_balance' => $ledgerPoint['balance'],
             'difference' => $difference,
             'note' => $note,
-            'scope_note' => 'Ledger reconciliation is still company-bank-wide because journal posting currently uses one generic Bank nominal.',
+            'scope_note' => $usesAccountNominal ? 'Ledger reconciliation uses this company account nominal.' : 'Ledger reconciliation is using the default Bank nominal fallback.',
         ];
     }
 

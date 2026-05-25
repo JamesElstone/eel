@@ -19,6 +19,7 @@ final class BankingAction implements ActionInterfaceFramework
             'select_field_mapping' => $this->editAccountMapping($request, $services),
             'delete' => $this->deleteCompanyAccount($request, $services),
             'save' => $this->saveCompanyAccount($request, $services, true),
+            'assign_missing_nominals' => $this->assignMissingNominals($request),
             'save_account_mapping' => $this->saveAccountMapping($request, $services),
             'save_mapping' => $this->saveAccountMapping($request, $services),
             default => ActionResultFramework::none(),
@@ -202,6 +203,46 @@ final class BankingAction implements ActionInterfaceFramework
         );
     }
 
+    private function assignMissingNominals(RequestFramework $request): ActionResultFramework
+    {
+        if (!(bool)AppConfigurationStore::get('developer_options', false)) {
+            return $this->result(
+                false,
+                [],
+                ['Developer options must be enabled before account nominals can be repaired.'],
+                $this->queryState($request),
+                []
+            );
+        }
+
+        $accountingContext = new AccountingContextService();
+        $companyId = $accountingContext->authCompanyId();
+        $taxYearId = $accountingContext->authTaxYearId();
+        $result = (new CompanyAccountNominalService())->assignMissingNominals($companyId);
+        $messages = [];
+        $errors = array_map('strval', (array)($result['errors'] ?? []));
+
+        if (!empty($result['success'])) {
+            $messages[] = sprintf(
+                'Account nominal repair complete: %d assigned, %d created, %d unchanged.',
+                (int)($result['assigned'] ?? 0),
+                (int)($result['created'] ?? 0),
+                (int)($result['unchanged'] ?? 0)
+            );
+        }
+
+        return $this->result(
+            !empty($result['success']),
+            $messages,
+            $errors,
+            $this->queryState($request, ['show_card' => 'banking_accounts']),
+            [
+                'company_id' => $companyId,
+                'tax_year_id' => $taxYearId,
+            ]
+        );
+    }
+
     private function queryState(RequestFramework $request, array $overrides = []): array
     {
 
@@ -230,6 +271,7 @@ final class BankingAction implements ActionInterfaceFramework
             'account_type' => trim((string)$request->input('account_type', CompanyAccountService::TYPE_BANK)),
             'institution_name' => trim((string)$request->input('institution_name', '')),
             'account_identifier' => trim((string)$request->input('account_identifier', '')),
+            'nominal_account_id' => trim((string)$request->input('nominal_account_id', '')),
             'internal_transfer_marker' => trim((string)$request->input('internal_transfer_marker', '')),
             'contact_name' => trim((string)$request->input('contact_name', '')),
             'phone_number' => trim((string)$request->input('phone_number', '')),

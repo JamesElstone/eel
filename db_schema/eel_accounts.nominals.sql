@@ -88,7 +88,8 @@ INSERT INTO `nominal_account_subtypes` VALUES
 (8,'materials','Materials','cost_of_sales',200,1),
 (9,'overhead','Overhead Expense','expense',300,1),
 (10,'expense_payable','Expense Claims Payable','liability',55,1),
-(11,'fixed_asset','Fixed Asset','asset',35,1);
+(11,'fixed_asset','Fixed Asset','asset',35,1),
+(12,'trade_creditor','Trade Creditor','liability',45,1);
 /*!40000 ALTER TABLE `nominal_account_subtypes` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;

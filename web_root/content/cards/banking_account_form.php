@@ -18,6 +18,14 @@ final class _banking_account_formCard extends CardBaseFramework
     {
         return [
             [
+                'key' => 'nominal_accounts',
+                'service' => NominalAccountRepository::class,
+                'method' => 'fetchNominalAccounts',
+                'params' => [
+                    'companyId' => ':company.id',
+                ],
+            ],
+            [
                 'key' => 'LookupCompanyAccount',
                 'service' => CompanyAccountService::class,
                 'method' => 'fetchAccount',
@@ -73,6 +81,7 @@ final class _banking_account_formCard extends CardBaseFramework
         $companyId = (int)($company['id'] ?? 0);
         $taxYearId = (int)($company['tax_year_id'] ?? 0);
         $LookupCompanyAccount = is_array($context['services']['LookupCompanyAccount'] ?? null) ? $context['services']['LookupCompanyAccount'] : null;
+        $nominalAccounts = (array)($context['services']['nominal_accounts'] ?? []);
         $LookupCompanyAccountId = (int)($LookupCompanyAccount['id'] ?? $context['edit_account_id'] ?? $page['edit_account_id'] ?? 0);
         $bankingMappingAccountId = (int)($page['mapping_account_id'] ?? 0);
         $bankingAccountForm = $this->buildFormState($LookupCompanyAccount, (array)($context['banking_account_form'] ?? $page['banking_account_form'] ?? []));
@@ -93,9 +102,16 @@ final class _banking_account_formCard extends CardBaseFramework
                 <input type="hidden" name="edit_account_id" value="' . $LookupCompanyAccountId . '">
                 <input type="hidden" name="mapping_account_id" value="' . $bankingMappingAccountId . '">
                 <div class="form-grid">
-                    <div class="form-row">
+                    <div class="form-row full">
                         <label for="account_name">Account name</label>
                         <input class="input" id="account_name" name="account_name" value="' . HelperFramework::escape((string)$bankingAccountForm['account_name']) . '" required>
+                    </div>
+                    <div class="form-row">
+                        <label for="nominal_account_id">Nominal</label>
+                        <select class="select" id="nominal_account_id" name="nominal_account_id">
+                            <option value="">Auto assign</option>
+                            ' . $this->nominalOptions($nominalAccounts, (string)$bankingAccountForm['nominal_account_id']) . '
+                        </select>
                     </div>
                     <div class="form-row">
                         <label for="account_type">Type</label>
@@ -168,6 +184,7 @@ final class _banking_account_formCard extends CardBaseFramework
         $defaults = [
             'account_name' => '',
             'account_type' => CompanyAccountService::TYPE_BANK,
+            'nominal_account_id' => '',
             'institution_name' => '',
             'account_identifier' => '',
             'internal_transfer_marker' => '',
@@ -187,6 +204,28 @@ final class _banking_account_formCard extends CardBaseFramework
         }
 
         return array_merge($defaults, $pageForm);
+    }
+
+    private function nominalOptions(array $nominalAccounts, string $selectedId): string
+    {
+        $html = '';
+        foreach ($nominalAccounts as $nominal) {
+            if (!is_array($nominal)) {
+                continue;
+            }
+
+            $accountType = (string)($nominal['account_type'] ?? '');
+            if (!in_array($accountType, ['asset', 'liability'], true)) {
+                continue;
+            }
+
+            $id = (string)($nominal['id'] ?? '');
+            $html .= '<option value="' . HelperFramework::escape($id) . '"' . ($id === $selectedId ? ' selected' : '') . '>'
+                . HelperFramework::escape(FormattingFramework::nominalLabel($nominal, ' '))
+                . '</option>';
+        }
+
+        return $html;
     }
 
 }

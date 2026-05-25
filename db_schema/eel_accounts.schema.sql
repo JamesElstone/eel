@@ -237,6 +237,7 @@ CREATE TABLE `company_accounts` (
   `account_type` enum('bank','trade') NOT NULL DEFAULT 'bank',
   `institution_name` varchar(255) DEFAULT NULL,
   `account_identifier` varchar(255) DEFAULT NULL,
+  `nominal_account_id` int(11) DEFAULT NULL,
   `internal_transfer_marker` varchar(100) DEFAULT NULL,
   `contact_name` varchar(255) DEFAULT NULL,
   `phone_number` varchar(100) DEFAULT NULL,
@@ -252,7 +253,9 @@ CREATE TABLE `company_accounts` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_company_accounts_name_type` (`company_id`,`account_name`,`account_type`),
   KEY `idx_company_accounts_company_active` (`company_id`,`is_active`,`account_type`),
-  CONSTRAINT `fk_company_accounts_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  KEY `idx_company_accounts_nominal` (`nominal_account_id`),
+  CONSTRAINT `fk_company_accounts_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_company_accounts_nominal` FOREIGN KEY (`nominal_account_id`) REFERENCES `nominal_accounts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=42 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 

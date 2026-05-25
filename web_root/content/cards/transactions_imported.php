@@ -93,7 +93,7 @@ final class _transactions_importedCard extends CardBaseFramework
         $transactionsByMonth = (array)($services['transactions_by_month'] ?? []);
         $monthStatus = (array)($services['month_status'] ?? []);
         $nominalAccounts = (array)($services['nominal_accounts'] ?? []);
-        $activeBankCompanyAccounts = $this->activeBankCompanyAccounts($services);
+        $activeTransferCompanyAccounts = $this->activeTransferCompanyAccounts($services);
         $selectedTransactionMonth = (string)($page['month_key'] ?? '');
         $selectedTransactionFilter = (string)($page['category_filter'] ?? 'all');
         $selectedMonthSummary = $this->buildSelectedMonthSummary($transactionsByMonth);
@@ -113,7 +113,7 @@ final class _transactions_importedCard extends CardBaseFramework
             $selectedTransactionMonth,
             $selectedTransactionFilter,
             $nominalAccounts,
-            $activeBankCompanyAccounts,
+            $activeTransferCompanyAccounts,
             $context,
             $this->bulkToolbarActionsHtml($companyId, $taxYearId, $selectedTransactionMonth, $selectedTransactionFilter)
         )->render(
@@ -171,7 +171,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 (string)($page['month_key'] ?? ''),
                 (string)($page['category_filter'] ?? 'all'),
                 (array)($services['nominal_accounts'] ?? []),
-                $this->activeBankCompanyAccounts($services)
+                $this->activeTransferCompanyAccounts($services)
             ),
         ];
     }
@@ -183,7 +183,7 @@ final class _transactions_importedCard extends CardBaseFramework
         string $selectedTransactionMonth,
         string $selectedTransactionFilter,
         array $nominalAccounts,
-        array $activeBankCompanyAccounts,
+        array $activeTransferCompanyAccounts,
         array $context,
         string $toolbarActionsHtml
     ): TableFramework {
@@ -197,7 +197,7 @@ final class _transactions_importedCard extends CardBaseFramework
             $selectedTransactionMonth,
             $selectedTransactionFilter,
             $nominalAccounts,
-            $activeBankCompanyAccounts
+            $activeTransferCompanyAccounts
         )
             ->visibleRows((array)$pagination['items'])
             ->toolbarActions($toolbarActionsHtml)
@@ -244,7 +244,7 @@ final class _transactions_importedCard extends CardBaseFramework
         string $selectedTransactionMonth,
         string $selectedTransactionFilter,
         array $nominalAccounts,
-        array $activeBankCompanyAccounts
+        array $activeTransferCompanyAccounts
     ): TableFramework {
         $rows = array_values(array_filter($transactions, static fn(mixed $row): bool => is_array($row)));
 
@@ -287,7 +287,7 @@ final class _transactions_importedCard extends CardBaseFramework
             ->column(
                 'categorisation',
                 'Categorisation',
-                html: fn(array $row): string => $this->categorisationHtml($row, $nominalAccounts, $activeBankCompanyAccounts)
+                html: fn(array $row): string => $this->categorisationHtml($row, $nominalAccounts, $activeTransferCompanyAccounts)
             )
             ->column(
                 'status',
@@ -316,12 +316,13 @@ final class _transactions_importedCard extends CardBaseFramework
             );
     }
 
-    private function activeBankCompanyAccounts(array $services): array
+    private function activeTransferCompanyAccounts(array $services): array
     {
         return array_values(array_filter(
             (array)($services['company_accounts'] ?? []),
             static fn(mixed $account): bool => is_array($account)
-                && (string)($account['account_type'] ?? '') === CompanyAccountService::TYPE_BANK
+                && in_array((string)($account['account_type'] ?? ''), [CompanyAccountService::TYPE_BANK, CompanyAccountService::TYPE_TRADE], true)
+                && (int)($account['is_active'] ?? 0) === 1
         ));
     }
 
@@ -382,7 +383,7 @@ final class _transactions_importedCard extends CardBaseFramework
         return $documentHtml . '</div>';
     }
 
-    private function categorisationHtml(array $transaction, array $nominalAccounts, array $activeBankCompanyAccounts): string
+    private function categorisationHtml(array $transaction, array $nominalAccounts, array $activeTransferCompanyAccounts): string
     {
         $transactionFormId = 'transaction-form-' . (int)($transaction['id'] ?? 0);
         $isTransferRow = $this->transactionIsTransferMode($transaction);
@@ -391,11 +392,13 @@ final class _transactions_importedCard extends CardBaseFramework
             $selectedTransferAccountId = (string)($transaction['transfer_account_id'] ?? '');
             $transferDirectionLabel = (float)($transaction['amount'] ?? 0) < 0 ? 'Transfer to:' : 'Transfer from:';
             $transferOptions = '<option value="">Select owned account</option>';
-            foreach ($activeBankCompanyAccounts as $account) {
+            foreach ($activeTransferCompanyAccounts as $account) {
                 if (!is_array($account) || (int)($account['id'] ?? 0) === (int)($transaction['account_id'] ?? 0)) {
                     continue;
                 }
-                $transferOptions .= '<option value="' . (int)($account['id'] ?? 0) . '"' . ((string)($account['id'] ?? '') === $selectedTransferAccountId ? ' selected' : '') . '>' . HelperFramework::escape((string)($account['account_name'] ?? '')) . '</option>';
+                $accountType = (string)($account['account_type'] ?? '');
+                $accountTypeLabel = CompanyAccountService::accountTypes()[$accountType] ?? ucfirst($accountType);
+                $transferOptions .= '<option value="' . (int)($account['id'] ?? 0) . '"' . ((string)($account['id'] ?? '') === $selectedTransferAccountId ? ' selected' : '') . '>' . HelperFramework::escape((string)($account['account_name'] ?? '') . ' [' . $accountTypeLabel . ']') . '</option>';
             }
 
             return '<div class="helper">' . HelperFramework::escape($transferDirectionLabel) . '</div>

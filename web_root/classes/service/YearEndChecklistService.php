@@ -37,24 +37,7 @@ final class YearEndChecklistService
             ];
         }
 
-        $topIssues = [];
-        foreach ($checklist['checks_flat'] as $check) {
-            if (!in_array((string)($check['status'] ?? ''), ['warning', 'fail'], true) && count($topIssues) >= 1) {
-                continue;
-            }
-
-            $topIssues[] = [
-                'title' => (string)($check['title'] ?? ''),
-                'detail' => trim((string)($check['metric_value'] ?? '')) !== ''
-                    ? (string)$check['metric_value']
-                    : (string)($check['detail_text'] ?? ''),
-                'status' => (string)($check['status'] ?? 'pass'),
-            ];
-
-            if (count($topIssues) >= 5) {
-                break;
-            }
-        }
+        $topIssues = $this->topIssuesFromChecks((array)($checklist['checks_flat'] ?? []));
 
         return [
             'available' => true,
@@ -64,6 +47,29 @@ final class YearEndChecklistService
             'top_issues' => $topIssues,
             'action_url' => '?page=year-end&company_id=' . (int)$companyId . '&tax_year_id=' . (int)($checklist['tax_year']['id'] ?? 0),
         ];
+    }
+
+    private function topIssuesFromChecks(array $checks): array
+    {
+        $topIssues = [];
+        foreach ($checks as $check) {
+            if (!is_array($check) || !in_array((string)($check['status'] ?? ''), ['warning', 'fail'], true)) {
+                continue;
+            }
+
+            $topIssues[] = [
+                'title' => (string)($check['title'] ?? ''),
+                'detail' => (string)($check['detail_text'] ?? ''),
+                'metric_value' => (string)($check['metric_value'] ?? ''),
+                'status' => (string)($check['status'] ?? 'pass'),
+            ];
+
+            if (count($topIssues) >= 5) {
+                break;
+            }
+        }
+
+        return $topIssues;
     }
 
     public function lockPeriod(int $companyId, int $taxYearId, string $lockedBy = 'web_app'): array {
@@ -219,7 +225,7 @@ final class YearEndChecklistService
             $missingMonths > 0
                 ? 'Some months inside the accounting period have no uploads or transactions and should be reviewed.'
                 : 'Every month inside the accounting period has at least some source activity.',
-            $missingMonths > 0 ? $missingMonths . ' missing month(s)' : 'All months covered',
+            $missingMonths > 0 ? $missingMonths . ' missing month' . ($missingMonths === 1 ? '' : 's') : 'All months covered',
             '?page=uploads&company_id=' . $companyId . '&tax_year_id=' . $taxYearId
         );
 

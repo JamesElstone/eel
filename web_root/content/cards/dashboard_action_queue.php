@@ -54,8 +54,17 @@ final class _dashboard_action_queueCard extends CardBaseFramework
         $itemsHtml = '';
 
         foreach ($actionQueue as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $state = $this->actionState($item);
             $itemsHtml .= '<div class="list-item">
                 <strong>' . HelperFramework::escape((string)($item['title'] ?? '')) . '</strong>
+                <span class="status-indicator">
+                    <span class="status-square ' . HelperFramework::escape($state) . '"></span>
+                    ' . HelperFramework::escape($this->stateLabel($state)) . '
+                </span>
                 <span>' . HelperFramework::escape((string)($item['detail'] ?? '')) . '</span>
             </div>';
         }
@@ -63,10 +72,44 @@ final class _dashboard_action_queueCard extends CardBaseFramework
         if ($itemsHtml === '') {
             $itemsHtml = '<div class="list-item">
                 <strong>No queued actions</strong>
+                <span class="status-indicator">
+                    <span class="status-square ok"></span>
+                    OK
+                </span>
                 <span>The dashboard has nothing urgent to surface right now.</span>
             </div>';
         }
 
         return '<div class="list">' . $itemsHtml . '</div>';
+    }
+
+    private function actionState(array $item): string
+    {
+        $state = strtolower(trim((string)($item['state'] ?? '')));
+
+        if (in_array($state, ['ok', 'warn', 'bad'], true)) {
+            return $state;
+        }
+
+        $title = strtolower(trim((string)($item['title'] ?? '')));
+
+        if ($title === '' || str_contains($title, 'no immediate actions') || str_contains($title, 'no queued actions')) {
+            return 'ok';
+        }
+
+        if (str_starts_with($title, 'company health:')) {
+            return 'bad';
+        }
+
+        return 'warn';
+    }
+
+    private function stateLabel(string $state): string
+    {
+        return match ($state) {
+            'ok' => 'OK',
+            'bad' => 'Needs attention',
+            default => 'Warning',
+        };
     }
 }

@@ -139,12 +139,31 @@ $harness->run(DashboardRepository::class, function (GeneratedServiceClassTestHar
                         'title' => 'Company Health: Company',
                         'detail' => 'No companies found yet.',
                     ],
+                    [
+                        'title' => 'Categorise uncategorised transactions',
+                        'detail' => '3 transactions still need a nominal account.',
+                    ],
                 ],
             ],
         ]);
 
         $harness->assertSame(true, str_contains($html, 'Company Health: Company'));
         $harness->assertSame(true, str_contains($html, 'No companies found yet.'));
+        $harness->assertSame(true, str_contains($html, 'status-square bad'));
+        $harness->assertSame(true, str_contains($html, 'Categorise uncategorised transactions'));
+        $harness->assertSame(true, str_contains($html, 'status-square warn'));
+    });
+
+    $harness->check('_dashboard_action_queueCard', 'renders empty action queue with ok indicator', function () use ($harness): void {
+        $card = new _dashboard_action_queueCard();
+        $html = $card->render([
+            'page' => [
+                'action_queue' => [],
+            ],
+        ]);
+
+        $harness->assertSame(true, str_contains($html, 'No queued actions'));
+        $harness->assertSame(true, str_contains($html, 'status-square ok'));
     });
 
     $harness->check('_dashboard_recent_transactionsCard', 'paginates recent transaction rows', function () use ($harness): void {
@@ -158,7 +177,7 @@ $harness->run(DashboardRepository::class, function (GeneratedServiceClassTestHar
                 'description' => 'Transaction ' . $i,
                 'category' => 'Bank fees',
                 'amount' => -1 * $i,
-                'status' => 'Posted',
+                'status' => $i === 1 ? 'Needs review' : 'Posted',
             ];
         }
 
@@ -182,9 +201,12 @@ $harness->run(DashboardRepository::class, function (GeneratedServiceClassTestHar
         ]);
 
         $harness->assertSame(true, str_contains($firstPageHtml, 'Recent transactions 1-5 of 13'));
+        $harness->assertSame(true, str_contains($firstPageHtml, 'class="card-toolbar"'));
+        $harness->assertSame(true, str_contains($firstPageHtml, 'name="_table_export_prepare" value="csv"'));
         $harness->assertSame(true, str_contains($firstPageHtml, 'Transaction 5'));
         $harness->assertSame(false, str_contains($firstPageHtml, 'Transaction 6'));
         $harness->assertSame(true, str_contains($firstPageHtml, 'name="dashboard_recent_transactions_page" value="2"'));
+        $harness->assertSame(true, str_contains($firstPageHtml, '<span class="badge warning">Needs review</span>'));
 
         $harness->assertSame(true, str_contains($secondPageHtml, 'Recent transactions 6-10 of 13'));
         $harness->assertSame(false, str_contains($secondPageHtml, 'Transaction 5'));

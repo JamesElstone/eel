@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 final class _transactions_importedCard extends CardBaseFramework
 {
+    private const PAGE_SIZE = 20;
+
     public function key(): string
     {
         return 'transactions_imported';
@@ -60,7 +62,10 @@ final class _transactions_importedCard extends CardBaseFramework
         array $pageContext,
         ActionResultFramework $actionResult
     ): array {
-        return TransactionAction::withTransactionCardContext($request, $services, $pageContext, $actionResult);
+        $pageContext = TransactionAction::withTransactionCardContext($request, $services, $pageContext, $actionResult);
+        $pageContext['page'][$this->paginationPageField()] = max(1, (int)$request->input($this->paginationPageField(), 1));
+
+        return $pageContext;
     }
 
     protected function additionalInvalidationFacts(): array
@@ -78,7 +83,6 @@ final class _transactions_importedCard extends CardBaseFramework
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $taxYearId = (int)($company['tax_year_id'] ?? 0);
-        $taxYears = (array)($page['tax_years'] ?? []);
 
         if ($companyId <= 0) {
             return '<div class="helper">A company has to be added and selected before transaction categorisation can occur.</div>';
@@ -89,11 +93,7 @@ final class _transactions_importedCard extends CardBaseFramework
         $transactionsByMonth = (array)($services['transactions_by_month'] ?? []);
         $monthStatus = (array)($services['month_status'] ?? []);
         $nominalAccounts = (array)($services['nominal_accounts'] ?? []);
-        $activeBankCompanyAccounts = array_values(array_filter(
-            (array)($services['company_accounts'] ?? []),
-            static fn(mixed $account): bool => is_array($account)
-                && (string)($account['account_type'] ?? '') === CompanyAccountService::TYPE_BANK
-        ));
+        $activeBankCompanyAccounts = $this->activeBankCompanyAccounts($services);
         $selectedTransactionMonth = (string)($page['month_key'] ?? '');
         $selectedTransactionFilter = (string)($page['category_filter'] ?? 'all');
         $selectedMonthSummary = $this->buildSelectedMonthSummary($transactionsByMonth);
@@ -106,207 +106,359 @@ final class _transactions_importedCard extends CardBaseFramework
             $monthOptions .= '<option value="' . HelperFramework::escape((string)($month['month_key'] ?? '')) . '"' . ((string)($month['month_key'] ?? '') === $selectedTransactionMonth ? ' selected' : '') . '>' . HelperFramework::escape((string)($month['label'] ?? '')) . '</option>';
         }
 
-        $rowsHtml = '';
-        foreach ($transactionsByMonth as $transaction) {
-            if (!is_array($transaction)) {
-                continue;
-            }
-
-            $transactionId = (int)($transaction['id'] ?? 0);
-            $transactionFormId = 'transaction-form-' . $transactionId;
-            $assetFormId = 'transaction-asset-form-' . $transactionId;
-            $selectedNominalAccountId = (string)($transaction['nominal_account_id'] ?? '');
-            $selectedTransferAccountId = (string)($transaction['transfer_account_id'] ?? '');
-            $isTransferRow = $this->transactionIsTransferMode($transaction);
-            $transferDirectionLabel = (float)($transaction['amount'] ?? 0) < 0 ? 'Transfer to:' : 'Transfer from:';
-            $journalRebuildAttributes = (int)($transaction['has_derived_journal'] ?? 0) === 1
-                ? ' data-chicken-check="true" data-chicken-title="Confirm journal rebuild" data-chicken-message="This will rebuild the journal entry for this transaction.<br><br>Continue?" data-chicken-confirm-text="Continue" data-chicken-button-class="button primary" data-submit-field="confirm_rebuild_journal" data-submit-value="1"'
-                : '';
-
-            $documentHtml = '<div class="document-stack">
-                <span class="badge ' . HelperFramework::escape($this->documentStatusBadgeClass((string)($transaction['document_download_status'] ?? ''))) . '">' . HelperFramework::escape($this->documentStatusLabel((string)($transaction['document_download_status'] ?? ''))) . '</span>';
-
-            $localDocumentPath = trim((string)($transaction['local_document_path'] ?? ''));
-            $sourceDocumentUrl = trim((string)($transaction['source_document_url'] ?? ''));
-            if ($localDocumentPath !== '') {
-                $documentHtml .= '<a class="text-link" href="' . HelperFramework::escape($this->assetHref($localDocumentPath)) . '" target="_blank" rel="noopener noreferrer">View Receipt</a>';
-            } elseif ($sourceDocumentUrl !== '') {
-                $documentHtml .= '<a class="text-link" href="' . HelperFramework::escape($sourceDocumentUrl) . '" target="_blank" rel="noopener noreferrer">Source URL</a>
-                    <form method="post" action="?page=transactions" data-ajax="true">
-                        <input type="hidden" name="card_action" value="Transaction">
-                        <input type="hidden" name="company_id" value="' . $companyId . '">
-                        <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
-                        <input type="hidden" name="transaction_id" value="' . $transactionId . '">
-                        <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
-                        <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
-                        <input type="hidden" name="global_action" value="retry_receipt_download">
-                        <button class="button button-inline" type="submit">Retry receipt</button>
-                    </form>';
-            }
-
-            $documentError = trim((string)($transaction['document_error'] ?? ''));
-            if ($documentError !== '') {
-                $documentHtml .= '<span class="helper">' . HelperFramework::escape($documentError) . '</span>';
-            }
-            $documentHtml .= '</div>';
-
-            $categorisationHtml = '';
-            if ($isTransferRow) {
-                $transferOptions = '<option value="">Select owned account</option>';
-                foreach ($activeBankCompanyAccounts as $account) {
-                    if (!is_array($account) || (int)($account['id'] ?? 0) === (int)($transaction['account_id'] ?? 0)) {
-                        continue;
-                    }
-                    $transferOptions .= '<option value="' . (int)($account['id'] ?? 0) . '"' . ((string)($account['id'] ?? '') === $selectedTransferAccountId ? ' selected' : '') . '>' . HelperFramework::escape((string)($account['account_name'] ?? '')) . '</option>';
-                }
-
-                $categorisationHtml = '<div class="helper">' . HelperFramework::escape($transferDirectionLabel) . '</div>
-                    <select class="select js-transaction-transfer" name="transfer_account_id" form="' . HelperFramework::escape($transactionFormId) . '" data-initial-value="' . HelperFramework::escape($selectedTransferAccountId) . '" data-dirty-action-target=".js-transaction-action" data-dirty-require-value="1">' . $transferOptions . '</select>';
-            } else {
-                $nominalOptions = '<option value="">Unassigned</option>';
-                foreach ($nominalAccounts as $nominal) {
-                    if (!is_array($nominal)) {
-                        continue;
-                    }
-                    $nominalOptions .= '<option value="' . (int)($nominal['id'] ?? 0) . '"' . ((string)($nominal['id'] ?? '') === $selectedNominalAccountId ? ' selected' : '') . '>' . HelperFramework::escape(FormattingFramework::nominalLabel($nominal)) . '</option>';
-                }
-
-                $categorisationHtml = '<select class="select js-transaction-nominal" name="nominal_account_id" form="' . HelperFramework::escape($transactionFormId) . '" data-initial-value="' . HelperFramework::escape($selectedNominalAccountId) . '" data-dirty-action-target=".js-transaction-action" data-dirty-require-value="1">' . $nominalOptions . '</select>';
-            }
-
-            $matchedRuleHtml = '';
-            if ((int)($transaction['auto_rule_id'] ?? 0) > 0) {
-                $matchedRuleHtml = '<div class="helper">Matched by rule #' . (int)($transaction['auto_rule_id'] ?? 0)
-                    . (trim((string)($transaction['auto_rule_match_value'] ?? '')) !== '' ? ' (' . HelperFramework::escape((string)($transaction['auto_rule_match_value'] ?? '')) . ')' : '')
-                    . '</div>';
-            }
-
-            $sourceCategory = (string)($transaction['source_category'] ?? '');
-            $flagsHtml = '<div class="document-stack">';
-            if ((int)($transaction['is_auto_excluded'] ?? 0) === 1) {
-                $flagsHtml .= '<span class="badge warning">Deferred</span>';
-            }
-            if (!$isTransferRow && (int)($transaction['auto_rule_id'] ?? 0) > 0) {
-                $flagsHtml .= '<span class="badge info">Rule #' . (int)($transaction['auto_rule_id'] ?? 0) . '</span>';
-            }
-            $flagsHtml .= '</div>';
-
-            $rowsHtml .= '<tr id="transaction-' . $transactionId . '">
-                <td>' . HelperFramework::escape($this->displayDate((string)($transaction['txn_date'] ?? ''))) . '</td>
-                <td>
-                    <div>' . HelperFramework::escape((string)($transaction['description'] ?? '')) . '</div>'
-                    . $matchedRuleHtml . '
-                </td>
-                <td>
-                    <div>' . HelperFramework::escape((string)($transaction['source_account'] ?? '')) . '</div>
-                    <div class="helper">' . HelperFramework::escape($sourceCategory !== '' ? $sourceCategory : 'No source category') . '</div>
-                </td>
-                <td class="' . ((float)($transaction['amount'] ?? 0) >= 0 ? 'amount-positive' : 'amount-negative') . '">' . HelperFramework::escape(FormattingFramework::money((float)($transaction['amount'] ?? 0))) . '</td>
-                <td>' . $documentHtml . '</td>
-                <td>' . $categorisationHtml . '</td>
-                <td><span class="badge ' . HelperFramework::escape($this->transactionCategorisationStatusBadgeClass($transaction)) . '">' . HelperFramework::escape($this->transactionCategorisationStatusLabel($transaction)) . '</span></td>
-                <td>' . $flagsHtml . '</td>
-                <td><span class="badge ' . HelperFramework::escape($this->transactionJournalStatusBadgeClass($transaction)) . '">' . HelperFramework::escape($this->transactionJournalStatusLabel($transaction)) . '</span></td>
-                <td>
-                    <form method="post" action="?page=assets" id="' . HelperFramework::escape($assetFormId) . '">
-                        <input type="hidden" name="company_id" value="' . $companyId . '">
-                        <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
-                        <input type="hidden" name="transaction_id" value="' . $transactionId . '">
-                    </form>
-                    <form method="post" action="?page=transactions" id="' . HelperFramework::escape($transactionFormId) . '" data-ajax="true">
-                        <input type="hidden" name="card_action" value="Transaction">
-                        <input type="hidden" name="company_id" value="' . $companyId . '">
-                        <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
-                        <input type="hidden" name="transaction_id" value="' . $transactionId . '">
-                        <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
-                        <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
-                        <input type="hidden" name="confirm_rebuild_journal" value="0">
-                        <div class="actions-row">
-                            <button class="button primary js-transaction-action" type="submit" name="global_action" value="save_transaction_category" data-dirty-enable-mode="changed" disabled' . $journalRebuildAttributes . '>' . ($isTransferRow ? 'Save' : 'Manual') . '</button>'
-                            . (!$isTransferRow
-                                ? '<button class="button primary js-transaction-action" type="submit" name="global_action" value="auto_create_transaction_rule" data-dirty-enable-mode="selected" disabled' . $journalRebuildAttributes . '>Create Automatic Rule</button>'
-                                : '') . '
-                            <button class="button primary" type="submit" name="global_action" value="defer_transaction"' . $journalRebuildAttributes . '>Defer</button>
-                            <button class="button" type="submit" form="' . HelperFramework::escape($assetFormId) . '" formnovalidate>Create Asset</button>
-                        </div>
-                    </form>
-                </td>
-            </tr>';
-        }
-
-        $tableHtml = $rowsHtml !== ''
-            ? '<div class="table-scroll">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Description</th>
-                            <th>Source</th>
-                            <th>Amount</th>
-                            <th>Document</th>
-                            <th>Categorisation</th>
-                            <th>Status</th>
-                            <th>Flags</th>
-                            <th>Journal</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>' . $rowsHtml . '</tbody>
-                </table>
-            </div>'
-            : '<div class="helper">No imported transactions match the selected month and filter yet.</div>';
+        $tableHtml = $this->configuredTransactionsTable(
+            $transactionsByMonth,
+            $companyId,
+            $taxYearId,
+            $selectedTransactionMonth,
+            $selectedTransactionFilter,
+            $nominalAccounts,
+            $activeBankCompanyAccounts,
+            $context,
+            $this->bulkToolbarActionsHtml($companyId, $taxYearId, $selectedTransactionMonth, $selectedTransactionFilter)
+        )->render(
+            $context,
+            [
+                'cards[]' => (array)($context['page']['page_cards'] ?? []),
+            ]
+        );
 
         return '
-            <form class="toolbar" method="post" action="?page=transactions" data-ajax="true">
-                <input type="hidden" name="card_action" value="Transaction">
-                <input type="hidden" name="global_action" value="select_transaction_month">
-                <input type="hidden" name="selection_source" value="transactions_imported_filters">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
-                <div class="mini-field">
-                    <label for="transaction_month_key">Month</label>
-                    <select class="select" id="transaction_month_key" name="month_key">' . $monthOptions . '</select>
-                </div>
-                <div class="mini-field">
-                    <label for="transaction_category_filter">Category filter</label>
-                    <select class="select" id="transaction_category_filter" name="category_filter">
-                        <option value="all"' . ($selectedTransactionFilter === 'all' ? ' selected' : '') . '>All</option>
-                        <option value="uncategorised"' . ($selectedTransactionFilter === 'uncategorised' ? ' selected' : '') . '>Uncategorised only</option>
-                        <option value="auto"' . ($selectedTransactionFilter === 'auto' ? ' selected' : '') . '>Auto categorised</option>
-                        <option value="manual"' . ($selectedTransactionFilter === 'manual' ? ' selected' : '') . '>Manual categorised</option>
-                    </select>
-                </div>
-            </form>
-            <div class="pill-row">
-                <span class="pill">' . (int)$selectedMonthSummary['total'] . ' in month</span>
-                <span class="pill">' . (int)$selectedMonthSummary['uncategorised'] . ' uncategorised</span>
-                <span class="pill">' . (int)$selectedMonthSummary['ready_to_post'] . ' ready to post</span>
-                <span class="pill">' . (int)$selectedMonthSummary['posted'] . ' posted</span>
-                <span class="pill">' . (int)$selectedMonthSummary['deferred'] . ' deferred</span>
-            </div>
-            <div>
-                <form method="post" action="?page=transactions" data-ajax="true">
+            <div class="card-toolbar transactions-imported-controls">
+                <form class="toolbar" method="post" action="?page=transactions" data-ajax="true">
                     <input type="hidden" name="card_action" value="Transaction">
+                    <input type="hidden" name="global_action" value="select_transaction_month">
+                    <input type="hidden" name="selection_source" value="transactions_imported_filters">
                     <input type="hidden" name="company_id" value="' . $companyId . '">
                     <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
-                    <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
-                    <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
-                    <input type="hidden" name="auto_scope" value="uncategorised">
-                    <input type="hidden" name="global_action" value="run_auto_rules">
-                    <button class="button" type="submit">Auto Apply</button>
+                    <div class="mini-field">
+                        <label for="transaction_month_key">Month</label>
+                        <select class="select" id="transaction_month_key" name="month_key">' . $monthOptions . '</select>
+                    </div>
+                    <div class="mini-field">
+                        <label for="transaction_category_filter">Category filter</label>
+                        <select class="select" id="transaction_category_filter" name="category_filter">
+                            <option value="all"' . ($selectedTransactionFilter === 'all' ? ' selected' : '') . '>All</option>
+                            <option value="uncategorised"' . ($selectedTransactionFilter === 'uncategorised' ? ' selected' : '') . '>Uncategorised only</option>
+                            <option value="auto"' . ($selectedTransactionFilter === 'auto' ? ' selected' : '') . '>Auto categorised</option>
+                            <option value="manual"' . ($selectedTransactionFilter === 'manual' ? ' selected' : '') . '>Manual categorised</option>
+                        </select>
+                    </div>
                 </form>
-                <form method="post" action="?page=transactions" data-ajax="true">
-                    <input type="hidden" name="card_action" value="Transaction">
-                    <input type="hidden" name="company_id" value="' . $companyId . '">
-                    <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
-                    <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
-                    <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
-                    <input type="hidden" name="global_action" value="post_categorised_transactions">
-                    <button class="button primary" type="submit">Post Categorised Transactions</button>
-                </form>
+                <div class="pill-row">
+                    <span class="pill">' . (int)$selectedMonthSummary['total'] . ' in month</span>
+                    <span class="pill">' . (int)$selectedMonthSummary['uncategorised'] . ' uncategorised</span>
+                    <span class="pill">' . (int)$selectedMonthSummary['ready_to_post'] . ' ready to post</span>
+                    <span class="pill">' . (int)$selectedMonthSummary['posted'] . ' posted</span>
+                    <span class="pill">' . (int)$selectedMonthSummary['deferred'] . ' deferred</span>
+                </div>
             </div>'
             . $tableHtml . '
         ';
+    }
+
+    public function tables(array $context): array
+    {
+        $company = (array)($context['company'] ?? []);
+        $page = (array)($context['page'] ?? []);
+        $services = (array)($context['services'] ?? []);
+
+        return [
+            $this->transactionsTable(
+                (array)($services['transactions_by_month'] ?? []),
+                (int)($company['id'] ?? 0),
+                (int)($company['tax_year_id'] ?? 0),
+                (string)($page['month_key'] ?? ''),
+                (string)($page['category_filter'] ?? 'all'),
+                (array)($services['nominal_accounts'] ?? []),
+                $this->activeBankCompanyAccounts($services)
+            ),
+        ];
+    }
+
+    private function configuredTransactionsTable(
+        array $transactions,
+        int $companyId,
+        int $taxYearId,
+        string $selectedTransactionMonth,
+        string $selectedTransactionFilter,
+        array $nominalAccounts,
+        array $activeBankCompanyAccounts,
+        array $context,
+        string $toolbarActionsHtml
+    ): TableFramework {
+        $rows = array_values(array_filter($transactions, static fn(mixed $row): bool => is_array($row)));
+        $pagination = HelperFramework::paginateArray($rows, $this->paginationPage($context), self::PAGE_SIZE);
+
+        return $this->transactionsTable(
+            $transactions,
+            $companyId,
+            $taxYearId,
+            $selectedTransactionMonth,
+            $selectedTransactionFilter,
+            $nominalAccounts,
+            $activeBankCompanyAccounts
+        )
+            ->visibleRows((array)$pagination['items'])
+            ->toolbarActions($toolbarActionsHtml)
+            ->pagination(
+                $pagination,
+                'Imported transactions',
+                $this->paginationPageField(),
+                [
+                    'page' => (string)($context['page']['page_id'] ?? ''),
+                    '_pagination' => '1',
+                    '_invalidate_fact' => $this->tableInvalidationFact(),
+                    'cards[]' => [$this->key()],
+                ]
+            );
+    }
+
+    private function bulkToolbarActionsHtml(int $companyId, int $taxYearId, string $selectedTransactionMonth, string $selectedTransactionFilter): string
+    {
+        return '<form method="post" action="?page=transactions" data-ajax="true">
+                <input type="hidden" name="card_action" value="Transaction">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
+                <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                <input type="hidden" name="auto_scope" value="uncategorised">
+                <input type="hidden" name="global_action" value="run_auto_rules">
+                <button class="button" type="submit">Auto Apply</button>
+            </form>
+            <form method="post" action="?page=transactions" data-ajax="true">
+                <input type="hidden" name="card_action" value="Transaction">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
+                <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                <input type="hidden" name="global_action" value="post_categorised_transactions">
+                <button class="button primary" type="submit">Post Categorised Transactions</button>
+            </form>';
+    }
+
+    private function transactionsTable(
+        array $transactions,
+        int $companyId,
+        int $taxYearId,
+        string $selectedTransactionMonth,
+        string $selectedTransactionFilter,
+        array $nominalAccounts,
+        array $activeBankCompanyAccounts
+    ): TableFramework {
+        $rows = array_values(array_filter($transactions, static fn(mixed $row): bool => is_array($row)));
+
+        return TableFramework::make($this->key(), $rows)
+            ->filename('imported-transactions')
+            ->exportLimit(1000)
+            ->empty('No imported transactions match the selected month and filter yet.')
+            ->column(
+                'txn_date',
+                'Date',
+                html: fn(array $row): string => HelperFramework::escape($this->displayDate((string)($row['txn_date'] ?? '')))
+            )
+            ->column(
+                'description',
+                'Description',
+                html: fn(array $row): string => $this->descriptionHtml($row)
+            )
+            ->column(
+                'source_account',
+                'Source',
+                html: fn(array $row): string => $this->sourceHtml($row)
+            )
+            ->column(
+                'amount',
+                'Amount',
+                html: static function (array $row): string {
+                    $amount = (float)($row['amount'] ?? 0);
+
+                    return '<span class="' . ($amount >= 0 ? 'amount-positive' : 'amount-negative') . '">'
+                        . HelperFramework::escape(FormattingFramework::money($amount))
+                        . '</span>';
+                },
+                cellClass: 'numeric'
+            )
+            ->column(
+                'document',
+                'Document',
+                html: fn(array $row): string => $this->documentHtml($row, $companyId, $taxYearId, $selectedTransactionMonth, $selectedTransactionFilter)
+            )
+            ->column(
+                'categorisation',
+                'Categorisation',
+                html: fn(array $row): string => $this->categorisationHtml($row, $nominalAccounts, $activeBankCompanyAccounts)
+            )
+            ->column(
+                'status',
+                'Status',
+                html: fn(array $row): string => '<span class="badge ' . HelperFramework::escape($this->transactionCategorisationStatusBadgeClass($row)) . '">'
+                    . HelperFramework::escape($this->transactionCategorisationStatusLabel($row))
+                    . '</span>'
+            )
+            ->column(
+                'flags',
+                'Flags',
+                html: fn(array $row): string => $this->flagsHtml($row)
+            )
+            ->column(
+                'journal',
+                'Journal',
+                html: fn(array $row): string => '<span class="badge ' . HelperFramework::escape($this->transactionJournalStatusBadgeClass($row)) . '">'
+                    . HelperFramework::escape($this->transactionJournalStatusLabel($row))
+                    . '</span>'
+            )
+            ->column(
+                'actions',
+                'Actions',
+                html: fn(array $row): string => $this->actionsHtml($row, $companyId, $taxYearId, $selectedTransactionMonth, $selectedTransactionFilter),
+                exportable: false
+            );
+    }
+
+    private function activeBankCompanyAccounts(array $services): array
+    {
+        return array_values(array_filter(
+            (array)($services['company_accounts'] ?? []),
+            static fn(mixed $account): bool => is_array($account)
+                && (string)($account['account_type'] ?? '') === CompanyAccountService::TYPE_BANK
+        ));
+    }
+
+    private function tableInvalidationFact(): string
+    {
+        return (string)($this->invalidationFacts()[0] ?? $this->key());
+    }
+
+    private function descriptionHtml(array $transaction): string
+    {
+        $matchedRuleHtml = '';
+        if ((int)($transaction['auto_rule_id'] ?? 0) > 0) {
+            $matchedRuleHtml = '<div class="helper">Matched by rule #' . (int)($transaction['auto_rule_id'] ?? 0)
+                . (trim((string)($transaction['auto_rule_match_value'] ?? '')) !== '' ? ' (' . HelperFramework::escape((string)($transaction['auto_rule_match_value'] ?? '')) . ')' : '')
+                . '</div>';
+        }
+
+        return '<div>' . HelperFramework::escape((string)($transaction['description'] ?? '')) . '</div>' . $matchedRuleHtml;
+    }
+
+    private function sourceHtml(array $transaction): string
+    {
+        $sourceCategory = (string)($transaction['source_category'] ?? '');
+
+        return '<div>' . HelperFramework::escape((string)($transaction['source_account'] ?? '')) . '</div>
+            <div class="helper">' . HelperFramework::escape($sourceCategory !== '' ? $sourceCategory : 'No source category') . '</div>';
+    }
+
+    private function documentHtml(array $transaction, int $companyId, int $taxYearId, string $selectedTransactionMonth, string $selectedTransactionFilter): string
+    {
+        $transactionId = (int)($transaction['id'] ?? 0);
+        $documentHtml = '<div class="document-stack">
+            <span class="badge ' . HelperFramework::escape($this->documentStatusBadgeClass((string)($transaction['document_download_status'] ?? ''))) . '">' . HelperFramework::escape($this->documentStatusLabel((string)($transaction['document_download_status'] ?? ''))) . '</span>';
+
+        $localDocumentPath = trim((string)($transaction['local_document_path'] ?? ''));
+        $sourceDocumentUrl = trim((string)($transaction['source_document_url'] ?? ''));
+        if ($localDocumentPath !== '') {
+            $documentHtml .= '<a class="text-link" href="' . HelperFramework::escape($this->assetHref($localDocumentPath)) . '" target="_blank" rel="noopener noreferrer">View Receipt</a>';
+        } elseif ($sourceDocumentUrl !== '') {
+            $documentHtml .= '<a class="text-link" href="' . HelperFramework::escape($sourceDocumentUrl) . '" target="_blank" rel="noopener noreferrer">Source URL</a>
+                <form method="post" action="?page=transactions" data-ajax="true">
+                    <input type="hidden" name="card_action" value="Transaction">
+                    <input type="hidden" name="company_id" value="' . $companyId . '">
+                    <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                    <input type="hidden" name="transaction_id" value="' . $transactionId . '">
+                    <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
+                    <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                    <input type="hidden" name="global_action" value="retry_receipt_download">
+                    <button class="button button-inline" type="submit">Retry receipt</button>
+                </form>';
+        }
+
+        $documentError = trim((string)($transaction['document_error'] ?? ''));
+        if ($documentError !== '') {
+            $documentHtml .= '<span class="helper">' . HelperFramework::escape($documentError) . '</span>';
+        }
+
+        return $documentHtml . '</div>';
+    }
+
+    private function categorisationHtml(array $transaction, array $nominalAccounts, array $activeBankCompanyAccounts): string
+    {
+        $transactionFormId = 'transaction-form-' . (int)($transaction['id'] ?? 0);
+        $isTransferRow = $this->transactionIsTransferMode($transaction);
+
+        if ($isTransferRow) {
+            $selectedTransferAccountId = (string)($transaction['transfer_account_id'] ?? '');
+            $transferDirectionLabel = (float)($transaction['amount'] ?? 0) < 0 ? 'Transfer to:' : 'Transfer from:';
+            $transferOptions = '<option value="">Select owned account</option>';
+            foreach ($activeBankCompanyAccounts as $account) {
+                if (!is_array($account) || (int)($account['id'] ?? 0) === (int)($transaction['account_id'] ?? 0)) {
+                    continue;
+                }
+                $transferOptions .= '<option value="' . (int)($account['id'] ?? 0) . '"' . ((string)($account['id'] ?? '') === $selectedTransferAccountId ? ' selected' : '') . '>' . HelperFramework::escape((string)($account['account_name'] ?? '')) . '</option>';
+            }
+
+            return '<div class="helper">' . HelperFramework::escape($transferDirectionLabel) . '</div>
+                <select class="select js-transaction-transfer" name="transfer_account_id" form="' . HelperFramework::escape($transactionFormId) . '" data-initial-value="' . HelperFramework::escape($selectedTransferAccountId) . '" data-dirty-action-target=".js-transaction-action" data-dirty-require-value="1">' . $transferOptions . '</select>';
+        }
+
+        $selectedNominalAccountId = (string)($transaction['nominal_account_id'] ?? '');
+        $nominalOptions = '<option value="">Unassigned</option>';
+        foreach ($nominalAccounts as $nominal) {
+            if (!is_array($nominal)) {
+                continue;
+            }
+            $nominalOptions .= '<option value="' . (int)($nominal['id'] ?? 0) . '"' . ((string)($nominal['id'] ?? '') === $selectedNominalAccountId ? ' selected' : '') . '>' . HelperFramework::escape(FormattingFramework::nominalLabel($nominal)) . '</option>';
+        }
+
+        return '<select class="select js-transaction-nominal" name="nominal_account_id" form="' . HelperFramework::escape($transactionFormId) . '" data-initial-value="' . HelperFramework::escape($selectedNominalAccountId) . '" data-dirty-action-target=".js-transaction-action" data-dirty-require-value="1">' . $nominalOptions . '</select>';
+    }
+
+    private function flagsHtml(array $transaction): string
+    {
+        $flagsHtml = '<div class="document-stack">';
+        if ((int)($transaction['is_auto_excluded'] ?? 0) === 1) {
+            $flagsHtml .= '<span class="badge warning">Deferred</span>';
+        }
+        if (!$this->transactionIsTransferMode($transaction) && (int)($transaction['auto_rule_id'] ?? 0) > 0) {
+            $flagsHtml .= '<span class="badge info">Rule #' . (int)($transaction['auto_rule_id'] ?? 0) . '</span>';
+        }
+
+        return $flagsHtml . '</div>';
+    }
+
+    private function actionsHtml(array $transaction, int $companyId, int $taxYearId, string $selectedTransactionMonth, string $selectedTransactionFilter): string
+    {
+        $transactionId = (int)($transaction['id'] ?? 0);
+        $transactionFormId = 'transaction-form-' . $transactionId;
+        $assetFormId = 'transaction-asset-form-' . $transactionId;
+        $isTransferRow = $this->transactionIsTransferMode($transaction);
+        $journalRebuildAttributes = (int)($transaction['has_derived_journal'] ?? 0) === 1
+            ? ' data-chicken-check="true" data-chicken-title="Confirm journal rebuild" data-chicken-message="This will rebuild the journal entry for this transaction.<br><br>Continue?" data-chicken-confirm-text="Continue" data-chicken-button-class="button primary" data-submit-field="confirm_rebuild_journal" data-submit-value="1"'
+            : '';
+
+        return '<form method="post" action="?page=assets" id="' . HelperFramework::escape($assetFormId) . '">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                <input type="hidden" name="transaction_id" value="' . $transactionId . '">
+            </form>
+            <form method="post" action="?page=transactions" id="' . HelperFramework::escape($transactionFormId) . '" data-ajax="true">
+                <input type="hidden" name="card_action" value="Transaction">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                <input type="hidden" name="transaction_id" value="' . $transactionId . '">
+                <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
+                <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                <input type="hidden" name="confirm_rebuild_journal" value="0">
+                <div class="actions-row">
+                    <button class="button primary js-transaction-action" type="submit" name="global_action" value="save_transaction_category" data-dirty-enable-mode="changed" disabled' . $journalRebuildAttributes . '>' . ($isTransferRow ? 'Save' : 'Manual') . '</button>'
+                    . (!$isTransferRow
+                        ? '<button class="button primary js-transaction-action" type="submit" name="global_action" value="auto_create_transaction_rule" data-dirty-enable-mode="selected" disabled' . $journalRebuildAttributes . '>Create Automatic Rule</button>'
+                        : '') . '
+                    <button class="button primary" type="submit" name="global_action" value="defer_transaction"' . $journalRebuildAttributes . '>Defer</button>
+                    <button class="button" type="submit" form="' . HelperFramework::escape($assetFormId) . '" formnovalidate>Create Asset</button>
+                </div>
+            </form>';
     }
 
     private function buildSelectedMonthSummary(array $transactionsByMonth): array

@@ -44,67 +44,88 @@ final class _dashboard_recent_transactionsCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $dashboardData = (array)(($context['services'] ?? [])['dashboard_data'] ?? []);
-        $recentTransactions = (array)($dashboardData['recent_transactions'] ?? (($context['page'] ?? [])['recent_transactions'] ?? []));
-        $pagination = HelperFramework::paginateArray(
-            $recentTransactions,
-            $this->paginationPage($context),
-            self::PAGE_SIZE
+        return $this->configuredTable($context)->render(
+            $context,
+            [
+                'cards[]' => (array)($context['page']['page_cards'] ?? []),
+            ]
         );
-        $recentTransactions = (array)$pagination['items'];
-        $rowsHtml = '';
+    }
 
-        foreach ($recentTransactions as $row) {
-            $status = (string)($row['status'] ?? '');
-            $statusClass = 'info';
-            if ($status === 'Matched') {
-                $statusClass = 'success';
-            } elseif ($status === 'Needs review') {
-                $statusClass = 'warning';
-            }
+    public function tables(array $context): array
+    {
+        return [$this->table($context)];
+    }
 
-            $amount = (float)($row['amount'] ?? 0);
-            $rowsHtml .= '<tr>
-                <td>' . HelperFramework::escape((string)($row['date'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape((string)($row['account'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape((string)($row['description'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape((string)($row['category'] ?? '')) . '</td>
-                <td class="' . ($amount >= 0 ? 'amount-positive' : 'amount-negative') . '">'
-                    . HelperFramework::escape(FormattingFramework::money($amount)) .
-                '</td>
-                <td><span class="badge ' . HelperFramework::escape($statusClass) . '">' . HelperFramework::escape($status) . '</span></td>
-            </tr>';
-        }
+    private function configuredTable(array $context): TableFramework
+    {
+        $pagination = HelperFramework::paginateArray($this->rows($context), $this->paginationPage($context), self::PAGE_SIZE);
 
-        if ($rowsHtml === '') {
-            $rowsHtml = '<tr><td colspan="6">No recent transactions are available.</td></tr>';
-        }
+        return $this->table($context)
+            ->visibleRows((array)$pagination['items'])
+            ->pagination(
+                $pagination,
+                'Recent transactions',
+                $this->paginationPageField(),
+                [
+                    'page' => (string)($context['page']['page_id'] ?? ''),
+                    '_pagination' => '1',
+                    '_invalidate_fact' => $this->tableInvalidationFact(),
+                    'cards[]' => [$this->key()],
+                ]
+            );
+    }
 
-        return '
-            <div class="toolbar">
-                <input class="input" type="search" placeholder="Search description, category, account...">
-                <select class="select">
-                    <option>All statuses</option>
-                    <option>Matched</option>
-                    <option>Needs review</option>
-                    <option>Posted</option>
-                </select>
-            </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Account</th>
-                        <th>Description</th>
-                        <th>Category</th>
-                        <th>Amount</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody>' . $rowsHtml . '</tbody>
-            </table>
-            ' . $this->paginationControls($context, $pagination, 'Recent transactions') . '
-        ';
+    private function table(array $context): TableFramework
+    {
+        return TableFramework::make($this->key(), $this->rows($context))
+            ->filename('dashboard-recent-transactions')
+            ->exportLimit(100)
+            ->empty('No recent transactions are available.')
+            ->textColumn('date', 'Date')
+            ->textColumn('account', 'Account')
+            ->textColumn('description', 'Description')
+            ->textColumn('category', 'Category')
+            ->column(
+                'amount',
+                'Amount',
+                html: static function (array $row): string {
+                    $amount = (float)($row['amount'] ?? 0);
+
+                    return HelperFramework::escape(FormattingFramework::money($amount));
+                },
+                export: static fn(array $row): string => FormattingFramework::money((float)($row['amount'] ?? 0)),
+                cellClass: 'numeric'
+            )
+            ->badgeColumn(
+                'status',
+                'Status',
+                badgeClassFormatter: fn(array $row): string => $this->statusClass((string)($row['status'] ?? ''))
+            );
+    }
+
+    private function rows(array $context): array
+    {
+        $dashboardData = (array)(($context['services'] ?? [])['dashboard_data'] ?? []);
+
+        return array_values(array_filter(
+            (array)($dashboardData['recent_transactions'] ?? (($context['page'] ?? [])['recent_transactions'] ?? [])),
+            static fn(mixed $row): bool => is_array($row)
+        ));
+    }
+
+    private function statusClass(string $status): string
+    {
+        return match ($status) {
+            'Matched' => 'success',
+            'Needs review' => 'warning',
+            default => 'info',
+        };
+    }
+
+    private function tableInvalidationFact(): string
+    {
+        return (string)($this->invalidationFacts()[0] ?? $this->key());
     }
 
 }

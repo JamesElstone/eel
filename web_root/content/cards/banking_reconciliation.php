@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 final class _banking_reconciliationCard extends CardBaseFramework
 {
+    private const PAGE_SIZE = 12;
+
     public function key(): string
     {
         return 'banking_reconciliation';
@@ -147,11 +149,11 @@ final class _banking_reconciliationCard extends CardBaseFramework
                     <div class="summary-value"><span class="badge ' . HelperFramework::escape($this->reconciliationStatusBadgeClass((string)($panel['ledger_reconciliation_status'] ?? 'not_available'))) . '">' . HelperFramework::escape($this->reconciliationStatusLabel((string)($panel['ledger_reconciliation_status'] ?? 'not_available'))) . '</span></div>
                 </div>
             </div>
-            ' . $this->bankUploadsTable($panel, $index)->render($context, [
+            ' . $this->configuredBankUploadsTable($panel, $index, $context)->render($context, [
                 'cards[]' => (array)($context['page']['page_cards'] ?? []),
             ]) . '
-            <h4 class="card-title">Ledger Reconciliation</h4>
             <div class="panel-soft">
+                <h4 class="card-title">Ledger Reconciliation</h4>
                 <div class="summary-grid">
                     <div class="summary-card">
                         <div class="summary-label">Latest statement closing balance</div>
@@ -299,6 +301,26 @@ final class _banking_reconciliationCard extends CardBaseFramework
             );
     }
 
+    private function configuredBankUploadsTable(array $panel, int $index, array $context): TableFramework
+    {
+        $rows = $this->bankUploadRows($panel);
+        $pagination = HelperFramework::paginateArray($rows, $this->paginationPage($context), self::PAGE_SIZE);
+
+        return $this->bankUploadsTable($panel, $index)
+            ->visibleRows((array)$pagination['items'])
+            ->pagination(
+                $pagination,
+                'Statement uploads',
+                $this->paginationPageField(),
+                [
+                    'page' => (string)($context['page']['page_id'] ?? ''),
+                    '_pagination' => '1',
+                    '_invalidate_fact' => $this->tableInvalidationFact(),
+                    'cards[]' => [$this->key()],
+                ]
+            );
+    }
+
     private function bankUploadRows(array $panel): array
     {
         $rows = [];
@@ -345,6 +367,11 @@ final class _banking_reconciliationCard extends CardBaseFramework
         ));
 
         return implode(' | ', $parts);
+    }
+
+    private function tableInvalidationFact(): string
+    {
+        return (string)($this->invalidationFacts()[0] ?? $this->key());
     }
 
     private function accountHelper(array $account): string

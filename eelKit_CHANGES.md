@@ -1,5 +1,77 @@
 # eelKit Changes
 
+## Indexed section blocks
+
+Feature name: `indexed_section`.
+
+eelKit now includes a generic CSS pattern for visually separating repeated sections inside a single card. It is intended for dense cards where one top-level card contains several domain entities, for example multiple bank accounts inside one reconciliation card.
+
+The styles live in `web_root/css/index.css` and are CSS-only. No eelKit page rendering changes are required to use them: downstream cards can emit the markup directly inside a normal `.card-body`.
+
+### Basic usage
+
+```html
+<section class="indexed-section">
+    <div class="indexed-section-marker">
+        <div class="indexed-section-number">01</div>
+        <div class="indexed-section-label">Account</div>
+    </div>
+    <div class="indexed-section-main">
+        <header class="indexed-section-header">
+            <div>
+                <h3 class="indexed-section-title">Current Account</h3>
+                <div class="indexed-section-helper">Anna Money - 04-03-70 / 24067720</div>
+            </div>
+            <div class="indexed-section-status">
+                <span class="badge success">Continuity pass</span>
+                <span class="badge success">Running pass</span>
+                <span class="badge warning">Ledger warning</span>
+            </div>
+        </header>
+        <div class="indexed-section-body">
+            <!-- Summary grids, tables, panel-soft blocks, forms, and actions go here. -->
+        </div>
+    </div>
+</section>
+```
+
+Multiple indexed sections can be placed one after another; adjacent sections receive vertical spacing automatically:
+
+```html
+<div class="card-body">
+    <section class="indexed-section">...</section>
+    <section class="indexed-section">...</section>
+    <section class="indexed-section">...</section>
+</div>
+```
+
+### CSS hooks
+
+The semantic classes are:
+
+- `.indexed-section`
+- `.indexed-section-marker`
+- `.indexed-section-number`
+- `.indexed-section-label`
+- `.indexed-section-main`
+- `.indexed-section-header`
+- `.indexed-section-title`
+- `.indexed-section-helper`
+- `.indexed-section-status`
+- `.indexed-section-body`
+
+The layout uses a left index rail on wider viewports. On narrow viewports, the rail becomes a horizontal top band so the block remains readable without cramping the content.
+
+### Rendering guidance
+
+Use indexed sections when the repeated block is subordinate to one card but still needs a strong visual boundary. Do not wrap each repeated item in another `.card`; that makes the hierarchy ambiguous and duplicates the top-level card treatment.
+
+For banking reconciliation-style cards, the account should be the indexed section. Internal headings such as `Ledger Reconciliation` should remain smaller headings inside `.indexed-section-body`, because the indexed header is the main separator.
+
+Do not apply `.card-title-toggle` to nested indexed-section headings unless the downstream app also implements separate nested-section JavaScript. eelKit's built-in `.card-title-toggle` behaviour is for top-level cards and toggles the nearest `.card` body.
+
+If downstream apps want generated markup instead of manual HTML, they can add their own helper or service method later. The framework does not need a page renderer change for the CSS-only pattern.
+
 ## Month Heat Map component
 
 Feature name: `month_heatmap`.

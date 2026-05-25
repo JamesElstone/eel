@@ -1231,6 +1231,89 @@ body.sidebar-collapsed .sidebar-hide-collapsed-link-initials .nav-link-short {
   position: relative;
 }
 
+.indexed-section {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.indexed-section + .indexed-section {
+  margin-top: 18px;
+}
+
+.indexed-section-marker {
+  display: grid;
+  align-content: start;
+  justify-items: center;
+  gap: 8px;
+  padding: 14px 8px;
+  background: #26364d;
+  color: #fff;
+}
+
+.indexed-section-number {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  font-weight: 800;
+}
+
+.indexed-section-label {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.indexed-section-main {
+  min-width: 0;
+}
+
+.indexed-section-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 13px 15px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.indexed-section-title {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.02rem;
+  font-weight: 800;
+}
+
+.indexed-section-helper {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.indexed-section-status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.indexed-section-body {
+  min-width: 0;
+  padding: 16px;
+}
+
 .card-body[hidden] {
   display: none;
 }
@@ -3005,6 +3088,29 @@ label {
   .month-grid,
   .path-meta {
     grid-template-columns: 1fr;
+  }
+
+  .indexed-section {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .indexed-section-marker {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    justify-items: start;
+  }
+
+  .indexed-section-label {
+    writing-mode: horizontal-tb;
+    transform: none;
+  }
+
+  .indexed-section-header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .indexed-section-status {
+    justify-content: flex-start;
   }
 
   .uploads-tablist {

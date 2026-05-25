@@ -87,12 +87,14 @@ final class _banking_accountsCard extends CardBaseFramework
             ->filename('company-accounts')
             ->exportLimit(1000)
             ->empty('No company accounts have been added to this company yet.')
+            ->toolbarActions($this->toolbarActionsHtml($context))
             ->primarySecondaryColumn(
                 'account_name',
                 'Name',
                 secondaryKey: 'account_identifier'
             )
             ->textColumn('account_type_label', 'Type')
+            ->textColumn('nominal_label', 'Nominal')
             ->textColumn('institution_name', 'Institution')
             ->textColumn('transfer_marker', 'Transfer Marker')
             ->textColumn('phone_number', 'Phone')
@@ -104,6 +106,25 @@ final class _banking_accountsCard extends CardBaseFramework
                 html: fn(array $row): string => $this->actionsHtml($row),
                 exportable: false
             );
+    }
+
+    private function toolbarActionsHtml(array $context): string
+    {
+        if (!(bool)AppConfigurationStore::get('developer_options', false)) {
+            return '';
+        }
+
+        $companyId = (int)($context['company']['id'] ?? 0);
+        if ($companyId <= 0) {
+            return '';
+        }
+
+        return '<form method="post" data-ajax="true" class="toolbar">
+            <input type="hidden" name="card_action" value="Banking">
+            <input type="hidden" name="intent" value="assign_missing_nominals">
+            <input type="hidden" name="company_id" value="' . HelperFramework::escape((string)$companyId) . '">
+            <button class="button danger" type="submit" data-chicken-check="true" data-chicken-message="Create and assign missing company account nominals?<br><br>Bank accounts use 1001-1099. Trade accounts use 2001-2099." data-chicken-confirm-text="Assign">Assign Missing Nominals</button>
+        </form>';
     }
 
     private function actionsHtml(array $account): string
@@ -136,6 +157,7 @@ final class _banking_accountsCard extends CardBaseFramework
             $account['transfer_marker'] = $accountType === CompanyAccountService::TYPE_BANK
                 ? (string)($account['internal_transfer_marker'] ?? '')
                 : '';
+            $account['nominal_label'] = $this->nominalLabel($account);
             $account['address_summary'] = $this->companyAccountAddressSummary($account);
             $account['status_label'] = (int)($account['is_active'] ?? 0) === 1 ? 'Active' : 'Inactive';
 
@@ -143,6 +165,18 @@ final class _banking_accountsCard extends CardBaseFramework
         }
 
         return $rows;
+    }
+
+    private function nominalLabel(array $account): string
+    {
+        $code = trim((string)($account['nominal_code'] ?? ''));
+        $name = trim((string)($account['nominal_name'] ?? ''));
+
+        if ($code === '' && $name === '') {
+            return 'Not assigned';
+        }
+
+        return trim($code . ' ' . $name);
     }
 
     private function companyAccountAddressSummary(array $account): string

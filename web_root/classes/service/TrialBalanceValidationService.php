@@ -145,37 +145,40 @@ final class TrialBalanceValidationService
 
     private function bankLedgerReasonableness(int $companyId, int $taxYearId, int $bankNominalId): array {
         $txnStmt = InterfaceDB::prepare(
-            'SELECT COALESCE(SUM(amount), 0)
-             FROM transactions
-             WHERE company_id = :company_id
-               AND tax_year_id = :tax_year_id
-               AND nominal_account_id IS NOT NULL
-               AND category_status IN (:auto_status, :manual_status)'
+            'SELECT COALESCE(SUM(t.amount), 0)
+             FROM transactions t
+             LEFT JOIN company_accounts ca ON ca.id = t.account_id
+             WHERE t.company_id = :company_id
+               AND t.tax_year_id = :tax_year_id
+               AND ca.account_type = :account_type
+               AND (
+                    (t.nominal_account_id IS NOT NULL AND t.category_status IN (:auto_status, :manual_status))
+                    OR (t.transfer_account_id IS NOT NULL AND t.category_status = :manual_status)
+               )'
         );
         $txnStmt->execute([
             'company_id' => $companyId,
             'tax_year_id' => $taxYearId,
+            'account_type' => CompanyAccountService::TYPE_BANK,
             'auto_status' => 'auto',
             'manual_status' => 'manual',
         ]);
         $transactionMovement = round((float)$txnStmt->fetchColumn(), 2);
 
         $ledgerMovement = 0.0;
-        if ($bankNominalId > 0) {
+        $bankNominalIds = $this->bankNominalIds($companyId, $bankNominalId);
+        if ($bankNominalIds !== []) {
+            $placeholders = implode(', ', array_fill(0, count($bankNominalIds), '?'));
             $ledgerStmt = InterfaceDB::prepare(
                 'SELECT COALESCE(SUM(COALESCE(jl.debit, 0) - COALESCE(jl.credit, 0)), 0)
                  FROM journals j
                  INNER JOIN journal_lines jl ON jl.journal_id = j.id
-                 WHERE j.company_id = :company_id
-                   AND j.tax_year_id = :tax_year_id
+                 WHERE j.company_id = ?
+                   AND j.tax_year_id = ?
                    AND j.is_posted = 1
-                   AND jl.nominal_account_id = :nominal_account_id'
+                   AND jl.nominal_account_id IN (' . $placeholders . ')'
             );
-            $ledgerStmt->execute([
-                'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
-                'nominal_account_id' => $bankNominalId,
-            ]);
+            $ledgerStmt->execute(array_merge([$companyId, $taxYearId], $bankNominalIds));
             $ledgerMovement = round((float)$ledgerStmt->fetchColumn(), 2);
         }
 
@@ -184,5 +187,40 @@ final class TrialBalanceValidationService
             'ledger_movement' => $ledgerMovement,
             'difference' => round($transactionMovement - $ledgerMovement, 2),
         ];
+    }
+
+    private function bankNominalIds(int $companyId, int $defaultBankNominalId): array
+    {
+        $ids = [];
+        if ($defaultBankNominalId > 0) {
+            $ids[$defaultBankNominalId] = $defaultBankNominalId;
+        }
+
+        $rows = InterfaceDB::fetchAll(
+            'SELECT DISTINCT ca.nominal_account_id
+             FROM company_accounts ca
+             INNER JOIN nominal_accounts na ON na.id = ca.nominal_account_id
+             LEFT JOIN nominal_account_subtypes nas ON nas.id = na.account_subtype_id
+             WHERE ca.company_id = :company_id
+               AND ca.account_type = :account_type
+               AND ca.nominal_account_id IS NOT NULL
+               AND na.account_type = :nominal_type
+               AND (nas.code = :subtype_code OR nas.code IS NULL)',
+            [
+                'company_id' => $companyId,
+                'account_type' => CompanyAccountService::TYPE_BANK,
+                'nominal_type' => 'asset',
+                'subtype_code' => 'bank',
+            ]
+        );
+
+        foreach ($rows as $row) {
+            $id = (int)($row['nominal_account_id'] ?? 0);
+            if ($id > 0) {
+                $ids[$id] = $id;
+            }
+        }
+
+        return array_values($ids);
     }
 }

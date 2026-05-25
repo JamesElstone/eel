@@ -143,12 +143,6 @@ final class TransactionAction implements ActionInterfaceFramework
 
         if ($transactionId <= 0 || $existingTransaction === null) {
             $errors[] = 'Select a valid transaction before saving categorisation changes.';
-        } elseif (
-            $globalAction !== 'defer_transaction'
-            && (int)($existingTransaction['has_derived_journal'] ?? 0) === 1
-            && $defaultBankNominalId <= 0
-        ) {
-            $errors[] = 'Set the default bank nominal before changing a posted transaction.';
         } elseif ($globalAction === 'auto_create_transaction_rule' && $isTransferTransaction) {
             $errors[] = 'Transfer rows cannot be turned into nominal auto-categorisation rules.';
         } elseif (
@@ -162,7 +156,7 @@ final class TransactionAction implements ActionInterfaceFramework
             && $isTransferTransaction
             && ($targetTransferAccountId === null || $targetTransferAccountId <= 0)
         ) {
-            $errors[] = 'Choose the matching owned bank account before saving this transfer.';
+            $errors[] = 'Choose the matching owned bank or trade account before saving this transfer.';
         } elseif ($globalAction === 'auto_create_transaction_rule' && ($targetNominalAccountId === null || $targetNominalAccountId <= 0)) {
             $errors[] = 'Choose a nominal account before creating a categorisation rule from a transaction.';
         }
@@ -270,8 +264,6 @@ final class TransactionAction implements ActionInterfaceFramework
 
         if ($autoScope === 'auto' && !$confirmAutoRebuild) {
             $errors[] = 'Confirm the journal rebuild warning before re-running rules on existing auto-categorised transactions.';
-        } elseif ($autoScope === 'auto' && $defaultBankNominalId <= 0) {
-            $errors[] = 'Set the default bank nominal before re-running rules on posted auto-categorised transactions.';
         }
 
         if ($errors !== []) {
@@ -332,26 +324,22 @@ final class TransactionAction implements ActionInterfaceFramework
         $errors = [];
         $flashMessages = [];
 
-        if ($defaultBankNominalId <= 0) {
-            $errors[] = 'Set the default bank nominal before posting categorised transactions.';
-        } else {
-            $postResult = self::service($services, TransactionJournalService::class)->postCategorisedTransactions(
-                $companyId,
-                $taxYearId,
-                $defaultBankNominalId,
-                $context['month_key'] !== '' ? $context['month_key'] : null,
-                'transactions_page_post'
-            );
+        $postResult = self::service($services, TransactionJournalService::class)->postCategorisedTransactions(
+            $companyId,
+            $taxYearId,
+            $defaultBankNominalId,
+            $context['month_key'] !== '' ? $context['month_key'] : null,
+            'transactions_page_post'
+        );
 
-            $errors = array_merge($errors, array_map('strval', (array)($postResult['errors'] ?? [])));
-            if (!empty($postResult['success'])) {
-                $flashMessages[] = sprintf(
-                    'Posting complete: %d created, %d rebuilt, %d unchanged.',
-                    (int)($postResult['created'] ?? 0),
-                    (int)($postResult['rebuilt'] ?? 0),
-                    (int)($postResult['unchanged'] ?? 0)
-                );
-            }
+        $errors = array_merge($errors, array_map('strval', (array)($postResult['errors'] ?? [])));
+        if (!empty($postResult['success'])) {
+            $flashMessages[] = sprintf(
+                'Posting complete: %d created, %d rebuilt, %d unchanged.',
+                (int)($postResult['created'] ?? 0),
+                (int)($postResult['rebuilt'] ?? 0),
+                (int)($postResult['unchanged'] ?? 0)
+            );
         }
 
         return $this->result($errors === [], $errors, $flashMessages, $context);

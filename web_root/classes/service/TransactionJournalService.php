@@ -23,13 +23,6 @@ final class TransactionJournalService
             ];
         }
 
-        if ($bankNominalId <= 0) {
-            return [
-                'success' => false,
-                'errors' => ['Set the default bank nominal before posting categorised transactions.'],
-            ];
-        }
-
         $transactionIds = $this->fetchPostableTransactionIds($companyId, $taxYearId, $monthKey);
         (new YearEndLockService())->assertUnlocked($companyId, $taxYearId, 'post categorised transactions');
         $summary = [
@@ -101,14 +94,15 @@ final class TransactionJournalService
 
         $sourceRef = $this->sourceRefForTransaction((int)$transaction['id']);
         $existingJournal = $this->fetchJournalBySourceRef((int)$transaction['company_id'], $sourceRef);
-        $desiredJournal = $this->buildDesiredJournal($transaction, $bankNominalId);
-
-        if ($desiredJournal !== null && $bankNominalId <= 0) {
+        $postingNominalErrors = $this->postingNominalErrors($transaction, $bankNominalId);
+        if ($postingNominalErrors !== []) {
             return [
                 'success' => false,
-                'errors' => ['Set the default bank nominal before posting categorised transactions.'],
+                'errors' => $postingNominalErrors,
             ];
         }
+
+        $desiredJournal = $this->buildDesiredJournal($transaction, $bankNominalId);
 
         if ($desiredJournal === null) {
             if ($existingJournal === null) {
@@ -266,7 +260,11 @@ final class TransactionJournalService
                     t.category_status,
                     COALESCE(ca.internal_transfer_marker, \'\') AS internal_transfer_marker,
                     COALESCE(ca.account_name, \'\') AS source_account_name,
-                    COALESCE(ta.account_name, \'\') AS transfer_account_name
+                    COALESCE(ca.account_type, \'\') AS source_account_type,
+                    COALESCE(ca.nominal_account_id, 0) AS source_account_nominal_id,
+                    COALESCE(ta.account_name, \'\') AS transfer_account_name,
+                    COALESCE(ta.account_type, \'\') AS transfer_account_type,
+                    COALESCE(ta.nominal_account_id, 0) AS transfer_account_nominal_id
              FROM transactions t
              LEFT JOIN company_accounts ca ON ca.id = t.account_id
              LEFT JOIN company_accounts ta ON ta.id = t.transfer_account_id
@@ -330,6 +328,9 @@ final class TransactionJournalService
         }
 
         $amount = round(abs((float)($transaction['amount'] ?? 0)), 2);
+        $sourceAccountId = (int)($transaction['account_id'] ?? 0);
+        $sourceAccountType = (string)($transaction['source_account_type'] ?? '');
+        $sourceNominalAccountId = $this->resolveCompanyAccountNominalId($transaction, 'source', $bankNominalId);
 
         if ($amount <= 0.0) {
             return null;
@@ -338,8 +339,41 @@ final class TransactionJournalService
         $description = trim((string)($transaction['description'] ?? ''));
         $journalDate = trim((string)($transaction['txn_date'] ?? ''));
 
-        $lines = (float)$transaction['amount'] < 0
-            ? [
+        if ($sourceAccountType === CompanyAccountService::TYPE_TRADE) {
+            $lines = (float)$transaction['amount'] < 0
+                ? [
+                    [
+                        'nominal_account_id' => $sourceNominalAccountId,
+                        'company_account_id' => $sourceAccountId,
+                        'debit' => number_format($amount, 2, '.', ''),
+                        'credit' => '0.00',
+                        'line_description' => $description,
+                    ],
+                    [
+                        'nominal_account_id' => $nominalAccountId,
+                        'debit' => '0.00',
+                        'credit' => number_format($amount, 2, '.', ''),
+                        'line_description' => $description,
+                    ],
+                ]
+                : [
+                    [
+                        'nominal_account_id' => $nominalAccountId,
+                        'debit' => number_format($amount, 2, '.', ''),
+                        'credit' => '0.00',
+                        'line_description' => $description,
+                    ],
+                    [
+                        'nominal_account_id' => $sourceNominalAccountId,
+                        'company_account_id' => $sourceAccountId,
+                        'debit' => '0.00',
+                        'credit' => number_format($amount, 2, '.', ''),
+                        'line_description' => $description,
+                    ],
+                ];
+        } else {
+            $lines = (float)$transaction['amount'] < 0
+                ? [
                 [
                     'nominal_account_id' => $nominalAccountId,
                     'debit' => number_format($amount, 2, '.', ''),
@@ -347,7 +381,8 @@ final class TransactionJournalService
                     'line_description' => $description,
                 ],
                 [
-                    'nominal_account_id' => $bankNominalId,
+                    'nominal_account_id' => $sourceNominalAccountId,
+                    'company_account_id' => $sourceAccountId,
                     'debit' => '0.00',
                     'credit' => number_format($amount, 2, '.', ''),
                     'line_description' => $description,
@@ -355,7 +390,8 @@ final class TransactionJournalService
             ]
             : [
                 [
-                    'nominal_account_id' => $bankNominalId,
+                    'nominal_account_id' => $sourceNominalAccountId,
+                    'company_account_id' => $sourceAccountId,
                     'debit' => number_format($amount, 2, '.', ''),
                     'credit' => '0.00',
                     'line_description' => $description,
@@ -367,6 +403,7 @@ final class TransactionJournalService
                     'line_description' => $description,
                 ],
             ];
+        }
 
         return [
             'company_id' => (int)$transaction['company_id'],
@@ -378,6 +415,45 @@ final class TransactionJournalService
             'is_posted' => 1,
             'lines' => $lines,
         ];
+    }
+
+    private function postingNominalErrors(array $transaction, int $fallbackBankNominalId): array
+    {
+        if ($this->isTransferTransaction($transaction)) {
+            $sourceAccountId = (int)($transaction['account_id'] ?? 0);
+            $transferAccountId = (int)($transaction['transfer_account_id'] ?? 0);
+            $categoryStatus = trim((string)($transaction['category_status'] ?? ''));
+            $amount = round(abs((float)($transaction['amount'] ?? 0)), 2);
+
+            if ($sourceAccountId <= 0 || $transferAccountId <= 0 || $categoryStatus !== 'manual' || $amount <= 0.0) {
+                return [];
+            }
+
+            $errors = [];
+            if ($this->resolveCompanyAccountNominalId($transaction, 'source', $fallbackBankNominalId) <= 0) {
+                $errors[] = 'Assign a nominal to the source account before posting this transfer: ' . (string)($transaction['source_account_name'] ?? 'Unknown account') . '.';
+            }
+
+            if ($this->resolveCompanyAccountNominalId($transaction, 'transfer', $fallbackBankNominalId) <= 0) {
+                $errors[] = 'Assign a nominal to the transfer account before posting this transfer: ' . (string)($transaction['transfer_account_name'] ?? 'Unknown account') . '.';
+            }
+
+            return $errors;
+        }
+
+        $nominalAccountId = (int)($transaction['nominal_account_id'] ?? 0);
+        $categoryStatus = trim((string)($transaction['category_status'] ?? ''));
+        $amount = round(abs((float)($transaction['amount'] ?? 0)), 2);
+
+        if ($nominalAccountId <= 0 || !in_array($categoryStatus, ['auto', 'manual'], true) || $amount <= 0.0) {
+            return [];
+        }
+
+        if ($this->resolveCompanyAccountNominalId($transaction, 'source', $fallbackBankNominalId) <= 0) {
+            return ['Assign a nominal to the source account before posting this transaction: ' . (string)($transaction['source_account_name'] ?? 'Unknown account') . '.'];
+        }
+
+        return [];
     }
 
     private function fetchJournalBySourceRef(int $companyId, string $sourceRef): ?array {
@@ -567,40 +643,80 @@ final class TransactionJournalService
         $transferLineDescription = trim((string)($transaction['transfer_account_name'] ?? '')) !== ''
             ? trim((string)$transaction['transfer_account_name'])
             : $description;
+        $sourceNominalAccountId = $this->resolveCompanyAccountNominalId($transaction, 'source', $bankNominalId);
+        $transferNominalAccountId = $this->resolveCompanyAccountNominalId($transaction, 'transfer', $bankNominalId);
+        $sourceAccountType = (string)($transaction['source_account_type'] ?? '');
+        $transferAccountType = (string)($transaction['transfer_account_type'] ?? '');
 
-        $lines = (float)$transaction['amount'] < 0
-            ? [
+        if ($sourceAccountType === CompanyAccountService::TYPE_TRADE && $transferAccountType === CompanyAccountService::TYPE_BANK) {
+            $lines = (float)$transaction['amount'] < 0
+                ? [
                 [
-                    'nominal_account_id' => $bankNominalId,
-                    'company_account_id' => $transferAccountId,
+                    'nominal_account_id' => $sourceNominalAccountId,
+                    'company_account_id' => $sourceAccountId,
                     'debit' => number_format($amount, 2, '.', ''),
                     'credit' => '0.00',
-                    'line_description' => $transferLineDescription,
+                    'line_description' => $sourceLineDescription,
                 ],
                 [
-                    'nominal_account_id' => $bankNominalId,
-                    'company_account_id' => $sourceAccountId,
+                    'nominal_account_id' => $transferNominalAccountId,
+                    'company_account_id' => $transferAccountId,
                     'debit' => '0.00',
                     'credit' => number_format($amount, 2, '.', ''),
-                    'line_description' => $sourceLineDescription,
+                    'line_description' => $transferLineDescription,
                 ],
             ]
             : [
                 [
-                    'nominal_account_id' => $bankNominalId,
-                    'company_account_id' => $sourceAccountId,
+                    'nominal_account_id' => $transferNominalAccountId,
+                    'company_account_id' => $transferAccountId,
                     'debit' => number_format($amount, 2, '.', ''),
                     'credit' => '0.00',
-                    'line_description' => $sourceLineDescription,
-                ],
-                [
-                    'nominal_account_id' => $bankNominalId,
-                    'company_account_id' => $transferAccountId,
-                    'debit' => '0.00',
-                    'credit' => number_format($amount, 2, '.', ''),
                     'line_description' => $transferLineDescription,
                 ],
+                [
+                    'nominal_account_id' => $sourceNominalAccountId,
+                    'company_account_id' => $sourceAccountId,
+                    'debit' => '0.00',
+                    'credit' => number_format($amount, 2, '.', ''),
+                    'line_description' => $sourceLineDescription,
+                ],
             ];
+        } else {
+            $lines = (float)$transaction['amount'] < 0
+                ? [
+                    [
+                        'nominal_account_id' => $transferNominalAccountId,
+                        'company_account_id' => $transferAccountId,
+                        'debit' => number_format($amount, 2, '.', ''),
+                        'credit' => '0.00',
+                        'line_description' => $transferLineDescription,
+                    ],
+                    [
+                        'nominal_account_id' => $sourceNominalAccountId,
+                        'company_account_id' => $sourceAccountId,
+                        'debit' => '0.00',
+                        'credit' => number_format($amount, 2, '.', ''),
+                        'line_description' => $sourceLineDescription,
+                    ],
+                ]
+                : [
+                    [
+                        'nominal_account_id' => $sourceNominalAccountId,
+                        'company_account_id' => $sourceAccountId,
+                        'debit' => number_format($amount, 2, '.', ''),
+                        'credit' => '0.00',
+                        'line_description' => $sourceLineDescription,
+                    ],
+                    [
+                        'nominal_account_id' => $transferNominalAccountId,
+                        'company_account_id' => $transferAccountId,
+                        'debit' => '0.00',
+                        'credit' => number_format($amount, 2, '.', ''),
+                        'line_description' => $transferLineDescription,
+                    ],
+                ];
+        }
 
         return [
             'company_id' => (int)$transaction['company_id'],
@@ -624,6 +740,21 @@ final class TransactionJournalService
 
         return (int)($transaction['is_internal_transfer'] ?? 0) === 1
             || (int)($transaction['transfer_account_id'] ?? 0) > 0;
+    }
+
+    private function resolveCompanyAccountNominalId(array $transaction, string $prefix, int $fallbackBankNominalId): int
+    {
+        $nominalId = (int)($transaction[$prefix . '_account_nominal_id'] ?? 0);
+        if ($nominalId > 0) {
+            return $nominalId;
+        }
+
+        $accountType = (string)($transaction[$prefix . '_account_type'] ?? '');
+        if ($accountType === CompanyAccountService::TYPE_BANK && $fallbackBankNominalId > 0) {
+            return $fallbackBankNominalId;
+        }
+
+        return 0;
     }
 
     private function findJournalId(int $companyId, string $sourceType, string $sourceRef): ?int {

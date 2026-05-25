@@ -714,12 +714,12 @@ final class TransactionCategorisationService
             return ['The selected transfer account must belong to the same company.'];
         }
 
-        if ((string)($account['account_type'] ?? '') !== CompanyAccountService::TYPE_BANK) {
-            return ['Internal transfers must point to another active bank account.'];
+        if (!in_array((string)($account['account_type'] ?? ''), [CompanyAccountService::TYPE_BANK, CompanyAccountService::TYPE_TRADE], true)) {
+            return ['Transfers must point to another active bank or trade account.'];
         }
 
         if ((int)($account['is_active'] ?? 0) !== 1) {
-            return ['Internal transfers must point to an active bank account.'];
+            return ['Transfers must point to an active bank or trade account.'];
         }
 
         return [];

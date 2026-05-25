@@ -94,13 +94,23 @@ $harness->run(_company_accounts::class, static function (GeneratedServiceClassTe
                     'id' => 47,
                     'account_name' => 'Main Current Account',
                     'account_type' => CompanyAccountService::TYPE_BANK,
+                    'nominal_account_id' => 7,
                     'is_active' => 1,
                 ],
+                'nominal_accounts' => [[
+                    'id' => 7,
+                    'code' => '1001',
+                    'name' => 'Main Current Account',
+                    'account_type' => 'asset',
+                    'subtype_code' => 'bank',
+                ]],
             ],
         ]);
 
         $harness->assertTrue(str_contains($html, 'name="intent" value="save"'));
         $harness->assertTrue(str_contains($html, 'name="account_id" value="47"'));
         $harness->assertTrue(str_contains($html, 'name="edit_account_id" value="47"'));
+        $harness->assertTrue(str_contains($html, 'name="nominal_account_id"'));
+        $harness->assertTrue(str_contains($html, '1001 - Main Current Account'));
     });
 });

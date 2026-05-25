@@ -1,5 +1,45 @@
 # eelKit Changes
 
+## Table toolbar actions
+
+Feature name: `table_toolbar_actions`.
+
+`TableFramework` now lets cards provide custom trusted toolbar HTML that renders in the table's built-in toolbar area, immediately before the Condensed View, CSV, and XLSX controls.
+
+Use the new chainable method:
+
+```php
+return TableFramework::make('transactions_imported', $rows)
+    ->toolbarActions($bulkActionsHtml)
+    ->column(...)
+    ->render($context);
+```
+
+The supplied HTML is caller-rendered and is not escaped, matching the existing trusted HTML callback behaviour used by table columns. Downstream projects should only pass HTML they intentionally trust.
+
+Rendered order is:
+
+```html
+<div class="card-toolbar">
+    <div class="actions-row">
+        <!-- filters, if any -->
+    </div>
+    <div class="actions-row">
+        <!-- custom toolbar actions -->
+        <!-- Condensed View / CSV / XLSX, when exports are enabled -->
+    </div>
+</div>
+```
+
+Compatibility notes:
+
+- Existing table rendering is unchanged when `toolbarActions()` is not used.
+- Custom toolbar actions render before Condensed View and export buttons.
+- Custom toolbar actions still render when `exports(false)` is set.
+- When exports are disabled, Condensed View, CSV, and XLSX remain hidden.
+- Filters continue rendering in the first actions row.
+- The toolbar is still omitted when there are no filters, no custom toolbar actions, and no built-in controls to show.
+
 ## DOM text rendering hardening
 
 Feature name: `dom_text_rendering_hardening`.

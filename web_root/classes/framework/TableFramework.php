@@ -27,6 +27,7 @@ final class TableFramework
     ];
     private int $exportLimit = 5000;
     private array $filters = [];
+    private string $toolbarActionsHtml = '';
 
     private function __construct(private readonly string $key, private readonly array $rows)
     {
@@ -279,6 +280,13 @@ final class TableFramework
         return $this;
     }
 
+    public function toolbarActions(string $html): self
+    {
+        $this->toolbarActionsHtml = trim($html);
+
+        return $this;
+    }
+
     public function exportFormats(array $formats): self
     {
         $resolved = [];
@@ -361,7 +369,7 @@ final class TableFramework
 
     public function renderToolbar(array $context, array $exportHiddenFields = []): string
     {
-        if (!$this->exportsEnabled && $this->filters === []) {
+        if (!$this->exportsEnabled && $this->filters === [] && $this->toolbarActionsHtml === '') {
             return '';
         }
 
@@ -370,6 +378,7 @@ final class TableFramework
                 . $this->renderFilters()
             . '</div>
             <div class="actions-row">'
+                . $this->toolbarActionsHtml
                 . $this->renderCondensedViewButton()
                 . $this->renderExportButtons($context, $exportHiddenFields)
             . '</div>

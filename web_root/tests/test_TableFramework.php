@@ -128,6 +128,51 @@ $harness->check(TableFramework::class, 'honours configured export formats and ex
     $harness->assertSame(false, str_contains($csv, 'Gamma'));
 });
 
+$harness->check(TableFramework::class, 'renders custom toolbar actions before built-in controls', function () use ($harness, $rows): void {
+    $table = TableFramework::make('demo_table', $rows)
+        ->toolbarActions('<button class="button" type="button">Auto Apply</button>')
+        ->column('name', 'Name');
+
+    $html = $table->render(['page' => ['page_id' => 'test']]);
+
+    $harness->assertTrue(str_contains($html, '<button class="button" type="button">Auto Apply</button>'));
+    $harness->assertTrue(strpos($html, 'Auto Apply') < strpos($html, 'Condensed View'));
+    $harness->assertTrue(strpos($html, 'Auto Apply') < strpos($html, 'name="_table_export_prepare" value="csv"'));
+    $harness->assertTrue(strpos($html, 'Auto Apply') < strpos($html, 'name="_table_export_prepare" value="xlsx"'));
+});
+
+$harness->check(TableFramework::class, 'renders custom toolbar actions when exports are disabled', function () use ($harness, $rows): void {
+    $table = TableFramework::make('demo_table', $rows)
+        ->exports(false)
+        ->toolbarActions('<form method="post"><button class="button" type="submit">Post Categorised Transactions</button></form>')
+        ->column('name', 'Name');
+
+    $html = $table->render(['page' => ['page_id' => 'test']]);
+
+    $harness->assertTrue(str_contains($html, '<div class="card-toolbar">'));
+    $harness->assertTrue(str_contains($html, 'Post Categorised Transactions'));
+    $harness->assertSame(false, str_contains($html, 'Condensed View'));
+    $harness->assertSame(false, str_contains($html, 'name="_table_export_prepare" value="csv"'));
+    $harness->assertSame(false, str_contains($html, 'name="_table_export_prepare" value="xlsx"'));
+});
+
+$harness->check(TableFramework::class, 'renders filters and custom toolbar actions in separate rows', function () use ($harness, $rows): void {
+    $table = TableFramework::make('demo_table', $rows)
+        ->exports(false)
+        ->filterSelect('demo_status', 'Status', ['all' => 'All statuses', 'ready' => 'Ready'], 'all')
+        ->toolbarActions('<button class="button" type="button">Auto Apply</button>')
+        ->column('name', 'Name');
+
+    $html = $table->renderToolbar(['page' => ['page_id' => 'test']]);
+    $filterPosition = strpos($html, '<label for="table-filter-demo_table-demo_status">Status</label>');
+    $customActionPosition = strpos($html, 'Auto Apply');
+
+    $harness->assertTrue($filterPosition !== false);
+    $harness->assertTrue($customActionPosition !== false);
+    $harness->assertTrue($filterPosition < $customActionPosition);
+    $harness->assertSame(2, substr_count($html, '<div class="actions-row">'));
+});
+
 $harness->check(TableFramework::class, 'renders convenience column formats with export-safe values', function () use ($harness): void {
     $rows = [[
         'actor' => '',

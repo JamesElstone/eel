@@ -81,7 +81,7 @@ final class _application_settingsCard extends CardBaseFramework
                     <legend>Navigation order</legend>
                     <label class="checkbox-item" for="settings-hide-collapsed-link-initials">
                         <input type="hidden" name="hide_collapsed_link_initials" value="0">
-                        <input id="settings-hide-collapsed-link-initials" name="hide_collapsed_link_initials" type="checkbox" value="1"' . ($hideCollapsedLinkInitials ? ' checked' : '') . '>
+                        <input id="settings-hide-collapsed-link-initials" name="hide_collapsed_link_initials" type="checkbox" value="1" data-submit-on-change="true"' . ($hideCollapsedLinkInitials ? ' checked' : '') . '>
                         <span class="checkbox-copy">
                             <span>Hide collapsed sidebar link initials.</span>
                         </span>

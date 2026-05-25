@@ -217,6 +217,27 @@ $harness->run(DashboardRepository::class, function (GeneratedServiceClassTestHar
         $harness->assertSame(true, str_contains($html, 'name="activity_window" value="this_month"'));
     });
 
+    $harness->check('_overviewCard', 'renders bank and trade account dashboard stats', function () use ($harness): void {
+        $card = new _overviewCard();
+        $html = $card->render([
+            'services' => [
+                'dashboard_data' => [
+                    'stats' => [
+                        'bank_accounts' => 2,
+                        'trade_accounts' => 3,
+                        'unreconciled_items' => 4,
+                        'draft_journals' => 5,
+                        'staged_upload_rows' => 6,
+                    ],
+                ],
+            ],
+        ]);
+
+        $harness->assertSame(true, str_contains($html, 'Bank accounts'));
+        $harness->assertSame(true, str_contains($html, 'Trade accounts'));
+        $harness->assertSame(true, str_contains($html, 'Active trade accounts used for supplier, customer, or ledger activity.'));
+    });
+
     $harness->check('_activityCard', 'paginates recent activity feed rows', function () use ($harness): void {
         $card = new _activityCard();
         $activity = [];

@@ -18,6 +18,7 @@ final class DashboardRepository
     {
         $stats = [
             'bank_accounts' => 0,
+            'trade_accounts' => 0,
             'statement_uploads' => 0,
             'unreconciled_items' => 0,
             'draft_journals' => 0,
@@ -44,7 +45,12 @@ final class DashboardRepository
         $stats['bank_accounts'] = InterfaceDB::countWhere('company_accounts', [
             'company_id' => $companyId,
             'is_active' => 1,
-            'account_type' => 'bank',
+            'account_type' => CompanyAccountService::TYPE_BANK,
+        ]);
+        $stats['trade_accounts'] = InterfaceDB::countWhere('company_accounts', [
+            'company_id' => $companyId,
+            'is_active' => 1,
+            'account_type' => CompanyAccountService::TYPE_TRADE,
         ]);
         $stats['statement_uploads'] = InterfaceDB::countWhere('statement_uploads', [
             'company_id' => $companyId,

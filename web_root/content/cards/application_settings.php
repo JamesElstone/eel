@@ -69,6 +69,7 @@ final class _application_settingsCard extends CardBaseFramework
                 <fieldset class="form-row full settings-fieldset">
                     <legend>Developer Options</legend>
                     <label class="checkbox-item" for="settings-developer-options">
+                        <input type="hidden" name="developer_options" value="0">
                         <input id="settings-developer-options" name="developer_options" type="checkbox" value="1"' . (!empty($config['developer_options']) ? ' checked' : '') . '>
                         <span class="checkbox-copy">
                             <span>Show developer-only tools, cards, and diagnostics where enabled.</span>
@@ -79,6 +80,7 @@ final class _application_settingsCard extends CardBaseFramework
                 <fieldset class="form-row full settings-fieldset">
                     <legend>Navigation order</legend>
                     <label class="checkbox-item" for="settings-hide-collapsed-link-initials">
+                        <input type="hidden" name="hide_collapsed_link_initials" value="0">
                         <input id="settings-hide-collapsed-link-initials" name="hide_collapsed_link_initials" type="checkbox" value="1"' . ($hideCollapsedLinkInitials ? ' checked' : '') . '>
                         <span class="checkbox-copy">
                             <span>Hide collapsed sidebar link initials.</span>

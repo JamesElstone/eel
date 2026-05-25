@@ -11,15 +11,9 @@ final class CardRendererFramework
 {
     /** @var array<string, array{status: string, data: mixed, error: ?array}> */
     private array $resolvedServices = [];
-    private bool $showCardKey = false;
 
     public function __construct(private readonly CardFactoryFramework $cards)
     {
-        
-        $config = AppConfigurationStore::config();
-        $showCardKey = (bool)($config['developer_options'] ?? false);
-        
-        $this->showCardKey = $showCardKey;
     }
 
     public function render(string $pageId, string $cardKey, array $context, PageServiceFramework $services): string
@@ -39,6 +33,7 @@ final class CardRendererFramework
 
         $errorSummary = $this->renderErrorSummaryMarkup((array)($cardContext['service_errors'] ?? []));
         $refreshAttributes = $this->renderRefreshAttributes($card, $cardContext);
+        $showDeveloperMetadata = $this->developerOptionsEnabled();
 
         return '
             <section id="' . HelperFramework::escape($domId) . '" class="card" data-card-key="' . HelperFramework::escape($cardKey) . '"' . $refreshAttributes . '>
@@ -52,10 +47,10 @@ final class CardRendererFramework
                         ' . $helperMarkup . '
                     </div>
                     <div class="card-header-meta">' 
-                     . ($this->showCardKey ? '<p class="eyebrow card-header-corner-eyebrow">Card: ' . HelperFramework::escape($cardKey) . '</p>' : '')
+                     . ($showDeveloperMetadata ? '<p class="eyebrow card-header-corner-eyebrow">Card: ' . HelperFramework::escape($cardKey) . '</p>' : '')
                      . '
                         <div class="card-service-pills">'
-                     . $this->getServicesUsedPills($card)
+                     . ($showDeveloperMetadata ? $this->getServicesUsedPills($card) : '')
                      . '
                         </div>
                     </div>
@@ -87,6 +82,11 @@ final class CardRendererFramework
             fn($service) => HelperFramework::createPill($service),
             $services
         ));
+    }
+
+    private function developerOptionsEnabled(): bool
+    {
+        return (bool)AppConfigurationStore::get('developer_options', false);
     }
 
     public function cardInvalidationFacts(string $cardKey): array

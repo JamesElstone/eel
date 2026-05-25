@@ -47,6 +47,27 @@ if (!class_exists('_non_refreshing_testCard', false)) {
     }
 }
 
+if (!class_exists('_service_metadata_testCard', false)) {
+    final class _service_metadata_testCard extends CardBaseFramework
+    {
+        public function services(): array
+        {
+            return [
+                [
+                    'key' => 'metadata',
+                    'service' => CardRendererOptionalParamTestService::class,
+                    'method' => 'filterUploadHistory',
+                ],
+            ];
+        }
+
+        public function render(array $context): string
+        {
+            return '<p>Service metadata test</p>';
+        }
+    }
+}
+
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(CardRendererFramework::class, function (GeneratedServiceClassTestHarness $harness, object $instance): void {
     if (!$instance instanceof CardRendererFramework) {
@@ -106,5 +127,30 @@ $harness->run(CardRendererFramework::class, function (GeneratedServiceClassTestH
 
         $harness->assertSame(false, str_contains($html, 'data-card-refresh-ms='));
         $harness->assertSame(false, str_contains($html, 'data-card-refresh-fact='));
+    });
+
+    $harness->check(CardRendererFramework::class, 'shows service metadata only when developer options are enabled', function () use ($harness, $instance, $services): void {
+        $path = AppConfigurationStore::configPath();
+        $original = file_get_contents($path);
+
+        if (!is_string($original)) {
+            throw new RuntimeException('Unable to read fixture config.');
+        }
+
+        try {
+            AppConfigurationStore::set('developer_options', true);
+            $enabledHtml = $instance->render('test', 'service_metadata_test', ['page' => ['page_id' => 'test']], $services);
+
+            AppConfigurationStore::set('developer_options', false);
+            $disabledHtml = $instance->render('test', 'service_metadata_test', ['page' => ['page_id' => 'test']], $services);
+
+            $harness->assertTrue(str_contains($enabledHtml, 'Card: service_metadata_test'));
+            $harness->assertTrue(str_contains($enabledHtml, 'Using ' . CardRendererOptionalParamTestService::class));
+            $harness->assertSame(false, str_contains($disabledHtml, 'Card: service_metadata_test'));
+            $harness->assertSame(false, str_contains($disabledHtml, 'Using ' . CardRendererOptionalParamTestService::class));
+        } finally {
+            file_put_contents($path, $original, LOCK_EX);
+            AppConfigurationStore::config(true);
+        }
     });
 });

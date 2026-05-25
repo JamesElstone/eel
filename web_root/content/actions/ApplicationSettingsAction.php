@@ -55,6 +55,7 @@ final class ApplicationSettingsAction implements ActionInterfaceFramework
         }
 
         try {
+            $previousConfig = AppConfigurationStore::config();
             $lookedUpVendorPublicIp = (string)$request->input('lookup_vendor_public_ip', '') === '1';
             $vendorPublicIp = $lookedUpVendorPublicIp
                 ? (new ExternalIpLookupOutbound())->lookupPublicIp()
@@ -65,21 +66,22 @@ final class ApplicationSettingsAction implements ActionInterfaceFramework
                 'app_strapline' => trim((string)$request->input('app_strapline', '')),
                 'brand-mark' => $brandMark,
                 'developer_options' => $developerOptions,
-                'navigation' => array_replace($this->configArray('navigation'), [
+                'navigation' => array_replace($this->configArray($previousConfig, 'navigation'), [
                     'default_order' => $this->navigationOrderFromRequest($request),
                     'hide_collapsed_link_initials' => $this->checkboxValue($request, 'hide_collapsed_link_initials'),
                 ]),
-                'antifraud' => array_replace($this->configArray('antifraud'), [
+                'antifraud' => array_replace($this->configArray($previousConfig, 'antifraud'), [
                     'vendor_license_ids' => trim((string)$request->input('antifraud_vendor_license_ids', '')),
                     'vendor_product_name' => trim((string)$request->input('antifraud_vendor_product_name', '')),
                     'vendor_public_ip' => $vendorPublicIp,
                     'vendor_version' => trim((string)$request->input('antifraud_vendor_version', '')),
                 ]),
-                'session' => array_replace($this->configArray('session'), [
+                'session' => array_replace($this->configArray($previousConfig, 'session'), [
                     'cookie_secure' => $this->cookieSecureValue((string)$request->input('session_cookie_secure', 'auto')),
                     'cookie_samesite' => $this->cookieSameSiteValue((string)$request->input('session_cookie_samesite', 'Strict')),
                 ]),
             ];
+            $successMessage = $this->successFlashMessage($previousConfig, $settings, $lookedUpVendorPublicIp);
 
             AppConfigurationStore::setEditableApplicationSettings($settings);
             $GLOBALS['appName'] = $appName;
@@ -99,7 +101,7 @@ final class ApplicationSettingsAction implements ActionInterfaceFramework
             ['application.settings', 'layout.sidebar'],
             [[
                 'type' => 'success',
-                'message' => $this->successFlashMessage($lookedUpVendorPublicIp, $developerOptions),
+                'message' => $successMessage,
             ]]
         );
     }
@@ -113,9 +115,9 @@ final class ApplicationSettingsAction implements ActionInterfaceFramework
         );
     }
 
-    private function configArray(string $path): array
+    private function configArray(array $config, string $path): array
     {
-        $value = AppConfigurationStore::get($path, []);
+        $value = $config[$path] ?? [];
 
         return is_array($value) ? $value : [];
     }
@@ -130,19 +132,58 @@ final class ApplicationSettingsAction implements ActionInterfaceFramework
         return (string)$value === '1';
     }
 
-    private function successFlashMessage(bool $lookedUpVendorPublicIp, bool $developerOptions): string
+    private function successFlashMessage(array $previousConfig, array $settings, bool $lookedUpVendorPublicIp): string
     {
-        $message = 'Application settings saved.';
-
-        if (!$developerOptions) {
-            $message .= ' Developer options are now off.';
-        }
+        $changes = $this->settingChangeMessages($previousConfig, $settings);
 
         if ($lookedUpVendorPublicIp) {
-            $message .= ' Vendor public IP looked up.';
+            $changes[] = 'Vendor public IP looked up.';
         }
 
-        return $message;
+        if ($changes === []) {
+            return 'No changes needed; application settings are already up to date.';
+        }
+
+        return implode(' ', $changes);
+    }
+
+    private function settingChangeMessages(array $previousConfig, array $settings): array
+    {
+        $changes = [];
+
+        if ((string)($previousConfig['app_name'] ?? '') !== (string)($settings['app_name'] ?? '')
+            || (string)($previousConfig['app_strapline'] ?? '') !== (string)($settings['app_strapline'] ?? '')
+            || (string)($previousConfig['brand-mark'] ?? '') !== (string)($settings['brand-mark'] ?? '')) {
+            $changes[] = 'Branding updated.';
+        }
+
+        if ((bool)($previousConfig['developer_options'] ?? false) !== (bool)($settings['developer_options'] ?? false)) {
+            $changes[] = !empty($settings['developer_options'])
+                ? 'Developer options are now on.'
+                : 'Developer options are now off.';
+        }
+
+        $previousNavigation = $this->configArray($previousConfig, 'navigation');
+        $currentNavigation = $this->configArray($settings, 'navigation');
+        if ((bool)($previousNavigation['hide_collapsed_link_initials'] ?? false) !== (bool)($currentNavigation['hide_collapsed_link_initials'] ?? false)) {
+            $changes[] = !empty($currentNavigation['hide_collapsed_link_initials'])
+                ? 'Collapsed sidebar link initials are now hidden.'
+                : 'Collapsed sidebar link initials are visible again.';
+        }
+
+        if (($previousNavigation['default_order'] ?? []) !== ($currentNavigation['default_order'] ?? [])) {
+            $changes[] = 'Navigation order updated.';
+        }
+
+        if ($this->configArray($previousConfig, 'antifraud') !== $this->configArray($settings, 'antifraud')) {
+            $changes[] = 'Anti-fraud header defaults updated.';
+        }
+
+        if ($this->configArray($previousConfig, 'session') !== $this->configArray($settings, 'session')) {
+            $changes[] = 'Session cookie settings updated.';
+        }
+
+        return $changes;
     }
 
     private function navigationOrderFromRequest(RequestFramework $request): array

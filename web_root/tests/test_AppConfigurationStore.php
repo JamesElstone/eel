@@ -74,7 +74,7 @@ $harness->check(AppConfigurationStore::class, 'updates database connection setti
         $harness->assertSame('odbc:test_dsn', $updated['db']['dsn'] ?? null);
         $harness->assertSame('test_user', $updated['db']['user'] ?? null);
         $harness->assertSame('test_password', $updated['db']['pass'] ?? null);
-        $harness->assertSame('../db_schema/eelKit.schema.sql', $updated['db']['sqlite_schema'] ?? null);
+        $harness->assertSame('../db_schema/eel_accounts.schema.sql', $updated['db']['sqlite_schema'] ?? null);
     } finally {
         file_put_contents($path, $original, LOCK_EX);
         AppConfigurationStore::config(true);
@@ -125,7 +125,7 @@ $harness->check(AppConfigurationStore::class, 'updates editable application sett
         $harness->assertSame(true, $updated['navigation']['hide_collapsed_link_initials'] ?? null);
         $harness->assertSame('203.0.113.10', $updated['antifraud']['vendor_public_ip'] ?? null);
         $harness->assertSame('true', $updated['session']['cookie_secure'] ?? null);
-        $harness->assertSame('../db_schema/eelKit.schema.sql', $updated['db']['sqlite_schema'] ?? null);
+        $harness->assertSame('../db_schema/eel_accounts.schema.sql', $updated['db']['sqlite_schema'] ?? null);
     } finally {
         file_put_contents($path, $original, LOCK_EX);
         AppConfigurationStore::config(true);
@@ -151,7 +151,7 @@ $harness->check(AppConfigurationStore::class, 'sets nested configuration paths w
         $harness->assertSame('LIVE', $updated['accounting']['hmrc']['mode'] ?? null);
         $harness->assertSame('LIVE', AppConfigurationStore::get('accounting.hmrc.mode'));
         $harness->assertSame('LIVE', $stored['accounting']['hmrc']['mode'] ?? null);
-        $harness->assertSame('../db_schema/eelKit.schema.sql', $updated['db']['sqlite_schema'] ?? null);
+        $harness->assertSame('../db_schema/eel_accounts.schema.sql', $updated['db']['sqlite_schema'] ?? null);
     } finally {
         file_put_contents($path, $original, LOCK_EX);
         AppConfigurationStore::config(true);

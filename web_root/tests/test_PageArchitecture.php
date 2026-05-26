@@ -62,10 +62,9 @@ final class TestPageArchitectureHarness
 
         $this->assertSame(
             [
+                'activity',
                 'user_account_audit_log',
                 'user_logon_history_log',
-                'transaction_category_audit_log',
-                'year_end_audit_log',
             ],
             $page->cards()
         );
@@ -120,9 +119,10 @@ final class TestPageArchitectureHarness
 
         $_GET = ['page' => 'dashboard'];
         $_POST = [
-            'action' => 'set-page-context',
+            'action' => 'set-site-context',
+            'site_context_key' => 'company_id',
+            'site_context_input_name' => 'company_id',
             'company_id' => '0',
-            'tax_year_id' => '',
             'cards' => $page->cards(),
             '_ajax' => '1',
         ];
@@ -132,7 +132,7 @@ final class TestPageArchitectureHarness
 
         $response = $page->handle(
             RequestFramework::fromGlobals(),
-            new PageServiceFramework($this->testPageServices())
+            createTestPageServiceFramework()
         );
 
         ob_start();
@@ -140,12 +140,10 @@ final class TestPageArchitectureHarness
         $payload = json_decode((string)ob_get_clean(), true);
 
         $this->assertTrue(is_array($payload));
-        $this->assertTrue(isset($payload['selector_ui']['companies']));
-        $this->assertTrue(isset($payload['selector_ui']['tax_years']));
-        $this->assertTrue(isset($payload['selector_ui']['company_id']));
-        $this->assertTrue(isset($payload['selector_ui']['tax_year_id']));
-        $this->assertTrue(is_array($payload['selector_ui']['companies']));
-        $this->assertTrue(is_array($payload['selector_ui']['tax_years']));
+        $this->assertTrue(isset($payload['site_context_html']['sidebar']));
+        $this->assertTrue(isset($payload['site_context_html']['topbar']));
+        $this->assertContains('name="company_id"', (string)$payload['site_context_html']['sidebar']);
+        $this->assertContains('name="tax_year_id"', (string)$payload['site_context_html']['topbar']);
     }
 
     private function testAjaxDeltaResponseIncludesAjaxNonceField(): void
@@ -291,9 +289,10 @@ final class TestPageArchitectureHarness
 
         $_GET = ['page' => 'test'];
         $_POST = [
-            'action' => 'set-page-context',
-            'company_id' => '22',
-            'tax_year_id' => '25',
+            'action' => 'set-site-context',
+            'site_context_key' => 'company_id',
+            'site_context_input_name' => 'company_id',
+            'company_id' => '0',
             'cards' => $page->cards(),
             '_ajax' => '1',
         ];
@@ -303,7 +302,7 @@ final class TestPageArchitectureHarness
 
         $response = $page->handle(
             RequestFramework::fromGlobals(),
-            new PageServiceFramework($this->testPageServices())
+            createTestPageServiceFramework()
         );
 
         ob_start();
@@ -312,8 +311,8 @@ final class TestPageArchitectureHarness
 
         $this->assertTrue(is_array($payload));
         $this->assertSame([], $payload['cards'] ?? null);
-        $this->assertTrue(isset($payload['selector_ui']['companies']));
-        $this->assertTrue(isset($payload['selector_ui']['tax_years']));
+        $this->assertTrue(isset($payload['site_context_html']['sidebar']));
+        $this->assertTrue(isset($payload['site_context_html']['topbar']));
     }
 
     private function testTestPageSharedContextAcrossCards(): void
@@ -437,11 +436,11 @@ final class TestPageArchitectureHarness
 
         $items = (new NavigationFramework(self::NAVIGATION_FIXTURES_DIRECTORY, 'trialBalance'))->build();
 
-        $this->assertSame(['uploads', 'directorLoan', 'trialBalance', 'zebra'], array_column($items, 'key'));
-        $this->assertSame('Director Loan', $items[1]['label']);
-        $this->assertSame('/?page=trialBalance', $items[2]['url']);
-        $this->assertSame('/tests/fixtures/navigation_pages/trialBalance.svg', $items[2]['icon_path']);
-        $this->assertTrue($items[2]['is_active']);
+        $this->assertSame(['directorLoan', 'trialBalance', 'uploads', 'zebra'], array_column($items, 'key'));
+        $this->assertSame('Director Loan', $items[0]['label']);
+        $this->assertSame('/?page=trialBalance', $items[1]['url']);
+        $this->assertSame('/tests/fixtures/navigation_pages/trialBalance.svg', $items[1]['icon_path']);
+        $this->assertTrue($items[1]['is_active']);
         $this->assertSame(1000, $items[3]['order']);
     }
 

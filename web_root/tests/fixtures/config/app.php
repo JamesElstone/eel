@@ -17,7 +17,7 @@ return array (
     'user' => '',
     'pass' => '',
     'logfile' => '',
-    'sqlite_schema' => '../db_schema/eelKit.schema.sql',
+    'sqlite_schema' => '../db_schema/eel_accounts.schema.sql',
   ),
   'developer_options' => true,
   'navigation' => 
@@ -34,5 +34,9 @@ return array (
   'uploads' => 
   array (
     'export_key' => '3KwECjQFlWmpTztcBAuviitPhE8uAJFL',
+  ),
+  'site_context' => 
+  array (
+    'service' => 'AccountingContextService',
   ),
 );

@@ -67,16 +67,22 @@ function testCompanyStoreRequest(int $companyId = 0, int $taxYearId = 0): Reques
     );
 }
 
-function testCompanyStoreSiteContextActionRequest(string $key, string $inputName, int $value): RequestFramework
+function testCompanyStoreSiteContextActionRequest(string $key, string $inputName, int $value, int $companyId = 0): RequestFramework
 {
+    $post = [
+        'action' => 'set-site-context',
+        'site_context_key' => $key,
+        'site_context_input_name' => $inputName,
+        $inputName => (string)$value,
+    ];
+
+    if ($companyId > 0) {
+        $post['company_id'] = (string)$companyId;
+    }
+
     return new RequestFramework(
         [],
-        [
-            'action' => 'set-site-context',
-            'site_context_key' => $key,
-            'site_context_input_name' => $inputName,
-            $inputName => (string)$value,
-        ],
+        $post,
         ['REQUEST_METHOD' => 'POST'],
         [],
         []
@@ -89,6 +95,50 @@ function resetCompanyStoreSession(): void
     $service->startSession();
     $_SESSION = [];
     $service->completeAuthentication(1, 'test-device');
+}
+
+function ensureCompanyStoreCompany(): int
+{
+    $companyNumber = 'TESTCTX001';
+    $companyId = (int)(InterfaceDB::fetchColumn(
+        'SELECT id FROM companies WHERE company_number = :company_number LIMIT 1',
+        ['company_number' => $companyNumber]
+    ) ?: 0);
+
+    if ($companyId <= 0) {
+        InterfaceDB::prepareExecute(
+            'INSERT INTO companies (company_name, company_number) VALUES (:company_name, :company_number)',
+            ['company_name' => 'Test Context Company Limited', 'company_number' => $companyNumber]
+        );
+        $companyId = (int)(InterfaceDB::fetchColumn(
+            'SELECT id FROM companies WHERE company_number = :company_number LIMIT 1',
+            ['company_number' => $companyNumber]
+        ) ?: 0);
+    }
+
+    if ($companyId <= 0) {
+        throw new RuntimeException('Unable to create test company context fixture.');
+    }
+
+    $taxYearId = (int)(InterfaceDB::fetchColumn(
+        'SELECT id FROM tax_years WHERE company_id = :company_id AND label = :label LIMIT 1',
+        ['company_id' => $companyId, 'label' => 'Test FY 2026']
+    ) ?: 0);
+
+    if ($taxYearId <= 0) {
+        InterfaceDB::prepareExecute(
+            'INSERT INTO tax_years (company_id, label, period_start, period_end)
+             VALUES (:company_id, :label, :period_start, :period_end)',
+            [
+                'company_id' => $companyId,
+                'label' => 'Test FY 2026',
+                'period_start' => '2026-01-01',
+                'period_end' => '2026-12-31',
+            ]
+        );
+    }
+
+    return $companyId;
 }
 
 $harness = new GeneratedServiceClassTestHarness();
@@ -136,7 +186,8 @@ $harness->run(AccountingContextService::class, function (GeneratedServiceClassTe
         resetCompanyStoreSession();
         $companies = (new CompanyRepository())->fetchCompanySelectorRows();
         if ($companies === []) {
-            $harness->skip('skipped, due to no companies data');
+            ensureCompanyStoreCompany();
+            $companies = (new CompanyRepository())->fetchCompanySelectorRows();
         }
 
         $requestedCompanyId = (int)($companies[0]['id'] ?? 0);
@@ -176,7 +227,8 @@ $harness->run(AccountingContextService::class, function (GeneratedServiceClassTe
         resetCompanyStoreSession();
         $companies = (new CompanyRepository())->fetchCompanySelectorRows();
         if ($companies === []) {
-            $harness->skip('skipped, due to no companies data');
+            ensureCompanyStoreCompany();
+            $companies = (new CompanyRepository())->fetchCompanySelectorRows();
         }
 
         $companyId = (int)($companies[0]['id'] ?? 0);
@@ -195,7 +247,8 @@ $harness->run(AccountingContextService::class, function (GeneratedServiceClassTe
 
         $taxYears = (new TaxYearRepository())->fetchTaxYears($companyId);
         if ($taxYears === []) {
-            $harness->skip('skipped, due to no tax years data');
+            ensureCompanyStoreCompany();
+            $taxYears = (new TaxYearRepository())->fetchTaxYears($companyId);
         }
 
         $taxYearId = (int)($taxYears[0]['id'] ?? 0);
@@ -204,7 +257,7 @@ $harness->run(AccountingContextService::class, function (GeneratedServiceClassTe
         }
 
         $result = $service->handleSiteContextAction(
-            testCompanyStoreSiteContextActionRequest('tax_year_id', 'tax_year_id', $taxYearId),
+            testCompanyStoreSiteContextActionRequest('tax_year_id', 'tax_year_id', $taxYearId, $companyId),
             new TestCompanyStorePage(),
             createTestPageServiceFramework()
         );

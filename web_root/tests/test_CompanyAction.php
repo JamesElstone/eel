@@ -69,7 +69,7 @@ $harness->run(CompanyAction::class, function (GeneratedServiceClassTestHarness $
     });
 
     $harness->check('CompanyAction', 'add_tax_period requires a selected company', function () use ($harness, $instance): void {
-        (new SessionAuthenticationService())->clearPageContext();
+        (new AccountingContextService())->clearPageContext();
 
         $request = new RequestFramework(
             [],
@@ -87,7 +87,7 @@ $harness->run(CompanyAction::class, function (GeneratedServiceClassTestHarness $
     });
 
     $harness->check('CompanyAction', 'clear_imported_accounting_data requires a selected company', function () use ($harness, $instance): void {
-        (new SessionAuthenticationService())->clearPageContext();
+        (new AccountingContextService())->clearPageContext();
 
         $request = new RequestFramework(
             [],
@@ -105,7 +105,7 @@ $harness->run(CompanyAction::class, function (GeneratedServiceClassTestHarness $
     });
 
     $harness->check('CompanyAction', 'delete_company requires a selected company', function () use ($harness, $instance): void {
-        (new SessionAuthenticationService())->clearPageContext();
+        (new AccountingContextService())->clearPageContext();
 
         $request = new RequestFramework(
             [],

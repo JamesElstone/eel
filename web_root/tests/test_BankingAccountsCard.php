@@ -46,7 +46,7 @@ $harness->run(_banking_accountsCard::class, static function (GeneratedServiceCla
         $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="csv"'));
         $harness->assertTrue(str_contains($html, '<div class="table-scroll"><table>'));
         $harness->assertTrue(str_contains($html, 'Main Current Account'));
-        $harness->assertTrue(str_contains($html, '<div class="helper">12345678</div>'));
+        $harness->assertTrue(str_contains($html, '12345678'));
         $harness->assertTrue(str_contains($html, '1001 Main Current Account'));
         $harness->assertTrue(str_contains($html, 'BANK-MAIN'));
         $harness->assertTrue(str_contains($html, 'Field Mappings'));

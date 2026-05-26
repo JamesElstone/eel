@@ -14,9 +14,17 @@ $testsDirectory = __DIR__;
 $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($classDirectory));
 $missingTests = [];
 $legacyTestNames = [
+    'AccountingContextService.php' => ['test_AccountingContextService.php', 'test_CompanyStore.php'],
     'CardBaseFramework.php' => ['test_CardBaseFramework.php', 'test_BaseCardFramework.php'],
+    'NullSiteContextProviderFramework.php' => ['test_SiteContextFramework.php'],
     'PageBaseFramework.php' => ['test_PageBaseFramework.php', 'test_BasePageFramework.php'],
     'PageContextFramework.php' => ['test_PageContextFramework.php', 'test_BaseModulePageFramework.php'],
+    'SiteContextCoordinatorFramework.php' => ['test_SiteContextFramework.php'],
+    'SiteContextProviderInterface.php' => ['test_SiteContextFramework.php'],
+    'SiteContextRendererFramework.php' => ['test_SiteContextFramework.php'],
+    'SiteContextResultFramework.php' => ['test_SiteContextFramework.php'],
+    'TableColumnFramework.php' => ['test_TableFramework.php'],
+    'TableExportFramework.php' => ['test_TableFramework.php'],
 ];
 
 foreach ($iterator as $fileInfo) {

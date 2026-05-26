@@ -56,7 +56,7 @@ final class TestPageContextFrameworkDouble extends PageContextFramework
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(TestPageContextFrameworkDouble::class, function (GeneratedServiceClassTestHarness $harness, TestPageContextFrameworkDouble $page): void {
     $harness->check(PageContextFramework::class, 'declares shared module services', function () use ($harness, $page): void {
-        $harness->assertSame([CompanyAccountService::class], $page->services());
+        $harness->assertSame([], $page->services());
     });
 
     $harness->check(PageContextFramework::class, 'builds baseline module page context and merges module context', function () use ($harness, $page): void {
@@ -89,7 +89,7 @@ $harness->run(TestPageContextFrameworkDouble::class, function (GeneratedServiceC
         $harness->assertSame('test_module', $context['base_page_id'] ?? null);
     });
 
-    $harness->check(PageContextFramework::class, 'prefers action result company and tax year in module context', function () use ($harness, $page): void {
+    $harness->check(PageContextFramework::class, 'does not treat action query values as site context selection', function () use ($harness, $page): void {
         $_GET = ['page' => 'test-module'];
         $_POST = [];
         $_SERVER['REQUEST_METHOD'] = 'GET';
@@ -108,11 +108,11 @@ $harness->run(TestPageContextFrameworkDouble::class, function (GeneratedServiceC
             ])
         );
 
-        $harness->assertSame(22, $context['company']['id'] ?? null);
-        $harness->assertSame(33, $context['company']['tax_year_id'] ?? null);
+        $harness->assertSame(0, $context['company']['id'] ?? null);
+        $harness->assertSame(0, $context['company']['tax_year_id'] ?? null);
     });
 
-    $harness->check(PageContextFramework::class, 'uses the session selected company when the request omits company_id', function () use ($harness, $page): void {
+    $harness->check(PageContextFramework::class, 'ignores stale legacy session company values', function () use ($harness, $page): void {
         $_GET = ['page' => 'test-module'];
         $_POST = [];
         $_SERVER['REQUEST_METHOD'] = 'GET';
@@ -129,6 +129,6 @@ $harness->run(TestPageContextFrameworkDouble::class, function (GeneratedServiceC
 
         $context = $page->exposedBuildContext($request, $services, ActionResultFramework::none());
 
-        $harness->assertSame(22, $context['company']['id'] ?? null);
+        $harness->assertSame(0, $context['company']['id'] ?? null);
     });
 });

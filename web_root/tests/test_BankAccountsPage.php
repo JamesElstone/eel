@@ -111,6 +111,6 @@ $harness->run(_company_accounts::class, static function (GeneratedServiceClassTe
         $harness->assertTrue(str_contains($html, 'name="account_id" value="47"'));
         $harness->assertTrue(str_contains($html, 'name="edit_account_id" value="47"'));
         $harness->assertTrue(str_contains($html, 'name="nominal_account_id"'));
-        $harness->assertTrue(str_contains($html, '1001 - Main Current Account'));
+        $harness->assertTrue(str_contains($html, '1001 Main Current Account'));
     });
 });

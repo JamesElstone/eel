@@ -11,6 +11,15 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARAT
 
 $harness = new GeneratedServiceClassTestHarness();
 
+$harness->check('test runner access', 'checks the production secure app config for developer options', function () use ($harness): void {
+    if (!function_exists('eel_tests_app_config_path')) {
+        $harness->skip('test runner access helper is only available through tests/index.php.');
+    }
+
+    $expectedPath = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'secure' . DIRECTORY_SEPARATOR . 'app.php';
+    $harness->assertSame($expectedPath, eel_tests_app_config_path());
+});
+
 $harness->check('secure/app.php', 'parses and returns a configuration array when present', function () use ($harness): void {
     $configPath = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'secure' . DIRECTORY_SEPARATOR . 'app.php';
 

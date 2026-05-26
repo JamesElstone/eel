@@ -48,7 +48,7 @@ if (($GLOBALS['test_output_state']['summary']['status'] ?? 'healthy') !== 'healt
 
 function eel_tests_developer_options_enabled(): bool
 {
-    $configPath = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'app.php';
+    $configPath = eel_tests_app_config_path();
 
     if (!is_file($configPath) || !is_readable($configPath)) {
         return false;
@@ -61,4 +61,9 @@ function eel_tests_developer_options_enabled(): bool
     }
 
     return is_array($config) && (bool)($config['developer_options'] ?? false);
+}
+
+function eel_tests_app_config_path(): string
+{
+    return dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'secure' . DIRECTORY_SEPARATOR . 'app.php';
 }

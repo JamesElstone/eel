@@ -13,6 +13,40 @@ final class CorporationTaxRateRuleService
 
     public function ensureSchema(): void
     {
+        if (InterfaceDB::tableExists('corporation_tax_rate_rules')) {
+            return;
+        }
+
+        if (InterfaceDB::driverName() === 'sqlite') {
+            InterfaceDB::execute(
+                'CREATE TABLE IF NOT EXISTS corporation_tax_rate_rules (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    regime TEXT NOT NULL DEFAULT \'non_ring_fence\',
+                    financial_year_start TEXT NOT NULL,
+                    financial_year_end TEXT NOT NULL,
+                    rule_version TEXT NOT NULL,
+                    main_rate REAL NOT NULL,
+                    small_profits_rate REAL DEFAULT NULL,
+                    lower_limit REAL DEFAULT NULL,
+                    upper_limit REAL DEFAULT NULL,
+                    marginal_relief_fraction REAL DEFAULT NULL,
+                    source_url TEXT NOT NULL,
+                    source_updated_at TEXT DEFAULT NULL,
+                    source_checked_at TEXT NOT NULL,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    notes TEXT DEFAULT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (regime, financial_year_start, rule_version)
+                )'
+            );
+            InterfaceDB::execute(
+                'CREATE INDEX IF NOT EXISTS idx_ct_rate_rules_lookup
+                 ON corporation_tax_rate_rules (regime, is_active, financial_year_start, financial_year_end)'
+            );
+            return;
+        }
+
         InterfaceDB::execute(
             'CREATE TABLE IF NOT EXISTS corporation_tax_rate_rules (
                 id int(11) NOT NULL AUTO_INCREMENT,

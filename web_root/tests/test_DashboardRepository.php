@@ -217,13 +217,24 @@ $harness->run(DashboardRepository::class, function (GeneratedServiceClassTestHar
     $harness->check('_activityCard', 'renders recent activity feed from card service data', function () use ($harness): void {
         $card = new _activityCard();
         $html = $card->render([
+            'page' => [
+                'page_id' => 'dashboard',
+                'page_cards' => ['activity'],
+            ],
             'services' => [
-                'activity_feed' => [
+                'activity_rows' => [
                     [
-                        'title' => 'Transaction categorised',
-                        'detail' => 'Bank charge: uncategorised to Bank fees | manual',
                         'occurred_at' => '2026-04-29 12:00:00',
-                        'meta' => 'James',
+                        'user_display_name' => 'James',
+                        'page_id' => 'dashboard',
+                        'action_name' => 'Transactions',
+                        'card_action_name' => 'Categorise',
+                        'message_type' => 'success',
+                        'message_text' => 'Transaction categorised',
+                        'message_html_text' => 'Bank charge: uncategorised to Bank fees | manual',
+                        'ip_address' => '127.0.0.1',
+                        'request_method' => 'POST',
+                        'request_uri' => '/index.php',
                     ],
                 ],
             ],
@@ -231,12 +242,11 @@ $harness->run(DashboardRepository::class, function (GeneratedServiceClassTestHar
 
         $harness->assertSame(true, str_contains($html, 'Transaction categorised'));
         $harness->assertSame(true, str_contains($html, 'Bank charge: uncategorised to Bank fees | manual'));
-        $harness->assertSame(true, str_contains($html, '2026-04-29 12:00:00 | James'));
+        $harness->assertSame(true, str_contains($html, '2026-04-29 12:00:00'));
+        $harness->assertSame(true, str_contains($html, 'James'));
         $harness->assertSame(true, str_contains($html, 'data-ajax="true"'));
-        $harness->assertSame(true, str_contains($html, 'name="card_action" value="Activity"'));
-        $harness->assertSame(true, str_contains($html, 'name="activity_window" value="1_day"'));
-        $harness->assertSame(true, str_contains($html, 'name="activity_window" value="7_days"'));
-        $harness->assertSame(true, str_contains($html, 'name="activity_window" value="this_month"'));
+        $harness->assertSame(true, str_contains($html, 'name="_table_export_prepare" value="csv"'));
+        $harness->assertSame(true, str_contains($html, 'name="table_key" value="activity"'));
     });
 
     $harness->check('_overviewCard', 'renders bank and trade account dashboard stats', function () use ($harness): void {
@@ -266,36 +276,42 @@ $harness->run(DashboardRepository::class, function (GeneratedServiceClassTestHar
 
         for ($i = 1; $i <= 13; $i++) {
             $activity[] = [
-                'title' => 'Activity ' . $i,
-                'detail' => 'Detail ' . $i,
                 'occurred_at' => '2026-04-29 12:' . str_pad((string)$i, 2, '0', STR_PAD_LEFT) . ':00',
-                'meta' => 'James',
+                'user_display_name' => 'James',
+                'page_id' => 'dashboard',
+                'action_name' => 'Activity ' . $i,
+                'message_type' => 'success',
+                'message_text' => 'Detail ' . $i,
+                'ip_address' => '127.0.0.1',
+                'request_method' => 'POST',
+                'request_uri' => '/index.php',
             ];
         }
 
         $firstPageHtml = $card->render([
             'page' => [
-                'activity_window' => 'this_month',
+                'page_id' => 'dashboard',
+                'page_cards' => ['activity'],
             ],
             'services' => [
-                'activity_feed' => $activity,
+                'activity_rows' => $activity,
             ],
         ]);
 
         $secondPageHtml = $card->render([
             'page' => [
-                'activity_window' => 'this_month',
+                'page_id' => 'dashboard',
+                'page_cards' => ['activity'],
                 'activity_page' => 2,
             ],
             'services' => [
-                'activity_feed' => $activity,
+                'activity_rows' => $activity,
             ],
         ]);
 
         $harness->assertSame(true, str_contains($firstPageHtml, 'Activity 1-5 of 13'));
         $harness->assertSame(true, str_contains($firstPageHtml, 'Activity 5'));
         $harness->assertSame(false, str_contains($firstPageHtml, 'Activity 6'));
-        $harness->assertSame(true, str_contains($firstPageHtml, 'name="activity_window" value="this_month"'));
         $harness->assertSame(true, str_contains($firstPageHtml, 'name="activity_page" value="2"'));
 
         $harness->assertSame(true, str_contains($secondPageHtml, 'Activity 6-10 of 13'));

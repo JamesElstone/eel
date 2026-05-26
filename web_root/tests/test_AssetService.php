@@ -21,15 +21,20 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         });
 
         $harness->check(AssetService::class, 'journal source enum supports asset postings', static function () use ($harness): void {
-            $columnType = (string)InterfaceDB::fetchColumn(
-                'SELECT COLUMN_TYPE
-                 FROM information_schema.COLUMNS
-                 WHERE TABLE_SCHEMA = DATABASE()
-                   AND TABLE_NAME = :table_name
-                   AND COLUMN_NAME = :column_name
-                 LIMIT 1',
-                ['table_name' => 'journals', 'column_name' => 'source_type']
-            );
+            if (InterfaceDB::driverName() === 'sqlite') {
+                $schemaPath = PROJECT_ROOT . 'db_schema' . DIRECTORY_SEPARATOR . 'eel_accounts.schema.sql';
+                $columnType = is_file($schemaPath) ? (string)file_get_contents($schemaPath) : '';
+            } else {
+                $columnType = (string)InterfaceDB::fetchColumn(
+                    'SELECT COLUMN_TYPE
+                     FROM information_schema.COLUMNS
+                     WHERE TABLE_SCHEMA = DATABASE()
+                       AND TABLE_NAME = :table_name
+                       AND COLUMN_NAME = :column_name
+                     LIMIT 1',
+                    ['table_name' => 'journals', 'column_name' => 'source_type']
+                );
+            }
 
             foreach (['asset_register', 'asset_depreciation', 'asset_disposal'] as $sourceType) {
                 $harness->assertTrue(str_contains($columnType, "'" . $sourceType . "'"));

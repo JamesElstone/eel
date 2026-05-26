@@ -37,7 +37,9 @@ try {
     test_output_line('PdoDb: connected successfully.');
     test_output_line('PdoDb: driver = ' . $driver);
 
-    $version = InterfaceDB::getServerVersion();
+    $version = $driver === 'sqlite'
+        ? trim((string)InterfaceDB::fetchColumn('SELECT sqlite_version()'))
+        : InterfaceDB::getServerVersion();
     if ($version === '') {
         throw new RuntimeException('Connected but could not determine server version.');
     }

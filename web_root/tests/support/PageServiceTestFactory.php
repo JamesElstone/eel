@@ -20,5 +20,8 @@ function testPageServiceUploadBasePath(): string
 
 function createTestPageServiceFramework(): PageServiceFramework
 {
-    return new PageServiceFramework(new AppService(testPageServiceUploadBasePath()));
+    return new PageServiceFramework(
+        new AppService(testPageServiceUploadBasePath()),
+        new SiteContextCoordinatorFramework(new AccountingContextService(), true)
+    );
 }

@@ -79,8 +79,7 @@ $harness->run(NominalsAction::class, function (GeneratedServiceClassTestHarness 
     });
 
     $harness->check('NominalsAction', 'returns a validation error when no complete suggestion set is available', function () use ($harness, $instance): void {
-        $sessionAuthenticationService = new SessionAuthenticationService();
-        $sessionAuthenticationService->completeAuthentication(1, 'test-device');
+        authenticateTestSession();
         (new AccountingContextService())->setPageContext(1, 'Test Company', '00000000', 0);
 
         $request = new RequestFramework(
@@ -98,3 +97,5 @@ $harness->run(NominalsAction::class, function (GeneratedServiceClassTestHarness 
         $harness->assertSame('No complete nominal suggestion set is currently available.', (string)($result->flashMessages()[0]['message'] ?? ''));
     });
 });
+
+clearAuthenticatedTestSession();

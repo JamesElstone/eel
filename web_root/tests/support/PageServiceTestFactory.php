@@ -18,6 +18,26 @@ function testPageServiceUploadBasePath(): string
     return $path;
 }
 
+function testCurrentAntiFraudDeviceId(): string
+{
+    $deviceId = trim((string)AntiFraudService::instance()->requestValue('Client-Device-ID'));
+
+    return $deviceId !== '' ? $deviceId : 'test-device';
+}
+
+function authenticateTestSession(int $userId = 1): void
+{
+    $sessionAuthenticationService = new SessionAuthenticationService();
+    $sessionAuthenticationService->completeAuthentication($userId, testCurrentAntiFraudDeviceId());
+}
+
+function clearAuthenticatedTestSession(): void
+{
+    $sessionAuthenticationService = new SessionAuthenticationService();
+    $sessionAuthenticationService->startSession();
+    $_SESSION = [];
+}
+
 function createTestPageServiceFramework(): PageServiceFramework
 {
     return new PageServiceFramework(

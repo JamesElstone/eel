@@ -94,7 +94,7 @@ function resetCompanyStoreSession(): void
     $service = new SessionAuthenticationService();
     $service->startSession();
     $_SESSION = [];
-    $service->completeAuthentication(1, 'test-device');
+    authenticateTestSession();
 }
 
 function ensureCompanyStoreCompany(): int
@@ -266,3 +266,5 @@ $harness->run(AccountingContextService::class, function (GeneratedServiceClassTe
         $harness->assertSame($taxYearId, $service->taxYearId());
     });
 });
+
+clearAuthenticatedTestSession();

@@ -42,7 +42,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                     ' . $this->metric('Facts', (string)(int)($run['fact_count'] ?? 0)) . '
                 </div>
                 <div class="helper">' . HelperFramework::escape((string)($run['error_message'] ?? '')) . '</div>
-                <div class="helper">Generated XHTML is a preview-quality internal accounts pack, not a complete HMRC CT600 submission.</div>
+                <div class="helper">Generated XHTML is a preview-quality internal FRS 105 micro-entity accounts preview, not a complete HMRC CT600 submission.</div>
             </section>
             <form method="post" action="?page=ixbrl_builder" data-ajax="true" class="actions-row">
                 <input type="hidden" name="card_action" value="Ixbrl">

@@ -500,7 +500,10 @@ final class YearEndMetricsService
     }
 
     public function profitAndLossSummary(int $companyId, int $taxYearId, string $periodStart, string $periodEnd): array {
-        $rows = InterfaceDB::fetchAll( 'SELECT na.account_type,
+        $rows = InterfaceDB::fetchAll( 'SELECT na.id,
+                    na.code,
+                    na.name,
+                    na.account_type,
                     COALESCE(na.tax_treatment, \'allowable\') AS tax_treatment,
                     SUM(COALESCE(jl.debit, 0)) AS total_debit,
                     SUM(COALESCE(jl.credit, 0)) AS total_credit
@@ -512,7 +515,7 @@ final class YearEndMetricsService
                AND j.is_posted = 1
                AND j.journal_date BETWEEN :period_start AND :period_end
                AND (na.account_type = :income_type OR na.account_type = :cost_type OR na.account_type = :expense_type)
-             GROUP BY na.account_type, na.tax_treatment', [
+             GROUP BY na.id, na.code, na.name, na.account_type, na.tax_treatment', [
             'company_id' => $companyId,
             'tax_year_id' => $taxYearId,
             'period_start' => $periodStart,
@@ -528,10 +531,12 @@ final class YearEndMetricsService
         $capitalAddBacks = 0.0;
         $otherTreatmentCount = 0;
         $unknownTreatmentCount = 0;
+        $taxTreatmentRules = new CorporationTaxTreatmentRuleService();
 
         foreach ($rows as $row) {
             $accountType = (string)($row['account_type'] ?? '');
-            $taxTreatment = trim((string)($row['tax_treatment'] ?? ''));
+            $treatmentResult = $taxTreatmentRules->resolveTaxTreatment($row, $periodStart, $periodEnd);
+            $taxTreatment = trim((string)($treatmentResult['tax_treatment'] ?? ''));
             $debit = (float)($row['total_debit'] ?? 0);
             $credit = (float)($row['total_credit'] ?? 0);
 

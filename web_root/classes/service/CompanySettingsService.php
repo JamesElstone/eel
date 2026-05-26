@@ -123,6 +123,7 @@ final class CompanySettingsService
             $companyRepository->saveCompanySection($settings);
 
             $settingsStore->set('utr', $settings['utr'], 'int');
+            $settingsStore->set('associated_company_count', $settings['associated_company_count'] ?? 0, 'int');
             $settingsStore->set('default_currency', $settings['default_currency'], 'char');
             $settingsStore->set('date_format', $settings['date_format'], 'char');
             $settingsStore->flush();

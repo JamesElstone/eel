@@ -465,7 +465,7 @@ CREATE TABLE `journals` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
   `tax_year_id` int(11) NOT NULL,
-  `source_type` enum('bank_csv','director_loan_register','expense_register','manual') NOT NULL,
+  `source_type` enum('bank_csv','director_loan_register','expense_register','manual','asset_register','asset_depreciation','asset_disposal') NOT NULL,
   `source_ref` varchar(255) DEFAULT NULL,
   `journal_date` date NOT NULL,
   `description` varchar(255) NOT NULL,
@@ -863,6 +863,72 @@ CREATE TABLE `statement_uploads` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `corporation_tax_rate_rules`
+--
+
+DROP TABLE IF EXISTS `corporation_tax_rate_rules`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `corporation_tax_rate_rules` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `regime` varchar(32) NOT NULL DEFAULT 'non_ring_fence',
+  `financial_year_start` date NOT NULL,
+  `financial_year_end` date NOT NULL,
+  `rule_version` varchar(32) NOT NULL,
+  `main_rate` decimal(8,6) NOT NULL,
+  `small_profits_rate` decimal(8,6) DEFAULT NULL,
+  `lower_limit` decimal(12,2) DEFAULT NULL,
+  `upper_limit` decimal(12,2) DEFAULT NULL,
+  `marginal_relief_fraction` decimal(8,6) DEFAULT NULL,
+  `source_url` varchar(500) NOT NULL,
+  `source_updated_at` date DEFAULT NULL,
+  `source_checked_at` date NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `notes` text DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ct_rate_rule_version` (`regime`,`financial_year_start`,`rule_version`),
+  KEY `idx_ct_rate_rules_lookup` (`regime`,`is_active`,`financial_year_start`,`financial_year_end`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `corporation_tax_treatment_rules`
+--
+
+DROP TABLE IF EXISTS `corporation_tax_treatment_rules`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `corporation_tax_treatment_rules` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `rule_code` varchar(64) NOT NULL,
+  `rule_version` varchar(32) NOT NULL,
+  `priority` int(11) NOT NULL DEFAULT 100,
+  `nominal_account_id` int(11) DEFAULT NULL,
+  `nominal_code` varchar(32) DEFAULT NULL,
+  `account_type` enum('income','cost_of_sales','expense','asset','liability','equity') DEFAULT NULL,
+  `name_contains` varchar(255) DEFAULT NULL,
+  `tax_treatment` enum('allowable','disallowable','capital','other') NOT NULL,
+  `effective_from` date DEFAULT NULL,
+  `effective_to` date DEFAULT NULL,
+  `source_url` varchar(500) NOT NULL,
+  `source_checked_at` date NOT NULL,
+  `rationale` text NOT NULL,
+  `review_status` enum('seeded','needs_review','reviewed') NOT NULL DEFAULT 'seeded',
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ct_treatment_rule_version` (`rule_code`,`rule_version`),
+  KEY `idx_ct_treatment_rules_lookup` (`is_active`,`priority`,`effective_from`,`effective_to`),
+  KEY `idx_ct_treatment_rules_nominal` (`nominal_account_id`),
+  KEY `idx_ct_treatment_rules_code` (`nominal_code`),
+  CONSTRAINT `fk_ct_treatment_rule_nominal` FOREIGN KEY (`nominal_account_id`) REFERENCES `nominal_accounts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `tax_loss_carryforwards`
 --
 
@@ -913,31 +979,6 @@ CREATE TABLE `tax_loss_movement_history` (
   CONSTRAINT `fk_tax_loss_history_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_tax_loss_history_tax_year` FOREIGN KEY (`tax_year_id`) REFERENCES `tax_years` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=1003 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `tax_loss_pools`
---
-
-DROP TABLE IF EXISTS `tax_loss_pools`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `tax_loss_pools` (
-  `id` bigint(20) NOT NULL AUTO_INCREMENT,
-  `company_id` int(11) NOT NULL,
-  `origin_tax_year_id` int(11) NOT NULL,
-  `loss_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
-  `used_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
-  `remaining_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
-  `notes` text DEFAULT NULL,
-  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
-  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
-  PRIMARY KEY (`id`),
-  KEY `idx_tax_loss_pools_company` (`company_id`),
-  KEY `idx_tax_loss_pools_origin_year` (`origin_tax_year_id`),
-  CONSTRAINT `fk_tax_loss_pools_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_tax_loss_pools_origin_year` FOREIGN KEY (`origin_tax_year_id`) REFERENCES `tax_years` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1090,6 +1131,79 @@ CREATE TABLE `transactions` (
   CONSTRAINT `fk_transactions_upload` FOREIGN KEY (`statement_upload_id`) REFERENCES `statement_uploads` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `chk_transactions_amount_nonzero` CHECK (`amount` <> 0)
 ) ENGINE=InnoDB AUTO_INCREMENT=4099 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `asset_register`
+--
+
+DROP TABLE IF EXISTS `asset_register`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `asset_register` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `asset_code` varchar(64) NOT NULL,
+  `description` varchar(255) NOT NULL,
+  `category` varchar(64) NOT NULL,
+  `nominal_account_id` int(11) NOT NULL,
+  `accum_dep_nominal_id` int(11) NOT NULL,
+  `purchase_date` date NOT NULL,
+  `cost` decimal(12,2) NOT NULL,
+  `useful_life_years` int(11) NOT NULL DEFAULT 3,
+  `depreciation_method` varchar(32) NOT NULL DEFAULT 'straight_line',
+  `residual_value` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `status` varchar(32) NOT NULL DEFAULT 'active',
+  `linked_journal_id` bigint(20) DEFAULT NULL,
+  `linked_transaction_id` bigint(20) DEFAULT NULL,
+  `disposal_date` date DEFAULT NULL,
+  `disposal_proceeds` decimal(12,2) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_asset_register_company_code` (`company_id`,`asset_code`),
+  KEY `idx_asset_register_company_status` (`company_id`,`status`,`purchase_date`),
+  KEY `idx_asset_register_nominal` (`nominal_account_id`),
+  KEY `idx_asset_register_accum_dep_nominal` (`accum_dep_nominal_id`),
+  KEY `idx_asset_register_linked_journal` (`linked_journal_id`),
+  KEY `idx_asset_register_linked_transaction` (`linked_transaction_id`),
+  CONSTRAINT `fk_asset_register_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_asset_register_nominal` FOREIGN KEY (`nominal_account_id`) REFERENCES `nominal_accounts` (`id`) ON UPDATE CASCADE,
+  CONSTRAINT `fk_asset_register_accum_dep_nominal` FOREIGN KEY (`accum_dep_nominal_id`) REFERENCES `nominal_accounts` (`id`) ON UPDATE CASCADE,
+  CONSTRAINT `fk_asset_register_linked_journal` FOREIGN KEY (`linked_journal_id`) REFERENCES `journals` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_asset_register_linked_transaction` FOREIGN KEY (`linked_transaction_id`) REFERENCES `transactions` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `chk_asset_register_cost` CHECK (`cost` > 0),
+  CONSTRAINT `chk_asset_register_useful_life` CHECK (`useful_life_years` > 0),
+  CONSTRAINT `chk_asset_register_residual` CHECK (`residual_value` >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `asset_depreciation_entries`
+--
+
+DROP TABLE IF EXISTS `asset_depreciation_entries`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `asset_depreciation_entries` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `asset_id` bigint(20) NOT NULL,
+  `tax_year_id` int(11) NOT NULL,
+  `period_start` date NOT NULL,
+  `period_end` date NOT NULL,
+  `amount` decimal(12,2) NOT NULL,
+  `journal_id` bigint(20) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_asset_depreciation_period` (`asset_id`,`tax_year_id`,`period_start`,`period_end`),
+  KEY `idx_asset_depreciation_tax_year` (`tax_year_id`),
+  KEY `idx_asset_depreciation_journal` (`journal_id`),
+  CONSTRAINT `fk_asset_depreciation_asset` FOREIGN KEY (`asset_id`) REFERENCES `asset_register` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_asset_depreciation_tax_year` FOREIGN KEY (`tax_year_id`) REFERENCES `tax_years` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_asset_depreciation_journal` FOREIGN KEY (`journal_id`) REFERENCES `journals` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `chk_asset_depreciation_period` CHECK (`period_start` <= `period_end`),
+  CONSTRAINT `chk_asset_depreciation_amount` CHECK (`amount` > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --

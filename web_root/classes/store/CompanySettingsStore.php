@@ -21,6 +21,7 @@ final class CompanySettingsStore
     public static function definitions(): array {
         return [
             'utr' => ['type' => 'int', 'default' => ''],
+            'associated_company_count' => ['type' => 'int', 'default' => '0'],
             'default_currency' => ['type' => 'char', 'default' => 'GBP'],
             'default_currency_symbol' => ['type' => 'char', 'default' => '&#163;'],
             'default_bank_nominal_id' => ['type' => 'int', 'default' => ''],

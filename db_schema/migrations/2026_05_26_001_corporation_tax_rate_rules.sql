@@ -1,0 +1,56 @@
+CREATE TABLE IF NOT EXISTS corporation_tax_rate_rules (
+  id int(11) NOT NULL AUTO_INCREMENT,
+  regime varchar(32) NOT NULL DEFAULT 'non_ring_fence',
+  financial_year_start date NOT NULL,
+  financial_year_end date NOT NULL,
+  rule_version varchar(32) NOT NULL,
+  main_rate decimal(8,6) NOT NULL,
+  small_profits_rate decimal(8,6) DEFAULT NULL,
+  lower_limit decimal(12,2) DEFAULT NULL,
+  upper_limit decimal(12,2) DEFAULT NULL,
+  marginal_relief_fraction decimal(8,6) DEFAULT NULL,
+  source_url varchar(500) NOT NULL,
+  source_updated_at date DEFAULT NULL,
+  source_checked_at date NOT NULL,
+  is_active tinyint(1) NOT NULL DEFAULT 1,
+  notes text DEFAULT NULL,
+  created_at datetime NOT NULL DEFAULT current_timestamp(),
+  updated_at datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_ct_rate_rule_version (regime, financial_year_start, rule_version),
+  KEY idx_ct_rate_rules_lookup (regime, is_active, financial_year_start, financial_year_end)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO corporation_tax_rate_rules (
+  regime,
+  financial_year_start,
+  financial_year_end,
+  rule_version,
+  main_rate,
+  small_profits_rate,
+  lower_limit,
+  upper_limit,
+  marginal_relief_fraction,
+  source_url,
+  source_updated_at,
+  source_checked_at,
+  is_active,
+  notes
+) VALUES
+  ('non_ring_fence', '2022-04-01', '2023-03-31', 'govuk-2026-04-01', 0.190000, NULL, NULL, NULL, NULL, 'https://www.gov.uk/government/publications/rates-and-allowances-corporation-tax/rates-and-allowances-corporation-tax', '2026-04-01', '2026-05-26', 1, 'Main rate for all non-ring-fence profits before the 1 April 2023 small profits/main rate split.'),
+  ('non_ring_fence', '2023-04-01', '2024-03-31', 'govuk-2026-04-01', 0.250000, 0.190000, 50000.00, 250000.00, 0.015000, 'https://www.gov.uk/government/publications/rates-and-allowances-corporation-tax/rates-and-allowances-corporation-tax', '2026-04-01', '2026-05-26', 1, 'GOV.UK rates table shows small profits rate 19%, main rate 25%, lower limit 50000, upper limit 250000, standard fraction 3/200.'),
+  ('non_ring_fence', '2024-04-01', '2025-03-31', 'govuk-2026-04-01', 0.250000, 0.190000, 50000.00, 250000.00, 0.015000, 'https://www.gov.uk/government/publications/rates-and-allowances-corporation-tax/rates-and-allowances-corporation-tax', '2026-04-01', '2026-05-26', 1, 'GOV.UK rates table shows small profits rate 19%, main rate 25%, lower limit 50000, upper limit 250000, standard fraction 3/200.'),
+  ('non_ring_fence', '2025-04-01', '2026-03-31', 'govuk-2026-04-01', 0.250000, 0.190000, 50000.00, 250000.00, 0.015000, 'https://www.gov.uk/government/publications/rates-and-allowances-corporation-tax/rates-and-allowances-corporation-tax', '2026-04-01', '2026-05-26', 1, 'GOV.UK rates table shows small profits rate 19%, main rate 25%, lower limit 50000, upper limit 250000, standard fraction 3/200.'),
+  ('non_ring_fence', '2026-04-01', '2027-03-31', 'govuk-2026-04-01', 0.250000, 0.190000, 50000.00, 250000.00, 0.015000, 'https://www.gov.uk/government/publications/rates-and-allowances-corporation-tax/rates-and-allowances-corporation-tax', '2026-04-01', '2026-05-26', 1, 'GOV.UK rates table shows small profits rate 19%, main rate 25%, lower limit 50000, upper limit 250000, standard fraction 3/200.')
+ON DUPLICATE KEY UPDATE
+  main_rate = VALUES(main_rate),
+  small_profits_rate = VALUES(small_profits_rate),
+  lower_limit = VALUES(lower_limit),
+  upper_limit = VALUES(upper_limit),
+  marginal_relief_fraction = VALUES(marginal_relief_fraction),
+  source_url = VALUES(source_url),
+  source_updated_at = VALUES(source_updated_at),
+  source_checked_at = VALUES(source_checked_at),
+  is_active = VALUES(is_active),
+  notes = VALUES(notes),
+  updated_at = CURRENT_TIMESTAMP;

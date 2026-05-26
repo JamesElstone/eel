@@ -9,10 +9,9 @@ declare(strict_types=1);
 
 final class CorporationTaxComputationService
 {
-    private const DEFAULT_CORPORATION_TAX_RATE = 0.19;
-
     public function __construct(
         private readonly ?YearEndMetricsService $metricsService = null,
+        private readonly ?CorporationTaxRateService $rateService = null,
     ) {
     }
 
@@ -26,7 +25,14 @@ final class CorporationTaxComputationService
             ];
         }
 
-        $schedule = $this->rebuildLossSchedule($companyId);
+        try {
+            $schedule = $this->rebuildLossSchedule($companyId);
+        } catch (Throwable $exception) {
+            return [
+                'available' => false,
+                'errors' => ['The corporation tax computation could not be built: ' . $exception->getMessage()],
+            ];
+        }
         $current = $schedule[$taxYearId] ?? null;
         if ($current === null) {
             return [
@@ -45,6 +51,9 @@ final class CorporationTaxComputationService
         if (!empty($current['asset_adjustment_warning'])) {
             $warnings[] = (string)$current['asset_adjustment_warning'];
         }
+        foreach ((array)($current['ct_rate_warnings'] ?? []) as $warning) {
+            $warnings[] = (string)$warning;
+        }
 
         return [
             'available' => true,
@@ -56,7 +65,9 @@ final class CorporationTaxComputationService
             'taxable_profit' => round((float)$current['taxable_profit'], 2),
             'taxable_loss' => round((float)$current['loss_created'], 2),
             'estimated_corporation_tax' => round((float)$current['estimated_corporation_tax'], 2),
-            'estimated_rate' => self::DEFAULT_CORPORATION_TAX_RATE,
+            'estimated_rate' => round((float)$current['estimated_rate'], 6),
+            'associated_company_count' => (int)($current['associated_company_count'] ?? 0),
+            'ct_rate_bands' => (array)($current['ct_rate_bands'] ?? []),
             'loss_created_in_period' => round((float)$current['loss_created'], 2),
             'losses_brought_forward' => round((float)$current['loss_brought_forward'], 2),
             'losses_used' => round((float)$current['loss_utilised'], 2),
@@ -99,6 +110,8 @@ final class CorporationTaxComputationService
 
         $schedule = [];
         $lossPool = [];
+        $associatedCompanyCount = $this->associatedCompanyCount($companyId);
+        $rateService = $this->rateService ?? new CorporationTaxRateService();
 
         $ownsTransaction = !InterfaceDB::inTransaction();
         if ($ownsTransaction) {
@@ -158,6 +171,12 @@ final class CorporationTaxComputationService
 
                 $lossCf = round(array_sum(array_column($lossPool, 'amount_remaining')), 2);
                 $taxableProfit = max(0.0, round($taxableBeforeLosses - $lossUsed, 2));
+                $rateCalculation = $rateService->calculate(
+                    (string)($taxYear['period_start'] ?? ''),
+                    (string)($taxYear['period_end'] ?? ''),
+                    $taxableProfit,
+                    $associatedCompanyCount
+                );
                 $computationHash = hash('sha256', json_encode([
                     'company_id' => $companyId,
                     'tax_year_id' => $taxYearId,
@@ -167,6 +186,8 @@ final class CorporationTaxComputationService
                     'allowances' => (float)$assetAdjustments['capital_allowances'],
                     'loss_bf' => $lossBf,
                     'loss_used' => $lossUsed,
+                    'associated_company_count' => $associatedCompanyCount,
+                    'rate_liability' => (float)$rateCalculation['liability'],
                 ], JSON_UNESCAPED_SLASHES));
 
                 $schedule[$taxYearId] = [
@@ -178,7 +199,11 @@ final class CorporationTaxComputationService
                     'capital_allowances' => round((float)$assetAdjustments['capital_allowances'], 2),
                     'taxable_before_losses' => $taxableBeforeLosses,
                     'taxable_profit' => $taxableProfit,
-                    'estimated_corporation_tax' => round($taxableProfit * self::DEFAULT_CORPORATION_TAX_RATE, 2),
+                    'estimated_corporation_tax' => round((float)$rateCalculation['liability'], 2),
+                    'estimated_rate' => round((float)$rateCalculation['effective_rate'], 6),
+                    'associated_company_count' => $associatedCompanyCount,
+                    'ct_rate_bands' => (array)($rateCalculation['bands'] ?? []),
+                    'ct_rate_warnings' => (array)($rateCalculation['warnings'] ?? []),
                     'loss_created' => round($lossCreated, 2),
                     'loss_brought_forward' => $lossBf,
                     'loss_utilised' => $lossUsed,
@@ -344,6 +369,18 @@ final class CorporationTaxComputationService
         }
 
         return InterfaceDB::countWhere('asset_register', 'company_id', $companyId);
+    }
+
+    private function associatedCompanyCount(int $companyId): int {
+        if ($companyId <= 0) {
+            return 0;
+        }
+
+        try {
+            return max(0, (int)(new CompanySettingsStore($companyId))->get('associated_company_count', 0));
+        } catch (Throwable) {
+            return 0;
+        }
     }
 
     private function tableExists(string $table): bool {

@@ -461,6 +461,7 @@ final class CompanyAction implements ActionInterfaceFramework
                 'company_name' => (string)($company['company_name'] ?? ''),
                 'companies_house_number' => (string)($company['company_number'] ?? ''),
                 'utr' => trim((string)$request->post('utr', '')),
+                'associated_company_count' => trim((string)$request->post('associated_company_count', '0')),
                 'default_currency' => trim((string)$request->post('default_currency', 'GBP')),
                 'date_format' => trim((string)$request->post('date_format', 'd/m/Y')),
                 'is_vat_registered' => !empty($company['is_vat_registered']),

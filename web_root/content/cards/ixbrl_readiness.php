@@ -38,7 +38,7 @@ final class _ixbrl_readinessCard extends CardBaseFramework
                     <span class="badge ' . (!empty($readiness['can_build_facts']) ? 'success' : 'danger') . '">' . HelperFramework::escape(!empty($readiness['can_build_facts']) ? 'Ready to build facts' : 'Blocked') . '</span>
                 </div>
                 <div class="helper">Period: ' . HelperFramework::escape((string)($taxYear['period_start'] ?? '')) . ' to ' . HelperFramework::escape((string)($taxYear['period_end'] ?? '')) . '</div>
-                <div class="helper">This builder creates an internal generated accounts pack preview. It is not a complete HMRC CT600 submission package.</div>
+                <div class="helper">This builder creates an internal generated FRS 105 micro-entity accounts preview. It is not a complete HMRC CT600 submission package.</div>
             </section>
             <section class="summary-grid">' . $items . '</section>
         </div>';

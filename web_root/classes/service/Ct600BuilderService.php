@@ -50,7 +50,11 @@ final class Ct600BuilderService
         }
 
         $estimatedTax = (float)($ct['estimated_corporation_tax'] ?? 0);
-        $losses = $this->lossApplication($companyId, $taxYearId, (float)($ct['taxable_profit'] ?? 0));
+        $losses = [
+            'brought_forward' => round((float)($ct['losses_brought_forward'] ?? 0), 2),
+            'used' => round((float)($ct['losses_used'] ?? 0), 2),
+            'remaining' => round((float)($ct['losses_carried_forward'] ?? 0), 2),
+        ];
         $directory = APP_ROOT . 'outbound' . DIRECTORY_SEPARATOR . 'hmrc' . DIRECTORY_SEPARATOR . 'ct600';
         if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
             return ['ok' => false, 'path' => null, 'warnings' => $warnings, 'errors' => ['Could not create CT600 output directory.']];
@@ -76,28 +80,6 @@ final class Ct600BuilderService
         }
 
         return ['ok' => true, 'path' => $path, 'warnings' => $warnings, 'errors' => [], 'losses' => $losses];
-    }
-
-    private function lossApplication(int $companyId, int $taxYearId, float $taxableProfit): array
-    {
-        if (!InterfaceDB::tableExists('tax_loss_pools')) {
-            return ['brought_forward' => 0.0, 'used' => 0.0, 'remaining' => 0.0];
-        }
-
-        $available = (float)InterfaceDB::fetchColumn(
-            'SELECT COALESCE(SUM(remaining_amount), 0)
-             FROM tax_loss_pools
-             WHERE company_id = :company_id
-               AND origin_tax_year_id <> :tax_year_id',
-            ['company_id' => $companyId, 'tax_year_id' => $taxYearId]
-        );
-        $used = $taxableProfit > 0 ? min($taxableProfit, $available) : 0.0;
-
-        return [
-            'brought_forward' => round($available, 2),
-            'used' => round($used, 2),
-            'remaining' => round($available - $used, 2),
-        ];
     }
 
     private function e(string $value): string

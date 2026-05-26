@@ -272,22 +272,44 @@ final class HmrcCorporationTaxSubmissionService
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
             );
         }
-        if (!InterfaceDB::tableExists('tax_loss_pools')) {
+        if (!InterfaceDB::tableExists('tax_loss_carryforwards')) {
             InterfaceDB::prepareExecute(
-                "CREATE TABLE IF NOT EXISTS tax_loss_pools (
-                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                "CREATE TABLE IF NOT EXISTS tax_loss_carryforwards (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
                     company_id INT NOT NULL,
                     origin_tax_year_id INT NOT NULL,
-                    loss_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-                    used_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-                    remaining_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
-                    notes TEXT NULL,
+                    amount_originated DECIMAL(12,2) NOT NULL,
+                    amount_used DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                    amount_remaining DECIMAL(12,2) NOT NULL,
+                    status VARCHAR(16) NOT NULL DEFAULT 'open',
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                    KEY idx_tax_loss_pools_company (company_id),
-                    KEY idx_tax_loss_pools_origin_year (origin_tax_year_id),
-                    CONSTRAINT fk_tax_loss_pools_company FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE ON UPDATE CASCADE,
-                    CONSTRAINT fk_tax_loss_pools_origin_year FOREIGN KEY (origin_tax_year_id) REFERENCES tax_years(id) ON DELETE CASCADE ON UPDATE CASCADE
+                    UNIQUE KEY uq_tax_loss_origin (company_id, origin_tax_year_id),
+                    KEY fk_tax_loss_year (origin_tax_year_id),
+                    CONSTRAINT fk_tax_loss_company FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE ON UPDATE CASCADE,
+                    CONSTRAINT fk_tax_loss_year FOREIGN KEY (origin_tax_year_id) REFERENCES tax_years(id) ON DELETE CASCADE ON UPDATE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+            );
+        }
+        if (!InterfaceDB::tableExists('tax_loss_movement_history')) {
+            InterfaceDB::prepareExecute(
+                "CREATE TABLE IF NOT EXISTS tax_loss_movement_history (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    company_id INT NOT NULL,
+                    tax_year_id INT NOT NULL,
+                    computation_hash VARCHAR(64) NOT NULL,
+                    loss_created DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                    loss_brought_forward DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                    loss_utilised DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                    loss_carried_forward DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                    taxable_before_losses DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                    taxable_profit DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                    computed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    KEY idx_tax_loss_history_period (company_id, tax_year_id, computed_at),
+                    KEY idx_tax_loss_history_hash (company_id, tax_year_id, computation_hash),
+                    KEY fk_tax_loss_history_tax_year (tax_year_id),
+                    CONSTRAINT fk_tax_loss_history_company FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE ON UPDATE CASCADE,
+                    CONSTRAINT fk_tax_loss_history_tax_year FOREIGN KEY (tax_year_id) REFERENCES tax_years(id) ON DELETE CASCADE ON UPDATE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
             );
         }

@@ -101,10 +101,10 @@ final class IxbrlRenderService
 
         return '<!DOCTYPE html>' . "\n"
             . '<html xmlns="http://www.w3.org/1999/xhtml" lang="en">' . "\n"
-            . '<head><meta charset="utf-8"/><title>Unaudited micro-entity accounts</title></head>' . "\n"
+            . '<head><meta charset="utf-8"/><title>FRS 105 unaudited micro-entity accounts preview</title></head>' . "\n"
             . '<body>' . "\n"
-            . '<!-- Internal/generated accounts pack preview only. This is not a complete HMRC CT600 submission package. -->' . "\n"
-            . '<h1>Unaudited micro-entity accounts</h1>' . "\n"
+            . '<!-- Internal/generated FRS 105 micro-entity accounts preview only. This is not a complete HMRC CT600 submission package. -->' . "\n"
+            . '<h1>FRS 105 unaudited micro-entity accounts preview</h1>' . "\n"
             . '<section><h2>' . $this->e($companyName) . '</h2><p>Company number: ' . $this->e($companyNumber) . '</p><p>Period: ' . $this->e($periodStart) . ' to ' . $this->e($periodEnd) . '</p></section>' . "\n"
             . '<section><h2>Balance sheet</h2><table><tbody>' . "\n"
             . $bodyRows

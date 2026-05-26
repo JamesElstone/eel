@@ -260,7 +260,7 @@ final class IxbrlFactBuilderService
             'source' => [
                 'calculation_type' => (string)$mapping['calculation_type'],
                 'source_key' => $sourceKey,
-                'internal_pack_notice' => 'Generated accounts pack only; not a complete HMRC CT600 submission.',
+                'internal_pack_notice' => 'Generated FRS 105 micro-entity accounts preview only; not a complete HMRC CT600 submission.',
             ],
         ];
     }
@@ -271,7 +271,7 @@ final class IxbrlFactBuilderService
             'average_number_employees' => 0,
             'dormant_false' => false,
             'production_software' => 'eel bookkeeping app',
-            'micro_entity_statement' => 'These accounts have been prepared in accordance with the micro-entity provisions.',
+            'micro_entity_statement' => 'These draft accounts are prepared for review under the FRS 105 micro-entities regime.',
             'audit_exemption_statement' => 'For the year ending on the balance sheet date the company was entitled to exemption from audit under section 477 of the Companies Act 2006.',
             'directors_responsibility_statement' => 'The director acknowledges responsibility for complying with the Companies Act 2006 requirements for accounting records and accounts.',
             'members_no_audit_statement' => 'The members have not required the company to obtain an audit of its accounts for the year in question.',

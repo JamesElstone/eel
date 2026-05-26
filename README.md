@@ -6,7 +6,7 @@
 -->
 # eel
 
-**eel** is an open-source bookkeeping and corporation tax preparation tool designed for small UK companies.
+**eel** is an open-source bookkeeping and corporation tax preparation tool designed for UK micro-entity companies preparing accounts under FRS 105.
 
 Its goal is simple:
 
@@ -16,7 +16,7 @@ Its goal is simple:
 
 ## Overview
 
-eel turns raw bank statement data into structured financial outputs suitable for statutory reporting.
+eel turns raw bank statement data into structured financial outputs suitable for FRS 105 micro-entity statutory reporting.
 
 Instead of relying on bank APIs, eel works with **CSV statement uploads**, making it simple, portable, and fully self-hosted.
 
@@ -30,6 +30,7 @@ To use this system, the company must meet the following criteria:
 
 - Be registered with Companies House and have a valid company registration number
 - Be active on Companies House (not dissolved or dormant)
+- Qualify as a micro-entity and prepare accounts under FRS 105, the Financial Reporting Standard applicable to the Micro-entities Regime
 - Have a valid UTR (Unique Taxpayer Reference) issued by HMRC
 - Not be VAT registered and remain below VAT registration thresholds
 - Have (free) developer API access configured for:
@@ -153,6 +154,8 @@ This project uses the Inter and Roboto fonts, licensed under the SIL Open Font L
 
 This software is provided "as is", without warranty of any kind.
 
-It is not accounting or tax advice. Users are responsible for verifying outputs and ensuring compliance with HMRC requirements.
+This software is not accounting, tax, legal, or professional advice. Users are responsible for independently verifying all outputs and for ensuring compliance with all applicable HMRC requirements before relying on, filing, or submitting any information produced by the software.
+
+This software is not authorised, endorsed, certified, or approved by HMRC. It has not yet been approved through a successful live submission to HMRC and should therefore be treated as early-stage software under active development. No representation is made that its outputs will be accepted by HMRC, Companies House, or any other authority.
 
 > This project is currently in **alpha**. Expect rough edges and ongoing changes.

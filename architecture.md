@@ -2,9 +2,9 @@
 
 ## 1. System Overview
 
-EEL is a bookkeeping and corporation tax preparation system for small UK limited companies.
+EEL is a bookkeeping and corporation tax preparation system for small UK limited companies preparing FRS 105 micro-entity accounts.
 
-Its core job is to convert multiple financial input sources into a unified, auditable, double-entry ledger. Reports, trial balance, statutory accounts, iXBRL, and CT600 outputs should be derived from that ledger.
+Its core job is to convert multiple financial input sources into a unified, auditable, double-entry ledger. Reports, trial balance, FRS 105 micro-entity statutory accounts, iXBRL preview/output, and CT600 outputs should be derived from that ledger.
 
 The bank feed is not the source of truth. The ledger is.
 

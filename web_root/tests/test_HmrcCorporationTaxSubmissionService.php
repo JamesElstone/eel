@@ -10,7 +10,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $service->ensureSchema();
             $harness->assertTrue(InterfaceDB::tableExists('hmrc_ct600_submissions'));
             $harness->assertTrue(InterfaceDB::tableExists('hmrc_submission_events'));
-            $harness->assertTrue(InterfaceDB::tableExists('tax_loss_pools'));
+            $harness->assertTrue(InterfaceDB::tableExists('tax_loss_carryforwards'));
+            $harness->assertTrue(InterfaceDB::tableExists('tax_loss_movement_history'));
         });
 
         $harness->check(HmrcCorporationTaxSubmissionService::class, 'validation fails cleanly with missing selection', static function () use ($harness, $service): void {

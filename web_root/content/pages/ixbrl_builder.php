@@ -16,12 +16,12 @@ final class _ixbrl_builder extends PageContextFramework
 
     public function title(): string
     {
-        return 'Accounts / iXBRL Builder';
+        return 'FRS 105 Accounts / iXBRL Preview';
     }
 
     public function subtitle(): string
     {
-        return 'Prepare a traceable accounts pack from journals through trial balance, statutory mapping, facts, and generated XHTML preview.';
+        return 'Prepare a traceable FRS 105 micro-entity accounts preview from journals through trial balance, statutory mapping, facts, and generated XHTML.';
     }
 
     public function cards(): array

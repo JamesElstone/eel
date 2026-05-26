@@ -63,6 +63,7 @@ final class _companies_company_settingsCard extends CardBaseFramework
         $settings = (array)($context['company']['settings'] ?? []);
         $utrMissing = ($context['company']['settings']['utr'] ?? 0) === 0;
         $utr = $utrMissing ? '' : (string)($context['company']['settings']['utr'] ?? '');
+        $associatedCompanyCount = max(0, (int)($context['company']['settings']['associated_company_count'] ?? 0));
         $defaultCurrency = (string)($context['company']['settings']['default_currency'] ?? '');
         $dateFormat = (string)($context['company']['settings']['date_format'] ?? '');
 
@@ -70,7 +71,7 @@ final class _companies_company_settingsCard extends CardBaseFramework
             <form method="post" data-ajax="true">
                 <input type="hidden" name="card_action" value="Company">
                 <input type="hidden" name="intent" value="save_company">
-                <section data-state-fields="utr" data-state-target="save_company_settings_button">
+                <section data-state-fields="utr,associated_company_count,default_currency,date_format" data-state-target="save_company_settings_button">
                 <div class="form-grid">
                     <div class="form-row">
                         <label for="company_name">Company name</label>
@@ -90,6 +91,10 @@ final class _companies_company_settingsCard extends CardBaseFramework
                     <div class="form-row">
                         <label for="incorporation_date">Detected incorporation date</label>
                         <input class="input" id="incorporation_date" value="' . HelperFramework::escape((string)($context['services']['company_detail']['incorporation_date'] ?? '')) . '" readonly>
+                    </div>
+                    <div class="form-row">
+                        <label for="associated_company_count">Associated companies excluding this company</label>
+                        <input class="input" id="associated_company_count" name="associated_company_count" type="number" min="0" step="1" value="' . HelperFramework::escape((string)$associatedCompanyCount) . '" data-state-default="' . HelperFramework::escape((string)$associatedCompanyCount) . '">
                     </div>
                     <div class="form-row">
                         <label for="default_currency">Currency</label>

@@ -32,20 +32,32 @@ final class _hmrc_submission extends PageContextFramework
     {
         $company = (array)($baseContext['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
-        $taxYearId = (int)($company['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $service = new HmrcCorporationTaxSubmissionService();
         $service->ensureSchema();
         $mode = $companyId > 0 ? (new hmrcService())->resolveHmrcMode($companyId) : 'TEST';
         $package = new HmrcSubmissionPackageService();
         $settings = $companyId > 0 ? (new CompanySettingsStore($companyId))->all() : [];
+        $ctPeriodService = new CorporationTaxPeriodService();
+        $sync = $companyId > 0 && $accountingPeriodId > 0
+            ? $ctPeriodService->syncForAccountingPeriod($companyId, $accountingPeriodId)
+            : ['periods' => []];
+        $ctPeriods = (array)($sync['periods'] ?? []);
+        $selectedCtPeriodId = $ctPeriodService->defaultCtPeriodId($companyId, $accountingPeriodId);
 
         return [
             'hmrc_submission' => [
                 'mode' => $mode,
                 'settings' => $settings,
-                'accounts_ixbrl' => $package->locateAccountsIxbrl($companyId, $taxYearId),
-                'computations_ixbrl' => $package->locateComputationsIxbrl($companyId, $taxYearId),
-                'latest_submission' => $service->getLatestSubmission($companyId, $taxYearId),
+                'ct_periods' => $ctPeriods,
+                'selected_ct_period_id' => $selectedCtPeriodId,
+                'accounts_ixbrl' => $package->locateAccountsIxbrl($companyId, $accountingPeriodId),
+                'computations_ixbrl' => $selectedCtPeriodId > 0
+                    ? $package->locateComputationsIxbrlForCtPeriod($companyId, $selectedCtPeriodId)
+                    : ['ok' => false, 'path' => null, 'filename' => null, 'warnings' => [], 'errors' => ['Select a CT period.']],
+                'latest_submission' => $selectedCtPeriodId > 0
+                    ? $service->getLatestSubmissionForCtPeriod($companyId, $selectedCtPeriodId)
+                    : null,
                 'history' => $service->getSubmissionHistory($companyId, null),
             ],
         ];

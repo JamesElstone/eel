@@ -77,18 +77,18 @@ final class _profit_loss extends PageContextFramework
     ): array {
         $company = (array)($baseContext['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
-        $taxYearId = (int)($company['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $profitLossService = new ProfitLossService();
 
         return [
             'profit_loss' => [
-                'summary' => $profitLossService->getProfitLossSummary($companyId, $taxYearId),
-                'breakdown' => $profitLossService->getProfitLossBreakdown($companyId, $taxYearId),
-                'monthly_trend' => $profitLossService->getMonthlyProfitLossTrend($companyId, $taxYearId),
-                'health' => $profitLossService->getProfitLossHealth($companyId, $taxYearId),
-                'uncategorised_watch' => $profitLossService->getUncategorisedWatch($companyId, $taxYearId, 10),
-                'month_status_grid' => $profitLossService->getMonthStatusGrid($companyId, $taxYearId),
-                'source_coverage' => $profitLossService->getSourceCoverage($companyId, $taxYearId),
+                'summary' => $profitLossService->getProfitLossSummary($companyId, $accountingPeriodId),
+                'breakdown' => $profitLossService->getProfitLossBreakdown($companyId, $accountingPeriodId),
+                'monthly_trend' => $profitLossService->getMonthlyProfitLossTrend($companyId, $accountingPeriodId),
+                'health' => $profitLossService->getProfitLossHealth($companyId, $accountingPeriodId),
+                'uncategorised_watch' => $profitLossService->getUncategorisedWatch($companyId, $accountingPeriodId, 10),
+                'month_status_grid' => $profitLossService->getMonthStatusGrid($companyId, $accountingPeriodId),
+                'source_coverage' => $profitLossService->getSourceCoverage($companyId, $accountingPeriodId),
             ],
         ];
     }

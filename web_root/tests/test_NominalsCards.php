@@ -21,7 +21,7 @@ $harness->run(_nominals_accountsCard::class, function (GeneratedServiceClassTest
     });
 
     $harness->check(_nominals_accountsCard::class, 'renders account rows from card service context', function () use ($harness, $card): void {
-        $html = $card->render([
+        $context = [
             'page' => ['page_id' => 'portable_page'],
             'services' => [
                 'nominal_account_catalog' => [[
@@ -35,10 +35,19 @@ $harness->run(_nominals_accountsCard::class, function (GeneratedServiceClassTest
                     'is_active' => 1,
                 ]],
             ],
-        ]);
+        ];
+        $html = $card->render($context);
+        $tables = $card->tables($context);
 
+        $harness->assertSame(true, ($tables[0] ?? null) instanceof TableFramework);
+        $harness->assertTrue(str_contains($html, '<div class="table-scroll"><table>'));
+        $harness->assertTrue(str_contains($html, 'Condensed View'));
+        $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="csv"'));
+        $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="xlsx"'));
         $harness->assertTrue(str_contains($html, '5000'));
         $harness->assertTrue(str_contains($html, 'Materials'));
+        $harness->assertTrue(str_contains($html, 'Allowable'));
+        $harness->assertTrue(str_contains($html, '<th>Tax Treatment</th>'));
         $harness->assertTrue(str_contains($html, 'name="card_action" value="Nominals"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="edit_nominal_account"'));
     });

@@ -14,15 +14,15 @@ final class ManualJournalService
     ) {
     }
 
-    public function fetchJournalByTag(int $companyId, int $taxYearId, string $journalTag, string $journalKey = 'primary'): ?array {
-        if ($companyId <= 0 || $taxYearId <= 0 || trim($journalTag) === '') {
+    public function fetchJournalByTag(int $companyId, int $accountingPeriodId, string $journalTag, string $journalKey = 'primary'): ?array {
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || trim($journalTag) === '') {
             return null;
         }
 
         if ($this->hasMetadataTable()) {
             $row = InterfaceDB::fetchOne( 'SELECT j.id,
                         j.company_id,
-                        j.tax_year_id,
+                        j.accounting_period_id,
                         j.source_type,
                         COALESCE(j.source_ref, \'\') AS source_ref,
                         j.journal_date,
@@ -37,12 +37,12 @@ final class ManualJournalService
                  FROM journal_entry_metadata jem
                  INNER JOIN journals j ON j.id = jem.journal_id
                  WHERE jem.company_id = :company_id
-                   AND jem.tax_year_id = :tax_year_id
+                   AND jem.accounting_period_id = :accounting_period_id
                    AND jem.journal_tag = :journal_tag
                    AND jem.journal_key = :journal_key
                  LIMIT 1', [
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
+                'accounting_period_id' => $accountingPeriodId,
                 'journal_tag' => trim($journalTag),
                 'journal_key' => trim($journalKey),
             ]);
@@ -55,7 +55,7 @@ final class ManualJournalService
         $sourceRef = $this->sourceRef(trim($journalTag), trim($journalKey));
         $row = InterfaceDB::fetchOne( 'SELECT id,
                     company_id,
-                    tax_year_id,
+                    accounting_period_id,
                     source_type,
                     COALESCE(source_ref, \'\') AS source_ref,
                     journal_date,
@@ -63,12 +63,12 @@ final class ManualJournalService
                     is_posted
              FROM journals
              WHERE company_id = :company_id
-               AND tax_year_id = :tax_year_id
+               AND accounting_period_id = :accounting_period_id
                AND source_type = :source_type
                AND source_ref = :source_ref
              LIMIT 1', [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'source_type' => 'manual',
             'source_ref' => $sourceRef,
         ]);
@@ -87,8 +87,8 @@ final class ManualJournalService
         return $row;
     }
 
-    public function listJournalsByTags(int $companyId, int $taxYearId, array $journalTags): array {
-        if ($companyId <= 0 || $taxYearId <= 0 || $journalTags === []) {
+    public function listJournalsByTags(int $companyId, int $accountingPeriodId, array $journalTags): array {
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || $journalTags === []) {
             return [];
         }
 
@@ -102,7 +102,7 @@ final class ManualJournalService
             $stmt = InterfaceDB::prepare(
                 'SELECT j.id,
                         j.company_id,
-                        j.tax_year_id,
+                        j.accounting_period_id,
                         j.source_type,
                         COALESCE(j.source_ref, \'\') AS source_ref,
                         j.journal_date,
@@ -117,16 +117,16 @@ final class ManualJournalService
                  FROM journal_entry_metadata jem
                  INNER JOIN journals j ON j.id = jem.journal_id
                  WHERE jem.company_id = ?
-                   AND jem.tax_year_id = ?
+                   AND jem.accounting_period_id = ?
                    AND jem.journal_tag IN (' . $placeholders . ')
                  ORDER BY j.journal_date DESC, j.id DESC'
             );
-            $stmt->execute(array_merge([$companyId, $taxYearId], $tags));
+            $stmt->execute(array_merge([$companyId, $accountingPeriodId], $tags));
             $rows = $stmt->fetchAll() ?: [];
         } else {
             $sourceRefs = array_map(fn(string $tag): string => $this->sourceRef($tag, ''), $tags);
             $conditions = [];
-            $params = [$companyId, $taxYearId, 'manual'];
+            $params = [$companyId, $accountingPeriodId, 'manual'];
             foreach ($sourceRefs as $sourceRefPrefix) {
                 $conditions[] = 'source_ref LIKE ?';
                 $params[] = $sourceRefPrefix . '%';
@@ -135,7 +135,7 @@ final class ManualJournalService
             $stmt = InterfaceDB::prepare(
                 'SELECT id,
                         company_id,
-                        tax_year_id,
+                        accounting_period_id,
                         source_type,
                         COALESCE(source_ref, \'\') AS source_ref,
                         journal_date,
@@ -143,7 +143,7 @@ final class ManualJournalService
                         is_posted
                  FROM journals
                  WHERE company_id = ?
-                   AND tax_year_id = ?
+                   AND accounting_period_id = ?
                    AND source_type = ?
                    AND (' . implode(' OR ', $conditions) . ')
                  ORDER BY journal_date DESC, id DESC'
@@ -171,7 +171,7 @@ final class ManualJournalService
 
     public function saveTaggedJournal(
         int $companyId,
-        int $taxYearId,
+        int $accountingPeriodId,
         string $journalTag,
         string $journalKey,
         string $journalDate,
@@ -188,7 +188,7 @@ final class ManualJournalService
         $description = trim($description);
         $journalDate = trim($journalDate);
 
-        if ($companyId <= 0 || $taxYearId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return ['success' => false, 'errors' => ['Select a valid company and accounting period first.']];
         }
 
@@ -209,9 +209,9 @@ final class ManualJournalService
             return ['success' => false, 'errors' => $normalisedLines['errors']];
         }
 
-        ($this->lockService ?? new YearEndLockService())->assertUnlocked($companyId, $taxYearId, 'post journals in this period');
+        ($this->lockService ?? new YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'post journals in this period');
 
-        $existing = $this->fetchJournalByTag($companyId, $taxYearId, $journalTag, $journalKey);
+        $existing = $this->fetchJournalByTag($companyId, $accountingPeriodId, $journalTag, $journalKey);
         $ownsTransaction = !InterfaceDB::inTransaction();
 
         if ($ownsTransaction) {
@@ -227,7 +227,7 @@ final class ManualJournalService
             $insert = InterfaceDB::prepare(
                 'INSERT INTO journals (
                     company_id,
-                    tax_year_id,
+                    accounting_period_id,
                     source_type,
                     source_ref,
                     journal_date,
@@ -237,7 +237,7 @@ final class ManualJournalService
                     updated_at
                  ) VALUES (
                     :company_id,
-                    :tax_year_id,
+                    :accounting_period_id,
                     :source_type,
                     :source_ref,
                     :journal_date,
@@ -249,7 +249,7 @@ final class ManualJournalService
             );
             $insert->execute([
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
+                'accounting_period_id' => $accountingPeriodId,
                 'source_type' => 'manual',
                 'source_ref' => $sourceRef,
                 'journal_date' => $journalDate,
@@ -270,7 +270,7 @@ final class ManualJournalService
                     'INSERT INTO journal_entry_metadata (
                         journal_id,
                         company_id,
-                        tax_year_id,
+                        accounting_period_id,
                         journal_tag,
                         journal_key,
                         entry_mode,
@@ -280,7 +280,7 @@ final class ManualJournalService
                      ) VALUES (
                         :journal_id,
                         :company_id,
-                        :tax_year_id,
+                        :accounting_period_id,
                         :journal_tag,
                         :journal_key,
                         :entry_mode,
@@ -292,7 +292,7 @@ final class ManualJournalService
                 $meta->execute([
                     'journal_id' => $journalId,
                     'company_id' => $companyId,
-                    'tax_year_id' => $taxYearId,
+                    'accounting_period_id' => $accountingPeriodId,
                     'journal_tag' => $journalTag,
                     'journal_key' => $journalKey,
                     'entry_mode' => $entryMode === 'system_generated' ? 'system_generated' : 'manual',
@@ -304,7 +304,7 @@ final class ManualJournalService
 
             ($this->lockService ?? new YearEndLockService())->writeAuditLog(
                 $companyId,
-                $taxYearId,
+                $accountingPeriodId,
                 $existing === null ? 'journal_created' : 'journal_replaced',
                 $changedBy,
                 $existing,
@@ -332,7 +332,7 @@ final class ManualJournalService
 
         return [
             'success' => true,
-            'journal' => $this->fetchJournalByTag($companyId, $taxYearId, $journalTag, $journalKey),
+            'journal' => $this->fetchJournalByTag($companyId, $accountingPeriodId, $journalTag, $journalKey),
             'replaced_existing' => $existing !== null,
             'replaced_journal_id' => $existing !== null ? (int)$existing['id'] : null,
         ];

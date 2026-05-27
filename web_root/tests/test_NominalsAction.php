@@ -27,12 +27,14 @@ $harness->run(NominalsAction::class, function (GeneratedServiceClassTestHarness 
 
         $message = $method->invoke($instance, [
             'default_bank_nominal_id' => '10',
+            'default_trade_nominal_id' => '15',
             'default_expense_nominal_id' => '20',
             'director_loan_nominal_id' => '30',
             'vat_nominal_id' => '',
             'uncategorised_nominal_id' => '50',
         ], [
             ['id' => 10, 'code' => '1200', 'name' => 'Bank'],
+            ['id' => 15, 'code' => '2300', 'name' => 'Trade Creditors'],
             ['id' => 20, 'code' => '5000', 'name' => 'Expenses'],
             ['id' => 30, 'code' => '2100', 'name' => 'Director Loan'],
             ['id' => 50, 'code' => '9999', 'name' => 'Uncategorised'],
@@ -40,6 +42,7 @@ $harness->run(NominalsAction::class, function (GeneratedServiceClassTestHarness 
 
         $harness->assertSame(true, str_contains($message, 'Default bank: 1200 - Bank'));
         $harness->assertSame(true, str_contains($message, '<br>Saved:<br>'));
+        $harness->assertSame(true, str_contains($message, 'Default trade: 2300 - Trade Creditors'));
         $harness->assertSame(true, str_contains($message, 'Default expense: 5000 - Expenses'));
         $harness->assertSame(true, str_contains($message, 'Director loan: 2100 - Director Loan'));
         $harness->assertSame(true, str_contains($message, 'VAT control: Unassigned'));
@@ -81,6 +84,18 @@ $harness->run(NominalsAction::class, function (GeneratedServiceClassTestHarness 
     $harness->check('NominalsAction', 'returns a validation error when no complete suggestion set is available', function () use ($harness, $instance): void {
         authenticateTestSession();
         (new AccountingContextService())->setPageContext(1, 'Test Company', '00000000', 0);
+        $settingsStore = new CompanySettingsStore(1);
+        foreach ([
+            'default_bank_nominal_id',
+            'default_trade_nominal_id',
+            'default_expense_nominal_id',
+            'director_loan_nominal_id',
+            'vat_nominal_id',
+            'uncategorised_nominal_id',
+        ] as $index => $setting) {
+            $settingsStore->set($setting, 9000 + $index, 'int');
+        }
+        $settingsStore->flush();
 
         $request = new RequestFramework(
             [],

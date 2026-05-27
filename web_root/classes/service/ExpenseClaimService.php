@@ -187,7 +187,7 @@ final class ExpenseClaimService
 
         return array_map([$this, 'formatClaimSummary'], InterfaceDB::fetchAll( 'SELECT ec.id,
                     ec.company_id,
-                    ec.tax_year_id,
+                    ec.accounting_period_id,
                     ec.claimant_id,
                     ec.claim_year,
                     ec.claim_month,
@@ -247,17 +247,17 @@ final class ExpenseClaimService
         }
 
         $derivedPeriod = $this->deriveMonthlyPeriod($period['year'], $period['month']);
-        $resolvedTaxYearId = $this->resolveTaxYearIdForDate($companyId, $derivedPeriod['period_end']);
-        if ($resolvedTaxYearId > 0) {
-            (new YearEndLockService())->assertUnlocked($companyId, $resolvedTaxYearId, 'create expense claims in this period');
+        $resolvedAccountingPeriodId = $this->resolveAccountingPeriodIdForDate($companyId, $derivedPeriod['period_end']);
+        if ($resolvedAccountingPeriodId > 0) {
+            (new YearEndLockService())->assertUnlocked($companyId, $resolvedAccountingPeriodId, 'create expense claims in this period');
         }
         if ((int)($claimant['is_active'] ?? 0) !== 1) {
             return ['success' => false, 'errors' => ['Only active claimants can be used for new claims.']];
         }
 
-        $taxYearId = $this->deriveTaxYearId($companyId, $derivedPeriod['period_start'], $derivedPeriod['period_end']);
+        $accountingPeriodId = $this->deriveAccountingPeriodId($companyId, $derivedPeriod['period_start'], $derivedPeriod['period_end']);
 
-        if ($taxYearId <= 0) {
+        if ($accountingPeriodId <= 0) {
             return ['success' => false, 'errors' => ['No accounting period overlaps the selected claim month.']];
         }
 
@@ -266,7 +266,7 @@ final class ExpenseClaimService
         InterfaceDB::prepare(
             'INSERT INTO expense_claims (
                 company_id,
-                tax_year_id,
+                accounting_period_id,
                 claimant_id,
                 claim_year,
                 claim_month,
@@ -284,7 +284,7 @@ final class ExpenseClaimService
                 updated_at
              ) VALUES (
                 :company_id,
-                :tax_year_id,
+                :accounting_period_id,
                 :claimant_id,
                 :claim_year,
                 :claim_month,
@@ -303,7 +303,7 @@ final class ExpenseClaimService
              )'
         )->execute([
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'claimant_id' => $claimantId,
             'claim_year' => $period['year'],
             'claim_month' => $period['month'],
@@ -431,16 +431,16 @@ final class ExpenseClaimService
         }
 
         $derivedPeriod = $this->deriveMonthlyPeriod($nextPeriod['year'], $nextPeriod['month']);
-        $taxYearId = $this->deriveTaxYearId($companyId, $derivedPeriod['period_start'], $derivedPeriod['period_end']);
+        $accountingPeriodId = $this->deriveAccountingPeriodId($companyId, $derivedPeriod['period_start'], $derivedPeriod['period_end']);
 
-        if ($taxYearId <= 0) {
+        if ($accountingPeriodId <= 0) {
             return ['success' => false, 'errors' => ['No accounting period overlaps the selected claim month.']];
         }
 
         InterfaceDB::prepare(
             'UPDATE expense_claims
              SET claimant_id = :claimant_id,
-                 tax_year_id = :tax_year_id,
+                 accounting_period_id = :accounting_period_id,
                  claim_year = :claim_year,
                  claim_month = :claim_month,
                  period_start = :period_start,
@@ -451,7 +451,7 @@ final class ExpenseClaimService
                AND company_id = :company_id'
         )->execute([
             'claimant_id' => $nextClaimantId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'claim_year' => $nextPeriod['year'],
             'claim_month' => $nextPeriod['month'],
             'period_start' => $derivedPeriod['period_start'],
@@ -603,7 +603,7 @@ final class ExpenseClaimService
         if ($claim === null) {
             return ['success' => false, 'errors' => ['The selected claim could not be found.']];
         }
-        (new YearEndLockService())->assertUnlocked($companyId, (int)($claim['tax_year_id'] ?? 0), 'link expense repayments in this period');
+        (new YearEndLockService())->assertUnlocked($companyId, (int)($claim['accounting_period_id'] ?? 0), 'link expense repayments in this period');
 
         if ((string)$claim['status'] === 'posted') {
             return ['success' => false, 'errors' => ['Posted claims are locked.']];
@@ -834,7 +834,7 @@ final class ExpenseClaimService
         if ($claim === null) {
             return ['success' => false, 'errors' => ['The selected claim could not be found.']];
         }
-        (new YearEndLockService())->assertUnlocked($companyId, (int)($claim['tax_year_id'] ?? 0), 'post expense claims in this period');
+        (new YearEndLockService())->assertUnlocked($companyId, (int)($claim['accounting_period_id'] ?? 0), 'post expense claims in this period');
 
         if ((string)$claim['status'] === 'posted') {
             return ['success' => false, 'errors' => ['This claim has already been posted.']];
@@ -880,7 +880,7 @@ final class ExpenseClaimService
             InterfaceDB::prepare(
                 'INSERT INTO journals (
                     company_id,
-                    tax_year_id,
+                    accounting_period_id,
                     source_type,
                     source_ref,
                     journal_date,
@@ -890,7 +890,7 @@ final class ExpenseClaimService
                     updated_at
                  ) VALUES (
                     :company_id,
-                    :tax_year_id,
+                    :accounting_period_id,
                     :source_type,
                     :source_ref,
                     :journal_date,
@@ -901,7 +901,7 @@ final class ExpenseClaimService
                  )'
             )->execute([
                 'company_id' => $companyId,
-                'tax_year_id' => (int)$claim['tax_year_id'],
+                'accounting_period_id' => (int)$claim['accounting_period_id'],
                 'source_type' => 'expense_register',
                 'source_ref' => (string)$claim['claim_reference_code'],
                 'journal_date' => (string)$claim['period_end'],
@@ -1238,10 +1238,10 @@ final class ExpenseClaimService
         return ((int)$stmt->fetchColumn()) + 1;
     }
 
-    private function resolveTaxYearIdForDate(int $companyId, string $date): int {
+    private function resolveAccountingPeriodIdForDate(int $companyId, string $date): int {
         $stmt = InterfaceDB::prepare(
             'SELECT id
-             FROM tax_years
+             FROM accounting_periods
              WHERE company_id = :company_id
                AND period_start <= :date
                AND period_end >= :date
@@ -1325,10 +1325,10 @@ final class ExpenseClaimService
         ];
     }
 
-    private function deriveTaxYearId(int $companyId, string $periodStart, string $periodEnd): int {
+    private function deriveAccountingPeriodId(int $companyId, string $periodStart, string $periodEnd): int {
         $stmt = InterfaceDB::prepare(
             'SELECT id, period_start, period_end
-             FROM tax_years
+             FROM accounting_periods
              WHERE company_id = :company_id
                AND period_end >= :period_start
                AND period_start <= :period_end

@@ -67,7 +67,8 @@ INSERT INTO `nominal_accounts` VALUES
 (37,'1350','Accum Dep - Vehicles','asset',11,'capital',1,135,'2026-04-09 12:48:13'),
 (38,'4200','Profit on Disposal','income',NULL,'other',1,420,'2026-04-09 12:48:13'),
 (39,'6200','Depreciation Expense','expense',NULL,'disallowable',1,620,'2026-04-09 12:48:13'),
-(40,'6210','Loss on Disposal','expense',NULL,'other',1,621,'2026-04-09 12:48:13');
+(40,'6210','Loss on Disposal','expense',NULL,'other',1,621,'2026-04-09 12:48:13'),
+(41,'2300','Trade Creditors','liability',12,'allowable',1,70,'2026-05-27 10:00:00');
 /*!40000 ALTER TABLE `nominal_accounts` ENABLE KEYS */;
 UNLOCK TABLES;
 

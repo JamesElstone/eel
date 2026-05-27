@@ -40,3 +40,4 @@ return array (
     'service' => 'AccountingContextService',
   ),
 );
+

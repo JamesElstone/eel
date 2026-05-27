@@ -60,7 +60,7 @@ final class _uploads_bank_transactionsCard extends CardBaseFramework
 
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
-        $taxYearId = (int)($company['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         
         $selectedUploadHistoryFilter = (string)($context['uploads']['filter'] ?? 'all');
         $selectedUploadHistoryPage = (int)($context['uploads']['page'] ?? 1);
@@ -91,7 +91,7 @@ final class _uploads_bank_transactionsCard extends CardBaseFramework
                 <input type="hidden" name="card_action" value="Uploads">
                 <input type="hidden" name="intent" value="upload_account_csv">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="filter" value="' . HelperFramework::escape($selectedUploadHistoryFilter) . '">
                 <input type="hidden" name="page" value="' . $selectedUploadHistoryPage . '">
                 <div class="stack">

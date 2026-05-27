@@ -16,12 +16,12 @@ final class OpeningBalanceService
     ) {
     }
 
-    public function fetchContext(int $companyId, int $taxYearId): array {
+    public function fetchContext(int $companyId, int $accountingPeriodId): array {
         $metrics = $this->metricsService ?? new YearEndMetricsService();
-        $taxYear = $metrics->fetchTaxYear($companyId, $taxYearId);
+        $accountingPeriod = $metrics->fetchAccountingPeriod($companyId, $accountingPeriodId);
         $company = $metrics->fetchCompanySummary($companyId);
 
-        if ($taxYear === null || $company === null) {
+        if ($accountingPeriod === null || $company === null) {
             return [
                 'available' => false,
                 'errors' => ['The selected company or accounting period could not be found.'],
@@ -31,16 +31,16 @@ final class OpeningBalanceService
         return [
             'available' => true,
             'company' => $company,
-            'tax_year' => $taxYear,
+            'accounting_period' => $accountingPeriod,
             'nominals' => $this->fetchNominals(),
             'existing_journal' => ($this->journalService ?? new ManualJournalService())
-                ->fetchJournalByTag($companyId, $taxYearId, 'opening_balance'),
-            'suggestions' => $this->buildSuggestionRows($companyId, $company, $taxYear),
+                ->fetchJournalByTag($companyId, $accountingPeriodId, 'opening_balance'),
+            'suggestions' => $this->buildSuggestionRows($companyId, $company, $accountingPeriod),
         ];
     }
 
-    public function saveOpeningBalance(int $companyId, int $taxYearId, array $payload, string $changedBy = 'web_app'): array {
-        $context = $this->fetchContext($companyId, $taxYearId);
+    public function saveOpeningBalance(int $companyId, int $accountingPeriodId, array $payload, string $changedBy = 'web_app'): array {
+        $context = $this->fetchContext($companyId, $accountingPeriodId);
         if (empty($context['available'])) {
             return $context;
         }
@@ -60,15 +60,15 @@ final class OpeningBalanceService
         $entryMode = $this->toBool($payload['is_system_generated'] ?? false) ? 'system_generated' : 'manual';
         $description = trim((string)($payload['description'] ?? ''));
         if ($description === '') {
-            $description = 'Opening balances for ' . (string)($context['tax_year']['label'] ?? 'selected period');
+            $description = 'Opening balances for ' . (string)($context['accounting_period']['label'] ?? 'selected period');
         }
 
         $result = ($this->journalService ?? new ManualJournalService())->saveTaggedJournal(
             $companyId,
-            $taxYearId,
+            $accountingPeriodId,
             'opening_balance',
             'primary',
-            (string)$context['tax_year']['period_start'],
+            (string)$context['accounting_period']['period_start'],
             $description,
             $lines,
             $entryMode,
@@ -107,9 +107,9 @@ final class OpeningBalanceService
         return $stmt->fetchAll() ?: [];
     }
 
-    private function buildSuggestionRows(int $companyId, array $company, array $taxYear): array {
-        $previousTaxYear = $this->fetchPreviousTaxYear($companyId, (string)$taxYear['period_start']);
-        if ($previousTaxYear === null) {
+    private function buildSuggestionRows(int $companyId, array $company, array $accountingPeriod): array {
+        $previousAccountingPeriod = $this->fetchPreviousAccountingPeriod($companyId, (string)$accountingPeriod['period_start']);
+        if ($previousAccountingPeriod === null) {
             return [];
         }
 
@@ -119,9 +119,9 @@ final class OpeningBalanceService
         }
 
         $service = $this->companiesHouseData ?? new CompaniesHouseStoredDataService();
-        $facts = $service->fetchFactsByCompanyPeriodEndAndConcept($companyNumber, (string)$previousTaxYear['period_end']);
+        $facts = $service->fetchFactsByCompanyPeriodEndAndConcept($companyNumber, (string)$previousAccountingPeriod['period_end']);
         if ($facts === []) {
-            $facts = $this->fetchFactsByContextPeriodEnd($companyNumber, (string)$previousTaxYear['period_end']);
+            $facts = $this->fetchFactsByContextPeriodEnd($companyNumber, (string)$previousAccountingPeriod['period_end']);
         }
         if ($facts === []) {
             return [];
@@ -147,7 +147,7 @@ final class OpeningBalanceService
                 'nominal_account_id' => $bankNominalId,
                 'debit' => number_format((float)$factMap['CurrentAssets'], 2, '.', ''),
                 'credit' => '0.00',
-                'line_description' => 'Suggested from filed Current Assets for ' . (string)$previousTaxYear['label'],
+                'line_description' => 'Suggested from filed Current Assets for ' . (string)$previousAccountingPeriod['label'],
                 'source_label' => 'CurrentAssets',
             ];
         }
@@ -162,7 +162,7 @@ final class OpeningBalanceService
                 'nominal_account_id' => (int)$creditorNominal['id'],
                 'debit' => '0.00',
                 'credit' => number_format((float)$factMap['CreditorsDueWithinOneYear'], 2, '.', ''),
-                'line_description' => 'Suggested from filed Creditors due within one year for ' . (string)$previousTaxYear['label'],
+                'line_description' => 'Suggested from filed Creditors due within one year for ' . (string)$previousAccountingPeriod['label'],
                 'source_label' => 'CreditorsDueWithinOneYear',
             ];
         }
@@ -180,7 +180,7 @@ final class OpeningBalanceService
                 'nominal_account_id' => (int)$equityNominal['id'],
                 'debit' => '0.00',
                 'credit' => number_format($equityValue, 2, '.', ''),
-                'line_description' => 'Suggested from filed Capital and Reserves for ' . (string)$previousTaxYear['label'],
+                'line_description' => 'Suggested from filed Capital and Reserves for ' . (string)$previousAccountingPeriod['label'],
                 'source_label' => 'CapitalAndReserves',
             ];
         }
@@ -195,9 +195,9 @@ final class OpeningBalanceService
         return abs(round($debitTotal - $creditTotal, 2)) < 0.005 ? $rows : [];
     }
 
-    private function fetchPreviousTaxYear(int $companyId, string $periodStart): ?array {
+    private function fetchPreviousAccountingPeriod(int $companyId, string $periodStart): ?array {
         $row = InterfaceDB::fetchOne( 'SELECT id, label, period_start, period_end
-             FROM tax_years
+             FROM accounting_periods
              WHERE company_id = :company_id
                AND period_end < :period_start
              ORDER BY period_end DESC, id DESC

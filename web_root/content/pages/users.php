@@ -26,7 +26,7 @@ final class _users extends PageContextFramework
 
     public function hiddenSiteContextSelectors(): array
     {
-        return ['tax_year_id'];
+        return ['accounting_period_id'];
     }
 
     public function services(): array

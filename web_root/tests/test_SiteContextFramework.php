@@ -533,8 +533,8 @@ try {
         $harness->assertTrue(str_contains($script, 'payload.site_context_values'));
         $harness->assertTrue(str_contains($script, 'payload[selection.inputName]'));
         $harness->assertTrue(str_contains($script, "field.dataset.siteContextSubmitField !== 'true'"));
-        $harness->assertTrue(str_contains($script, 'data-tax-year-summary-button="true"'));
-        $harness->assertTrue(str_contains($script, 'taxYearSelect.dispatchEvent'));
+        $harness->assertTrue(str_contains($script, 'data-accounting-period-summary-button="true"'));
+        $harness->assertTrue(str_contains($script, 'accountingPeriodSelect.dispatchEvent'));
     });
 } finally {
     AppConfigurationStore::config(true);

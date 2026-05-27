@@ -181,7 +181,7 @@ $harness->run(UploadStatementCoverageService::class, static function (GeneratedS
         $harness->assertTrue(str_contains((string)($months['2025-06-01']['tooltip'] ?? ''), '2 rows tested, 1 balance break'));
     });
 
-    $harness->check(UploadStatementCoverageService::class, 'marks opening tax year boundary mismatches on the first rendered month', static function () use ($harness, $service): void {
+    $harness->check(UploadStatementCoverageService::class, 'marks opening accounting period boundary mismatches on the first rendered month', static function () use ($harness, $service): void {
         $method = new ReflectionMethod(UploadStatementCoverageService::class, 'buildOptionsFromInputs');
         $method->setAccessible(true);
 
@@ -238,7 +238,7 @@ $harness->run(UploadStatementCoverageService::class, static function (GeneratedS
         $harness->assertTrue(str_contains((string)($months['2025-01-01']['tooltip'] ?? ''), '31/12/2024 at GBP 20.00; this statement opens on 02/01/2025 at GBP 30.00'));
     });
 
-    $harness->check(UploadStatementCoverageService::class, 'ignores overlapping duplicate statements when checking tax year boundaries', static function () use ($harness, $service): void {
+    $harness->check(UploadStatementCoverageService::class, 'ignores overlapping duplicate statements when checking accounting period boundaries', static function () use ($harness, $service): void {
         $method = new ReflectionMethod(UploadStatementCoverageService::class, 'buildOptionsFromInputs');
         $method->setAccessible(true);
 

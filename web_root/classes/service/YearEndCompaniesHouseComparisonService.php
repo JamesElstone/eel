@@ -17,12 +17,12 @@ final class YearEndCompaniesHouseComparisonService
     ) {
     }
 
-    public function fetchComparison(int $companyId, int $taxYearId): array {
+    public function fetchComparison(int $companyId, int $accountingPeriodId): array {
         $metrics = $this->metricsService ?? new YearEndMetricsService();
-        $taxYear = $metrics->fetchTaxYear($companyId, $taxYearId);
+        $accountingPeriod = $metrics->fetchAccountingPeriod($companyId, $accountingPeriodId);
         $company = $metrics->fetchCompanySummary($companyId);
 
-        if ($taxYear === null || $company === null) {
+        if ($accountingPeriod === null || $company === null) {
             return [
                 'available' => false,
                 'errors' => ['The selected company or accounting period could not be found.'],
@@ -39,7 +39,7 @@ final class YearEndCompaniesHouseComparisonService
 
         $stored = $this->storedDataService ?? new CompaniesHouseStoredDataService();
         $summaries = $stored->fetchDocumentSummariesByCompanyNumber($companyNumber);
-        $nearest = $this->findNearestSummary($summaries, (string)$taxYear['period_end']);
+        $nearest = $this->findNearestSummary($summaries, (string)$accountingPeriod['period_end']);
         if ($nearest === null) {
             return [
                 'available' => false,
@@ -50,9 +50,9 @@ final class YearEndCompaniesHouseComparisonService
         $facts = $this->fetchMetricFacts((int)$nearest['id']);
         $appMetrics = $metrics->fetchBalanceSheetMetricValues(
             $companyId,
-            $taxYearId,
-            (string)$taxYear['period_start'],
-            (string)$taxYear['period_end']
+            $accountingPeriodId,
+            (string)$accountingPeriod['period_start'],
+            (string)$accountingPeriod['period_end']
         );
         $threshold = $this->comparisonThreshold($companyId);
         $rows = [];
@@ -83,7 +83,7 @@ final class YearEndCompaniesHouseComparisonService
             ];
         }
 
-        $hasExactMatch = (string)($nearest['period_end'] ?? '') === (string)$taxYear['period_end'];
+        $hasExactMatch = (string)($nearest['period_end'] ?? '') === (string)$accountingPeriod['period_end'];
 
         return [
             'available' => true,

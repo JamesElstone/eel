@@ -63,17 +63,17 @@ $harness->run(CompanyAction::class, function (GeneratedServiceClassTestHarness $
         $harness->assertSame(true, in_array($environment, ['TEST', 'LIVE'], true));
     });
 
-    $harness->check('CompanyAction', 'validateAccountingPeriodPayload rejects update requests without a selected tax year', function () use ($harness, $instance, $validateAccountingPeriodPayload): void {
+    $harness->check('CompanyAction', 'validateAccountingPeriodPayload rejects update requests without a selected accounting period', function () use ($harness, $instance, $validateAccountingPeriodPayload): void {
         $errors = $validateAccountingPeriodPayload->invoke($instance, 27, 0, '2024-10-01', '2025-09-30', false);
         $harness->assertSame(true, in_array('Select an existing accounting period before saving changes.', $errors, true));
     });
 
-    $harness->check('CompanyAction', 'add_tax_period requires a selected company', function () use ($harness, $instance): void {
+    $harness->check('CompanyAction', 'add_accounting_period requires a selected company', function () use ($harness, $instance): void {
         (new AccountingContextService())->clearPageContext();
 
         $request = new RequestFramework(
             [],
-            ['card_action' => 'Company', 'intent' => 'add_tax_period'],
+            ['card_action' => 'Company', 'intent' => 'add_accounting_period'],
             ['REQUEST_METHOD' => 'POST', 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest', 'HTTP_ACCEPT' => 'application/json'],
             [],
             [],
@@ -120,5 +120,51 @@ $harness->run(CompanyAction::class, function (GeneratedServiceClassTestHarness $
 
         $harness->assertSame(false, $result->isSuccess());
         $harness->assertSame('A company must be selected before deletion.', (string)($result->flashMessages()[0]['message'] ?? ''));
+    });
+
+    $harness->check('CompanyAction', 'delete_company refreshes setup health after deleting the selected company', function () use ($harness, $instance): void {
+        $companyNumber = 'DEL' . substr(hash('sha256', __FILE__ . microtime(true)), 0, 9);
+
+        try {
+            authenticateTestSession();
+
+            InterfaceDB::prepareExecute(
+                'INSERT INTO companies (company_name, company_number) VALUES (:company_name, :company_number)',
+                ['company_name' => 'Delete Fixture Limited', 'company_number' => $companyNumber]
+            );
+
+            $companyId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM companies WHERE company_number = :company_number',
+                ['company_number' => $companyNumber]
+            );
+
+            (new AccountingContextService())->setPageContext(
+                $companyId,
+                'Delete Fixture Limited',
+                $companyNumber,
+                0
+            );
+
+            $request = new RequestFramework(
+                [],
+                [
+                    'card_action' => 'Company',
+                    'intent' => 'delete_company',
+                    'delete_company_confirm' => '1',
+                    'delete_company_confirm_value' => $companyNumber,
+                ],
+                ['REQUEST_METHOD' => 'POST', 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest', 'HTTP_ACCEPT' => 'application/json'],
+                [],
+                [],
+                null
+            );
+
+            $result = $instance->handle($request, createTestPageServiceFramework());
+
+            $harness->assertSame(true, $result->isSuccess());
+            $harness->assertSame(true, in_array('settings_setup_health', $result->changedFacts(), true));
+        } finally {
+            clearAuthenticatedTestSession();
+        }
     });
 });

@@ -1419,11 +1419,11 @@
                 return;
             }
 
-            const clearInput = form.querySelector('[data-clear-confirm-input]');
-            const clearButton = form.querySelector('#clear-imported-data-button');
+            const clearInput = form.querySelector('[data-clear-confirm-input], [data-clear-company-input]');
+            const clearButton = form.querySelector('[data-clear-confirm-button], #clear-imported-data-button');
             const deleteCheckbox = form.querySelector('[data-delete-confirm-checkbox]');
             const deleteInput = form.querySelector('[data-delete-confirm-input]');
-            const deleteButton = form.querySelector('[data-delete-confirm-button]');
+            const deleteButton = form.querySelector('[data-delete-confirm-button], [data-delete-company-button]');
 
             if (
                 !(clearInput instanceof HTMLInputElement)
@@ -1885,6 +1885,7 @@
 
                 if (replacement instanceof HTMLElement && current) {
                     current.replaceWith(replacement);
+                    initialisePageCardTabs(replacement);
                     initialiseCardToggles(replacement);
                     initStateWatchers(replacement);
                     initialiseVisibleWhenControls(replacement);
@@ -2066,7 +2067,7 @@
         }
 
         const label = String(control.dataset.pageCardSwitchTab || '').trim().toLowerCase();
-        const tabsRoot = control.closest('.page-card-tabs');
+        const tabsRoot = control.closest('.page-card-tabs') || document.querySelector('.page-card-tabs');
         if (label === '' || !(tabsRoot instanceof HTMLElement)) {
             return;
         }
@@ -2569,18 +2570,18 @@
     });
 
     document.addEventListener('click', async (event) => {
-        const taxYearSummaryButton = event.target instanceof Element
-            ? event.target.closest('[data-tax-year-summary-button="true"]')
+        const accountingPeriodSummaryButton = event.target instanceof Element
+            ? event.target.closest('[data-accounting-period-summary-button="true"]')
             : null;
 
-        if (taxYearSummaryButton instanceof HTMLButtonElement) {
+        if (accountingPeriodSummaryButton instanceof HTMLButtonElement) {
             event.preventDefault();
-            const taxYearId = String(taxYearSummaryButton.dataset.taxYearId || '').trim();
-            const taxYearSelect = document.querySelector('.site-context-slot select[data-site-context-key="tax_year_id"]');
+            const accountingPeriodId = String(accountingPeriodSummaryButton.dataset.accountingPeriodId || '').trim();
+            const accountingPeriodSelect = document.querySelector('.site-context-slot select[data-site-context-key="accounting_period_id"]');
 
-            if (taxYearId !== '' && taxYearSelect instanceof HTMLSelectElement) {
-                taxYearSelect.value = taxYearId;
-                taxYearSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            if (accountingPeriodId !== '' && accountingPeriodSelect instanceof HTMLSelectElement) {
+                accountingPeriodSelect.value = accountingPeriodId;
+                accountingPeriodSelect.dispatchEvent(new Event('change', { bubbles: true }));
             }
 
             return;

@@ -56,7 +56,7 @@ final class _transactions_rulesCard extends CardBaseFramework
     {
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
-        $taxYearId = (int)($company['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
 
         if ($companyId <= 0) {
             return '<div class="helper">A company has to be added and selected before transaction categorisation can occur.</div>';
@@ -72,7 +72,7 @@ final class _transactions_rulesCard extends CardBaseFramework
         $rulesSection = $this->configuredRulesTable(
             $categorisationRules,
             $companyId,
-            $taxYearId,
+            $accountingPeriodId,
             $selectedTransactionMonth,
             $selectedTransactionFilter,
             $context
@@ -90,7 +90,7 @@ final class _transactions_rulesCard extends CardBaseFramework
                 <form method="post" action="?page=transactions">
                     <input type="hidden" name="card_action" value="Transaction">
                     <input type="hidden" name="company_id" value="' . $companyId . '">
-                    <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                     <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
                     <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
                     <input type="hidden" name="global_action" value="import_categorisation_rules">
@@ -117,21 +117,21 @@ final class _transactions_rulesCard extends CardBaseFramework
             $this->rulesTable(
                 (array)($services['categorisation_rules'] ?? []),
                 (int)($company['id'] ?? 0),
-                (int)($company['tax_year_id'] ?? 0),
+                (int)($company['accounting_period_id'] ?? 0),
                 (string)($page['month_key'] ?? ''),
                 (string)($page['category_filter'] ?? 'all')
             ),
         ];
     }
 
-    private function configuredRulesTable(array $rules, int $companyId, int $taxYearId, string $selectedTransactionMonth, string $selectedTransactionFilter, array $context): TableFramework
+    private function configuredRulesTable(array $rules, int $companyId, int $accountingPeriodId, string $selectedTransactionMonth, string $selectedTransactionFilter, array $context): TableFramework
     {
         $rows = array_values(array_filter($rules, static fn(mixed $rule): bool => is_array($rule)));
         $pagination = HelperFramework::paginateArray($rows, $this->paginationPage($context), self::PAGE_SIZE);
 
-        return $this->rulesTable($rules, $companyId, $taxYearId, $selectedTransactionMonth, $selectedTransactionFilter)
+        return $this->rulesTable($rules, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter)
             ->visibleRows((array)$pagination['items'])
-            ->toolbarActions($this->exportRulesToolbarAction($companyId, $taxYearId, $selectedTransactionMonth, $selectedTransactionFilter))
+            ->toolbarActions($this->exportRulesToolbarAction($companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter))
             ->pagination(
                 $pagination,
                 'Categorisation rules',
@@ -145,7 +145,7 @@ final class _transactions_rulesCard extends CardBaseFramework
             );
     }
 
-    private function rulesTable(array $rules, int $companyId, int $taxYearId, string $selectedTransactionMonth, string $selectedTransactionFilter): TableFramework
+    private function rulesTable(array $rules, int $companyId, int $accountingPeriodId, string $selectedTransactionMonth, string $selectedTransactionFilter): TableFramework
     {
         $rows = array_values(array_filter($rules, static fn(mixed $rule): bool => is_array($rule)));
 
@@ -174,17 +174,17 @@ final class _transactions_rulesCard extends CardBaseFramework
             ->column(
                 'actions',
                 '',
-                html: fn(array $row): string => $this->ruleActionsHtml($row, $companyId, $taxYearId, $selectedTransactionMonth, $selectedTransactionFilter),
+                html: fn(array $row): string => $this->ruleActionsHtml($row, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter),
                 exportable: false
             );
     }
 
-    private function exportRulesToolbarAction(int $companyId, int $taxYearId, string $selectedTransactionMonth, string $selectedTransactionFilter): string
+    private function exportRulesToolbarAction(int $companyId, int $accountingPeriodId, string $selectedTransactionMonth, string $selectedTransactionFilter): string
     {
         return '<form method="post" action="?page=transactions">
             <input type="hidden" name="card_action" value="Transaction">
             <input type="hidden" name="company_id" value="' . $companyId . '">
-            <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+            <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
             <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
             <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
             <input type="hidden" name="global_action" value="export_categorisation_rules">
@@ -192,13 +192,13 @@ final class _transactions_rulesCard extends CardBaseFramework
         </form>';
     }
 
-    private function ruleActionsHtml(array $rule, int $companyId, int $taxYearId, string $selectedTransactionMonth, string $selectedTransactionFilter): string
+    private function ruleActionsHtml(array $rule, int $companyId, int $accountingPeriodId, string $selectedTransactionMonth, string $selectedTransactionFilter): string
     {
         $ruleId = (int)($rule['id'] ?? 0);
         $isActive = (int)($rule['is_active'] ?? 0) === 1;
         $commonFields = '<input type="hidden" name="card_action" value="Transaction">
             <input type="hidden" name="company_id" value="' . $companyId . '">
-            <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+            <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
             <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
             <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
             <input type="hidden" name="rule_id" value="' . $ruleId . '">';

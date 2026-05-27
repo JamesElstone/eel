@@ -25,7 +25,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 'method' => 'buildMonthStatus',
                 'params' => [
                     'companyId' => ':company.id',
-                    'taxYearId' => ':company.tax_year_id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
             [
@@ -34,7 +34,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 'method' => 'fetchTransactionsForMonth',
                 'params' => [
                     'companyId' => ':company.id',
-                    'taxYearId' => ':company.tax_year_id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                     'monthKey' => ':page.month_key',
                     'categoryFilter' => ':page.category_filter',
                 ],
@@ -82,7 +82,7 @@ final class _transactions_importedCard extends CardBaseFramework
     {
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
-        $taxYearId = (int)($company['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
 
         if ($companyId <= 0) {
             return '<div class="helper">A company has to be added and selected before transaction categorisation can occur.</div>';
@@ -109,13 +109,13 @@ final class _transactions_importedCard extends CardBaseFramework
         $tableHtml = $this->configuredTransactionsTable(
             $transactionsByMonth,
             $companyId,
-            $taxYearId,
+            $accountingPeriodId,
             $selectedTransactionMonth,
             $selectedTransactionFilter,
             $nominalAccounts,
             $activeTransferCompanyAccounts,
             $context,
-            $this->bulkToolbarActionsHtml($companyId, $taxYearId, $selectedTransactionMonth, $selectedTransactionFilter)
+            $this->bulkToolbarActionsHtml($companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter)
         )->render(
             $context,
             [
@@ -130,7 +130,7 @@ final class _transactions_importedCard extends CardBaseFramework
                     <input type="hidden" name="global_action" value="select_transaction_month">
                     <input type="hidden" name="selection_source" value="transactions_imported_filters">
                     <input type="hidden" name="company_id" value="' . $companyId . '">
-                    <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                     <div class="mini-field">
                         <label for="transaction_month_key">Month</label>
                         <select class="select" id="transaction_month_key" name="month_key">' . $monthOptions . '</select>
@@ -167,7 +167,7 @@ final class _transactions_importedCard extends CardBaseFramework
             $this->transactionsTable(
                 (array)($services['transactions_by_month'] ?? []),
                 (int)($company['id'] ?? 0),
-                (int)($company['tax_year_id'] ?? 0),
+                (int)($company['accounting_period_id'] ?? 0),
                 (string)($page['month_key'] ?? ''),
                 (string)($page['category_filter'] ?? 'all'),
                 (array)($services['nominal_accounts'] ?? []),
@@ -179,7 +179,7 @@ final class _transactions_importedCard extends CardBaseFramework
     private function configuredTransactionsTable(
         array $transactions,
         int $companyId,
-        int $taxYearId,
+        int $accountingPeriodId,
         string $selectedTransactionMonth,
         string $selectedTransactionFilter,
         array $nominalAccounts,
@@ -193,7 +193,7 @@ final class _transactions_importedCard extends CardBaseFramework
         return $this->transactionsTable(
             $transactions,
             $companyId,
-            $taxYearId,
+            $accountingPeriodId,
             $selectedTransactionMonth,
             $selectedTransactionFilter,
             $nominalAccounts,
@@ -214,12 +214,12 @@ final class _transactions_importedCard extends CardBaseFramework
             );
     }
 
-    private function bulkToolbarActionsHtml(int $companyId, int $taxYearId, string $selectedTransactionMonth, string $selectedTransactionFilter): string
+    private function bulkToolbarActionsHtml(int $companyId, int $accountingPeriodId, string $selectedTransactionMonth, string $selectedTransactionFilter): string
     {
         return '<form method="post" action="?page=transactions" data-ajax="true">
                 <input type="hidden" name="card_action" value="Transaction">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
                 <input type="hidden" name="auto_scope" value="uncategorised">
@@ -229,7 +229,7 @@ final class _transactions_importedCard extends CardBaseFramework
             <form method="post" action="?page=transactions" data-ajax="true">
                 <input type="hidden" name="card_action" value="Transaction">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
                 <input type="hidden" name="global_action" value="post_categorised_transactions">
@@ -240,7 +240,7 @@ final class _transactions_importedCard extends CardBaseFramework
     private function transactionsTable(
         array $transactions,
         int $companyId,
-        int $taxYearId,
+        int $accountingPeriodId,
         string $selectedTransactionMonth,
         string $selectedTransactionFilter,
         array $nominalAccounts,
@@ -282,7 +282,7 @@ final class _transactions_importedCard extends CardBaseFramework
             ->column(
                 'document',
                 'Document',
-                html: fn(array $row): string => $this->documentHtml($row, $companyId, $taxYearId, $selectedTransactionMonth, $selectedTransactionFilter)
+                html: fn(array $row): string => $this->documentHtml($row, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter)
             )
             ->column(
                 'categorisation',
@@ -311,7 +311,7 @@ final class _transactions_importedCard extends CardBaseFramework
             ->column(
                 'actions',
                 'Actions',
-                html: fn(array $row): string => $this->actionsHtml($row, $companyId, $taxYearId, $selectedTransactionMonth, $selectedTransactionFilter),
+                html: fn(array $row): string => $this->actionsHtml($row, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter),
                 exportable: false
             );
     }
@@ -351,7 +351,7 @@ final class _transactions_importedCard extends CardBaseFramework
             <div class="helper">' . HelperFramework::escape($sourceCategory !== '' ? $sourceCategory : 'No source category') . '</div>';
     }
 
-    private function documentHtml(array $transaction, int $companyId, int $taxYearId, string $selectedTransactionMonth, string $selectedTransactionFilter): string
+    private function documentHtml(array $transaction, int $companyId, int $accountingPeriodId, string $selectedTransactionMonth, string $selectedTransactionFilter): string
     {
         $transactionId = (int)($transaction['id'] ?? 0);
         $documentHtml = '<div class="document-stack">
@@ -366,7 +366,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 <form method="post" action="?page=transactions" data-ajax="true">
                     <input type="hidden" name="card_action" value="Transaction">
                     <input type="hidden" name="company_id" value="' . $companyId . '">
-                    <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                     <input type="hidden" name="transaction_id" value="' . $transactionId . '">
                     <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
                     <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
@@ -430,7 +430,7 @@ final class _transactions_importedCard extends CardBaseFramework
         return $flagsHtml . '</div>';
     }
 
-    private function actionsHtml(array $transaction, int $companyId, int $taxYearId, string $selectedTransactionMonth, string $selectedTransactionFilter): string
+    private function actionsHtml(array $transaction, int $companyId, int $accountingPeriodId, string $selectedTransactionMonth, string $selectedTransactionFilter): string
     {
         $transactionId = (int)($transaction['id'] ?? 0);
         $transactionFormId = 'transaction-form-' . $transactionId;
@@ -442,13 +442,13 @@ final class _transactions_importedCard extends CardBaseFramework
 
         return '<form method="post" action="?page=assets" id="' . HelperFramework::escape($assetFormId) . '">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="transaction_id" value="' . $transactionId . '">
             </form>
             <form method="post" action="?page=transactions" id="' . HelperFramework::escape($transactionFormId) . '" data-ajax="true">
                 <input type="hidden" name="card_action" value="Transaction">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="transaction_id" value="' . $transactionId . '">
                 <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">

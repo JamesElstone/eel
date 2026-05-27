@@ -23,8 +23,8 @@ $harness->run(HealthAction::class, function (GeneratedServiceClassTestHarness $h
 
     $filterSetupHealthItems = new ReflectionMethod(SetupHealthService::class, 'filterSetupHealthItems');
     $filterSetupHealthItems->setAccessible(true);
-    $buildTaxYearStatus = new ReflectionMethod(SetupHealthService::class, 'buildTaxYearStatus');
-    $buildTaxYearStatus->setAccessible(true);
+    $buildAccountingPeriodStatus = new ReflectionMethod(SetupHealthService::class, 'buildAccountingPeriodStatus');
+    $buildAccountingPeriodStatus->setAccessible(true);
     $buildDefaultNominalStatus = new ReflectionMethod(SetupHealthService::class, 'buildDefaultNominalStatus');
     $buildDefaultNominalStatus->setAccessible(true);
 
@@ -96,22 +96,22 @@ $harness->run(HealthAction::class, function (GeneratedServiceClassTestHarness $h
         $harness->assertSame('Corporation tax UTR', $filtered[2]['title'] ?? '');
     });
 
-    $harness->check(SetupHealthService::class, 'tax year status distinguishes missing and gapped accounting periods', function () use (
+    $harness->check(SetupHealthService::class, 'accounting period status distinguishes missing and gapped accounting periods', function () use (
         $harness,
         $service,
-        $buildTaxYearStatus
+        $buildAccountingPeriodStatus
     ): void {
-        $empty = $buildTaxYearStatus->invoke($service, 0, []);
+        $empty = $buildAccountingPeriodStatus->invoke($service, 0, []);
         $harness->assertSame('bad', $empty['state'] ?? null);
-        $harness->assertSame('No tax periods defined.', $empty['detail'] ?? null);
+        $harness->assertSame('No accounting periods defined.', $empty['detail'] ?? null);
 
-        $gapped = $buildTaxYearStatus->invoke($service, 0, [
+        $gapped = $buildAccountingPeriodStatus->invoke($service, 0, [
             ['period_start' => '2024-01-01', 'period_end' => '2024-12-31'],
             ['period_start' => '2025-02-01', 'period_end' => '2026-01-31'],
         ]);
         $harness->assertSame('warn', $gapped['state'] ?? null);
 
-        $complete = $buildTaxYearStatus->invoke($service, 0, [
+        $complete = $buildAccountingPeriodStatus->invoke($service, 0, [
             ['period_start' => '2024-01-01', 'period_end' => '2024-12-31'],
             ['period_start' => '2025-01-01', 'period_end' => '2025-12-31'],
         ]);
@@ -125,6 +125,7 @@ $harness->run(HealthAction::class, function (GeneratedServiceClassTestHarness $h
     ): void {
         $nominalAccounts = [
             ['id' => 10],
+            ['id' => 15],
             ['id' => 20],
             ['id' => 30],
             ['id' => 40],
@@ -136,12 +137,14 @@ $harness->run(HealthAction::class, function (GeneratedServiceClassTestHarness $h
 
         $partial = $buildDefaultNominalStatus->invoke($service, [
             'default_bank_nominal_id' => 10,
+            'default_trade_nominal_id' => 15,
             'default_expense_nominal_id' => 20,
         ], $nominalAccounts);
         $harness->assertSame('warn', $partial['state'] ?? null);
 
         $complete = $buildDefaultNominalStatus->invoke($service, [
             'default_bank_nominal_id' => 10,
+            'default_trade_nominal_id' => 15,
             'default_expense_nominal_id' => 20,
             'director_loan_nominal_id' => 30,
             'vat_nominal_id' => 40,
@@ -171,7 +174,7 @@ $harness->run(HealthAction::class, function (GeneratedServiceClassTestHarness $h
                 [
                     'title' => 'Tax years',
                     'state' => 'warn',
-                    'detail' => 'Some tax periods are missing.',
+                    'detail' => 'Some accounting periods are missing.',
                 ],
                 [
                     'title' => 'Corporation tax UTR',

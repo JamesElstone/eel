@@ -21,47 +21,47 @@ final class HmrcObligationService
         }
 
         $created = 0;
-        foreach ((new TaxYearRepository())->fetchTaxYears($companyId) as $taxYear) {
-            $result = $this->syncObligationsForTaxYear($companyId, (int)$taxYear['id']);
+        foreach ((new AccountingPeriodRepository())->fetchAccountingPeriods($companyId) as $accountingPeriod) {
+            $result = $this->syncObligationsForAccountingPeriod($companyId, (int)$accountingPeriod['id']);
             $created += (int)($result['created'] ?? 0);
         }
 
         return ['success' => true, 'errors' => [], 'created' => $created];
     }
 
-    public function syncObligationsForTaxYear(int $companyId, int $taxYearId): array
+    public function syncObligationsForAccountingPeriod(int $companyId, int $accountingPeriodId): array
     {
         $this->ensureSchema();
-        $taxYear = (new TaxYearRepository())->fetchTaxYear($companyId, $taxYearId);
-        if ($taxYear === null) {
+        $accountingPeriod = (new AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null) {
             return ['success' => false, 'errors' => ['The selected accounting period could not be found.'], 'created' => 0];
         }
 
-        $dueDates = $this->calculateDueDates($taxYear);
+        $dueDates = $this->calculateDueDates($accountingPeriod);
         $created = 0;
         foreach ([
             'ct_payment' => $dueDates['ct_payment_due_date'],
             'ct600_filing' => $dueDates['ct600_filing_due_date'],
         ] as $type => $dueDate) {
-            if ($this->obligationExists($companyId, $taxYearId, $type)) {
+            if ($this->obligationExists($companyId, $accountingPeriodId, $type)) {
                 continue;
             }
 
             InterfaceDB::prepareExecute(
                 'INSERT INTO hmrc_obligations (
-                    company_id, tax_year_id, obligation_type, period_start, period_end, due_date,
+                    company_id, accounting_period_id, obligation_type, period_start, period_end, due_date,
                     amount_due, amount_paid, status, source, source_reference, notes
                  ) VALUES (?, ?, ?, ?, ?, ?, NULL, 0.00, ?, ?, ?, ?)',
                 [
                     $companyId,
-                    $taxYearId,
+                    $accountingPeriodId,
                     $type,
-                    (string)$taxYear['period_start'],
-                    (string)$taxYear['period_end'],
+                    (string)$accountingPeriod['period_start'],
+                    (string)$accountingPeriod['period_end'],
                     $dueDate,
                     'not_started',
                     'calculated',
-                    'tax_year:' . $taxYearId,
+                    'accounting_period:' . $accountingPeriodId,
                     $type === 'ct_payment'
                         ? 'Calculated Corporation Tax payment deadline. Amount can be updated when CT is estimated or finalised.'
                         : 'Calculated Company Tax Return filing deadline. Companies House filing does not mark this as filed.',
@@ -83,22 +83,22 @@ final class HmrcObligationService
         $filter = $this->normaliseFilter((string)($filters['filter'] ?? 'all'));
         $rows = InterfaceDB::fetchAll(
             'SELECT o.*,
-                    ty.label AS tax_year_label,
-                    ty.period_start AS tax_year_start,
-                    ty.period_end AS tax_year_end
+                    ty.label AS accounting_period_label,
+                    ty.period_start AS accounting_period_start,
+                    ty.period_end AS accounting_period_end
              FROM hmrc_obligations o
-             INNER JOIN tax_years ty ON ty.id = o.tax_year_id
+             INNER JOIN accounting_periods ty ON ty.id = o.accounting_period_id
              WHERE o.company_id = :company_id
              ORDER BY o.period_start DESC, o.due_date ASC, o.id ASC',
             ['company_id' => $companyId]
         );
 
         $today = $this->today();
-        $currentTaxYearId = $this->currentTaxYearId($companyId, $today);
+        $currentAccountingPeriodId = $this->currentAccountingPeriodId($companyId, $today);
         $decorated = [];
         foreach ($rows as $row) {
             $item = $this->decorateObligation((array)$row, $today);
-            if (!$this->passesFilter($item, $filter, $currentTaxYearId, $today)) {
+            if (!$this->passesFilter($item, $filter, $currentAccountingPeriodId, $today)) {
                 continue;
             }
             $decorated[] = $item;
@@ -218,16 +218,16 @@ final class HmrcObligationService
     {
         $this->ensureSchema();
         $companyId = (int)($input['company_id'] ?? 0);
-        $taxYearId = (int)($input['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($input['accounting_period_id'] ?? 0);
         $type = $this->normaliseType((string)($input['obligation_type'] ?? 'hmrc_penalty'));
         $dueDate = trim((string)($input['due_date'] ?? ''));
         $amountDue = trim((string)($input['amount_due'] ?? ''));
         $sourceReference = trim((string)($input['source_reference'] ?? ''));
         $notes = trim((string)($input['notes'] ?? ''));
-        $taxYear = (new TaxYearRepository())->fetchTaxYear($companyId, $taxYearId);
+        $accountingPeriod = (new AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId);
 
         $errors = [];
-        if ($taxYear === null) {
+        if ($accountingPeriod === null) {
             $errors[] = 'Select a valid company and accounting period.';
         }
         if (!$this->isDate($dueDate)) {
@@ -242,15 +242,15 @@ final class HmrcObligationService
 
         InterfaceDB::prepareExecute(
             'INSERT INTO hmrc_obligations (
-                company_id, tax_year_id, obligation_type, period_start, period_end, due_date,
+                company_id, accounting_period_id, obligation_type, period_start, period_end, due_date,
                 amount_due, amount_paid, status, source, source_reference, notes
              ) VALUES (?, ?, ?, ?, ?, ?, ?, 0.00, ?, ?, ?, ?)',
             [
                 $companyId,
-                $taxYearId,
+                $accountingPeriodId,
                 $type,
-                (string)$taxYear['period_start'],
-                (string)$taxYear['period_end'],
+                (string)$accountingPeriod['period_start'],
+                (string)$accountingPeriod['period_end'],
                 $dueDate,
                 $amountDue !== '' ? number_format((float)$amountDue, 2, '.', '') : null,
                 'not_started',
@@ -263,9 +263,9 @@ final class HmrcObligationService
         return ['success' => true, 'errors' => []];
     }
 
-    public function calculateDueDates(array $taxYear): array
+    public function calculateDueDates(array $accountingPeriod): array
     {
-        $periodEnd = (string)($taxYear['period_end'] ?? '');
+        $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
         try {
             $end = new DateTimeImmutable($periodEnd);
         } catch (Throwable) {
@@ -353,7 +353,7 @@ final class HmrcObligationService
                 $overdueCount++;
             }
             if ((string)$item['period_end'] < $today && !in_array((string)$item['effective_status'], ['filed', 'paid', 'cancelled', 'not_applicable'], true)) {
-                $previousPeriodIds[(int)$item['tax_year_id']] = true;
+                $previousPeriodIds[(int)$item['accounting_period_id']] = true;
             }
             if ((string)$item['obligation_type'] === 'ct600_filing') {
                 if ((string)$item['effective_status'] === 'filed') {
@@ -380,19 +380,19 @@ final class HmrcObligationService
         ];
     }
 
-    public function periodChecklist(int $companyId, int $taxYearId): array
+    public function periodChecklist(int $companyId, int $accountingPeriodId): array
     {
-        $taxYear = (new TaxYearRepository())->fetchTaxYear($companyId, $taxYearId);
-        if ($taxYear === null) {
+        $accountingPeriod = (new AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null) {
             return [];
         }
         $obligations = $this->listObligations($companyId, ['filter' => 'all']);
-        $periodObligations = array_values(array_filter($obligations, static fn(array $row): bool => (int)$row['tax_year_id'] === $taxYearId));
+        $periodObligations = array_values(array_filter($obligations, static fn(array $row): bool => (int)$row['accounting_period_id'] === $accountingPeriodId));
         $ctPayment = $this->firstByType($periodObligations, 'ct_payment');
         $ct600 = $this->firstByType($periodObligations, 'ct600_filing');
-        $transactions = $this->transactionSummary($companyId, $taxYearId);
-        $journalCount = $this->journalCount($companyId, $taxYearId);
-        $ch = $this->companiesHouseStatus($companyId, (string)$taxYear['period_end']);
+        $transactions = $this->transactionSummary($companyId, $accountingPeriodId);
+        $journalCount = $this->journalCount($companyId, $accountingPeriodId);
+        $ch = $this->companiesHouseStatus($companyId, (string)$accountingPeriod['period_end']);
 
         return [
             $this->check('Bank transactions imported', (int)$transactions['total'] > 0, (int)$transactions['total'] . ' transaction(s) in period.'),
@@ -433,7 +433,7 @@ final class HmrcObligationService
             "CREATE TABLE IF NOT EXISTS hmrc_obligations (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 company_id INT NOT NULL,
-                tax_year_id INT NOT NULL,
+                accounting_period_id INT NOT NULL,
                 obligation_type ENUM('ct_payment','ct600_filing','hmrc_penalty','hmrc_interest','other') NOT NULL,
                 period_start DATE NOT NULL,
                 period_end DATE NOT NULL,
@@ -449,24 +449,24 @@ final class HmrcObligationService
                 notes TEXT NULL,
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                KEY idx_hmrc_obligations_period_type (company_id, tax_year_id, obligation_type),
-                KEY idx_hmrc_obligations_company_tax_year (company_id, tax_year_id),
+                KEY idx_hmrc_obligations_period_type (company_id, accounting_period_id, obligation_type),
+                KEY idx_hmrc_obligations_company_accounting_period (company_id, accounting_period_id),
                 KEY idx_hmrc_obligations_type (obligation_type),
                 KEY idx_hmrc_obligations_due_date (due_date),
                 KEY idx_hmrc_obligations_status (status),
                 KEY idx_hmrc_obligations_company_due_status (company_id, due_date, status),
                 CONSTRAINT fk_hmrc_obligations_company FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE ON UPDATE CASCADE,
-                CONSTRAINT fk_hmrc_obligations_tax_year FOREIGN KEY (tax_year_id) REFERENCES tax_years(id) ON DELETE CASCADE ON UPDATE CASCADE,
+                CONSTRAINT fk_hmrc_obligations_accounting_period FOREIGN KEY (accounting_period_id) REFERENCES accounting_periods(id) ON DELETE CASCADE ON UPDATE CASCADE,
                 CONSTRAINT fk_hmrc_obligations_journal FOREIGN KEY (related_journal_id) REFERENCES journals(id) ON DELETE SET NULL ON UPDATE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
         );
     }
 
-    private function obligationExists(int $companyId, int $taxYearId, string $type): bool
+    private function obligationExists(int $companyId, int $accountingPeriodId, string $type): bool
     {
         return InterfaceDB::countWhere('hmrc_obligations', [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'obligation_type' => $type,
         ]) > 0;
     }
@@ -523,15 +523,15 @@ final class HmrcObligationService
         return 'Review obligation';
     }
 
-    private function passesFilter(array $item, string $filter, int $currentTaxYearId, string $today): bool
+    private function passesFilter(array $item, string $filter, int $currentAccountingPeriodId, string $today): bool
     {
         return match ($filter) {
             'overdue' => (string)$item['effective_status'] === 'overdue',
             'due_soon' => (int)$item['days_delta'] >= 0 && (int)$item['days_delta'] <= 30 && !in_array((string)$item['effective_status'], ['paid', 'filed', 'cancelled', 'not_applicable'], true),
             'unpaid' => in_array((string)$item['obligation_type'], ['ct_payment', 'hmrc_penalty', 'hmrc_interest', 'other'], true) && (float)($item['outstanding_amount'] ?? 0) > 0,
             'unfiled' => (string)$item['obligation_type'] === 'ct600_filing' && (string)$item['effective_status'] !== 'filed',
-            'previous_years' => (int)$item['tax_year_id'] !== $currentTaxYearId && (string)$item['period_end'] < $today,
-            'current_year' => (int)$item['tax_year_id'] === $currentTaxYearId,
+            'previous_years' => (int)$item['accounting_period_id'] !== $currentAccountingPeriodId && (string)$item['period_end'] < $today,
+            'current_year' => (int)$item['accounting_period_id'] === $currentAccountingPeriodId,
             'fines_only' => in_array((string)$item['obligation_type'], ['hmrc_penalty', 'hmrc_interest'], true),
             default => true,
         };
@@ -575,11 +575,11 @@ final class HmrcObligationService
         return (int)$now->diff($due)->format('%r%a');
     }
 
-    private function currentTaxYearId(int $companyId, string $today): int
+    private function currentAccountingPeriodId(int $companyId, string $today): int
     {
         $value = InterfaceDB::fetchColumn(
             'SELECT id
-             FROM tax_years
+             FROM accounting_periods
              WHERE company_id = :company_id
                AND :today BETWEEN period_start AND period_end
              ORDER BY period_start DESC
@@ -592,7 +592,7 @@ final class HmrcObligationService
 
         return (int)(InterfaceDB::fetchColumn(
             'SELECT id
-             FROM tax_years
+             FROM accounting_periods
              WHERE company_id = :company_id
              ORDER BY period_end DESC
              LIMIT 1',
@@ -644,29 +644,29 @@ final class HmrcObligationService
         ];
     }
 
-    private function transactionSummary(int $companyId, int $taxYearId): array
+    private function transactionSummary(int $companyId, int $accountingPeriodId): array
     {
         $row = InterfaceDB::fetchOne(
             'SELECT COUNT(*) AS total,
                     SUM(CASE WHEN category_status = :uncategorised OR nominal_account_id IS NULL THEN 1 ELSE 0 END) AS uncategorised
              FROM transactions
              WHERE company_id = :company_id
-               AND tax_year_id = :tax_year_id',
-            ['uncategorised' => 'uncategorised', 'company_id' => $companyId, 'tax_year_id' => $taxYearId]
+               AND accounting_period_id = :accounting_period_id',
+            ['uncategorised' => 'uncategorised', 'company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
         ) ?: [];
 
         return ['total' => (int)($row['total'] ?? 0), 'uncategorised' => (int)($row['uncategorised'] ?? 0)];
     }
 
-    private function journalCount(int $companyId, int $taxYearId): int
+    private function journalCount(int $companyId, int $accountingPeriodId): int
     {
         return (int)InterfaceDB::fetchColumn(
             'SELECT COUNT(*)
              FROM journals
              WHERE company_id = :company_id
-               AND tax_year_id = :tax_year_id
+               AND accounting_period_id = :accounting_period_id
                AND is_posted = 1',
-            ['company_id' => $companyId, 'tax_year_id' => $taxYearId]
+            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
         );
     }
 

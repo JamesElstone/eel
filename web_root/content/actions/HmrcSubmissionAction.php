@@ -32,7 +32,8 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
         $service = new HmrcCorporationTaxSubmissionService();
         $fraud = new HmrcFraudPreventionHeaderService();
         $companyId = (int)$request->input('company_id', 0);
-        $taxYearId = (int)$request->input('tax_year_id', 0);
+        $accountingPeriodId = (int)$request->input('accounting_period_id', 0);
+        $ctPeriodId = (int)$request->input('ct_period_id', 0);
         $intent = trim((string)$request->input('intent', 'hmrc_validate_package'));
         $mode = HelperFramework::normaliseEnvironmentMode((string)$request->input('mode', 'TEST'));
         $line = function (string $level, string $message): void {
@@ -41,7 +42,8 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
         };
 
         $line('info', 'Selected company ID: ' . $companyId);
-        $line('info', 'Selected tax year ID: ' . $taxYearId);
+        $line('info', 'Selected accounting period ID: ' . $accountingPeriodId);
+        $line('info', 'Selected CT period ID: ' . $ctPeriodId);
         $line('info', 'API mode: ' . $mode);
 
         if ($intent === 'hmrc_submit_live') {
@@ -71,7 +73,7 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
         }
 
         $line('info', 'Generated package checks starting.');
-        $validation = $service->validatePackage($companyId, $taxYearId, $mode);
+        $validation = $service->validatePackage($companyId, $ctPeriodId, $mode);
         $submissionId = (int)($validation['submission_id'] ?? 0);
         $line('info', 'Submission draft ID: ' . $submissionId);
         foreach ((array)($validation['warnings'] ?? []) as $warning) {

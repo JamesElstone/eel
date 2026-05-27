@@ -28,7 +28,7 @@ final class _csv_exportCard extends CardBaseFramework
                 'method' => 'fetchExportMonths',
                 'params' => [
                     'companyId' => ':company.id',
-                    'taxYearId' => ':company.tax_year_id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
         ];
@@ -47,10 +47,10 @@ final class _csv_exportCard extends CardBaseFramework
     public function render(array $context): string
     {
         $companyId = (int)($context['company']['id'] ?? 0);
-        $taxYearId = (int)($context['company']['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($context['company']['accounting_period_id'] ?? 0);
         $months = (array)($context['services']['csv_export_months'] ?? []);
 
-        if ($companyId <= 0 || $taxYearId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return '<div class="helper">Select a company and accounting period before exporting CSV uploads.</div>';
         }
 
@@ -79,7 +79,7 @@ final class _csv_exportCard extends CardBaseFramework
                 $hiddenInputs = '
                             <input type="hidden" name="card_action" value="Uploads">
                             <input type="hidden" name="company_id" value="' . $companyId . '">
-                            <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                            <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                             <input type="hidden" name="upload_id" value="' . (int)($upload['id'] ?? 0) . '">
                             <input type="hidden" name="export_month" value="' . HelperFramework::escape($monthKey) . '">';
 

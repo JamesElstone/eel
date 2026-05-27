@@ -15,7 +15,7 @@ $harness->run(_transactions_monthly_statusCard::class, static function (Generate
         $html = $card->render([
             'company' => [
                 'id' => 12,
-                'tax_year_id' => 34,
+                'accounting_period_id' => 34,
             ],
             'services' => [
                 'month_status' => [

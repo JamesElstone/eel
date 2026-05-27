@@ -123,7 +123,7 @@ final class _banking_accountsCard extends CardBaseFramework
             <input type="hidden" name="card_action" value="Banking">
             <input type="hidden" name="intent" value="assign_missing_nominals">
             <input type="hidden" name="company_id" value="' . HelperFramework::escape((string)$companyId) . '">
-            <button class="button danger" type="submit" data-chicken-check="true" data-chicken-message="Create and assign missing company account nominals?<br><br>Bank accounts use 1001-1099. Trade accounts use 2001-2099." data-chicken-confirm-text="Assign">Assign Missing Nominals</button>
+            <button class="button danger" type="submit" data-chicken-check="true" data-chicken-message="Create and assign missing company account nominals?<br><br>Bank and trade accounts use the next free code above the configured default nominal." data-chicken-confirm-text="Assign">Assign Missing Nominals</button>
         </form>';
     }
 

@@ -23,7 +23,7 @@ final class _trial_balance_stateCard extends CardBaseFramework
                 'method' => 'fetchTrialBalance',
                 'params' => [
                     'companyId' => ':company_id',
-                    'taxYearId' => ':tax_year_id',
+                    'accountingPeriodId' => ':accounting_period_id',
                     'includeZero' => ':trial_balance_include_zero',
                     'includeUnposted' => ':trial_balance_include_unposted',
                     'filters' => ':trial_balance_filters',
@@ -35,7 +35,7 @@ final class _trial_balance_stateCard extends CardBaseFramework
                 'method' => 'fetchValidation',
                 'params' => [
                     'companyId' => ':company_id',
-                    'taxYearId' => ':tax_year_id',
+                    'accountingPeriodId' => ':accounting_period_id',
                 ],
             ],
             [
@@ -44,7 +44,7 @@ final class _trial_balance_stateCard extends CardBaseFramework
                 'method' => 'fetchComparison',
                 'params' => [
                     'companyId' => ':company_id',
-                    'taxYearId' => ':tax_year_id',
+                    'accountingPeriodId' => ':accounting_period_id',
                 ],
             ],
         ];
@@ -69,7 +69,7 @@ final class _trial_balance_stateCard extends CardBaseFramework
 
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
-        $taxYearId = (int)($company['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $pageId = (string)(($context['page'] ?? [])['page_id'] ?? 'trial_balance');
         $validation = (array)($context['services']['trialBalanceValidation'] ?? []);
         $comparison = (array)($context['services']['trialBalanceComparison'] ?? []);
@@ -81,7 +81,7 @@ final class _trial_balance_stateCard extends CardBaseFramework
         $taxComputation = (array)($summary['tax_computation'] ?? []);
 
         return '<div id="trial-balance-app" class="settings-stack">
-            ' . $this->renderFilterPanel($company, (array)($trialBalance['tax_year'] ?? []), $companyId, $taxYearId, $pageId, $filters, $viewMode, $includeZero, $includeUnposted) . '
+            ' . $this->renderFilterPanel($company, (array)($trialBalance['accounting_period'] ?? []), $companyId, $accountingPeriodId, $pageId, $filters, $viewMode, $includeZero, $includeUnposted) . '
             ' . $this->renderSummaryPanel($summary, (string)($validation['ready_for_ct_working_papers'] ?? 'Not ready')) . '
             ' . $this->renderValidationPanel($validation) . '
             ' . $this->renderNominalRowsPanel((array)($trialBalance['rows'] ?? []), $viewMode) . '
@@ -92,9 +92,9 @@ final class _trial_balance_stateCard extends CardBaseFramework
 
     private function renderFilterPanel(
         array $company,
-        array $taxYear,
+        array $accountingPeriod,
         int $companyId,
-        int $taxYearId,
+        int $accountingPeriodId,
         string $pageId,
         array $filters,
         string $viewMode,
@@ -107,7 +107,7 @@ final class _trial_balance_stateCard extends CardBaseFramework
         $focus = (string)($filters['focus'] ?? 'all');
         $csvUrl = 'api/trial-balance/export-csv.php?' . http_build_query([
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'include_zero' => $includeZero ? '1' : '0',
             'include_unposted' => $includeUnposted ? '1' : '0',
             'search' => $search,
@@ -121,7 +121,7 @@ final class _trial_balance_stateCard extends CardBaseFramework
                 <input type="hidden" name="card_action" value="TrialBalance">
                 <input type="hidden" name="intent" value="filter">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
             </form>
             <div class="form-grid">
                 <div class="form-row">
@@ -130,7 +130,7 @@ final class _trial_balance_stateCard extends CardBaseFramework
                 </div>
                 <div class="form-row">
                     <label>Accounting period</label>
-                    <input class="input" value="' . HelperFramework::escape((string)($taxYear['label'] ?? '')) . '" readonly>
+                    <input class="input" value="' . HelperFramework::escape((string)($accountingPeriod['label'] ?? '')) . '" readonly>
                 </div>
                 <div class="form-row">
                     <label for="trial-balance-view-mode">View mode</label>

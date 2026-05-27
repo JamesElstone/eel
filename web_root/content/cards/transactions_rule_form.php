@@ -65,7 +65,7 @@ final class _transactions_rule_formCard extends CardBaseFramework
     {
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
-        $taxYearId = (int)($company['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $selectedTransactionMonth = (string)($page['month_key'] ?? '');
         if ($companyId <= 0) {
             return '<div class="helper">A company has to be added and selected before transaction categorisation can occur.</div>';
@@ -100,7 +100,7 @@ final class _transactions_rule_formCard extends CardBaseFramework
             <form method="post" action="?page=transactions" data-ajax="true">
                 <input type="hidden" name="card_action" value="Transaction">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">'
                 . ($editingRuleId > 0

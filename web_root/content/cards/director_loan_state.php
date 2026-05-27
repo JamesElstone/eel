@@ -23,7 +23,7 @@ final class _director_loan_stateCard extends CardBaseFramework
                 'method' => 'fetchStatement',
                 'params' => [
                     'companyId' => ':company_id',
-                    'taxYearId' => ':tax_year_id',
+                    'accountingPeriodId' => ':accounting_period_id',
                 ],
             ],
         ];
@@ -54,7 +54,7 @@ final class _director_loan_stateCard extends CardBaseFramework
                 . $this->renderErrors((array)($statement['errors'] ?? ['Director loan statement is not available for the selected period.']));
         }
 
-        $taxYear = (array)($statement['tax_year'] ?? []);
+        $accountingPeriod = (array)($statement['accounting_period'] ?? []);
         $nominal = (array)($statement['director_loan_nominal'] ?? []);
         $hasMovements = !empty($statement['has_movements_in_period']);
         $rowsHtml = '';
@@ -76,7 +76,7 @@ final class _director_loan_stateCard extends CardBaseFramework
 
         return '
             <section class="settings-stack">
-                ' . $this->renderSelectedContext($company, $taxYear) . '
+                ' . $this->renderSelectedContext($company, $accountingPeriod) . '
                 <div class="helper">Using ' . HelperFramework::escape(FormattingFramework::nominalLabel($nominal, ' ')) . ' as the Director Loan nominal.</div>
             </section>
             <div class="month-grid">
@@ -95,7 +95,7 @@ final class _director_loan_stateCard extends CardBaseFramework
         ';
     }
 
-    private function renderSelectedContext(array $company, array $taxYear): string
+    private function renderSelectedContext(array $company, array $accountingPeriod): string
     {
         return '<div class="form-grid">
             <div class="form-row">
@@ -104,7 +104,7 @@ final class _director_loan_stateCard extends CardBaseFramework
             </div>
             <div class="form-row">
                 <label>Accounting Period</label>
-                <input class="input" value="' . HelperFramework::escape((string)($taxYear['label'] ?? '')) . '" readonly>
+                <input class="input" value="' . HelperFramework::escape((string)($accountingPeriod['label'] ?? '')) . '" readonly>
             </div>
         </div>';
     }

@@ -16,10 +16,10 @@ final class TrialBalanceValidationService
     ) {
     }
 
-    public function fetchValidation(int $companyId, int $taxYearId): array {
+    public function fetchValidation(int $companyId, int $accountingPeriodId): array {
         $trialBalanceService = $this->trialBalanceService ?? new TrialBalanceService();
         $metrics = $this->metricsService ?? new YearEndMetricsService();
-        $context = $trialBalanceService->fetchPageContext($companyId, $taxYearId);
+        $context = $trialBalanceService->fetchPageContext($companyId, $accountingPeriodId);
 
         if ($context === null) {
             return [
@@ -28,24 +28,24 @@ final class TrialBalanceValidationService
             ];
         }
 
-        $periodStart = (string)($context['tax_year']['period_start'] ?? '');
-        $periodEnd = (string)($context['tax_year']['period_end'] ?? '');
-        $tb = $trialBalanceService->fetchTrialBalance($companyId, $taxYearId, true, false);
+        $periodStart = (string)($context['accounting_period']['period_start'] ?? '');
+        $periodEnd = (string)($context['accounting_period']['period_end'] ?? '');
+        $tb = $trialBalanceService->fetchTrialBalance($companyId, $accountingPeriodId, true, false);
         $summary = (array)($tb['summary'] ?? []);
         $totals = (array)($tb['totals'] ?? []);
-        $uncategorisedCount = $metrics->uncategorisedTransactionsCount($companyId, $taxYearId, $periodStart, $periodEnd);
-        $unpostedCount = $this->countUnpostedJournals($companyId, $taxYearId);
-        $missingPostingRoutes = $metrics->strandedCommittedSourceRowsCount($companyId, $taxYearId);
-        $monthTiles = $metrics->buildMonthTiles($companyId, $taxYearId, $periodStart, $periodEnd);
-        $review = ($this->lockService ?? new YearEndLockService())->fetchReview($companyId, $taxYearId);
+        $uncategorisedCount = $metrics->uncategorisedTransactionsCount($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $unpostedCount = $this->countUnpostedJournals($companyId, $accountingPeriodId);
+        $missingPostingRoutes = $metrics->strandedCommittedSourceRowsCount($companyId, $accountingPeriodId);
+        $monthTiles = $metrics->buildMonthTiles($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $review = ($this->lockService ?? new YearEndLockService())->fetchReview($companyId, $accountingPeriodId);
 
-        $bankCheck = $this->bankLedgerReasonableness($companyId, $taxYearId, (int)($context['settings']['default_bank_nominal_id'] ?? 0));
+        $bankCheck = $this->bankLedgerReasonableness($companyId, $accountingPeriodId, (int)($context['settings']['default_bank_nominal_id'] ?? 0));
         $suspenseBalance = (float)($summary['uncategorised_exposure'] ?? 0);
         $hasJournals = !empty($tb['has_rows']);
         $monthAllGreen = $monthTiles !== [] && count(array_filter($monthTiles, static fn(array $tile): bool => (string)($tile['status'] ?? '') !== 'green')) === 0;
         $reviewWarningsAcknowledged = trim((string)($review['review_notes'] ?? '')) !== '';
         $comparisonDifferences = count(array_filter(
-            (array)((new TrialBalanceComparisonService())->fetchComparison($companyId, $taxYearId)['rows'] ?? []),
+            (array)((new TrialBalanceComparisonService())->fetchComparison($companyId, $accountingPeriodId)['rows'] ?? []),
             static fn(array $row): bool => (string)($row['status'] ?? '') === 'differs'
         ));
 
@@ -127,29 +127,29 @@ final class TrialBalanceValidationService
         ];
     }
 
-    private function countUnpostedJournals(int $companyId, int $taxYearId): int {
+    private function countUnpostedJournals(int $companyId, int $accountingPeriodId): int {
         $stmt = InterfaceDB::prepare(
             'SELECT COUNT(*)
              FROM journals
              WHERE company_id = :company_id
-               AND tax_year_id = :tax_year_id
+               AND accounting_period_id = :accounting_period_id
                AND COALESCE(is_posted, 0) = 0'
         );
         $stmt->execute([
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
         ]);
 
         return (int)$stmt->fetchColumn();
     }
 
-    private function bankLedgerReasonableness(int $companyId, int $taxYearId, int $bankNominalId): array {
+    private function bankLedgerReasonableness(int $companyId, int $accountingPeriodId, int $bankNominalId): array {
         $txnStmt = InterfaceDB::prepare(
             'SELECT COALESCE(SUM(t.amount), 0)
              FROM transactions t
              LEFT JOIN company_accounts ca ON ca.id = t.account_id
              WHERE t.company_id = :company_id
-               AND t.tax_year_id = :tax_year_id
+               AND t.accounting_period_id = :accounting_period_id
                AND ca.account_type = :account_type
                AND (
                     (t.nominal_account_id IS NOT NULL AND t.category_status IN (:auto_status, :manual_status))
@@ -158,7 +158,7 @@ final class TrialBalanceValidationService
         );
         $txnStmt->execute([
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'account_type' => CompanyAccountService::TYPE_BANK,
             'auto_status' => 'auto',
             'manual_status' => 'manual',
@@ -174,11 +174,11 @@ final class TrialBalanceValidationService
                  FROM journals j
                  INNER JOIN journal_lines jl ON jl.journal_id = j.id
                  WHERE j.company_id = ?
-                   AND j.tax_year_id = ?
+                   AND j.accounting_period_id = ?
                    AND j.is_posted = 1
                    AND jl.nominal_account_id IN (' . $placeholders . ')'
             );
-            $ledgerStmt->execute(array_merge([$companyId, $taxYearId], $bankNominalIds));
+            $ledgerStmt->execute(array_merge([$companyId, $accountingPeriodId], $bankNominalIds));
             $ledgerMovement = round((float)$ledgerStmt->fetchColumn(), 2);
         }
 

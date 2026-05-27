@@ -9,11 +9,11 @@ declare(strict_types=1);
 
 final class IxbrlRenderService
 {
-    public function generatePreview(int $companyId, int $taxYearId): array
+    public function generatePreview(int $companyId, int $accountingPeriodId): array
     {
         $builder = new IxbrlFactBuilderService();
         $builder->ensureSchema();
-        $run = $builder->getLatestRun($companyId, $taxYearId);
+        $run = $builder->getLatestRun($companyId, $accountingPeriodId);
         if (!is_array($run) || (int)($run['fact_count'] ?? 0) <= 0) {
             return ['success' => false, 'errors' => ['Build iXBRL facts before generating the preview file.']];
         }
@@ -26,7 +26,7 @@ final class IxbrlRenderService
                 throw new RuntimeException('Could not create outbound iXBRL directory.');
             }
 
-            $filename = 'ixbrl_' . $companyId . '_' . $taxYearId . '_' . (int)$run['id'] . '.xhtml';
+            $filename = 'ixbrl_' . $companyId . '_' . $accountingPeriodId . '_' . (int)$run['id'] . '.xhtml';
             $path = $directory . DIRECTORY_SEPARATOR . $filename;
             if (file_put_contents($path, $xhtml) === false) {
                 throw new RuntimeException('Could not write generated iXBRL preview file.');

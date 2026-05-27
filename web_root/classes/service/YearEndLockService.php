@@ -9,14 +9,14 @@ declare(strict_types=1);
 
 final class YearEndLockService
 {
-    public function fetchReview(int $companyId, int $taxYearId): ?array {
-        if ($companyId <= 0 || $taxYearId <= 0 || !$this->hasReviewTable()) {
+    public function fetchReview(int $companyId, int $accountingPeriodId): ?array {
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || !$this->hasReviewTable()) {
             return null;
         }
 
         $row = InterfaceDB::fetchOne( 'SELECT id,
                     company_id,
-                    tax_year_id,
+                    accounting_period_id,
                     status,
                     is_locked,
                     locked_at,
@@ -27,29 +27,29 @@ final class YearEndLockService
                     updated_at
              FROM year_end_reviews
              WHERE company_id = :company_id
-               AND tax_year_id = :tax_year_id
+               AND accounting_period_id = :accounting_period_id
              LIMIT 1', [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
         ]);
         return is_array($row) ? $row : null;
     }
 
-    public function isLocked(int $companyId, int $taxYearId): bool {
-        $review = $this->fetchReview($companyId, $taxYearId);
+    public function isLocked(int $companyId, int $accountingPeriodId): bool {
+        $review = $this->fetchReview($companyId, $accountingPeriodId);
 
         return is_array($review) && (int)($review['is_locked'] ?? 0) === 1;
     }
 
-    public function assertUnlocked(int $companyId, int $taxYearId, string $actionLabel = 'change this period'): void {
-        if ($this->isLocked($companyId, $taxYearId)) {
+    public function assertUnlocked(int $companyId, int $accountingPeriodId, string $actionLabel = 'change this period'): void {
+        if ($this->isLocked($companyId, $accountingPeriodId)) {
             throw new RuntimeException('This accounting period is locked, so you cannot ' . trim($actionLabel) . '.');
         }
     }
 
     public function saveRecalculationSnapshot(
         int $companyId,
-        int $taxYearId,
+        int $accountingPeriodId,
         string $status,
         array $checkRows
     ): array {
@@ -62,7 +62,7 @@ final class YearEndLockService
 
         $status = $this->normaliseStatus($status);
         $now = (new DateTimeImmutable('now'))->format('Y-m-d H:i:s');
-        $existing = $this->fetchReview($companyId, $taxYearId);
+        $existing = $this->fetchReview($companyId, $accountingPeriodId);
 
         $ownsTransaction = !InterfaceDB::inTransaction();
         if ($ownsTransaction) {
@@ -73,7 +73,7 @@ final class YearEndLockService
             if ($existing === null) {
                 InterfaceDB::execute( 'INSERT INTO year_end_reviews (
                         company_id,
-                        tax_year_id,
+                        accounting_period_id,
                         status,
                         is_locked,
                         review_notes,
@@ -82,7 +82,7 @@ final class YearEndLockService
                         updated_at
                      ) VALUES (
                         :company_id,
-                        :tax_year_id,
+                        :accounting_period_id,
                         :status,
                         0,
                         NULL,
@@ -91,7 +91,7 @@ final class YearEndLockService
                         :updated_at
                      )', [
                     'company_id' => $companyId,
-                    'tax_year_id' => $taxYearId,
+                    'accounting_period_id' => $accountingPeriodId,
                     'status' => $status,
                     'last_recalculated_at' => $now,
                     'created_at' => $now,
@@ -103,27 +103,27 @@ final class YearEndLockService
                          last_recalculated_at = :last_recalculated_at,
                          updated_at = :updated_at
                      WHERE company_id = :company_id
-                       AND tax_year_id = :tax_year_id'
+                       AND accounting_period_id = :accounting_period_id'
                 , [
                     'status' => (int)($existing['is_locked'] ?? 0) === 1 ? 'locked' : $status,
                     'last_recalculated_at' => $now,
                     'updated_at' => $now,
                     'company_id' => $companyId,
-                    'tax_year_id' => $taxYearId,
+                    'accounting_period_id' => $accountingPeriodId,
                 ]);
             }
 
             InterfaceDB::execute( 'DELETE FROM year_end_check_results
                  WHERE company_id = :company_id
-                   AND tax_year_id = :tax_year_id'
+                   AND accounting_period_id = :accounting_period_id'
             , [
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
+                'accounting_period_id' => $accountingPeriodId,
             ]);
 
             $insertCheckSql = 'INSERT INTO year_end_check_results (
                     company_id,
-                    tax_year_id,
+                    accounting_period_id,
                     check_code,
                     severity,
                     status,
@@ -134,7 +134,7 @@ final class YearEndLockService
                     calculated_at
                  ) VALUES (
                     :company_id,
-                    :tax_year_id,
+                    :accounting_period_id,
                     :check_code,
                     :severity,
                     :status,
@@ -148,7 +148,7 @@ final class YearEndLockService
             foreach ($checkRows as $row) {
                 InterfaceDB::execute( $insertCheckSql, [
                     'company_id' => $companyId,
-                    'tax_year_id' => $taxYearId,
+                    'accounting_period_id' => $accountingPeriodId,
                     'check_code' => (string)($row['check_code'] ?? ''),
                     'severity' => $this->normaliseSeverity((string)($row['severity'] ?? 'info')),
                     'status' => $this->normaliseCheckStatus((string)($row['status'] ?? 'pass')),
@@ -173,11 +173,11 @@ final class YearEndLockService
 
         return [
             'success' => true,
-            'review' => $this->fetchReview($companyId, $taxYearId),
+            'review' => $this->fetchReview($companyId, $accountingPeriodId),
         ];
     }
 
-    public function saveNotes(int $companyId, int $taxYearId, string $notes, string $changedBy = 'web_app'): array {
+    public function saveNotes(int $companyId, int $accountingPeriodId, string $notes, string $changedBy = 'web_app'): array {
         if (!$this->hasReviewTable()) {
             return [
                 'success' => false,
@@ -185,25 +185,25 @@ final class YearEndLockService
             ];
         }
 
-        $this->ensureReviewRow($companyId, $taxYearId);
-        $existing = $this->fetchReview($companyId, $taxYearId);
+        $this->ensureReviewRow($companyId, $accountingPeriodId);
+        $existing = $this->fetchReview($companyId, $accountingPeriodId);
         $notes = trim($notes);
 
         InterfaceDB::execute( 'UPDATE year_end_reviews
              SET review_notes = :review_notes,
                  updated_at = :updated_at
              WHERE company_id = :company_id
-               AND tax_year_id = :tax_year_id'
+               AND accounting_period_id = :accounting_period_id'
         , [
             'review_notes' => $notes !== '' ? $notes : null,
             'updated_at' => (new DateTimeImmutable('now'))->format('Y-m-d H:i:s'),
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
         ]);
 
         $this->writeAuditLog(
             $companyId,
-            $taxYearId,
+            $accountingPeriodId,
             'notes_changed',
             $changedBy,
             ['review_notes' => $existing['review_notes'] ?? null],
@@ -212,11 +212,11 @@ final class YearEndLockService
 
         return [
             'success' => true,
-            'review' => $this->fetchReview($companyId, $taxYearId),
+            'review' => $this->fetchReview($companyId, $accountingPeriodId),
         ];
     }
 
-    public function lockPeriod(int $companyId, int $taxYearId, string $lockedBy = 'web_app'): array {
+    public function lockPeriod(int $companyId, int $accountingPeriodId, string $lockedBy = 'web_app'): array {
         if (!$this->hasReviewTable()) {
             return [
                 'success' => false,
@@ -224,8 +224,8 @@ final class YearEndLockService
             ];
         }
 
-        $this->ensureReviewRow($companyId, $taxYearId);
-        $existing = $this->fetchReview($companyId, $taxYearId);
+        $this->ensureReviewRow($companyId, $accountingPeriodId);
+        $existing = $this->fetchReview($companyId, $accountingPeriodId);
         $now = (new DateTimeImmutable('now'))->format('Y-m-d H:i:s');
 
         InterfaceDB::execute( 'UPDATE year_end_reviews
@@ -235,18 +235,18 @@ final class YearEndLockService
                  locked_by = :locked_by,
                  updated_at = :updated_at
              WHERE company_id = :company_id
-               AND tax_year_id = :tax_year_id'
+               AND accounting_period_id = :accounting_period_id'
         , [
             'status' => 'locked',
             'locked_at' => $now,
             'locked_by' => $this->actorValue($lockedBy),
             'updated_at' => $now,
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
         ]);
 
-        $review = $this->fetchReview($companyId, $taxYearId);
-        $this->writeAuditLog($companyId, $taxYearId, 'lock', $lockedBy, $existing, $review);
+        $review = $this->fetchReview($companyId, $accountingPeriodId);
+        $this->writeAuditLog($companyId, $accountingPeriodId, 'lock', $lockedBy, $existing, $review);
 
         return [
             'success' => true,
@@ -254,7 +254,7 @@ final class YearEndLockService
         ];
     }
 
-    public function unlockPeriod(int $companyId, int $taxYearId, string $changedBy = 'web_app', ?string $notes = null): array {
+    public function unlockPeriod(int $companyId, int $accountingPeriodId, string $changedBy = 'web_app', ?string $notes = null): array {
         if (!$this->hasReviewTable()) {
             return [
                 'success' => false,
@@ -262,8 +262,8 @@ final class YearEndLockService
             ];
         }
 
-        $this->ensureReviewRow($companyId, $taxYearId);
-        $existing = $this->fetchReview($companyId, $taxYearId);
+        $this->ensureReviewRow($companyId, $accountingPeriodId);
+        $existing = $this->fetchReview($companyId, $accountingPeriodId);
         $now = (new DateTimeImmutable('now'))->format('Y-m-d H:i:s');
 
         InterfaceDB::execute( 'UPDATE year_end_reviews
@@ -276,17 +276,17 @@ final class YearEndLockService
                  END,
                  updated_at = :updated_at
              WHERE company_id = :company_id
-               AND tax_year_id = :tax_year_id'
+               AND accounting_period_id = :accounting_period_id'
         , [
             'locked_status' => 'locked',
             'fallback_status' => 'in_progress',
             'updated_at' => $now,
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
         ]);
 
-        $review = $this->fetchReview($companyId, $taxYearId);
-        $this->writeAuditLog($companyId, $taxYearId, 'unlock', $changedBy, $existing, $review, $notes);
+        $review = $this->fetchReview($companyId, $accountingPeriodId);
+        $this->writeAuditLog($companyId, $accountingPeriodId, 'unlock', $changedBy, $existing, $review, $notes);
 
         return [
             'success' => true,
@@ -296,7 +296,7 @@ final class YearEndLockService
 
     public function writeAuditLog(
         int $companyId,
-        int $taxYearId,
+        int $accountingPeriodId,
         string $action,
         string $actionBy,
         ?array $oldValue = null,
@@ -309,7 +309,7 @@ final class YearEndLockService
 
         InterfaceDB::execute( 'INSERT INTO year_end_audit_log (
                 company_id,
-                tax_year_id,
+                accounting_period_id,
                 action,
                 action_by,
                 action_at,
@@ -318,7 +318,7 @@ final class YearEndLockService
                 notes
              ) VALUES (
                 :company_id,
-                :tax_year_id,
+                :accounting_period_id,
                 :action,
                 :action_by,
                 :action_at,
@@ -327,7 +327,7 @@ final class YearEndLockService
                 :notes
              )', [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'action' => trim($action) !== '' ? trim($action) : 'unknown',
             'action_by' => $this->actorValue($actionBy),
             'action_at' => (new DateTimeImmutable('now'))->format('Y-m-d H:i:s'),
@@ -337,15 +337,15 @@ final class YearEndLockService
         ]);
     }
 
-    private function ensureReviewRow(int $companyId, int $taxYearId): void {
-        if ($this->fetchReview($companyId, $taxYearId) !== null) {
+    private function ensureReviewRow(int $companyId, int $accountingPeriodId): void {
+        if ($this->fetchReview($companyId, $accountingPeriodId) !== null) {
             return;
         }
 
         $now = (new DateTimeImmutable('now'))->format('Y-m-d H:i:s');
         InterfaceDB::execute( 'INSERT INTO year_end_reviews (
                 company_id,
-                tax_year_id,
+                accounting_period_id,
                 status,
                 is_locked,
                 locked_at,
@@ -356,7 +356,7 @@ final class YearEndLockService
                 updated_at
              ) VALUES (
                 :company_id,
-                :tax_year_id,
+                :accounting_period_id,
                 :status,
                 0,
                 NULL,
@@ -367,7 +367,7 @@ final class YearEndLockService
                 :updated_at
              )', [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'status' => 'not_started',
             'created_at' => $now,
             'updated_at' => $now,

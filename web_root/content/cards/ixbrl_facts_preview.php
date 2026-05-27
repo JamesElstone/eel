@@ -19,7 +19,7 @@ final class _ixbrl_facts_previewCard extends CardBaseFramework
     {
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
-        $taxYearId = (int)($company['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $readiness = (array)($context['ixbrl']['readiness'] ?? []);
         $facts = (array)($context['ixbrl']['facts'] ?? []);
         $disabled = !empty($readiness['can_build_facts']) ? '' : ' disabled';
@@ -45,7 +45,7 @@ final class _ixbrl_facts_previewCard extends CardBaseFramework
                 <input type="hidden" name="card_action" value="Ixbrl">
                 <input type="hidden" name="intent" value="build_ixbrl_facts">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <button class="button primary" type="submit"' . $disabled . '>Build / Refresh Facts</button>
             </form>
             ' . $table . '

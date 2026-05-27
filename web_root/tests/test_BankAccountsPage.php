@@ -85,7 +85,7 @@ $harness->run(_company_accounts::class, static function (GeneratedServiceClassTe
         $html = $card->render([
             'company' => [
                 'id' => 12,
-                'tax_year_id' => 34,
+                'accounting_period_id' => 34,
             ],
             'edit_account_id' => 47,
             'page' => [],

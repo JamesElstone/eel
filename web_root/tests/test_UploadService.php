@@ -31,7 +31,7 @@ $harness->run(StatementUploadService::class, static function (GeneratedServiceCl
         $method->setAccessible(true);
 
         $harness->assertSame(true, $method->invoke(null, ['workflow_status' => 'uploaded'], 'action_required'));
-        $harness->assertSame(true, $method->invoke(null, ['workflow_status' => 'needs_tax_year'], 'action_required'));
+        $harness->assertSame(true, $method->invoke(null, ['workflow_status' => 'needs_accounting_period'], 'action_required'));
         $harness->assertSame(false, $method->invoke(null, ['workflow_status' => 'staged'], 'action_required'));
         $harness->assertSame(true, $method->invoke(null, ['workflow_status' => 'staged'], 'ready'));
     });
@@ -48,7 +48,7 @@ $harness->run(StatementUploadService::class, static function (GeneratedServiceCl
         $method = new ReflectionMethod(StatementUploadService::class, 'fetchUploadHistory');
         $parameters = $method->getParameters();
 
-        $harness->assertSame('respectSelectedTaxYear', $parameters[2]->getName() ?? null);
+        $harness->assertSame('respectSelectedAccountingPeriod', $parameters[2]->getName() ?? null);
         $harness->assertSame(true, $parameters[2]->getDefaultValue() ?? null);
     });
 

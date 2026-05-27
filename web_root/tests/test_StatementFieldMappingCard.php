@@ -18,7 +18,7 @@ $harness->run(_statement_field_mappingCard::class, static function (GeneratedSer
             ],
             'company' => [
                 'id' => 42,
-                'tax_year_id' => 61,
+                'accounting_period_id' => 61,
             ],
             'field_mapping' => [
                 'account_id' => 47,
@@ -70,7 +70,7 @@ $harness->run(_statement_field_mappingCard::class, static function (GeneratedSer
             ],
             'company' => [
                 'id' => 42,
-                'tax_year_id' => 61,
+                'accounting_period_id' => 61,
             ],
             'uploads' => [
                 'id' => 124,

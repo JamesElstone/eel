@@ -61,7 +61,7 @@ $harness->run(_dashboard_year_end_readinessCard::class, static function (Generat
                             'status' => 'warning',
                         ],
                     ],
-                    'action_url' => '?page=year-end&company_id=1&tax_year_id=2',
+                    'action_url' => '?page=year-end&company_id=1&accounting_period_id=2',
                 ],
             ],
         ]);

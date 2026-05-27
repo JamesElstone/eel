@@ -31,7 +31,7 @@ final class UploadsAction implements ActionInterfaceFramework
     {
         $result = $this->statementUploadService($services)->importUploadedStatements([
             'company_id' => $request->input('company_id'),
-            'tax_year_id' => $request->input('tax_year_id'),
+            'accounting_period_id' => $request->input('accounting_period_id'),
             'account_id' => $request->input('account_id'),
             'filter' => $request->input('filter'),
             'page' => $request->input('page'),
@@ -180,7 +180,7 @@ final class UploadsAction implements ActionInterfaceFramework
     {
         $payload = [
             'company_id' => $request->input('company_id'),
-            'tax_year_id' => $request->input('tax_year_id'),
+            'accounting_period_id' => $request->input('accounting_period_id'),
             'upload_id' => $request->input('upload_id'),
             'account_id' => $request->input('account_id'),
         ];

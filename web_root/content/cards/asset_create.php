@@ -23,7 +23,7 @@ final class _asset_createCard extends CardBaseFramework
                 'method' => 'fetchPageData',
                 'params' => [
                     'companyId' => ':company_id',
-                    'taxYearId' => ':tax_year_id',
+                    'accountingPeriodId' => ':accounting_period_id',
                     'defaultBankNominalId' => ':default_bank_nominal_id',
                     'prefillTransactionId' => ':prefill_transaction_id',
                 ],
@@ -47,8 +47,8 @@ final class _asset_createCard extends CardBaseFramework
         $company = (array)($context['company'] ?? []);
         $assetsPageData = (array)($context['services']['assetPageData'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
-        $taxYearId = (int)($company['tax_year_id'] ?? 0);
-        $taxYears = (array)($page['tax_years'] ?? []);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
+        $accountingPeriods = (array)($page['accounting_periods'] ?? []);
         $nominalAccounts = (array)($page['nominal_accounts'] ?? []);
         $prefillTransaction = is_array($assetsPageData['prefill_transaction'] ?? null) ? $assetsPageData['prefill_transaction'] : null;
         $assetCategories = is_array($assetsPageData['asset_categories'] ?? null) ? $assetsPageData['asset_categories'] : [];
@@ -56,7 +56,7 @@ final class _asset_createCard extends CardBaseFramework
         return '
             <form method="post" action="?page=assets" data-ajax="true">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">'
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
                 . ($prefillTransaction !== null
                     ? '<input type="hidden" name="transaction_id" value="' . (int)($prefillTransaction['transaction_id'] ?? 0) . '">'
                     : '') . '

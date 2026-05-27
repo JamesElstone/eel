@@ -23,7 +23,7 @@ final class _dashboard_action_queueCard extends CardBaseFramework
                 'method' => 'fetchDashboardData',
                 'params' => [
                     'companyId' => ':company.id',
-                    'taxYearId' => ':company.tax_year_id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
         ];

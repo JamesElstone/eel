@@ -89,14 +89,14 @@ $harness->run(StatementUploadService::class, function (GeneratedServiceClassTest
     });
 
     $harness->check(StatementUploadService::class, 'upload summary query deduplicates exact file hashes', function () use ($harness, $service): void {
-        $method = (new ReflectionClass($service))->getMethod('uploadSummaryByTaxYearSql');
+        $method = (new ReflectionClass($service))->getMethod('uploadSummaryByAccountingPeriodSql');
         $method->setAccessible(true);
 
         $sql = $method->invoke($service);
 
         $harness->assertTrue(str_contains($sql, 'unique_uploads'));
         $harness->assertTrue(str_contains($sql, 'su.file_sha256'));
-        $harness->assertTrue(str_contains($sql, 'GROUP BY COALESCE(su.tax_year_id, ty.id),'));
+        $harness->assertTrue(str_contains($sql, 'GROUP BY COALESCE(su.accounting_period_id, ty.id),'));
         $harness->assertTrue(str_contains($sql, "COALESCE(NULLIF(su.file_sha256, ''), CONCAT('upload:', su.id))"));
     });
 
@@ -113,13 +113,13 @@ $harness->run(StatementUploadService::class, function (GeneratedServiceClassTest
     });
 
     $harness->check(StatementUploadService::class, 'upload history period filter constrains unassigned uploads by statement dates', function () use ($harness, $service): void {
-        $method = (new ReflectionClass($service))->getMethod('uploadHistoryTaxYearFilterClause');
+        $method = (new ReflectionClass($service))->getMethod('uploadHistoryAccountingPeriodFilterClause');
         $method->setAccessible(true);
 
         $sql = $method->invoke($service);
 
-        $harness->assertTrue(str_contains($sql, 'su.tax_year_id = ?'));
-        $harness->assertTrue(str_contains($sql, 'su.tax_year_id IS NULL'));
+        $harness->assertTrue(str_contains($sql, 'su.accounting_period_id = ?'));
+        $harness->assertTrue(str_contains($sql, 'su.accounting_period_id IS NULL'));
         $harness->assertTrue(str_contains($sql, 'COALESCE(su.date_range_start, su.statement_month) <= ?'));
         $harness->assertTrue(str_contains($sql, 'COALESCE(su.date_range_end, su.statement_month) >= ?'));
     });

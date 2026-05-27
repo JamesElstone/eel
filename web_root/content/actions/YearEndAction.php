@@ -12,27 +12,27 @@ final class YearEndAction implements ActionInterfaceFramework
     public function handle(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
         $companyId = max(0, (int)$request->input('company_id', 0));
-        $taxYearId = max(0, (int)$request->input('tax_year_id', 0));
+        $accountingPeriodId = max(0, (int)$request->input('accounting_period_id', 0));
         $intent = trim((string)$request->input('intent', ''));
 
-        if ($companyId <= 0 || $taxYearId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return $this->result(false, ['Select a company and accounting period before updating year-end readiness.']);
         }
 
         try {
             $result = match ($intent) {
-                'recalculate' => (new YearEndChecklistService())->recalculateChecklist($companyId, $taxYearId),
-                'lock_period' => (new YearEndChecklistService())->lockPeriod($companyId, $taxYearId),
-                'unlock_period' => (new YearEndChecklistService())->unlockPeriod($companyId, $taxYearId),
-                'save_notes' => (new YearEndChecklistService())->saveNotes($companyId, $taxYearId, (string)$request->input('review_notes', '')),
+                'recalculate' => (new YearEndChecklistService())->recalculateChecklist($companyId, $accountingPeriodId),
+                'lock_period' => (new YearEndChecklistService())->lockPeriod($companyId, $accountingPeriodId),
+                'unlock_period' => (new YearEndChecklistService())->unlockPeriod($companyId, $accountingPeriodId),
+                'save_notes' => (new YearEndChecklistService())->saveNotes($companyId, $accountingPeriodId, (string)$request->input('review_notes', '')),
                 'save_opening_balance' => (new OpeningBalanceService())->saveOpeningBalance(
                     $companyId,
-                    $taxYearId,
+                    $accountingPeriodId,
                     $this->openingBalancePayload($request)
                 ),
                 'create_adjustment' => (new YearEndAdjustmentService())->createAdjustment(
                     $companyId,
-                    $taxYearId,
+                    $accountingPeriodId,
                     $this->adjustmentPayload($request)
                 ),
                 default => ['success' => false, 'errors' => ['Unknown year-end action.']],

@@ -7,7 +7,7 @@
  */
 declare(strict_types=1);
 
-final class TaxYearsAction implements ActionInterfaceFramework
+final class AccountingPeriodsAction implements ActionInterfaceFramework
 {
     public function handle(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
@@ -50,10 +50,10 @@ final class TaxYearsAction implements ActionInterfaceFramework
                 );
             }
 
-            $taxYearRepository = new TaxYearRepository();
+            $accountingPeriodRepository = new AccountingPeriodRepository();
 
             foreach ($missing as $period) {
-                $taxYearRepository->createPeriod(
+                $accountingPeriodRepository->createPeriod(
                     $companyId,
                     (string)($period['start'] ?? ''),
                     (string)($period['end'] ?? ''),
@@ -153,10 +153,10 @@ final class TaxYearsAction implements ActionInterfaceFramework
                 );
             }
 
-            $taxYearRepository = new TaxYearRepository();
+            $accountingPeriodRepository = new AccountingPeriodRepository();
 
             foreach ($missing as $period) {
-                $taxYearRepository->createPeriod(
+                $accountingPeriodRepository->createPeriod(
                     $companyId,
                     (string)($period['start'] ?? ''),
                     (string)($period['end'] ?? ''),

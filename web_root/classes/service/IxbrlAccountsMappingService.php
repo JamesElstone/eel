@@ -9,9 +9,9 @@ declare(strict_types=1);
 
 final class IxbrlAccountsMappingService
 {
-    public function getAccountsMapping(int $companyId, int $taxYearId): array
+    public function getAccountsMapping(int $companyId, int $accountingPeriodId): array
     {
-        $trialBalance = (new IxbrlTrialBalanceService())->getTrialBalance($companyId, $taxYearId);
+        $trialBalance = (new IxbrlTrialBalanceService())->getTrialBalance($companyId, $accountingPeriodId);
         $buckets = $this->emptyBuckets();
         $sources = [];
         $income = 0.0;
@@ -84,7 +84,7 @@ final class IxbrlAccountsMappingService
         }
 
         return [
-            'available' => $companyId > 0 && $taxYearId > 0,
+            'available' => $companyId > 0 && $accountingPeriodId > 0,
             'buckets' => array_map(static fn(float $value): float => round($value, 2), $buckets),
             'sources' => $sources,
             'assumptions' => $assumptions,

@@ -143,7 +143,7 @@ final class TestPageArchitectureHarness
         $this->assertTrue(isset($payload['site_context_html']['sidebar']));
         $this->assertTrue(isset($payload['site_context_html']['topbar']));
         $this->assertContains('name="company_id"', (string)$payload['site_context_html']['sidebar']);
-        $this->assertContains('name="tax_year_id"', (string)$payload['site_context_html']['topbar']);
+        $this->assertContains('name="accounting_period_id"', (string)$payload['site_context_html']['topbar']);
     }
 
     private function testAjaxDeltaResponseIncludesAjaxNonceField(): void

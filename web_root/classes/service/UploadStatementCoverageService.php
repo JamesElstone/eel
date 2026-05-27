@@ -15,33 +15,33 @@ final class UploadStatementCoverageService
     ) {
     }
 
-    public function buildHeatmapOptions(int $companyId, int $taxYearId): array
+    public function buildHeatmapOptions(int $companyId, int $accountingPeriodId): array
     {
         $companyId = HelperFramework::sanitiseId($companyId);
-        $taxYearId = HelperFramework::sanitiseId($taxYearId);
+        $accountingPeriodId = HelperFramework::sanitiseId($accountingPeriodId);
 
-        if ($companyId <= 0 || $taxYearId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return [];
         }
 
-        $taxYear = (new TaxYearRepository())->fetchTaxYear($companyId, $taxYearId);
+        $accountingPeriod = (new AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId);
 
-        if ($taxYear === null) {
+        if ($accountingPeriod === null) {
             return [];
         }
 
         return $this->buildOptionsFromInputs(
-            $taxYear,
-            $this->statementUploadService->buildMonthStatus($companyId, $taxYearId),
-            $this->bankingReconciliationService->fetchBankAccountPanelsWithAdjacentStatements($companyId, $taxYearId, 0),
-            $this->statementUploadService->buildUniqueUploadedRowsByMonth($companyId, $taxYearId)
+            $accountingPeriod,
+            $this->statementUploadService->buildMonthStatus($companyId, $accountingPeriodId),
+            $this->bankingReconciliationService->fetchBankAccountPanelsWithAdjacentStatements($companyId, $accountingPeriodId, 0),
+            $this->statementUploadService->buildUniqueUploadedRowsByMonth($companyId, $accountingPeriodId)
         );
     }
 
-    private function buildOptionsFromInputs(array $taxYear, array $monthStatus, array $reconciliationPanels, array $uniqueUploadedRowsByMonth = []): array
+    private function buildOptionsFromInputs(array $accountingPeriod, array $monthStatus, array $reconciliationPanels, array $uniqueUploadedRowsByMonth = []): array
     {
-        $periodStart = trim((string)($taxYear['period_start'] ?? ''));
-        $periodEnd = trim((string)($taxYear['period_end'] ?? ''));
+        $periodStart = trim((string)($accountingPeriod['period_start'] ?? ''));
+        $periodEnd = trim((string)($accountingPeriod['period_end'] ?? ''));
 
         if ($periodStart === '' || $periodEnd === '') {
             return [];

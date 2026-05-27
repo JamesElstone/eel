@@ -9,14 +9,14 @@ declare(strict_types=1);
 
 final class ProfitLossService
 {
-    public function getProfitLossSummary(int $companyId, int $taxYearId): array
+    public function getProfitLossSummary(int $companyId, int $accountingPeriodId): array
     {
-        $taxYear = $this->fetchTaxYear($companyId, $taxYearId);
-        if ($taxYear === null) {
+        $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null) {
             return $this->emptySummary('Select a company and accounting period before reviewing Profit & Loss.');
         }
 
-        $totals = $this->profitLossTotals($companyId, $taxYearId, (string)$taxYear['period_start'], (string)$taxYear['period_end']);
+        $totals = $this->profitLossTotals($companyId, $accountingPeriodId, (string)$accountingPeriod['period_start'], (string)$accountingPeriod['period_end']);
         $incomeTotal = round((float)$totals['income_total'], 2);
         $costOfSalesTotal = round((float)$totals['cost_of_sales_total'], 2);
         $expenseTotal = round((float)$totals['expense_total'], 2);
@@ -26,11 +26,11 @@ final class ProfitLossService
         return [
             'available' => true,
             'errors' => [],
-            'period_label' => (string)($taxYear['label'] ?? ''),
-            'period_start' => (string)($taxYear['period_start'] ?? ''),
-            'period_end' => (string)($taxYear['period_end'] ?? ''),
-            'journal_count' => $this->journalCount($companyId, $taxYearId),
-            'transaction_count' => $this->transactionCount($companyId, $taxYearId),
+            'period_label' => (string)($accountingPeriod['label'] ?? ''),
+            'period_start' => (string)($accountingPeriod['period_start'] ?? ''),
+            'period_end' => (string)($accountingPeriod['period_end'] ?? ''),
+            'journal_count' => $this->journalCount($companyId, $accountingPeriodId),
+            'transaction_count' => $this->transactionCount($companyId, $accountingPeriodId),
             'income_total' => $incomeTotal,
             'cost_of_sales_total' => $costOfSalesTotal,
             'gross_profit' => $grossProfit,
@@ -38,15 +38,15 @@ final class ProfitLossService
             'net_profit' => $netProfit,
             'profit_margin_percent' => $incomeTotal > 0 ? round(($netProfit / $incomeTotal) * 100, 1) : 0.0,
             'has_loss' => $netProfit < 0,
-            'has_journals' => $this->journalCount($companyId, $taxYearId) > 0,
-            'has_transactions' => $this->transactionCount($companyId, $taxYearId) > 0,
+            'has_journals' => $this->journalCount($companyId, $accountingPeriodId) > 0,
+            'has_transactions' => $this->transactionCount($companyId, $accountingPeriodId) > 0,
         ];
     }
 
-    public function getProfitLossBreakdown(int $companyId, int $taxYearId): array
+    public function getProfitLossBreakdown(int $companyId, int $accountingPeriodId): array
     {
-        $taxYear = $this->fetchTaxYear($companyId, $taxYearId);
-        if ($taxYear === null) {
+        $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null) {
             return [
                 'income' => [],
                 'cost_of_sales' => [],
@@ -65,7 +65,7 @@ final class ProfitLossService
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
              INNER JOIN nominal_accounts na ON na.id = jl.nominal_account_id
              WHERE j.company_id = :company_id
-               AND j.tax_year_id = :tax_year_id
+               AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
                AND j.journal_date BETWEEN :period_start AND :period_end
                AND na.account_type IN (:income_type, :cost_type, :expense_type)
@@ -73,9 +73,9 @@ final class ProfitLossService
              ORDER BY na.account_type ASC, ABS(COALESCE(SUM(jl.debit), 0) - COALESCE(SUM(jl.credit), 0)) DESC, na.code ASC',
             [
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
-                'period_start' => (string)$taxYear['period_start'],
-                'period_end' => (string)$taxYear['period_end'],
+                'accounting_period_id' => $accountingPeriodId,
+                'period_start' => (string)$accountingPeriod['period_start'],
+                'period_end' => (string)$accountingPeriod['period_end'],
                 'income_type' => 'income',
                 'cost_type' => 'cost_of_sales',
                 'expense_type' => 'expense',
@@ -121,14 +121,14 @@ final class ProfitLossService
         return $breakdown;
     }
 
-    public function getMonthlyProfitLossTrend(int $companyId, int $taxYearId): array
+    public function getMonthlyProfitLossTrend(int $companyId, int $accountingPeriodId): array
     {
-        $taxYear = $this->fetchTaxYear($companyId, $taxYearId);
-        if ($taxYear === null) {
+        $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null) {
             return [];
         }
 
-        $months = $this->periodMonths((string)$taxYear['period_start'], (string)$taxYear['period_end']);
+        $months = $this->periodMonths((string)$accountingPeriod['period_start'], (string)$accountingPeriod['period_end']);
         $rows = InterfaceDB::fetchAll(
             'SELECT DATE_FORMAT(j.journal_date, \'%Y-%m-01\') AS month_start,
                     na.account_type,
@@ -138,7 +138,7 @@ final class ProfitLossService
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
              INNER JOIN nominal_accounts na ON na.id = jl.nominal_account_id
              WHERE j.company_id = :company_id
-               AND j.tax_year_id = :tax_year_id
+               AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
                AND j.journal_date BETWEEN :period_start AND :period_end
                AND na.account_type IN (:income_type, :cost_type, :expense_type)
@@ -146,9 +146,9 @@ final class ProfitLossService
              ORDER BY month_start ASC',
             [
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
-                'period_start' => (string)$taxYear['period_start'],
-                'period_end' => (string)$taxYear['period_end'],
+                'accounting_period_id' => $accountingPeriodId,
+                'period_start' => (string)$accountingPeriod['period_start'],
+                'period_end' => (string)$accountingPeriod['period_end'],
                 'income_type' => 'income',
                 'cost_type' => 'cost_of_sales',
                 'expense_type' => 'expense',
@@ -184,10 +184,10 @@ final class ProfitLossService
         return array_values($months);
     }
 
-    public function getProfitLossHealth(int $companyId, int $taxYearId): array
+    public function getProfitLossHealth(int $companyId, int $accountingPeriodId): array
     {
-        $taxYear = $this->fetchTaxYear($companyId, $taxYearId);
-        if ($taxYear === null) {
+        $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null) {
             return [
                 'available' => false,
                 'errors' => ['Select a company and accounting period before reviewing data health.'],
@@ -195,16 +195,16 @@ final class ProfitLossService
             ];
         }
 
-        $totalTransactions = $this->transactionCount($companyId, $taxYearId);
-        $uncategorisedTransactions = $this->uncategorisedTransactionCount($companyId, $taxYearId);
+        $totalTransactions = $this->transactionCount($companyId, $accountingPeriodId);
+        $uncategorisedTransactions = $this->uncategorisedTransactionCount($companyId, $accountingPeriodId);
         $categorisedTransactions = max(0, $totalTransactions - $uncategorisedTransactions);
         $categorisedPercent = $totalTransactions > 0 ? round(($categorisedTransactions / $totalTransactions) * 100, 1) : 0.0;
-        $monthGrid = $this->getMonthStatusGrid($companyId, $taxYearId);
+        $monthGrid = $this->getMonthStatusGrid($companyId, $accountingPeriodId);
         $missingMonthCount = count(array_filter($monthGrid, static fn(array $row): bool => (string)($row['status'] ?? '') === 'no_data'));
         $uploadedMonthCount = count(array_filter($monthGrid, static fn(array $row): bool => (int)($row['upload_count'] ?? 0) > 0));
         $committedMonthCount = count(array_filter($monthGrid, static fn(array $row): bool => (int)($row['committed_count'] ?? 0) > 0));
         $uploadInProgressCount = count(array_filter($monthGrid, static fn(array $row): bool => (string)($row['status'] ?? '') === 'upload_in_progress'));
-        $journalCount = $this->journalCount($companyId, $taxYearId);
+        $journalCount = $this->journalCount($companyId, $accountingPeriodId);
 
         $score = 100.0;
         if ($journalCount <= 0) {
@@ -234,9 +234,9 @@ final class ProfitLossService
         ];
     }
 
-    public function getUncategorisedWatch(int $companyId, int $taxYearId, int $limit = 10): array
+    public function getUncategorisedWatch(int $companyId, int $accountingPeriodId, int $limit = 10): array
     {
-        if ($companyId <= 0 || $taxYearId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return [];
         }
 
@@ -251,7 +251,7 @@ final class ProfitLossService
                     COALESCE(t.counterparty_name, \'\') AS counterparty_name
              FROM transactions t
              WHERE t.company_id = ?
-               AND t.tax_year_id = ?
+               AND t.accounting_period_id = ?
                AND (t.category_status = ? OR t.nominal_account_id IS NULL)
              ORDER BY ABS(t.amount) DESC, t.txn_date DESC, t.id DESC
              LIMIT ' . $limit
@@ -259,32 +259,32 @@ final class ProfitLossService
         if ($stmt === false) {
             return [];
         }
-        $stmt->execute([$companyId, $taxYearId, 'uncategorised']);
+        $stmt->execute([$companyId, $accountingPeriodId, 'uncategorised']);
 
         return $stmt->fetchAll() ?: [];
     }
 
-    public function getMonthStatusGrid(int $companyId, int $taxYearId): array
+    public function getMonthStatusGrid(int $companyId, int $accountingPeriodId): array
     {
-        $taxYear = $this->fetchTaxYear($companyId, $taxYearId);
-        if ($taxYear === null) {
+        $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null) {
             return [];
         }
 
-        $months = $this->periodMonths((string)$taxYear['period_start'], (string)$taxYear['period_end']);
-        foreach ($this->transactionMonths($companyId, $taxYearId) as $monthKey => $row) {
+        $months = $this->periodMonths((string)$accountingPeriod['period_start'], (string)$accountingPeriod['period_end']);
+        foreach ($this->transactionMonths($companyId, $accountingPeriodId) as $monthKey => $row) {
             if (!isset($months[$monthKey])) {
                 continue;
             }
             $months[$monthKey]['transaction_count'] = (int)($row['transaction_count'] ?? 0);
             $months[$monthKey]['uncategorised_count'] = (int)($row['uncategorised_count'] ?? 0);
         }
-        foreach ($this->journalMonths($companyId, $taxYearId) as $monthKey => $count) {
+        foreach ($this->journalMonths($companyId, $accountingPeriodId) as $monthKey => $count) {
             if (isset($months[$monthKey])) {
                 $months[$monthKey]['journal_count'] = (int)$count;
             }
         }
-        foreach ($this->uploadMonths($companyId, $taxYearId) as $monthKey => $row) {
+        foreach ($this->uploadMonths($companyId, $accountingPeriodId) as $monthKey => $row) {
             if (!isset($months[$monthKey])) {
                 continue;
             }
@@ -309,7 +309,7 @@ final class ProfitLossService
         return array_values($months);
     }
 
-    public function getSourceCoverage(int $companyId, int $taxYearId): array
+    public function getSourceCoverage(int $companyId, int $accountingPeriodId): array
     {
         $sources = [
             'bank_csv' => ['label' => 'Bank CSV journals'],
@@ -327,7 +327,7 @@ final class ProfitLossService
         }
         unset($source);
 
-        if ($companyId <= 0 || $taxYearId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return $sources;
         }
 
@@ -339,12 +339,12 @@ final class ProfitLossService
              FROM journals j
              LEFT JOIN journal_lines jl ON jl.journal_id = j.id
              WHERE j.company_id = :company_id
-               AND j.tax_year_id = :tax_year_id
+               AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
              GROUP BY j.source_type',
             [
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
+                'accounting_period_id' => $accountingPeriodId,
             ]
         );
 
@@ -382,16 +382,16 @@ final class ProfitLossService
         ];
     }
 
-    private function fetchTaxYear(int $companyId, int $taxYearId): ?array
+    private function fetchAccountingPeriod(int $companyId, int $accountingPeriodId): ?array
     {
-        if ($companyId <= 0 || $taxYearId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return null;
         }
 
-        return (new TaxYearRepository())->fetchTaxYear($companyId, $taxYearId);
+        return (new AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId);
     }
 
-    private function profitLossTotals(int $companyId, int $taxYearId, string $periodStart, string $periodEnd): array
+    private function profitLossTotals(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array
     {
         $rows = InterfaceDB::fetchAll(
             'SELECT na.account_type,
@@ -401,14 +401,14 @@ final class ProfitLossService
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
              INNER JOIN nominal_accounts na ON na.id = jl.nominal_account_id
              WHERE j.company_id = :company_id
-               AND j.tax_year_id = :tax_year_id
+               AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
                AND j.journal_date BETWEEN :period_start AND :period_end
                AND na.account_type IN (:income_type, :cost_type, :expense_type)
              GROUP BY na.account_type',
             [
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
+                'accounting_period_id' => $accountingPeriodId,
                 'period_start' => $periodStart,
                 'period_end' => $periodEnd,
                 'income_type' => 'income',
@@ -472,7 +472,7 @@ final class ProfitLossService
         return $months;
     }
 
-    private function transactionMonths(int $companyId, int $taxYearId): array
+    private function transactionMonths(int $companyId, int $accountingPeriodId): array
     {
         $result = [];
         foreach (InterfaceDB::fetchAll(
@@ -481,12 +481,12 @@ final class ProfitLossService
                     SUM(CASE WHEN category_status = :uncategorised OR nominal_account_id IS NULL THEN 1 ELSE 0 END) AS uncategorised_count
              FROM transactions
              WHERE company_id = :company_id
-               AND tax_year_id = :tax_year_id
+               AND accounting_period_id = :accounting_period_id
              GROUP BY DATE_FORMAT(txn_date, \'%Y-%m-01\')',
             [
                 'uncategorised' => 'uncategorised',
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
+                'accounting_period_id' => $accountingPeriodId,
             ]
         ) as $row) {
             $result[(string)$row['month_start']] = $row;
@@ -495,7 +495,7 @@ final class ProfitLossService
         return $result;
     }
 
-    private function journalMonths(int $companyId, int $taxYearId): array
+    private function journalMonths(int $companyId, int $accountingPeriodId): array
     {
         $result = [];
         foreach (InterfaceDB::fetchAll(
@@ -503,12 +503,12 @@ final class ProfitLossService
                     COUNT(*) AS journal_count
              FROM journals
              WHERE company_id = :company_id
-               AND tax_year_id = :tax_year_id
+               AND accounting_period_id = :accounting_period_id
                AND is_posted = 1
              GROUP BY DATE_FORMAT(journal_date, \'%Y-%m-01\')',
             [
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
+                'accounting_period_id' => $accountingPeriodId,
             ]
         ) as $row) {
             $result[(string)$row['month_start']] = (int)($row['journal_count'] ?? 0);
@@ -517,7 +517,7 @@ final class ProfitLossService
         return $result;
     }
 
-    private function uploadMonths(int $companyId, int $taxYearId): array
+    private function uploadMonths(int $companyId, int $accountingPeriodId): array
     {
         $result = [];
         foreach (InterfaceDB::fetchAll(
@@ -527,13 +527,13 @@ final class ProfitLossService
                     SUM(CASE WHEN workflow_status NOT IN (:committed, :completed) AND rows_committed = 0 THEN 1 ELSE 0 END) AS in_progress_count
              FROM statement_uploads
              WHERE company_id = :company_id
-               AND tax_year_id = :tax_year_id
+               AND accounting_period_id = :accounting_period_id
              GROUP BY DATE_FORMAT(COALESCE(date_range_start, statement_month), \'%Y-%m-01\')',
             [
                 'committed' => 'committed',
                 'completed' => 'completed',
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
+                'accounting_period_id' => $accountingPeriodId,
             ]
         ) as $row) {
             $result[(string)$row['month_start']] = $row;
@@ -542,9 +542,9 @@ final class ProfitLossService
         return $result;
     }
 
-    private function journalCount(int $companyId, int $taxYearId): int
+    private function journalCount(int $companyId, int $accountingPeriodId): int
     {
-        if ($companyId <= 0 || $taxYearId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return 0;
         }
 
@@ -552,18 +552,18 @@ final class ProfitLossService
             'SELECT COUNT(*)
              FROM journals
              WHERE company_id = :company_id
-               AND tax_year_id = :tax_year_id
+               AND accounting_period_id = :accounting_period_id
                AND is_posted = 1',
             [
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
+                'accounting_period_id' => $accountingPeriodId,
             ]
         );
     }
 
-    private function transactionCount(int $companyId, int $taxYearId): int
+    private function transactionCount(int $companyId, int $accountingPeriodId): int
     {
-        if ($companyId <= 0 || $taxYearId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return 0;
         }
 
@@ -571,17 +571,17 @@ final class ProfitLossService
             'SELECT COUNT(*)
              FROM transactions
              WHERE company_id = :company_id
-               AND tax_year_id = :tax_year_id',
+               AND accounting_period_id = :accounting_period_id',
             [
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
+                'accounting_period_id' => $accountingPeriodId,
             ]
         );
     }
 
-    private function uncategorisedTransactionCount(int $companyId, int $taxYearId): int
+    private function uncategorisedTransactionCount(int $companyId, int $accountingPeriodId): int
     {
-        if ($companyId <= 0 || $taxYearId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return 0;
         }
 
@@ -589,11 +589,11 @@ final class ProfitLossService
             'SELECT COUNT(*)
              FROM transactions
              WHERE company_id = :company_id
-               AND tax_year_id = :tax_year_id
+               AND accounting_period_id = :accounting_period_id
                AND (category_status = :uncategorised OR nominal_account_id IS NULL)',
             [
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
+                'accounting_period_id' => $accountingPeriodId,
                 'uncategorised' => 'uncategorised',
             ]
         );

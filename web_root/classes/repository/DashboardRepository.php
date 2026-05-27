@@ -11,7 +11,7 @@ final class DashboardRepository
 {
     public function fetchDashboardData(
         int $companyId,
-        int $taxYearId,
+        int $accountingPeriodId,
         ?int $defaultBankNominalId = null,
         int $recentLimit = 12
     ): array
@@ -62,31 +62,31 @@ final class DashboardRepository
             (int)$stats['statement_uploads']
         );
 
-        if ($taxYearId > 0) {
+        if ($accountingPeriodId > 0) {
             $transactionCount = InterfaceDB::countWhere('transactions', [
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
+                'accounting_period_id' => $accountingPeriodId,
             ]);
 
             $stats['unreconciled_items'] = InterfaceDB::countWhere('transactions', [
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
+                'accounting_period_id' => $accountingPeriodId,
                 'category_status' => 'uncategorised',
             ]);
 
             $stats['draft_journals'] = InterfaceDB::countWhere('journals', [
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
+                'accounting_period_id' => $accountingPeriodId,
                 'source_type' => 'manual',
             ]);
-            $stats['staged_upload_rows'] = $this->countStagedUploadRows($companyId, $taxYearId);
+            $stats['staged_upload_rows'] = $this->countStagedUploadRows($companyId, $accountingPeriodId);
 
             $this->appendMissingTransactionAction($data['activity'], (int)$transactionCount);
         }
 
         $data['stats'] = $stats;
 
-        if ($taxYearId <= 0) {
+        if ($accountingPeriodId <= 0) {
             $data['activity'] = $this->finaliseActivity([], $setupHealthActions);
 
             return $data;
@@ -115,7 +115,7 @@ final class DashboardRepository
                 FROM transactions t
                 LEFT JOIN nominal_accounts bank_na ON bank_na.id = ?
                 LEFT JOIN nominal_accounts cat_na ON cat_na.id = t.nominal_account_id
-                WHERE t.company_id = ? AND t.tax_year_id = ?
+                WHERE t.company_id = ? AND t.accounting_period_id = ?
                 ORDER BY t.txn_date DESC, t.id DESC
                 LIMIT {$recentLimit}";
 
@@ -123,7 +123,7 @@ final class DashboardRepository
         $stmt->execute([
             $defaultBankNominalId,
             $companyId,
-            $taxYearId,
+            $accountingPeriodId,
         ]);
         $data['recent_transactions'] = $stmt->fetchAll();
 
@@ -145,7 +145,7 @@ final class DashboardRepository
 
         $duplicateUploads = InterfaceDB::countWhereCompare('statement_uploads', 'rows_duplicate', '>', 0, [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
         ]);
         if ($duplicateUploads > 0) {
             $data['activity'][] = [
@@ -156,7 +156,7 @@ final class DashboardRepository
 
         $emptyUploads = InterfaceDB::countWhere('statement_uploads', [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'rows_inserted' => 0,
         ]);
         if ($emptyUploads > 0) {
@@ -168,7 +168,7 @@ final class DashboardRepository
 
         $manualTransactions = InterfaceDB::countWhere('transactions', [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'statement_upload_id' => null,
         ]);
         if ($manualTransactions > 0) {
@@ -222,13 +222,13 @@ final class DashboardRepository
 
         $activity[] = [
             'title' => 'Import transactions for this year',
-            'detail' => 'The selected tax year is missing any transaction records.',
+            'detail' => 'The selected accounting period is missing any transaction records.',
         ];
     }
 
-    private function countStagedUploadRows(int $companyId, int $taxYearId): int
+    private function countStagedUploadRows(int $companyId, int $accountingPeriodId): int
     {
-        if ($companyId <= 0 || $taxYearId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return 0;
         }
 
@@ -237,11 +237,11 @@ final class DashboardRepository
              FROM statement_import_rows sir
              INNER JOIN statement_uploads su ON su.id = sir.upload_id
              WHERE su.company_id = ?
-               AND sir.tax_year_id = ?
+               AND sir.accounting_period_id = ?
                AND su.workflow_status IN ('mapped', 'staged')
                AND sir.committed_transaction_id IS NULL"
         );
-        $stmt->execute([$companyId, $taxYearId]);
+        $stmt->execute([$companyId, $accountingPeriodId]);
 
         return (int)$stmt->fetchColumn();
     }
@@ -326,17 +326,17 @@ final class DashboardRepository
 
     public function fetchTransactionsForMonth(
         int $companyId,
-        int $taxYearId,
+        int $accountingPeriodId,
         string $monthKey,
         string $categoryFilter = 'all',
         int $limit = 500
     ): array {
-        if ($companyId <= 0 || $taxYearId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return [];
         }
 
-        $taxYear = (new TaxYearRepository())->fetchTaxYear($companyId, $taxYearId);
-        if ($taxYear === null || empty($taxYear['period_start']) || empty($taxYear['period_end'])) {
+        $accountingPeriod = (new AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null || empty($accountingPeriod['period_start']) || empty($accountingPeriod['period_end'])) {
             return [];
         }
 
@@ -350,8 +350,8 @@ final class DashboardRepository
         ];
         $params = [
             'company_id' => $companyId,
-            'period_start' => (string)$taxYear['period_start'],
-            'period_end' => (string)$taxYear['period_end'],
+            'period_start' => (string)$accountingPeriod['period_start'],
+            'period_end' => (string)$accountingPeriod['period_end'],
         ];
 
         if ($monthKey !== '') {

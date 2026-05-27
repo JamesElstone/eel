@@ -12,7 +12,7 @@ final class SetupHealthService
     public function buildContext(int $companyId): array
     {
         $companyRepository = new CompanyRepository();
-        $taxYearRepository = new TaxYearRepository();
+        $accountingPeriodRepository = new AccountingPeriodRepository();
         $nominalAccountRepository = new NominalAccountRepository();
         $companySettingsService = new CompanySettingsService();
 
@@ -21,17 +21,17 @@ final class SetupHealthService
         $settings = $companyId > 0
             ? $companySettingsService->loadFromDatabase(new CompanySettingsStore($companyId), $companyId, 0)
             : CompanySettingsStore::defaults();
-        $taxYears = $taxYearRepository->fetchTaxYears($companyId);
+        $accountingPeriods = $accountingPeriodRepository->fetchAccountingPeriods($companyId);
         $nominalAccounts = $nominalAccountRepository->fetchNominalAccounts($companyId);
-        $taxYearStatus = $this->buildTaxYearStatus($companyId, $taxYears);
+        $accountingPeriodStatus = $this->buildAccountingPeriodStatus($companyId, $accountingPeriods);
         $setupHealthItems = $this->buildSetupHealthItems(
             $dbStatus,
             $companies,
-            $taxYears,
+            $accountingPeriods,
             $nominalAccounts,
             $settings,
             $companySettingsService->hasCompanySettingsRow($companyId),
-            $taxYearStatus
+            $accountingPeriodStatus
         );
 
         return [
@@ -79,14 +79,14 @@ final class SetupHealthService
     private function buildSetupHealthItems(
         array $dbStatus,
         array $companies,
-        array $taxYears,
+        array $accountingPeriods,
         array $nominalAccounts,
         array $settings,
         bool $hasCompanySettings,
-        ?array $taxYearStatus = null
+        ?array $accountingPeriodStatus = null
     ): array {
         $selectedCompanyLoaded = ($settings['company_id'] ?? '') !== '' && ($settings['company_name'] ?? '') !== '';
-        $taxYearStatus = $taxYearStatus ?? $this->buildTaxYearStatus(0, $taxYears);
+        $accountingPeriodStatus = $accountingPeriodStatus ?? $this->buildAccountingPeriodStatus(0, $accountingPeriods);
         $defaultNominalStatus = $this->buildDefaultNominalStatus($settings, $nominalAccounts);
         $utrSet = (int)($settings['utr'] ?? 0) > 0;
 
@@ -111,10 +111,10 @@ final class SetupHealthService
                     : 'No company is selected.',
             ],
             [
-                'ok' => (string)($taxYearStatus['state'] ?? 'bad') === 'ok',
-                'state' => (string)($taxYearStatus['state'] ?? 'bad'),
+                'ok' => (string)($accountingPeriodStatus['state'] ?? 'bad') === 'ok',
+                'state' => (string)($accountingPeriodStatus['state'] ?? 'bad'),
                 'title' => 'Tax years',
-                'detail' => (string)($taxYearStatus['detail'] ?? 'No tax periods defined.'),
+                'detail' => (string)($accountingPeriodStatus['detail'] ?? 'No accounting periods defined.'),
             ],
             [
                 'ok' => count($nominalAccounts) > 0,
@@ -150,6 +150,7 @@ final class SetupHealthService
     {
         $requiredKeys = [
             'default_bank_nominal_id' => 'Default bank',
+            'default_trade_nominal_id' => 'Default trade',
             'default_expense_nominal_id' => 'Default expense',
             'director_loan_nominal_id' => 'Director loan',
             'vat_nominal_id' => 'VAT control',
@@ -198,33 +199,33 @@ final class SetupHealthService
         ];
     }
 
-    private function buildTaxYearStatus(int $companyId, array $taxYears): array
+    private function buildAccountingPeriodStatus(int $companyId, array $accountingPeriods): array
     {
-        $taxYearCount = count($taxYears);
+        $accountingPeriodCount = count($accountingPeriods);
 
-        if ($taxYearCount < 1) {
+        if ($accountingPeriodCount < 1) {
             return [
                 'state' => 'bad',
-                'detail' => 'No tax periods defined.',
+                'detail' => 'No accounting periods defined.',
             ];
         }
 
-        $gapCount = $this->countAccountingPeriodGaps($taxYears);
+        $gapCount = $this->countAccountingPeriodGaps($accountingPeriods);
         $missingCount = 0;
 
         if ($companyId > 0) {
             $guidance = (new AccountingGuidanceService())->build($companyId);
             $missingCount = count((array)($guidance['missing_suggested_periods'] ?? []));
-        } elseif (!$this->allRowsHavePeriodDates($taxYears)) {
+        } elseif (!$this->allRowsHavePeriodDates($accountingPeriods)) {
             $missingCount = 1;
         }
 
         if ($missingCount > 0 || $gapCount > 0) {
             $parts = [];
-            $parts[] = $taxYearCount . ' tax period' . ($taxYearCount === 1 ? '' : 's') . ' defined, but there ' . ($gapCount === 1 ? 'is an ' : 'are ') . 'accounting gap' . ($gapCount === 1 ? '' : 's') . '.';
+            $parts[] = $accountingPeriodCount . ' accounting period' . ($accountingPeriodCount === 1 ? '' : 's') . ' defined, but there ' . ($gapCount === 1 ? 'is an ' : 'are ') . 'accounting gap' . ($gapCount === 1 ? '' : 's') . '.';
 
             if ($missingCount > 0) {
-                $parts[] = $missingCount . ' more tax period' . ($missingCount === 1 ? ' is ' : 's are ') . 'recommended.';
+                $parts[] = $missingCount . ' more accounting period' . ($missingCount === 1 ? ' is ' : 's are ') . 'recommended.';
             }
 
             if ($gapCount > 0) {
@@ -239,17 +240,17 @@ final class SetupHealthService
 
         return [
             'state' => 'ok',
-            'detail' => 'All possible tax periods are defined.',
+            'detail' => 'All possible accounting periods are defined.',
         ];
     }
 
-    private function countAccountingPeriodGaps(array $taxYears): int
+    private function countAccountingPeriodGaps(array $accountingPeriods): int
     {
         $periods = [];
 
-        foreach ($taxYears as $taxYear) {
-            $start = trim((string)($taxYear['period_start'] ?? ''));
-            $end = trim((string)($taxYear['period_end'] ?? ''));
+        foreach ($accountingPeriods as $accountingPeriod) {
+            $start = trim((string)($accountingPeriod['period_start'] ?? ''));
+            $end = trim((string)($accountingPeriod['period_end'] ?? ''));
 
             if ($start === '' || $end === '') {
                 continue;
@@ -285,10 +286,10 @@ final class SetupHealthService
         return $gaps;
     }
 
-    private function allRowsHavePeriodDates(array $taxYears): bool
+    private function allRowsHavePeriodDates(array $accountingPeriods): bool
     {
-        foreach ($taxYears as $taxYear) {
-            if (trim((string)($taxYear['period_start'] ?? '')) === '' || trim((string)($taxYear['period_end'] ?? '')) === '') {
+        foreach ($accountingPeriods as $accountingPeriod) {
+            if (trim((string)($accountingPeriod['period_start'] ?? '')) === '' || trim((string)($accountingPeriod['period_end'] ?? '')) === '') {
                 return false;
             }
         }

@@ -9,18 +9,18 @@ declare(strict_types=1);
 
 final class CompanySettingsService
 {
-    public function loadFromDatabase(CompanySettingsStore $settingsStore, int $companyId, int $taxYearId): array
+    public function loadFromDatabase(CompanySettingsStore $settingsStore, int $companyId, int $accountingPeriodId): array
     {
         $settings = $this->defaultSettings();
         $settings['company_id'] = $companyId > 0 ? (string)$companyId : '';
-        $settings['tax_year_id'] = $taxYearId > 0 ? (string)$taxYearId : '';
+        $settings['accounting_period_id'] = $accountingPeriodId > 0 ? (string)$accountingPeriodId : '';
 
         if ($companyId > 0) {
             $settingsStore->persistMissingDefaults();
         }
 
         $companyRepository = new CompanyRepository();
-        $taxYearRepository = new TaxYearRepository();
+        $accountingPeriodRepository = new AccountingPeriodRepository();
 
         if ($companyId > 0) {
             $company = $companyRepository->fetchCompanyDetails($companyId);
@@ -63,13 +63,13 @@ final class CompanySettingsService
             }
         }
 
-        if ($taxYearId > 0) {
-            $taxYear = $taxYearRepository->fetchTaxYear($companyId, $taxYearId);
+        if ($accountingPeriodId > 0) {
+            $accountingPeriod = $accountingPeriodRepository->fetchAccountingPeriod($companyId, $accountingPeriodId);
 
-            if ($taxYear !== null) {
-                $settings['financial_period_label'] = (string)($taxYear['label'] ?? '');
-                $settings['period_start'] = (string)($taxYear['period_start'] ?? '');
-                $settings['period_end'] = (string)($taxYear['period_end'] ?? '');
+            if ($accountingPeriod !== null) {
+                $settings['financial_period_label'] = (string)($accountingPeriod['label'] ?? '');
+                $settings['period_start'] = (string)($accountingPeriod['period_start'] ?? '');
+                $settings['period_end'] = (string)($accountingPeriod['period_end'] ?? '');
             }
         }
 
@@ -83,14 +83,14 @@ final class CompanySettingsService
     public function saveToDatabase(CompanySettingsStore $settingsStore, array $settings): void
     {
         $companyRepository = new CompanyRepository();
-        $taxYearRepository = new TaxYearRepository();
+        $accountingPeriodRepository = new AccountingPeriodRepository();
         InterfaceDB::beginTransaction();
 
         try {
             $companyRepository->updateBasicDetails($settings);
-            $taxYearRepository->updatePeriod(
+            $accountingPeriodRepository->updatePeriod(
                 (int)$settings['company_id'],
-                (int)$settings['tax_year_id'],
+                (int)$settings['accounting_period_id'],
                 (string)$settings['financial_period_label'],
                 (string)$settings['period_start'],
                 (string)$settings['period_end']
@@ -139,22 +139,22 @@ final class CompanySettingsService
 
     public function saveAccountingSection(CompanySettingsStore $settingsStore, array &$settings): void
     {
-        $taxYearRepository = new TaxYearRepository();
+        $accountingPeriodRepository = new AccountingPeriodRepository();
         InterfaceDB::beginTransaction();
 
         try {
-            if ($settings['tax_year_id'] === '') {
-                $newPeriodId = $taxYearRepository->createPeriod(
+            if ($settings['accounting_period_id'] === '') {
+                $newPeriodId = $accountingPeriodRepository->createPeriod(
                     (int)$settings['company_id'],
                     (string)$settings['period_start'],
                     (string)$settings['period_end'],
                     (string)$settings['financial_period_label']
                 );
-                $settings['tax_year_id'] = $newPeriodId > 0 ? (string)$newPeriodId : '';
+                $settings['accounting_period_id'] = $newPeriodId > 0 ? (string)$newPeriodId : '';
             } else {
-                $taxYearRepository->updatePeriod(
+                $accountingPeriodRepository->updatePeriod(
                     (int)$settings['company_id'],
-                    (int)$settings['tax_year_id'],
+                    (int)$settings['accounting_period_id'],
                     (string)$settings['financial_period_label'],
                     (string)$settings['period_start'],
                     (string)$settings['period_end']
@@ -173,11 +173,12 @@ final class CompanySettingsService
 
     public function saveNominalsSection(CompanySettingsStore $settingsStore, array $settings): void
     {
-        $settingsStore->set('default_bank_nominal_id', $settings['default_bank_nominal_id'], 'int');
-        $settingsStore->set('default_expense_nominal_id', $settings['default_expense_nominal_id'], 'int');
-        $settingsStore->set('director_loan_nominal_id', $settings['director_loan_nominal_id'], 'int');
-        $settingsStore->set('vat_nominal_id', $settings['vat_nominal_id'], 'int');
-        $settingsStore->set('uncategorised_nominal_id', $settings['uncategorised_nominal_id'], 'int');
+        $settingsStore->set('default_bank_nominal_id', $settings['default_bank_nominal_id'] ?? '', 'int');
+        $settingsStore->set('default_trade_nominal_id', $settings['default_trade_nominal_id'] ?? '', 'int');
+        $settingsStore->set('default_expense_nominal_id', $settings['default_expense_nominal_id'] ?? '', 'int');
+        $settingsStore->set('director_loan_nominal_id', $settings['director_loan_nominal_id'] ?? '', 'int');
+        $settingsStore->set('vat_nominal_id', $settings['vat_nominal_id'] ?? '', 'int');
+        $settingsStore->set('uncategorised_nominal_id', $settings['uncategorised_nominal_id'] ?? '', 'int');
         $settingsStore->flush();
     }
 
@@ -197,6 +198,7 @@ final class CompanySettingsService
 
         foreach ([
             'default_bank_nominal_id',
+            'default_trade_nominal_id',
             'default_expense_nominal_id',
             'director_loan_nominal_id',
             'vat_nominal_id',
@@ -236,7 +238,7 @@ final class CompanySettingsService
     {
         return array_merge(CompanySettingsStore::defaults(), [
             'company_id' => '',
-            'tax_year_id' => '',
+            'accounting_period_id' => '',
             'company_name' => '',
             'companies_house_number' => '',
             'incorporation_date' => '',
@@ -295,6 +297,15 @@ final class CompanySettingsService
                     && ($row['subtype_code'] === 'bank'
                         || $row['code'] === '1200'
                         || str_contains(strtolower($row['name']), 'bank'));
+            }),
+            'default_trade_nominal_id' => $this->firstMatchingNominal($normalised, static fn(array $row): bool => $row['id'] > 0 && $row['code'] === '2300')
+                ?? $this->firstMatchingNominal($normalised, static function (array $row): bool {
+                $name = strtolower($row['name']);
+
+                return $row['id'] > 0
+                    && $row['account_type'] === 'liability'
+                    && ($row['subtype_code'] === 'trade_creditor'
+                        || str_contains($name, 'trade creditor'));
             }),
             'default_expense_nominal_id' => $this->firstMatchingNominal($normalised, static function (array $row): bool {
                 $name = strtolower($row['name']);

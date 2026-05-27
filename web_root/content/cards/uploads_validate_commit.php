@@ -80,7 +80,7 @@ final class _uploads_validate_commitCard extends CardBaseFramework
 
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
-        $taxYearId = (int)($company['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
 
         $uploadId = (int)($context['uploads']['id'] ?? 0);
         $uploadHistoryFilter = (string)($context['uploads']['filter'] ?? 'all');
@@ -127,7 +127,7 @@ final class _uploads_validate_commitCard extends CardBaseFramework
                 <input type="hidden" name="card_action" value="Uploads">
                 <input type="hidden" name="intent" value="commit_account_upload">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="upload_id" value="' . $uploadId . '">
                 <input type="hidden" name="filter" value="' . HelperFramework::escape($uploadHistoryFilter) . '">
                 <input type="hidden" name="page" value="' . $uploadHistoryPage . '">
@@ -140,10 +140,10 @@ final class _uploads_validate_commitCard extends CardBaseFramework
             $amount = (float)($row['normalised_amount'] ?? 0);
             $amountClass = $amount >= 0 ? 'amount-positive' : 'amount-negative';
 
-            $accountingPeriod = trim((string)($row['tax_year_label'] ?? ''));
+            $accountingPeriod = trim((string)($row['accounting_period_label'] ?? ''));
             if ($accountingPeriod === '') {
-                $rowTaxYearId = (int)($row['tax_year_id'] ?? 0);
-                $accountingPeriod = $rowTaxYearId > 0 ? 'Period #' . $rowTaxYearId : 'Missing';
+                $rowAccountingPeriodId = (int)($row['accounting_period_id'] ?? 0);
+                $accountingPeriod = $rowAccountingPeriodId > 0 ? 'Period #' . $rowAccountingPeriodId : 'Missing';
             }
 
             $description = (string)($row['normalised_description'] ?? $row['source_description'] ?? '');
@@ -172,7 +172,7 @@ final class _uploads_validate_commitCard extends CardBaseFramework
             } elseif ($status !== 'valid') {
                 $stageClass = 'muted';
                 $stageLabel = 'Invalid';
-            } elseif ((int)($row['tax_year_id'] ?? 0) <= 0) {
+            } elseif ((int)($row['accounting_period_id'] ?? 0) <= 0) {
                 $stageClass = 'warning';
                 $stageLabel = 'Needs accounting period';
             } else {
@@ -229,7 +229,7 @@ final class _uploads_validate_commitCard extends CardBaseFramework
                     </div>
                     <div class="actions-row">
                         <form method="post" data-ajax="true">
-                            <input type="hidden" name="card_action" value="TaxYears">
+                            <input type="hidden" name="card_action" value="AccountingPeriods">
                             <input type="hidden" name="intent" value="create_required_periods_for_upload">
                             <input type="hidden" name="company_id" value="' . $companyId . '">
                             <input type="hidden" name="required_period_end" value="' . HelperFramework::escape($periodEnd) . '">

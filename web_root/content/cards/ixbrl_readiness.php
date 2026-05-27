@@ -19,7 +19,7 @@ final class _ixbrl_readinessCard extends CardBaseFramework
     {
         $readiness = (array)($context['ixbrl']['readiness'] ?? []);
         $company = (array)($readiness['company'] ?? $context['company'] ?? []);
-        $taxYear = (array)($readiness['tax_year'] ?? []);
+        $accountingPeriod = (array)($readiness['accounting_period'] ?? []);
         $checks = (array)($readiness['checks'] ?? []);
 
         $items = '';
@@ -37,7 +37,7 @@ final class _ixbrl_readinessCard extends CardBaseFramework
                     <h3 class="card-title">' . HelperFramework::escape((string)($company['company_name'] ?? 'Selected company')) . '</h3>
                     <span class="badge ' . (!empty($readiness['can_build_facts']) ? 'success' : 'danger') . '">' . HelperFramework::escape(!empty($readiness['can_build_facts']) ? 'Ready to build facts' : 'Blocked') . '</span>
                 </div>
-                <div class="helper">Period: ' . HelperFramework::escape((string)($taxYear['period_start'] ?? '')) . ' to ' . HelperFramework::escape((string)($taxYear['period_end'] ?? '')) . '</div>
+                <div class="helper">Period: ' . HelperFramework::escape((string)($accountingPeriod['period_start'] ?? '')) . ' to ' . HelperFramework::escape((string)($accountingPeriod['period_end'] ?? '')) . '</div>
                 <div class="helper">This builder creates an internal generated FRS 105 micro-entity accounts preview. It is not a complete HMRC CT600 submission package.</div>
             </section>
             <section class="summary-grid">' . $items . '</section>

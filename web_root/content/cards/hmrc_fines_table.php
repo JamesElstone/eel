@@ -18,7 +18,7 @@ final class _hmrc_fines_tableCard extends CardBaseFramework
     public function render(array $context): string
     {
         $companyId = (int)($context['company']['id'] ?? 0);
-        $taxYearId = (int)($context['company']['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($context['company']['accounting_period_id'] ?? 0);
         $items = array_values(array_filter(
             (array)($context['hmrc_obligations']['all_obligations'] ?? []),
             static fn(array $item): bool => in_array((string)($item['obligation_type'] ?? ''), ['hmrc_penalty', 'hmrc_interest'], true)
@@ -30,7 +30,7 @@ final class _hmrc_fines_tableCard extends CardBaseFramework
                 <input type="hidden" name="card_action" value="HmrcObligation">
                 <input type="hidden" name="intent" value="create_manual_obligation">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <div class="form-row"><label>Type</label><select class="select" name="obligation_type"><option value="hmrc_penalty">HMRC penalty</option><option value="hmrc_interest">HMRC interest</option><option value="other">Other HMRC balance</option></select></div>
                 <div class="form-row"><label>Due date</label><input class="input" type="date" name="due_date"></div>
                 <div class="form-row"><label>Amount due</label><input class="input" type="number" step="0.01" min="0" name="amount_due"></div>
@@ -48,7 +48,7 @@ final class _hmrc_fines_tableCard extends CardBaseFramework
         $rows = '';
         foreach ($items as $item) {
             $rows .= '<tr>
-                <td>' . HelperFramework::escape((string)($item['tax_year_label'] ?? '')) . '</td>
+                <td>' . HelperFramework::escape((string)($item['accounting_period_label'] ?? '')) . '</td>
                 <td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($item['obligation_type'] ?? ''), '_')) . '</td>
                 <td>' . HelperFramework::escape((string)($item['due_date'] ?? '')) . '</td>
                 <td>' . HelperFramework::escape($item['amount_due'] === null ? 'Not set' : FormattingFramework::money($item['amount_due'])) . '</td>

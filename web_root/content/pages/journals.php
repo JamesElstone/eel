@@ -37,11 +37,11 @@ final class _journals extends PageContextFramework
     ): array {
         $company = (array)($baseContext['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
-        $taxYearId = (int)($company['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
 
         return [
-            'journal_entries' => ($companyId > 0 && $taxYearId > 0)
-                ? (new TransactionJournalService())->fetchJournals($companyId, $taxYearId)
+            'journal_entries' => ($companyId > 0 && $accountingPeriodId > 0)
+                ? (new TransactionJournalService())->fetchJournals($companyId, $accountingPeriodId)
                 : [],
         ];
     }

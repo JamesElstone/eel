@@ -67,7 +67,7 @@ final class _dividends extends PageContextFramework
     ): array {
         $company = (array)($baseContext['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
-        $taxYearId = (int)($company['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $asAtDate = trim((string)$request->input('as_at_date', ''));
         $dividendService = new DividendService();
 
@@ -78,13 +78,13 @@ final class _dividends extends PageContextFramework
         return [
             'dividends' => [
                 'as_at_date' => $asAtDate,
-                'capacity' => $companyId > 0 && $taxYearId > 0
-                    ? $dividendService->getDividendCapacity($companyId, $taxYearId, $asAtDate !== '' ? $asAtDate : null)
+                'capacity' => $companyId > 0 && $accountingPeriodId > 0
+                    ? $dividendService->getDividendCapacity($companyId, $accountingPeriodId, $asAtDate !== '' ? $asAtDate : null)
                     : ['available' => false, 'errors' => ['Select a company and accounting period before reviewing dividends.']],
-                'history' => $companyId > 0 && $taxYearId > 0
-                    ? $dividendService->listDividends($companyId, $taxYearId)
+                'history' => $companyId > 0 && $accountingPeriodId > 0
+                    ? $dividendService->listDividends($companyId, $accountingPeriodId)
                     : [],
-                'warnings' => $dividendService->getDividendWarnings($companyId, $taxYearId),
+                'warnings' => $dividendService->getDividendWarnings($companyId, $accountingPeriodId),
                 'nominals' => (array)($nominals['accounts'] ?? []),
                 'nominal_errors' => (array)($nominals['errors'] ?? []),
             ],

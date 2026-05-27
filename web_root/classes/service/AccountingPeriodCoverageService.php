@@ -41,7 +41,7 @@ final class AccountingPeriodCoverageService
             $outsidePeriodCount = (int)InterfaceDB::fetchColumn( 'SELECT COUNT(*)
                  FROM transactions
                  WHERE company_id = ?
-                   AND tax_year_id = ?
+                   AND accounting_period_id = ?
                    AND (txn_date < ? OR txn_date > ?)', [$companyId, $accountingPeriodId, $periodStart, $periodEnd]);
         }
 

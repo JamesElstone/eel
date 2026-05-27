@@ -19,7 +19,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
     {
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
-        $taxYearId = (int)($company['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $run = (array)($context['ixbrl']['latest_run'] ?? []);
         $readiness = (array)($context['ixbrl']['readiness'] ?? []);
         $canBuild = !empty($readiness['can_build_facts']);
@@ -48,14 +48,14 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 <input type="hidden" name="card_action" value="Ixbrl">
                 <input type="hidden" name="intent" value="build_ixbrl_facts">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <button class="button" type="submit"' . ($canBuild ? '' : ' disabled') . '>Build / Refresh Facts</button>
             </form>
             <form method="post" action="?page=ixbrl_builder" data-ajax="true" class="actions-row">
                 <input type="hidden" name="card_action" value="Ixbrl">
                 <input type="hidden" name="intent" value="generate_ixbrl_preview">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <button class="button primary" type="submit"' . ($canGenerate ? '' : ' disabled') . '>Generate iXBRL Preview</button>
                 ' . $download . '
             </form>

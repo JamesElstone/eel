@@ -30,17 +30,17 @@ final class _banking_reconciliationCard extends CardBaseFramework
                 'method' => 'fetchAccountPanels',
                 'params' => [
                     'companyId' => ':company.id',
-                    'taxYearId' => ':company.tax_year_id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                     'bankNominalId' => ':company.settings.default_bank_nominal_id',
                 ],
             ],
             [
-                'key' => 'tax_year',
-                'service' => TaxYearRepository::class,
-                'method' => 'fetchTaxYear',
+                'key' => 'accounting_period',
+                'service' => AccountingPeriodRepository::class,
+                'method' => 'fetchAccountingPeriod',
                 'params' => [
                     'companyId' => ':company.id',
-                    'taxYearId' => ':company.tax_year_id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
         ];
@@ -68,7 +68,7 @@ final class _banking_reconciliationCard extends CardBaseFramework
     public function render(array $context): string
     {
         $panels = (array)($context['services']['reconciliationPanels'] ?? []);
-        $taxYearLabel = (string)($context['services']['tax_year']['label'] ?? '');
+        $accountingPeriodLabel = (string)($context['services']['accounting_period']['label'] ?? '');
         $panelsHtml = '';
 
         foreach ($panels as $index => $panel) {
@@ -96,8 +96,8 @@ final class _banking_reconciliationCard extends CardBaseFramework
                         </header>
                         <div class="indexed-section-body">'
                             . ($accountType === CompanyAccountService::TYPE_TRADE
-                                ? $this->renderTradePanel($panel, $taxYearLabel)
-                                : $this->renderBankPanel($panel, $taxYearLabel, $index, $context))
+                                ? $this->renderTradePanel($panel, $accountingPeriodLabel)
+                                : $this->renderBankPanel($panel, $accountingPeriodLabel, $index, $context))
                         . '</div>
                     </div>
                 </section>';
@@ -125,7 +125,7 @@ final class _banking_reconciliationCard extends CardBaseFramework
         return $tables;
     }
 
-    private function renderBankPanel(array $panel, string $taxYearLabel, int $index, array $context): string
+    private function renderBankPanel(array $panel, string $accountingPeriodLabel, int $index, array $context): string
     {
         $account = is_array($panel['account'] ?? null) ? $panel['account'] : [];
         $ledgerSummary = is_array($panel['ledger_summary'] ?? null) ? $panel['ledger_summary'] : [];
@@ -133,8 +133,8 @@ final class _banking_reconciliationCard extends CardBaseFramework
         return '
             <div class="summary-grid four">
                 <div class="summary-card">
-                    <div class="summary-label">Selected tax year</div>
-                    <div class="summary-value"><span class="badge info">' . HelperFramework::escape($taxYearLabel) . '</span></div>
+                    <div class="summary-label">Selected accounting period</div>
+                    <div class="summary-value"><span class="badge info">' . HelperFramework::escape($accountingPeriodLabel) . '</span></div>
                 </div>
                 <div class="summary-card">
                     <div class="summary-label">Statement continuity</div>
@@ -181,15 +181,15 @@ final class _banking_reconciliationCard extends CardBaseFramework
             </div>';
     }
 
-    private function renderTradePanel(array $panel, string $taxYearLabel): string
+    private function renderTradePanel(array $panel, string $accountingPeriodLabel): string
     {
         $summary = is_array($panel['trade_summary'] ?? null) ? $panel['trade_summary'] : [];
 
         return '
             <div class="summary-grid four">
                 <div class="summary-card">
-                    <div class="summary-label">Selected tax year</div>
-                    <div class="summary-value"><span class="badge info">' . HelperFramework::escape($taxYearLabel) . '</span></div>
+                    <div class="summary-label">Selected accounting period</div>
+                    <div class="summary-value"><span class="badge info">' . HelperFramework::escape($accountingPeriodLabel) . '</span></div>
                 </div>
                 <div class="summary-card">
                     <div class="summary-label">Tagged ledger lines</div>
@@ -242,7 +242,7 @@ final class _banking_reconciliationCard extends CardBaseFramework
         return TableFramework::make($key, $this->bankUploadRows($panel))
             ->filename($filename)
             ->exportLimit(1000)
-            ->empty('No bank statement uploads are available for ' . $accountName . ' in the selected tax year.')
+            ->empty('No bank statement uploads are available for ' . $accountName . ' in the selected accounting period.')
             ->classes(wrapperClass: 'table-scroll panel-soft')
             ->primarySecondaryColumn(
                 'statement_month',

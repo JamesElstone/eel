@@ -9,20 +9,20 @@ declare(strict_types=1);
 
 final class BankingReconciliationService
 {
-    public function fetchBankAccountPanels(int $companyId, int $taxYearId, int $bankNominalId): array {
-        return $this->fetchAccountPanelsInternal($companyId, $taxYearId, $bankNominalId, false);
+    public function fetchBankAccountPanels(int $companyId, int $accountingPeriodId, int $bankNominalId): array {
+        return $this->fetchAccountPanelsInternal($companyId, $accountingPeriodId, $bankNominalId, false);
     }
 
-    public function fetchBankAccountPanelsWithAdjacentStatements(int $companyId, int $taxYearId, int $bankNominalId): array {
-        return $this->fetchAccountPanelsInternal($companyId, $taxYearId, $bankNominalId, true);
+    public function fetchBankAccountPanelsWithAdjacentStatements(int $companyId, int $accountingPeriodId, int $bankNominalId): array {
+        return $this->fetchAccountPanelsInternal($companyId, $accountingPeriodId, $bankNominalId, true);
     }
 
-    public function fetchAccountPanels(int $companyId, int $taxYearId, int $bankNominalId): array {
-        return $this->fetchAccountPanelsInternal($companyId, $taxYearId, $bankNominalId, false);
+    public function fetchAccountPanels(int $companyId, int $accountingPeriodId, int $bankNominalId): array {
+        return $this->fetchAccountPanelsInternal($companyId, $accountingPeriodId, $bankNominalId, false);
     }
 
-    private function fetchAccountPanelsInternal(int $companyId, int $taxYearId, int $bankNominalId, bool $returnAdjacentStatements): array {
-        if ($companyId <= 0 || $taxYearId <= 0) {
+    private function fetchAccountPanelsInternal(int $companyId, int $accountingPeriodId, int $bankNominalId, bool $returnAdjacentStatements): array {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return [];
         }
 
@@ -36,8 +36,8 @@ final class BankingReconciliationService
             $accounts,
             static fn(array $account): bool => (string)($account['account_type'] ?? '') === CompanyAccountService::TYPE_BANK
         ));
-        $taxYear = (new TaxYearRepository())->fetchTaxYear($companyId, $taxYearId);
-        $uploadsByAccount = $this->fetchUploadsByAccount($companyId, $taxYearId, array_column($bankAccounts, 'id'), $taxYear);
+        $accountingPeriod = (new AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        $uploadsByAccount = $this->fetchUploadsByAccount($companyId, $accountingPeriodId, array_column($bankAccounts, 'id'), $accountingPeriod);
         $rowsByUpload = $this->fetchRowsByUpload($this->flattenUploadIds($uploadsByAccount));
         $panels = [];
 
@@ -48,7 +48,7 @@ final class BankingReconciliationService
             $uploadAnalyses = [];
             $ledgerNominalId = $accountNominalId > 0 ? $accountNominalId : $bankNominalId;
             $ledgerDeltas = $accountType === CompanyAccountService::TYPE_BANK && $ledgerNominalId > 0
-                ? $this->fetchLedgerBankDeltas($companyId, $taxYearId, $ledgerNominalId)
+                ? $this->fetchLedgerBankDeltas($companyId, $accountingPeriodId, $ledgerNominalId)
                 : [];
 
             if ($accountType === CompanyAccountService::TYPE_BANK) {
@@ -61,7 +61,7 @@ final class BankingReconciliationService
             $uploadAnalyses = $this->applyContinuityChecks($uploadAnalyses);
             $visibleUploadAnalyses = $returnAdjacentStatements
                 ? $uploadAnalyses
-                : $this->filterUploadAnalysesForTaxYear($uploadAnalyses, $taxYearId);
+                : $this->filterUploadAnalysesForAccountingPeriod($uploadAnalyses, $accountingPeriodId);
             $ledgerSummary = $this->buildLedgerReconciliationSummary(
                 $visibleUploadAnalyses,
                 $ledgerDeltas,
@@ -69,13 +69,13 @@ final class BankingReconciliationService
                 $accountNominalId > 0
             );
             $tradeSummary = $accountType === CompanyAccountService::TYPE_TRADE
-                ? $this->buildTradeLedgerSummary($companyId, $taxYearId, $accountId)
+                ? $this->buildTradeLedgerSummary($companyId, $accountingPeriodId, $accountId)
                 : null;
 
             $panels[] = [
                 'account' => $account,
                 'account_type' => $accountType,
-                'tax_year_id' => $taxYearId,
+                'accounting_period_id' => $accountingPeriodId,
                 'statement_continuity_status' => $this->aggregateStatus($visibleUploadAnalyses, 'continuity_status'),
                 'running_balance_status' => $this->aggregateStatus($visibleUploadAnalyses, 'running_balance_status'),
                 'ledger_reconciliation_status' => $tradeSummary !== null ? (string)$tradeSummary['status'] : (string)$ledgerSummary['status'],
@@ -107,7 +107,7 @@ final class BankingReconciliationService
         ]);
     }
 
-    private function buildTradeLedgerSummary(int $companyId, int $taxYearId, int $accountId): array {
+    private function buildTradeLedgerSummary(int $companyId, int $accountingPeriodId, int $accountId): array {
         $row = InterfaceDB::fetchOne( 'SELECT COUNT(jl.id) AS line_count,
                     COALESCE(SUM(COALESCE(jl.debit, 0)), 0.00) AS debit_total,
                     COALESCE(SUM(COALESCE(jl.credit, 0)), 0.00) AS credit_total,
@@ -116,11 +116,11 @@ final class BankingReconciliationService
              FROM journals j
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
              WHERE j.company_id = :company_id
-               AND j.tax_year_id = :tax_year_id
+               AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
                AND jl.company_account_id = :company_account_id', [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'company_account_id' => $accountId,
         ]);
 
@@ -162,21 +162,21 @@ final class BankingReconciliationService
         ];
     }
 
-    private function fetchUploadsByAccount(int $companyId, int $taxYearId, array $accountIds, ?array $continuityWindowTaxYear = null): array {
+    private function fetchUploadsByAccount(int $companyId, int $accountingPeriodId, array $accountIds, ?array $continuityWindowAccountingPeriod = null): array {
         if ($accountIds === []) {
             return [];
         }
 
-        if ($continuityWindowTaxYear !== null) {
-            return $this->fetchUploadsByAccountWithAdjacentStatements($companyId, $taxYearId, $accountIds, $continuityWindowTaxYear);
+        if ($continuityWindowAccountingPeriod !== null) {
+            return $this->fetchUploadsByAccountWithAdjacentStatements($companyId, $accountingPeriodId, $accountIds, $continuityWindowAccountingPeriod);
         }
 
         $placeholders = implode(', ', array_fill(0, count($accountIds), '?'));
-        $params = array_merge([$companyId, $taxYearId], array_map('intval', $accountIds));
+        $params = array_merge([$companyId, $accountingPeriodId], array_map('intval', $accountIds));
         $stmt = InterfaceDB::prepare(
             'SELECT id,
                     company_id,
-                    tax_year_id,
+                    accounting_period_id,
                     account_id,
                     original_filename,
                     statement_month,
@@ -188,7 +188,7 @@ final class BankingReconciliationService
                     rows_committed
              FROM statement_uploads
              WHERE company_id = ?
-               AND tax_year_id = ?
+               AND accounting_period_id = ?
                AND account_id IN (' . $placeholders . ')
              ORDER BY account_id ASC, COALESCE(date_range_start, statement_month, date_range_end) ASC, id ASC'
         );
@@ -203,23 +203,23 @@ final class BankingReconciliationService
         return $grouped;
     }
 
-    private function fetchUploadsByAccountWithAdjacentStatements(int $companyId, int $taxYearId, array $accountIds, array $taxYear): array {
-        $periodStart = trim((string)($taxYear['period_start'] ?? ''));
-        $periodEnd = trim((string)($taxYear['period_end'] ?? ''));
+    private function fetchUploadsByAccountWithAdjacentStatements(int $companyId, int $accountingPeriodId, array $accountIds, array $accountingPeriod): array {
+        $periodStart = trim((string)($accountingPeriod['period_start'] ?? ''));
+        $periodEnd = trim((string)($accountingPeriod['period_end'] ?? ''));
 
         if ($periodStart === '' || $periodEnd === '') {
-            return $this->fetchUploadsByAccount($companyId, $taxYearId, $accountIds);
+            return $this->fetchUploadsByAccount($companyId, $accountingPeriodId, $accountIds);
         }
 
         $placeholders = implode(', ', array_fill(0, count($accountIds), '?'));
         $params = array_merge(
-            [$companyId, $taxYearId, $periodStart, $periodEnd],
+            [$companyId, $accountingPeriodId, $periodStart, $periodEnd],
             array_map('intval', $accountIds)
         );
         $stmt = InterfaceDB::prepare(
             'SELECT id,
                     company_id,
-                    tax_year_id,
+                    accounting_period_id,
                     account_id,
                     original_filename,
                     statement_month,
@@ -232,7 +232,7 @@ final class BankingReconciliationService
              FROM statement_uploads
              WHERE company_id = ?
                AND (
-                    tax_year_id = ?
+                    accounting_period_id = ?
                     OR COALESCE(date_range_end, date_range_start, statement_month) < ?
                     OR COALESCE(date_range_start, statement_month, date_range_end) > ?
                )
@@ -248,7 +248,7 @@ final class BankingReconciliationService
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $accountId = (int)$row['account_id'];
 
-            if ((int)($row['tax_year_id'] ?? 0) === $taxYearId) {
+            if ((int)($row['accounting_period_id'] ?? 0) === $accountingPeriodId) {
                 $selected[$accountId][] = $row;
                 continue;
             }
@@ -363,20 +363,20 @@ final class BankingReconciliationService
         return $grouped;
     }
 
-    private function fetchLedgerBankDeltas(int $companyId, int $taxYearId, int $bankNominalId): array {
+    private function fetchLedgerBankDeltas(int $companyId, int $accountingPeriodId, int $bankNominalId): array {
         $rows = InterfaceDB::fetchAll( 'SELECT j.journal_date,
                     COALESCE(SUM(COALESCE(jl.debit, 0) - COALESCE(jl.credit, 0)), 0.00) AS day_delta,
                     SUM(CASE WHEN COALESCE(j.source_type, \'\') <> \'bank_csv\' THEN 1 ELSE 0 END) AS non_csv_lines
              FROM journals j
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
              WHERE j.company_id = :company_id
-               AND j.tax_year_id = :tax_year_id
+               AND j.accounting_period_id = :accounting_period_id
                AND jl.nominal_account_id = :bank_nominal_id
                AND j.is_posted = 1
              GROUP BY j.journal_date
              ORDER BY j.journal_date ASC', [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'bank_nominal_id' => $bankNominalId,
         ]);
 
@@ -505,13 +505,13 @@ final class BankingReconciliationService
         return $uploads;
     }
 
-    private function filterUploadAnalysesForTaxYear(array $uploads, int $taxYearId): array {
+    private function filterUploadAnalysesForAccountingPeriod(array $uploads, int $accountingPeriodId): array {
         return array_values(array_filter(
             $uploads,
-            static function (array $uploadCheck) use ($taxYearId): bool {
+            static function (array $uploadCheck) use ($accountingPeriodId): bool {
                 $upload = is_array($uploadCheck['upload'] ?? null) ? $uploadCheck['upload'] : [];
 
-                return (int)($upload['tax_year_id'] ?? 0) === $taxYearId;
+                return (int)($upload['accounting_period_id'] ?? 0) === $accountingPeriodId;
             }
         ));
     }

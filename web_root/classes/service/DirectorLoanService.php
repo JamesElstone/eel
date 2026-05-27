@@ -20,7 +20,7 @@ final class DirectorLoanService
 
         $stmt = InterfaceDB::prepareExecute(
             'SELECT id, label, period_start, period_end
-             FROM tax_years
+             FROM accounting_periods
              WHERE company_id = :company_id
              ORDER BY period_start DESC, id DESC',
             ['company_id' => $companyId]
@@ -39,20 +39,20 @@ final class DirectorLoanService
         return [
             'success' => true,
             'periods' => $periods,
-            'selected_tax_year_id' => count($periods) > 0 ? (int)$periods[0]['id'] : 0,
-            'tax_year_id' => count($periods) > 0 ? (int)$periods[0]['id'] : 0,
+            'selected_accounting_period_id' => count($periods) > 0 ? (int)$periods[0]['id'] : 0,
+            'accounting_period_id' => count($periods) > 0 ? (int)$periods[0]['id'] : 0,
         ];
     }
 
-    public function fetchStatement(int $companyId, int $taxYearId): array {
+    public function fetchStatement(int $companyId, int $accountingPeriodId): array {
         $validation = $this->validateCompany($companyId);
         if ($validation !== null) {
             return $validation;
         }
 
-        $taxYear = $this->fetchTaxYear($companyId, $taxYearId);
-        if ($taxYear === null) {
-            return $this->errorResult('The selected accounting period could not be found for this company.', 'tax_year_not_found', 404);
+        $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null) {
+            return $this->errorResult('The selected accounting period could not be found for this company.', 'accounting_period_not_found', 404);
         }
 
         $settings = $this->fetchCompanySettings($companyId);
@@ -66,19 +66,19 @@ final class DirectorLoanService
             return $this->errorResult('The configured Director Loan nominal could not be found or is inactive.', 'director_loan_nominal_invalid', 422);
         }
 
-        $openingBalance = $this->fetchOpeningBalance($companyId, $directorLoanNominalId, (string)$taxYear['period_start']);
+        $openingBalance = $this->fetchOpeningBalance($companyId, $directorLoanNominalId, (string)$accountingPeriod['period_start']);
         $movementRows = $this->fetchMovementRows(
             $companyId,
             $directorLoanNominalId,
-            (string)$taxYear['period_start'],
-            (string)$taxYear['period_end']
+            (string)$accountingPeriod['period_start'],
+            (string)$accountingPeriod['period_end']
         );
 
         $statementRows = [[
             'row_type' => 'opening_balance',
             'journal_id' => null,
             'journal_line_id' => null,
-            'journal_date' => (string)$taxYear['period_start'],
+            'journal_date' => (string)$accountingPeriod['period_start'],
             'description' => 'Balance brought forward',
             'source_type' => null,
             'signed_amount' => null,
@@ -114,11 +114,11 @@ final class DirectorLoanService
 
         return [
             'success' => true,
-            'tax_year' => [
-                'id' => (int)$taxYear['id'],
-                'label' => (string)$taxYear['label'],
-                'period_start' => (string)$taxYear['period_start'],
-                'period_end' => (string)$taxYear['period_end'],
+            'accounting_period' => [
+                'id' => (int)$accountingPeriod['id'],
+                'label' => (string)$accountingPeriod['label'],
+                'period_start' => (string)$accountingPeriod['period_start'],
+                'period_end' => (string)$accountingPeriod['period_end'],
             ],
             'director_loan_nominal' => [
                 'id' => (int)($nominal['id'] ?? 0),
@@ -244,25 +244,25 @@ final class DirectorLoanService
             : $journalDescription . ' - ' . $lineDescription;
     }
 
-    private function fetchTaxYear(int $companyId, int $taxYearId): ?array {
-        if ($companyId <= 0 || $taxYearId <= 0) {
+    private function fetchAccountingPeriod(int $companyId, int $accountingPeriodId): ?array {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return null;
         }
 
         $stmt = InterfaceDB::prepareExecute(
             'SELECT id, label, period_start, period_end
-             FROM tax_years
+             FROM accounting_periods
              WHERE id = :id
                AND company_id = :company_id
              LIMIT 1',
             [
-            'id' => $taxYearId,
+            'id' => $accountingPeriodId,
             'company_id' => $companyId,
             ]
         );
-        $taxYear = $stmt->fetch();
+        $accountingPeriod = $stmt->fetch();
 
-        return is_array($taxYear) ? $taxYear : null;
+        return is_array($accountingPeriod) ? $accountingPeriod : null;
     }
 
     private function fetchNominalAccount(int $nominalAccountId): ?array {

@@ -22,8 +22,8 @@ final class CompanyAction implements ActionInterfaceFramework
             'clear_imported_accounting_data' => $this->clearImportedAccountingData($request),
             'delete_orphaned_transferred_files' => $this->deleteOrphanedTransferredFiles($request),
             'delete_company' => $this->deleteCompany($request),
-            'add_tax_period' => $this->saveAccountingPeriod($request, true),
-            'update_tax_period' => $this->saveAccountingPeriod($request, false),
+            'add_accounting_period' => $this->saveAccountingPeriod($request, true),
+            'update_accounting_period' => $this->saveAccountingPeriod($request, false),
             'save_import_review' => $this->saveImportReview($request),
             default => ActionResultFramework::none(),
         };
@@ -209,8 +209,8 @@ final class CompanyAction implements ActionInterfaceFramework
                 throw new RuntimeException('The added company could not be selected.');
             }
 
-            $taxYears = (new TaxYearRepository())->fetchTaxYears($companyId);
-            $taxYearId = (int)($taxYears[0]['id'] ?? 0);
+            $accountingPeriods = (new AccountingPeriodRepository())->fetchAccountingPeriods($companyId);
+            $accountingPeriodId = (int)($accountingPeriods[0]['id'] ?? 0);
             $selectedCompanyName = trim((string)($selectedCompany['company_name'] ?? $companyName));
             $selectedCompanyNumber = trim((string)($selectedCompany['company_number'] ?? $companyNumber));
 
@@ -218,7 +218,7 @@ final class CompanyAction implements ActionInterfaceFramework
                 $companyId,
                 $selectedCompanyName,
                 $selectedCompanyNumber,
-                $taxYearId
+                $accountingPeriodId
             );
 
             return ActionResultFramework::success(
@@ -229,7 +229,7 @@ final class CompanyAction implements ActionInterfaceFramework
                     'company_id' => $companyId,
                     'company_name' => $selectedCompanyName !== '' ? $selectedCompanyName : null,
                     'company_number' => $selectedCompanyNumber !== '' ? $selectedCompanyNumber : null,
-                    'tax_year_id' => $taxYearId > 0 ? $taxYearId : null,
+                    'accounting_period_id' => $accountingPeriodId > 0 ? $accountingPeriodId : null,
                     'company_search_results' => [],
                     'company_search_term' => '',
                 ]
@@ -748,22 +748,22 @@ final class CompanyAction implements ActionInterfaceFramework
             $nextCompanyId = (int)($nextCompany['id'] ?? 0);
             $nextCompanyName = trim((string)($nextCompany['company_name'] ?? ''));
             $nextCompanyNumber = trim((string)($nextCompany['company_number'] ?? ''));
-            $nextTaxYearId = 0;
+            $nextAccountingPeriodId = 0;
 
             if ($nextCompanyId > 0) {
-                $firstTaxYear = (new TaxYearRepository())->fetchTaxYears($nextCompanyId);
-                $nextTaxYearId = (int)($firstTaxYear[0]['id'] ?? 0);
+                $firstAccountingPeriod = (new AccountingPeriodRepository())->fetchAccountingPeriods($nextCompanyId);
+                $nextAccountingPeriodId = (int)($firstAccountingPeriod[0]['id'] ?? 0);
             }
 
             (new AccountingContextService())->setPageContext(
                 $nextCompanyId,
                 $nextCompanyName,
                 $nextCompanyNumber,
-                $nextTaxYearId
+                $nextAccountingPeriodId
             );
 
             return ActionResultFramework::success(
-                ['page.context', SiteContextCoordinatorFramework::UI_INVALIDATION_FACT, 'layout.sidebar'],
+                ['page.context', SiteContextCoordinatorFramework::UI_INVALIDATION_FACT, 'layout.sidebar', 'settings_setup_health'],
                 [[
                     'type' => 'success',
                     'message' => 'Company deleted successfully: ' . ($deletedCompanyName !== '' ? $deletedCompanyName : $deletedCompanyNumber) . '. All company-linked data, including stored Companies House reference documents, has been removed; nominal tables were left untouched.',
@@ -773,7 +773,7 @@ final class CompanyAction implements ActionInterfaceFramework
                     'company_id' => $nextCompanyId > 0 ? $nextCompanyId : null,
                     'company_name' => $nextCompanyName !== '' ? $nextCompanyName : null,
                     'company_number' => $nextCompanyNumber !== '' ? $nextCompanyNumber : null,
-                    'tax_year_id' => $nextTaxYearId > 0 ? $nextTaxYearId : null,
+                    'accounting_period_id' => $nextAccountingPeriodId > 0 ? $nextAccountingPeriodId : null,
                     'company_search_results' => [],
                     'company_search_term' => '',
                 ]
@@ -805,12 +805,12 @@ final class CompanyAction implements ActionInterfaceFramework
             );
         }
 
-        $requestedTaxYearId = max(0, (int)$request->input('tax_year_id', 0));
+        $requestedAccountingPeriodId = max(0, (int)$request->input('accounting_period_id', 0));
         $financialPeriodLabel = trim((string)$request->post('financial_period_label', ''));
         $periodStart = trim((string)$request->post('period_start', ''));
         $periodEnd = trim((string)$request->post('period_end', ''));
 
-        $errors = $this->validateAccountingPeriodPayload($companyId, $requestedTaxYearId, $periodStart, $periodEnd, $isCreate);
+        $errors = $this->validateAccountingPeriodPayload($companyId, $requestedAccountingPeriodId, $periodStart, $periodEnd, $isCreate);
         if ($errors !== []) {
             return new ActionResultFramework(false, ['page.context'], array_map(
                 static fn(string $message): array => ['type' => 'error', 'message' => $message],
@@ -830,7 +830,7 @@ final class CompanyAction implements ActionInterfaceFramework
             $settingsService = new CompanySettingsService();
             $settings = [
                 'company_id' => (string)$companyId,
-                'tax_year_id' => $isCreate ? '' : (string)$requestedTaxYearId,
+                'accounting_period_id' => $isCreate ? '' : (string)$requestedAccountingPeriodId,
                 'financial_period_label' => $financialPeriodLabel !== ''
                     ? $financialPeriodLabel
                     : TaxPeriodService::accountingPeriodLabel($periodStart, $periodEnd),
@@ -840,8 +840,8 @@ final class CompanyAction implements ActionInterfaceFramework
 
             $settingsService->saveAccountingSection($settingsStore, $settings);
 
-            $savedTaxYearId = max(0, (int)($settings['tax_year_id'] ?? 0));
-            if ($savedTaxYearId <= 0) {
+            $savedAccountingPeriodId = max(0, (int)($settings['accounting_period_id'] ?? 0));
+            if ($savedAccountingPeriodId <= 0) {
                 throw new RuntimeException('The accounting period could not be saved.');
             }
 
@@ -849,7 +849,7 @@ final class CompanyAction implements ActionInterfaceFramework
                 $companyId,
                 trim((string)($company['company_name'] ?? '')),
                 trim((string)($company['company_number'] ?? '')),
-                $savedTaxYearId
+                $savedAccountingPeriodId
             );
 
             return ActionResultFramework::success(
@@ -861,7 +861,7 @@ final class CompanyAction implements ActionInterfaceFramework
                 [],
                 [
                     'company_id' => $companyId,
-                    'tax_year_id' => $savedTaxYearId,
+                    'accounting_period_id' => $savedAccountingPeriodId,
                 ]
             );
         } catch (Throwable $exception) {
@@ -878,7 +878,7 @@ final class CompanyAction implements ActionInterfaceFramework
 
     private function validateAccountingPeriodPayload(
         int $companyId,
-        int $taxYearId,
+        int $accountingPeriodId,
         string $periodStart,
         string $periodEnd,
         bool $isCreate
@@ -907,15 +907,15 @@ final class CompanyAction implements ActionInterfaceFramework
             return $errors;
         }
 
-        if (!$isCreate && $taxYearId <= 0) {
+        if (!$isCreate && $accountingPeriodId <= 0) {
             $errors[] = 'Select an existing accounting period before saving changes.';
             return $errors;
         }
 
-        $repository = new TaxYearRepository();
-        $periodId = $isCreate ? 0 : $taxYearId;
+        $repository = new AccountingPeriodRepository();
+        $periodId = $isCreate ? 0 : $accountingPeriodId;
 
-        if (!$isCreate && $repository->fetchTaxYear($companyId, $taxYearId) === null) {
+        if (!$isCreate && $repository->fetchAccountingPeriod($companyId, $accountingPeriodId) === null) {
             $errors[] = 'The selected accounting period could not be loaded.';
             return $errors;
         }

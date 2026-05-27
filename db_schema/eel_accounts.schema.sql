@@ -363,7 +363,7 @@ DROP TABLE IF EXISTS `expense_claims`;
 CREATE TABLE `expense_claims` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
-  `tax_year_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
   `claimant_id` int(11) NOT NULL,
   `claim_year` smallint(6) NOT NULL,
   `claim_month` tinyint(4) NOT NULL,
@@ -383,13 +383,13 @@ CREATE TABLE `expense_claims` (
   UNIQUE KEY `uniq_expense_claims_company_reference` (`company_id`,`claim_reference_code`),
   UNIQUE KEY `uniq_expense_claims_company_claimant_month` (`company_id`,`claimant_id`,`claim_year`,`claim_month`),
   KEY `idx_expense_claims_company_period` (`company_id`,`claim_year`,`claim_month`),
-  KEY `idx_expense_claims_tax_year` (`tax_year_id`),
+  KEY `idx_expense_claims_accounting_period` (`accounting_period_id`),
   KEY `idx_expense_claims_claimant` (`claimant_id`),
   KEY `idx_expense_claims_posted_journal` (`posted_journal_id`),
   CONSTRAINT `fk_expense_claims_claimant` FOREIGN KEY (`claimant_id`) REFERENCES `expense_claimants` (`id`) ON UPDATE CASCADE,
   CONSTRAINT `fk_expense_claims_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_expense_claims_posted_journal` FOREIGN KEY (`posted_journal_id`) REFERENCES `journals` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT `fk_expense_claims_tax_year` FOREIGN KEY (`tax_year_id`) REFERENCES `tax_years` (`id`) ON UPDATE CASCADE,
+  CONSTRAINT `fk_expense_claims_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON UPDATE CASCADE,
   CONSTRAINT `chk_expense_claims_month` CHECK (`claim_month` between 1 and 12)
 ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -405,7 +405,7 @@ CREATE TABLE `journal_entry_metadata` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `journal_id` bigint(20) NOT NULL,
   `company_id` int(11) NOT NULL,
-  `tax_year_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
   `journal_tag` varchar(64) NOT NULL,
   `journal_key` varchar(128) NOT NULL DEFAULT '',
   `entry_mode` varchar(32) NOT NULL DEFAULT 'manual',
@@ -416,16 +416,16 @@ CREATE TABLE `journal_entry_metadata` (
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_journal_entry_metadata_journal` (`journal_id`),
-  UNIQUE KEY `uq_journal_entry_metadata_key` (`company_id`,`tax_year_id`,`journal_tag`,`journal_key`),
-  KEY `idx_journal_entry_metadata_period` (`company_id`,`tax_year_id`,`journal_tag`),
+  UNIQUE KEY `uq_journal_entry_metadata_key` (`company_id`,`accounting_period_id`,`journal_tag`,`journal_key`),
+  KEY `idx_journal_entry_metadata_period` (`company_id`,`accounting_period_id`,`journal_tag`),
   KEY `idx_journal_entry_metadata_related` (`related_journal_id`),
-  KEY `fk_journal_entry_metadata_tax_year` (`tax_year_id`),
+  KEY `fk_journal_entry_metadata_accounting_period` (`accounting_period_id`),
   KEY `fk_journal_entry_metadata_replacement_journal` (`replacement_of_journal_id`),
   CONSTRAINT `fk_journal_entry_metadata_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_journal_entry_metadata_journal` FOREIGN KEY (`journal_id`) REFERENCES `journals` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_journal_entry_metadata_related_journal` FOREIGN KEY (`related_journal_id`) REFERENCES `journals` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_journal_entry_metadata_replacement_journal` FOREIGN KEY (`replacement_of_journal_id`) REFERENCES `journals` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT `fk_journal_entry_metadata_tax_year` FOREIGN KEY (`tax_year_id`) REFERENCES `tax_years` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `fk_journal_entry_metadata_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -466,7 +466,7 @@ DROP TABLE IF EXISTS `journals`;
 CREATE TABLE `journals` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
-  `tax_year_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
   `source_type` enum('bank_csv','director_loan_register','expense_register','manual','asset_register','asset_depreciation','asset_disposal') NOT NULL,
   `source_ref` varchar(255) DEFAULT NULL,
   `journal_date` date NOT NULL,
@@ -477,10 +477,10 @@ CREATE TABLE `journals` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_journals_company_source_ref` (`company_id`,`source_type`,`source_ref`),
   KEY `idx_journals_company_date` (`company_id`,`journal_date`),
-  KEY `idx_journals_tax_year_date` (`tax_year_id`,`journal_date`),
+  KEY `idx_journals_accounting_period_date` (`accounting_period_id`,`journal_date`),
   KEY `idx_journals_source_type` (`source_type`),
   CONSTRAINT `fk_journals_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_journals_tax_year` FOREIGN KEY (`tax_year_id`) REFERENCES `tax_years` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `fk_journals_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=10 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -494,7 +494,7 @@ DROP TABLE IF EXISTS `hmrc_obligations`;
 CREATE TABLE `hmrc_obligations` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
-  `tax_year_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
   `obligation_type` enum('ct_payment','ct600_filing','hmrc_penalty','hmrc_interest','other') NOT NULL,
   `period_start` date NOT NULL,
   `period_end` date NOT NULL,
@@ -511,17 +511,73 @@ CREATE TABLE `hmrc_obligations` (
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
-  KEY `idx_hmrc_obligations_company_tax_year` (`company_id`,`tax_year_id`),
-  KEY `idx_hmrc_obligations_period_type` (`company_id`,`tax_year_id`,`obligation_type`),
+  KEY `idx_hmrc_obligations_company_accounting_period` (`company_id`,`accounting_period_id`),
+  KEY `idx_hmrc_obligations_period_type` (`company_id`,`accounting_period_id`,`obligation_type`),
   KEY `idx_hmrc_obligations_type` (`obligation_type`),
   KEY `idx_hmrc_obligations_due_date` (`due_date`),
   KEY `idx_hmrc_obligations_status` (`status`),
   KEY `idx_hmrc_obligations_company_due_status` (`company_id`,`due_date`,`status`),
-  KEY `fk_hmrc_obligations_tax_year` (`tax_year_id`),
+  KEY `fk_hmrc_obligations_accounting_period` (`accounting_period_id`),
   KEY `fk_hmrc_obligations_journal` (`related_journal_id`),
   CONSTRAINT `fk_hmrc_obligations_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_hmrc_obligations_journal` FOREIGN KEY (`related_journal_id`) REFERENCES `journals` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT `fk_hmrc_obligations_tax_year` FOREIGN KEY (`tax_year_id`) REFERENCES `tax_years` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `fk_hmrc_obligations_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `corporation_tax_periods`
+--
+
+DROP TABLE IF EXISTS `corporation_tax_periods`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `corporation_tax_periods` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `sequence_no` int(11) NOT NULL,
+  `period_start` date NOT NULL,
+  `period_end` date NOT NULL,
+  `status` enum('pending','computed','ready','submitted','accepted','rejected','superseded') NOT NULL DEFAULT 'pending',
+  `latest_computation_run_id` int(11) DEFAULT NULL,
+  `latest_submission_id` bigint(20) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ct_period_sequence` (`accounting_period_id`,`sequence_no`),
+  KEY `idx_ct_period_company_period` (`company_id`,`accounting_period_id`),
+  KEY `idx_ct_period_status` (`company_id`,`accounting_period_id`,`status`),
+  CONSTRAINT `fk_ct_period_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct_period_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `corporation_tax_computation_runs`
+--
+
+DROP TABLE IF EXISTS `corporation_tax_computation_runs`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `corporation_tax_computation_runs` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `ct_period_id` int(11) NOT NULL,
+  `period_start` date NOT NULL,
+  `period_end` date NOT NULL,
+  `status` enum('draft','generated','failed') NOT NULL DEFAULT 'draft',
+  `computation_hash` char(64) NOT NULL,
+  `summary_json` longtext NOT NULL,
+  `generated_path` varchar(1000) DEFAULT NULL,
+  `generated_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_ct_computation_period` (`ct_period_id`,`generated_at`),
+  KEY `idx_ct_computation_company_period` (`company_id`,`accounting_period_id`,`generated_at`),
+  CONSTRAINT `fk_ct_computation_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct_computation_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ct_computation_ct_period` FOREIGN KEY (`ct_period_id`) REFERENCES `corporation_tax_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -535,7 +591,8 @@ DROP TABLE IF EXISTS `hmrc_ct600_submissions`;
 CREATE TABLE `hmrc_ct600_submissions` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
-  `tax_year_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `ct_period_id` int(11) DEFAULT NULL,
   `mode` enum('TEST','LIVE') NOT NULL,
   `status` enum('draft','validating','validation_failed','ready','submitting','accepted','rejected','failed') NOT NULL,
   `submission_type` enum('original','amendment') NOT NULL DEFAULT 'original',
@@ -557,10 +614,12 @@ CREATE TABLE `hmrc_ct600_submissions` (
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
-  KEY `idx_hmrc_ct600_company_tax_year` (`company_id`,`tax_year_id`),
+  KEY `idx_hmrc_ct600_company_accounting_period` (`company_id`,`accounting_period_id`),
+  KEY `idx_hmrc_ct600_ct_period` (`ct_period_id`),
   KEY `idx_hmrc_ct600_mode_status` (`mode`,`status`),
   CONSTRAINT `fk_hmrc_ct600_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_hmrc_ct600_tax_year` FOREIGN KEY (`tax_year_id`) REFERENCES `tax_years` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `fk_hmrc_ct600_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_hmrc_ct600_ct_period` FOREIGN KEY (`ct_period_id`) REFERENCES `corporation_tax_periods` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -594,7 +653,7 @@ DROP TABLE IF EXISTS `ixbrl_generation_runs`;
 CREATE TABLE `ixbrl_generation_runs` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
-  `tax_year_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
   `status` enum('draft','ready','generated','failed') NOT NULL DEFAULT 'draft',
   `generated_filename` varchar(255) DEFAULT NULL,
   `generated_path` varchar(1000) DEFAULT NULL,
@@ -604,10 +663,10 @@ CREATE TABLE `ixbrl_generation_runs` (
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `error_message` text DEFAULT NULL,
   PRIMARY KEY (`id`),
-  KEY `idx_ixbrl_runs_company_tax_year` (`company_id`,`tax_year_id`),
+  KEY `idx_ixbrl_runs_company_accounting_period` (`company_id`,`accounting_period_id`),
   KEY `idx_ixbrl_runs_status` (`status`),
   CONSTRAINT `fk_ixbrl_runs_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_ixbrl_runs_tax_year` FOREIGN KEY (`tax_year_id`) REFERENCES `tax_years` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `fk_ixbrl_runs_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -788,7 +847,7 @@ CREATE TABLE `statement_import_rows` (
   `source_currency` varchar(32) DEFAULT NULL,
   `source_category` varchar(255) DEFAULT NULL,
   `source_document_url` varchar(2000) DEFAULT NULL,
-  `tax_year_id` int(11) DEFAULT NULL,
+  `accounting_period_id` int(11) DEFAULT NULL,
   `chosen_txn_date` date DEFAULT NULL,
   `chosen_date_source` enum('processed','created') DEFAULT NULL,
   `normalised_description` text DEFAULT NULL,
@@ -810,9 +869,9 @@ CREATE TABLE `statement_import_rows` (
   KEY `idx_statement_import_rows_upload_duplicates` (`upload_id`,`is_duplicate_within_upload`,`is_duplicate_existing`),
   KEY `idx_statement_import_rows_row_hash` (`row_hash`),
   KEY `idx_statement_import_rows_committed_transaction` (`committed_transaction_id`),
-  KEY `idx_statement_import_rows_tax_year` (`tax_year_id`),
+  KEY `idx_statement_import_rows_accounting_period` (`accounting_period_id`),
   CONSTRAINT `fk_statement_import_rows_committed_transaction` FOREIGN KEY (`committed_transaction_id`) REFERENCES `transactions` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT `fk_statement_import_rows_tax_year` FOREIGN KEY (`tax_year_id`) REFERENCES `tax_years` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_statement_import_rows_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_statement_import_rows_upload` FOREIGN KEY (`upload_id`) REFERENCES `statement_uploads` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=8762 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -827,7 +886,7 @@ DROP TABLE IF EXISTS `statement_uploads`;
 CREATE TABLE `statement_uploads` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
-  `tax_year_id` int(11) DEFAULT NULL,
+  `accounting_period_id` int(11) DEFAULT NULL,
   `account_id` int(11) DEFAULT NULL,
   `source_type` varchar(50) NOT NULL DEFAULT 'Account_money',
   `workflow_status` enum('uploaded','mapped','staged','committed','completed') NOT NULL DEFAULT 'uploaded',
@@ -852,15 +911,15 @@ CREATE TABLE `statement_uploads` (
   `committed_at` datetime DEFAULT NULL,
   `upload_notes` text DEFAULT NULL,
   PRIMARY KEY (`id`),
-  KEY `idx_statement_uploads_company_taxyear_month` (`company_id`,`tax_year_id`,`statement_month`),
-  KEY `fk_statement_uploads_tax_year` (`tax_year_id`),
-  KEY `idx_statement_uploads_company_status` (`company_id`,`tax_year_id`,`workflow_status`,`uploaded_at`),
+  KEY `idx_statement_uploads_company_taxyear_month` (`company_id`,`accounting_period_id`,`statement_month`),
+  KEY `fk_statement_uploads_accounting_period` (`accounting_period_id`),
+  KEY `idx_statement_uploads_company_status` (`company_id`,`accounting_period_id`,`workflow_status`,`uploaded_at`),
   KEY `idx_statement_uploads_account` (`account_id`),
   KEY `idx_statement_uploads_company_file_hash` (`company_id`,`file_sha256`),
   KEY `idx_statement_uploads_company_uploaded` (`company_id`,`uploaded_at`),
   CONSTRAINT `fk_statement_uploads_account` FOREIGN KEY (`account_id`) REFERENCES `company_accounts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_statement_uploads_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_statement_uploads_tax_year` FOREIGN KEY (`tax_year_id`) REFERENCES `tax_years` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+  CONSTRAINT `fk_statement_uploads_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=194 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -940,7 +999,8 @@ DROP TABLE IF EXISTS `tax_loss_carryforwards`;
 CREATE TABLE `tax_loss_carryforwards` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
-  `origin_tax_year_id` int(11) NOT NULL,
+  `origin_accounting_period_id` int(11) NOT NULL,
+  `origin_ct_period_id` int(11) DEFAULT NULL,
   `amount_originated` decimal(12,2) NOT NULL,
   `amount_used` decimal(12,2) NOT NULL DEFAULT 0.00,
   `amount_remaining` decimal(12,2) NOT NULL,
@@ -948,10 +1008,12 @@ CREATE TABLE `tax_loss_carryforwards` (
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_tax_loss_origin` (`company_id`,`origin_tax_year_id`),
-  KEY `fk_tax_loss_year` (`origin_tax_year_id`),
+  UNIQUE KEY `uq_tax_loss_origin` (`company_id`,`origin_accounting_period_id`),
+  KEY `fk_tax_loss_accounting_period` (`origin_accounting_period_id`),
+  KEY `idx_tax_loss_origin_ct_period` (`origin_ct_period_id`),
   CONSTRAINT `fk_tax_loss_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_tax_loss_year` FOREIGN KEY (`origin_tax_year_id`) REFERENCES `tax_years` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `fk_tax_loss_accounting_period` FOREIGN KEY (`origin_accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_tax_loss_origin_ct_period` FOREIGN KEY (`origin_ct_period_id`) REFERENCES `corporation_tax_periods` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -965,7 +1027,8 @@ DROP TABLE IF EXISTS `tax_loss_movement_history`;
 CREATE TABLE `tax_loss_movement_history` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
-  `tax_year_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `ct_period_id` int(11) DEFAULT NULL,
   `computation_hash` varchar(64) NOT NULL,
   `loss_created` decimal(12,2) NOT NULL DEFAULT 0.00,
   `loss_brought_forward` decimal(12,2) NOT NULL DEFAULT 0.00,
@@ -975,25 +1038,28 @@ CREATE TABLE `tax_loss_movement_history` (
   `taxable_profit` decimal(12,2) NOT NULL DEFAULT 0.00,
   `computed_at` datetime NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
-  KEY `idx_tax_loss_history_period` (`company_id`,`tax_year_id`,`computed_at`),
-  KEY `idx_tax_loss_history_hash` (`company_id`,`tax_year_id`,`computation_hash`),
-  KEY `fk_tax_loss_history_tax_year` (`tax_year_id`),
+  KEY `idx_tax_loss_history_period` (`company_id`,`accounting_period_id`,`computed_at`),
+  KEY `idx_tax_loss_history_hash` (`company_id`,`accounting_period_id`,`computation_hash`),
+  KEY `fk_tax_loss_history_accounting_period` (`accounting_period_id`),
+  KEY `idx_tax_loss_history_ct_period` (`ct_period_id`),
   CONSTRAINT `fk_tax_loss_history_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_tax_loss_history_tax_year` FOREIGN KEY (`tax_year_id`) REFERENCES `tax_years` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `fk_tax_loss_history_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_tax_loss_history_ct_period` FOREIGN KEY (`ct_period_id`) REFERENCES `corporation_tax_periods` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=1003 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Table structure for table `tax_year_adjustments`
+-- Table structure for table `accounting_period_adjustments`
 --
 
-DROP TABLE IF EXISTS `tax_year_adjustments`;
+DROP TABLE IF EXISTS `accounting_period_adjustments`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `tax_year_adjustments` (
+CREATE TABLE `accounting_period_adjustments` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
-  `tax_year_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `ct_period_id` int(11) DEFAULT NULL,
   `type` varchar(64) NOT NULL,
   `direction` varchar(16) NOT NULL,
   `amount` decimal(12,2) NOT NULL,
@@ -1001,21 +1067,23 @@ CREATE TABLE `tax_year_adjustments` (
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
-  KEY `idx_tax_year_adjustments_company_year` (`company_id`,`tax_year_id`,`type`),
-  KEY `fk_tax_adjustments_year` (`tax_year_id`),
-  CONSTRAINT `fk_tax_adjustments_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_tax_adjustments_year` FOREIGN KEY (`tax_year_id`) REFERENCES `tax_years` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  KEY `idx_accounting_period_adjustments_company_period` (`company_id`,`accounting_period_id`,`type`),
+  KEY `fk_accounting_period_adjustments_period` (`accounting_period_id`),
+  KEY `idx_accounting_period_adjustments_ct_period` (`ct_period_id`),
+  CONSTRAINT `fk_accounting_period_adjustments_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_accounting_period_adjustments_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_accounting_period_adjustments_ct_period` FOREIGN KEY (`ct_period_id`) REFERENCES `corporation_tax_periods` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Table structure for table `tax_years`
+-- Table structure for table `accounting_periods`
 --
 
-DROP TABLE IF EXISTS `tax_years`;
+DROP TABLE IF EXISTS `accounting_periods`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `tax_years` (
+CREATE TABLE `accounting_periods` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
   `label` varchar(64) NOT NULL,
@@ -1025,8 +1093,8 @@ CREATE TABLE `tax_years` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_company_label` (`company_id`,`label`),
   UNIQUE KEY `uniq_company_period` (`company_id`,`period_start`,`period_end`),
-  KEY `idx_tax_years_company_period` (`company_id`,`period_start`,`period_end`),
-  CONSTRAINT `fk_tax_years_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  KEY `idx_accounting_periods_company_period` (`company_id`,`period_start`,`period_end`),
+  CONSTRAINT `fk_accounting_periods_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=30 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -1076,7 +1144,7 @@ DROP TABLE IF EXISTS `transactions`;
 CREATE TABLE `transactions` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
-  `tax_year_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
   `statement_upload_id` int(11) NOT NULL,
   `account_id` int(11) DEFAULT NULL,
   `txn_date` date NOT NULL,
@@ -1111,24 +1179,24 @@ CREATE TABLE `transactions` (
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_company_dedupe` (`company_id`,`dedupe_hash`),
-  KEY `idx_transactions_tax_year_date` (`tax_year_id`,`txn_date`),
+  KEY `idx_transactions_accounting_period_date` (`accounting_period_id`,`txn_date`),
   KEY `idx_transactions_upload` (`statement_upload_id`),
   KEY `idx_transactions_nominal` (`nominal_account_id`),
   KEY `idx_transactions_category_status` (`category_status`),
   KEY `idx_transactions_company_month` (`company_id`,`txn_date`),
-  KEY `idx_transactions_company_currency` (`company_id`,`tax_year_id`,`currency`),
+  KEY `idx_transactions_company_currency` (`company_id`,`accounting_period_id`,`currency`),
   KEY `idx_transactions_company_document_hash` (`company_id`,`document_url_hash`),
   KEY `idx_transactions_document_status` (`document_download_status`),
   KEY `idx_transactions_account` (`account_id`),
   KEY `idx_transactions_auto_rule` (`auto_rule_id`),
-  KEY `idx_transactions_auto_excluded` (`company_id`,`tax_year_id`,`is_auto_excluded`,`category_status`),
+  KEY `idx_transactions_auto_excluded` (`company_id`,`accounting_period_id`,`is_auto_excluded`,`category_status`),
   KEY `idx_transactions_transfer_account` (`transfer_account_id`),
-  KEY `idx_transactions_internal_transfer` (`company_id`,`tax_year_id`,`is_internal_transfer`),
+  KEY `idx_transactions_internal_transfer` (`company_id`,`accounting_period_id`,`is_internal_transfer`),
   CONSTRAINT `fk_transactions_account` FOREIGN KEY (`account_id`) REFERENCES `company_accounts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_transactions_auto_rule` FOREIGN KEY (`auto_rule_id`) REFERENCES `categorisation_rules` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_transactions_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_transactions_nominal` FOREIGN KEY (`nominal_account_id`) REFERENCES `nominal_accounts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT `fk_transactions_tax_year` FOREIGN KEY (`tax_year_id`) REFERENCES `tax_years` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_transactions_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_transactions_transfer_account` FOREIGN KEY (`transfer_account_id`) REFERENCES `company_accounts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_transactions_upload` FOREIGN KEY (`statement_upload_id`) REFERENCES `statement_uploads` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `chk_transactions_amount_nonzero` CHECK (`amount` <> 0)
@@ -1190,18 +1258,18 @@ DROP TABLE IF EXISTS `asset_depreciation_entries`;
 CREATE TABLE `asset_depreciation_entries` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `asset_id` bigint(20) NOT NULL,
-  `tax_year_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
   `period_start` date NOT NULL,
   `period_end` date NOT NULL,
   `amount` decimal(12,2) NOT NULL,
   `journal_id` bigint(20) DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_asset_depreciation_period` (`asset_id`,`tax_year_id`,`period_start`,`period_end`),
-  KEY `idx_asset_depreciation_tax_year` (`tax_year_id`),
+  UNIQUE KEY `uq_asset_depreciation_period` (`asset_id`,`accounting_period_id`,`period_start`,`period_end`),
+  KEY `idx_asset_depreciation_accounting_period` (`accounting_period_id`),
   KEY `idx_asset_depreciation_journal` (`journal_id`),
   CONSTRAINT `fk_asset_depreciation_asset` FOREIGN KEY (`asset_id`) REFERENCES `asset_register` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_asset_depreciation_tax_year` FOREIGN KEY (`tax_year_id`) REFERENCES `tax_years` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_asset_depreciation_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_asset_depreciation_journal` FOREIGN KEY (`journal_id`) REFERENCES `journals` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `chk_asset_depreciation_period` CHECK (`period_start` <= `period_end`),
   CONSTRAINT `chk_asset_depreciation_amount` CHECK (`amount` > 0)
@@ -1370,7 +1438,7 @@ DROP TABLE IF EXISTS `year_end_audit_log`;
 CREATE TABLE `year_end_audit_log` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
-  `tax_year_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
   `action` varchar(100) NOT NULL,
   `action_by` varchar(100) NOT NULL,
   `action_at` datetime NOT NULL DEFAULT current_timestamp(),
@@ -1378,7 +1446,7 @@ CREATE TABLE `year_end_audit_log` (
   `new_value_json` longtext DEFAULT NULL,
   `notes` text DEFAULT NULL,
   PRIMARY KEY (`id`),
-  KEY `idx_year_end_audit_log_company_period` (`company_id`,`tax_year_id`),
+  KEY `idx_year_end_audit_log_company_period` (`company_id`,`accounting_period_id`),
   KEY `idx_year_end_audit_log_action_at` (`action_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -1393,7 +1461,7 @@ DROP TABLE IF EXISTS `year_end_check_results`;
 CREATE TABLE `year_end_check_results` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
-  `tax_year_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
   `check_code` varchar(100) NOT NULL,
   `severity` enum('info','warning','fail') NOT NULL DEFAULT 'info',
   `status` enum('pass','warning','fail','not_applicable') NOT NULL DEFAULT 'pass',
@@ -1403,8 +1471,8 @@ CREATE TABLE `year_end_check_results` (
   `action_url` varchar(500) DEFAULT NULL,
   `calculated_at` datetime NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uniq_year_end_check_results_company_period_code` (`company_id`,`tax_year_id`,`check_code`),
-  KEY `idx_year_end_check_results_company_period` (`company_id`,`tax_year_id`)
+  UNIQUE KEY `uniq_year_end_check_results_company_period_code` (`company_id`,`accounting_period_id`,`check_code`),
+  KEY `idx_year_end_check_results_company_period` (`company_id`,`accounting_period_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=241 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -1418,7 +1486,7 @@ DROP TABLE IF EXISTS `year_end_reviews`;
 CREATE TABLE `year_end_reviews` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
-  `tax_year_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
   `status` enum('not_started','in_progress','needs_attention','ready_for_review','locked') NOT NULL DEFAULT 'not_started',
   `is_locked` tinyint(1) NOT NULL DEFAULT 0,
   `locked_at` datetime DEFAULT NULL,
@@ -1428,9 +1496,9 @@ CREATE TABLE `year_end_reviews` (
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uniq_year_end_reviews_company_period` (`company_id`,`tax_year_id`),
+  UNIQUE KEY `uniq_year_end_reviews_company_period` (`company_id`,`accounting_period_id`),
   KEY `idx_year_end_reviews_company` (`company_id`),
-  KEY `idx_year_end_reviews_tax_year` (`tax_year_id`)
+  KEY `idx_year_end_reviews_accounting_period` (`accounting_period_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;

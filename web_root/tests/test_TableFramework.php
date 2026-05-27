@@ -66,6 +66,8 @@ $harness->check(TableFramework::class, 'renders visible rows with toolbar export
     $harness->assertTrue(str_contains($html, 'Next &gt;'));
     $harness->assertTrue(str_contains($html, '<span class="badge info">ready</span>'));
     $harness->assertSame(false, str_contains($html, '>Gamma<'));
+    $harness->assertSame(false, str_contains($html, 'table-sort-form'));
+    $harness->assertSame(false, str_contains($html, 'table-sortable-heading'));
 });
 
 $harness->check(TableFramework::class, 'renders sortable headings and sorts full row sets', function () use ($harness): void {

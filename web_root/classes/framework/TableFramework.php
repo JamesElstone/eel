@@ -32,6 +32,7 @@ final class TableFramework
     private string $sortKey = '';
     private string $sortDirection = '';
     private array $sortHiddenFields = [];
+    private bool $sortingConfigured = false;
 
     private function __construct(private readonly string $key, private readonly array $rows)
     {
@@ -253,6 +254,7 @@ final class TableFramework
 
     public function sorting(string $sortKey = '', string $direction = '', array $hiddenFields = []): self
     {
+        $this->sortingConfigured = true;
         $sortKey = trim($sortKey);
         try {
             $this->sortKey = $sortKey !== '' ? HelperFramework::normaliseCardKey($sortKey) : '';
@@ -468,9 +470,10 @@ final class TableFramework
 
     private function renderHeaderCell(TableColumnFramework $column): string
     {
+        $isSortable = $this->sortingConfigured && $column->isSortable();
         $classes = array_values(array_filter([
             $column->headerClass(),
-            $column->isSortable() ? 'table-sortable-heading' : '',
+            $isSortable ? 'table-sortable-heading' : '',
             $this->activeSortKey() === $column->key() ? 'table-sort-active' : '',
         ]));
         $classAttribute = $classes !== [] ? ' class="' . HelperFramework::escape(implode(' ', $classes)) . '"' : '';
@@ -480,7 +483,7 @@ final class TableFramework
             $ariaSort = ' aria-sort="' . ($this->activeSortDirection() === 'desc' ? 'descending' : 'ascending') . '"';
         }
 
-        if (!$column->isSortable()) {
+        if (!$isSortable) {
             return '<th' . $classAttribute . $ariaSort . '>' . HelperFramework::escape($column->label()) . '</th>';
         }
 

@@ -30,6 +30,17 @@ final class _user_login_lockoutsCard extends CardBaseFramework
         return 'Active login lockouts caused by repeated failed password attempts.';
     }
 
+    public function handle(
+        RequestFramework $request,
+        PageServiceFramework $services,
+        array $pageContext,
+        ActionResultFramework $actionResult
+    ): array {
+        $pageContext = parent::handle($request, $services, $pageContext, $actionResult);
+
+        return $this->applyTableSortContext($request, $pageContext, $this->key());
+    }
+
     protected function additionalInvalidationFacts(): array
     {
         return [];
@@ -42,14 +53,23 @@ final class _user_login_lockoutsCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        return $this->table($context)->render($context, [
+        return $this->configuredTable($context)->render($context, [
             'cards[]' => (array)($context['page']['page_cards'] ?? []),
         ]);
     }
 
     public function tables(array $context): array
     {
-        return [$this->table($context)];
+        return [$this->configuredTable($context)];
+    }
+
+    private function configuredTable(array $context): TableFramework
+    {
+        return $this->configureTableSorting($this->table($context), $context, [
+            'page' => (string)($context['page']['page_id'] ?? 'users'),
+            '_invalidate_fact' => $this->tableInvalidationFact(),
+            'cards[]' => [$this->key()],
+        ]);
     }
 
     private function table(array $context): TableFramework
@@ -71,6 +91,11 @@ final class _user_login_lockoutsCard extends CardBaseFramework
                 exportable: false,
                 cellClass: 'cell-fit'
             );
+    }
+
+    private function tableInvalidationFact(): string
+    {
+        return (string)($this->invalidationFacts()[0] ?? 'user.login.lockouts');
     }
 
     private function rows(array $context): array

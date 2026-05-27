@@ -18,6 +18,7 @@ final class TableColumnFramework
         private readonly string $cellClass = '',
         private readonly bool $exportable = true,
         private readonly string $exportType = 'string',
+        private readonly mixed $sort = null,
     ) {
     }
 
@@ -44,6 +45,11 @@ final class TableColumnFramework
     public function isExportable(): bool
     {
         return $this->exportable;
+    }
+
+    public function isSortable(): bool
+    {
+        return $this->sort !== false && ($this->exportable || $this->sort !== null);
     }
 
     public function htmlValue(array $row): string
@@ -77,6 +83,19 @@ final class TableColumnFramework
         return in_array($this->exportType, ['number', 'date', 'datetime', 'bool'], true)
             ? $this->exportType
             : 'string';
+    }
+
+    public function sortValue(array $row): mixed
+    {
+        if (is_callable($this->sort)) {
+            return ($this->sort)($row, $this);
+        }
+
+        if ($this->sort === true) {
+            return $this->scalarValue($row);
+        }
+
+        return $this->exportValue($row);
     }
 
     private function scalarValue(array $row): string

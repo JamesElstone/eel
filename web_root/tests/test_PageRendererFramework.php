@@ -229,4 +229,33 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
             AppConfigurationStore::config(true);
         }
     });
+
+    $harness->check(PageRendererFramework::class, 'frontend rebinds page card tabs after AJAX card replacement', function () use ($harness): void {
+        $script = file_get_contents(APP_JS . 'index.js');
+
+        if (!is_string($script)) {
+            throw new RuntimeException('Unable to read frontend script.');
+        }
+
+        $harness->assertTrue(str_contains(
+            $script,
+            "current.replaceWith(replacement);\r\n                    initialisePageCardTabs(replacement);"
+        ) || str_contains(
+            $script,
+            "current.replaceWith(replacement);\n                    initialisePageCardTabs(replacement);"
+        ));
+    });
+
+    $harness->check(PageRendererFramework::class, 'frontend page card switchers can target page-level tab root', function () use ($harness): void {
+        $script = file_get_contents(APP_JS . 'index.js');
+
+        if (!is_string($script)) {
+            throw new RuntimeException('Unable to read frontend script.');
+        }
+
+        $harness->assertTrue(str_contains(
+            $script,
+            "control.closest('.page-card-tabs') || document.querySelector('.page-card-tabs')"
+        ));
+    });
 });

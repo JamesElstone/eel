@@ -1,5 +1,83 @@
 # eelKit Changes
 
+## Clickable table heading sorting
+
+Feature name: `table_heading_sorting`.
+
+`TableFramework` now supports server-side sorting from clickable column headings. Sortable headers render as AJAX-enabled POST buttons, and the active heading includes `aria-sort` plus a compact direction marker.
+
+eelKit's built-in table cards have been wired to use this behaviour, but downstream projects can adopt it case by case. Existing downstream tables will not sort just because the framework has the capability; a card must pass sort state into its table and, for paginated tables, paginate the sorted rows.
+
+### Case-by-case adoption
+
+For an unpaginated downstream table, configure the table with request/context sort values before rendering:
+
+```php
+return TableFramework::make('transactions_imported', $rows)
+    ->sorting($sortKey, $sortDirection, [
+        'page' => (string)($context['page']['page_id'] ?? ''),
+        '_invalidate_fact' => 'transactions.imported',
+        'cards[]' => ['transactions_imported'],
+    ])
+    ->column('date', 'Date')
+    ->column('description', 'Description')
+    ->column('amount', 'Amount', exportType: 'number')
+    ->render($context);
+```
+
+For paginated tables, sort the full dataset before slicing the visible page:
+
+```php
+$table = TableFramework::make('transactions_imported', $rows)
+    ->sorting($sortKey, $sortDirection, [
+        'page' => (string)($context['page']['page_id'] ?? ''),
+        '_pagination' => '1',
+        '_invalidate_fact' => 'transactions.imported',
+        'cards[]' => ['transactions_imported'],
+    ])
+    ->column('date', 'Date')
+    ->column('description', 'Description')
+    ->column('amount', 'Amount', exportType: 'number');
+
+$pagination = HelperFramework::paginateArray($table->sortedRows(), $page, 25);
+
+return $table
+    ->visibleRows((array)$pagination['items'])
+    ->pagination($pagination, 'Transactions', 'transactions_imported_page', [
+        'page' => (string)($context['page']['page_id'] ?? ''),
+        '_pagination' => '1',
+        '_invalidate_fact' => 'transactions.imported',
+        'cards[]' => ['transactions_imported'],
+    ])
+    ->render($context);
+```
+
+If a card extends `CardBaseFramework`, the new helper methods can carry the state for you:
+
+```php
+$pageContext = $this->applyTableSortContext($request, $pageContext, 'transactions_imported');
+
+$table = $this->configureTableSorting($table, $context, [
+    'page' => (string)($context['page']['page_id'] ?? ''),
+    '_invalidate_fact' => 'transactions.imported',
+    'cards[]' => ['transactions_imported'],
+]);
+```
+
+Columns are sortable by default when they are exportable. Screen-only columns with `exportable: false` are not sortable by default. Disable sorting explicitly on any data column that should not become clickable:
+
+```php
+->column('actions', 'Actions', html: $actionsHtml, exportable: false)
+->column('raw_status', 'Raw Status', sort: false)
+```
+
+Compatibility notes:
+
+- Downstream projects can enable sorting one card/table at a time.
+- Existing tables keep their current row order until their cards call `sorting()` and, when paginated, use `sortedRows()` before pagination.
+- CSV and XLSX exports use the sorted full source rows when sorting is configured.
+- Invalid or non-sortable sort keys fall back to the original row order.
+
 ## Table toolbar actions
 
 Feature name: `table_toolbar_actions`.

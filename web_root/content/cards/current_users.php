@@ -30,6 +30,17 @@ final class _current_usersCard extends CardBaseFramework
         return 'Assign a role for each user, then manage access, OTP reset, and password updates from the same table.';
     }
 
+    public function handle(
+        RequestFramework $request,
+        PageServiceFramework $services,
+        array $pageContext,
+        ActionResultFramework $actionResult
+    ): array {
+        $pageContext = parent::handle($request, $services, $pageContext, $actionResult);
+
+        return $this->applyTableSortContext($request, $pageContext, $this->key());
+    }
+
     protected function additionalInvalidationFacts(): array
     {
         return [];
@@ -42,14 +53,23 @@ final class _current_usersCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        return $this->table($context)->render($context, [
+        return $this->configuredTable($context)->render($context, [
             'cards[]' => (array)($context['page']['page_cards'] ?? []),
         ]);
     }
 
     public function tables(array $context): array
     {
-        return [$this->table($context)];
+        return [$this->configuredTable($context)];
+    }
+
+    private function configuredTable(array $context): TableFramework
+    {
+        return $this->configureTableSorting($this->table($context), $context, [
+            'page' => (string)($context['page']['page_id'] ?? 'users'),
+            '_invalidate_fact' => $this->tableInvalidationFact(),
+            'cards[]' => [$this->key()],
+        ]);
     }
 
     private function table(array $context): TableFramework
@@ -94,6 +114,11 @@ final class _current_usersCard extends CardBaseFramework
                 html: fn(array $row): string => $this->actionsHtml($context, $row),
                 exportable: false
             );
+    }
+
+    private function tableInvalidationFact(): string
+    {
+        return (string)($this->invalidationFacts()[0] ?? 'current.users');
     }
 
     private function roleSelectHtml(array $context, array $user): string

@@ -28,7 +28,7 @@ final class _table_export_demoCard extends CardBaseFramework
 
     public function tables(array $context): array
     {
-        return [$this->table($context)];
+        return [$this->configuredTable($context)];
     }
 
     public function handle(
@@ -38,6 +38,7 @@ final class _table_export_demoCard extends CardBaseFramework
         ActionResultFramework $actionResult
     ): array {
         $pageContext = parent::handle($request, $services, $pageContext, $actionResult);
+        $pageContext = $this->applyTableSortContext($request, $pageContext, 'test_table_export_demo');
         $pageContext[$this->key()]['status_filter'] = $this->normaliseStatusFilter((string)$request->input(
             'table_export_demo_status',
             (string)($pageContext[$this->key()]['status_filter'] ?? 'all')
@@ -48,22 +49,33 @@ final class _table_export_demoCard extends CardBaseFramework
 
     public function render(array $context): string
     {
+        return $this->configuredTable($context)->render($context, [
+            'cards[]' => (array)($context['page']['page_cards'] ?? []),
+            'table_export_demo_status' => $this->selectedStatusFilter($context),
+        ]);
+    }
+
+    private function configuredTable(array $context): TableFramework
+    {
         $statusFilter = $this->selectedStatusFilter($context);
-        $rows = $this->filteredRows($context, $statusFilter);
+        $hiddenFields = [
+            'page' => (string)($context['page']['page_id'] ?? 'test'),
+            '_pagination' => '1',
+            '_invalidate_fact' => $this->tableInvalidationFact(),
+            'cards[]' => [$this->key()],
+            'table_export_demo_status' => $statusFilter,
+        ];
+        $table = $this->configureTableSorting($this->table($context), $context, $hiddenFields);
+        $rows = $table->sortedRows();
         $pagination = HelperFramework::paginateArray($rows, $this->paginationPage($context), self::PAGE_SIZE);
-        $table = $this->table($context)
+
+        return $table
             ->visibleRows((array)$pagination['items'])
             ->pagination(
                 $pagination,
                 'Demo records',
                 $this->paginationPageField(),
-                [
-                    'page' => (string)($context['page']['page_id'] ?? 'test'),
-                    '_pagination' => '1',
-                    '_invalidate_fact' => $this->tableInvalidationFact(),
-                    'cards[]' => [$this->key()],
-                    'table_export_demo_status' => $statusFilter,
-                ]
+                $hiddenFields
             )
             ->filterSelect(
                 'table_export_demo_status',
@@ -77,11 +89,6 @@ final class _table_export_demoCard extends CardBaseFramework
                     'cards[]' => [$this->key()],
                 ]
             );
-
-        return $table->render($context, [
-            'cards[]' => (array)($context['page']['page_cards'] ?? []),
-            'table_export_demo_status' => $statusFilter,
-        ]);
     }
 
     private function tableInvalidationFact(): string

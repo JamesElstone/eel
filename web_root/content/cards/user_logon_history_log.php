@@ -48,6 +48,7 @@ final class _user_logon_history_logCard extends CardBaseFramework
         ActionResultFramework $actionResult
     ): array {
         $pageContext = parent::handle($request, $services, $pageContext, $actionResult);
+        $pageContext = $this->applyTableSortContext($request, $pageContext, $this->key());
         $pageContext[$this->key()]['selected_user_id'] = max(0, (int)$request->input(
             'logon_history_user_id',
             $pageContext[$this->key()]['selected_user_id'] ?? 0
@@ -76,27 +77,29 @@ final class _user_logon_history_logCard extends CardBaseFramework
 
     public function tables(array $context): array
     {
-        return [$this->table($context)];
+        return [$this->configuredTable($context)];
     }
 
     private function configuredTable(array $context): TableFramework
     {
         $selectedUserId = $this->selectedUserId($context);
-        $pagination = HelperFramework::paginateArray($this->rows($context), $this->paginationPage($context), self::PAGE_SIZE);
+        $hiddenFields = [
+            'page' => (string)($context['page']['page_id'] ?? ''),
+            '_pagination' => '1',
+            '_invalidate_fact' => $this->tableInvalidationFact(),
+            'cards[]' => [$this->key()],
+            'logon_history_user_id' => (string)$selectedUserId,
+        ];
+        $table = $this->configureTableSorting($this->table($context), $context, $hiddenFields);
+        $pagination = HelperFramework::paginateArray($table->sortedRows(), $this->paginationPage($context), self::PAGE_SIZE);
 
-        return $this->table($context)
+        return $table
             ->visibleRows((array)$pagination['items'])
             ->pagination(
                 $pagination,
                 'User logon events',
                 $this->paginationPageField(),
-                [
-                    'page' => (string)($context['page']['page_id'] ?? ''),
-                    '_pagination' => '1',
-                    '_invalidate_fact' => $this->tableInvalidationFact(),
-                    'cards[]' => [$this->key()],
-                    'logon_history_user_id' => (string)$selectedUserId,
-                ]
+                $hiddenFields
             )
             ->filterSelect(
                 'logon_history_user_id',

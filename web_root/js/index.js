@@ -1885,6 +1885,7 @@
 
                 if (replacement instanceof HTMLElement && current) {
                     current.replaceWith(replacement);
+                    initialisePageCardTabs(replacement);
                     initialiseCardToggles(replacement);
                     initStateWatchers(replacement);
                     initialiseVisibleWhenControls(replacement);
@@ -2066,7 +2067,7 @@
         }
 
         const label = String(control.dataset.pageCardSwitchTab || '').trim().toLowerCase();
-        const tabsRoot = control.closest('.page-card-tabs');
+        const tabsRoot = control.closest('.page-card-tabs') || document.querySelector('.page-card-tabs');
         if (label === '' || !(tabsRoot instanceof HTMLElement)) {
             return;
         }

@@ -1492,6 +1492,8 @@ tbody tr:last-child td {
 
 .table-scroll.table-condensed th,
 .table-scroll.table-condensed td,
+.table-scroll-mini.table-condensed th,
+.table-scroll-mini.table-condensed td,
 table.table-condensed th,
 table.table-condensed td {
   padding: 8px 5px;
@@ -1499,39 +1501,48 @@ table.table-condensed td {
 
 .table-scroll.table-condensed tbody td,
 .table-scroll.table-condensed tbody td *,
+.table-scroll-mini.table-condensed tbody td,
+.table-scroll-mini.table-condensed tbody td *,
 table.table-condensed tbody td,
 table.table-condensed tbody td * {
   font-size: 0.70rem;
 }
 
 .table-scroll.table-condensed .button,
+.table-scroll-mini.table-condensed .button,
 table.table-condensed .button {
   padding: 8px 5px;
   margin-bottom: 0;
 }
 
 .table-scroll.table-condensed .actions-row,
+.table-scroll-mini.table-condensed .actions-row,
 table.table-condensed .actions-row {
   gap: 6px;
 }
 
 .table-scroll.table-condensed .input-action-row,
+.table-scroll-mini.table-condensed .input-action-row,
 table.table-condensed .input-action-row {
   gap: 5px;
 }
 
 .table-scroll.table-condensed .selector-input,
+.table-scroll-mini.table-condensed .selector-input,
 table.table-condensed .selector-input {
   padding: 8px 5px;
 }
 
 .table-scroll.table-condensed .badge,
+.table-scroll-mini.table-condensed .badge,
 table.table-condensed .badge {
   font-size: 0.65rem;
 }
 
 .table-scroll.table-condensed .input,
 .table-scroll.table-condensed .select,
+.table-scroll-mini.table-condensed .input,
+.table-scroll-mini.table-condensed .select,
 table.table-condensed .input,
 table.table-condensed .select {
   padding: 8px 10px;

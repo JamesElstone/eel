@@ -35,6 +35,17 @@ final class _user_account_audit_logCard extends CardBaseFramework
         return 'Recent user-account changes such as profile updates, password changes, OTP resets, and enable or disable actions.';
     }
 
+    public function handle(
+        RequestFramework $request,
+        PageServiceFramework $services,
+        array $pageContext,
+        ActionResultFramework $actionResult
+    ): array {
+        $pageContext = parent::handle($request, $services, $pageContext, $actionResult);
+
+        return $this->applyTableSortContext($request, $pageContext, $this->key());
+    }
+
     protected function additionalInvalidationFacts(): array
     {
         return ['page.context'];
@@ -57,26 +68,27 @@ final class _user_account_audit_logCard extends CardBaseFramework
 
     public function tables(array $context): array
     {
-        return [$this->table($context)];
+        return [$this->configuredTable($context)];
     }
 
     private function configuredTable(array $context): TableFramework
     {
-        $rows = $this->rows($context);
-        $pagination = HelperFramework::paginateArray($rows, $this->paginationPage($context), self::PAGE_SIZE);
+        $hiddenFields = [
+            'page' => (string)($context['page']['page_id'] ?? ''),
+            '_pagination' => '1',
+            '_invalidate_fact' => $this->tableInvalidationFact(),
+            'cards[]' => [$this->key()],
+        ];
+        $table = $this->configureTableSorting($this->table($context), $context, $hiddenFields);
+        $pagination = HelperFramework::paginateArray($table->sortedRows(), $this->paginationPage($context), self::PAGE_SIZE);
 
-        return $this->table($context)
+        return $table
             ->visibleRows((array)$pagination['items'])
             ->pagination(
                 $pagination,
                 'User account audit events',
                 $this->paginationPageField(),
-                [
-                    'page' => (string)($context['page']['page_id'] ?? ''),
-                    '_pagination' => '1',
-                    '_invalidate_fact' => $this->tableInvalidationFact(),
-                    'cards[]' => [$this->key()],
-                ]
+                $hiddenFields
             );
     }
 

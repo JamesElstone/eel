@@ -85,6 +85,76 @@ abstract class CardBaseFramework implements CardInterfaceFramework
         return $pageContext;
     }
 
+    protected function applyTableSortContext(RequestFramework $request, array $pageContext, string $tableKey): array
+    {
+        $tableKey = HelperFramework::normaliseCardKey($tableKey);
+        $sortField = $this->tableSortFieldName($tableKey);
+        $directionField = $this->tableSortDirectionFieldName($tableKey);
+        $sortKey = trim((string)$request->input($sortField, (string)($pageContext[$this->key()][$sortField] ?? '')));
+        $direction = strtolower(trim((string)$request->input($directionField, (string)($pageContext[$this->key()][$directionField] ?? ''))));
+
+        try {
+            $sortKey = $sortKey !== '' ? HelperFramework::normaliseCardKey($sortKey) : '';
+        } catch (InvalidArgumentException) {
+            $sortKey = '';
+        }
+
+        if (!in_array($direction, ['asc', 'desc'], true)) {
+            $direction = '';
+        }
+
+        if ($direction === '') {
+            $sortKey = '';
+        }
+
+        $pageContext[$this->key()][$sortField] = $sortKey;
+        $pageContext[$this->key()][$directionField] = $direction;
+
+        return $pageContext;
+    }
+
+    protected function configureTableSorting(TableFramework $table, array $context, array $hiddenFields = []): TableFramework
+    {
+        return $table->sorting(
+            $this->tableSortKey($context, $table->key()),
+            $this->tableSortDirection($context, $table->key()),
+            $hiddenFields
+        );
+    }
+
+    protected function tableSortHiddenFields(array $context, string $tableKey): array
+    {
+        $sortKey = $this->tableSortKey($context, $tableKey);
+        $direction = $this->tableSortDirection($context, $tableKey);
+
+        return $sortKey !== '' && $direction !== ''
+            ? [
+                $this->tableSortFieldName($tableKey) => $sortKey,
+                $this->tableSortDirectionFieldName($tableKey) => $direction,
+            ]
+            : [];
+    }
+
+    protected function tableSortKey(array $context, string $tableKey): string
+    {
+        return (string)(($context[$this->key()] ?? [])[$this->tableSortFieldName($tableKey)] ?? '');
+    }
+
+    protected function tableSortDirection(array $context, string $tableKey): string
+    {
+        return (string)(($context[$this->key()] ?? [])[$this->tableSortDirectionFieldName($tableKey)] ?? '');
+    }
+
+    protected function tableSortFieldName(string $tableKey): string
+    {
+        return HelperFramework::normaliseCardKey($tableKey) . '_sort';
+    }
+
+    protected function tableSortDirectionFieldName(string $tableKey): string
+    {
+        return HelperFramework::normaliseCardKey($tableKey) . '_sort_direction';
+    }
+
     protected function paginationPage(array $context, ?string $scope = null): int
     {
         return max(1, (int)($context['page'][$this->paginationPageField($scope)] ?? 1));

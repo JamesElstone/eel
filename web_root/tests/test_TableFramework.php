@@ -68,6 +68,62 @@ $harness->check(TableFramework::class, 'renders visible rows with toolbar export
     $harness->assertSame(false, str_contains($html, '>Gamma<'));
 });
 
+$harness->check(TableFramework::class, 'renders sortable headings and sorts full row sets', function () use ($harness): void {
+    $rows = [
+        ['name' => 'Beta', 'amount' => '10', 'active' => false, 'action' => 'ignore'],
+        ['name' => 'alpha', 'amount' => '2', 'active' => true, 'action' => 'ignore'],
+        ['name' => 'Alpha', 'amount' => '2', 'active' => false, 'action' => 'ignore'],
+        ['name' => 'Gamma', 'amount' => '', 'active' => true, 'action' => 'ignore'],
+    ];
+
+    $table = TableFramework::make('demo_table', $rows)
+        ->column('name', 'Name')
+        ->column('amount', 'Amount', exportType: 'number')
+        ->column('active', 'Active', exportType: 'bool')
+        ->column('action', 'Action', html: static fn(): string => '<button>Ignore</button>', exportable: false)
+        ->sorting('amount', 'asc', [
+            'page' => 'test',
+            '_pagination' => '1',
+            '_invalidate_fact' => 'demo.table',
+            'cards[]' => ['demo_table'],
+        ])
+        ->visibleRows([$rows[0]])
+        ->pagination(HelperFramework::paginateArray($rows, 2, 1), 'Demo rows', 'demo_table_page', [
+            'page' => 'test',
+            '_pagination' => '1',
+            '_invalidate_fact' => 'demo.table',
+            'cards[]' => ['demo_table'],
+        ]);
+
+    $html = $table->render(['page' => ['page_id' => 'test']]);
+    $csv = $table->exportCsv();
+    $sortedRows = $table->sortedRows();
+
+    $harness->assertTrue(str_contains($html, 'class="table-sort-form"'));
+    $harness->assertTrue(str_contains($html, 'name="demo_table_sort" value="name"'));
+    $harness->assertTrue(str_contains($html, 'name="demo_table_sort" value="amount"'));
+    $harness->assertTrue(str_contains($html, 'name="demo_table_sort_direction" value="desc"'));
+    $harness->assertTrue(str_contains($html, 'aria-sort="ascending"'));
+    $harness->assertTrue(str_contains($html, 'name="demo_table_page" value="1"'));
+    $harness->assertSame(false, str_contains($html, 'name="demo_table_sort" value="action"'));
+    $harness->assertSame('alpha', $sortedRows[0]['name']);
+    $harness->assertSame('Alpha', $sortedRows[1]['name']);
+    $harness->assertSame('Beta', $sortedRows[2]['name']);
+    $harness->assertSame('Gamma', $sortedRows[3]['name']);
+    $harness->assertTrue(strpos($csv, "alpha,2,Yes") < strpos($csv, "Beta,10,No"));
+    $harness->assertTrue(strpos($csv, "Beta,10,No") < strpos($csv, "Gamma,,Yes"));
+
+    $boolRows = TableFramework::make('demo_table', $rows)
+        ->column('name', 'Name')
+        ->column('active', 'Active', exportType: 'bool')
+        ->sorting('active', 'asc')
+        ->sortedRows();
+
+    $harness->assertSame('Beta', $boolRows[0]['name']);
+    $harness->assertSame('Alpha', $boolRows[1]['name']);
+    $harness->assertSame('alpha', $boolRows[2]['name']);
+});
+
 $harness->check(TableFramework::class, 'exports unpaginated rows and export-specific values to CSV', function () use ($harness, $rows): void {
     $table = TableFramework::make('demo_table', $rows)
         ->column('name', 'Name')

@@ -28,6 +28,10 @@ final class TableFramework
     private int $exportLimit = 5000;
     private array $filters = [];
     private string $toolbarActionsHtml = '';
+    private bool $visibleRowsConfigured = false;
+    private string $sortKey = '';
+    private string $sortDirection = '';
+    private array $sortHiddenFields = [];
 
     private function __construct(private readonly string $key, private readonly array $rows)
     {
@@ -75,7 +79,8 @@ final class TableFramework
         string $headerClass = '',
         string $cellClass = '',
         bool $exportable = true,
-        string $exportType = 'string'
+        string $exportType = 'string',
+        callable|bool|null $sort = null
     ): self {
         $this->columns[] = new TableColumnFramework(
             $key,
@@ -85,7 +90,8 @@ final class TableFramework
             $headerClass,
             $cellClass,
             $exportable,
-            $exportType
+            $exportType,
+            $sort
         );
 
         return $this;
@@ -98,7 +104,8 @@ final class TableFramework
         string $headerClass = '',
         string $cellClass = '',
         bool $exportable = true,
-        string $exportType = 'string'
+        string $exportType = 'string',
+        callable|bool|null $sort = null
     ): self {
         return $this->column(
             $key,
@@ -108,7 +115,8 @@ final class TableFramework
             headerClass: $headerClass,
             cellClass: $cellClass,
             exportable: $exportable,
-            exportType: $exportType
+            exportType: $exportType,
+            sort: $sort
         );
     }
 
@@ -122,7 +130,8 @@ final class TableFramework
         ?callable $badgeClassFormatter = null,
         string $headerClass = '',
         string $cellClass = '',
-        bool $exportable = true
+        bool $exportable = true,
+        callable|bool|null $sort = null
     ): self {
         $formatLabel = static function (array $row) use ($key, $fallback, $labelSeparator, $labelFormatter): string {
             $value = self::stringValue($row[$key] ?? null, $fallback);
@@ -144,7 +153,8 @@ final class TableFramework
             export: static fn(array $row): string => $formatLabel($row),
             headerClass: $headerClass,
             cellClass: $cellClass,
-            exportable: $exportable
+            exportable: $exportable,
+            sort: $sort
         );
     }
 
@@ -156,7 +166,8 @@ final class TableFramework
         string $separator = ' | ',
         string $headerClass = '',
         string $cellClass = '',
-        bool $exportable = true
+        bool $exportable = true,
+        callable|bool|null $sort = null
     ): self {
         return $this->column(
             $key,
@@ -176,7 +187,8 @@ final class TableFramework
             },
             headerClass: $headerClass,
             cellClass: $cellClass,
-            exportable: $exportable
+            exportable: $exportable,
+            sort: $sort
         );
     }
 
@@ -192,7 +204,8 @@ final class TableFramework
         string $secondaryPreviewClass = '',
         string $headerClass = '',
         string $cellClass = '',
-        bool $exportable = true
+        bool $exportable = true,
+        callable|bool|null $sort = null
     ): self {
         return $this->column(
             $primaryKey,
@@ -225,15 +238,104 @@ final class TableFramework
             },
             headerClass: $headerClass,
             cellClass: $cellClass,
-            exportable: $exportable
+            exportable: $exportable,
+            sort: $sort
         );
     }
 
     public function visibleRows(array $rows): self
     {
         $this->visibleRows = array_values($rows);
+        $this->visibleRowsConfigured = true;
 
         return $this;
+    }
+
+    public function sorting(string $sortKey = '', string $direction = '', array $hiddenFields = []): self
+    {
+        $sortKey = trim($sortKey);
+        try {
+            $this->sortKey = $sortKey !== '' ? HelperFramework::normaliseCardKey($sortKey) : '';
+        } catch (InvalidArgumentException) {
+            $this->sortKey = '';
+        }
+        $this->sortDirection = $this->normaliseSortDirection($direction);
+        $this->sortHiddenFields = $hiddenFields;
+
+        if ($this->sortDirection === '') {
+            $this->sortKey = '';
+        }
+
+        return $this;
+    }
+
+    public function sortFieldName(): string
+    {
+        return $this->key . '_sort';
+    }
+
+    public function sortDirectionFieldName(): string
+    {
+        return $this->key . '_sort_direction';
+    }
+
+    public function activeSortKey(): string
+    {
+        return $this->activeSortColumn() instanceof TableColumnFramework ? $this->sortKey : '';
+    }
+
+    public function activeSortDirection(): string
+    {
+        return $this->activeSortColumn() instanceof TableColumnFramework ? $this->sortDirection : '';
+    }
+
+    public function sortHiddenFields(): array
+    {
+        $sortKey = $this->activeSortKey();
+        $direction = $this->activeSortDirection();
+
+        return $sortKey !== '' && $direction !== ''
+            ? [
+                $this->sortFieldName() => $sortKey,
+                $this->sortDirectionFieldName() => $direction,
+            ]
+            : [];
+    }
+
+    public function sortedRows(): array
+    {
+        $column = $this->activeSortColumn();
+        if (!$column instanceof TableColumnFramework) {
+            return array_values($this->rows);
+        }
+
+        $direction = $this->activeSortDirection();
+        $indexed = [];
+        foreach (array_values($this->rows) as $index => $row) {
+            $row = is_array($row) ? $row : ['value' => $row];
+            $indexed[] = [
+                'index' => $index,
+                'row' => $row,
+                'value' => $column->sortValue($row),
+            ];
+        }
+
+        usort($indexed, function (array $left, array $right) use ($column, $direction): int {
+            $leftEmpty = $this->isEmptySortValue($left['value']);
+            $rightEmpty = $this->isEmptySortValue($right['value']);
+            if ($leftEmpty || $rightEmpty) {
+                return $leftEmpty === $rightEmpty ? ((int)$left['index'] <=> (int)$right['index']) : ($leftEmpty ? 1 : -1);
+            }
+
+            $comparison = $this->compareSortValues($left['value'], $right['value'], $column->exportType());
+            if ($comparison !== 0 && $direction === 'desc') {
+                $comparison *= -1;
+            }
+
+            return $comparison !== 0 ? $comparison : ((int)$left['index'] <=> (int)$right['index']);
+        });
+
+        return array_map(static fn(array $item): array => $item['row'], $indexed);
     }
 
     public function pagination(
@@ -333,14 +435,11 @@ final class TableFramework
         $headerHtml = '';
 
         foreach ($columns as $column) {
-            $headerClass = $column->headerClass();
-            $headerHtml .= '<th' . ($headerClass !== '' ? ' class="' . HelperFramework::escape($headerClass) . '"' : '') . '>'
-                . HelperFramework::escape($column->label())
-                . '</th>';
+            $headerHtml .= $this->renderHeaderCell($column);
         }
 
         $bodyHtml = '';
-        foreach ($this->visibleRows as $row) {
+        foreach ($this->displayRows() as $row) {
             $row = is_array($row) ? $row : ['value' => $row];
             $bodyHtml .= '<tr>';
 
@@ -365,6 +464,35 @@ final class TableFramework
         }
 
         return '<div class="' . HelperFramework::escape($this->wrapperClass) . '">' . $table . '</div>';
+    }
+
+    private function renderHeaderCell(TableColumnFramework $column): string
+    {
+        $classes = array_values(array_filter([
+            $column->headerClass(),
+            $column->isSortable() ? 'table-sortable-heading' : '',
+            $this->activeSortKey() === $column->key() ? 'table-sort-active' : '',
+        ]));
+        $classAttribute = $classes !== [] ? ' class="' . HelperFramework::escape(implode(' ', $classes)) . '"' : '';
+        $ariaSort = '';
+
+        if ($this->activeSortKey() === $column->key()) {
+            $ariaSort = ' aria-sort="' . ($this->activeSortDirection() === 'desc' ? 'descending' : 'ascending') . '"';
+        }
+
+        if (!$column->isSortable()) {
+            return '<th' . $classAttribute . $ariaSort . '>' . HelperFramework::escape($column->label()) . '</th>';
+        }
+
+        return '<th' . $classAttribute . $ariaSort . '>'
+            . '<form method="post" data-ajax="true" class="table-sort-form">'
+            . $this->hiddenInputs($this->sortButtonFields($column))
+            . '<button class="table-sort-button" type="submit">'
+            . '<span class="table-sort-label">' . HelperFramework::escape($column->label()) . '</span>'
+            . '<span class="table-sort-indicator" aria-hidden="true">' . HelperFramework::escape($this->sortIndicator($column)) . '</span>'
+            . '</button>'
+            . '</form>'
+            . '</th>';
     }
 
     public function renderToolbar(array $context, array $exportHiddenFields = []): string
@@ -528,7 +656,8 @@ final class TableFramework
                 '_table_export_prepare' => $format,
                 'table_key' => $this->key,
             ],
-            $hiddenFields
+            $hiddenFields,
+            $this->sortHiddenFields()
         );
 
         return '<form method="post" data-ajax="true">' . $this->hiddenInputs($fields) . '<button class="button primary" type="submit">'
@@ -551,7 +680,7 @@ final class TableFramework
 
             $fieldId = 'table-filter-' . $this->key . '-' . preg_replace('/[^A-Za-z0-9_-]+/', '-', (string)$filter['name']);
             $html .= '<form method="post" data-ajax="true" class="toolbar">'
-                . $this->hiddenInputs((array)$filter['hidden_fields'])
+                . $this->hiddenInputs(array_merge((array)$filter['hidden_fields'], $this->sortHiddenFields()))
                 . '<div class="form-row table-filter-row">'
                 . '<label for="' . HelperFramework::escape($fieldId) . '">' . HelperFramework::escape((string)$filter['label']) . '</label>'
                 . '<select class="selector-input" id="' . HelperFramework::escape($fieldId) . '" name="' . HelperFramework::escape((string)$filter['name']) . '">'
@@ -580,12 +709,136 @@ final class TableFramework
             $page,
             $enabled,
             $this->paginationPageField,
-            $this->paginationHiddenFields,
+            array_merge($this->paginationHiddenFields, $this->sortHiddenFields()),
             '',
             'post',
             ['data-ajax' => 'true'],
             'button primary'
         );
+    }
+
+    private function displayRows(): array
+    {
+        return $this->visibleRowsConfigured ? $this->visibleRows : $this->sortedRows();
+    }
+
+    private function sortButtonFields(TableColumnFramework $column): array
+    {
+        $fields = array_merge(['_pagination' => '1'], $this->sortHiddenFields);
+        $fields[$this->sortFieldName()] = $column->key();
+        $fields[$this->sortDirectionFieldName()] = $this->nextSortDirection($column);
+
+        if ($this->pagination !== null) {
+            $fields[$this->paginationPageField] = '1';
+        }
+
+        return $fields;
+    }
+
+    private function sortIndicator(TableColumnFramework $column): string
+    {
+        if ($this->activeSortKey() !== $column->key()) {
+            return '';
+        }
+
+        return $this->activeSortDirection() === 'desc' ? 'v' : '^';
+    }
+
+    private function nextSortDirection(TableColumnFramework $column): string
+    {
+        return $this->activeSortKey() === $column->key() && $this->activeSortDirection() === 'asc'
+            ? 'desc'
+            : 'asc';
+    }
+
+    private function activeSortColumn(): ?TableColumnFramework
+    {
+        if ($this->sortKey === '' || $this->sortDirection === '') {
+            return null;
+        }
+
+        foreach ($this->resolvedColumns() as $column) {
+            if ($column->key() === $this->sortKey && $column->isSortable()) {
+                return $column;
+            }
+        }
+
+        return null;
+    }
+
+    private function normaliseSortDirection(string $direction): string
+    {
+        $direction = strtolower(trim($direction));
+
+        return in_array($direction, ['asc', 'desc'], true) ? $direction : '';
+    }
+
+    private function compareSortValues(mixed $left, mixed $right, string $type): int
+    {
+        return match ($type) {
+            'number' => $this->compareNumberSortValues($left, $right),
+            'bool' => $this->compareBoolSortValues($left, $right),
+            default => strnatcasecmp($this->sortString($left), $this->sortString($right)),
+        };
+    }
+
+    private function isEmptySortValue(mixed $value): bool
+    {
+        return $value === null || (is_scalar($value) && trim((string)$value) === '');
+    }
+
+    private function compareNumberSortValues(mixed $left, mixed $right): int
+    {
+        $leftNumber = $this->numberSortValue($left);
+        $rightNumber = $this->numberSortValue($right);
+
+        if ($leftNumber === null || $rightNumber === null) {
+            return $leftNumber === $rightNumber ? 0 : ($leftNumber === null ? 1 : -1);
+        }
+
+        return $leftNumber <=> $rightNumber;
+    }
+
+    private function compareBoolSortValues(mixed $left, mixed $right): int
+    {
+        return $this->boolSortValue($left) <=> $this->boolSortValue($right);
+    }
+
+    private function numberSortValue(mixed $value): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $value = is_scalar($value) ? str_replace(',', '', trim((string)$value)) : '';
+
+        return is_numeric($value) ? (float)$value : null;
+    }
+
+    private function boolSortValue(mixed $value): int
+    {
+        if (is_bool($value)) {
+            return $value ? 1 : 0;
+        }
+
+        return in_array(strtolower(trim((string)$value)), ['1', 'true', 'yes', 'enabled', 'active'], true) ? 1 : 0;
+    }
+
+    private function sortString(mixed $value): string
+    {
+        if ($value === null) {
+            return '';
+        }
+
+        if (is_bool($value)) {
+            return $value ? 'yes' : 'no';
+        }
+
+        if (is_scalar($value)) {
+            return trim(preg_replace('/\s+/', ' ', (string)$value) ?? (string)$value);
+        }
+
+        return trim(preg_replace('/\s+/', ' ', json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?: '') ?? '');
     }
 
     /**
@@ -624,7 +877,7 @@ final class TableFramework
 
     private function exportRows(): array
     {
-        return array_slice(array_values($this->rows), 0, $this->exportLimit);
+        return array_slice(array_values($this->sortedRows()), 0, $this->exportLimit);
     }
 
     private function downloadFilename(string $extension): string

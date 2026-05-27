@@ -79,7 +79,7 @@ final class _banking_account_formCard extends CardBaseFramework
         $page = (array)($context['page'] ?? []);
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
-        $taxYearId = (int)($company['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $LookupCompanyAccount = is_array($context['services']['LookupCompanyAccount'] ?? null) ? $context['services']['LookupCompanyAccount'] : null;
         $nominalAccounts = (array)($context['services']['nominal_accounts'] ?? []);
         $LookupCompanyAccountId = (int)($LookupCompanyAccount['id'] ?? $context['edit_account_id'] ?? $page['edit_account_id'] ?? 0);
@@ -97,25 +97,31 @@ final class _banking_account_formCard extends CardBaseFramework
                 <input type="hidden" name="card_action" value="Banking">
                 <input type="hidden" name="intent" value="' . HelperFramework::escape($LookupCompanyAccount !== null ? 'save' : 'add') . '">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="account_id" value="' . $LookupCompanyAccountId . '">
                 <input type="hidden" name="edit_account_id" value="' . $LookupCompanyAccountId . '">
                 <input type="hidden" name="mapping_account_id" value="' . $bankingMappingAccountId . '">
                 <div class="form-grid">
-                    <div class="form-row full">
+                    <div class="form-row">
                         <label for="account_name">Account name</label>
                         <input class="input" id="account_name" name="account_name" value="' . HelperFramework::escape((string)$bankingAccountForm['account_name']) . '" required>
                     </div>
-                    <div class="form-row">
-                        <label for="nominal_account_id">Nominal</label>
-                        <select class="select" id="nominal_account_id" name="nominal_account_id">
-                            <option value="">Auto assign</option>
-                            ' . $this->nominalOptions($nominalAccounts, (string)$bankingAccountForm['nominal_account_id']) . '
-                        </select>
-                    </div>
-                    <div class="form-row">
-                        <label for="account_type">Type</label>
-                        <select class="select" id="account_type" name="account_type">' . $optionsHtml . '</select>
+                    <div class="flex-controls">
+                        <div class="mini-field">
+                            <label for="nominal_account_id">Nominal</label>
+                            <select class="select" id="nominal_account_id" name="nominal_account_id">
+                                <option value="">Auto assign</option>
+                                ' . $this->nominalOptions($nominalAccounts, (string)$bankingAccountForm['nominal_account_id']) . '
+                            </select>
+                        </div>
+                        <div class="mini-field">
+                            <label for="account_type">Type</label>
+                            <select class="select" id="account_type" name="account_type">' . $optionsHtml . '</select>
+                        </div>
+                        <div class="mini-field">
+                            <label for="internal_transfer_marker">Internal transfer marker</label>
+                            <input class="input" id="internal_transfer_marker" name="internal_transfer_marker" value="' . HelperFramework::escape((string)$bankingAccountForm['internal_transfer_marker']) . '" maxlength="6" size="6" placeholder="P2P">
+                        </div>
                     </div>
                     <div class="form-row">
                         <label for="institution_name">Institution</label>
@@ -124,10 +130,6 @@ final class _banking_account_formCard extends CardBaseFramework
                     <div class="form-row">
                         <label for="account_identifier">Identifier</label>
                         <input class="input" id="account_identifier" name="account_identifier" value="' . HelperFramework::escape((string)$bankingAccountForm['account_identifier']) . '" placeholder="Sort code/account mask, card ending, or Account label">
-                    </div>
-                    <div class="form-row">
-                        <label for="internal_transfer_marker">Internal transfer marker</label>
-                        <input class="input" id="internal_transfer_marker" name="internal_transfer_marker" value="' . HelperFramework::escape((string)$bankingAccountForm['internal_transfer_marker']) . '" placeholder="P2P">
                     </div>
                     <div class="form-row">
                         <label for="contact_name">Contact</label>

@@ -84,7 +84,7 @@ final class BankingAction implements ActionInterfaceFramework
         $accountingContext = new AccountingContextService();
 
         $companyId = $accountingContext->authCompanyId();
-        $taxYearId = $accountingContext->authTaxYearId();
+        $accountingPeriodId = $accountingContext->authAccountingPeriodId();
 
         $accountId = HelperFramework::sanitiseId($request->input('account_id'));
 
@@ -98,11 +98,17 @@ final class BankingAction implements ActionInterfaceFramework
         $flashErrors = array_map('strval', (array)($result['errors'] ?? []));
         $context = [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
         ];
 
         if (!empty($result['success'])) {
             $flashMessages[] = $isUpdate ? 'Account updated successfully.' : 'Account saved successfully.';
+            if (!empty($result['nominal_created'])) {
+                $nominalCode = trim((string)($result['nominal_code'] ?? ''));
+                $flashMessages[] = $nominalCode !== ''
+                    ? 'Nominal ' . $nominalCode . ' created for this account.'
+                    : 'A nominal was created for this account.';
+            }
 
             return $this->result(
                 true,
@@ -135,7 +141,7 @@ final class BankingAction implements ActionInterfaceFramework
     {
         $accountingContext = new AccountingContextService();
         $companyId = $accountingContext->authCompanyId();
-        $taxYearId = $accountingContext->authTaxYearId();
+        $accountingPeriodId = $accountingContext->authAccountingPeriodId();
         $accountId = max(0, (int)$request->input('account_id', 0));
 
         $result = $this->companyAccountService($services)->deleteAccount($companyId, $accountId);
@@ -157,7 +163,7 @@ final class BankingAction implements ActionInterfaceFramework
             ]),
             [
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
+                'accounting_period_id' => $accountingPeriodId,
             ]
         );
     }
@@ -167,11 +173,11 @@ final class BankingAction implements ActionInterfaceFramework
 
         $accountingContext = new AccountingContextService();
         $companyId = $accountingContext->authCompanyId();
-        $taxYearId = $accountingContext->authTaxYearId();
+        $accountingPeriodId = $accountingContext->authAccountingPeriodId();
 
         $payload = [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'upload_id' => max(0, (int)$request->input('upload_id', 0)),
             'account_id' => max(0, (int)$request->input('account_id', $request->input('mapping_account_id', 0))),
         ];
@@ -198,7 +204,7 @@ final class BankingAction implements ActionInterfaceFramework
             ]),
             [
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
+                'accounting_period_id' => $accountingPeriodId,
             ]
         );
     }
@@ -217,7 +223,7 @@ final class BankingAction implements ActionInterfaceFramework
 
         $accountingContext = new AccountingContextService();
         $companyId = $accountingContext->authCompanyId();
-        $taxYearId = $accountingContext->authTaxYearId();
+        $accountingPeriodId = $accountingContext->authAccountingPeriodId();
         $result = (new CompanyAccountNominalService())->assignMissingNominals($companyId);
         $messages = [];
         $errors = array_map('strval', (array)($result['errors'] ?? []));
@@ -238,7 +244,7 @@ final class BankingAction implements ActionInterfaceFramework
             $this->queryState($request, ['show_card' => 'banking_accounts']),
             [
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
+                'accounting_period_id' => $accountingPeriodId,
             ]
         );
     }
@@ -248,11 +254,11 @@ final class BankingAction implements ActionInterfaceFramework
 
         $accountingContext = new AccountingContextService();
         $companyId = $accountingContext->authCompanyId();
-        $taxYearId = $accountingContext->authTaxYearId();
+        $accountingPeriodId = $accountingContext->authAccountingPeriodId();
 
         $query = [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'edit_account_id' => max(0, (int)$request->input('edit_account_id', 0)),
             'mapping_account_id' => max(0, (int)$request->input('mapping_account_id', 0)),
         ];
@@ -306,7 +312,13 @@ final class BankingAction implements ActionInterfaceFramework
             }
         }
 
-        return new ActionResultFramework($success, ['page.context'], $flash, $query, $context);
+        return new ActionResultFramework(
+            $success,
+            ['page.context', 'banking.accounts', 'banking.account.form', 'nominals.accounts', 'companies.nominals'],
+            $flash,
+            $query,
+            $context
+        );
     }
 
     private function companyAccountService(PageServiceFramework $services): CompanyAccountService

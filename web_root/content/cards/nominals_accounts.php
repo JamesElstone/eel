@@ -35,54 +35,74 @@ final class _nominals_accountsCard extends CardBaseFramework
         return '';
     }
 
+    public function tables(array $context): array
+    {
+        return [$this->table($context)];
+    }
+
     public function render(array $context): string
     {
-        $nominalAccountCatalog = (array)($context['services']['nominal_account_catalog'] ?? []);
-        $pageId = (string)($context['page']['page_id'] ?? 'nominals');
+        return $this->table($context)->render($context, [
+            'cards[]' => (array)($context['page']['page_cards'] ?? []),
+        ]);
+    }
 
-        $rows = '';
-        foreach ($nominalAccountCatalog as $nominal) {
+    private function table(array $context): TableFramework
+    {
+        return TableFramework::make($this->key(), $this->rows($context))
+            ->filename('nominal-accounts')
+            ->exportLimit(1000)
+            ->empty('No nominal accounts were found.')
+            ->textColumn('code', 'Code')
+            ->textColumn('name', 'Name')
+            ->textColumn('account_type', 'Type')
+            ->textColumn('subtype_name', 'Subtype')
+            ->textColumn('tax_treatment_label', 'Tax Treatment')
+            ->column(
+                'sort_order',
+                'Sort',
+                html: static fn(array $row): string => HelperFramework::escape((string)(int)($row['sort_order'] ?? 0)),
+                export: static fn(array $row): int => (int)($row['sort_order'] ?? 0),
+                exportType: 'number'
+            )
+            ->textColumn('status_label', 'Status')
+            ->column(
+                'actions',
+                '',
+                html: fn(array $row): string => $this->actionsHtml($row, (string)($context['page']['page_id'] ?? 'nominals')),
+                exportable: false
+            );
+    }
+
+    private function rows(array $context): array
+    {
+        $rows = [];
+
+        foreach ((array)($context['services']['nominal_account_catalog'] ?? []) as $nominal) {
             if (!is_array($nominal)) {
                 continue;
             }
 
-            $rows .= '<tr>
-                <td>' . HelperFramework::escape((string)($nominal['code'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape((string)($nominal['name'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape((string)($nominal['account_type'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape((string)($nominal['subtype_name'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape(AccountingFormattingService::nominalTaxTreatmentLabel((string)($nominal['tax_treatment'] ?? 'allowable'))) . '</td>
-                <td>' . (int)($nominal['sort_order'] ?? 0) . '</td>
-                <td>' . ((int)($nominal['is_active'] ?? 0) === 1 ? 'Active' : 'Inactive') . '</td>
-                <td>
-                    <form method="post" data-ajax="true">
-                        <input type="hidden" name="card_action" value="Nominals">
-                        <input type="hidden" name="intent" value="edit_nominal_account">
-                        <input type="hidden" name="page" value="' . HelperFramework::escape($pageId) . '">
-                        <input type="hidden" name="show_card" value="nominals_add_account">
-                        <input type="hidden" name="edit_nominal_id" value="' . (int)($nominal['id'] ?? 0) . '">
-                        <button class="button" type="submit">Edit</button>
-                    </form>
-                </td>
-            </tr>';
+            $nominal['tax_treatment_label'] = AccountingFormattingService::nominalTaxTreatmentLabel(
+                (string)($nominal['tax_treatment'] ?? 'allowable')
+            );
+            $nominal['status_label'] = (int)($nominal['is_active'] ?? 0) === 1 ? 'Active' : 'Inactive';
+
+            $rows[] = $nominal;
         }
 
-        return '
-            <table>
-                <thead>
-                    <tr>
-                        <th>Code</th>
-                        <th>Name</th>
-                        <th>Type</th>
-                        <th>Subtype</th>
-                        <th>Tax Treatment</th>
-                        <th>Sort</th>
-                        <th>Status</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>' . $rows . '</tbody>
-            </table>
-        ';
+        return $rows;
+    }
+
+    private function actionsHtml(array $nominal, string $pageId): string
+    {
+        return '<form method="post" data-ajax="true">
+            <input type="hidden" name="card_action" value="Nominals">
+            <input type="hidden" name="intent" value="edit_nominal_account">
+            <input type="hidden" name="page" value="' . HelperFramework::escape($pageId) . '">
+            <input type="hidden" name="show_card" value="nominals_add_account">
+            <input type="hidden" name="edit_nominal_id" value="' . (int)($nominal['id'] ?? 0) . '">
+            <button class="button" type="submit">Edit</button>
+        </form>';
     }
 }

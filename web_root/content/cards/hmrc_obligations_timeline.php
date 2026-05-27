@@ -42,7 +42,7 @@ final class _hmrc_obligations_timelineCard extends CardBaseFramework
         $rows = '';
         foreach ($items as $item) {
             $rows .= '<tr>
-                <td>' . HelperFramework::escape((string)($item['tax_year_label'] ?? '')) . '<div class="helper">' . HelperFramework::escape((string)($item['period_start'] ?? '') . ' to ' . (string)($item['period_end'] ?? '')) . '</div></td>
+                <td>' . HelperFramework::escape((string)($item['accounting_period_label'] ?? '')) . '<div class="helper">' . HelperFramework::escape((string)($item['period_start'] ?? '') . ' to ' . (string)($item['period_end'] ?? '')) . '</div></td>
                 <td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($item['obligation_type'] ?? ''), '_')) . $this->chHint((array)($item['companies_house'] ?? [])) . '</td>
                 <td>' . HelperFramework::escape((string)($item['due_date'] ?? '')) . '<div class="helper">' . HelperFramework::escape($this->daysLabel((int)($item['days_delta'] ?? 0))) . '</div></td>
                 <td>' . HelperFramework::escape($this->amountLabel($item)) . '</td>

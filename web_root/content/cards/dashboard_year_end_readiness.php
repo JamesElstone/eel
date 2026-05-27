@@ -23,7 +23,7 @@ final class _dashboard_year_end_readinessCard extends CardBaseFramework
                 'method' => 'fetchDashboardSummary',
                 'params' => [
                     'companyId' => ':company.id',
-                    'taxYearId' => ':company.tax_year_id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
         ];

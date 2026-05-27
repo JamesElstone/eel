@@ -75,28 +75,28 @@ final class DividendService
         }
     }
 
-    public function getDividendCapacity(int $companyId, int $taxYearId, ?string $asAtDate = null): array
+    public function getDividendCapacity(int $companyId, int $accountingPeriodId, ?string $asAtDate = null): array
     {
-        if ($companyId <= 0 || $taxYearId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return [
                 'available' => false,
                 'errors' => ['Select a company and accounting period before reviewing dividend capacity.'],
             ];
         }
 
-        $taxYear = $this->fetchTaxYear($companyId, $taxYearId);
-        if ($taxYear === null) {
+        $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null) {
             return [
                 'available' => false,
                 'errors' => ['The selected accounting period could not be found.'],
             ];
         }
 
-        $periodStart = (string)$taxYear['period_start'];
-        $periodEnd = (string)$taxYear['period_end'];
+        $periodStart = (string)$accountingPeriod['period_start'];
+        $periodEnd = (string)$accountingPeriod['period_end'];
         $effectiveDate = $this->effectiveAsAtDate($asAtDate, $periodStart, $periodEnd);
-        $profit = $this->profitForPeriod($companyId, $taxYearId, $periodStart, $effectiveDate);
-        $dividendsDeclared = $this->dividendsDeclaredForPeriod($companyId, $taxYearId, $periodStart, $effectiveDate);
+        $profit = $this->profitForPeriod($companyId, $accountingPeriodId, $periodStart, $effectiveDate);
+        $dividendsDeclared = $this->dividendsDeclaredForPeriod($companyId, $accountingPeriodId, $periodStart, $effectiveDate);
         $retainedEarningsBroughtForward = 0.0;
         $availableReserves = round($retainedEarningsBroughtForward + $profit - $dividendsDeclared, 2);
 
@@ -104,8 +104,8 @@ final class DividendService
             'available' => true,
             'errors' => [],
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
-            'tax_year' => $taxYear,
+            'accounting_period_id' => $accountingPeriodId,
+            'accounting_period' => $accountingPeriod,
             'as_at_date' => $effectiveDate,
             'retained_earnings_brought_forward' => $retainedEarningsBroughtForward,
             'retained_earnings_status' => 'Pending prior-period close',
@@ -121,7 +121,7 @@ final class DividendService
     public function declareDividend(array $input): array
     {
         $companyId = (int)($input['company_id'] ?? 0);
-        $taxYearId = (int)($input['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($input['accounting_period_id'] ?? 0);
         $declarationDate = trim((string)($input['declaration_date'] ?? ''));
         $description = trim((string)($input['description'] ?? ''));
         $settlementTarget = trim((string)($input['settlement_target'] ?? ''));
@@ -132,7 +132,7 @@ final class DividendService
         }
 
         $errors = [];
-        if ($companyId <= 0 || $taxYearId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             $errors[] = 'Select a company and accounting period before declaring a dividend.';
         }
         if (!$this->isValidDate($declarationDate)) {
@@ -145,11 +145,11 @@ final class DividendService
             $errors[] = 'Choose a valid dividend settlement target.';
         }
 
-        $taxYear = $companyId > 0 && $taxYearId > 0 ? $this->fetchTaxYear($companyId, $taxYearId) : null;
-        if ($taxYear === null && $companyId > 0 && $taxYearId > 0) {
+        $accountingPeriod = $companyId > 0 && $accountingPeriodId > 0 ? $this->fetchAccountingPeriod($companyId, $accountingPeriodId) : null;
+        if ($accountingPeriod === null && $companyId > 0 && $accountingPeriodId > 0) {
             $errors[] = 'The selected accounting period could not be found.';
         }
-        if ($taxYear !== null && $this->dateInsidePeriod($declarationDate, (string)$taxYear['period_start'], (string)$taxYear['period_end']) === false) {
+        if ($accountingPeriod !== null && $this->dateInsidePeriod($declarationDate, (string)$accountingPeriod['period_start'], (string)$accountingPeriod['period_end']) === false) {
             $errors[] = 'Declaration date must fall inside the selected accounting period.';
         }
 
@@ -183,7 +183,7 @@ final class DividendService
                 : 'Dividends Payable nominal account is missing.']];
         }
 
-        $capacity = $this->getDividendCapacity($companyId, $taxYearId, $declarationDate);
+        $capacity = $this->getDividendCapacity($companyId, $accountingPeriodId, $declarationDate);
         $availableReserves = round((float)($capacity['available_distributable_reserves'] ?? 0), 2);
         if ($availableReserves <= 0) {
             return ['success' => false, 'errors' => ['Dividend declaration is blocked because distributable reserves are not positive.']];
@@ -193,12 +193,12 @@ final class DividendService
         }
 
         try {
-            (new YearEndLockService())->assertUnlocked($companyId, $taxYearId, 'declare dividends in this period');
+            (new YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'declare dividends in this period');
         } catch (Throwable $exception) {
             return ['success' => false, 'errors' => [$exception->getMessage()]];
         }
 
-        $sourceRef = $this->sourceRef($companyId, $taxYearId, $declarationDate);
+        $sourceRef = $this->sourceRef($companyId, $accountingPeriodId, $declarationDate);
         $ownsTransaction = !InterfaceDB::inTransaction();
 
         if ($ownsTransaction) {
@@ -209,7 +209,7 @@ final class DividendService
             InterfaceDB::prepareExecute(
                 'INSERT INTO journals (
                     company_id,
-                    tax_year_id,
+                    accounting_period_id,
                     source_type,
                     source_ref,
                     journal_date,
@@ -220,7 +220,7 @@ final class DividendService
                  ) VALUES (?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)',
                 [
                     $companyId,
-                    $taxYearId,
+                    $accountingPeriodId,
                     'manual',
                     $sourceRef,
                     $declarationDate,
@@ -254,15 +254,15 @@ final class DividendService
         }
     }
 
-    public function listDividends(int $companyId, int $taxYearId): array
+    public function listDividends(int $companyId, int $accountingPeriodId): array
     {
-        if ($companyId <= 0 || $taxYearId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return [];
         }
 
         $dividendsPaid = $this->findNominalByCode(self::DIVIDENDS_PAID_CODE);
         $dividendsPaidId = (int)($dividendsPaid['id'] ?? 0);
-        $params = [$companyId, $taxYearId, 'manual', 'dividend:%'];
+        $params = [$companyId, $accountingPeriodId, 'manual', 'dividend:%'];
         $nominalCondition = '';
         if ($dividendsPaidId > 0) {
             $nominalCondition = ' OR EXISTS (
@@ -285,7 +285,7 @@ final class DividendService
              FROM journals j
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
              WHERE j.company_id = ?
-               AND j.tax_year_id = ?
+               AND j.accounting_period_id = ?
                AND (
                     (j.source_type = ? AND j.source_ref LIKE ?)' . $nominalCondition . '
                )
@@ -308,10 +308,10 @@ final class DividendService
         return $rows;
     }
 
-    public function getDividendWarnings(int $companyId, int $taxYearId): array
+    public function getDividendWarnings(int $companyId, int $accountingPeriodId): array
     {
         $warnings = [];
-        if ($companyId <= 0 || $taxYearId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             $warnings[] = [
                 'severity' => 'danger',
                 'title' => 'Selected period missing',
@@ -331,8 +331,8 @@ final class DividendService
             }
         }
 
-        if ($companyId > 0 && $taxYearId > 0) {
-            $capacity = $this->getDividendCapacity($companyId, $taxYearId);
+        if ($companyId > 0 && $accountingPeriodId > 0) {
+            $capacity = $this->getDividendCapacity($companyId, $accountingPeriodId);
             $profit = (float)($capacity['current_year_profit_loss'] ?? 0);
             $reserves = (float)($capacity['available_distributable_reserves'] ?? 0);
 
@@ -375,17 +375,17 @@ final class DividendService
         ];
     }
 
-    private function fetchTaxYear(int $companyId, int $taxYearId): ?array
+    private function fetchAccountingPeriod(int $companyId, int $accountingPeriodId): ?array
     {
         $row = InterfaceDB::fetchOne(
             'SELECT id, company_id, label, period_start, period_end
-             FROM tax_years
+             FROM accounting_periods
              WHERE company_id = :company_id
-               AND id = :tax_year_id
+               AND id = :accounting_period_id
              LIMIT 1',
             [
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
+                'accounting_period_id' => $accountingPeriodId,
             ]
         );
 
@@ -405,7 +405,7 @@ final class DividendService
         return is_array($row) ? $row : null;
     }
 
-    private function profitForPeriod(int $companyId, int $taxYearId, string $periodStart, string $asAtDate): float
+    private function profitForPeriod(int $companyId, int $accountingPeriodId, string $periodStart, string $asAtDate): float
     {
         $rows = InterfaceDB::fetchAll(
             'SELECT na.account_type,
@@ -415,14 +415,14 @@ final class DividendService
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
              INNER JOIN nominal_accounts na ON na.id = jl.nominal_account_id
              WHERE j.company_id = :company_id
-               AND j.tax_year_id = :tax_year_id
+               AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
                AND j.journal_date BETWEEN :period_start AND :as_at_date
                AND na.account_type IN (:income_type, :cost_type, :expense_type)
              GROUP BY na.account_type',
             [
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
+                'accounting_period_id' => $accountingPeriodId,
                 'period_start' => $periodStart,
                 'as_at_date' => $asAtDate,
                 'income_type' => 'income',
@@ -448,7 +448,7 @@ final class DividendService
         return round($income - $expenses, 2);
     }
 
-    private function dividendsDeclaredForPeriod(int $companyId, int $taxYearId, string $periodStart, string $asAtDate): float
+    private function dividendsDeclaredForPeriod(int $companyId, int $accountingPeriodId, string $periodStart, string $asAtDate): float
     {
         $nominal = $this->findNominalByCode(self::DIVIDENDS_PAID_CODE);
         $nominalId = (int)($nominal['id'] ?? 0);
@@ -461,13 +461,13 @@ final class DividendService
              FROM journals j
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
              WHERE j.company_id = :company_id
-               AND j.tax_year_id = :tax_year_id
+               AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
                AND j.journal_date BETWEEN :period_start AND :as_at_date
                AND jl.nominal_account_id = :nominal_account_id',
             [
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
+                'accounting_period_id' => $accountingPeriodId,
                 'period_start' => $periodStart,
                 'as_at_date' => $asAtDate,
                 'nominal_account_id' => $nominalId,
@@ -561,7 +561,7 @@ final class DividendService
         return trim((string)($row['code'] ?? '') . ' ' . (string)($row['name'] ?? ''));
     }
 
-    private function sourceRef(int $companyId, int $taxYearId, string $declarationDate): string
+    private function sourceRef(int $companyId, int $accountingPeriodId, string $declarationDate): string
     {
         $date = str_replace('-', '', $declarationDate);
         try {
@@ -570,7 +570,7 @@ final class DividendService
             $suffix = str_replace('.', '', uniqid('', true));
         }
 
-        return 'dividend:' . $companyId . ':' . $taxYearId . ':' . $date . ':' . $suffix;
+        return 'dividend:' . $companyId . ':' . $accountingPeriodId . ':' . $date . ':' . $suffix;
     }
 
     private function effectiveAsAtDate(?string $asAtDate, string $periodStart, string $periodEnd): string

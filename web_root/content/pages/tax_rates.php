@@ -26,7 +26,7 @@ final class _tax_rates extends PageContextFramework
 
     public function hiddenSiteContextSelectors(): array
     {
-        return ['company_id', 'tax_year_id'];
+        return ['company_id', 'accounting_period_id'];
     }
 
     public function cards(): array

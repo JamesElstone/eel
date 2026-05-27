@@ -99,14 +99,14 @@ final class _year_end_audit_logCard extends CardBaseFramework
 
     private function periodLabel(array $row): string
     {
-        $start = trim((string)($row['tax_year_start'] ?? ''));
-        $end = trim((string)($row['tax_year_end'] ?? ''));
+        $start = trim((string)($row['accounting_period_start'] ?? ''));
+        $end = trim((string)($row['accounting_period_end'] ?? ''));
 
         if ($start !== '' && $end !== '') {
             return $start . ' to ' . $end;
         }
 
-        return 'Tax year #' . (string)($row['tax_year_id'] ?? '');
+        return 'Tax year #' . (string)($row['accounting_period_id'] ?? '');
     }
 
     private function jsonSummary(string $oldValueJson, string $newValueJson): string

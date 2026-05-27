@@ -30,12 +30,12 @@ final class AssetService
         ];
     }
 
-    public function fetchPageData(int $companyId, int $taxYearId, int $defaultBankNominalId = 0, int $prefillTransactionId = 0): array {
+    public function fetchPageData(int $companyId, int $accountingPeriodId, int $defaultBankNominalId = 0, int $prefillTransactionId = 0): array {
         if (!$this->hasRequiredSchema()) {
             return [
                 'assets' => [],
-                'tax_years' => $this->fetchTaxYears($companyId),
-                'tax_year_id' => $taxYearId,
+                'accounting_periods' => $this->fetchAccountingPeriods($companyId),
+                'accounting_period_id' => $accountingPeriodId,
                 'tax_view' => null,
                 'prefill_transaction' => null,
                 'default_bank_nominal_id' => $defaultBankNominalId,
@@ -46,9 +46,9 @@ final class AssetService
 
         return [
             'assets' => $this->fetchAssets($companyId),
-            'tax_years' => $this->fetchTaxYears($companyId),
-            'tax_year_id' => $taxYearId,
-            'tax_view' => $taxYearId > 0 ? $this->fetchTaxView($companyId, $taxYearId) : null,
+            'accounting_periods' => $this->fetchAccountingPeriods($companyId),
+            'accounting_period_id' => $accountingPeriodId,
+            'tax_view' => $accountingPeriodId > 0 ? $this->fetchTaxView($companyId, $accountingPeriodId) : null,
             'prefill_transaction' => $prefillTransactionId > 0 ? $this->fetchTransactionPrefill($companyId, $prefillTransactionId) : null,
             'default_bank_nominal_id' => $defaultBankNominalId,
             'asset_categories' => self::assetCategoryOptions(),
@@ -67,7 +67,7 @@ final class AssetService
             'description' => (string)$transaction['description'],
             'purchase_date' => (string)$transaction['txn_date'],
             'cost' => round(abs((float)$transaction['amount']), 2),
-            'tax_year_id' => (int)$transaction['tax_year_id'],
+            'accounting_period_id' => (int)$transaction['accounting_period_id'],
         ];
     }
 
@@ -108,7 +108,7 @@ final class AssetService
         if ($transaction === null || (int)($transaction['company_id'] ?? 0) !== $companyId) {
             return ['success' => false, 'errors' => ['The selected transaction could not be found for this company.']];
         }
-        (new YearEndLockService())->assertUnlocked($companyId, (int)($transaction['tax_year_id'] ?? 0), 'create assets from transactions in this period');
+        (new YearEndLockService())->assertUnlocked($companyId, (int)($transaction['accounting_period_id'] ?? 0), 'create assets from transactions in this period');
 
         if ($defaultBankNominalId <= 0) {
             return ['success' => false, 'errors' => ['Set the default bank nominal before creating an asset from a transaction.']];
@@ -118,7 +118,7 @@ final class AssetService
             'purchase_date' => (string)$transaction['txn_date'],
             'cost' => abs((float)$transaction['amount']),
             'description' => (string)$transaction['description'],
-            'tax_year_id' => (int)$transaction['tax_year_id'],
+            'accounting_period_id' => (int)$transaction['accounting_period_id'],
         ]);
         if ($normalised['errors'] !== []) {
             return ['success' => false, 'errors' => $normalised['errors']];
@@ -182,7 +182,7 @@ final class AssetService
         }
     }
 
-    public function createManualAsset(int $companyId, int $taxYearId, array $payload, int $offsetNominalId): array {
+    public function createManualAsset(int $companyId, int $accountingPeriodId, array $payload, int $offsetNominalId): array {
         if (!$this->hasRequiredSchema()) {
             return ['success' => false, 'errors' => ['Run the fixed asset migration before using the asset register.']];
         }
@@ -190,16 +190,16 @@ final class AssetService
         if ($offsetNominalId <= 0) {
             return ['success' => false, 'errors' => ['Choose an offset nominal before posting a manual asset.']];
         }
-        (new YearEndLockService())->assertUnlocked($companyId, $taxYearId, 'post manual assets in this period');
+        (new YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'post manual assets in this period');
 
-        $normalised = $this->normaliseAssetPayload($companyId, $payload, ['tax_year_id' => $taxYearId]);
+        $normalised = $this->normaliseAssetPayload($companyId, $payload, ['accounting_period_id' => $accountingPeriodId]);
         if ($normalised['errors'] !== []) {
             return ['success' => false, 'errors' => $normalised['errors']];
         }
 
         $journalDate = (string)$normalised['values']['purchase_date'];
-        $resolvedTaxYearId = $this->resolveTaxYearIdForDate($companyId, $journalDate);
-        if ($resolvedTaxYearId <= 0) {
+        $resolvedAccountingPeriodId = $this->resolveAccountingPeriodIdForDate($companyId, $journalDate);
+        if ($resolvedAccountingPeriodId <= 0) {
             return ['success' => false, 'errors' => ['No accounting period exists for the chosen purchase date.']];
         }
 
@@ -212,7 +212,7 @@ final class AssetService
             $assetCode = $this->generateAssetCode($companyId);
             $journalId = $this->insertJournal([
                 'company_id' => $companyId,
-                'tax_year_id' => $resolvedTaxYearId,
+                'accounting_period_id' => $resolvedAccountingPeriodId,
                 'source_type' => 'asset_register',
                 'source_ref' => 'asset:' . $assetCode . ':opening',
                 'journal_date' => $journalDate,
@@ -248,18 +248,18 @@ final class AssetService
         }
     }
 
-    public function runDepreciation(int $companyId, int $taxYearId): array {
+    public function runDepreciation(int $companyId, int $accountingPeriodId): array {
         if (!$this->hasRequiredSchema()) {
             return ['success' => false, 'errors' => ['Run the fixed asset migration before posting depreciation.']];
         }
 
-        $taxYear = $this->fetchTaxYear($companyId, $taxYearId);
-        if ($taxYear === null) {
+        $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null) {
             return ['success' => false, 'errors' => ['The selected accounting period could not be found.']];
         }
-        (new YearEndLockService())->assertUnlocked($companyId, $taxYearId, 'post depreciation in this period');
+        (new YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'post depreciation in this period');
 
-        $assets = $this->fetchDepreciableAssets($companyId, (string)$taxYear['period_start'], (string)$taxYear['period_end']);
+        $assets = $this->fetchDepreciableAssets($companyId, (string)$accountingPeriod['period_start'], (string)$accountingPeriod['period_end']);
         $summary = ['success' => true, 'created' => 0, 'skipped' => 0, 'errors' => []];
         $ownsTransaction = !InterfaceDB::inTransaction();
         if ($ownsTransaction) {
@@ -268,8 +268,8 @@ final class AssetService
 
         try {
             foreach ($assets as $asset) {
-                $periodStart = max((string)$taxYear['period_start'], (string)$asset['purchase_date']);
-                $periodEnd = (string)$taxYear['period_end'];
+                $periodStart = max((string)$accountingPeriod['period_start'], (string)$asset['purchase_date']);
+                $periodEnd = (string)$accountingPeriod['period_end'];
                 if ((string)($asset['status'] ?? 'active') === 'disposed' && trim((string)($asset['disposal_date'] ?? '')) !== '') {
                     $periodEnd = min($periodEnd, (string)$asset['disposal_date']);
                 }
@@ -279,7 +279,7 @@ final class AssetService
                     continue;
                 }
 
-                if ($this->depreciationEntryExists((int)$asset['id'], $taxYearId, $periodStart, $periodEnd)) {
+                if ($this->depreciationEntryExists((int)$asset['id'], $accountingPeriodId, $periodStart, $periodEnd)) {
                     $summary['skipped']++;
                     continue;
                 }
@@ -292,9 +292,9 @@ final class AssetService
 
                 $journalId = $this->insertJournal([
                     'company_id' => $companyId,
-                    'tax_year_id' => $taxYearId,
+                    'accounting_period_id' => $accountingPeriodId,
                     'source_type' => 'asset_depreciation',
-                    'source_ref' => 'asset:' . (int)$asset['id'] . ':depreciation:' . $taxYearId . ':' . $periodStart . ':' . $periodEnd,
+                    'source_ref' => 'asset:' . (int)$asset['id'] . ':depreciation:' . $accountingPeriodId . ':' . $periodStart . ':' . $periodEnd,
                     'journal_date' => $periodEnd,
                     'description' => 'Depreciation ' . (string)$asset['asset_code'],
                 ]);
@@ -305,7 +305,7 @@ final class AssetService
                 $stmt = InterfaceDB::prepare(
                     'INSERT INTO asset_depreciation_entries (
                         asset_id,
-                        tax_year_id,
+                        accounting_period_id,
                         period_start,
                         period_end,
                         amount,
@@ -313,7 +313,7 @@ final class AssetService
                         created_at
                     ) VALUES (
                         :asset_id,
-                        :tax_year_id,
+                        :accounting_period_id,
                         :period_start,
                         :period_end,
                         :amount,
@@ -323,7 +323,7 @@ final class AssetService
                 );
                 $stmt->execute([
                     'asset_id' => (int)$asset['id'],
-                    'tax_year_id' => $taxYearId,
+                    'accounting_period_id' => $accountingPeriodId,
                     'period_start' => $periodStart,
                     'period_end' => $periodEnd,
                     'amount' => $amount,
@@ -368,11 +368,11 @@ final class AssetService
             return ['success' => false, 'errors' => ['Set the default bank nominal before posting a disposal.']];
         }
 
-        $taxYearId = $this->resolveTaxYearIdForDate($companyId, $disposalDate);
-        if ($taxYearId <= 0) {
+        $accountingPeriodId = $this->resolveAccountingPeriodIdForDate($companyId, $disposalDate);
+        if ($accountingPeriodId <= 0) {
             return ['success' => false, 'errors' => ['No accounting period exists for the disposal date.']];
         }
-        (new YearEndLockService())->assertUnlocked($companyId, $taxYearId, 'dispose assets in this period');
+        (new YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'dispose assets in this period');
 
         $accumulatedDepreciation = $this->sumDepreciationToDate($assetId, $disposalDate);
         $nbv = round(max(0.0, (float)$asset['cost'] - $accumulatedDepreciation), 2);
@@ -386,7 +386,7 @@ final class AssetService
         try {
             $journalId = $this->insertJournal([
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
+                'accounting_period_id' => $accountingPeriodId,
                 'source_type' => 'asset_disposal',
                 'source_ref' => 'asset:' . $assetId . ':disposal',
                 'journal_date' => $disposalDate,
@@ -453,19 +453,19 @@ final class AssetService
         ];
     }
 
-    public function fetchTaxView(int $companyId, int $taxYearId): ?array {
+    public function fetchTaxView(int $companyId, int $accountingPeriodId): ?array {
         if (!$this->hasRequiredSchema()) {
             return null;
         }
 
-        $taxYear = $this->fetchTaxYear($companyId, $taxYearId);
-        if ($taxYear === null) {
+        $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null) {
             return null;
         }
 
         $metrics = $this->refreshDerivedTaxData($companyId);
-        return $metrics[$taxYearId] ?? [
-            'tax_year' => $taxYear,
+        return $metrics[$accountingPeriodId] ?? [
+            'accounting_period' => $accountingPeriod,
             'accounting_profit' => 0.0,
             'depreciation_add_back' => 0.0,
             'capital_allowances' => 0.0,
@@ -478,8 +478,8 @@ final class AssetService
     }
 
     private function refreshDerivedTaxData(int $companyId): array {
-        $taxYears = $this->fetchTaxYears($companyId);
-        if ($taxYears === []) {
+        $accountingPeriods = $this->fetchAccountingPeriods($companyId);
+        if ($accountingPeriods === []) {
             return [];
         }
 
@@ -487,19 +487,19 @@ final class AssetService
         $metrics = [];
         $lossPool = [];
 
-        foreach (array_reverse($taxYears) as $taxYear) {
-            $taxYearId = (int)$taxYear['id'];
-            $depreciationByAsset = $this->fetchDepreciationByAsset($companyId, $taxYearId);
-            $allowancesByAsset = $this->calculateCapitalAllowancesByAsset($companyId, $taxYear);
+        foreach (array_reverse($accountingPeriods) as $accountingPeriod) {
+            $accountingPeriodId = (int)$accountingPeriod['id'];
+            $depreciationByAsset = $this->fetchDepreciationByAsset($companyId, $accountingPeriodId);
+            $allowancesByAsset = $this->calculateCapitalAllowancesByAsset($companyId, $accountingPeriod);
 
             foreach ($depreciationByAsset as $assetId => $amount) {
-                $this->insertTaxYearAdjustment($companyId, $taxYearId, 'add_back_depreciation', 'add', $amount, $assetId);
+                $this->insertAccountingPeriodAdjustment($companyId, $accountingPeriodId, 'add_back_depreciation', 'add', $amount, $assetId);
             }
             foreach ($allowancesByAsset as $assetId => $amount) {
-                $this->insertTaxYearAdjustment($companyId, $taxYearId, 'capital_allowances', 'deduct', $amount, $assetId);
+                $this->insertAccountingPeriodAdjustment($companyId, $accountingPeriodId, 'capital_allowances', 'deduct', $amount, $assetId);
             }
 
-            $accountingProfit = $this->calculateAccountingProfit($companyId, $taxYearId);
+            $accountingProfit = $this->calculateAccountingProfit($companyId, $accountingPeriodId);
             $depreciationAddBack = round(array_sum($depreciationByAsset), 2);
             $capitalAllowances = round(array_sum($allowancesByAsset), 2);
             $taxableBeforeLosses = round($accountingProfit + $depreciationAddBack - $capitalAllowances, 2);
@@ -523,7 +523,7 @@ final class AssetService
 
             if ($taxableBeforeLosses < 0) {
                 $lossPool[] = [
-                    'origin_tax_year_id' => $taxYearId,
+                    'origin_accounting_period_id' => $accountingPeriodId,
                     'originated' => abs($taxableBeforeLosses),
                     'used' => 0.0,
                     'remaining' => abs($taxableBeforeLosses),
@@ -531,8 +531,8 @@ final class AssetService
             }
 
             $lossesCf = round(array_sum(array_column($lossPool, 'remaining')), 2);
-            $metrics[$taxYearId] = [
-                'tax_year' => $taxYear,
+            $metrics[$accountingPeriodId] = [
+                'accounting_period' => $accountingPeriod,
                 'accounting_profit' => round($accountingProfit, 2),
                 'depreciation_add_back' => $depreciationAddBack,
                 'capital_allowances' => $capitalAllowances,
@@ -548,7 +548,7 @@ final class AssetService
             $stmt = InterfaceDB::prepare(
                 'INSERT INTO tax_loss_carryforwards (
                     company_id,
-                    origin_tax_year_id,
+                    origin_accounting_period_id,
                     amount_originated,
                     amount_used,
                     amount_remaining,
@@ -557,7 +557,7 @@ final class AssetService
                     updated_at
                  ) VALUES (
                     :company_id,
-                    :origin_tax_year_id,
+                    :origin_accounting_period_id,
                     :amount_originated,
                     :amount_used,
                     :amount_remaining,
@@ -568,7 +568,7 @@ final class AssetService
             );
             $stmt->execute([
                 'company_id' => $companyId,
-                'origin_tax_year_id' => $lossRow['origin_tax_year_id'],
+                'origin_accounting_period_id' => $lossRow['origin_accounting_period_id'],
                 'amount_originated' => round($lossRow['originated'], 2),
                 'amount_used' => round($lossRow['used'], 2),
                 'amount_remaining' => round($lossRow['remaining'], 2),
@@ -580,24 +580,24 @@ final class AssetService
     }
 
     private function deleteDerivedTaxRows(int $companyId): void {
-        InterfaceDB::prepare('DELETE FROM tax_year_adjustments WHERE company_id = :company_id')
+        InterfaceDB::prepare('DELETE FROM accounting_period_adjustments WHERE company_id = :company_id')
             ->execute(['company_id' => $companyId]);
         InterfaceDB::prepare('DELETE FROM tax_loss_carryforwards WHERE company_id = :company_id')
             ->execute(['company_id' => $companyId]);
     }
 
-    private function fetchDepreciationByAsset(int $companyId, int $taxYearId): array {
+    private function fetchDepreciationByAsset(int $companyId, int $accountingPeriodId): array {
         $stmt = InterfaceDB::prepare(
             'SELECT ar.id AS asset_id, COALESCE(SUM(ade.amount), 0) AS amount
              FROM asset_register ar
              INNER JOIN asset_depreciation_entries ade ON ade.asset_id = ar.id
              WHERE ar.company_id = :company_id
-               AND ade.tax_year_id = :tax_year_id
+               AND ade.accounting_period_id = :accounting_period_id
              GROUP BY ar.id'
         );
         $stmt->execute([
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
         ]);
 
         $rows = [];
@@ -608,7 +608,7 @@ final class AssetService
         return $rows;
     }
 
-    private function calculateCapitalAllowancesByAsset(int $companyId, array $taxYear): array {
+    private function calculateCapitalAllowancesByAsset(int $companyId, array $accountingPeriod): array {
         $stmt = InterfaceDB::prepare(
             'SELECT id, category, cost
              FROM asset_register
@@ -617,8 +617,8 @@ final class AssetService
         );
         $stmt->execute([
             'company_id' => $companyId,
-            'period_start' => (string)$taxYear['period_start'],
-            'period_end' => (string)$taxYear['period_end'],
+            'period_start' => (string)$accountingPeriod['period_start'],
+            'period_end' => (string)$accountingPeriod['period_end'],
         ]);
 
         $allowances = [];
@@ -637,7 +637,7 @@ final class AssetService
         return $allowances;
     }
 
-    private function calculateAccountingProfit(int $companyId, int $taxYearId): float {
+    private function calculateAccountingProfit(int $companyId, int $accountingPeriodId): float {
         $stmt = InterfaceDB::prepare(
             'SELECT na.account_type,
                     COALESCE(SUM(jl.debit), 0) AS total_debit,
@@ -646,13 +646,13 @@ final class AssetService
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
              INNER JOIN nominal_accounts na ON na.id = jl.nominal_account_id
              WHERE j.company_id = :company_id
-               AND j.tax_year_id = :tax_year_id
+               AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
              GROUP BY na.account_type'
         );
         $stmt->execute([
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
         ]);
 
         $profit = 0.0;
@@ -670,11 +670,11 @@ final class AssetService
         return round($profit, 2);
     }
 
-    private function insertTaxYearAdjustment(int $companyId, int $taxYearId, string $type, string $direction, float $amount, int $assetId): void {
+    private function insertAccountingPeriodAdjustment(int $companyId, int $accountingPeriodId, string $type, string $direction, float $amount, int $assetId): void {
         $stmt = InterfaceDB::prepare(
-            'INSERT INTO tax_year_adjustments (
+            'INSERT INTO accounting_period_adjustments (
                 company_id,
-                tax_year_id,
+                accounting_period_id,
                 type,
                 direction,
                 amount,
@@ -683,7 +683,7 @@ final class AssetService
                 updated_at
              ) VALUES (
                 :company_id,
-                :tax_year_id,
+                :accounting_period_id,
                 :type,
                 :direction,
                 :amount,
@@ -694,7 +694,7 @@ final class AssetService
         );
         $stmt->execute([
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'type' => $type,
             'direction' => $direction,
             'amount' => round($amount, 2),
@@ -719,10 +719,10 @@ final class AssetService
         return $stmt->fetchAll() ?: [];
     }
 
-    private function depreciationEntryExists(int $assetId, int $taxYearId, string $periodStart, string $periodEnd): bool {
+    private function depreciationEntryExists(int $assetId, int $accountingPeriodId, string $periodStart, string $periodEnd): bool {
         return InterfaceDB::countWhere('asset_depreciation_entries', [
             'asset_id' => $assetId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'period_start' => $periodStart,
             'period_end' => $periodEnd,
         ]) > 0;
@@ -774,7 +774,7 @@ final class AssetService
         $lifeYears = (int)($payload['useful_life_years'] ?? 3);
         $method = trim((string)($payload['depreciation_method'] ?? 'straight_line'));
         $residualValue = round((float)($payload['residual_value'] ?? 0), 2);
-        $taxYearId = (int)($payload['tax_year_id'] ?? $defaults['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($payload['accounting_period_id'] ?? $defaults['accounting_period_id'] ?? 0);
         $status = trim((string)($payload['status'] ?? 'active'));
         $errors = [];
 
@@ -799,10 +799,10 @@ final class AssetService
         if ($residualValue < 0 || $residualValue >= $cost) {
             $errors[] = 'Residual value must be zero or less than cost.';
         }
-        if ($taxYearId <= 0 && $purchaseDate !== '') {
-            $taxYearId = $this->resolveTaxYearIdForDate($companyId, $purchaseDate);
+        if ($accountingPeriodId <= 0 && $purchaseDate !== '') {
+            $accountingPeriodId = $this->resolveAccountingPeriodIdForDate($companyId, $purchaseDate);
         }
-        if ($taxYearId <= 0) {
+        if ($accountingPeriodId <= 0) {
             $errors[] = 'No accounting period exists for the chosen purchase date.';
         }
 
@@ -817,7 +817,7 @@ final class AssetService
             'errors' => $errors,
             'values' => [
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
+                'accounting_period_id' => $accountingPeriodId,
                 'description' => $description,
                 'category' => $category,
                 'nominal_account_id' => $nominalAccountId,
@@ -900,25 +900,25 @@ final class AssetService
         ]);
     }
 
-    private function fetchTaxYears(int $companyId): array {
+    private function fetchAccountingPeriods(int $companyId): array {
         if ($companyId <= 0) {
             return [];
         }
 
-        return (new TaxYearRepository())->fetchTaxYears($companyId);
+        return (new AccountingPeriodRepository())->fetchAccountingPeriods($companyId);
     }
 
-    private function fetchTaxYear(int $companyId, int $taxYearId): ?array {
-        return (new TaxYearRepository())->fetchTaxYear($companyId, $taxYearId);
+    private function fetchAccountingPeriod(int $companyId, int $accountingPeriodId): ?array {
+        return (new AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId);
     }
 
-    private function resolveTaxYearIdForDate(int $companyId, string $date): int {
+    private function resolveAccountingPeriodIdForDate(int $companyId, string $date): int {
         if ($companyId <= 0 || !$this->isIsoDate($date)) {
             return 0;
         }
 
         $value = InterfaceDB::fetchColumn( 'SELECT id
-             FROM tax_years
+             FROM accounting_periods
              WHERE company_id = :company_id
                AND period_start <= :date_value
                AND period_end >= :date_value
@@ -942,7 +942,7 @@ final class AssetService
         $stmt = InterfaceDB::prepare(
             'INSERT INTO journals (
                 company_id,
-                tax_year_id,
+                accounting_period_id,
                 source_type,
                 source_ref,
                 journal_date,
@@ -952,7 +952,7 @@ final class AssetService
                 updated_at
              ) VALUES (
                 :company_id,
-                :tax_year_id,
+                :accounting_period_id,
                 :source_type,
                 :source_ref,
                 :journal_date,
@@ -964,7 +964,7 @@ final class AssetService
         );
         $stmt->execute([
             'company_id' => $journal['company_id'],
-            'tax_year_id' => $journal['tax_year_id'],
+            'accounting_period_id' => $journal['accounting_period_id'],
             'source_type' => $journal['source_type'],
             'source_ref' => $journal['source_ref'],
             'journal_date' => $journal['journal_date'],
@@ -1071,7 +1071,7 @@ final class AssetService
         try {
             $this->schemaReady = InterfaceDB::tableExists('asset_register')
                 && InterfaceDB::tableExists('asset_depreciation_entries')
-                && InterfaceDB::tableExists('tax_year_adjustments')
+                && InterfaceDB::tableExists('accounting_period_adjustments')
                 && InterfaceDB::tableExists('tax_loss_carryforwards');
         } catch (Throwable) {
             $this->schemaReady = false;

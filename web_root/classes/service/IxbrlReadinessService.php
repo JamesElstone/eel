@@ -9,33 +9,33 @@ declare(strict_types=1);
 
 final class IxbrlReadinessService
 {
-    public function getReadiness(int $companyId, int $taxYearId): array
+    public function getReadiness(int $companyId, int $accountingPeriodId): array
     {
         (new IxbrlFactBuilderService())->ensureSchema();
         $company = $this->fetchCompany($companyId);
-        $taxYear = $this->fetchTaxYear($companyId, $taxYearId);
+        $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
         $checks = [];
 
-        $this->addCheck($checks, 'period_selected', 'Period selected', $company !== null && $taxYear !== null, true, $taxYear === null ? 'Select a company and accounting period.' : 'Accounting period is available.');
-        $journalCount = $companyId > 0 && $taxYearId > 0 ? InterfaceDB::countWhere('journals', ['company_id' => $companyId, 'tax_year_id' => $taxYearId]) : 0;
+        $this->addCheck($checks, 'period_selected', 'Period selected', $company !== null && $accountingPeriod !== null, true, $accountingPeriod === null ? 'Select a company and accounting period.' : 'Accounting period is available.');
+        $journalCount = $companyId > 0 && $accountingPeriodId > 0 ? InterfaceDB::countWhere('journals', ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]) : 0;
         $this->addCheck($checks, 'journals_exist', 'At least one journal exists', $journalCount > 0, true, $journalCount . ' journals found.');
-        $unbalancedJournals = $this->unbalancedJournalCount($companyId, $taxYearId);
+        $unbalancedJournals = $this->unbalancedJournalCount($companyId, $accountingPeriodId);
         $this->addCheck($checks, 'journal_lines_balance', 'Journal lines balance', $unbalancedJournals === 0, true, $unbalancedJournals === 0 ? 'No unbalanced posted journals detected.' : $unbalancedJournals . ' unbalanced posted journals detected.');
 
-        $totals = (new IxbrlTrialBalanceService())->getTotals($companyId, $taxYearId);
+        $totals = (new IxbrlTrialBalanceService())->getTotals($companyId, $accountingPeriodId);
         $this->addCheck($checks, 'trial_balance_balanced', 'Trial balance balanced', !empty($totals['is_balanced']), true, 'Difference: ' . FormattingFramework::money($totals['difference'] ?? 0));
 
-        $uncategorised = $this->uncategorisedTransactionCount($companyId, $taxYearId);
+        $uncategorised = $this->uncategorisedTransactionCount($companyId, $accountingPeriodId);
         $this->addCheck($checks, 'uncategorised_clear', 'Uncategorised transactions clear', $uncategorised === 0, false, $uncategorised . ' uncategorised transactions found.');
 
-        $unposted = $this->unpostedJournalCount($companyId, $taxYearId);
+        $unposted = $this->unpostedJournalCount($companyId, $accountingPeriodId);
         $this->addCheck($checks, 'journals_posted', 'Journals posted', $unposted === 0, true, $unposted === 0 ? 'All journals are posted.' : $unposted . ' unposted journals found.');
 
         $settings = $companyId > 0 ? (new CompanySettingsStore($companyId))->all() : [];
         $missingSettings = $this->missingSettings($settings);
         $this->addCheck($checks, 'required_settings', 'Required company settings present', $missingSettings === [], false, $missingSettings === [] ? 'Core company settings are present.' : 'Missing: ' . implode(', ', $missingSettings));
 
-        $latestRun = (new IxbrlFactBuilderService())->getLatestRun($companyId, $taxYearId);
+        $latestRun = (new IxbrlFactBuilderService())->getLatestRun($companyId, $accountingPeriodId);
         $factCount = (int)($latestRun['fact_count'] ?? 0);
         $this->addCheck($checks, 'facts_generated', 'Facts generated', $factCount > 0, false, $factCount > 0 ? $factCount . ' generated facts available.' : 'Build facts before generating XHTML.');
 
@@ -47,7 +47,7 @@ final class IxbrlReadinessService
 
         return [
             'company' => $company,
-            'tax_year' => $taxYear,
+            'accounting_period' => $accountingPeriod,
             'checks' => $checks,
             'blocking_errors' => array_map(static fn(array $check): string => (string)$check['detail'], $blocking),
             'warnings' => array_map(static fn(array $check): string => (string)$check['detail'], $warnings),
@@ -76,23 +76,23 @@ final class IxbrlReadinessService
         return is_array($row) ? $row : null;
     }
 
-    private function fetchTaxYear(int $companyId, int $taxYearId): ?array
+    private function fetchAccountingPeriod(int $companyId, int $accountingPeriodId): ?array
     {
         $row = InterfaceDB::fetchOne(
             'SELECT *
-             FROM tax_years
+             FROM accounting_periods
              WHERE id = :id
                AND company_id = :company_id
              LIMIT 1',
-            ['id' => $taxYearId, 'company_id' => $companyId]
+            ['id' => $accountingPeriodId, 'company_id' => $companyId]
         );
 
         return is_array($row) ? $row : null;
     }
 
-    private function unbalancedJournalCount(int $companyId, int $taxYearId): int
+    private function unbalancedJournalCount(int $companyId, int $accountingPeriodId): int
     {
-        if ($companyId <= 0 || $taxYearId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return 0;
         }
 
@@ -103,31 +103,31 @@ final class IxbrlReadinessService
                 FROM journals j
                 INNER JOIN journal_lines jl ON jl.journal_id = j.id
                 WHERE j.company_id = :company_id
-                  AND j.tax_year_id = :tax_year_id
+                  AND j.accounting_period_id = :accounting_period_id
                   AND j.is_posted = 1
                 GROUP BY j.id
                 HAVING ABS(COALESCE(SUM(jl.debit), 0) - COALESCE(SUM(jl.credit), 0)) >= 0.005
              ) x',
-            ['company_id' => $companyId, 'tax_year_id' => $taxYearId]
+            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
         );
     }
 
-    private function unpostedJournalCount(int $companyId, int $taxYearId): int
+    private function unpostedJournalCount(int $companyId, int $accountingPeriodId): int
     {
-        if ($companyId <= 0 || $taxYearId <= 0 || !InterfaceDB::columnExists('journals', 'is_posted')) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || !InterfaceDB::columnExists('journals', 'is_posted')) {
             return 0;
         }
 
-        return InterfaceDB::countWhere('journals', ['company_id' => $companyId, 'tax_year_id' => $taxYearId, 'is_posted' => 0]);
+        return InterfaceDB::countWhere('journals', ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId, 'is_posted' => 0]);
     }
 
-    private function uncategorisedTransactionCount(int $companyId, int $taxYearId): int
+    private function uncategorisedTransactionCount(int $companyId, int $accountingPeriodId): int
     {
-        if ($companyId <= 0 || $taxYearId <= 0 || !InterfaceDB::tableExists('transactions')) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || !InterfaceDB::tableExists('transactions')) {
             return 0;
         }
 
-        return InterfaceDB::countWhere('transactions', ['company_id' => $companyId, 'tax_year_id' => $taxYearId, 'category_status' => 'uncategorised']);
+        return InterfaceDB::countWhere('transactions', ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId, 'category_status' => 'uncategorised']);
     }
 
     private function missingSettings(array $settings): array

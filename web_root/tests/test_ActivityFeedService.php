@@ -42,8 +42,8 @@ $harness->run(ActivityFeedService::class, function (GeneratedServiceClassTestHar
             'action' => 'lock',
             'action_by' => 'James',
             'action_at' => '2026-04-29 13:00:00',
-            'tax_year_start' => '2025-01-01',
-            'tax_year_end' => '2025-12-31',
+            'accounting_period_start' => '2025-01-01',
+            'accounting_period_end' => '2025-12-31',
             'notes' => 'Reviewed',
         ]);
 

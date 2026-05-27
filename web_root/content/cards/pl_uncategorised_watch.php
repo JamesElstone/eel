@@ -19,8 +19,8 @@ final class _pl_uncategorised_watchCard extends CardBaseFramework
     {
         $rows = (array)($context['profit_loss']['uncategorised_watch'] ?? []);
         $companyId = (int)($context['company']['id'] ?? 0);
-        $taxYearId = (int)($context['company']['tax_year_id'] ?? 0);
-        $link = '?' . http_build_query(['page' => 'transactions', 'company_id' => $companyId, 'tax_year_id' => $taxYearId, 'category_filter' => 'uncategorised']);
+        $accountingPeriodId = (int)($context['company']['accounting_period_id'] ?? 0);
+        $link = '?' . http_build_query(['page' => 'transactions', 'company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId, 'category_filter' => 'uncategorised']);
 
         if ($rows === []) {
             return '<div class="helper">No uncategorised transactions found for this period.</div><div class="actions-row"><a class="button" href="' . HelperFramework::escape($link) . '">Review Transactions</a></div>';

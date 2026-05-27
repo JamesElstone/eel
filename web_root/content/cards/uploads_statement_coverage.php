@@ -33,7 +33,7 @@ final class _uploads_statement_coverageCard extends CardBaseFramework
                 'method' => 'buildHeatmapOptions',
                 'params' => [
                     'companyId' => ':company.id',
-                    'taxYearId' => ':company.tax_year_id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
         ];
@@ -52,15 +52,15 @@ final class _uploads_statement_coverageCard extends CardBaseFramework
     public function render(array $context): string
     {
         $options = (array)($context['services']['statement_coverage_heatmap'] ?? []);
-        $taxYear = (array)($context['tax_year'] ?? []);
-        $taxYearLabel = trim((string)($taxYear['label'] ?? ''));
+        $accountingPeriod = (array)($context['accounting_period'] ?? []);
+        $accountingPeriodLabel = trim((string)($accountingPeriod['label'] ?? ''));
 
         if ($options === []) {
             return '<div class="helper">Select a company and accounting period to see statement coverage.</div>';
         }
 
-        if ($taxYearLabel !== '') {
-            $options['label'] = 'Statement Coverage from ' . $taxYearLabel;
+        if ($accountingPeriodLabel !== '') {
+            $options['label'] = 'Statement Coverage from ' . $accountingPeriodLabel;
         }
 
         return (new ChartService())->monthHeatmap($options);

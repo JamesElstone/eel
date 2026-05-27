@@ -26,13 +26,13 @@ final class AccountingGuidanceService
         }
 
         $documentRepository = new CompaniesHouseDocumentRepository();
-        $taxYearRepository = new TaxYearRepository();
+        $accountingPeriodRepository = new AccountingPeriodRepository();
         $filedPeriods = $documentRepository->fetchFiledAccountingPeriods($companyId, $companyNumber);
         $result['filed_period_count'] = count($filedPeriods);
 
         $findExact = InterfaceDB::prepare(
             'SELECT id
-             FROM tax_years
+             FROM accounting_periods
              WHERE company_id = ?
                AND period_start = ?
                AND period_end = ?
@@ -41,7 +41,7 @@ final class AccountingGuidanceService
         );
         $findOverlap = InterfaceDB::prepare(
             'SELECT COUNT(*)
-             FROM tax_years
+             FROM accounting_periods
              WHERE company_id = ?
                AND NOT (period_end < ? OR period_start > ?)
                AND NOT (period_start = ? AND period_end = ?)'
@@ -68,7 +68,7 @@ final class AccountingGuidanceService
                 continue;
             }
 
-            $taxYearRepository->createPeriod($companyId, $periodStart, $periodEnd);
+            $accountingPeriodRepository->createPeriod($companyId, $periodStart, $periodEnd);
             $result['created_count']++;
             $result['created_periods'][] = $period;
         }
@@ -80,18 +80,18 @@ final class AccountingGuidanceService
     {
         $accountingContext = new AccountingContextService();
         $companyId = HelperFramework::sanitiseId($companyId, $accountingContext->companyId());
-        $taxYearId = HelperFramework::sanitiseId($accountingContext->taxYearId());
+        $accountingPeriodId = HelperFramework::sanitiseId($accountingContext->accountingPeriodId());
         $companyRepository = new CompanyRepository();
-        $taxYearRepository = new TaxYearRepository();
+        $accountingPeriodRepository = new AccountingPeriodRepository();
         $company = $companyId > 0 ? $companyRepository->fetchCompanyDetails($companyId) : null;
-        $accountingPeriods = $companyId > 0 ? $taxYearRepository->fetchTaxYears($companyId) : [];
-        $selectedTaxYear = $companyId > 0 && $taxYearId > 0
-            ? $taxYearRepository->fetchTaxYear($companyId, $taxYearId)
+        $accountingPeriods = $companyId > 0 ? $accountingPeriodRepository->fetchAccountingPeriods($companyId) : [];
+        $selectedAccountingPeriod = $companyId > 0 && $accountingPeriodId > 0
+            ? $accountingPeriodRepository->fetchAccountingPeriod($companyId, $accountingPeriodId)
             : null;
         $incorporationDate = trim((string)($company['incorporation_date'] ?? ''));
         $companyNumber = trim((string)($company['company_number'] ?? ''));
-        $periodStart = trim((string)($selectedTaxYear['period_start'] ?? ''));
-        $periodEnd = trim((string)($selectedTaxYear['period_end'] ?? ''));
+        $periodStart = trim((string)($selectedAccountingPeriod['period_start'] ?? ''));
+        $periodEnd = trim((string)($selectedAccountingPeriod['period_end'] ?? ''));
 
         $guidance = [
             'incorporation_date' => $incorporationDate,
@@ -176,7 +176,7 @@ final class AccountingGuidanceService
             $coverageService = new AccountingPeriodCoverageService();
             $guidance['coverage'] = $coverageService->summarise(
                 $companyId,
-                $taxYearId,
+                $accountingPeriodId,
                 $periodStart,
                 $periodEnd
             );

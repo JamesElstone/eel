@@ -107,7 +107,7 @@ The system is built around a central ledger model, with multiple input sources f
 - `journals` + `journal_lines` -> double-entry ledger
 - `nominal_accounts` -> chart of accounts
 - `categorisation_rules` -> automation layer
-- `tax_years` -> accounting periods
+- `accounting_periods` -> accounting periods
 
 This structure enables a clean progression from raw data to statutory outputs.
 

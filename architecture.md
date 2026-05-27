@@ -181,7 +181,7 @@ Transactions are not the final accounting truth by themselves. They are source d
 Important transaction fields:
 
 - `company_id`
-- `tax_year_id`
+- `accounting_period_id`
 - `statement_upload_id`
 - `account_id`
 - `txn_date`
@@ -218,7 +218,7 @@ Tracks uploaded files.
 Important fields:
 
 - `company_id`
-- `tax_year_id`
+- `accounting_period_id`
 - `account_id`
 - `statement_month`
 - `file_sha256`
@@ -407,14 +407,14 @@ Avoid duplicating repayments if they already exist in bank CSV data. Register en
 
 ---
 
-## 12. Tax Years and CT Periods
+## 12. Accounting Periods and CT Periods
 
-The `tax_years` table currently stores accounting periods, not necessarily statutory tax years.
+The `accounting_periods` table currently stores accounting periods, not necessarily statutory accounting periods.
 
 Important rule:
 
 ```text
-tax_years = accounting periods
+accounting_periods = accounting periods
 ```
 
 Corporation Tax periods are derived from confirmed accounting periods.

@@ -13,13 +13,13 @@ $harness = new GeneratedServiceClassTestHarness();
 $harness->run(BankingReconciliationService::class, static function (GeneratedServiceClassTestHarness $harness, BankingReconciliationService $service): void {
     $harness->check(BankingReconciliationService::class, 'uses adjacent previous statement for selected-period opening continuity', static function () use ($harness, $service): void {
         $applyContinuity = banking_reconciliation_private_method($service, 'applyContinuityChecks');
-        $filterTaxYear = banking_reconciliation_private_method($service, 'filterUploadAnalysesForTaxYear');
+        $filterAccountingPeriod = banking_reconciliation_private_method($service, 'filterUploadAnalysesForAccountingPeriod');
 
         $analysed = $applyContinuity->invoke($service, [
             banking_reconciliation_upload_check(217, 73, '2025-09-01', '2025-09-30', 49.02, 911.03),
             banking_reconciliation_upload_check(267, 74, '2025-10-01', '2025-10-26', 911.03, 390.24),
         ]);
-        $visible = $filterTaxYear->invoke($service, $analysed, 74);
+        $visible = $filterAccountingPeriod->invoke($service, $analysed, 74);
 
         $harness->assertCount(1, $visible);
         $harness->assertSame(267, (int)($visible[0]['upload']['id'] ?? 0));
@@ -30,14 +30,14 @@ $harness->run(BankingReconciliationService::class, static function (GeneratedSer
 
     $harness->check(BankingReconciliationService::class, 'hides adjacent context statements from normal banking reconciliation uploads', static function () use ($harness, $service): void {
         $applyContinuity = banking_reconciliation_private_method($service, 'applyContinuityChecks');
-        $filterTaxYear = banking_reconciliation_private_method($service, 'filterUploadAnalysesForTaxYear');
+        $filterAccountingPeriod = banking_reconciliation_private_method($service, 'filterUploadAnalysesForAccountingPeriod');
 
         $analysed = $applyContinuity->invoke($service, [
             banking_reconciliation_upload_check(217, 73, '2025-09-01', '2025-09-30', 49.02, 911.03),
             banking_reconciliation_upload_check(267, 74, '2025-10-01', '2025-10-26', 911.03, 390.24),
             banking_reconciliation_upload_check(999, 75, '2026-10-01', '2026-10-31', 390.24, 999.99),
         ]);
-        $visible = $filterTaxYear->invoke($service, $analysed, 74);
+        $visible = $filterAccountingPeriod->invoke($service, $analysed, 74);
 
         $harness->assertCount(1, $visible);
         $harness->assertSame([267], array_map(
@@ -48,7 +48,7 @@ $harness->run(BankingReconciliationService::class, static function (GeneratedSer
 
     $harness->check(BankingReconciliationService::class, 'ledger summary uses latest selected-period statement after adjacent filtering', static function () use ($harness, $service): void {
         $applyContinuity = banking_reconciliation_private_method($service, 'applyContinuityChecks');
-        $filterTaxYear = banking_reconciliation_private_method($service, 'filterUploadAnalysesForTaxYear');
+        $filterAccountingPeriod = banking_reconciliation_private_method($service, 'filterUploadAnalysesForAccountingPeriod');
         $buildLedgerSummary = banking_reconciliation_private_method($service, 'buildLedgerReconciliationSummary');
 
         $analysed = $applyContinuity->invoke($service, [
@@ -56,7 +56,7 @@ $harness->run(BankingReconciliationService::class, static function (GeneratedSer
             banking_reconciliation_upload_check(268, 74, '2025-11-01', '2025-11-30', 390.24, 165.20),
             banking_reconciliation_upload_check(999, 75, '2026-10-01', '2026-10-31', 165.20, 999.99),
         ]);
-        $visible = $filterTaxYear->invoke($service, $analysed, 74);
+        $visible = $filterAccountingPeriod->invoke($service, $analysed, 74);
         $summary = $buildLedgerSummary->invoke($service, $visible, [], 0);
 
         $harness->assertSame(165.20, $summary['statement_closing_balance'] ?? null);
@@ -72,12 +72,12 @@ function banking_reconciliation_private_method(BankingReconciliationService $ser
     return $method;
 }
 
-function banking_reconciliation_upload_check(int $uploadId, int $taxYearId, string $startDate, string $closingDate, float $openingBalance, float $closingBalance): array
+function banking_reconciliation_upload_check(int $uploadId, int $accountingPeriodId, string $startDate, string $closingDate, float $openingBalance, float $closingBalance): array
 {
     return [
         'upload' => [
             'id' => $uploadId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'date_range_start' => $startDate,
             'statement_month' => substr($startDate, 0, 7) . '-01',
             'date_range_end' => $closingDate,

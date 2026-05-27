@@ -77,13 +77,13 @@ final class TransactionCategorisationService
 
     public function applyAutoCategoryBatch(
         int $companyId,
-        ?int $taxYearId = null,
+        ?int $accountingPeriodId = null,
         string $mode = 'uncategorised',
         ?string $monthKey = null,
         string $changedBy = 'system'
     ): array {
         $mode = $this->normaliseBatchMode($mode);
-        $transactions = $this->fetchBatchTransactions($companyId, $taxYearId, $mode, $monthKey);
+        $transactions = $this->fetchBatchTransactions($companyId, $accountingPeriodId, $mode, $monthKey);
         $rules = $this->fetchActiveRules($companyId);
         $summary = [
             'success' => true,
@@ -227,7 +227,7 @@ final class TransactionCategorisationService
     private function assertPeriodUnlocked(array $transaction, string $actionLabel): void {
         (new YearEndLockService())->assertUnlocked(
             (int)($transaction['company_id'] ?? 0),
-            (int)($transaction['tax_year_id'] ?? 0),
+            (int)($transaction['accounting_period_id'] ?? 0),
             $actionLabel
         );
     }
@@ -244,7 +244,7 @@ final class TransactionCategorisationService
         $stmt = InterfaceDB::prepare(
             'SELECT t.id,
                     t.company_id,
-                    t.tax_year_id,
+                    t.accounting_period_id,
                     t.account_id,
                     t.txn_date,
                     t.txn_type,
@@ -594,7 +594,7 @@ final class TransactionCategorisationService
             || (int)($transaction['is_auto_excluded'] ?? 0) !== (int)($nextState['is_auto_excluded'] ?? 0);
     }
 
-    private function fetchBatchTransactions(int $companyId, ?int $taxYearId, string $mode, ?string $monthKey): array {
+    private function fetchBatchTransactions(int $companyId, ?int $accountingPeriodId, string $mode, ?string $monthKey): array {
         if ($companyId <= 0) {
             return [];
         }
@@ -606,9 +606,9 @@ final class TransactionCategorisationService
             'company_id' => $companyId,
         ];
 
-        if ($taxYearId !== null && $taxYearId > 0) {
-            $where[] = 't.tax_year_id = :tax_year_id';
-            $params['tax_year_id'] = $taxYearId;
+        if ($accountingPeriodId !== null && $accountingPeriodId > 0) {
+            $where[] = 't.accounting_period_id = :accounting_period_id';
+            $params['accounting_period_id'] = $accountingPeriodId;
         }
 
         if ($mode === 'auto') {
@@ -633,7 +633,7 @@ final class TransactionCategorisationService
         $stmt = InterfaceDB::prepare(
             'SELECT t.id,
                     t.company_id,
-                    t.tax_year_id,
+                    t.accounting_period_id,
                     t.account_id,
                     t.txn_date,
                     t.txn_type,

@@ -15,12 +15,12 @@ final class TrialBalanceComparisonService
     ) {
     }
 
-    public function fetchComparison(int $companyId, int $taxYearId): array {
+    public function fetchComparison(int $companyId, int $accountingPeriodId): array {
         $metrics = $this->metricsService ?? new YearEndMetricsService();
-        $taxYear = $metrics->fetchTaxYear($companyId, $taxYearId);
+        $accountingPeriod = $metrics->fetchAccountingPeriod($companyId, $accountingPeriodId);
         $company = $metrics->fetchCompanySummary($companyId);
 
-        if ($taxYear === null || $company === null) {
+        if ($accountingPeriod === null || $company === null) {
             return [
                 'available' => false,
                 'errors' => ['The selected company or accounting period could not be found.'],
@@ -37,7 +37,7 @@ final class TrialBalanceComparisonService
 
         $stored = $this->storedDataService ?? new CompaniesHouseStoredDataService();
         $summaries = $stored->fetchDocumentSummariesByCompanyNumber($companyNumber);
-        $nearest = $this->findNearestSummary($summaries, (string)$taxYear['period_end']);
+        $nearest = $this->findNearestSummary($summaries, (string)$accountingPeriod['period_end']);
         if ($nearest === null) {
             return [
                 'available' => false,
@@ -48,9 +48,9 @@ final class TrialBalanceComparisonService
         $facts = $this->fetchMetricFacts((int)$nearest['id']);
         $ledger = $metrics->fetchBalanceSheetMetricValues(
             $companyId,
-            $taxYearId,
-            (string)$taxYear['period_start'],
-            (string)$taxYear['period_end']
+            $accountingPeriodId,
+            (string)$accountingPeriod['period_start'],
+            (string)$accountingPeriod['period_end']
         );
 
         $rows = [];

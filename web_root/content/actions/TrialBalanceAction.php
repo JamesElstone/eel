@@ -12,7 +12,7 @@ final class TrialBalanceAction implements ActionInterfaceFramework
     public function handle(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
         $companyId = max(0, (int)$request->input('company_id', 0));
-        $taxYearId = max(0, (int)$request->input('tax_year_id', 0));
+        $accountingPeriodId = max(0, (int)$request->input('accounting_period_id', 0));
         $filters = [
             'search' => trim((string)$request->input('search', '')),
             'account_type' => $this->normaliseOption((string)$request->input('account_type', 'all'), [
@@ -38,7 +38,7 @@ final class TrialBalanceAction implements ActionInterfaceFramework
             [],
             [
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
+                'accounting_period_id' => $accountingPeriodId,
                 'search' => $filters['search'],
                 'account_type' => $filters['account_type'],
                 'focus' => $filters['focus'],
@@ -48,7 +48,7 @@ final class TrialBalanceAction implements ActionInterfaceFramework
             ],
             [
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
+                'accounting_period_id' => $accountingPeriodId,
                 'trial_balance_filters' => $filters,
                 'trial_balance_include_zero' => $this->truthy($request->input('include_zero', '0')),
                 'trial_balance_include_unposted' => $this->truthy($request->input('include_unposted', '0')),

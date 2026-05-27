@@ -57,10 +57,10 @@ final class TransactionAction implements ActionInterfaceFramework
 
         $company = (array)($pageContext['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
-        $taxYearId = (int)($company['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $dashboardRepository = self::service($services, DashboardRepository::class);
-        $monthStatus = $companyId > 0 && $taxYearId > 0
-            ? self::service($services, StatementUploadService::class)->buildMonthStatus($companyId, $taxYearId)
+        $monthStatus = $companyId > 0 && $accountingPeriodId > 0
+            ? self::service($services, StatementUploadService::class)->buildMonthStatus($companyId, $accountingPeriodId)
             : [];
         $context = $actionResult->context();
         $monthKey = $dashboardRepository->normaliseTransactionMonthFilter((string)(
@@ -255,7 +255,7 @@ final class TransactionAction implements ActionInterfaceFramework
     {
         $context = $this->filterContext($request);
         $companyId = $this->selectedCompanyId($request);
-        $taxYearId = $this->selectedTaxYearId($request);
+        $accountingPeriodId = $this->selectedAccountingPeriodId($request);
         $defaultBankNominalId = $this->defaultBankNominalId($companyId);
         $autoScope = trim((string)$request->post('auto_scope', 'uncategorised')) === 'auto' ? 'auto' : 'uncategorised';
         $confirmAutoRebuild = $this->checkboxValue($request, 'confirm_rebuild_auto_journals');
@@ -274,7 +274,7 @@ final class TransactionAction implements ActionInterfaceFramework
             InterfaceDB::beginTransaction();
             $batchResult = self::service($services, TransactionCategorisationService::class)->applyAutoCategoryBatch(
                 $companyId,
-                $taxYearId,
+                $accountingPeriodId,
                 $autoScope,
                 $context['month_key'] !== '' ? $context['month_key'] : null,
                 'transactions_page_auto'
@@ -319,14 +319,14 @@ final class TransactionAction implements ActionInterfaceFramework
     {
         $context = $this->filterContext($request);
         $companyId = $this->selectedCompanyId($request);
-        $taxYearId = $this->selectedTaxYearId($request);
+        $accountingPeriodId = $this->selectedAccountingPeriodId($request);
         $defaultBankNominalId = $this->defaultBankNominalId($companyId);
         $errors = [];
         $flashMessages = [];
 
         $postResult = self::service($services, TransactionJournalService::class)->postCategorisedTransactions(
             $companyId,
-            $taxYearId,
+            $accountingPeriodId,
             $defaultBankNominalId,
             $context['month_key'] !== '' ? $context['month_key'] : null,
             'transactions_page_post'
@@ -481,11 +481,11 @@ final class TransactionAction implements ActionInterfaceFramework
     private function filterQuery(RequestFramework $request, array $context): array
     {
         $companyId = $this->selectedCompanyId($request);
-        $taxYearId = $this->selectedTaxYearId($request);
+        $accountingPeriodId = $this->selectedAccountingPeriodId($request);
 
         return [
             'company_id' => $companyId > 0 ? $companyId : null,
-            'tax_year_id' => $taxYearId > 0 ? $taxYearId : null,
+            'accounting_period_id' => $accountingPeriodId > 0 ? $accountingPeriodId : null,
             'month_key' => (string)($context['month_key'] ?? '') !== '' ? (string)$context['month_key'] : null,
             'category_filter' => (string)($context['category_filter'] ?? '') !== '' ? (string)$context['category_filter'] : null,
             'rule_id' => (int)($context['editing_rule_id'] ?? 0) > 0 ? (int)$context['editing_rule_id'] : null,
@@ -518,11 +518,11 @@ final class TransactionAction implements ActionInterfaceFramework
         return HelperFramework::sanitiseId($request->input('company_id', null), $context->companyId($request));
     }
 
-    private function selectedTaxYearId(RequestFramework $request): int
+    private function selectedAccountingPeriodId(RequestFramework $request): int
     {
         $context = new AccountingContextService();
 
-        return HelperFramework::sanitiseId($request->input('tax_year_id', null), $context->taxYearId($request));
+        return HelperFramework::sanitiseId($request->input('accounting_period_id', null), $context->accountingPeriodId($request));
     }
 
     private function defaultBankNominalId(int $companyId): int

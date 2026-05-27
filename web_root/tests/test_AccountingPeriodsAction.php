@@ -12,19 +12,19 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 $harness = new GeneratedServiceClassTestHarness();
 
-$harness->run(TaxYearsAction::class, function (GeneratedServiceClassTestHarness $harness, object $instance): void {
-    if (!$instance instanceof TaxYearsAction) {
-        throw new RuntimeException('Unexpected TaxYearsAction instance.');
+$harness->run(AccountingPeriodsAction::class, function (GeneratedServiceClassTestHarness $harness, object $instance): void {
+    if (!$instance instanceof AccountingPeriodsAction) {
+        throw new RuntimeException('Unexpected AccountingPeriodsAction instance.');
     }
 
-    $harness->check('TaxYearsAction', 'implements the action interface', function () use ($harness, $instance): void {
+    $harness->check('AccountingPeriodsAction', 'implements the action interface', function () use ($harness, $instance): void {
         $harness->assertSame(true, $instance instanceof ActionInterfaceFramework);
     });
 
-    $harness->check('TaxYearsAction', 'create_suggested_periods requires a selected company', function () use ($harness, $instance): void {
+    $harness->check('AccountingPeriodsAction', 'create_suggested_periods requires a selected company', function () use ($harness, $instance): void {
         $request = new RequestFramework(
             [],
-            ['card_action' => 'TaxYears', 'intent' => 'create_suggested_periods'],
+            ['card_action' => 'AccountingPeriods', 'intent' => 'create_suggested_periods'],
             ['REQUEST_METHOD' => 'POST', 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest', 'HTTP_ACCEPT' => 'application/json'],
             [],
             [],
@@ -37,10 +37,10 @@ $harness->run(TaxYearsAction::class, function (GeneratedServiceClassTestHarness 
         $harness->assertSame('Select a company before creating suggested accounting periods.', (string)($result->flashMessages()[0]['message'] ?? ''));
     });
 
-    $harness->check('TaxYearsAction', 'create_required_periods_for_upload requires a selected company', function () use ($harness, $instance): void {
+    $harness->check('AccountingPeriodsAction', 'create_required_periods_for_upload requires a selected company', function () use ($harness, $instance): void {
         $request = new RequestFramework(
             [],
-            ['card_action' => 'TaxYears', 'intent' => 'create_required_periods_for_upload', 'required_period_end' => '2025-09-30'],
+            ['card_action' => 'AccountingPeriods', 'intent' => 'create_required_periods_for_upload', 'required_period_end' => '2025-09-30'],
             ['REQUEST_METHOD' => 'POST', 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest', 'HTTP_ACCEPT' => 'application/json'],
             [],
             [],

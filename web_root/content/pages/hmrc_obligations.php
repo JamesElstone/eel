@@ -53,7 +53,7 @@ final class _hmrc_obligations extends PageContextFramework
     ): array {
         $company = (array)($baseContext['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
-        $taxYearId = (int)($company['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $filter = trim((string)$request->input('hmrc_filter', 'all'));
         $service = new HmrcObligationService();
         if ($companyId > 0) {
@@ -69,7 +69,7 @@ final class _hmrc_obligations extends PageContextFramework
                 'summary' => $service->getOutstandingSummary($companyId),
                 'timeline' => $service->listObligations($companyId, ['filter' => $filter]),
                 'all_obligations' => $service->listObligations($companyId, ['filter' => 'all']),
-                'checklist' => $service->periodChecklist($companyId, $taxYearId),
+                'checklist' => $service->periodChecklist($companyId, $accountingPeriodId),
                 'guidance' => $service->getGuidanceState($companyId),
             ],
         ];

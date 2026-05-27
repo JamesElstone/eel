@@ -34,9 +34,9 @@ final class _uploads_detailsCard extends CardBaseFramework
                 ],
             ],
             [
-                'key' => 'upload_summary_by_tax_year',
+                'key' => 'upload_summary_by_accounting_period',
                 'service' => StatementUploadService::class,
-                'method' => 'fetchUploadSummaryByTaxYear',
+                'method' => 'fetchUploadSummaryByAccountingPeriod',
                 'params' => [
                     'companyId' => ':company.id',
                 ],
@@ -94,7 +94,7 @@ final class _uploads_detailsCard extends CardBaseFramework
 
         $filterOptionsHtml = '';
         $filterTerms = (array)($context['services']['filter_terms'] ?? []);
-        $uploadSummaryHtml = $this->uploadSummaryTable((array)($context['services']['upload_summary_by_tax_year'] ?? []));
+        $uploadSummaryHtml = $this->uploadSummaryTable((array)($context['services']['upload_summary_by_accounting_period'] ?? []));
         
         foreach ($filterTerms as $filterValue => $filterLabel) {
             $filterOptionsHtml .= '<option value="' . HelperFramework::escape($filterValue) . '"' . (($context['uploads']['filter'] ?? '') === $filterValue ? ' selected' : '') . '>' . HelperFramework::escape($filterLabel) . '</option>';
@@ -228,7 +228,7 @@ final class _uploads_detailsCard extends CardBaseFramework
                 continue;
             }
 
-            $periodCells .= '<th scope="col">' . $this->taxYearSummaryButton($period) . '</th>';
+            $periodCells .= '<th scope="col">' . $this->accountingPeriodSummaryButton($period) . '</th>';
             $uploadCells .= '<td>' . (int)($period['upload_count'] ?? 0) . ' CSV (' . (int)($period['row_count'] ?? 0) . ' rows)</td>';
         }
 
@@ -240,7 +240,7 @@ final class _uploads_detailsCard extends CardBaseFramework
             <table>
                 <tbody>
                     <tr>
-                        <th scope="row">Tax Period</th>
+                        <th scope="row">Accounting Period</th>
                         ' . $periodCells . '
                     </tr>
                     <tr>
@@ -252,16 +252,16 @@ final class _uploads_detailsCard extends CardBaseFramework
         </div>';
     }
 
-    private function taxYearSummaryButton(array $period): string
+    private function accountingPeriodSummaryButton(array $period): string
     {
         $label = HelperFramework::escape((string)($period['label'] ?? ''));
-        $taxYearId = (int)($period['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($period['accounting_period_id'] ?? 0);
 
-        if ($taxYearId <= 0) {
+        if ($accountingPeriodId <= 0) {
             return $label;
         }
 
-        return '<button class="uploads-period-button" type="button" data-tax-year-summary-button="true" data-tax-year-id="' . $taxYearId . '" aria-label="Switch to tax period ' . $label . '">' . $label . '</button>';
+        return '<button class="uploads-period-button" type="button" data-accounting-period-summary-button="true" data-accounting-period-id="' . $accountingPeriodId . '" aria-label="Switch to accounting period ' . $label . '">' . $label . '</button>';
     }
 
     private function uploadRowsLabel(array $upload): string
@@ -354,7 +354,7 @@ final class _uploads_detailsCard extends CardBaseFramework
             return 'Duplicate File';
         }
 
-        if ($workflowStatus === 'needs_tax_year') {
+        if ($workflowStatus === 'needs_accounting_period') {
             return 'Needs Accounting Period';
         }
 
@@ -382,7 +382,7 @@ final class _uploads_detailsCard extends CardBaseFramework
             return 'warning';
         }
 
-        if ($workflowStatus === 'needs_tax_year') {
+        if ($workflowStatus === 'needs_accounting_period') {
             return 'warning';
         }
 

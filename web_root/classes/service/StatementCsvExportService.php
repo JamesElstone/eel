@@ -18,14 +18,14 @@ final class StatementCsvExportService
         $this->fileCheckService = $fileCheckService ?? new FileCheckService($this->uploadsConfig($defaultUploadDirectory));
     }
 
-    public function fetchExportMonths(int $companyId, int $taxYearId): array
+    public function fetchExportMonths(int $companyId, int $accountingPeriodId): array
     {
-        if ($companyId <= 0 || $taxYearId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return [];
         }
 
-        $taxYear = (new TaxYearRepository())->fetchTaxYear($companyId, $taxYearId);
-        if ($taxYear === null) {
+        $accountingPeriod = (new AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null) {
             return [];
         }
 
@@ -45,18 +45,18 @@ final class StatementCsvExportService
                AND ca.company_id = su.company_id
              WHERE su.company_id = :company_id
                AND (
-                    su.tax_year_id = :tax_year_id
+                    su.accounting_period_id = :accounting_period_id
                     OR (
-                        su.tax_year_id IS NULL
+                        su.accounting_period_id IS NULL
                         AND su.statement_month BETWEEN :period_start AND :period_end
                     )
                )
              ORDER BY su.statement_month ASC, su.uploaded_at ASC, su.id ASC',
             [
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
-                'period_start' => (string)($taxYear['period_start'] ?? ''),
-                'period_end' => (string)($taxYear['period_end'] ?? ''),
+                'accounting_period_id' => $accountingPeriodId,
+                'period_start' => (string)($accountingPeriod['period_start'] ?? ''),
+                'period_end' => (string)($accountingPeriod['period_end'] ?? ''),
             ]
         );
 
@@ -72,8 +72,8 @@ final class StatementCsvExportService
         }
 
         $months = [];
-        $cursor = new DateTimeImmutable((string)$taxYear['period_start']);
-        $end = new DateTimeImmutable((string)$taxYear['period_end']);
+        $cursor = new DateTimeImmutable((string)$accountingPeriod['period_start']);
+        $end = new DateTimeImmutable((string)$accountingPeriod['period_end']);
         $cursor = $cursor->modify('first day of this month');
         $end = $end->modify('first day of this month');
 

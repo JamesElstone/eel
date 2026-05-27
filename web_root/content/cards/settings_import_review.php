@@ -34,7 +34,7 @@ final class _settings_import_reviewCard extends CardBaseFramework
         $hasValidSelectedCompany = (int)($context['company']['id'] ?? 0) > 0;
         $settings = (array)($context['company']['settings'] ?? []);
         $companyId = (int)($context['company']['id'] ?? 0);
-        $taxYearId = (int)($context['company']['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($context['company']['accounting_period_id'] ?? 0);
 
         if (!$hasValidSelectedCompany) {
             return '<div class="helper">Select or add a company first, and the import and review controls will appear here.</div>';
@@ -45,7 +45,7 @@ final class _settings_import_reviewCard extends CardBaseFramework
                 <input type="hidden" name="card_action" value="Company">
                 <input type="hidden" name="intent" value="save_import_review">
                 <input type="hidden" name="company_id" value="' . HelperFramework::escape((string)$companyId) . '">
-                <input type="hidden" name="tax_year_id" value="' . HelperFramework::escape((string)$taxYearId) . '">
+                <input type="hidden" name="accounting_period_id" value="' . HelperFramework::escape((string)$accountingPeriodId) . '">
                 <section data-state-fields="enable_duplicate_file_check,enable_duplicate_row_check,auto_create_rule_prompt,lock_posted_periods" data-state-target="save_import_review_button">
                 <div class="checkbox-grid">
                     <label class="checkbox-item">

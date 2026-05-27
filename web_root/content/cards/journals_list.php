@@ -34,7 +34,7 @@ final class _journals_listCard extends CardBaseFramework
         $page = (array)($context['page'] ?? []);
         $journalEntries = (array)($page['journal_entries'] ?? []);
         $companyId = (int)($context['company']['id'] ?? 0);
-        $taxYears = (array)($page['tax_years'] ?? []);
+        $accountingPeriods = (array)($page['accounting_periods'] ?? []);
 
         if ($journalEntries === []) {
             return '
@@ -59,7 +59,7 @@ final class _journals_listCard extends CardBaseFramework
             $actionHtml = (string)($journal['source_type'] ?? '') === 'bank_csv' && $sourceTransactionId > 0
                 ? '<a class="button" href="' . HelperFramework::escape($this->buildTransactionsUrl(
                     $companyId,
-                    $taxYearId,
+                    $accountingPeriodId,
                     $this->monthKeyFromDate((string)($journal['journal_date'] ?? ''))
                 )) . '#transaction-' . $sourceTransactionId . '">Review Transaction</a>'
                 : '<span class="helper">Manual and non-bank journals stay separate from source-derived posting.</span>';
@@ -126,12 +126,12 @@ final class _journals_listCard extends CardBaseFramework
         return substr($value, 0, 7) . '-01';
     }
 
-    private function buildTransactionsUrl(int $companyId, int $taxYearId, string $monthKey): string
+    private function buildTransactionsUrl(int $companyId, int $accountingPeriodId, string $monthKey): string
     {
         return '?' . http_build_query([
             'page' => 'transactions',
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'month_key' => $monthKey,
             'category_filter' => 'all',
         ]);

@@ -42,7 +42,7 @@ $harness->run(DashboardRepository::class, function (GeneratedServiceClassTestHar
                 [
                     'title' => 'Tax years',
                     'state' => 'warn',
-                    'detail' => 'Some tax periods are missing.',
+                    'detail' => 'Some accounting periods are missing.',
                 ],
                 [
                     'title' => 'Nominal accounts',
@@ -116,7 +116,7 @@ $harness->run(DashboardRepository::class, function (GeneratedServiceClassTestHar
 
         $harness->assertCount(1, $activity);
         $harness->assertSame('Import transactions for this year', $activity[0]['title'] ?? '');
-        $harness->assertSame('The selected tax year is missing any transaction records.', $activity[0]['detail'] ?? '');
+        $harness->assertSame('The selected accounting period is missing any transaction records.', $activity[0]['detail'] ?? '');
     });
 
     $harness->check(DashboardRepository::class, 'skips missing transaction action when selected year has transactions', function () use ($harness): void {

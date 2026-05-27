@@ -14,7 +14,7 @@ $harness->run(_banking_reconciliationCard::class, static function (GeneratedServ
     $harness->check(_banking_reconciliationCard::class, 'renders account labels for each reconciliation panel', static function () use ($harness, $card): void {
         $html = $card->render([
             'services' => [
-                'tax_year' => [
+                'accounting_period' => [
                     'label' => '01/10/2025 to 30/09/2026',
                 ],
                 'reconciliationPanels' => [
@@ -100,7 +100,7 @@ $harness->run(_banking_reconciliationCard::class, static function (GeneratedServ
         $harness->assertTrue(str_contains($html, '<div class="indexed-section-helper">Example Bank</div>'));
         $harness->assertTrue(str_contains($html, '<h3 class="indexed-section-title">Example Bank - Saving Pot (20%)</h3>'));
         $harness->assertTrue(str_contains($html, '<div class="indexed-section-helper">Example Bank · POT(20%)</div>'));
-        $harness->assertTrue(str_contains($html, 'No bank statement uploads are available for Example Bank - Saving Pot (20%) in the selected tax year.'));
+        $harness->assertTrue(str_contains($html, 'No bank statement uploads are available for Example Bank - Saving Pot (20%) in the selected accounting period.'));
         $harness->assertTrue(str_contains($html, '<h3 class="indexed-section-title">Example Trade Supplier</h3>'));
         $harness->assertTrue(str_contains($html, 'Trade Ledger Check'));
         $harness->assertTrue(str_contains($html, 'Supplier statement matching is not implemented yet; this is a ledger-tagged trade account check.'));
@@ -130,7 +130,7 @@ $harness->run(_banking_reconciliationCard::class, static function (GeneratedServ
                 'page_cards' => ['banking_reconciliation'],
             ],
             'services' => [
-                'tax_year' => [
+                'accounting_period' => [
                     'label' => '01/10/2025 to 30/09/2026',
                 ],
                 'reconciliationPanels' => [

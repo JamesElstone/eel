@@ -15,11 +15,11 @@ final class YearEndTaxReadinessService
     ) {
     }
 
-    public function fetchSummary(int $companyId, int $taxYearId): array {
+    public function fetchSummary(int $companyId, int $accountingPeriodId): array {
         $service = $this->taxComputationService ?? new CorporationTaxComputationService(
             $this->metricsService ?? new YearEndMetricsService()
         );
 
-        return $service->fetchSummary($companyId, $taxYearId);
+        return $service->fetchSummary($companyId, $accountingPeriodId);
     }
 }

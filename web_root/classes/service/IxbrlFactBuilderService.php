@@ -9,41 +9,41 @@ declare(strict_types=1);
 
 final class IxbrlFactBuilderService
 {
-    public function buildFacts(int $companyId, int $taxYearId): int
+    public function buildFacts(int $companyId, int $accountingPeriodId): int
     {
         $this->ensureSchema();
         $company = $this->fetchCompany($companyId);
-        $taxYear = $this->fetchTaxYear($companyId, $taxYearId);
-        if ($company === null || $taxYear === null) {
+        $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($company === null || $accountingPeriod === null) {
             throw new InvalidArgumentException('Select a valid company and accounting period before building iXBRL facts.');
         }
 
-        return (int)InterfaceDB::transaction(function () use ($companyId, $taxYearId, $company, $taxYear): int {
+        return (int)InterfaceDB::transaction(function () use ($companyId, $accountingPeriodId, $company, $accountingPeriod): int {
             $runToken = 'build:' . bin2hex(random_bytes(8));
             InterfaceDB::prepareExecute(
-                'INSERT INTO ixbrl_generation_runs (company_id, tax_year_id, status, error_message)
-                 VALUES (:company_id, :tax_year_id, :status, :run_token)',
-                ['company_id' => $companyId, 'tax_year_id' => $taxYearId, 'status' => 'draft', 'run_token' => $runToken]
+                'INSERT INTO ixbrl_generation_runs (company_id, accounting_period_id, status, error_message)
+                 VALUES (:company_id, :accounting_period_id, :status, :run_token)',
+                ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId, 'status' => 'draft', 'run_token' => $runToken]
             );
             $runId = (int)InterfaceDB::fetchColumn(
                 'SELECT id
                  FROM ixbrl_generation_runs
                  WHERE company_id = :company_id
-                   AND tax_year_id = :tax_year_id
+                   AND accounting_period_id = :accounting_period_id
                    AND status = :status
                    AND error_message = :run_token
                  ORDER BY id DESC
                  LIMIT 1',
-                ['company_id' => $companyId, 'tax_year_id' => $taxYearId, 'status' => 'draft', 'run_token' => $runToken]
+                ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId, 'status' => 'draft', 'run_token' => $runToken]
             );
             if ($runId <= 0) {
                 throw new RuntimeException('Could not create an iXBRL generation run.');
             }
 
-            $mapping = (new IxbrlAccountsMappingService())->getAccountsMapping($companyId, $taxYearId);
+            $mapping = (new IxbrlAccountsMappingService())->getAccountsMapping($companyId, $accountingPeriodId);
             $bucketValues = (array)($mapping['buckets'] ?? []);
             foreach ($this->activeMappings() as $factMapping) {
-                $fact = $this->factFromMapping($factMapping, $company, $taxYear, $bucketValues);
+                $fact = $this->factFromMapping($factMapping, $company, $accountingPeriod, $bucketValues);
                 InterfaceDB::prepareExecute(
                     'INSERT INTO ixbrl_generation_facts (
                         run_id, fact_key, taxonomy_concept, label, value_type,
@@ -97,10 +97,10 @@ final class IxbrlFactBuilderService
         );
     }
 
-    public function getLatestRun(int $companyId, int $taxYearId): ?array
+    public function getLatestRun(int $companyId, int $accountingPeriodId): ?array
     {
         $this->ensureSchema();
-        if ($companyId <= 0 || $taxYearId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return null;
         }
 
@@ -110,11 +110,11 @@ final class IxbrlFactBuilderService
              FROM ixbrl_generation_runs r
              LEFT JOIN ixbrl_generation_facts f ON f.run_id = r.id
              WHERE r.company_id = :company_id
-               AND r.tax_year_id = :tax_year_id
+               AND r.accounting_period_id = :accounting_period_id
              GROUP BY r.id
              ORDER BY r.id DESC
              LIMIT 1',
-            ['company_id' => $companyId, 'tax_year_id' => $taxYearId]
+            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
         );
 
         return is_array($row) ? $row : null;
@@ -127,7 +127,7 @@ final class IxbrlFactBuilderService
                 "CREATE TABLE IF NOT EXISTS ixbrl_generation_runs (
                     id BIGINT AUTO_INCREMENT PRIMARY KEY,
                     company_id INT NOT NULL,
-                    tax_year_id INT NOT NULL,
+                    accounting_period_id INT NOT NULL,
                     status ENUM('draft','ready','generated','failed') NOT NULL DEFAULT 'draft',
                     generated_filename VARCHAR(255) NULL,
                     generated_path VARCHAR(1000) NULL,
@@ -136,10 +136,10 @@ final class IxbrlFactBuilderService
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     error_message TEXT NULL,
-                    KEY idx_ixbrl_runs_company_tax_year (company_id, tax_year_id),
+                    KEY idx_ixbrl_runs_company_accounting_period (company_id, accounting_period_id),
                     KEY idx_ixbrl_runs_status (status),
                     CONSTRAINT fk_ixbrl_runs_company FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE ON UPDATE CASCADE,
-                    CONSTRAINT fk_ixbrl_runs_tax_year FOREIGN KEY (tax_year_id) REFERENCES tax_years(id) ON DELETE CASCADE ON UPDATE CASCADE
+                    CONSTRAINT fk_ixbrl_runs_accounting_period FOREIGN KEY (accounting_period_id) REFERENCES accounting_periods(id) ON DELETE CASCADE ON UPDATE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
             );
         }
@@ -221,13 +221,13 @@ final class IxbrlFactBuilderService
         );
     }
 
-    private function factFromMapping(array $mapping, array $company, array $taxYear, array $buckets): array
+    private function factFromMapping(array $mapping, array $company, array $accountingPeriod, array $buckets): array
     {
         $type = (string)$mapping['value_type'];
         $sourceKey = (string)($mapping['source_key'] ?? '');
         $value = match ((string)$mapping['calculation_type']) {
             'company_field' => (string)($company[$sourceKey] ?? ''),
-            'period_field' => (string)($taxYear[$sourceKey] ?? ''),
+            'period_field' => (string)($accountingPeriod[$sourceKey] ?? ''),
             'derived' => (float)($buckets[$sourceKey] ?? 0),
             'manual' => $this->manualValue((string)$mapping['fact_key']),
             default => null,
@@ -292,15 +292,15 @@ final class IxbrlFactBuilderService
         return is_array($row) ? $row : null;
     }
 
-    private function fetchTaxYear(int $companyId, int $taxYearId): ?array
+    private function fetchAccountingPeriod(int $companyId, int $accountingPeriodId): ?array
     {
         $row = InterfaceDB::fetchOne(
             'SELECT *
-             FROM tax_years
+             FROM accounting_periods
              WHERE id = :id
                AND company_id = :company_id
              LIMIT 1',
-            ['id' => $taxYearId, 'company_id' => $companyId]
+            ['id' => $accountingPeriodId, 'company_id' => $companyId]
         );
 
         return is_array($row) ? $row : null;

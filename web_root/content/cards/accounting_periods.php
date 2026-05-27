@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 final class _accounting_periodsCard extends CardBaseFramework
 {
+    private const PAGE_SIZE = 5;
+
     public function key(): string
     {
         return 'accounting_periods';
@@ -24,9 +26,9 @@ final class _accounting_periodsCard extends CardBaseFramework
                 'params' => ['companyId' => ':company.id'],
             ],
             [
-                'key' => 'tax_years',
-                'service' => TaxYearRepository::class,
-                'method' => 'fetchTaxYears',
+                'key' => 'accounting_periods',
+                'service' => AccountingPeriodRepository::class,
+                'method' => 'fetchAccountingPeriods',
                 'params' => ['companyId' => ':company.id'],
             ],
             [
@@ -56,6 +58,11 @@ final class _accounting_periodsCard extends CardBaseFramework
         return '';
     }
 
+    public function tables(array $context): array
+    {
+        return [$this->existingPeriodsTable($context)];
+    }
+
     public function render(array $context): string
     {
 
@@ -67,12 +74,12 @@ final class _accounting_periodsCard extends CardBaseFramework
         $usesFiledPeriods = (string)($context['services']['accounting_guidance']['suggestion_basis'] ?? '') === 'companies_house_filed_periods';
 
         $companyId = (int)($context['company']['id'] ?? 0);
-        $taxYearId = (int)($context['company']['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($context['company']['accounting_period_id'] ?? 0);
         $pageId = trim((string)($context['page']['page_id'] ?? ''));
 
-        $taxYears = (array)($context['services']['tax_years'] ?? []);
-        $selectedTaxYear = $this->resolveSelectedTaxYear($taxYears, $taxYearId);
-        $selectedTaxYearId = (int)($selectedTaxYear['id'] ?? ($taxYearId > 0 ? $taxYearId : 0));
+        $accountingPeriods = (array)($context['services']['accounting_periods'] ?? []);
+        $selectedAccountingPeriod = $this->resolveSelectedAccountingPeriod($accountingPeriods, $accountingPeriodId);
+        $selectedAccountingPeriodId = (int)($selectedAccountingPeriod['id'] ?? ($accountingPeriodId > 0 ? $accountingPeriodId : 0));
 
         $missingHtml = '';
         if (!empty($accountingGuidance['missing_suggested_periods'])) {
@@ -110,7 +117,7 @@ final class _accounting_periodsCard extends CardBaseFramework
                 </div>
                 <div>
                     <form method="post" data-ajax="true">
-                        <input type="hidden" name="card_action" value="TaxYears">
+                        <input type="hidden" name="card_action" value="AccountingPeriods">
                         <input type="hidden" name="intent" value="create_suggested_periods">
                         <input type="hidden" name="company_id" value="' . $companyId . '">
                         <button class="button primary" type="submit">Create Suggested Accounting Periods</button>
@@ -120,64 +127,57 @@ final class _accounting_periodsCard extends CardBaseFramework
             $missingHtml .= '</div>';
         }
 
-        $existingPeriodsHtml = '';
-        if ($taxYears !== []) {
-            $existingPeriodRowsHtml = '';
-
-            foreach ($taxYears as $taxYear) {
-                if (!is_array($taxYear)) {
-                    continue;
-                }
-
-                $existingPeriodRowsHtml .= '<tr>
-                    <td>' . $this->escape((string)($taxYear['label'] ?? '')) . '</td>
-                    <td>' . $this->escape($this->displayDate((string)($taxYear['period_start'] ?? ''))) . '</td>
-                    <td>' . $this->escape($this->displayDate((string)($taxYear['period_end'] ?? ''))) . '</td>
-                </tr>';
-            }
-
-            $existingPeriodsHtml = '
-                <div class="table-scroll-mini">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Alias</th>
-                                <th>Start</th>
-                                <th>End</th>
-                            </tr>
-                        </thead>
-                        <tbody>' . $existingPeriodRowsHtml . '</tbody>
-                    </table>
-                </div>
-            ';
-        }
+        $existingPeriodsPagination = HelperFramework::paginateArray(
+            $this->existingPeriodRows($context),
+            $this->paginationPage($context),
+            self::PAGE_SIZE
+        );
+        $existingPeriodsHtml = $this->existingPeriodsTable($context)
+            ->visibleRows((array)$existingPeriodsPagination['items'])
+            ->pagination(
+                $existingPeriodsPagination,
+                'Accounting periods',
+                $this->paginationPageField(),
+                [
+                    'page' => $pageId,
+                    '_pagination' => '1',
+                    '_invalidate_fact' => $this->tableInvalidationFact(),
+                    'cards[]' => $this->key(),
+                ]
+            )
+            ->render($context, [
+                'cards[]' => (array)($context['page']['page_cards'] ?? []),
+            ]);
 
         $mainHtml = '
         <div class="panel-soft">
             <h4 class="card-title">Existing periods</h4>
             ' . $existingPeriodsHtml . '
         </div>
-        <div class="panel-soft">
+        <div class="panel-soft stack">
             <div class="form-flex-flow">
                 <div class="form-row full">
-                    <label for="tax_year_id">Accounting period</label>
+                    <label for="accounting_period_id">Accounting period</label>
                     <form method="post" data-ajax="true" data-accounting-period-selector="true">
-                        <input type="hidden" name="action" value="set-page-context">
+                        <input type="hidden" name="action" value="set-site-context">
                         <input type="hidden" name="_ajax" value="1">
                         <input type="hidden" name="page" value="' . $this->escape($pageId) . '">
-                        <select class="select" id="tax_year_id" name="tax_year_id">
-                        <option value="0" data-period-label="" data-period-start="" data-period-end=""' . ($taxYearId === 0 ? ' selected' : '') . '>New Period</option>';
-                        foreach ($taxYears as $taxYear) {
+                        <input type="hidden" name="site_context_key" value="accounting_period_id">
+                        <input type="hidden" name="site_context_input_name" value="accounting_period_id">
+                        <input type="hidden" name="company_id" value="' . $companyId . '">
+                        <select class="select" id="accounting_period_id" name="accounting_period_id">
+                        <option value="0" data-period-label="" data-period-start="" data-period-end=""' . ($accountingPeriodId === 0 ? ' selected' : '') . '>New Period</option>';
+                        foreach ($accountingPeriods as $accountingPeriod) {
                             $mainHtml .= '<option value="' . 
-                                ($taxYear['id'] ?? 0) . 
-                                '" data-period-label="' . $this->escape((string)($taxYear['label'] ?? ''))
-                                . '" data-period-start="' . $this->escape((string)($taxYear['period_start'] ?? ''))
-                                . '" data-period-end="' . $this->escape((string)($taxYear['period_end'] ?? ''))
-                                . '"'. (((int)($taxYear['id'] ?? 0) === $taxYearId) ? ' selected' : '')
+                                ($accountingPeriod['id'] ?? 0) . 
+                                '" data-period-label="' . $this->escape((string)($accountingPeriod['label'] ?? ''))
+                                . '" data-period-start="' . $this->escape((string)($accountingPeriod['period_start'] ?? ''))
+                                . '" data-period-end="' . $this->escape((string)($accountingPeriod['period_end'] ?? ''))
+                                . '"'. (((int)($accountingPeriod['id'] ?? 0) === $accountingPeriodId) ? ' selected' : '')
                                 . '>('
-                                . $this->escape($this->displayDate((string)($taxYear['period_start'] ?? '')))
+                                . $this->escape($this->displayDate((string)($accountingPeriod['period_start'] ?? '')))
                                 . ' to '
-                                . $this->escape($this->displayDate((string)($taxYear['period_end'] ?? '')))
+                                . $this->escape($this->displayDate((string)($accountingPeriod['period_end'] ?? '')))
                                 . 
                             ')</option>';
                         };
@@ -188,25 +188,25 @@ final class _accounting_periodsCard extends CardBaseFramework
             </div>
             <form method="post" data-ajax="true" data-accounting-period-form="true">
                 <input type="hidden" name="card_action" value="Company">
-                <input type="hidden" id="accounting_period_intent" name="intent" value="' . ($selectedTaxYearId > 0 ? 'update_tax_period' : 'add_tax_period') . '">
+                <input type="hidden" id="accounting_period_intent" name="intent" value="' . ($selectedAccountingPeriodId > 0 ? 'update_accounting_period' : 'add_accounting_period') . '">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" id="accounting_period_selected_tax_year_id" name="tax_year_id" value="' . $selectedTaxYearId . '" data-state-default="' . $selectedTaxYearId . '">
-                <section data-state-fields="accounting_period_selected_tax_year_id,financial_period_label,period_start,period_end" data-state-target="save_accounting_period_button">
+                <input type="hidden" id="accounting_period_selected_accounting_period_id" name="accounting_period_id" value="' . $selectedAccountingPeriodId . '" data-state-default="' . $selectedAccountingPeriodId . '">
+                <section data-state-fields="accounting_period_selected_accounting_period_id,financial_period_label,period_start,period_end" data-state-target="save_accounting_period_button">
                 <div class="form-flex-flow">
                     <div class="form-row half">
                         <label for="financial_period_label">Period Alias Name</label>
-                        <input class="input" id="financial_period_label" name="financial_period_label" value="' . $this->escape((string)($selectedTaxYear['label'] ?? '')) . '">
+                        <input class="input" id="financial_period_label" name="financial_period_label" value="' . $this->escape((string)($selectedAccountingPeriod['label'] ?? '')) . '">
                     </div>
                     <div class="form-row half">
                         <label for="period_start">Period start</label>
-                        <input class="input" type="date" id="period_start" name="period_start" value="' . $this->escape((string)($selectedTaxYear['period_start'] ?? '')) . '">
+                        <input class="input" type="date" id="period_start" name="period_start" value="' . $this->escape((string)($selectedAccountingPeriod['period_start'] ?? '')) . '">
                     </div>
                     <div class="form-row half">
                         <label for="period_end">Period end</label>
-                        <input class="input" type="date" id="period_end" name="period_end" value="' . $this->escape((string)($selectedTaxYear['period_end'] ?? '')) . '">
+                        <input class="input" type="date" id="period_end" name="period_end" value="' . $this->escape((string)($selectedAccountingPeriod['period_end'] ?? '')) . '">
                     </div>
                     <div class="form-row full">
-                        <button class="button primary" id="save_accounting_period_button" type="submit" disabled>Save Tax Period Details</button>
+                        <button class="button primary" id="save_accounting_period_button" type="submit" disabled>Save Accounting Period Details</button>
                     </div>
                 </div>
                 </section>
@@ -362,14 +362,51 @@ final class _accounting_periodsCard extends CardBaseFramework
         return HelperFramework::displayDate($value);
     }
 
-    private function resolveSelectedTaxYear(array $taxYears, int $taxYearId): array
+    private function existingPeriodsTable(array $context): TableFramework
     {
-        foreach ($taxYears as $taxYear) {
-            if ((int)($taxYear['id'] ?? 0) === $taxYearId) {
-                return (array)$taxYear;
+        return TableFramework::make($this->key(), $this->existingPeriodRows($context))
+            ->filename('accounting-periods')
+            ->empty('No accounting periods have been created for this company yet.')
+            ->classes('', 'table-scroll-mini')
+            ->textColumn('label', 'Alias')
+            ->textColumn('period_start_display', 'Start')
+            ->textColumn('period_end_display', 'End');
+    }
+
+    private function existingPeriodRows(array $context): array
+    {
+        $rows = [];
+
+        foreach ((array)($context['services']['accounting_periods'] ?? []) as $accountingPeriod) {
+            if (!is_array($accountingPeriod)) {
+                continue;
+            }
+
+            $rows[] = [
+                'label' => (string)($accountingPeriod['label'] ?? ''),
+                'period_start_display' => $this->displayDate((string)($accountingPeriod['period_start'] ?? '')),
+                'period_end_display' => $this->displayDate((string)($accountingPeriod['period_end'] ?? '')),
+                'period_start' => (string)($accountingPeriod['period_start'] ?? ''),
+                'period_end' => (string)($accountingPeriod['period_end'] ?? ''),
+            ];
+        }
+
+        return $rows;
+    }
+
+    private function tableInvalidationFact(): string
+    {
+        return str_replace('_', '.', $this->key());
+    }
+
+    private function resolveSelectedAccountingPeriod(array $accountingPeriods, int $accountingPeriodId): array
+    {
+        foreach ($accountingPeriods as $accountingPeriod) {
+            if ((int)($accountingPeriod['id'] ?? 0) === $accountingPeriodId) {
+                return (array)$accountingPeriod;
             }
         }
 
-        return (array)($taxYears[0] ?? []);
+        return (array)($accountingPeriods[0] ?? []);
     }
 }

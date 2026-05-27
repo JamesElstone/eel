@@ -10,9 +10,7 @@ declare(strict_types=1);
 final class CompanyAccountNominalService
 {
     private const BANK_CODE_START = 1001;
-    private const BANK_CODE_END = 1099;
-    private const TRADE_CODE_START = 2001;
-    private const TRADE_CODE_END = 2099;
+    private const TRADE_CODE_START = 2301;
 
     public function assignMissingNominals(int $companyId): array
     {
@@ -28,6 +26,7 @@ final class CompanyAccountNominalService
 
         $settings = (new CompanySettingsStore($companyId))->all();
         $defaultBankNominalId = (int)($settings['default_bank_nominal_id'] ?? 0);
+        $defaultTradeNominalId = (int)($settings['default_trade_nominal_id'] ?? 0);
         $accounts = $this->fetchCompanyAccounts($companyId);
         $summary = [
             'success' => true,
@@ -38,7 +37,7 @@ final class CompanyAccountNominalService
         ];
 
         foreach ($accounts as $account) {
-            if (!$this->needsNominalAssignment($account, $defaultBankNominalId)) {
+            if (!$this->needsNominalAssignment($account, $defaultBankNominalId, $defaultTradeNominalId)) {
                 $summary['unchanged']++;
                 continue;
             }
@@ -119,6 +118,7 @@ final class CompanyAccountNominalService
         }
 
         return $this->createNominalForAccount([
+            'company_id' => (int)($input['company_id'] ?? 0),
             'account_name' => (string)($input['account_name'] ?? ''),
             'account_type' => (string)($input['account_type'] ?? CompanyAccountService::TYPE_BANK),
         ]);
@@ -127,7 +127,8 @@ final class CompanyAccountNominalService
     private function createNominalForAccount(array $account): array
     {
         $accountType = (string)($account['account_type'] ?? CompanyAccountService::TYPE_BANK);
-        $definition = $this->definitionForAccountType($accountType);
+        $settings = $this->settingsForAccount($account);
+        $definition = $this->definitionForAccountType($accountType, $settings);
 
         if ($definition === null) {
             return [
@@ -191,7 +192,7 @@ final class CompanyAccountNominalService
         ];
     }
 
-    private function needsNominalAssignment(array $account, int $defaultBankNominalId): bool
+    private function needsNominalAssignment(array $account, int $defaultBankNominalId, int $defaultTradeNominalId): bool
     {
         $accountType = (string)($account['account_type'] ?? '');
         $nominalId = (int)($account['nominal_account_id'] ?? 0);
@@ -212,7 +213,8 @@ final class CompanyAccountNominalService
 
         if ($accountType === CompanyAccountService::TYPE_TRADE) {
             return $nominalType !== 'liability'
-                || !in_array($subtypeCode, ['trade_creditor', 'expense_payable'], true);
+                || !in_array($subtypeCode, ['trade_creditor', 'expense_payable'], true)
+                || ($defaultTradeNominalId > 0 && $nominalId === $defaultTradeNominalId);
         }
 
         return true;
@@ -342,20 +344,29 @@ final class CompanyAccountNominalService
         return is_array($row) ? $row : null;
     }
 
-    private function definitionForAccountType(string $accountType): ?array
+    private function definitionForAccountType(string $accountType, array $settings = []): ?array
     {
+        $bankStart = $this->codeRangeStartFromDefault(
+            (int)($settings['default_bank_nominal_id'] ?? 0),
+            self::BANK_CODE_START
+        );
+        $tradeStart = $this->codeRangeStartFromDefault(
+            (int)($settings['default_trade_nominal_id'] ?? 0),
+            self::TRADE_CODE_START
+        );
+
         return match ($accountType) {
             CompanyAccountService::TYPE_BANK => [
-                'start' => self::BANK_CODE_START,
-                'end' => self::BANK_CODE_END,
+                'start' => $bankStart,
+                'end' => $bankStart + 98,
                 'account_type' => 'asset',
                 'subtype_code' => 'bank',
                 'subtype_name' => 'Bank',
                 'subtype_sort_order' => 10,
             ],
             CompanyAccountService::TYPE_TRADE => [
-                'start' => self::TRADE_CODE_START,
-                'end' => self::TRADE_CODE_END,
+                'start' => $tradeStart,
+                'end' => $tradeStart + 98,
                 'account_type' => 'liability',
                 'subtype_code' => 'trade_creditor',
                 'subtype_name' => 'Trade Creditor',
@@ -363,6 +374,25 @@ final class CompanyAccountNominalService
             ],
             default => null,
         };
+    }
+
+    private function settingsForAccount(array $account): array
+    {
+        $companyId = (int)($account['company_id'] ?? 0);
+
+        return $companyId > 0 ? (new CompanySettingsStore($companyId))->all() : [];
+    }
+
+    private function codeRangeStartFromDefault(int $defaultNominalId, int $fallbackStart): int
+    {
+        if ($defaultNominalId <= 0) {
+            return $fallbackStart;
+        }
+
+        $nominal = $this->fetchNominal($defaultNominalId);
+        $code = trim((string)($nominal['code'] ?? ''));
+
+        return ctype_digit($code) ? ((int)$code + 1) : $fallbackStart;
     }
 
     private function generatedNominalName(string $accountName, string $accountType): string

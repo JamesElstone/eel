@@ -9,35 +9,43 @@ declare(strict_types=1);
 
 final class HmrcCorporationTaxSubmissionService
 {
-    public function validatePackage(int $companyId, int $taxYearId, string $mode): array
+    public function validatePackage(int $companyId, int $ctPeriodId, string $mode): array
     {
         $this->ensureSchema();
         $mode = HelperFramework::normaliseEnvironmentMode($mode);
-        $draft = $this->createSubmissionDraft($companyId, $taxYearId, $mode);
+        $draft = $this->createSubmissionDraft($companyId, $ctPeriodId, $mode);
         $submissionId = (int)($draft['submission_id'] ?? 0);
         $errors = (array)($draft['errors'] ?? []);
         $warnings = [];
 
         $company = (new CompanyRepository())->fetchCompanyDetails($companyId);
-        $taxYear = (new TaxYearRepository())->fetchTaxYear($companyId, $taxYearId);
+        $ctPeriodService = new CorporationTaxPeriodService();
+        $ctPeriod = $ctPeriodService->fetch($companyId, $ctPeriodId);
+        $accountingPeriodId = (int)($ctPeriod['accounting_period_id'] ?? 0);
+        $accountingPeriod = (new AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId);
         if (!is_array($company) || empty($company['is_active'])) {
             $errors[] = 'Company exists and active check failed.';
         }
-        if ($taxYear === null) {
-            $errors[] = 'Tax year exists and belongs to company check failed.';
+        if ($accountingPeriod === null) {
+            $errors[] = 'Accounting period exists and belongs to company check failed.';
+        }
+        if ($ctPeriod === null) {
+            $errors[] = 'CT period exists and belongs to company check failed.';
         }
         $settings = $companyId > 0 ? (new CompanySettingsStore($companyId))->all() : [];
         if (trim((string)($settings['utr'] ?? '')) === '') {
             $errors[] = 'UTR is missing.';
         }
-        if ($taxYear !== null) {
-            $days = (new DateTimeImmutable((string)$taxYear['period_start']))->diff(new DateTimeImmutable((string)$taxYear['period_end']))->days + 1;
+        if ($ctPeriod !== null) {
+            $days = (new DateTimeImmutable((string)$ctPeriod['period_start']))->diff(new DateTimeImmutable((string)$ctPeriod['period_end']))->days + 1;
             if ($days > 365) {
-                $errors[] = 'CT period exceeds 12 months; split periods may be required.';
+                $errors[] = 'CT period exceeds 12 months.';
             }
         }
+        $sequence = $ctPeriodService->canSubmit($companyId, $ctPeriodId);
+        $errors = array_merge($errors, (array)($sequence['errors'] ?? []));
 
-        $tbTotals = (new IxbrlTrialBalanceService())->getTotals($companyId, $taxYearId);
+        $tbTotals = (new IxbrlTrialBalanceService())->getTotals($companyId, $accountingPeriodId);
         if ((int)($tbTotals['row_count'] ?? 0) <= 0) {
             $errors[] = 'Trial balance has no posted journal rows.';
         } elseif (empty($tbTotals['is_balanced'])) {
@@ -45,11 +53,11 @@ final class HmrcCorporationTaxSubmissionService
         }
 
         $package = new HmrcSubmissionPackageService();
-        $accounts = $package->locateAccountsIxbrl($companyId, $taxYearId);
-        $computations = $package->locateComputationsIxbrl($companyId, $taxYearId);
-        $ct600 = (new Ct600BuilderService())->buildCt600Xml($companyId, $taxYearId);
+        $accounts = $package->locateAccountsIxbrl($companyId, $accountingPeriodId);
+        $computations = $package->locateComputationsIxbrlForCtPeriod($companyId, $ctPeriodId);
+        $ct600 = (new Ct600BuilderService())->buildCt600XmlForCtPeriod($companyId, $ctPeriodId);
         $credentials = (new HmrcApiClient())->credentialsConfigured($mode);
-        $warnings = array_merge($warnings, (array)($accounts['warnings'] ?? []), (array)($computations['warnings'] ?? []), (array)($ct600['warnings'] ?? []), $this->companiesHouseComparisonWarnings($companyId, $taxYearId));
+        $warnings = array_merge($warnings, (array)($accounts['warnings'] ?? []), (array)($computations['warnings'] ?? []), (array)($ct600['warnings'] ?? []), $this->companiesHouseComparisonWarnings($companyId, $accountingPeriodId));
         $errors = array_merge($errors, (array)($accounts['errors'] ?? []), (array)($computations['errors'] ?? []), (array)($ct600['errors'] ?? []));
         if (empty($credentials['ok'])) {
             $errors[] = 'HMRC CT600 API credentials are not configured for ' . $mode . '.';
@@ -70,9 +78,9 @@ final class HmrcCorporationTaxSubmissionService
                 'UPDATE hmrc_ct600_submissions
                  SET status = :status,
                      ct600_xml_path = :ct600_xml_path,
-                     accounts_ixbrl_path = :accounts_ixbrl_path,
-                     computations_ixbrl_path = :computations_ixbrl_path,
-                     validation_json = :validation_json
+                    accounts_ixbrl_path = :accounts_ixbrl_path,
+                    computations_ixbrl_path = :computations_ixbrl_path,
+                    validation_json = :validation_json
                  WHERE id = :id',
                 [
                     'status' => $errors === [] ? 'ready' : 'validation_failed',
@@ -83,29 +91,32 @@ final class HmrcCorporationTaxSubmissionService
                     'id' => $submissionId,
                 ]
             );
+            (new CorporationTaxPeriodService())->markLatestSubmission($ctPeriodId, $submissionId, $errors === [] ? 'ready' : 'validation_failed');
             $this->event($submissionId, $errors === [] ? 'success' : 'error', $errors === [] ? 'Package validation passed.' : 'Package validation failed.', $validation);
         }
 
         return ['success' => $errors === [], 'submission_id' => $submissionId, 'errors' => $errors, 'warnings' => $warnings, 'validation' => $validation];
     }
 
-    public function createSubmissionDraft(int $companyId, int $taxYearId, string $mode): array
+    public function createSubmissionDraft(int $companyId, int $ctPeriodId, string $mode): array
     {
         $this->ensureSchema();
         $mode = HelperFramework::normaliseEnvironmentMode($mode);
-        if ($companyId <= 0 || $taxYearId <= 0) {
-            return ['success' => false, 'errors' => ['Select a company and accounting period.'], 'submission_id' => 0];
+        $ctPeriod = (new CorporationTaxPeriodService())->fetch($companyId, $ctPeriodId);
+        $accountingPeriodId = (int)($ctPeriod['accounting_period_id'] ?? 0);
+        if ($companyId <= 0 || $ctPeriodId <= 0 || $accountingPeriodId <= 0) {
+            return ['success' => false, 'errors' => ['Select a company, accounting period, and CT period.'], 'submission_id' => 0];
         }
 
         $token = 'draft:' . bin2hex(random_bytes(8));
         InterfaceDB::prepareExecute(
-            'INSERT INTO hmrc_ct600_submissions (company_id, tax_year_id, mode, status, hmrc_response_summary)
-             VALUES (:company_id, :tax_year_id, :mode, :status, :token)',
-            ['company_id' => $companyId, 'tax_year_id' => $taxYearId, 'mode' => $mode, 'status' => 'draft', 'token' => $token]
+            'INSERT INTO hmrc_ct600_submissions (company_id, accounting_period_id, ct_period_id, mode, status, hmrc_response_summary)
+             VALUES (:company_id, :accounting_period_id, :ct_period_id, :mode, :status, :token)',
+            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId, 'ct_period_id' => $ctPeriodId, 'mode' => $mode, 'status' => 'draft', 'token' => $token]
         );
         $id = (int)InterfaceDB::fetchColumn(
-            'SELECT id FROM hmrc_ct600_submissions WHERE company_id = :company_id AND tax_year_id = :tax_year_id AND hmrc_response_summary = :token ORDER BY id DESC LIMIT 1',
-            ['company_id' => $companyId, 'tax_year_id' => $taxYearId, 'token' => $token]
+            'SELECT id FROM hmrc_ct600_submissions WHERE company_id = :company_id AND ct_period_id = :ct_period_id AND hmrc_response_summary = :token ORDER BY id DESC LIMIT 1',
+            ['company_id' => $companyId, 'ct_period_id' => $ctPeriodId, 'token' => $token]
         );
         if ($id > 0) {
             InterfaceDB::prepareExecute('UPDATE hmrc_ct600_submissions SET hmrc_response_summary = NULL WHERE id = :id', ['id' => $id]);
@@ -122,7 +133,13 @@ final class HmrcCorporationTaxSubmissionService
         if ($submission === null) {
             return ['success' => false, 'errors' => ['Submission draft not found.']];
         }
+        $ctPeriodId = (int)($submission['ct_period_id'] ?? 0);
+        $sequence = (new CorporationTaxPeriodService())->canSubmit((int)$submission['company_id'], $ctPeriodId);
+        if (empty($sequence['ok'])) {
+            return ['success' => false, 'errors' => (array)($sequence['errors'] ?? ['Earlier CT periods must be completed first.'])];
+        }
         InterfaceDB::prepareExecute('UPDATE hmrc_ct600_submissions SET status = :status WHERE id = :id', ['status' => 'submitting', 'id' => $submissionId]);
+        (new CorporationTaxPeriodService())->markLatestSubmission($ctPeriodId, $submissionId, 'submitting');
         $this->event($submissionId, 'info', 'HMRC submission started.');
         $logger('info', 'Building submission envelope.');
         $package = new HmrcSubmissionPackageService();
@@ -169,11 +186,12 @@ final class HmrcCorporationTaxSubmissionService
             ]
         );
         $this->event($submissionId, $accepted ? 'success' : 'error', $accepted ? 'HMRC submission accepted.' : 'HMRC submission rejected or failed.', $response);
+        (new CorporationTaxPeriodService())->markLatestSubmission($ctPeriodId, $submissionId, $accepted ? 'accepted' : 'rejected');
 
         return ['success' => $accepted, 'errors' => $accepted ? [] : [$summary], 'response' => $response];
     }
 
-    public function getSubmissionHistory(int $companyId, ?int $taxYearId = null): array
+    public function getSubmissionHistory(int $companyId, ?int $accountingPeriodId = null): array
     {
         $this->ensureSchema();
         if ($companyId <= 0) {
@@ -181,16 +199,18 @@ final class HmrcCorporationTaxSubmissionService
         }
         $params = ['company_id' => $companyId];
         $where = 's.company_id = :company_id';
-        if ($taxYearId !== null && $taxYearId > 0) {
-            $where .= ' AND s.tax_year_id = :tax_year_id';
-            $params['tax_year_id'] = $taxYearId;
+        if ($accountingPeriodId !== null && $accountingPeriodId > 0) {
+            $where .= ' AND s.accounting_period_id = :accounting_period_id';
+            $params['accounting_period_id'] = $accountingPeriodId;
         }
 
         return InterfaceDB::fetchAll(
-            'SELECT s.*, c.company_name, ty.label AS tax_year_label, ty.period_start, ty.period_end
+            'SELECT s.*, c.company_name, ap.label AS accounting_period_label, ap.period_start AS accounting_period_start, ap.period_end AS accounting_period_end,
+                    ctp.sequence_no AS ct_period_sequence_no, ctp.period_start, ctp.period_end
              FROM hmrc_ct600_submissions s
              INNER JOIN companies c ON c.id = s.company_id
-             INNER JOIN tax_years ty ON ty.id = s.tax_year_id
+             INNER JOIN accounting_periods ap ON ap.id = s.accounting_period_id
+             LEFT JOIN corporation_tax_periods ctp ON ctp.id = s.ct_period_id
              WHERE ' . $where . '
              ORDER BY s.created_at DESC, s.id DESC
              LIMIT 50',
@@ -198,11 +218,30 @@ final class HmrcCorporationTaxSubmissionService
         );
     }
 
-    public function getLatestSubmission(int $companyId, int $taxYearId): ?array
+    public function getLatestSubmission(int $companyId, int $accountingPeriodId): ?array
     {
-        $history = $this->getSubmissionHistory($companyId, $taxYearId);
+        $history = $this->getSubmissionHistory($companyId, $accountingPeriodId);
 
         return $history[0] ?? null;
+    }
+
+    public function getLatestSubmissionForCtPeriod(int $companyId, int $ctPeriodId): ?array
+    {
+        if ($companyId <= 0 || $ctPeriodId <= 0) {
+            return null;
+        }
+
+        $row = InterfaceDB::fetchOne(
+            'SELECT *
+             FROM hmrc_ct600_submissions
+             WHERE company_id = :company_id
+               AND ct_period_id = :ct_period_id
+             ORDER BY created_at DESC, id DESC
+             LIMIT 1',
+            ['company_id' => $companyId, 'ct_period_id' => $ctPeriodId]
+        );
+
+        return is_array($row) ? $row : null;
     }
 
     public function event(int $submissionId, string $level, string $message, array $context = []): void
@@ -225,12 +264,14 @@ final class HmrcCorporationTaxSubmissionService
 
     public function ensureSchema(): void
     {
+        (new CorporationTaxPeriodService())->ensureSchema();
         if (!InterfaceDB::tableExists('hmrc_ct600_submissions')) {
             InterfaceDB::prepareExecute(
                 "CREATE TABLE IF NOT EXISTS hmrc_ct600_submissions (
                     id BIGINT AUTO_INCREMENT PRIMARY KEY,
                     company_id INT NOT NULL,
-                    tax_year_id INT NOT NULL,
+                    accounting_period_id INT NOT NULL,
+                    ct_period_id INT NULL,
                     mode ENUM('TEST','LIVE') NOT NULL,
                     status ENUM('draft','validating','validation_failed','ready','submitting','accepted','rejected','failed') NOT NULL,
                     submission_type ENUM('original','amendment') NOT NULL DEFAULT 'original',
@@ -251,10 +292,12 @@ final class HmrcCorporationTaxSubmissionService
                     submitted_at DATETIME NULL,
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                    KEY idx_hmrc_ct600_company_tax_year (company_id, tax_year_id),
+                    KEY idx_hmrc_ct600_company_accounting_period (company_id, accounting_period_id),
+                    KEY idx_hmrc_ct600_ct_period (ct_period_id),
                     KEY idx_hmrc_ct600_mode_status (mode, status),
                     CONSTRAINT fk_hmrc_ct600_company FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE ON UPDATE CASCADE,
-                    CONSTRAINT fk_hmrc_ct600_tax_year FOREIGN KEY (tax_year_id) REFERENCES tax_years(id) ON DELETE CASCADE ON UPDATE CASCADE
+                    CONSTRAINT fk_hmrc_ct600_accounting_period FOREIGN KEY (accounting_period_id) REFERENCES accounting_periods(id) ON DELETE CASCADE ON UPDATE CASCADE,
+                    CONSTRAINT fk_hmrc_ct600_ct_period FOREIGN KEY (ct_period_id) REFERENCES corporation_tax_periods(id) ON DELETE SET NULL ON UPDATE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
             );
         }
@@ -277,17 +320,20 @@ final class HmrcCorporationTaxSubmissionService
                 "CREATE TABLE IF NOT EXISTS tax_loss_carryforwards (
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     company_id INT NOT NULL,
-                    origin_tax_year_id INT NOT NULL,
+                    origin_accounting_period_id INT NOT NULL,
+                    origin_ct_period_id INT NULL,
                     amount_originated DECIMAL(12,2) NOT NULL,
                     amount_used DECIMAL(12,2) NOT NULL DEFAULT 0.00,
                     amount_remaining DECIMAL(12,2) NOT NULL,
                     status VARCHAR(16) NOT NULL DEFAULT 'open',
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                    UNIQUE KEY uq_tax_loss_origin (company_id, origin_tax_year_id),
-                    KEY fk_tax_loss_year (origin_tax_year_id),
+                    UNIQUE KEY uq_tax_loss_origin (company_id, origin_accounting_period_id),
+                    KEY idx_tax_loss_origin_ct_period (origin_ct_period_id),
+                    KEY fk_tax_loss_accounting_period (origin_accounting_period_id),
                     CONSTRAINT fk_tax_loss_company FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE ON UPDATE CASCADE,
-                    CONSTRAINT fk_tax_loss_year FOREIGN KEY (origin_tax_year_id) REFERENCES tax_years(id) ON DELETE CASCADE ON UPDATE CASCADE
+                    CONSTRAINT fk_tax_loss_accounting_period FOREIGN KEY (origin_accounting_period_id) REFERENCES accounting_periods(id) ON DELETE CASCADE ON UPDATE CASCADE,
+                    CONSTRAINT fk_tax_loss_origin_ct_period FOREIGN KEY (origin_ct_period_id) REFERENCES corporation_tax_periods(id) ON DELETE SET NULL ON UPDATE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
             );
         }
@@ -296,7 +342,8 @@ final class HmrcCorporationTaxSubmissionService
                 "CREATE TABLE IF NOT EXISTS tax_loss_movement_history (
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     company_id INT NOT NULL,
-                    tax_year_id INT NOT NULL,
+                    accounting_period_id INT NOT NULL,
+                    ct_period_id INT NULL,
                     computation_hash VARCHAR(64) NOT NULL,
                     loss_created DECIMAL(12,2) NOT NULL DEFAULT 0.00,
                     loss_brought_forward DECIMAL(12,2) NOT NULL DEFAULT 0.00,
@@ -305,11 +352,13 @@ final class HmrcCorporationTaxSubmissionService
                     taxable_before_losses DECIMAL(12,2) NOT NULL DEFAULT 0.00,
                     taxable_profit DECIMAL(12,2) NOT NULL DEFAULT 0.00,
                     computed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    KEY idx_tax_loss_history_period (company_id, tax_year_id, computed_at),
-                    KEY idx_tax_loss_history_hash (company_id, tax_year_id, computation_hash),
-                    KEY fk_tax_loss_history_tax_year (tax_year_id),
+                    KEY idx_tax_loss_history_period (company_id, accounting_period_id, computed_at),
+                    KEY idx_tax_loss_history_hash (company_id, accounting_period_id, computation_hash),
+                    KEY idx_tax_loss_history_ct_period (ct_period_id),
+                    KEY fk_tax_loss_history_accounting_period (accounting_period_id),
                     CONSTRAINT fk_tax_loss_history_company FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE ON UPDATE CASCADE,
-                    CONSTRAINT fk_tax_loss_history_tax_year FOREIGN KEY (tax_year_id) REFERENCES tax_years(id) ON DELETE CASCADE ON UPDATE CASCADE
+                    CONSTRAINT fk_tax_loss_history_accounting_period FOREIGN KEY (accounting_period_id) REFERENCES accounting_periods(id) ON DELETE CASCADE ON UPDATE CASCADE,
+                    CONSTRAINT fk_tax_loss_history_ct_period FOREIGN KEY (ct_period_id) REFERENCES corporation_tax_periods(id) ON DELETE SET NULL ON UPDATE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
             );
         }
@@ -363,10 +412,10 @@ final class HmrcCorporationTaxSubmissionService
         return trim((string)($headers['x-correlation-id'] ?? '')) ?: null;
     }
 
-    private function companiesHouseComparisonWarnings(int $companyId, int $taxYearId): array
+    private function companiesHouseComparisonWarnings(int $companyId, int $accountingPeriodId): array
     {
-        $taxYear = (new TaxYearRepository())->fetchTaxYear($companyId, $taxYearId);
-        if ($taxYear === null || !InterfaceDB::tableExists('companies_house_document_facts')) {
+        $accountingPeriod = (new AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null || !InterfaceDB::tableExists('companies_house_document_facts')) {
             return [];
         }
         $count = (int)InterfaceDB::fetchColumn(
@@ -374,7 +423,7 @@ final class HmrcCorporationTaxSubmissionService
              FROM companies_house_documents d
              WHERE d.company_id = :company_id
                AND d.significant_date = :period_end',
-            ['company_id' => $companyId, 'period_end' => (string)$taxYear['period_end']]
+            ['company_id' => $companyId, 'period_end' => (string)$accountingPeriod['period_end']]
         );
         if ($count <= 0) {
             return [];

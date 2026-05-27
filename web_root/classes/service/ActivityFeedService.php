@@ -15,7 +15,7 @@ final class ActivityFeedService
     ) {
     }
 
-    public function fetchRecentActivity(int $companyId = 0, int $taxYearId = 0, int $limit = 12, string $window = '7_days'): array
+    public function fetchRecentActivity(int $companyId = 0, int $accountingPeriodId = 0, int $limit = 12, string $window = '7_days'): array
     {
         $limit = max(1, min(50, $limit));
         $fetchLimit = min(200, max($limit * 4, 25));
@@ -25,8 +25,8 @@ final class ActivityFeedService
 
         foreach ($auditRepository->fetchRecentTransactionCategoryAudit($fetchLimit) as $row) {
             $rowCompanyId = (int)($row['company_id'] ?? 0);
-            $rowTaxYearId = (int)($row['tax_year_id'] ?? 0);
-            if (($companyId > 0 && $rowCompanyId !== $companyId) || ($taxYearId > 0 && $rowTaxYearId !== $taxYearId)) {
+            $rowAccountingPeriodId = (int)($row['accounting_period_id'] ?? 0);
+            if (($companyId > 0 && $rowCompanyId !== $companyId) || ($accountingPeriodId > 0 && $rowAccountingPeriodId !== $accountingPeriodId)) {
                 continue;
             }
 
@@ -35,8 +35,8 @@ final class ActivityFeedService
 
         foreach ($auditRepository->fetchRecentYearEndAudit($fetchLimit) as $row) {
             $rowCompanyId = (int)($row['company_id'] ?? 0);
-            $rowTaxYearId = (int)($row['tax_year_id'] ?? 0);
-            if (($companyId > 0 && $rowCompanyId !== $companyId) || ($taxYearId > 0 && $rowTaxYearId !== $taxYearId)) {
+            $rowAccountingPeriodId = (int)($row['accounting_period_id'] ?? 0);
+            if (($companyId > 0 && $rowCompanyId !== $companyId) || ($accountingPeriodId > 0 && $rowAccountingPeriodId !== $accountingPeriodId)) {
                 continue;
             }
 
@@ -136,16 +136,16 @@ final class ActivityFeedService
 
     private function periodLabel(array $row): string
     {
-        $start = trim((string)($row['tax_year_start'] ?? ''));
-        $end = trim((string)($row['tax_year_end'] ?? ''));
+        $start = trim((string)($row['accounting_period_start'] ?? ''));
+        $end = trim((string)($row['accounting_period_end'] ?? ''));
 
         if ($start !== '' && $end !== '') {
             return $start . ' to ' . $end;
         }
 
-        $taxYearId = (int)($row['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($row['accounting_period_id'] ?? 0);
 
-        return $taxYearId > 0 ? 'Tax year #' . $taxYearId : 'No accounting period';
+        return $accountingPeriodId > 0 ? 'Tax year #' . $accountingPeriodId : 'No accounting period';
     }
 
     private function filterByWindow(array $items, string $window): array

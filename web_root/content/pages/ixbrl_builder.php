@@ -65,20 +65,20 @@ final class _ixbrl_builder extends PageContextFramework
     ): array {
         $company = (array)($baseContext['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
-        $taxYearId = (int)($company['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
 
         $builder = new IxbrlFactBuilderService();
         $builder->ensureSchema();
-        $readiness = (new IxbrlReadinessService())->getReadiness($companyId, $taxYearId);
-        $latestRun = $builder->getLatestRun($companyId, $taxYearId);
+        $readiness = (new IxbrlReadinessService())->getReadiness($companyId, $accountingPeriodId);
+        $latestRun = $builder->getLatestRun($companyId, $accountingPeriodId);
         $facts = is_array($latestRun) ? $builder->getFacts((int)$latestRun['id']) : [];
 
         return [
             'ixbrl' => [
                 'readiness' => $readiness,
-                'trial_balance' => (new IxbrlTrialBalanceService())->getTrialBalance($companyId, $taxYearId),
-                'trial_balance_totals' => (new IxbrlTrialBalanceService())->getTotals($companyId, $taxYearId),
-                'accounts_mapping' => (new IxbrlAccountsMappingService())->getAccountsMapping($companyId, $taxYearId),
+                'trial_balance' => (new IxbrlTrialBalanceService())->getTrialBalance($companyId, $accountingPeriodId),
+                'trial_balance_totals' => (new IxbrlTrialBalanceService())->getTotals($companyId, $accountingPeriodId),
+                'accounts_mapping' => (new IxbrlAccountsMappingService())->getAccountsMapping($companyId, $accountingPeriodId),
                 'latest_run' => $latestRun,
                 'facts' => $facts,
             ],

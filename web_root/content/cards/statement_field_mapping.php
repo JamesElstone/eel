@@ -87,7 +87,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
         $pageId = trim((string)($context['page']['page_id'] ?? ''));
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
-        $taxYearId = (int)($company['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $activeCompanyAccounts = (array)($context['services']['activeCompanyAccounts'] ?? []);
 
         $selectedUploadId = (int)($context['uploads']['id'] ?? 0);
@@ -127,7 +127,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
         $sampleHtml = $this->renderSourceSample($sourceSample);
         $mappingFieldsHtml = $this->renderMappingFields($mappingView, $sourceHeaders, $mode);
         $accountSelectHtml = $this->renderAccountSelector($activeCompanyAccounts, $accountId, $mode);
-        $buttonsHtml = $this->renderButtons($mode, $hasConfirmedMapping, $uploadId, $companyId, $taxYearId, $accountId);
+        $buttonsHtml = $this->renderButtons($mode, $hasConfirmedMapping, $uploadId, $companyId, $accountingPeriodId, $accountId);
 
         return '
             <div class="stack">
@@ -137,7 +137,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
                     <input type="hidden" name="card_action" value="' . HelperFramework::escape($cardAction) . '">
                     <input type="hidden" name="intent" value="save_account_mapping">
                     <input type="hidden" name="company_id" value="' . $companyId . '">
-                    <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                     <input type="hidden" name="upload_id" value="' . $uploadId . '">
                     <input type="hidden" name="mapping_account_id" value="' . $bankingMappingAccountId . '">
                         ' . $accountSelectHtml . '
@@ -316,7 +316,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
         bool $hasConfirmedMapping,
         int $uploadId,
         int $companyId,
-        int $taxYearId,
+        int $accountingPeriodId,
         int $accountId
     ): string {
         if ($mode !== 'upload' || $uploadId <= 0 || !$hasConfirmedMapping) {
@@ -327,7 +327,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
             <input type="hidden" name="card_action" value="Uploads">
             <input type="hidden" name="intent" value="stage_account_upload">
             <input type="hidden" name="company_id" value="' . $companyId . '">
-            <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+            <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
             <input type="hidden" name="upload_id" value="' . $uploadId . '">
             <input type="hidden" name="account_id" value="' . $accountId . '">
             <button class="button primary" type="submit" data-page-card-switch-tab="Commit Transactions">Preview And Validate Rows</button>

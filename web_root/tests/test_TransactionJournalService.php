@@ -17,7 +17,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $journal = $buildDesiredJournal->invoke($service, [
             'id' => 501,
             'company_id' => 1,
-            'tax_year_id' => 2,
+            'accounting_period_id' => 2,
             'account_id' => 10,
             'transfer_account_id' => 20,
             'txn_date' => '2026-05-01',
@@ -44,7 +44,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $journal = $buildDesiredJournal->invoke($service, [
             'id' => 502,
             'company_id' => 1,
-            'tax_year_id' => 2,
+            'accounting_period_id' => 2,
             'account_id' => 20,
             'txn_date' => '2026-05-02',
             'description' => 'Example Trade Supplier materials',

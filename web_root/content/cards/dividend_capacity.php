@@ -32,7 +32,7 @@ final class _dividend_capacityCard extends CardBaseFramework
             return $this->renderErrors((array)($capacity['errors'] ?? ['Dividend capacity is not available.']));
         }
 
-        $taxYear = (array)($capacity['tax_year'] ?? []);
+        $accountingPeriod = (array)($capacity['accounting_period'] ?? []);
         $badgeClass = (string)($capacity['status_badge_class'] ?? 'info');
         $statusLabel = (string)($capacity['status_label'] ?? 'Unknown');
 
@@ -45,7 +45,7 @@ final class _dividend_capacityCard extends CardBaseFramework
                 <div class="summary-grid">
                     ' . $this->summaryCard('Company', (string)($company['name'] ?? '')) . '
                     ' . $this->summaryCard('Company number', (string)($company['number'] ?? '')) . '
-                    ' . $this->summaryCard('Accounting period', (string)($taxYear['label'] ?? '')) . '
+                    ' . $this->summaryCard('Accounting period', (string)($accountingPeriod['label'] ?? '')) . '
                     ' . $this->summaryCard('Capacity date', (string)($capacity['as_at_date'] ?? '')) . '
                 </div>
             </section>

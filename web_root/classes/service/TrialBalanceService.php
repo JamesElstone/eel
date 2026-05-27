@@ -15,21 +15,21 @@ final class TrialBalanceService
     ) {
     }
 
-    public function fetchPageContext(int $companyId, int $taxYearId): ?array {
+    public function fetchPageContext(int $companyId, int $accountingPeriodId): ?array {
         $metrics = $this->metricsService ?? new YearEndMetricsService();
-        $taxYear = $metrics->fetchTaxYear($companyId, $taxYearId);
+        $accountingPeriod = $metrics->fetchAccountingPeriod($companyId, $accountingPeriodId);
         $company = $metrics->fetchCompanySummary($companyId);
 
-        if ($taxYear === null || $company === null) {
+        if ($accountingPeriod === null || $company === null) {
             return null;
         }
 
         $settings = $metrics->fetchCompanySettings($companyId);
-        $review = ($this->lockService ?? new YearEndLockService())->fetchReview($companyId, $taxYearId);
+        $review = ($this->lockService ?? new YearEndLockService())->fetchReview($companyId, $accountingPeriodId);
 
         return [
             'company' => $company,
-            'tax_year' => $taxYear,
+            'accounting_period' => $accountingPeriod,
             'settings' => $settings,
             'review' => $review,
         ];
@@ -37,12 +37,12 @@ final class TrialBalanceService
 
     public function fetchTrialBalance(
         int $companyId,
-        int $taxYearId,
+        int $accountingPeriodId,
         bool $includeZero = false,
         bool $includeUnposted = false,
         array $filters = []
     ): array {
-        $context = $this->fetchPageContext($companyId, $taxYearId);
+        $context = $this->fetchPageContext($companyId, $accountingPeriodId);
         if ($context === null) {
             return [
                 'available' => false,
@@ -50,7 +50,7 @@ final class TrialBalanceService
             ];
         }
 
-        $rows = $this->fetchNominalTrialBalanceRows($companyId, $taxYearId, $includeUnposted);
+        $rows = $this->fetchNominalTrialBalanceRows($companyId, $accountingPeriodId, $includeUnposted);
         $summary = $this->buildSummary($context, $rows);
         $filteredRows = $this->applyFilters($rows, $includeZero, $filters);
         $totals = $this->buildTotals($filteredRows);
@@ -58,7 +58,7 @@ final class TrialBalanceService
         return [
             'available' => true,
             'company' => $context['company'],
-            'tax_year' => $context['tax_year'],
+            'accounting_period' => $context['accounting_period'],
             'include_zero' => $includeZero,
             'include_unposted' => $includeUnposted,
             'filters' => [
@@ -75,8 +75,8 @@ final class TrialBalanceService
         ];
     }
 
-    public function fetchSummary(int $companyId, int $taxYearId, bool $includeUnposted = false): array {
-        $context = $this->fetchPageContext($companyId, $taxYearId);
+    public function fetchSummary(int $companyId, int $accountingPeriodId, bool $includeUnposted = false): array {
+        $context = $this->fetchPageContext($companyId, $accountingPeriodId);
         if ($context === null) {
             return [
                 'available' => false,
@@ -84,7 +84,7 @@ final class TrialBalanceService
             ];
         }
 
-        $rows = $this->fetchNominalTrialBalanceRows($companyId, $taxYearId, $includeUnposted);
+        $rows = $this->fetchNominalTrialBalanceRows($companyId, $accountingPeriodId, $includeUnposted);
 
         return [
             'available' => true,
@@ -94,11 +94,11 @@ final class TrialBalanceService
 
     public function fetchNominalLedger(
         int $companyId,
-        int $taxYearId,
+        int $accountingPeriodId,
         int $nominalAccountId,
         bool $includeUnposted = false
     ): array {
-        $context = $this->fetchPageContext($companyId, $taxYearId);
+        $context = $this->fetchPageContext($companyId, $accountingPeriodId);
         if ($context === null) {
             return [
                 'available' => false,
@@ -121,20 +121,20 @@ final class TrialBalanceService
             ];
         }
 
-        $entries = $this->fetchNominalLedgerEntries($companyId, $taxYearId, $nominalAccountId, $includeUnposted);
+        $entries = $this->fetchNominalLedgerEntries($companyId, $accountingPeriodId, $nominalAccountId, $includeUnposted);
         $runningBalance = 0.0;
 
         foreach ($entries as &$entry) {
             $runningBalance = round($runningBalance + (float)$entry['debit'] - (float)$entry['credit'], 2);
             $entry['running_balance'] = $runningBalance;
-            $entry['link_url'] = $this->sourceLink((string)($entry['source_type'] ?? ''), (string)($entry['source_ref'] ?? ''), $companyId, $taxYearId, (string)($entry['journal_date'] ?? ''));
+            $entry['link_url'] = $this->sourceLink((string)($entry['source_type'] ?? ''), (string)($entry['source_ref'] ?? ''), $companyId, $accountingPeriodId, (string)($entry['journal_date'] ?? ''));
         }
         unset($entry);
 
         return [
             'available' => true,
             'company' => $context['company'],
-            'tax_year' => $context['tax_year'],
+            'accounting_period' => $context['accounting_period'],
             'nominal' => $nominal,
             'entries' => $entries,
         ];
@@ -142,23 +142,23 @@ final class TrialBalanceService
 
     public function fetchCsvExport(
         int $companyId,
-        int $taxYearId,
+        int $accountingPeriodId,
         bool $includeZero = false,
         bool $includeUnposted = false,
         array $filters = []
     ): array {
-        $result = $this->fetchTrialBalance($companyId, $taxYearId, $includeZero, $includeUnposted, $filters);
+        $result = $this->fetchTrialBalance($companyId, $accountingPeriodId, $includeZero, $includeUnposted, $filters);
         if (empty($result['available'])) {
             return $result;
         }
 
-        $context = $this->fetchPageContext($companyId, $taxYearId);
+        $context = $this->fetchPageContext($companyId, $accountingPeriodId);
         $timestamp = (new DateTimeImmutable('now'))->format('Y-m-d H:i:s');
         $summary = $result['summary'] ?? [];
         $rows = [];
 
         $rows[] = ['Company', (string)($context['company']['company_name'] ?? '')];
-        $rows[] = ['Period', (string)($context['tax_year']['label'] ?? '')];
+        $rows[] = ['Period', (string)($context['accounting_period']['label'] ?? '')];
         $rows[] = ['Generated At', $timestamp];
         $rows[] = ['Balanced Status', !empty($summary['trial_balance_status']['is_balanced']) ? 'Balanced' : 'Not balanced'];
         $rows[] = [];
@@ -193,12 +193,12 @@ final class TrialBalanceService
 
         return [
             'available' => true,
-            'filename' => $this->buildCsvFileName((string)($context['company']['company_name'] ?? 'company'), (string)($context['tax_year']['label'] ?? 'period')),
+            'filename' => $this->buildCsvFileName((string)($context['company']['company_name'] ?? 'company'), (string)($context['accounting_period']['label'] ?? 'period')),
             'rows' => $rows,
         ];
     }
 
-    private function fetchNominalTrialBalanceRows(int $companyId, int $taxYearId, bool $includeUnposted): array {
+    private function fetchNominalTrialBalanceRows(int $companyId, int $accountingPeriodId, bool $includeUnposted): array {
         $postingPredicate = $includeUnposted ? '' : 'AND COALESCE(j.is_posted, 0) = 1';
         $sql = '
             SELECT na.id,
@@ -226,7 +226,7 @@ final class TrialBalanceService
                 FROM journals j
                 INNER JOIN journal_lines jl ON jl.journal_id = j.id
                 WHERE j.company_id = :company_id
-                  AND j.tax_year_id = :tax_year_id
+                  AND j.accounting_period_id = :accounting_period_id
                   ' . $postingPredicate . '
                 GROUP BY jl.nominal_account_id
             ) agg ON agg.nominal_account_id = na.id
@@ -236,7 +236,7 @@ final class TrialBalanceService
 
         $rowsData = InterfaceDB::fetchAll( $sql, [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
         ]);
 
         $rows = [];
@@ -275,9 +275,9 @@ final class TrialBalanceService
         $settings = (array)($context['settings'] ?? []);
         $metrics = $this->metricsService ?? new YearEndMetricsService();
         $companyId = (int)($context['company']['id'] ?? 0);
-        $taxYearId = (int)($context['tax_year']['id'] ?? 0);
-        $periodStart = (string)($context['tax_year']['period_start'] ?? '');
-        $periodEnd = (string)($context['tax_year']['period_end'] ?? '');
+        $accountingPeriodId = (int)($context['accounting_period']['id'] ?? 0);
+        $periodStart = (string)($context['accounting_period']['period_start'] ?? '');
+        $periodEnd = (string)($context['accounting_period']['period_end'] ?? '');
 
         $totalDebits = 0.0;
         $totalCredits = 0.0;
@@ -321,9 +321,9 @@ final class TrialBalanceService
 
         $difference = round($totalDebits - $totalCredits, 2);
         $isBalanced = abs($difference) < 0.005;
-        $profitAndLoss = $metrics->profitAndLossSummary($companyId, $taxYearId, $periodStart, $periodEnd);
-        $balanceSheet = $metrics->fetchBalanceSheetMetricValues($companyId, $taxYearId, $periodStart, $periodEnd);
-        $taxComputation = (new YearEndTaxReadinessService($metrics))->fetchSummary($companyId, $taxYearId);
+        $profitAndLoss = $metrics->profitAndLossSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $balanceSheet = $metrics->fetchBalanceSheetMetricValues($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $taxComputation = (new YearEndTaxReadinessService($metrics))->fetchSummary($companyId, $accountingPeriodId);
         $reviewNotes = trim((string)($context['review']['review_notes'] ?? ''));
 
         return [
@@ -462,7 +462,7 @@ final class TrialBalanceService
         return $net >= 0 ? 'Debit' : 'Credit';
     }
 
-    private function fetchNominalLedgerEntries(int $companyId, int $taxYearId, int $nominalAccountId, bool $includeUnposted): array {
+    private function fetchNominalLedgerEntries(int $companyId, int $accountingPeriodId, int $nominalAccountId, bool $includeUnposted): array {
         $postingPredicate = $includeUnposted ? '' : 'AND j.is_posted = 1';
         return InterfaceDB::fetchAll( 'SELECT j.id AS journal_id,
                     j.journal_date,
@@ -476,12 +476,12 @@ final class TrialBalanceService
              FROM journals j
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
              WHERE j.company_id = :company_id
-               AND j.tax_year_id = :tax_year_id
+               AND j.accounting_period_id = :accounting_period_id
                ' . $postingPredicate . '
                AND jl.nominal_account_id = :nominal_account_id
              ORDER BY j.journal_date ASC, j.id ASC, jl.id ASC', [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'nominal_account_id' => $nominalAccountId,
         ]);
     }
@@ -501,15 +501,15 @@ final class TrialBalanceService
         return is_array($row) ? $row : null;
     }
 
-    private function sourceLink(string $sourceType, string $sourceRef, int $companyId, int $taxYearId, string $journalDate): string {
+    private function sourceLink(string $sourceType, string $sourceRef, int $companyId, int $accountingPeriodId, string $journalDate): string {
         return match ($sourceType) {
             'bank_csv' => preg_match('/transaction:(\d+)/', $sourceRef, $matches) === 1
-                ? '?page=transactions&company_id=' . $companyId . '&tax_year_id=' . $taxYearId . '&month_key=' . urlencode(substr($journalDate, 0, 7) . '-01') . '&category_filter=all#transaction-' . (int)$matches[1]
-                : '?page=transactions&company_id=' . $companyId . '&tax_year_id=' . $taxYearId,
-            'director_loan_register' => '?page=director-loan&company_id=' . $companyId . '&tax_year_id=' . $taxYearId,
+                ? '?page=transactions&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&month_key=' . urlencode(substr($journalDate, 0, 7) . '-01') . '&category_filter=all#transaction-' . (int)$matches[1]
+                : '?page=transactions&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId,
+            'director_loan_register' => '?page=director-loan&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId,
             'expense_register', 'expense_claim_post', 'expense_claim_payment_link' => '?page=expenses&company_id=' . $companyId,
-            'manual' => '?page=journals&company_id=' . $companyId . '&tax_year_id=' . $taxYearId,
-            default => '?page=journals&company_id=' . $companyId . '&tax_year_id=' . $taxYearId,
+            'manual' => '?page=journals&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId,
+            default => '?page=journals&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId,
         };
     }
 

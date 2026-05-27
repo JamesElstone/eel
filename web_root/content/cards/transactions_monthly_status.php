@@ -28,7 +28,7 @@ final class _transactions_monthly_statusCard extends CardBaseFramework
                 'method' => 'buildMonthStatus',
                 'params' => [
                     'companyId' => ':company.id',
-                    'taxYearId' => ':company.tax_year_id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
         ];
@@ -60,7 +60,7 @@ final class _transactions_monthly_statusCard extends CardBaseFramework
         $monthStatus = (array)($services['month_status'] ?? []);
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
-        $taxYearId = (int)($company['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $selectedTransactionFilter = (string)($page['selected_transaction_filter'] ?? $page['category_filter'] ?? 'all');
 
         if ($monthStatus === []) {
@@ -82,7 +82,7 @@ final class _transactions_monthly_statusCard extends CardBaseFramework
                 <input type="hidden" name="card_action" value="Transaction">
                 <input type="hidden" name="global_action" value="select_transaction_month">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="month_key" value="' . HelperFramework::escape((string)($month['month_key'] ?? '')) . '">
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
                 <button class="' . HelperFramework::escape($this->monthStatusClass((string)($month['status'] ?? 'idle'))) . '" type="submit" data-page-card-switch-tab="Categorise">

@@ -94,7 +94,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $context = [
             'company' => [
                 'id' => 1,
-                'tax_year_id' => 2,
+                'accounting_period_id' => 2,
             ],
             'page' => [
                 'month_key' => '2026-03-01',
@@ -153,7 +153,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $html = (new _transactions_importedCard())->render([
             'company' => [
                 'id' => 1,
-                'tax_year_id' => 2,
+                'accounting_period_id' => 2,
             ],
             'page' => [
                 'month_key' => '2026-03-01',
@@ -208,7 +208,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $html = (new _transactions_rulesCard())->render([
             'company' => [
                 'id' => 1,
-                'tax_year_id' => 2,
+                'accounting_period_id' => 2,
             ],
             'page' => [
                 'page_id' => 'transactions',
@@ -270,7 +270,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $html = (new _transactions_rulesCard())->render([
             'company' => [
                 'id' => 1,
-                'tax_year_id' => 2,
+                'accounting_period_id' => 2,
             ],
             'page' => [
                 'page_id' => 'transactions',
@@ -307,7 +307,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $html = (new _transactions_importedCard())->render([
             'company' => [
                 'id' => 1,
-                'tax_year_id' => 2,
+                'accounting_period_id' => 2,
             ],
             'page' => [
                 'page_id' => 'transactions',

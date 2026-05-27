@@ -11,20 +11,20 @@ final class TransactionJournalService
 {
     public function postCategorisedTransactions(
         int $companyId,
-        int $taxYearId,
+        int $accountingPeriodId,
         int $bankNominalId,
         ?string $monthKey = null,
         string $changedBy = 'system'
     ): array {
-        if ($companyId <= 0 || $taxYearId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return [
                 'success' => false,
                 'errors' => ['Select a company and accounting period before posting transactions.'],
             ];
         }
 
-        $transactionIds = $this->fetchPostableTransactionIds($companyId, $taxYearId, $monthKey);
-        (new YearEndLockService())->assertUnlocked($companyId, $taxYearId, 'post categorised transactions');
+        $transactionIds = $this->fetchPostableTransactionIds($companyId, $accountingPeriodId, $monthKey);
+        (new YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'post categorised transactions');
         $summary = [
             'success' => true,
             'errors' => [],
@@ -88,7 +88,7 @@ final class TransactionJournalService
 
         (new YearEndLockService())->assertUnlocked(
             (int)($transaction['company_id'] ?? 0),
-            (int)($transaction['tax_year_id'] ?? 0),
+            (int)($transaction['accounting_period_id'] ?? 0),
             'post journals in this period'
         );
 
@@ -204,8 +204,8 @@ final class TransactionJournalService
         ]) > 0;
     }
 
-    public function fetchJournals(int $companyId, int $taxYearId, int $limit = 200): array {
-        if ($companyId <= 0 || $taxYearId <= 0) {
+    public function fetchJournals(int $companyId, int $accountingPeriodId, int $limit = 200): array {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return [];
         }
 
@@ -213,7 +213,7 @@ final class TransactionJournalService
         $stmt = InterfaceDB::prepare(
             "SELECT j.id,
                     j.company_id,
-                    j.tax_year_id,
+                    j.accounting_period_id,
                     j.source_type,
                     COALESCE(j.source_ref, '') AS source_ref,
                     j.journal_date,
@@ -224,14 +224,14 @@ final class TransactionJournalService
              FROM journals j
              LEFT JOIN journal_lines jl ON jl.journal_id = j.id
              WHERE j.company_id = :company_id
-               AND j.tax_year_id = :tax_year_id
-             GROUP BY j.id, j.company_id, j.tax_year_id, j.source_type, j.source_ref, j.journal_date, j.description, j.is_posted
+               AND j.accounting_period_id = :accounting_period_id
+             GROUP BY j.id, j.company_id, j.accounting_period_id, j.source_type, j.source_ref, j.journal_date, j.description, j.is_posted
              ORDER BY j.journal_date DESC, j.id DESC
              LIMIT {$limit}"
         );
         $stmt->execute([
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
         ]);
 
         $journals = $stmt->fetchAll();
@@ -248,7 +248,7 @@ final class TransactionJournalService
         $stmt = InterfaceDB::prepare(
             'SELECT t.id,
                     t.company_id,
-                    t.tax_year_id,
+                    t.accounting_period_id,
                     t.account_id,
                     t.txn_date,
                     t.txn_type,
@@ -277,10 +277,10 @@ final class TransactionJournalService
         return is_array($row) ? $row : null;
     }
 
-    private function fetchPostableTransactionIds(int $companyId, int $taxYearId, ?string $monthKey): array {
+    private function fetchPostableTransactionIds(int $companyId, int $accountingPeriodId, ?string $monthKey): array {
         $where = [
             't.company_id = :company_id',
-            't.tax_year_id = :tax_year_id',
+            't.accounting_period_id = :accounting_period_id',
             '(
                 (t.nominal_account_id IS NOT NULL AND t.category_status IN (\'auto\', \'manual\'))
                 OR (t.transfer_account_id IS NOT NULL AND t.is_internal_transfer = 1 AND t.category_status = \'manual\')
@@ -288,7 +288,7 @@ final class TransactionJournalService
         ];
         $params = [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
         ];
 
         $monthKey = trim((string)$monthKey);
@@ -407,7 +407,7 @@ final class TransactionJournalService
 
         return [
             'company_id' => (int)$transaction['company_id'],
-            'tax_year_id' => (int)$transaction['tax_year_id'],
+            'accounting_period_id' => (int)$transaction['accounting_period_id'],
             'source_type' => 'bank_csv',
             'source_ref' => $this->sourceRefForTransaction((int)$transaction['id']),
             'journal_date' => $journalDate,
@@ -460,7 +460,7 @@ final class TransactionJournalService
         $stmt = InterfaceDB::prepare(
             'SELECT id,
                     company_id,
-                    tax_year_id,
+                    accounting_period_id,
                     source_type,
                     source_ref,
                     journal_date,
@@ -548,7 +548,7 @@ final class TransactionJournalService
         $stmt = InterfaceDB::prepare(
             'INSERT INTO journals (
                 company_id,
-                tax_year_id,
+                accounting_period_id,
                 source_type,
                 source_ref,
                 journal_date,
@@ -558,7 +558,7 @@ final class TransactionJournalService
                 updated_at
             ) VALUES (
                 :company_id,
-                :tax_year_id,
+                :accounting_period_id,
                 :source_type,
                 :source_ref,
                 :journal_date,
@@ -570,7 +570,7 @@ final class TransactionJournalService
         );
         $stmt->execute([
             'company_id' => $journal['company_id'],
-            'tax_year_id' => $journal['tax_year_id'],
+            'accounting_period_id' => $journal['accounting_period_id'],
             'source_type' => $journal['source_type'],
             'source_ref' => $journal['source_ref'],
             'journal_date' => $journal['journal_date'],
@@ -720,7 +720,7 @@ final class TransactionJournalService
 
         return [
             'company_id' => (int)$transaction['company_id'],
-            'tax_year_id' => (int)$transaction['tax_year_id'],
+            'accounting_period_id' => (int)$transaction['accounting_period_id'],
             'source_type' => 'bank_csv',
             'source_ref' => $this->sourceRefForTransaction((int)$transaction['id']),
             'journal_date' => $journalDate,

@@ -28,14 +28,14 @@ final class _dividend_declareCard extends CardBaseFramework
     {
         $company = (array)($context['company'] ?? []);
         $capacity = (array)($context['dividends']['capacity'] ?? []);
-        $taxYear = (array)($capacity['tax_year'] ?? []);
+        $accountingPeriod = (array)($capacity['accounting_period'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
-        $taxYearId = (int)($company['tax_year_id'] ?? 0);
-        $periodStart = (string)($taxYear['period_start'] ?? '');
-        $periodEnd = (string)($taxYear['period_end'] ?? '');
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
+        $periodStart = (string)($accountingPeriod['period_start'] ?? '');
+        $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
         $defaultDate = (string)($capacity['as_at_date'] ?? date('Y-m-d'));
         $availableReserves = round((float)($capacity['available_distributable_reserves'] ?? 0), 2);
-        $canDeclare = !empty($capacity['available']) && $availableReserves > 0 && $companyId > 0 && $taxYearId > 0;
+        $canDeclare = !empty($capacity['available']) && $availableReserves > 0 && $companyId > 0 && $accountingPeriodId > 0;
         $disabled = $canDeclare ? '' : ' disabled';
 
         $helper = $canDeclare
@@ -48,7 +48,7 @@ final class _dividend_declareCard extends CardBaseFramework
                 <input type="hidden" name="card_action" value="Dividend">
                 <input type="hidden" name="intent" value="declare_dividend">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <div class="form-row">
                     <label for="dividend_declaration_date">Declaration date</label>
                     <input class="input" id="dividend_declaration_date" type="date" name="declaration_date" value="' . HelperFramework::escape($defaultDate) . '" min="' . HelperFramework::escape($periodStart) . '" max="' . HelperFramework::escape($periodEnd) . '"' . $disabled . '>

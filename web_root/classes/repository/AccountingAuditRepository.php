@@ -31,7 +31,7 @@ final class AccountingAuditRepository
                 audit.changed_at,
                 audit.reason,
                 transactions.company_id,
-                transactions.tax_year_id,
+                transactions.accounting_period_id,
                 transactions.txn_date,
                 transactions.description AS transaction_description,
                 transactions.amount AS transaction_amount,
@@ -59,7 +59,7 @@ final class AccountingAuditRepository
             'SELECT
                 audit.id,
                 audit.company_id,
-                audit.tax_year_id,
+                audit.accounting_period_id,
                 audit.action,
                 audit.action_by,
                 audit.action_at,
@@ -67,13 +67,13 @@ final class AccountingAuditRepository
                 audit.new_value_json,
                 audit.notes,
                 COALESCE(companies.company_name, \'\') AS company_name,
-                COALESCE(tax_years.period_start, NULL) AS tax_year_start,
-                COALESCE(tax_years.period_end, NULL) AS tax_year_end
+                COALESCE(accounting_periods.period_start, NULL) AS accounting_period_start,
+                COALESCE(accounting_periods.period_end, NULL) AS accounting_period_end
              FROM year_end_audit_log audit
              LEFT JOIN companies
                 ON companies.id = audit.company_id
-             LEFT JOIN tax_years
-                ON tax_years.id = audit.tax_year_id
+             LEFT JOIN accounting_periods
+                ON accounting_periods.id = audit.accounting_period_id
              ORDER BY audit.action_at DESC, audit.id DESC
              LIMIT ' . FormattingFramework::normaliseLimit($limit)
         );

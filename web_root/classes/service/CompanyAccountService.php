@@ -121,6 +121,7 @@ final class CompanyAccountService
         }
 
         try {
+            $input['company_id'] = $companyId;
             $nominalResult = (new CompanyAccountNominalService())->resolveNominalForAccountInput($input);
             if (empty($nominalResult['success'])) {
                 if ($ownsTransaction && InterfaceDB::inTransaction()) {
@@ -221,6 +222,9 @@ final class CompanyAccountService
             'success' => $accountId !== false,
             'errors' => $accountId !== false ? [] : ['The account was saved but could not be reloaded.'],
             'account_id' => $accountId !== false ? (int)$accountId : 0,
+            'nominal_account_id' => (int)$nominalResult['nominal_account_id'],
+            'nominal_code' => (string)($nominalResult['nominal_code'] ?? ''),
+            'nominal_created' => !empty($nominalResult['created']),
         ];
     }
 
@@ -263,6 +267,7 @@ final class CompanyAccountService
         }
 
         try {
+            $input['company_id'] = $companyId;
             $nominalResult = (new CompanyAccountNominalService())->resolveNominalForAccountInput($input);
             if (empty($nominalResult['success'])) {
                 if ($ownsTransaction && InterfaceDB::inTransaction()) {
@@ -335,6 +340,9 @@ final class CompanyAccountService
             'success' => true,
             'errors' => [],
             'account_id' => $accountId,
+            'nominal_account_id' => (int)$nominalResult['nominal_account_id'],
+            'nominal_code' => (string)($nominalResult['nominal_code'] ?? ''),
+            'nominal_created' => !empty($nominalResult['created']),
         ];
     }
 

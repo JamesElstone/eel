@@ -23,7 +23,7 @@ final class _asset_registerCard extends CardBaseFramework
                 'method' => 'fetchPageData',
                 'params' => [
                     'companyId' => ':company_id',
-                    'taxYearId' => ':tax_year_id',
+                    'accountingPeriodId' => ':accounting_period_id',
                     'defaultBankNominalId' => ':default_bank_nominal_id',
                     'prefillTransactionId' => ':prefill_transaction_id',
                 ],
@@ -47,7 +47,7 @@ final class _asset_registerCard extends CardBaseFramework
         $company = (array)($context['company'] ?? []);
         $assetsPageData = (array)($context['services']['assetPageData'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
-        $taxYearId = (int)($company['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $assets = is_array($assetsPageData['assets'] ?? null) ? $assetsPageData['assets'] : [];
         $rowsHtml = '';
 
@@ -65,7 +65,7 @@ final class _asset_registerCard extends CardBaseFramework
                 <td>' . ($status !== 'disposed'
                     ? '<form method="post" action="?page=assets" data-ajax="true">
                         <input type="hidden" name="company_id" value="' . $companyId . '">
-                        <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                        <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                         <input type="hidden" name="asset_id" value="' . (int)($asset['id'] ?? 0) . '">
                         <input type="hidden" name="global_action" value="dispose_asset">
                         <div>
@@ -86,7 +86,7 @@ final class _asset_registerCard extends CardBaseFramework
             <div>
                 <form method="post" action="?page=assets" data-ajax="true">
                     <input type="hidden" name="company_id" value="' . $companyId . '">
-                    <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                     <input type="hidden" name="global_action" value="run_asset_depreciation">
                     <button class="button primary" type="submit">Run Depreciation</button>
                 </form>

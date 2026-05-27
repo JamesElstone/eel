@@ -16,20 +16,20 @@ final class YearEndMetricsService
     ) {
     }
 
-    public function fetchTaxYear(int $companyId, int $taxYearId): ?array {
-        return (new TaxYearRepository())->fetchTaxYear($companyId, $taxYearId);
+    public function fetchAccountingPeriod(int $companyId, int $accountingPeriodId): ?array {
+        return (new AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId);
     }
 
-    public function fetchTaxYears(int $companyId): array {
-        return (new TaxYearRepository())->fetchTaxYears($companyId);
+    public function fetchAccountingPeriods(int $companyId): array {
+        return (new AccountingPeriodRepository())->fetchAccountingPeriods($companyId);
     }
 
-    public function resolveLatestOpenTaxYearId(int $companyId): int {
+    public function resolveLatestOpenAccountingPeriodId(int $companyId): int {
         $sql = 'SELECT ty.id
-             FROM tax_years ty
+             FROM accounting_periods ty
              LEFT JOIN year_end_reviews yer
                ON yer.company_id = ty.company_id
-              AND yer.tax_year_id = ty.id
+              AND yer.accounting_period_id = ty.id
              WHERE ty.company_id = :company_id
                AND COALESCE(yer.is_locked, 0) = 0
              ORDER BY ty.period_start DESC, ty.id DESC
@@ -44,7 +44,7 @@ final class YearEndMetricsService
         }
 
         return (int)(InterfaceDB::fetchColumn( 'SELECT id
-             FROM tax_years
+             FROM accounting_periods
              WHERE company_id = :company_id
              ORDER BY period_start DESC, id DESC
              LIMIT 1', ['company_id' => $companyId]) ?: 0);
@@ -78,14 +78,14 @@ final class YearEndMetricsService
         return $settings;
     }
 
-    public function buildMonthTiles(int $companyId, int $taxYearId, string $periodStart, string $periodEnd): array {
+    public function buildMonthTiles(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array {
         $coverageService = new AccountingPeriodCoverageService();
-        $coverage = $coverageService->summarise($companyId, $taxYearId, $periodStart, $periodEnd);
-        $uploadsByMonth = $this->fetchUploadCountsByMonth($companyId, $taxYearId, $periodStart, $periodEnd);
-        $transactionByMonth = $this->fetchTransactionCountsByMonth($companyId, $taxYearId, $periodStart, $periodEnd);
+        $coverage = $coverageService->summarise($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $uploadsByMonth = $this->fetchUploadCountsByMonth($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $transactionByMonth = $this->fetchTransactionCountsByMonth($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $suspenseNominalId = $this->findSuspenseNominalId($companyId);
         $suspenseByMonth = $suspenseNominalId > 0
-            ? $this->fetchSuspenseCountsByMonth($companyId, $taxYearId, $suspenseNominalId)
+            ? $this->fetchSuspenseCountsByMonth($companyId, $accountingPeriodId, $suspenseNominalId)
             : [];
 
         $tiles = [];
@@ -120,46 +120,46 @@ final class YearEndMetricsService
         return $tiles;
     }
 
-    public function sourceDataSummary(int $companyId, int $taxYearId, string $periodStart, string $periodEnd): array {
+    public function sourceDataSummary(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array {
         return [
-            'bank_transactions' => $this->countTransactions($companyId, $taxYearId, $periodStart, $periodEnd),
-            'manual_journals' => $this->countJournalsBySource($companyId, $taxYearId, ['manual']),
-            'director_loan_journals' => $this->countJournalsBySource($companyId, $taxYearId, ['director_loan_register']),
-            'expense_journals' => $this->countJournalsBySource($companyId, $taxYearId, ['expense_register', 'expense_claim_post', 'expense_claim_payment_link']),
+            'bank_transactions' => $this->countTransactions($companyId, $accountingPeriodId, $periodStart, $periodEnd),
+            'manual_journals' => $this->countJournalsBySource($companyId, $accountingPeriodId, ['manual']),
+            'director_loan_journals' => $this->countJournalsBySource($companyId, $accountingPeriodId, ['director_loan_register']),
+            'expense_journals' => $this->countJournalsBySource($companyId, $accountingPeriodId, ['expense_register', 'expense_claim_post', 'expense_claim_payment_link']),
         ];
     }
 
-    public function uncategorisedTransactionsCount(int $companyId, int $taxYearId, string $periodStart, string $periodEnd): int {
+    public function uncategorisedTransactionsCount(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): int {
         return (int)InterfaceDB::fetchColumn( 'SELECT COUNT(*)
              FROM transactions
              WHERE company_id = :company_id
-               AND tax_year_id = :tax_year_id
+               AND accounting_period_id = :accounting_period_id
                AND txn_date BETWEEN :period_start AND :period_end
                AND (category_status = :category_status OR nominal_account_id IS NULL)', [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'period_start' => $periodStart,
             'period_end' => $periodEnd,
             'category_status' => 'uncategorised',
         ]);
     }
 
-    public function autoCategorisedPendingReviewCount(int $companyId, int $taxYearId, string $periodStart, string $periodEnd): int {
+    public function autoCategorisedPendingReviewCount(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): int {
         return (int)InterfaceDB::fetchColumn( 'SELECT COUNT(*)
              FROM transactions
              WHERE company_id = :company_id
-               AND tax_year_id = :tax_year_id
+               AND accounting_period_id = :accounting_period_id
                AND txn_date BETWEEN :period_start AND :period_end
                AND category_status = :category_status', [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'period_start' => $periodStart,
             'period_end' => $periodEnd,
             'category_status' => 'auto',
         ]);
     }
 
-    public function suspenseSummary(int $companyId, int $taxYearId, string $periodEnd): array {
+    public function suspenseSummary(int $companyId, int $accountingPeriodId, string $periodEnd): array {
         $nominalId = $this->findSuspenseNominalId($companyId);
         if ($nominalId <= 0) {
             return [
@@ -191,8 +191,8 @@ final class YearEndMetricsService
         ];
     }
 
-    public function trialBalanceSummary(int $companyId, int $taxYearId, string $periodStart, string $periodEnd): array {
-        $lines = $this->fetchTrialBalanceLines($companyId, $taxYearId, $periodStart, $periodEnd);
+    public function trialBalanceSummary(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array {
+        $lines = $this->fetchTrialBalanceLines($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $totalDebits = 0.0;
         $totalCredits = 0.0;
 
@@ -212,7 +212,7 @@ final class YearEndMetricsService
         ];
     }
 
-    public function journalIntegritySummary(int $companyId, int $taxYearId): array {
+    public function journalIntegritySummary(int $companyId, int $accountingPeriodId): array {
         $summary = [
             'line_count_failures' => 0,
             'unbalanced_journals' => 0,
@@ -230,11 +230,11 @@ final class YearEndMetricsService
              LEFT JOIN journal_lines jl ON jl.journal_id = j.id
              LEFT JOIN nominal_accounts na ON na.id = jl.nominal_account_id
              WHERE j.company_id = :company_id
-               AND j.tax_year_id = :tax_year_id
+               AND j.accounting_period_id = :accounting_period_id
              GROUP BY j.id, j.description
              ORDER BY j.journal_date ASC, j.id ASC', [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
         ]) as $row) {
             $issues = [];
             if ((int)($row['line_count'] ?? 0) < 2) {
@@ -262,9 +262,9 @@ final class YearEndMetricsService
         return $summary;
     }
 
-    public function statementContinuitySummary(int $companyId, int $taxYearId, int $bankNominalId): array {
+    public function statementContinuitySummary(int $companyId, int $accountingPeriodId, int $bankNominalId): array {
         $service = $this->bankingReconciliationService ?? new BankingReconciliationService();
-        $panels = $service->fetchBankAccountPanels($companyId, $taxYearId, $bankNominalId);
+        $panels = $service->fetchBankAccountPanels($companyId, $accountingPeriodId, $bankNominalId);
 
         $continuityWarnings = 0;
         $ledgerWarnings = 0;
@@ -285,16 +285,16 @@ final class YearEndMetricsService
         ];
     }
 
-    public function duplicateImportAudit(int $companyId, int $taxYearId): array {
+    public function duplicateImportAudit(int $companyId, int $accountingPeriodId): array {
         $row = InterfaceDB::fetchOne( 'SELECT COALESCE(SUM(COALESCE(rows_duplicate, 0)), 0) AS duplicate_rows,
                     COALESCE(SUM(CASE WHEN COALESCE(rows_duplicate, 0) > 0 THEN 1 ELSE 0 END), 0) AS duplicate_files,
                     COALESCE(SUM(COALESCE(rows_duplicate_within_upload, 0)), 0) AS duplicate_within_upload,
                     COALESCE(SUM(COALESCE(rows_duplicate_existing, 0)), 0) AS duplicate_existing
              FROM statement_uploads
              WHERE company_id = :company_id
-               AND tax_year_id = :tax_year_id', [
+               AND accounting_period_id = :accounting_period_id', [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
         ]) ?: [];
 
         return [
@@ -305,7 +305,7 @@ final class YearEndMetricsService
         ];
     }
 
-    public function strandedCommittedSourceRowsCount(int $companyId, int $taxYearId): int {
+    public function strandedCommittedSourceRowsCount(int $companyId, int $accountingPeriodId): int {
         if (!$this->tableExists('statement_import_rows')) {
             return 0;
         }
@@ -318,7 +318,7 @@ final class YearEndMetricsService
                ON j.source_type = :source_type
               AND j.source_ref = CONCAT(:source_prefix, sir.committed_transaction_id)
              WHERE su.company_id = :company_id
-               AND su.tax_year_id = :tax_year_id
+               AND su.accounting_period_id = :accounting_period_id
                AND sir.committed_transaction_id IS NOT NULL
                AND (
                     t.id IS NULL
@@ -331,15 +331,15 @@ final class YearEndMetricsService
             'source_type' => 'bank_csv',
             'source_prefix' => 'transaction:',
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'auto_status' => 'auto',
             'manual_status' => 'manual',
         ]);
     }
 
-    public function directorLoanSummary(int $companyId, int $taxYearId): array {
+    public function directorLoanSummary(int $companyId, int $accountingPeriodId): array {
         $service = $this->directorLoanService ?? new DirectorLoanService();
-        $result = $service->fetchStatement($companyId, $taxYearId);
+        $result = $service->fetchStatement($companyId, $accountingPeriodId);
         if (empty($result['success'])) {
             return [
                 'available' => false,
@@ -410,10 +410,10 @@ final class YearEndMetricsService
         ];
     }
 
-    public function financialStatementsSummary(int $companyId, int $taxYearId, string $periodStart, string $periodEnd): array {
-        $trialBalance = $this->trialBalanceSummary($companyId, $taxYearId, $periodStart, $periodEnd);
-        $balances = $this->fetchBalanceSheetMetricValues($companyId, $taxYearId, $periodStart, $periodEnd);
-        $profitAndLoss = $this->profitAndLossSummary($companyId, $taxYearId, $periodStart, $periodEnd);
+    public function financialStatementsSummary(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array {
+        $trialBalance = $this->trialBalanceSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $balances = $this->fetchBalanceSheetMetricValues($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $profitAndLoss = $this->profitAndLossSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $openingEquity = $this->equityBalanceUntilDate($companyId, $periodStart, true);
         $closingEquity = $this->equityBalanceUntilDate($companyId, $periodEnd, false);
         $expectedClosingEquity = round($openingEquity + (float)($profitAndLoss['profit_before_tax'] ?? 0), 2);
@@ -431,11 +431,11 @@ final class YearEndMetricsService
                 'expected_closing_equity' => $expectedClosingEquity,
                 'unexplained_movement' => round($closingEquity - $expectedClosingEquity, 2),
             ],
-            'fixed_asset_hint_count' => $this->likelyCapitalPurchaseCount($companyId, $taxYearId, $periodStart, $periodEnd),
+            'fixed_asset_hint_count' => $this->likelyCapitalPurchaseCount($companyId, $accountingPeriodId, $periodStart, $periodEnd),
         ];
     }
 
-    public function fetchBalanceSheetMetricValues(int $companyId, int $taxYearId, string $periodStart, string $periodEnd): array {
+    public function fetchBalanceSheetMetricValues(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array {
         $rows = InterfaceDB::fetchAll( 'SELECT na.account_type,
                     COALESCE(nas.code, \'\') AS subtype_code,
                     COALESCE(SUM(COALESCE(jl.debit, 0) - COALESCE(jl.credit, 0)), 0) AS movement
@@ -444,12 +444,12 @@ final class YearEndMetricsService
              INNER JOIN nominal_accounts na ON na.id = jl.nominal_account_id
              LEFT JOIN nominal_account_subtypes nas ON nas.id = na.account_subtype_id
              WHERE j.company_id = :company_id
-               AND j.tax_year_id = :tax_year_id
+               AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
                AND j.journal_date BETWEEN :period_start AND :period_end
              GROUP BY na.account_type, nas.code', [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'period_start' => $periodStart,
             'period_end' => $periodEnd,
         ]);
@@ -499,7 +499,7 @@ final class YearEndMetricsService
         ];
     }
 
-    public function profitAndLossSummary(int $companyId, int $taxYearId, string $periodStart, string $periodEnd): array {
+    public function profitAndLossSummary(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array {
         $rows = InterfaceDB::fetchAll( 'SELECT na.id,
                     na.code,
                     na.name,
@@ -511,13 +511,13 @@ final class YearEndMetricsService
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
              INNER JOIN nominal_accounts na ON na.id = jl.nominal_account_id
              WHERE j.company_id = :company_id
-               AND j.tax_year_id = :tax_year_id
+               AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
                AND j.journal_date BETWEEN :period_start AND :period_end
                AND (na.account_type = :income_type OR na.account_type = :cost_type OR na.account_type = :expense_type)
              GROUP BY na.id, na.code, na.name, na.account_type, na.tax_treatment', [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'period_start' => $periodStart,
             'period_end' => $periodEnd,
             'income_type' => 'income',
@@ -569,20 +569,20 @@ final class YearEndMetricsService
         ];
     }
 
-    private function countTransactions(int $companyId, int $taxYearId, string $periodStart, string $periodEnd): int {
+    private function countTransactions(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): int {
         return (int)InterfaceDB::fetchColumn( 'SELECT COUNT(*)
              FROM transactions
              WHERE company_id = :company_id
-               AND tax_year_id = :tax_year_id
+               AND accounting_period_id = :accounting_period_id
                AND txn_date BETWEEN :period_start AND :period_end', [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'period_start' => $periodStart,
             'period_end' => $periodEnd,
         ]);
     }
 
-    private function countJournalsBySource(int $companyId, int $taxYearId, array $sourceTypes): int {
+    private function countJournalsBySource(int $companyId, int $accountingPeriodId, array $sourceTypes): int {
         if ($sourceTypes === []) {
             return 0;
         }
@@ -592,26 +592,26 @@ final class YearEndMetricsService
             'SELECT COUNT(*)
              FROM journals
              WHERE company_id = ?
-               AND tax_year_id = ?
+               AND accounting_period_id = ?
                AND is_posted = 1
                AND source_type IN (' . $placeholders . ')'
         );
-        $stmt->execute(array_merge([$companyId, $taxYearId], $sourceTypes));
+        $stmt->execute(array_merge([$companyId, $accountingPeriodId], $sourceTypes));
 
         return (int)$stmt->fetchColumn();
     }
 
-    private function fetchUploadCountsByMonth(int $companyId, int $taxYearId, string $periodStart, string $periodEnd): array {
+    private function fetchUploadCountsByMonth(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array {
         $result = [];
         foreach (InterfaceDB::fetchAll( 'SELECT DATE_FORMAT(COALESCE(date_range_start, statement_month), \'%Y-%m-01\') AS month_key,
                     COUNT(*) AS upload_count
              FROM statement_uploads
              WHERE company_id = :company_id
-               AND tax_year_id = :tax_year_id
+               AND accounting_period_id = :accounting_period_id
                AND COALESCE(date_range_start, statement_month, date_range_end) BETWEEN :period_start AND :period_end
              GROUP BY DATE_FORMAT(COALESCE(date_range_start, statement_month), \'%Y-%m-01\')', [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'period_start' => $periodStart,
             'period_end' => $periodEnd,
         ]) as $row) {
@@ -621,19 +621,19 @@ final class YearEndMetricsService
         return $result;
     }
 
-    private function fetchTransactionCountsByMonth(int $companyId, int $taxYearId, string $periodStart, string $periodEnd): array {
+    private function fetchTransactionCountsByMonth(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array {
         $result = [];
         foreach (InterfaceDB::fetchAll( 'SELECT DATE_FORMAT(txn_date, \'%Y-%m-01\') AS month_key,
                     COUNT(*) AS transaction_count,
                     SUM(CASE WHEN category_status = :category_status OR nominal_account_id IS NULL THEN 1 ELSE 0 END) AS uncategorised_count
              FROM transactions
              WHERE company_id = :company_id
-               AND tax_year_id = :tax_year_id
+               AND accounting_period_id = :accounting_period_id
                AND txn_date BETWEEN :period_start AND :period_end
              GROUP BY DATE_FORMAT(txn_date, \'%Y-%m-01\')', [
             'category_status' => 'uncategorised',
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'period_start' => $periodStart,
             'period_end' => $periodEnd,
         ]) as $row) {
@@ -646,19 +646,19 @@ final class YearEndMetricsService
         return $result;
     }
 
-    private function fetchSuspenseCountsByMonth(int $companyId, int $taxYearId, int $nominalAccountId): array {
+    private function fetchSuspenseCountsByMonth(int $companyId, int $accountingPeriodId, int $nominalAccountId): array {
         $result = [];
         foreach (InterfaceDB::fetchAll( 'SELECT DATE_FORMAT(j.journal_date, \'%Y-%m-01\') AS month_key,
                     COUNT(*) AS suspense_count
              FROM journals j
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
              WHERE j.company_id = :company_id
-               AND j.tax_year_id = :tax_year_id
+               AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
                AND jl.nominal_account_id = :nominal_account_id
              GROUP BY DATE_FORMAT(j.journal_date, \'%Y-%m-01\')', [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'nominal_account_id' => $nominalAccountId,
         ]) as $row) {
             $result[(string)$row['month_key']] = (int)($row['suspense_count'] ?? 0);
@@ -667,7 +667,7 @@ final class YearEndMetricsService
         return $result;
     }
 
-    private function fetchTrialBalanceLines(int $companyId, int $taxYearId, string $periodStart, string $periodEnd): array {
+    private function fetchTrialBalanceLines(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array {
         return InterfaceDB::fetchAll( 'SELECT jl.nominal_account_id,
                     COALESCE(na.code, \'\') AS nominal_code,
                     COALESCE(na.name, \'\') AS nominal_name,
@@ -677,13 +677,13 @@ final class YearEndMetricsService
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
              LEFT JOIN nominal_accounts na ON na.id = jl.nominal_account_id
              WHERE j.company_id = :company_id
-               AND j.tax_year_id = :tax_year_id
+               AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
                AND j.journal_date BETWEEN :period_start AND :period_end
              GROUP BY jl.nominal_account_id, na.code, na.name
              ORDER BY na.code ASC, na.name ASC, jl.nominal_account_id ASC', [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'period_start' => $periodStart,
             'period_end' => $periodEnd,
         ]);
@@ -726,12 +726,12 @@ final class YearEndMetricsService
         ]), 2);
     }
 
-    private function likelyCapitalPurchaseCount(int $companyId, int $taxYearId, string $periodStart, string $periodEnd): int {
+    private function likelyCapitalPurchaseCount(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): int {
         return (int)InterfaceDB::fetchColumn( 'SELECT COUNT(*)
              FROM transactions t
              LEFT JOIN nominal_accounts na ON na.id = t.nominal_account_id
              WHERE t.company_id = :company_id
-               AND t.tax_year_id = :tax_year_id
+               AND t.accounting_period_id = :accounting_period_id
                AND t.txn_date BETWEEN :period_start AND :period_end
                AND (
                     COALESCE(na.tax_treatment, \'\') = :capital_treatment
@@ -740,7 +740,7 @@ final class YearEndMetricsService
                     OR LOWER(COALESCE(t.description, \'\')) LIKE :capital_hint_three
                )', [
             'company_id' => $companyId,
-            'tax_year_id' => $taxYearId,
+            'accounting_period_id' => $accountingPeriodId,
             'period_start' => $periodStart,
             'period_end' => $periodEnd,
             'capital_treatment' => 'capital',

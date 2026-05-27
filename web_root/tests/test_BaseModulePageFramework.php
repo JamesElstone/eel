@@ -79,7 +79,7 @@ $harness->run(TestPageContextFrameworkDouble::class, function (GeneratedServiceC
         $harness->assertSame('test_module', $context['page']['page_id'] ?? null);
         $harness->assertSame(['alpha', 'beta'], $context['page']['page_cards'] ?? null);
         $harness->assertSame($singleCompanyId, $context['company']['id'] ?? null);
-        $harness->assertSame(0, $context['company']['tax_year_id'] ?? null);
+        $harness->assertSame(0, $context['company']['accounting_period_id'] ?? null);
         $harness->assertSame($singleCompanyId > 0, $context['company']['valid_selected'] ?? null);
         $harness->assertTrue(is_array($context['company']['settings'] ?? null));
         if ($singleCompanyId === 0) {
@@ -104,12 +104,12 @@ $harness->run(TestPageContextFrameworkDouble::class, function (GeneratedServiceC
             $services,
             ActionResultFramework::success([], [], [], [
                 'company_id' => 22,
-                'tax_year_id' => 33,
+                'accounting_period_id' => 33,
             ])
         );
 
         $harness->assertSame(0, $context['company']['id'] ?? null);
-        $harness->assertSame(0, $context['company']['tax_year_id'] ?? null);
+        $harness->assertSame(0, $context['company']['accounting_period_id'] ?? null);
     });
 
     $harness->check(PageContextFramework::class, 'ignores stale legacy session company values', function () use ($harness, $page): void {

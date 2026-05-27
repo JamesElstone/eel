@@ -210,6 +210,7 @@ final class NominalsAction implements ActionInterfaceFramework
             $settingsService = new CompanySettingsService();
             $settings = [
                 'default_bank_nominal_id' => trim((string)$request->post('default_bank_nominal_id', '')),
+                'default_trade_nominal_id' => trim((string)$request->post('default_trade_nominal_id', '')),
                 'default_expense_nominal_id' => trim((string)$request->post('default_expense_nominal_id', '')),
                 'director_loan_nominal_id' => trim((string)$request->post('director_loan_nominal_id', '')),
                 'vat_nominal_id' => trim((string)$request->post('vat_nominal_id', '')),
@@ -277,6 +278,7 @@ final class NominalsAction implements ActionInterfaceFramework
     {
         $labels = [
             'default_bank_nominal_id' => 'Default bank',
+            'default_trade_nominal_id' => 'Default trade',
             'default_expense_nominal_id' => 'Default expense',
             'director_loan_nominal_id' => 'Director loan',
             'vat_nominal_id' => 'VAT control',

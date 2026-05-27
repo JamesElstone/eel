@@ -15,7 +15,7 @@ $harness->run(_csv_exportCard::class, static function (GeneratedServiceClassTest
         $html = $card->render([
             'company' => [
                 'id' => 47,
-                'tax_year_id' => 74,
+                'accounting_period_id' => 74,
             ],
             'services' => [
                 'csv_export_months' => [
@@ -59,7 +59,7 @@ $harness->run(_csv_exportCard::class, static function (GeneratedServiceClassTest
         $html = $card->render([
             'company' => [
                 'id' => 47,
-                'tax_year_id' => 74,
+                'accounting_period_id' => 74,
             ],
             'services' => [
                 'csv_export_months' => [

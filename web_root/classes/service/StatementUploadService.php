@@ -19,7 +19,7 @@ final class StatementUploadService
     private const WORKFLOW_STAGED = 'staged';
     private const WORKFLOW_COMMITTED = 'committed';
     private const WORKFLOW_COMPLETED = 'completed';
-    private const WORKFLOW_NEEDS_TAX_YEAR = 'needs_tax_year';
+    private const WORKFLOW_NEEDS_ACCOUNTING_PERIOD = 'needs_accounting_period';
     private const MAPPING_ORIGIN_AUTO = 'auto';
     private const MAPPING_ORIGIN_REUSED = 'reused';
     private const MAPPING_ORIGIN_MANUAL = 'manual';
@@ -171,7 +171,7 @@ final class StatementUploadService
 
         $companyId = $this->requirePositiveInteger($post['company_id'] ?? null, 'company_id', $errors);
         $accountId = $this->requirePositiveInteger($post['account_id'] ?? null, 'account_id', $errors);
-        $taxYearId = HelperFramework::sanitiseId($post['tax_year_id'] ?? 0);
+        $accountingPeriodId = HelperFramework::sanitiseId($post['accounting_period_id'] ?? 0);
         $upload = $files['statement_file'] ?? $files['csv_file'] ?? null;
 
         if (!is_array($upload)) {
@@ -188,7 +188,7 @@ final class StatementUploadService
             return $this->failureResult(404, ['The selected upload account could not be found for this company.'], $warnings);
         }
 
-        if ($taxYearId > 0 && (new TaxYearRepository())->fetchTaxYear($companyId, $taxYearId) === null) {
+        if ($accountingPeriodId > 0 && (new AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId) === null) {
             return $this->failureResult(404, ['The selected accounting period could not be found for this company.'], $warnings);
         }
 
@@ -269,7 +269,7 @@ final class StatementUploadService
 
             $this->insertStatementUpload([
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId > 0 ? $taxYearId : null,
+                'accounting_period_id' => $accountingPeriodId > 0 ? $accountingPeriodId : null,
                 'account_id' => $accountId,
                 'source_type' => self::SOURCE_TYPE,
                 'workflow_status' => self::WORKFLOW_UPLOADED,
@@ -445,7 +445,7 @@ final class StatementUploadService
                     ca.institution_name,
                     ca.internal_transfer_marker
              FROM statement_uploads su
-             LEFT JOIN tax_years ty ON ty.id = su.tax_year_id
+             LEFT JOIN accounting_periods ty ON ty.id = su.accounting_period_id
              LEFT JOIN company_accounts ca ON ca.id = su.account_id
              WHERE su.id = :id
                AND su.company_id = :company_id
@@ -494,8 +494,8 @@ final class StatementUploadService
                     source_currency,
                     source_category,
                     source_document_url,
-                    tir.tax_year_id,
-                    COALESCE(ty.label, \'\') AS tax_year_label,
+                    tir.accounting_period_id,
+                    COALESCE(ty.label, \'\') AS accounting_period_label,
                     chosen_txn_date,
                     chosen_date_source,
                     normalised_description,
@@ -509,8 +509,8 @@ final class StatementUploadService
                     committed_transaction_id,
                     committed_at
              FROM statement_import_rows tir
-             LEFT JOIN tax_years ty
-                ON ty.id = tir.tax_year_id
+             LEFT JOIN accounting_periods ty
+                ON ty.id = tir.accounting_period_id
              WHERE tir.upload_id = :upload_id
              ORDER BY tir.`row_number` ASC, tir.id ASC', ['upload_id' => $uploadId]);
 
@@ -806,7 +806,7 @@ final class StatementUploadService
             return $this->failureResult(500, ['The uploaded CSV file could not be found on disk for staging.'], $warnings);
         }
 
-        $companyTaxYears = $this->fetchCompanyAccountingPeriods((int)$upload['company_id']);
+        $companyAccountingPeriods = $this->fetchCompanyAccountingPeriods((int)$upload['company_id']);
         $sourceHeaders = $this->decodeJsonArray((string)($upload['source_headers_json'] ?? ''));
         $preparedRows = $this->parseCsvIntoStageRows(
             $storedPath,
@@ -818,7 +818,7 @@ final class StatementUploadService
             $defaultCurrency,
             $warnings,
             (string)($upload['account_name'] ?? ''),
-            $companyTaxYears
+            $companyAccountingPeriods
         );
         $sourceRowCount = count($preparedRows);
         $balanceBreak = $this->firstRunningBalanceBreak($preparedRows);
@@ -856,8 +856,8 @@ final class StatementUploadService
             'rows_duplicate' => 0,
             'date_range_start' => null,
             'date_range_end' => null,
-            'resolved_tax_year_ids' => [],
-            'rows_missing_tax_year' => 0,
+            'resolved_accounting_period_ids' => [],
+            'rows_missing_accounting_period' => 0,
         ];
 
         foreach ($preparedRows as &$row) {
@@ -897,7 +897,7 @@ final class StatementUploadService
                 if (
                     (int)$row['is_duplicate_within_upload'] === 0
                     && (int)$row['is_duplicate_existing'] === 0
-                    && (int)($row['tax_year_id'] ?? 0) > 0
+                    && (int)($row['accounting_period_id'] ?? 0) > 0
                 ) {
                     $summary['rows_ready_to_import']++;
                 }
@@ -911,10 +911,10 @@ final class StatementUploadService
                         : $summary['date_range_end'];
                 }
 
-                if ((int)($row['tax_year_id'] ?? 0) > 0) {
-                    $summary['resolved_tax_year_ids'][(int)$row['tax_year_id']] = true;
+                if ((int)($row['accounting_period_id'] ?? 0) > 0) {
+                    $summary['resolved_accounting_period_ids'][(int)$row['accounting_period_id']] = true;
                 } else {
-                    $summary['rows_missing_tax_year']++;
+                    $summary['rows_missing_accounting_period']++;
                 }
 
             } else {
@@ -956,7 +956,7 @@ final class StatementUploadService
                     source_currency,
                     source_category,
                     source_document_url,
-                    tax_year_id,
+                    accounting_period_id,
                     chosen_txn_date,
                     chosen_date_source,
                     normalised_description,
@@ -981,7 +981,7 @@ final class StatementUploadService
                     :source_currency,
                     :source_category,
                     :source_document_url,
-                    :tax_year_id,
+                    :accounting_period_id,
                     :chosen_txn_date,
                     :chosen_date_source,
                     :normalised_description,
@@ -1010,7 +1010,7 @@ final class StatementUploadService
                     'source_currency' => $row['source_currency'],
                     'source_category' => $row['source_category'],
                     'source_document_url' => $row['source_document_url'],
-                    'tax_year_id' => $row['tax_year_id'],
+                    'accounting_period_id' => $row['accounting_period_id'],
                     'chosen_txn_date' => $row['chosen_txn_date'],
                     'chosen_date_source' => $row['chosen_date_source'],
                     'normalised_description' => $row['normalised_description'],
@@ -1025,25 +1025,25 @@ final class StatementUploadService
                 ]);
             }
 
-            $resolvedTaxYearId = count($summary['resolved_tax_year_ids']) === 1
-                ? (int)array_key_first($summary['resolved_tax_year_ids'])
+            $resolvedAccountingPeriodId = count($summary['resolved_accounting_period_ids']) === 1
+                ? (int)array_key_first($summary['resolved_accounting_period_ids'])
                 : null;
 
-            $workflowStatus = $summary['rows_valid'] > 0 && $summary['rows_missing_tax_year'] > 0
-                ? self::WORKFLOW_NEEDS_TAX_YEAR
+            $workflowStatus = $summary['rows_valid'] > 0 && $summary['rows_missing_accounting_period'] > 0
+                ? self::WORKFLOW_NEEDS_ACCOUNTING_PERIOD
                 : self::WORKFLOW_STAGED;
 
-            if ($summary['rows_missing_tax_year'] > 0) {
+            if ($summary['rows_missing_accounting_period'] > 0) {
                 $warnings[] = sprintf(
                     '%d valid row(s) could not be assigned to an accounting period. Create the missing accounting period before committing.',
-                    (int)$summary['rows_missing_tax_year']
+                    (int)$summary['rows_missing_accounting_period']
                 );
             }
 
             $update = InterfaceDB::prepare(
                 'UPDATE statement_uploads
                  SET workflow_status = :workflow_status,
-                     tax_year_id = :tax_year_id,
+                     accounting_period_id = :accounting_period_id,
                      statement_month = :statement_month,
                      date_range_start = :date_range_start,
                      date_range_end = :date_range_end,
@@ -1060,7 +1060,7 @@ final class StatementUploadService
             );
             $update->execute([
                 'workflow_status' => $workflowStatus,
-                'tax_year_id' => $resolvedTaxYearId,
+                'accounting_period_id' => $resolvedAccountingPeriodId,
                 'statement_month' => $statementMonth,
                 'date_range_start' => $summary['date_range_start'],
                 'date_range_end' => $summary['date_range_end'],
@@ -1119,7 +1119,7 @@ final class StatementUploadService
             $insertTransaction = InterfaceDB::prepare(
                 'INSERT IGNORE INTO transactions (
                     company_id,
-                    tax_year_id,
+                    accounting_period_id,
                     statement_upload_id,
                     account_id,
                     txn_date,
@@ -1147,7 +1147,7 @@ final class StatementUploadService
                     notes
                 ) VALUES (
                     :company_id,
-                    :tax_year_id,
+                    :accounting_period_id,
                     :statement_upload_id,
                     :account_id,
                     :txn_date,
@@ -1198,7 +1198,7 @@ final class StatementUploadService
 
                 $insertTransaction->execute([
                     'company_id' => (int)$upload['company_id'],
-                    'tax_year_id' => (int)$row['tax_year_id'],
+                    'accounting_period_id' => (int)$row['accounting_period_id'],
                     'statement_upload_id' => $uploadId,
                     'account_id' => (int)($upload['account_id'] ?? 0) > 0 ? (int)$upload['account_id'] : null,
                     'txn_date' => (string)$row['chosen_txn_date'],
@@ -1337,12 +1337,12 @@ final class StatementUploadService
             self::WORKFLOW_UPLOADED,
             self::WORKFLOW_MAPPED,
             self::WORKFLOW_STAGED,
-            self::WORKFLOW_NEEDS_TAX_YEAR,
+            self::WORKFLOW_NEEDS_ACCOUNTING_PERIOD,
         ], true)) {
             return false;
         }
 
-        if ($workflowStatus === self::WORKFLOW_NEEDS_TAX_YEAR) {
+        if ($workflowStatus === self::WORKFLOW_NEEDS_ACCOUNTING_PERIOD) {
             return true;
         }
 
@@ -1525,12 +1525,12 @@ final class StatementUploadService
         array $sourceHeaders,
         array $mapping,
         int $companyId,
-        string $taxYearStart,
-        string $taxYearEnd,
+        string $accountingPeriodStart,
+        string $accountingPeriodEnd,
         string $defaultCurrency,
         array &$warnings,
         ?string $fallbackSourceAccount = null,
-        ?array $companyTaxYears = null
+        ?array $companyAccountingPeriods = null
     ): array {
         $rows = [];
         $handle = fopen($filename, 'rb');
@@ -1561,12 +1561,12 @@ final class StatementUploadService
                     $sourceHeaders,
                     $mapping,
                     $companyId,
-                    $taxYearStart,
-                    $taxYearEnd,
+                    $accountingPeriodStart,
+                    $accountingPeriodEnd,
                     $defaultCurrency,
                     $warnings,
                     $fallbackSourceAccount,
-                    $companyTaxYears
+                    $companyAccountingPeriods
                 );
             }
         } finally {
@@ -1582,12 +1582,12 @@ final class StatementUploadService
         array $sourceHeaders,
         array $mapping,
         int $companyId,
-        string $taxYearStart,
-        string $taxYearEnd,
+        string $accountingPeriodStart,
+        string $accountingPeriodEnd,
         string $defaultCurrency,
         array &$warnings,
         ?string $fallbackSourceAccount = null,
-        ?array $companyTaxYears = null
+        ?array $companyAccountingPeriods = null
     ): array {
         $notes = [];
         $blockingNotes = [];
@@ -1673,26 +1673,26 @@ final class StatementUploadService
             $blockingNotes[] = $message;
         }
 
-        $resolvedTaxYear = null;
+        $resolvedAccountingPeriod = null;
 
         if ($chosenTxnDate !== null) {
-            $usingFallbackPeriodWindow = (!is_array($companyTaxYears) || $companyTaxYears === [])
-                && $taxYearStart !== ''
-                && $taxYearEnd !== '';
-            $availableTaxYears = is_array($companyTaxYears) && $companyTaxYears !== []
-                ? $companyTaxYears
+            $usingFallbackPeriodWindow = (!is_array($companyAccountingPeriods) || $companyAccountingPeriods === [])
+                && $accountingPeriodStart !== ''
+                && $accountingPeriodEnd !== '';
+            $availableAccountingPeriods = is_array($companyAccountingPeriods) && $companyAccountingPeriods !== []
+                ? $companyAccountingPeriods
                 : ($usingFallbackPeriodWindow
                     ? [[
                         'id' => null,
                         'label' => '',
-                        'period_start' => $taxYearStart,
-                        'period_end' => $taxYearEnd,
+                        'period_start' => $accountingPeriodStart,
+                        'period_end' => $accountingPeriodEnd,
                     ]]
                     : []);
 
-            $resolvedTaxYear = $this->resolveAccountingPeriodForDate($chosenTxnDate, $availableTaxYears);
+            $resolvedAccountingPeriod = $this->resolveAccountingPeriodForDate($chosenTxnDate, $availableAccountingPeriods);
 
-            if ($resolvedTaxYear === null) {
+            if ($resolvedAccountingPeriod === null) {
                 $message = $usingFallbackPeriodWindow
                     ? 'The chosen transaction date falls outside the selected accounting period.'
                     : 'No accounting period exists for the chosen transaction date. Add an accounting period before committing this row.';
@@ -1753,8 +1753,8 @@ final class StatementUploadService
             'source_currency' => self::normaliseText($sourceCurrency),
             'source_category' => self::normaliseText($sourceCategory),
             'source_document_url' => self::normaliseText($sourceDocumentUrl),
-            'tax_year_id' => isset($resolvedTaxYear['id']) ? (int)$resolvedTaxYear['id'] : null,
-            'tax_year_label' => isset($resolvedTaxYear['label']) ? self::normaliseText((string)$resolvedTaxYear['label']) : null,
+            'accounting_period_id' => isset($resolvedAccountingPeriod['id']) ? (int)$resolvedAccountingPeriod['id'] : null,
+            'accounting_period_label' => isset($resolvedAccountingPeriod['label']) ? self::normaliseText((string)$resolvedAccountingPeriod['label']) : null,
             'chosen_txn_date' => $chosenTxnDate,
             'chosen_date_source' => $chosenDateSource,
             'normalised_description' => $normalisedDescription,
@@ -1803,7 +1803,7 @@ final class StatementUploadService
                     source_processed,
                     source_category,
                     source_document_url,
-                    tax_year_id,
+                    accounting_period_id,
                     chosen_txn_date,
                     normalised_description,
                     normalised_amount,
@@ -1814,7 +1814,7 @@ final class StatementUploadService
              FROM statement_import_rows
              WHERE upload_id = :upload_id
                AND validation_status = :validation_status
-               AND tax_year_id IS NOT NULL
+               AND accounting_period_id IS NOT NULL
                AND is_duplicate_within_upload = 0
                AND is_duplicate_existing = 0
                AND committed_transaction_id IS NULL
@@ -2300,7 +2300,7 @@ final class StatementUploadService
 
         $stmt = InterfaceDB::prepare(
             'SELECT id, label, period_start, period_end
-             FROM tax_years
+             FROM accounting_periods
              WHERE company_id = :company_id
              ORDER BY period_start ASC, period_end ASC, id ASC'
         );
@@ -2310,14 +2310,14 @@ final class StatementUploadService
         return is_array($rows) ? $rows : [];
     }
 
-    private function resolveAccountingPeriodForDate(string $txnDate, array $companyTaxYears): ?array {
+    private function resolveAccountingPeriodForDate(string $txnDate, array $companyAccountingPeriods): ?array {
         $txnDate = trim($txnDate);
 
-        if ($txnDate === '' || $companyTaxYears === []) {
+        if ($txnDate === '' || $companyAccountingPeriods === []) {
             return null;
         }
 
-        foreach ($companyTaxYears as $row) {
+        foreach ($companyAccountingPeriods as $row) {
             $periodStart = trim((string)($row['period_start'] ?? ''));
             $periodEnd = trim((string)($row['period_end'] ?? ''));
 
@@ -2458,7 +2458,7 @@ final class StatementUploadService
         return in_array($workflowStatus, [
             self::WORKFLOW_MAPPED,
             self::WORKFLOW_STAGED,
-            self::WORKFLOW_NEEDS_TAX_YEAR,
+            self::WORKFLOW_NEEDS_ACCOUNTING_PERIOD,
             self::WORKFLOW_COMMITTED,
             self::WORKFLOW_COMPLETED,
         ], true);
@@ -2932,7 +2932,7 @@ final class StatementUploadService
         $stmt = InterfaceDB::prepare(
             'INSERT INTO statement_uploads (
                 company_id,
-                tax_year_id,
+                accounting_period_id,
                 account_id,
                 source_type,
                 workflow_status,
@@ -2953,7 +2953,7 @@ final class StatementUploadService
                 upload_notes
             ) VALUES (
                 :company_id,
-                :tax_year_id,
+                :accounting_period_id,
                 :account_id,
                 :source_type,
                 :workflow_status,
@@ -3263,19 +3263,19 @@ final class StatementUploadService
         return $uploads;
     }
 
-    public function buildMonthStatus(?int $companyId = null, ?int $taxYearId = null): array
+    public function buildMonthStatus(?int $companyId = null, ?int $accountingPeriodId = null): array
     {
         $accountingContext = new AccountingContextService();
         $companyId = HelperFramework::sanitiseId($companyId, $accountingContext->companyId());
-        $taxYearId = HelperFramework::sanitiseId($taxYearId, $accountingContext->taxYearId());
+        $accountingPeriodId = HelperFramework::sanitiseId($accountingPeriodId, $accountingContext->accountingPeriodId());
 
-        if ($companyId <= 0 || $taxYearId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return [];
         }
 
-        $taxYear = (new TaxYearRepository())->fetchTaxYear($companyId, $taxYearId);
+        $accountingPeriod = (new AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId);
 
-        if ($taxYear === null || empty($taxYear['period_start']) || empty($taxYear['period_end'])) {
+        if ($accountingPeriod === null || empty($accountingPeriod['period_start']) || empty($accountingPeriod['period_end'])) {
             return [];
         }
 
@@ -3304,8 +3304,8 @@ final class StatementUploadService
                                       ORDER BY month_key");
         $summaryStmt->execute([
             $companyId,
-            (string)$taxYear['period_start'],
-            (string)$taxYear['period_end'],
+            (string)$accountingPeriod['period_start'],
+            (string)$accountingPeriod['period_end'],
         ]);
         $summaries = [];
         foreach ($summaryStmt->fetchAll() as $row) {
@@ -3326,15 +3326,15 @@ final class StatementUploadService
                                                 INNER JOIN statement_uploads su
                                                    ON su.id = sir.upload_id
                                                   AND su.company_id = ?
-                                                WHERE sir.tax_year_id = ?
+                                                WHERE sir.accounting_period_id = ?
                                                   AND sir.chosen_txn_date BETWEEN ? AND ?
                                                 GROUP BY DATE_FORMAT(sir.chosen_txn_date, '%Y-%m-01')
                                                 ORDER BY month_key");
         $importRowsStmt->execute([
             $companyId,
-            $taxYearId,
-            (string)$taxYear['period_start'],
-            (string)$taxYear['period_end'],
+            $accountingPeriodId,
+            (string)$accountingPeriod['period_start'],
+            (string)$accountingPeriod['period_end'],
         ]);
         $importRowSummaries = [];
         foreach ($importRowsStmt->fetchAll() as $row) {
@@ -3350,9 +3350,9 @@ final class StatementUploadService
                                                       AND sir.id IS NULL
                                                       AND su.rows_parsed > 0
                                                       AND (
-                                                          su.tax_year_id = ?
+                                                          su.accounting_period_id = ?
                                                           OR (
-                                                              su.tax_year_id IS NULL
+                                                              su.accounting_period_id IS NULL
                                                               AND su.statement_month BETWEEN ? AND ?
                                                           )
                                                       )
@@ -3361,11 +3361,11 @@ final class StatementUploadService
                                                     ORDER BY month_key");
         $unstagedUploadsStmt->execute([
             $companyId,
-            $taxYearId,
-            (string)$taxYear['period_start'],
-            (string)$taxYear['period_end'],
-            (string)$taxYear['period_start'],
-            (string)$taxYear['period_end'],
+            $accountingPeriodId,
+            (string)$accountingPeriod['period_start'],
+            (string)$accountingPeriod['period_end'],
+            (string)$accountingPeriod['period_start'],
+            (string)$accountingPeriod['period_end'],
         ]);
         $unstagedUploadSummaries = [];
         foreach ($unstagedUploadsStmt->fetchAll() as $row) {
@@ -3373,8 +3373,8 @@ final class StatementUploadService
         }
 
         $months = [];
-        $cursor = new DateTime((string)$taxYear['period_start']);
-        $end = new DateTime((string)$taxYear['period_end']);
+        $cursor = new DateTime((string)$accountingPeriod['period_start']);
+        $end = new DateTime((string)$accountingPeriod['period_end']);
         $cursor->modify('first day of this month');
         $end->modify('first day of this month');
 
@@ -3418,34 +3418,34 @@ final class StatementUploadService
         return $months;
     }
 
-    public function buildUniqueUploadedRowsByMonth(?int $companyId = null, ?int $taxYearId = null): array
+    public function buildUniqueUploadedRowsByMonth(?int $companyId = null, ?int $accountingPeriodId = null): array
     {
         $accountingContext = new AccountingContextService();
         $companyId = HelperFramework::sanitiseId($companyId, $accountingContext->companyId());
-        $taxYearId = HelperFramework::sanitiseId($taxYearId, $accountingContext->taxYearId());
+        $accountingPeriodId = HelperFramework::sanitiseId($accountingPeriodId, $accountingContext->accountingPeriodId());
 
-        if ($companyId <= 0 || $taxYearId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return [];
         }
 
-        $taxYear = (new TaxYearRepository())->fetchTaxYear($companyId, $taxYearId);
+        $accountingPeriod = (new AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId);
 
-        if ($taxYear === null || empty($taxYear['period_start']) || empty($taxYear['period_end'])) {
+        if ($accountingPeriod === null || empty($accountingPeriod['period_start']) || empty($accountingPeriod['period_end'])) {
             return [];
         }
 
         $stmt = InterfaceDB::prepare($this->uniqueUploadedRowsByMonthSql());
         $stmt->execute([
             $companyId,
-            $taxYearId,
-            (string)$taxYear['period_start'],
-            (string)$taxYear['period_end'],
+            $accountingPeriodId,
+            (string)$accountingPeriod['period_start'],
+            (string)$accountingPeriod['period_end'],
             $companyId,
-            $taxYearId,
-            (string)$taxYear['period_start'],
-            (string)$taxYear['period_end'],
-            (string)$taxYear['period_start'],
-            (string)$taxYear['period_end'],
+            $accountingPeriodId,
+            (string)$accountingPeriod['period_start'],
+            (string)$accountingPeriod['period_end'],
+            (string)$accountingPeriod['period_start'],
+            (string)$accountingPeriod['period_end'],
         ]);
 
         $rowsByMonth = [];
@@ -3476,7 +3476,7 @@ final class StatementUploadService
                         INNER JOIN statement_uploads su
                            ON su.id = sir.upload_id
                           AND su.company_id = ?
-                        WHERE sir.tax_year_id = ?
+                        WHERE sir.accounting_period_id = ?
                           AND sir.chosen_txn_date BETWEEN ? AND ?
                         GROUP BY DATE_FORMAT(sir.chosen_txn_date, '%Y-%m-01'),
                                  COALESCE(NULLIF(su.file_sha256, ''), CONCAT('upload:', su.id)),
@@ -3493,9 +3493,9 @@ final class StatementUploadService
                       AND sir.id IS NULL
                       AND su.rows_parsed > 0
                       AND (
-                          su.tax_year_id = ?
+                          su.accounting_period_id = ?
                           OR (
-                              su.tax_year_id IS NULL
+                              su.accounting_period_id IS NULL
                               AND su.statement_month BETWEEN ? AND ?
                           )
                       )
@@ -3518,7 +3518,7 @@ final class StatementUploadService
             $filter = 'all';
         }
 
-        $uploadHistory = self::annotateDuplicateFileUploads($this->fetchUploadHistory(respectSelectedTaxYear: $filter !== 'zero_row_csv'));
+        $uploadHistory = self::annotateDuplicateFileUploads($this->fetchUploadHistory(respectSelectedAccountingPeriod: $filter !== 'zero_row_csv'));
 
         if ($filter === 'all') {
             return $uploadHistory;
@@ -3536,7 +3536,7 @@ final class StatementUploadService
         $status = (string)($row['workflow_status'] ?? '');
 
         return match ($filter) {
-            'action_required' => in_array($status, ['uploaded', 'needs_tax_year'], true),
+            'action_required' => in_array($status, ['uploaded', 'needs_accounting_period'], true),
             'ready' => in_array($status, ['mapped', 'staged'], true),
             'imported' => in_array($status, ['committed', 'completed'], true),
             'zero_row_csv' => (int)($row['rows_parsed'] ?? 0) === 0,
@@ -3575,7 +3575,7 @@ final class StatementUploadService
         return $rows;
     }
 
-    public function fetchUploadSummaryByTaxYear(int $companyId): array
+    public function fetchUploadSummaryByAccountingPeriod(int $companyId): array
     {
         $companyId = HelperFramework::sanitiseId($companyId);
 
@@ -3583,41 +3583,41 @@ final class StatementUploadService
             return [];
         }
 
-        $taxYears = (new TaxYearRepository())->fetchTaxYears($companyId);
+        $accountingPeriods = (new AccountingPeriodRepository())->fetchAccountingPeriods($companyId);
 
-        if ($taxYears === []) {
+        if ($accountingPeriods === []) {
             return [];
         }
 
-        $rows = InterfaceDB::fetchAll($this->uploadSummaryByTaxYearSql(), ['company_id' => $companyId]);
+        $rows = InterfaceDB::fetchAll($this->uploadSummaryByAccountingPeriodSql(), ['company_id' => $companyId]);
 
-        $summaryByTaxYearId = [];
+        $summaryByAccountingPeriodId = [];
         foreach ($rows as $row) {
-            $taxYearId = (int)($row['tax_year_id'] ?? 0);
+            $accountingPeriodId = (int)($row['accounting_period_id'] ?? 0);
 
-            if ($taxYearId <= 0) {
+            if ($accountingPeriodId <= 0) {
                 continue;
             }
 
-            $summaryByTaxYearId[$taxYearId] = [
+            $summaryByAccountingPeriodId[$accountingPeriodId] = [
                 'upload_count' => (int)($row['upload_count'] ?? 0),
                 'row_count' => (int)($row['row_count'] ?? 0),
             ];
         }
 
         $summary = [];
-        foreach ($taxYears as $taxYear) {
-            $taxYearId = (int)($taxYear['id'] ?? 0);
-            $counts = $summaryByTaxYearId[$taxYearId] ?? [
+        foreach ($accountingPeriods as $accountingPeriod) {
+            $accountingPeriodId = (int)($accountingPeriod['id'] ?? 0);
+            $counts = $summaryByAccountingPeriodId[$accountingPeriodId] ?? [
                 'upload_count' => 0,
                 'row_count' => 0,
             ];
 
             $summary[] = [
-                'tax_year_id' => $taxYearId,
-                'label' => (string)($taxYear['label'] ?? ''),
-                'period_start' => (string)($taxYear['period_start'] ?? ''),
-                'period_end' => (string)($taxYear['period_end'] ?? ''),
+                'accounting_period_id' => $accountingPeriodId,
+                'label' => (string)($accountingPeriod['label'] ?? ''),
+                'period_start' => (string)($accountingPeriod['period_start'] ?? ''),
+                'period_end' => (string)($accountingPeriod['period_end'] ?? ''),
                 'upload_count' => (int)$counts['upload_count'],
                 'row_count' => (int)$counts['row_count'],
             ];
@@ -3626,34 +3626,34 @@ final class StatementUploadService
         return $summary;
     }
 
-    private function uploadSummaryByTaxYearSql(): string
+    private function uploadSummaryByAccountingPeriodSql(): string
     {
-        return 'SELECT upload_tax_year_id AS tax_year_id,
+        return 'SELECT upload_accounting_period_id AS accounting_period_id,
                     COUNT(*) AS upload_count,
                     SUM(rows_parsed) AS row_count
              FROM (
-                 SELECT COALESCE(su.tax_year_id, ty.id) AS upload_tax_year_id,
+                 SELECT COALESCE(su.accounting_period_id, ty.id) AS upload_accounting_period_id,
                         COALESCE(NULLIF(su.file_sha256, \'\'), CONCAT(\'upload:\', su.id)) AS upload_identity,
                         MAX(su.rows_parsed) AS rows_parsed
                  FROM statement_uploads su
-                 LEFT JOIN tax_years ty
-                    ON su.tax_year_id IS NULL
+                 LEFT JOIN accounting_periods ty
+                    ON su.accounting_period_id IS NULL
                    AND ty.company_id = su.company_id
                    AND su.statement_month BETWEEN ty.period_start AND ty.period_end
                  WHERE su.company_id = :company_id
-                   AND COALESCE(su.tax_year_id, ty.id) IS NOT NULL
-                 GROUP BY COALESCE(su.tax_year_id, ty.id),
+                   AND COALESCE(su.accounting_period_id, ty.id) IS NOT NULL
+                 GROUP BY COALESCE(su.accounting_period_id, ty.id),
                           COALESCE(NULLIF(su.file_sha256, \'\'), CONCAT(\'upload:\', su.id))
              ) unique_uploads
-             GROUP BY upload_tax_year_id';
+             GROUP BY upload_accounting_period_id';
     }
 
-    public function fetchUploadHistory(?int $limit = null, int $offset = 0, bool $respectSelectedTaxYear = true): array
+    public function fetchUploadHistory(?int $limit = null, int $offset = 0, bool $respectSelectedAccountingPeriod = true): array
     {
 
         $accountingContext = new AccountingContextService();
         $companyId = HelperFramework::sanitiseId($accountingContext->companyId());
-        $taxYearId = HelperFramework::sanitiseId($accountingContext->taxYearId());
+        $accountingPeriodId = HelperFramework::sanitiseId($accountingContext->accountingPeriodId());
        
         if ($companyId <= 0) {
             return [];
@@ -3695,22 +3695,22 @@ final class StatementUploadService
 
         $params = [$companyId];
 
-        if ($respectSelectedTaxYear && $taxYearId > 0) {
-            $taxYear = (new TaxYearRepository())->fetchTaxYear($companyId, $taxYearId);
+        if ($respectSelectedAccountingPeriod && $accountingPeriodId > 0) {
+            $accountingPeriod = (new AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId);
 
-            if ($taxYear === null) {
+            if ($accountingPeriod === null) {
                 return [];
             }
 
-            $periodStart = (string)($taxYear['period_start'] ?? '');
-            $periodEnd = (string)($taxYear['period_end'] ?? '');
+            $periodStart = (string)($accountingPeriod['period_start'] ?? '');
+            $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
 
             if ($periodStart === '' || $periodEnd === '') {
                 return [];
             }
 
-            $sql .= $this->uploadHistoryTaxYearFilterClause();
-            $params[] = $taxYearId;
+            $sql .= $this->uploadHistoryAccountingPeriodFilterClause();
+            $params[] = $accountingPeriodId;
             $params[] = $periodEnd;
             $params[] = $periodStart;
         }
@@ -3739,12 +3739,12 @@ final class StatementUploadService
         return $rows;
     }
 
-    private function uploadHistoryTaxYearFilterClause(): string
+    private function uploadHistoryAccountingPeriodFilterClause(): string
     {
         return " AND (
-                            su.tax_year_id = ?
+                            su.accounting_period_id = ?
                             OR (
-                                su.tax_year_id IS NULL
+                                su.accounting_period_id IS NULL
                                 AND COALESCE(su.date_range_start, su.statement_month) <= ?
                                 AND COALESCE(su.date_range_end, su.statement_month) >= ?
                             )

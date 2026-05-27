@@ -34,7 +34,7 @@ final class TestCompanyStorePage implements PageInterfaceFramework
 
     public function hiddenSiteContextSelectors(): array
     {
-        return ['tax_year_id'];
+        return ['accounting_period_id'];
     }
 
     public function services(): array
@@ -53,13 +53,13 @@ final class TestCompanyStorePage implements PageInterfaceFramework
     }
 }
 
-function testCompanyStoreRequest(int $companyId = 0, int $taxYearId = 0): RequestFramework
+function testCompanyStoreRequest(int $companyId = 0, int $accountingPeriodId = 0): RequestFramework
 {
     return new RequestFramework(
         [],
         [
             'company_id' => (string)$companyId,
-            'tax_year_id' => (string)$taxYearId,
+            'accounting_period_id' => (string)$accountingPeriodId,
         ],
         ['REQUEST_METHOD' => 'POST'],
         [],
@@ -120,14 +120,14 @@ function ensureCompanyStoreCompany(): int
         throw new RuntimeException('Unable to create test company context fixture.');
     }
 
-    $taxYearId = (int)(InterfaceDB::fetchColumn(
-        'SELECT id FROM tax_years WHERE company_id = :company_id AND label = :label LIMIT 1',
+    $accountingPeriodId = (int)(InterfaceDB::fetchColumn(
+        'SELECT id FROM accounting_periods WHERE company_id = :company_id AND label = :label LIMIT 1',
         ['company_id' => $companyId, 'label' => 'Test FY 2026']
     ) ?: 0);
 
-    if ($taxYearId <= 0) {
+    if ($accountingPeriodId <= 0) {
         InterfaceDB::prepareExecute(
-            'INSERT INTO tax_years (company_id, label, period_start, period_end)
+            'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
              VALUES (:company_id, :label, :period_start, :period_end)',
             [
                 'company_id' => $companyId,
@@ -170,16 +170,16 @@ $harness->run(AccountingContextService::class, function (GeneratedServiceClassTe
         $selectors = $result->selectors();
 
         $harness->assertSame(0, $context['site_context']['company_id'] ?? null);
-        $harness->assertSame(0, $context['site_context']['tax_year_id'] ?? null);
+        $harness->assertSame(0, $context['site_context']['accounting_period_id'] ?? null);
         $harness->assertSame('company_id', $selectors[0]['key'] ?? null);
         $harness->assertSame('sidebar', $selectors[0]['slot'] ?? null);
         $harness->assertSame(true, $selectors[0]['disabled'] ?? null);
-        $harness->assertSame('tax_year_id', $selectors[1]['key'] ?? null);
+        $harness->assertSame('accounting_period_id', $selectors[1]['key'] ?? null);
         $harness->assertSame('topbar', $selectors[1]['slot'] ?? null);
         $harness->assertSame(true, $selectors[1]['disabled'] ?? null);
     });
 
-    $harness->check(AccountingContextService::class, 'returns company and topbar tax-year selectors when companies exist', function () use (
+    $harness->check(AccountingContextService::class, 'returns company and topbar accounting-period selectors when companies exist', function () use (
         $harness,
         $service
     ): void {
@@ -203,19 +203,19 @@ $harness->run(AccountingContextService::class, function (GeneratedServiceClassTe
         );
         $context = $result->context();
         $selectors = $result->selectors();
-        $expectedTaxYears = (new TaxYearRepository())->fetchTaxYears($requestedCompanyId);
+        $expectedAccountingPeriods = (new AccountingPeriodRepository())->fetchAccountingPeriods($requestedCompanyId);
 
         $harness->assertSame($requestedCompanyId, (int)($context['site_context']['company_id'] ?? 0));
         $harness->assertSame($requestedCompanyId, (int)($context['company']['id'] ?? 0));
         $harness->assertSame('company_id', $selectors[0]['input_name'] ?? null);
         $harness->assertSame('sidebar', $selectors[0]['slot'] ?? null);
-        $harness->assertSame('tax_year_id', $selectors[1]['input_name'] ?? null);
+        $harness->assertSame('accounting_period_id', $selectors[1]['input_name'] ?? null);
         $harness->assertSame('topbar', $selectors[1]['slot'] ?? null);
 
-        if ($expectedTaxYears !== []) {
-            $harness->assertSame((int)($expectedTaxYears[0]['id'] ?? 0), (int)($context['site_context']['tax_year_id'] ?? 0));
+        if ($expectedAccountingPeriods !== []) {
+            $harness->assertSame((int)($expectedAccountingPeriods[0]['id'] ?? 0), (int)($context['site_context']['accounting_period_id'] ?? 0));
         } else {
-            $harness->assertSame(0, (int)($context['site_context']['tax_year_id'] ?? 0));
+            $harness->assertSame(0, (int)($context['site_context']['accounting_period_id'] ?? 0));
             $harness->assertSame(true, $selectors[1]['disabled'] ?? null);
         }
     });
@@ -245,25 +245,25 @@ $harness->run(AccountingContextService::class, function (GeneratedServiceClassTe
         $harness->assertTrue($result->isSuccess());
         $harness->assertSame($companyId, $service->companyId());
 
-        $taxYears = (new TaxYearRepository())->fetchTaxYears($companyId);
-        if ($taxYears === []) {
+        $accountingPeriods = (new AccountingPeriodRepository())->fetchAccountingPeriods($companyId);
+        if ($accountingPeriods === []) {
             ensureCompanyStoreCompany();
-            $taxYears = (new TaxYearRepository())->fetchTaxYears($companyId);
+            $accountingPeriods = (new AccountingPeriodRepository())->fetchAccountingPeriods($companyId);
         }
 
-        $taxYearId = (int)($taxYears[0]['id'] ?? 0);
-        if ($taxYearId <= 0) {
-            $harness->skip('skipped, due to no resolvable tax year id');
+        $accountingPeriodId = (int)($accountingPeriods[0]['id'] ?? 0);
+        if ($accountingPeriodId <= 0) {
+            $harness->skip('skipped, due to no resolvable accounting period id');
         }
 
         $result = $service->handleSiteContextAction(
-            testCompanyStoreSiteContextActionRequest('tax_year_id', 'tax_year_id', $taxYearId, $companyId),
+            testCompanyStoreSiteContextActionRequest('accounting_period_id', 'accounting_period_id', $accountingPeriodId, $companyId),
             new TestCompanyStorePage(),
             createTestPageServiceFramework()
         );
 
         $harness->assertTrue($result->isSuccess());
-        $harness->assertSame($taxYearId, $service->taxYearId());
+        $harness->assertSame($accountingPeriodId, $service->accountingPeriodId());
     });
 });
 

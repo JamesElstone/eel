@@ -13,7 +13,7 @@ final class AccountingContextService implements SiteContextProviderInterface
     private const SESSION_COMPANY_ID = 'eel.accounting.company_id';
     private const SESSION_COMPANY_NAME = 'eel.accounting.company_name';
     private const SESSION_COMPANY_NUMBER = 'eel.accounting.company_number';
-    private const SESSION_TAX_YEAR_ID = 'eel.accounting.tax_year_id';
+    private const SESSION_ACCOUNTING_PERIOD_ID = 'eel.accounting.accounting_period_id';
 
     public function resolveSiteContext(
         RequestFramework $request,
@@ -41,8 +41,8 @@ final class AccountingContextService implements SiteContextProviderInterface
             return $this->handleCompanySelection($request, $value);
         }
 
-        if ($key === 'tax_year_id') {
-            return $this->handleTaxYearSelection($request, $value);
+        if ($key === 'accounting_period_id') {
+            return $this->handleAccountingPeriodSelection($request, $value);
         }
 
         return new ActionResultFramework(false, [], [[
@@ -74,13 +74,13 @@ final class AccountingContextService implements SiteContextProviderInterface
         return $this->sessionCompanyId();
     }
 
-    public function taxYearId(?RequestFramework $request = null): int
+    public function accountingPeriodId(?RequestFramework $request = null): int
     {
         if ($request instanceof RequestFramework) {
-            return (int)($this->resolveSelection($request)['context']['company']['tax_year_id'] ?? 0);
+            return (int)($this->resolveSelection($request)['context']['company']['accounting_period_id'] ?? 0);
         }
 
-        return $this->sessionTaxYearId();
+        return $this->sessionAccountingPeriodId();
     }
 
     public function authCompanyId(): int
@@ -88,21 +88,21 @@ final class AccountingContextService implements SiteContextProviderInterface
         return HelperFramework::sanitiseId($this->companyId());
     }
 
-    public function authTaxYearId(): int
+    public function authAccountingPeriodId(): int
     {
-        return HelperFramework::sanitiseId($this->taxYearId());
+        return HelperFramework::sanitiseId($this->accountingPeriodId());
     }
 
     public function setPageContext(
         int $companyId,
         string $companyName,
         string $companyNumber,
-        int $taxYearId
+        int $accountingPeriodId
     ): void {
         $this->startContextSession();
 
         $companyId = max(0, $companyId);
-        $taxYearId = max(0, $taxYearId);
+        $accountingPeriodId = max(0, $accountingPeriodId);
         $companyName = trim($companyName);
         $companyNumber = trim($companyNumber);
         $userId = $this->currentUserId();
@@ -117,10 +117,10 @@ final class AccountingContextService implements SiteContextProviderInterface
         $_SESSION[self::SESSION_COMPANY_NAME] = $companyName;
         $_SESSION[self::SESSION_COMPANY_NUMBER] = $companyNumber;
 
-        if ($taxYearId > 0) {
-            $_SESSION[self::SESSION_TAX_YEAR_ID] = $taxYearId;
+        if ($accountingPeriodId > 0) {
+            $_SESSION[self::SESSION_ACCOUNTING_PERIOD_ID] = $accountingPeriodId;
         } else {
-            unset($_SESSION[self::SESSION_TAX_YEAR_ID]);
+            unset($_SESSION[self::SESSION_ACCOUNTING_PERIOD_ID]);
         }
     }
 
@@ -133,7 +133,7 @@ final class AccountingContextService implements SiteContextProviderInterface
             $_SESSION[self::SESSION_COMPANY_ID],
             $_SESSION[self::SESSION_COMPANY_NAME],
             $_SESSION[self::SESSION_COMPANY_NUMBER],
-            $_SESSION[self::SESSION_TAX_YEAR_ID]
+            $_SESSION[self::SESSION_ACCOUNTING_PERIOD_ID]
         );
     }
 
@@ -153,26 +153,26 @@ final class AccountingContextService implements SiteContextProviderInterface
             ]]);
         }
 
-        $taxYearId = $this->validTaxYearId(
+        $accountingPeriodId = $this->validAccountingPeriodId(
             $companyId,
-            $this->requestContextId($request, 'tax_year_id', 'tax_year_id')
+            $this->requestContextId($request, 'accounting_period_id', 'accounting_period_id')
         );
 
-        if ($taxYearId <= 0) {
-            $taxYearId = $this->defaultTaxYearId($companyId);
+        if ($accountingPeriodId <= 0) {
+            $accountingPeriodId = $this->defaultAccountingPeriodId($companyId);
         }
 
         $this->setPageContext(
             $companyId,
             trim((string)($company['company_name'] ?? '')),
             trim((string)($company['company_number'] ?? '')),
-            $taxYearId
+            $accountingPeriodId
         );
 
         return ActionResultFramework::success();
     }
 
-    private function handleTaxYearSelection(RequestFramework $request, int $taxYearId): ActionResultFramework
+    private function handleAccountingPeriodSelection(RequestFramework $request, int $accountingPeriodId): ActionResultFramework
     {
         $companyId = $this->requestContextId($request, 'company_id', 'company_id');
         $companyId = HelperFramework::sanitiseId($companyId, $this->sessionCompanyId());
@@ -192,7 +192,7 @@ final class AccountingContextService implements SiteContextProviderInterface
             ]]);
         }
 
-        if ($taxYearId > 0 && $this->validTaxYearId($companyId, $taxYearId) <= 0) {
+        if ($accountingPeriodId > 0 && $this->validAccountingPeriodId($companyId, $accountingPeriodId) <= 0) {
             return new ActionResultFramework(false, [], [[
                 'type' => 'error',
                 'message' => 'The selected accounting period does not belong to the selected company.',
@@ -203,7 +203,7 @@ final class AccountingContextService implements SiteContextProviderInterface
             $companyId,
             trim((string)($company['company_name'] ?? '')),
             trim((string)($company['company_number'] ?? '')),
-            $taxYearId
+            $accountingPeriodId
         );
 
         return ActionResultFramework::success();
@@ -226,33 +226,33 @@ final class AccountingContextService implements SiteContextProviderInterface
             $companyId = 0;
         }
 
-        $taxYears = $companyId > 0 ? (new TaxYearRepository())->fetchTaxYears($companyId) : [];
-        $requestedTaxYearId = $this->contextId($pageContext, 'tax_year_id');
-        $requestedTaxYearId = HelperFramework::sanitiseId(
-            $requestedTaxYearId,
-            $this->requestContextId($request, 'tax_year_id', 'tax_year_id')
+        $accountingPeriods = $companyId > 0 ? (new AccountingPeriodRepository())->fetchAccountingPeriods($companyId) : [];
+        $requestedAccountingPeriodId = $this->contextId($pageContext, 'accounting_period_id');
+        $requestedAccountingPeriodId = HelperFramework::sanitiseId(
+            $requestedAccountingPeriodId,
+            $this->requestContextId($request, 'accounting_period_id', 'accounting_period_id')
         );
-        $taxYearId = $this->resolveTaxYearId($taxYears, $requestedTaxYearId);
-        $taxYear = $taxYearId > 0 ? (new TaxYearRepository())->fetchTaxYear($companyId, $taxYearId) : null;
+        $accountingPeriodId = $this->resolveAccountingPeriodId($accountingPeriods, $requestedAccountingPeriodId);
+        $accountingPeriod = $accountingPeriodId > 0 ? (new AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId) : null;
 
         $companyName = trim((string)($company['company_name'] ?? ''));
         $companyNumber = trim((string)($company['company_number'] ?? ''));
-        $this->setPageContext($companyId, $companyName, $companyNumber, $taxYearId);
+        $this->setPageContext($companyId, $companyName, $companyNumber, $accountingPeriodId);
 
         return [
-            'context' => $this->context($companyId, $company, $taxYearId, $taxYear),
-            'selectors' => $this->selectors($companyRows, $companyId, $taxYears, $taxYearId),
+            'context' => $this->context($companyId, $company, $accountingPeriodId, $accountingPeriod),
+            'selectors' => $this->selectors($companyRows, $companyId, $accountingPeriods, $accountingPeriodId),
         ];
     }
 
-    private function context(int $companyId, ?array $company, int $taxYearId, ?array $taxYear): array
+    private function context(int $companyId, ?array $company, int $accountingPeriodId, ?array $accountingPeriod): array
     {
         $settings = CompanySettingsStore::defaults();
         if ($companyId > 0) {
             $settings = (new CompanySettingsService())->loadFromDatabase(
                 new CompanySettingsStore($companyId),
                 $companyId,
-                $taxYearId
+                $accountingPeriodId
             );
         }
 
@@ -262,11 +262,11 @@ final class AccountingContextService implements SiteContextProviderInterface
         return [
             'site_context' => [
                 'company_id' => $companyId,
-                'tax_year_id' => $taxYearId,
+                'accounting_period_id' => $accountingPeriodId,
             ],
             'page' => [
                 'selected_company_id' => $companyId,
-                'selected_tax_year_id' => $taxYearId,
+                'selected_accounting_period_id' => $accountingPeriodId,
             ],
             'company' => [
                 'id' => $companyId,
@@ -275,20 +275,20 @@ final class AccountingContextService implements SiteContextProviderInterface
                 'number' => $companyNumber,
                 'company_number' => $companyNumber,
                 'valid_selected' => $companyId > 0 && $company !== null,
-                'tax_year_id' => $taxYearId,
-                'tax_year_label' => trim((string)($taxYear['label'] ?? '')),
+                'accounting_period_id' => $accountingPeriodId,
+                'accounting_period_label' => trim((string)($accountingPeriod['label'] ?? '')),
                 'settings' => $settings,
             ],
-            'tax_year' => [
-                'id' => $taxYearId,
-                'label' => trim((string)($taxYear['label'] ?? '')),
-                'period_start' => trim((string)($taxYear['period_start'] ?? '')),
-                'period_end' => trim((string)($taxYear['period_end'] ?? '')),
+            'accounting_period' => [
+                'id' => $accountingPeriodId,
+                'label' => trim((string)($accountingPeriod['label'] ?? '')),
+                'period_start' => trim((string)($accountingPeriod['period_start'] ?? '')),
+                'period_end' => trim((string)($accountingPeriod['period_end'] ?? '')),
             ],
         ];
     }
 
-    private function selectors(array $companies, int $companyId, array $taxYears, int $taxYearId): array
+    private function selectors(array $companies, int $companyId, array $accountingPeriods, int $accountingPeriodId): array
     {
         return [
             [
@@ -302,13 +302,13 @@ final class AccountingContextService implements SiteContextProviderInterface
                 'visible' => true,
             ],
             [
-                'key' => 'tax_year_id',
-                'input_name' => 'tax_year_id',
+                'key' => 'accounting_period_id',
+                'input_name' => 'accounting_period_id',
                 'slot' => 'topbar',
                 'label' => 'Accounting Period',
-                'value' => $taxYearId > 0 ? (string)$taxYearId : '',
-                'options' => $this->taxYearOptions($taxYears),
-                'disabled' => $companyId <= 0 || $taxYears === [],
+                'value' => $accountingPeriodId > 0 ? (string)$accountingPeriodId : '',
+                'options' => $this->accountingPeriodOptions($accountingPeriods),
+                'disabled' => $companyId <= 0 || $accountingPeriods === [],
                 'visible' => true,
             ],
         ];
@@ -344,23 +344,23 @@ final class AccountingContextService implements SiteContextProviderInterface
         return $options !== [] ? $options : [['value' => '', 'label' => 'No companies']];
     }
 
-    private function taxYearOptions(array $taxYears): array
+    private function accountingPeriodOptions(array $accountingPeriods): array
     {
-        if ($taxYears === []) {
+        if ($accountingPeriods === []) {
             return [['value' => '', 'label' => 'No accounting periods']];
         }
 
         $options = [];
-        foreach ($taxYears as $taxYear) {
-            $id = (int)($taxYear['id'] ?? 0);
+        foreach ($accountingPeriods as $accountingPeriod) {
+            $id = (int)($accountingPeriod['id'] ?? 0);
             if ($id <= 0) {
                 continue;
             }
 
-            $label = trim((string)($taxYear['label'] ?? ''));
+            $label = trim((string)($accountingPeriod['label'] ?? ''));
             if ($label === '') {
-                $start = trim((string)($taxYear['period_start'] ?? ''));
-                $end = trim((string)($taxYear['period_end'] ?? ''));
+                $start = trim((string)($accountingPeriod['period_start'] ?? ''));
+                $end = trim((string)($accountingPeriod['period_end'] ?? ''));
                 $label = $start !== '' && $end !== ''
                     ? TaxPeriodService::accountingPeriodLabel($start, $end)
                     : 'Accounting period #' . $id;
@@ -401,46 +401,46 @@ final class AccountingContextService implements SiteContextProviderInterface
         return 0;
     }
 
-    private function resolveTaxYearId(array $taxYears, int $requestedTaxYearId): int
+    private function resolveAccountingPeriodId(array $accountingPeriods, int $requestedAccountingPeriodId): int
     {
         $validIds = [];
-        foreach ($taxYears as $taxYear) {
-            $id = (int)($taxYear['id'] ?? 0);
+        foreach ($accountingPeriods as $accountingPeriod) {
+            $id = (int)($accountingPeriod['id'] ?? 0);
             if ($id > 0) {
                 $validIds[$id] = true;
             }
         }
 
-        if ($requestedTaxYearId > 0 && isset($validIds[$requestedTaxYearId])) {
-            return $requestedTaxYearId;
+        if ($requestedAccountingPeriodId > 0 && isset($validIds[$requestedAccountingPeriodId])) {
+            return $requestedAccountingPeriodId;
         }
 
-        $sessionTaxYearId = $this->sessionTaxYearId();
-        if ($sessionTaxYearId > 0 && isset($validIds[$sessionTaxYearId])) {
-            return $sessionTaxYearId;
+        $sessionAccountingPeriodId = $this->sessionAccountingPeriodId();
+        if ($sessionAccountingPeriodId > 0 && isset($validIds[$sessionAccountingPeriodId])) {
+            return $sessionAccountingPeriodId;
         }
 
-        return (int)($taxYears[0]['id'] ?? 0);
+        return (int)($accountingPeriods[0]['id'] ?? 0);
     }
 
-    private function validTaxYearId(int $companyId, int $taxYearId): int
+    private function validAccountingPeriodId(int $companyId, int $accountingPeriodId): int
     {
-        if ($companyId <= 0 || $taxYearId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return 0;
         }
 
-        return (new TaxYearRepository())->fetchTaxYear($companyId, $taxYearId) !== null ? $taxYearId : 0;
+        return (new AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId) !== null ? $accountingPeriodId : 0;
     }
 
-    private function defaultTaxYearId(int $companyId): int
+    private function defaultAccountingPeriodId(int $companyId): int
     {
         if ($companyId <= 0) {
             return 0;
         }
 
-        $taxYears = (new TaxYearRepository())->fetchTaxYears($companyId);
+        $accountingPeriods = (new AccountingPeriodRepository())->fetchAccountingPeriods($companyId);
 
-        return (int)($taxYears[0]['id'] ?? 0);
+        return (int)($accountingPeriods[0]['id'] ?? 0);
     }
 
     private function contextId(array $context, string $key): int
@@ -484,11 +484,11 @@ final class AccountingContextService implements SiteContextProviderInterface
         return HelperFramework::sanitiseId($_SESSION[self::SESSION_COMPANY_ID] ?? 0);
     }
 
-    private function sessionTaxYearId(): int
+    private function sessionAccountingPeriodId(): int
     {
         $this->ensureCurrentUserOwnsContext();
 
-        return HelperFramework::sanitiseId($_SESSION[self::SESSION_TAX_YEAR_ID] ?? 0);
+        return HelperFramework::sanitiseId($_SESSION[self::SESSION_ACCOUNTING_PERIOD_ID] ?? 0);
     }
 
     private function ensureCurrentUserOwnsContext(): void

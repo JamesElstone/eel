@@ -23,7 +23,7 @@ final class _asset_taxCard extends CardBaseFramework
                 'method' => 'fetchPageData',
                 'params' => [
                     'companyId' => ':company_id',
-                    'taxYearId' => ':tax_year_id',
+                    'accountingPeriodId' => ':accounting_period_id',
                     'defaultBankNominalId' => ':default_bank_nominal_id',
                     'prefillTransactionId' => ':prefill_transaction_id',
                 ],
@@ -47,10 +47,10 @@ final class _asset_taxCard extends CardBaseFramework
         $company = (array)($context['company'] ?? []);
         $assetsPageData = (array)($context['services']['assetPageData'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
-        $taxYearId = (int)($company['tax_year_id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $pageId = trim((string)($page['page_id'] ?? ''));
         $assetTaxView = is_array($assetsPageData['tax_view'] ?? null) ? $assetsPageData['tax_view'] : null;
-        $assetTaxYears = is_array($assetsPageData['tax_years'] ?? null) ? $assetsPageData['tax_years'] : [];
+        $assetAccountingPeriods = is_array($assetsPageData['accounting_periods'] ?? null) ? $assetsPageData['accounting_periods'] : [];
 
         return '
            <form class="toolbar" method="post" data-ajax="true" data-accounting-period-selector="true">
@@ -59,8 +59,8 @@ final class _asset_taxCard extends CardBaseFramework
                 <input type="hidden" name="page" value="' . HelperFramework::escape($pageId) . '">
                 <input type="hidden" name="company_id" value="' . HelperFramework::escape((string)$companyId) . '">
                 <div class="mini-field">
-                    <label for="asset_tax_year_id">Accounting Period</label>
-                    <select class="select" id="asset_tax_year_id" name="tax_year_id">' . $this->taxYearOptions($assetTaxYears, $taxYearId) . '</select>
+                    <label for="asset_accounting_period_id">Accounting Period</label>
+                    <select class="select" id="asset_accounting_period_id" name="accounting_period_id">' . $this->accountingPeriodOptions($assetAccountingPeriods, $accountingPeriodId) . '</select>
                 </div>
             </form>
             ' . ($assetTaxView !== null
@@ -78,13 +78,13 @@ final class _asset_taxCard extends CardBaseFramework
         ';
     }
 
-    private function taxYearOptions(array $assetTaxYears, int $taxYearId): string
+    private function accountingPeriodOptions(array $assetAccountingPeriods, int $accountingPeriodId): string
     {
         $html = '';
-        foreach ($assetTaxYears as $taxYear) {
-            $optionTaxYearId = (int)($taxYear['id'] ?? 0);
-            $selected = $optionTaxYearId === $taxYearId ? ' selected' : '';
-            $html .= '<option value="' . HelperFramework::escape((string)$optionTaxYearId) . '"' . $selected . '>' . HelperFramework::escape((string)($taxYear['label'] ?? '')) . '</option>';
+        foreach ($assetAccountingPeriods as $accountingPeriod) {
+            $optionAccountingPeriodId = (int)($accountingPeriod['id'] ?? 0);
+            $selected = $optionAccountingPeriodId === $accountingPeriodId ? ' selected' : '';
+            $html .= '<option value="' . HelperFramework::escape((string)$optionAccountingPeriodId) . '"' . $selected . '>' . HelperFramework::escape((string)($accountingPeriod['label'] ?? '')) . '</option>';
         }
 
         return $html;

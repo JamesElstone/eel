@@ -64,6 +64,7 @@ final class _companies_nominalsCard extends CardBaseFramework
 
             $suggestionLabels = [
                 'default_bank_nominal_id' => 'Default bank nominal',
+                'default_trade_nominal_id' => 'Default trade nominal',
                 'default_expense_nominal_id' => 'Default expense nominal',
                 'director_loan_nominal_id' => 'Director loan nominal',
                 'vat_nominal_id' => 'VAT control nominal',
@@ -107,13 +108,20 @@ final class _companies_nominalsCard extends CardBaseFramework
                 <input type="hidden" name="intent" value="save_nominals">
                 <input type="hidden" name="company_id" value="' . HelperFramework::escape((string)($context['company']['id'] ?? 0)) . '">
                 <div class="panel-soft">
-                    <section data-state-fields="default_bank_nominal_id,default_expense_nominal_id,director_loan_nominal_id,vat_nominal_id,uncategorised_nominal_id" data-state-target="save_default_nominals">
+                    <section data-state-fields="default_bank_nominal_id,default_trade_nominal_id,default_expense_nominal_id,director_loan_nominal_id,vat_nominal_id,uncategorised_nominal_id" data-state-target="save_default_nominals">
                     <div class="form-flex-flow">
                         <div class="form-row">
                             <label for="default_bank_nominal_id">Default Bank nominal</label>
                             <select class="select" id="default_bank_nominal_id" name="default_bank_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['default_bank_nominal_id'] ?? '')) . '">
                                 <option value="">Select nominal account</option>
                                 ' . $this->nominalOptions($nominalAccounts, (string)($settings['default_bank_nominal_id'] ?? '')) . '
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <label for="default_trade_nominal_id">Default Trade nominal</label>
+                            <select class="select" id="default_trade_nominal_id" name="default_trade_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['default_trade_nominal_id'] ?? '')) . '">
+                                <option value="">Select nominal account</option>
+                                ' . $this->nominalOptions($nominalAccounts, (string)($settings['default_trade_nominal_id'] ?? '')) . '
                             </select>
                         </div>
                         <div class="form-row">
@@ -186,6 +194,16 @@ final class _companies_nominalsCard extends CardBaseFramework
         return array_filter([
             'default_bank_nominal_id' => !$this->hasAssignedNominal($settings, 'default_bank_nominal_id')
                 ? $this->firstMatchingNominal($normalised, static fn(array $row): bool => $row['id'] > 0 && ($row['subtype_code'] === 'bank' || $row['code'] === '1200' || str_contains(strtolower($row['name']), 'bank')))
+                : null,
+            'default_trade_nominal_id' => !$this->hasAssignedNominal($settings, 'default_trade_nominal_id')
+                ? ($this->firstMatchingNominal($normalised, static fn(array $row): bool => $row['id'] > 0 && $row['code'] === '2300')
+                    ?? $this->firstMatchingNominal($normalised, static function (array $row): bool {
+                    $name = strtolower($row['name']);
+                    return $row['id'] > 0
+                        && $row['account_type'] === 'liability'
+                        && ($row['subtype_code'] === 'trade_creditor'
+                            || str_contains($name, 'trade creditor'));
+                }))
                 : null,
             'default_expense_nominal_id' => !$this->hasAssignedNominal($settings, 'default_expense_nominal_id')
                 ? $this->firstMatchingNominal($normalised, static function (array $row): bool {

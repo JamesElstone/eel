@@ -13,7 +13,7 @@ $harness = new GeneratedServiceClassTestHarness();
 $harness->run(_uploads_statement_coverageCard::class, static function (GeneratedServiceClassTestHarness $harness, _uploads_statement_coverageCard $card): void {
     $harness->check(_uploads_statement_coverageCard::class, 'renders eelKit month heatmap for statement coverage', static function () use ($harness, $card): void {
         $html = $card->render([
-            'tax_year' => [
+            'accounting_period' => [
                 'label' => '05/09/2022 to 30/09/2023',
             ],
             'services' => [

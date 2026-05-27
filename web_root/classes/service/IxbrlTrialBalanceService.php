@@ -9,9 +9,9 @@ declare(strict_types=1);
 
 final class IxbrlTrialBalanceService
 {
-    public function getTrialBalance(int $companyId, int $taxYearId): array
+    public function getTrialBalance(int $companyId, int $accountingPeriodId): array
     {
-        if ($companyId <= 0 || $taxYearId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return [];
         }
 
@@ -31,11 +31,11 @@ final class IxbrlTrialBalanceService
              JOIN nominal_accounts na ON na.id = jl.nominal_account_id
              LEFT JOIN nominal_account_subtypes nas ON nas.id = na.account_subtype_id
              WHERE j.company_id = :company_id
-               AND j.tax_year_id = :tax_year_id
+               AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
              GROUP BY na.id, na.code, na.name, na.account_type, nas.code, nas.name
              ORDER BY na.sort_order, na.code',
-            ['company_id' => $companyId, 'tax_year_id' => $taxYearId]
+            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
         );
 
         return array_map(static function (array $row): array {
@@ -49,9 +49,9 @@ final class IxbrlTrialBalanceService
         }, $rows);
     }
 
-    public function getTotals(int $companyId, int $taxYearId): array
+    public function getTotals(int $companyId, int $accountingPeriodId): array
     {
-        $rows = $this->getTrialBalance($companyId, $taxYearId);
+        $rows = $this->getTrialBalance($companyId, $accountingPeriodId);
         $debit = 0.0;
         $credit = 0.0;
         foreach ($rows as $row) {
@@ -68,8 +68,8 @@ final class IxbrlTrialBalanceService
         ];
     }
 
-    public function isBalanced(int $companyId, int $taxYearId): bool
+    public function isBalanced(int $companyId, int $accountingPeriodId): bool
     {
-        return !empty($this->getTotals($companyId, $taxYearId)['is_balanced']);
+        return !empty($this->getTotals($companyId, $accountingPeriodId)['is_balanced']);
     }
 }

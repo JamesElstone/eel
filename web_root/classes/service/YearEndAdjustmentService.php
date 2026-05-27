@@ -15,12 +15,12 @@ final class YearEndAdjustmentService
     ) {
     }
 
-    public function fetchContext(int $companyId, int $taxYearId): array {
+    public function fetchContext(int $companyId, int $accountingPeriodId): array {
         $metrics = $this->metricsService ?? new YearEndMetricsService();
-        $taxYear = $metrics->fetchTaxYear($companyId, $taxYearId);
+        $accountingPeriod = $metrics->fetchAccountingPeriod($companyId, $accountingPeriodId);
         $company = $metrics->fetchCompanySummary($companyId);
 
-        if ($taxYear === null || $company === null) {
+        if ($accountingPeriod === null || $company === null) {
             return [
                 'available' => false,
                 'errors' => ['The selected company or accounting period could not be found.'],
@@ -30,23 +30,23 @@ final class YearEndAdjustmentService
         return [
             'available' => true,
             'company' => $company,
-            'tax_year' => $taxYear,
-            'next_tax_year' => $this->fetchNextTaxYear($companyId, (string)$taxYear['period_end']),
+            'accounting_period' => $accountingPeriod,
+            'next_accounting_period' => $this->fetchNextAccountingPeriod($companyId, (string)$accountingPeriod['period_end']),
             'nominals' => $this->fetchNominals(),
             'adjustments' => ($this->journalService ?? new ManualJournalService())
-                ->listJournalsByTags($companyId, $taxYearId, ['year_end_adjustment', 'year_end_adjustment_reversal']),
+                ->listJournalsByTags($companyId, $accountingPeriodId, ['year_end_adjustment', 'year_end_adjustment_reversal']),
         ];
     }
 
-    public function createAdjustment(int $companyId, int $taxYearId, array $payload, string $changedBy = 'web_app'): array {
-        $context = $this->fetchContext($companyId, $taxYearId);
+    public function createAdjustment(int $companyId, int $accountingPeriodId, array $payload, string $changedBy = 'web_app'): array {
+        $context = $this->fetchContext($companyId, $accountingPeriodId);
         if (empty($context['available'])) {
             return $context;
         }
 
         $template = trim((string)($payload['template_type'] ?? 'custom'));
         $description = trim((string)($payload['description'] ?? ''));
-        $journalDate = trim((string)($payload['journal_date'] ?? (string)$context['tax_year']['period_end']));
+        $journalDate = trim((string)($payload['journal_date'] ?? (string)$context['accounting_period']['period_end']));
         $notes = trim((string)($payload['notes'] ?? ''));
         $key = trim((string)($payload['journal_key'] ?? ''));
         if ($key === '') {
@@ -62,7 +62,7 @@ final class YearEndAdjustmentService
         try {
             $result = ($this->journalService ?? new ManualJournalService())->saveTaggedJournal(
                 $companyId,
-                $taxYearId,
+                $accountingPeriodId,
                 'year_end_adjustment',
                 $key,
                 $journalDate,
@@ -85,8 +85,8 @@ final class YearEndAdjustmentService
 
             $reversalJournal = null;
             if (!empty($payload['auto_reverse'])) {
-                $nextTaxYear = $context['next_tax_year'] ?? null;
-                if ($nextTaxYear === null) {
+                $nextAccountingPeriod = $context['next_accounting_period'] ?? null;
+                if ($nextAccountingPeriod === null) {
                     if ($ownsTransaction && InterfaceDB::inTransaction()) {
                         InterfaceDB::rollBack();
                     }
@@ -108,10 +108,10 @@ final class YearEndAdjustmentService
 
                 $reversal = ($this->journalService ?? new ManualJournalService())->saveTaggedJournal(
                     $companyId,
-                    (int)$nextTaxYear['id'],
+                    (int)$nextAccountingPeriod['id'],
                     'year_end_adjustment_reversal',
                     'reversal-of-' . (int)$result['journal']['id'],
-                    (string)$nextTaxYear['period_start'],
+                    (string)$nextAccountingPeriod['period_start'],
                     'Reversal of ' . (string)($result['journal']['description'] ?? 'year end adjustment'),
                     $reversalLines,
                     'system_generated',
@@ -198,10 +198,10 @@ final class YearEndAdjustmentService
         return $stmt->fetchAll() ?: [];
     }
 
-    private function fetchNextTaxYear(int $companyId, string $periodEnd): ?array {
+    private function fetchNextAccountingPeriod(int $companyId, string $periodEnd): ?array {
         $stmt = InterfaceDB::prepare(
             'SELECT id, label, period_start, period_end
-             FROM tax_years
+             FROM accounting_periods
              WHERE company_id = :company_id
                AND period_start > :period_end
              ORDER BY period_start ASC, id ASC

@@ -9,7 +9,7 @@ declare(strict_types=1);
 
 final class HmrcSubmissionPackageService
 {
-    public function locateAccountsIxbrl(int $companyId, int $taxYearId): array
+    public function locateAccountsIxbrl(int $companyId, int $accountingPeriodId): array
     {
         if (!InterfaceDB::tableExists('ixbrl_generation_runs')) {
             return ['ok' => false, 'path' => null, 'filename' => null, 'warnings' => [], 'errors' => ['Accounts iXBRL generation table is missing.']];
@@ -19,12 +19,12 @@ final class HmrcSubmissionPackageService
             'SELECT generated_path, generated_filename, output_sha256, generated_at
              FROM ixbrl_generation_runs
              WHERE company_id = :company_id
-               AND tax_year_id = :tax_year_id
+               AND accounting_period_id = :accounting_period_id
                AND status = :status
                AND generated_path IS NOT NULL
              ORDER BY id DESC
              LIMIT 1',
-            ['company_id' => $companyId, 'tax_year_id' => $taxYearId, 'status' => 'generated']
+            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId, 'status' => 'generated']
         );
         $path = is_array($row) ? (string)($row['generated_path'] ?? '') : '';
         if ($path === '' || !is_file($path)) {
@@ -34,10 +34,28 @@ final class HmrcSubmissionPackageService
         return ['ok' => true, 'path' => $path, 'filename' => basename($path), 'warnings' => [], 'errors' => [], 'hash' => (string)($row['output_sha256'] ?? '')];
     }
 
-    public function locateComputationsIxbrl(int $companyId, int $taxYearId): array
+    public function locateComputationsIxbrl(int $companyId, int $accountingPeriodId): array
     {
         $directory = APP_ROOT . 'outbound' . DIRECTORY_SEPARATOR . 'hmrc' . DIRECTORY_SEPARATOR . 'computations';
-        $candidates = glob($directory . DIRECTORY_SEPARATOR . 'computations_' . $companyId . '_' . $taxYearId . '*.xhtml') ?: [];
+        $candidates = glob($directory . DIRECTORY_SEPARATOR . 'computations_' . $companyId . '_' . $accountingPeriodId . '*.xhtml') ?: [];
+        if ($candidates === []) {
+            return [
+                'ok' => false,
+                'path' => null,
+                'filename' => null,
+                'warnings' => ['Corporation Tax computations iXBRL generation is not implemented yet.'],
+                'errors' => ['Generated computations iXBRL is required before HMRC submission.'],
+            ];
+        }
+        usort($candidates, static fn(string $left, string $right): int => filemtime($right) <=> filemtime($left));
+
+        return ['ok' => true, 'path' => $candidates[0], 'filename' => basename($candidates[0]), 'warnings' => [], 'errors' => []];
+    }
+
+    public function locateComputationsIxbrlForCtPeriod(int $companyId, int $ctPeriodId): array
+    {
+        $directory = APP_ROOT . 'outbound' . DIRECTORY_SEPARATOR . 'hmrc' . DIRECTORY_SEPARATOR . 'computations';
+        $candidates = glob($directory . DIRECTORY_SEPARATOR . 'computations_' . $companyId . '_ct_' . $ctPeriodId . '*.xhtml') ?: [];
         if ($candidates === []) {
             return [
                 'ok' => false,

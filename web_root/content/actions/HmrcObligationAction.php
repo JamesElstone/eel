@@ -23,7 +23,7 @@ final class HmrcObligationAction implements ActionInterfaceFramework
                 'update_status' => $service->updateObligationStatus((int)$request->input('obligation_id', 0), (string)$request->input('status', ''), (string)$request->input('notes', '')),
                 'create_manual_obligation' => $service->createManualObligation([
                     'company_id' => $companyId,
-                    'tax_year_id' => (int)$request->input('tax_year_id', 0),
+                    'accounting_period_id' => (int)$request->input('accounting_period_id', 0),
                     'obligation_type' => (string)$request->input('obligation_type', 'hmrc_penalty'),
                     'due_date' => (string)$request->input('due_date', ''),
                     'amount_due' => (string)$request->input('amount_due', ''),

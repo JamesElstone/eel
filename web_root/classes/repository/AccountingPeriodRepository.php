@@ -7,9 +7,9 @@
  */
 declare(strict_types=1);
 
-final class TaxYearRepository
+final class AccountingPeriodRepository
 {
-    public function fetchTaxYears(int $companyId): array
+    public function fetchAccountingPeriods(int $companyId): array
     {
         if ($companyId <= 0) {
             return [];
@@ -17,51 +17,53 @@ final class TaxYearRepository
 
         return InterfaceDB::fetchAll(
             'SELECT id, label, period_start, period_end
-             FROM tax_years
+             FROM accounting_periods
              WHERE company_id = :company_id
              ORDER BY period_start DESC, id DESC',
             ['company_id' => $companyId]
         );
     }
 
-    public function fetchTaxYear(int $companyId, int $taxYearId): ?array
+    public function fetchAccountingPeriod(int $companyId, int $accountingPeriodId): ?array
     {
-        if ($companyId <= 0 || $taxYearId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return null;
         }
 
         $row = InterfaceDB::fetchOne(
             'SELECT id, company_id, label, period_start, period_end
-             FROM tax_years
+             FROM accounting_periods
              WHERE company_id = :company_id
                AND id = :id
              LIMIT 1',
             [
                 'company_id' => $companyId,
-                'id' => $taxYearId,
+                'id' => $accountingPeriodId,
             ]
         );
 
         return is_array($row) ? $row : null;
     }
-    public function updatePeriod(int $companyId, int $taxYearId, string $label, string $periodStart, string $periodEnd): void
+    public function updatePeriod(int $companyId, int $accountingPeriodId, string $label, string $periodStart, string $periodEnd): void
     {
         $label = trim($label) !== ''
             ? trim($label)
             : TaxPeriodService::accountingPeriodLabel($periodStart, $periodEnd);
 
-        InterfaceDB::prepareExecute('UPDATE tax_years SET label = ?, period_start = ?, period_end = ? WHERE id = ? AND company_id = ?', [
+        InterfaceDB::prepareExecute('UPDATE accounting_periods SET label = ?, period_start = ?, period_end = ? WHERE id = ? AND company_id = ?', [
             $label,
             $periodStart,
             $periodEnd,
-            $taxYearId,
+            $accountingPeriodId,
             $companyId,
         ]);
+
+        (new CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $accountingPeriodId);
     }
 
     public function validateOverlap(int $companyId, int $periodId, string $periodStart, string $periodEnd): array
     {
-        $stmt = InterfaceDB::prepareExecute('SELECT id, label, period_start, period_end FROM tax_years WHERE company_id = ? ORDER BY period_start, id', [$companyId]);
+        $stmt = InterfaceDB::prepareExecute('SELECT id, label, period_start, period_end FROM accounting_periods WHERE company_id = ? ORDER BY period_start, id', [$companyId]);
         $errors = [];
 
         foreach ($stmt->fetchAll() as $row) {
@@ -81,7 +83,7 @@ final class TaxYearRepository
 
     public function validateSequence(int $companyId, int $periodId, string $periodStart, string $periodEnd): array
     {
-        $stmt = InterfaceDB::prepareExecute('SELECT id, label, period_start, period_end FROM tax_years WHERE company_id = ? ORDER BY period_start, id', [$companyId]);
+        $stmt = InterfaceDB::prepareExecute('SELECT id, label, period_start, period_end FROM accounting_periods WHERE company_id = ? ORDER BY period_start, id', [$companyId]);
         $periods = [];
 
         foreach ($stmt->fetchAll() as $row) {
@@ -130,21 +132,31 @@ final class TaxYearRepository
         $label = $label !== null && trim($label) !== ''
             ? trim($label)
             : TaxPeriodService::accountingPeriodLabel($periodStart, $periodEnd);
-        if (InterfaceDB::countWhere('tax_years', [
+        if (InterfaceDB::countWhere('accounting_periods', [
             'company_id' => $companyId,
             'period_start' => $periodStart,
             'period_end' => $periodEnd,
         ]) > 0) {
-            $find = InterfaceDB::prepareExecute('SELECT id FROM tax_years WHERE company_id = ? AND period_start = ? AND period_end = ? ORDER BY id DESC LIMIT 1', [$companyId, $periodStart, $periodEnd]);
+            $find = InterfaceDB::prepareExecute('SELECT id FROM accounting_periods WHERE company_id = ? AND period_start = ? AND period_end = ? ORDER BY id DESC LIMIT 1', [$companyId, $periodStart, $periodEnd]);
 
-            return (int)$find->fetchColumn();
+            $id = (int)$find->fetchColumn();
+            if ($id > 0) {
+                (new CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $id);
+            }
+
+            return $id;
         }
 
-        InterfaceDB::prepareExecute('INSERT INTO tax_years (company_id, label, period_start, period_end) VALUES (?, ?, ?, ?)', [$companyId, $label, $periodStart, $periodEnd]);
+        InterfaceDB::prepareExecute('INSERT INTO accounting_periods (company_id, label, period_start, period_end) VALUES (?, ?, ?, ?)', [$companyId, $label, $periodStart, $periodEnd]);
 
-        $find = InterfaceDB::prepareExecute('SELECT id FROM tax_years WHERE company_id = ? AND period_start = ? AND period_end = ? ORDER BY id DESC LIMIT 1', [$companyId, $periodStart, $periodEnd]);
+        $find = InterfaceDB::prepareExecute('SELECT id FROM accounting_periods WHERE company_id = ? AND period_start = ? AND period_end = ? ORDER BY id DESC LIMIT 1', [$companyId, $periodStart, $periodEnd]);
 
-        return (int)$find->fetchColumn();
+        $id = (int)$find->fetchColumn();
+        if ($id > 0) {
+            (new CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $id);
+        }
+
+        return $id;
     }
 
     private function periodsOverlap(string $startA, string $endA, string $startB, string $endB): bool

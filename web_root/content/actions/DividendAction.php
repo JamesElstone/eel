@@ -19,7 +19,7 @@ final class DividendAction implements ActionInterfaceFramework
         try {
             $result = (new DividendService())->declareDividend([
                 'company_id' => (int)$request->input('company_id', 0),
-                'tax_year_id' => (int)$request->input('tax_year_id', 0),
+                'accounting_period_id' => (int)$request->input('accounting_period_id', 0),
                 'declaration_date' => (string)$request->input('declaration_date', ''),
                 'amount' => (string)$request->input('amount', ''),
                 'description' => (string)$request->input('description', ''),

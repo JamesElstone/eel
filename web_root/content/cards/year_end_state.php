@@ -23,7 +23,7 @@ final class _year_end_stateCard extends CardBaseFramework
                 'method' => 'fetchChecklist',
                 'params' => [
                     'companyId' => ':company_id',
-                    'taxYearId' => ':tax_year_id',
+                    'accountingPeriodId' => ':accounting_period_id',
                     'persist' => false,
                 ],
             ],
@@ -33,7 +33,7 @@ final class _year_end_stateCard extends CardBaseFramework
                 'method' => 'fetchSummary',
                 'params' => [
                     'companyId' => ':company_id',
-                    'taxYearId' => ':tax_year_id',
+                    'accountingPeriodId' => ':accounting_period_id',
                 ],
             ],
             [
@@ -42,7 +42,7 @@ final class _year_end_stateCard extends CardBaseFramework
                 'method' => 'fetchContext',
                 'params' => [
                     'companyId' => ':company_id',
-                    'taxYearId' => ':tax_year_id',
+                    'accountingPeriodId' => ':accounting_period_id',
                 ],
             ],
             [
@@ -51,7 +51,7 @@ final class _year_end_stateCard extends CardBaseFramework
                 'method' => 'fetchContext',
                 'params' => [
                     'companyId' => ':company_id',
-                    'taxYearId' => ':tax_year_id',
+                    'accountingPeriodId' => ':accounting_period_id',
                 ],
             ],
             [
@@ -60,7 +60,7 @@ final class _year_end_stateCard extends CardBaseFramework
                 'method' => 'fetchComparison',
                 'params' => [
                     'companyId' => ':company_id',
-                    'taxYearId' => ':tax_year_id',
+                    'accountingPeriodId' => ':accounting_period_id',
                 ],
             ],
         ];
@@ -105,8 +105,8 @@ final class _year_end_stateCard extends CardBaseFramework
     {
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
-        $taxYear = (array)($checklist['tax_year'] ?? []);
-        $taxYearId = (int)($taxYear['id'] ?? ($company['tax_year_id'] ?? 0));
+        $accountingPeriod = (array)($checklist['accounting_period'] ?? []);
+        $accountingPeriodId = (int)($accountingPeriod['id'] ?? ($company['accounting_period_id'] ?? 0));
         $review = (array)($checklist['review'] ?? []);
         $isLocked = !empty($review['is_locked']);
         $lockIntent = $isLocked ? 'unlock_period' : 'lock_period';
@@ -129,15 +129,15 @@ final class _year_end_stateCard extends CardBaseFramework
                     </div>
                 </div>
                 <div class="actions-row">
-                    ' . $this->actionForm($companyId, $taxYearId, 'recalculate', 'Recalculate') . '
-                    ' . $this->actionForm($companyId, $taxYearId, $lockIntent, $lockLabel) . '
+                    ' . $this->actionForm($companyId, $accountingPeriodId, 'recalculate', 'Recalculate') . '
+                    ' . $this->actionForm($companyId, $accountingPeriodId, $lockIntent, $lockLabel) . '
                     <button class="button" type="button" disabled>Export checklist</button>
                 </div>
                 <form method="post" data-ajax="true">
                     <input type="hidden" name="card_action" value="YearEnd">
                     <input type="hidden" name="intent" value="save_notes">
                     <input type="hidden" name="company_id" value="' . $companyId . '">
-                    <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                     <div class="form-row full">
                         <label for="year-end-review-notes">Year end notes</label>
                         <textarea class="input" id="year-end-review-notes" name="review_notes" style="min-height:120px;">' . HelperFramework::escape((string)($review['review_notes'] ?? '')) . '</textarea>
@@ -147,13 +147,13 @@ final class _year_end_stateCard extends CardBaseFramework
             </section>';
     }
 
-    private function actionForm(int $companyId, int $taxYearId, string $intent, string $label): string
+    private function actionForm(int $companyId, int $accountingPeriodId, string $intent, string $label): string
     {
         return '<form method="post" data-ajax="true">
             <input type="hidden" name="card_action" value="YearEnd">
             <input type="hidden" name="intent" value="' . HelperFramework::escape($intent) . '">
             <input type="hidden" name="company_id" value="' . $companyId . '">
-            <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+            <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
             <button class="button primary" type="submit">' . HelperFramework::escape($label) . '</button>
         </form>';
     }
@@ -262,8 +262,8 @@ final class _year_end_stateCard extends CardBaseFramework
 
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
-        $taxYear = (array)($openingBalances['tax_year'] ?? []);
-        $taxYearId = (int)($taxYear['id'] ?? ($company['tax_year_id'] ?? 0));
+        $accountingPeriod = (array)($openingBalances['accounting_period'] ?? []);
+        $accountingPeriodId = (int)($accountingPeriod['id'] ?? ($company['accounting_period_id'] ?? 0));
         $existing = is_array($openingBalances['existing_journal'] ?? null) ? (array)$openingBalances['existing_journal'] : [];
         $defaultRows = (array)($existing['lines'] ?? []);
         if ($defaultRows === []) {
@@ -273,7 +273,7 @@ final class _year_end_stateCard extends CardBaseFramework
         $formId = 'year-end-opening-balance-form';
         $description = $existing !== []
             ? (string)($existing['description'] ?? '')
-            : 'Opening balances for ' . (string)($taxYear['label'] ?? 'selected period');
+            : 'Opening balances for ' . (string)($accountingPeriod['label'] ?? 'selected period');
 
         return '<section class="settings-stack" id="opening-balances">
             <h3 class="card-title">Opening Balances</h3>
@@ -282,7 +282,7 @@ final class _year_end_stateCard extends CardBaseFramework
                 <input type="hidden" name="card_action" value="YearEnd">
                 <input type="hidden" name="intent" value="save_opening_balance">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
             </form>
             ' . $this->lineEditorTable('opening_balance', $formId, (array)($openingBalances['nominals'] ?? []), $defaultRows, 8) . '
             <div class="form-grid">
@@ -311,8 +311,8 @@ final class _year_end_stateCard extends CardBaseFramework
 
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
-        $taxYear = (array)($adjustments['tax_year'] ?? []);
-        $taxYearId = (int)($taxYear['id'] ?? ($company['tax_year_id'] ?? 0));
+        $accountingPeriod = (array)($adjustments['accounting_period'] ?? []);
+        $accountingPeriodId = (int)($accountingPeriod['id'] ?? ($company['accounting_period_id'] ?? 0));
         $formId = 'year-end-adjustment-form';
 
         return '<section class="settings-stack" id="year-end-adjustments">
@@ -321,11 +321,11 @@ final class _year_end_stateCard extends CardBaseFramework
                 <input type="hidden" name="card_action" value="YearEnd">
                 <input type="hidden" name="intent" value="create_adjustment">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="tax_year_id" value="' . $taxYearId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
             </form>
             <div class="form-grid">
                 <div class="form-row"><label for="adjustment-template-type">Template</label><select class="select" id="adjustment-template-type" name="adjustment_template_type" form="' . $formId . '">' . $this->options(['accrual' => 'Create accrual', 'prepayment' => 'Create prepayment', 'deferred_income' => 'Create deferred income', 'custom' => 'Custom journal'], 'accrual') . '</select></div>
-                <div class="form-row"><label for="adjustment-date">Date</label><input class="input" id="adjustment-date" name="adjustment_date" form="' . $formId . '" type="date" value="' . HelperFramework::escape((string)($taxYear['period_end'] ?? '')) . '"></div>
+                <div class="form-row"><label for="adjustment-date">Date</label><input class="input" id="adjustment-date" name="adjustment_date" form="' . $formId . '" type="date" value="' . HelperFramework::escape((string)($accountingPeriod['period_end'] ?? '')) . '"></div>
                 <div class="form-row"><label for="adjustment-description">Description</label><input class="input" id="adjustment-description" name="adjustment_description" form="' . $formId . '" value=""></div>
                 <div class="form-row"><label for="adjustment-notes">Notes</label><input class="input" id="adjustment-notes" name="adjustment_notes" form="' . $formId . '" value=""></div>
                 <div class="form-row"><label for="adjustment-primary-nominal">Primary nominal</label><select class="select" id="adjustment-primary-nominal" name="adjustment_primary_nominal_id" form="' . $formId . '">' . $this->nominalOptions((array)($adjustments['nominals'] ?? []), 0) . '</select></div>

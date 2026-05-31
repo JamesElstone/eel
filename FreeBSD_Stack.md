@@ -1,135 +1,26 @@
 # FreeBSD Stack
 
-This document records the recommended FreeBSD package stack for running and
-maintaining eelKit on a FreeBSD server.
+Instructions for running eelKit on FreeBSD.
 
-The verified server platform is:
+Verified platform:
 
 ```text
 FreeBSD 15.0-RELEASE-p9 GENERIC amd64
 ```
 
-## Runtime Stack
-
-These packages are the minimum runtime stack for the web application:
-
-```sh
-pkg install apache24 \
-  mariadb-connector-odbc \
-  php84-ctype \
-  php84-curl \
-  php84-filter \
-  php84-gd \
-  php84-mbstring \
-  php84-pdo_odbc \
-  php84-session
-```
-
-The application expects PHP 8.4 with these modules available:
-
-```text
-ctype
-curl
-filter
-gd
-json
-mbstring
-PDO
-PDO_ODBC
-session
-```
-
-The expected PDO driver list must include:
-
-```text
-odbc
-```
-
-## Recommended Stack
-
-The operational server stack also includes build, maintenance, and admin tools:
-
-```sh
-pkg install git \
-  sudo \
-  screen \
-  portmaster \
-  portconfig \
-  sqlite3 \
-  php84-tokenizer \
-  cmake-core \
-  gmake \
-  meson \
-  pkgconf \
-  corepack \
-  gettext-tools
-```
-
-Together, the recommended explicit package origins are:
-
-```text
-www/apache24
-databases/mariadb-connector-odbc
-textproc/php84-ctype
-ftp/php84-curl
-security/php84-filter
-graphics/php84-gd
-converters/php84-mbstring
-databases/php84-pdo_odbc
-www/php84-session
-devel/git
-security/sudo
-sysutils/screen
-ports-mgmt/portmaster
-ports-mgmt/portconfig
-databases/sqlite3
-devel/php84-tokenizer
-devel/cmake-core
-devel/gmake
-devel/meson
-devel/pkgconf
-www/corepack
-devel/gettext-tools
-```
-
-## Install From Packages
-
-For a normal binary package install:
+## 1. Install Packages
 
 ```sh
 pkg update
-pkg install apache24 mariadb-connector-odbc \
+pkg install -y apache24 \
+  php84 \
   php84-ctype php84-curl php84-filter php84-gd php84-mbstring \
-  php84-pdo_odbc php84-session \
-  git sudo screen portmaster portconfig sqlite3 php84-tokenizer \
+  php84-pdo php84-pdo_odbc php84-session php84-tokenizer \
+  unixODBC git sudo screen portmaster portconfig sqlite3 \
   cmake-core gmake meson pkgconf corepack gettext-tools
 ```
 
-After installation, verify PHP and PDO ODBC:
-
-```sh
-php -m | grep -Ei 'ctype|curl|filter|gd|json|mbstring|PDO|ODBC|session'
-php -r 'print_r(PDO::getAvailableDrivers());'
-```
-
-The PDO driver output should include `odbc`.
-
-## Build MariaDB Connector/ODBC From Ports
-
-If the binary package is not suitable, build the connector from ports.
-
-Until the FreeBSD ports tree is updated, use the port Makefile included in this
-repository:
-
-```sh
-cp usr/ports/databases/mariadb-connector-odbc/Makefile \
-  /usr/ports/databases/mariadb-connector-odbc/Makefile
-```
-
-Do not install `databases/mariadb-connector-c` when the MariaDB client package
-already provides `mariadb_config`.
-
-Install or confirm the MariaDB client library first:
+Confirm the MariaDB client library is already present:
 
 ```sh
 pkg info | grep -i maria
@@ -137,13 +28,23 @@ find /usr/local -name 'libmariadb.so*' -print
 ldconfig -r | grep -i mariadb
 ```
 
-The expected client library path is usually:
+Do not install `databases/mariadb-connector-c` if the installed MariaDB client
+package already provides `mariadb_config`.
 
-```text
-/usr/local/lib/mysql/libmariadb.so.3
+## 2. Build MariaDB Connector/ODBC
+
+The current FreeBSD ports tree has a known iconv-related bug in
+`databases/mariadb-connector-odbc`. Until the ports tree is updated, use the
+Makefile included in this repository.
+
+From the eelKit project root:
+
+```sh
+cp usr/ports/databases/mariadb-connector-odbc/Makefile \
+  /usr/ports/databases/mariadb-connector-odbc/Makefile
 ```
 
-Build the ODBC connector against that client library:
+Build and install the port:
 
 ```sh
 cd /usr/ports/databases/mariadb-connector-odbc
@@ -152,34 +53,49 @@ make LDFLAGS="-L/usr/local/lib/mysql" CPPFLAGS="-I/usr/local/include/mysql"
 make install
 ```
 
-Verify the installed driver:
+Verify the driver:
 
 ```sh
 find /usr/local -name 'libmaodbc.so*' -print
 ldd /usr/local/lib/mariadb/libmaodbc.so
 ```
 
-The expected ODBC driver path is:
+Expected driver path:
 
 ```text
 /usr/local/lib/mariadb/libmaodbc.so
 ```
 
-## Configure PHP PDO ODBC
+## 3. Configure PHP PDO ODBC
 
-From the project root, apply the bundled PDO ODBC connection-pooling override:
+From the eelKit project root, install the bundled PDO_ODBC ini file:
 
 ```sh
-grep -qxF 'pdo_odbc.connection_pooling=off' \
-  /usr/local/etc/php/ext-30-pdo_odbc.ini || \
-  cat usr/local/etc/php/ext-30-pdo_odbc.ini >> \
-    /usr/local/etc/php/ext-30-pdo_odbc.ini
+cp usr/local/etc/php/ext-30-pdo_odbc.ini \
+  /usr/local/etc/php/ext-30-pdo_odbc.ini
 ```
 
-This keeps `pdo_odbc.connection_pooling` disabled while preserving any existing
-extension-loading lines installed by the PHP package.
+It must contain:
 
-## Configure unixODBC
+```ini
+extension=pdo_odbc.so
+pdo_odbc.connection_pooling=off
+```
+
+Verify PHP:
+
+```sh
+php -m | grep -Ei 'ctype|curl|filter|gd|json|mbstring|PDO|ODBC|session'
+php -r 'print_r(PDO::getAvailableDrivers());'
+```
+
+`PDO_ODBC` must be loaded and the PDO driver list must include `odbc`.
+
+Keep ODBC connection pooling disabled. With pooling set to `strict` or
+`relaxed`, repeated `new PDO('odbc:eelKit', null, null, ...)` connections
+segfaulted in `libodbc.so.2` on FreeBSD/PHP 8.4/unixODBC/MariaDB ODBC.
+
+## 4. Configure unixODBC
 
 Register the MariaDB ODBC driver:
 
@@ -195,12 +111,6 @@ EOF
 odbcinst -i -d -f /tmp/mariadb-odbc-driver.template
 odbcinst -q -d
 odbcinst -q -d -n MariaDB
-```
-
-Check the unixODBC configuration paths:
-
-```sh
-odbcinst -j
 ```
 
 Create or edit `/usr/local/etc/odbc.ini`:
@@ -220,39 +130,71 @@ CHARSET=utf8mb4
 Test the DSN:
 
 ```sh
+odbcinst -j
 odbcinst -q -s
 isql -v eelKit
 isql -v eelKit local 'replace_with_real_password'
 ```
 
-## Configure Services
+## 5. Configure PHP-FPM
 
-Enable Apache:
-
-```sh
-sysrc apache24_enable=YES
-service apache24 start
-```
-
-If PHP-FPM is used on the host, enable and start it:
+Enable PHP-FPM:
 
 ```sh
 sysrc php_fpm_enable=YES
-service php_fpm start
 ```
 
-Restart services after PHP extension or ODBC DSN changes:
+Check the PHP-FPM listener:
 
 ```sh
-service php_fpm restart
-service apache24 restart
+grep -n '^listen' /usr/local/etc/php-fpm.d/www.conf
 ```
 
-## Apache Document Root
+The default listener is:
 
-Configure Apache so only `web_root` is public.
+```ini
+user = www
+group = www
+listen = 127.0.0.1:9000
+```
 
-Do not expose these directories through the web server:
+## 6. Configure Apache Document Root
+
+Create an Apache include for eelKit:
+
+```sh
+cat > /usr/local/etc/apache24/Includes/eelKit.conf <<'EOF'
+LoadModule proxy_module libexec/apache24/mod_proxy.so
+LoadModule proxy_fcgi_module libexec/apache24/mod_proxy_fcgi.so
+LoadModule rewrite_module libexec/apache24/mod_rewrite.so
+
+ServerName eelKit.int.elstone.net:80
+
+<VirtualHost *:80>
+    ServerName eelKit.int.elstone.net
+    DocumentRoot "/usr/local/eelKit/web_root"
+
+    DirectoryIndex index.php index.html
+
+    <Directory "/usr/local/eelKit/web_root">
+        Options -Indexes +FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    <FilesMatch "\.php$">
+        SetHandler "proxy:fcgi://127.0.0.1:9000"
+    </FilesMatch>
+
+    ErrorLog "/var/log/httpd-eelKit-error.log"
+    CustomLog "/var/log/httpd-eelKit-access.log" combined
+</VirtualHost>
+EOF
+```
+
+Only `/usr/local/eelKit/web_root` should be public.
+
+Do not expose:
 
 ```text
 secure
@@ -261,29 +203,39 @@ tools
 file_logs
 ```
 
-The PHP process must be able to write to:
-
-```text
-secure
-file_logs
-```
-
-On FreeBSD, PHP commonly runs as the `www` user. A typical permission setup is:
+Allow the PHP user to write to `secure` and `file_logs`:
 
 ```sh
-chown root:www secure
-chmod 775 secure
+chown -R james.elstone:www /usr/local/eelKit
+chmod 775 /usr/local/eelKit/secure /usr/local/eelKit/file_logs
+find /usr/local/eelKit/secure /usr/local/eelKit/file_logs -type f \
+  -exec chmod 664 {} +
 ```
 
-## Application Setup
+## 7. Start Services
 
-From the project root, hydrate configuration and set up the database:
+```sh
+sysrc apache24_enable=YES
+service php_fpm start
+service apache24 start
+```
+
+After PHP, ODBC, or Apache changes:
+
+```sh
+service php_fpm restart
+service apache24 restart
+```
+
+## 8. Configure eelKit
+
+From the eelKit project root:
 
 ```sh
 php tools/php/setupDb.php
 ```
 
-Or configure the database DSN explicitly:
+To set the ODBC DSN explicitly:
 
 ```sh
 php tools/php/setupDb.php \
@@ -304,13 +256,13 @@ Run the test suite:
 php web_root/tests/index.php
 ```
 
-## Production Checks
-
-Before treating the host as production-ready:
+## 9. Production Checks
 
 ```sh
-php -m | grep -Ei 'PDO|ODBC'
+php -m | grep -Ei 'PDO|PDO_ODBC|mbstring|session|curl|gd'
 php -r 'print_r(PDO::getAvailableDrivers());'
+php -r 'echo function_exists("imagecreatetruecolor") ? "gd ok\n" : "gd missing\n";'
+php -i | grep 'ODBC Connection Pooling'
 service apache24 status
 ```
 
@@ -318,6 +270,8 @@ Confirm:
 
 - `PDO_ODBC` is loaded.
 - `PDO::getAvailableDrivers()` includes `odbc`.
+- `ODBC Connection Pooling => Disabled`.
+- `gd ok`.
 - Apache serves `web_root` as the document root.
 - `secure/app.php` is not web-accessible.
 - `developer_options` is set to `false` in `secure/app.php`.

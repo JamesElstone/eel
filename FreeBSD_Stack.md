@@ -118,6 +118,14 @@ The PDO driver output should include `odbc`.
 
 If the binary package is not suitable, build the connector from ports.
 
+Until the FreeBSD ports tree is updated, use the port Makefile included in this
+repository:
+
+```sh
+cp usr/ports/databases/mariadb-connector-odbc/Makefile \
+  /usr/ports/databases/mariadb-connector-odbc/Makefile
+```
+
 Do not install `databases/mariadb-connector-c` when the MariaDB client package
 already provides `mariadb_config`.
 
@@ -157,6 +165,20 @@ The expected ODBC driver path is:
 /usr/local/lib/mariadb/libmaodbc.so
 ```
 
+## Configure PHP PDO ODBC
+
+From the project root, apply the bundled PDO ODBC connection-pooling override:
+
+```sh
+grep -qxF 'pdo_odbc.connection_pooling=off' \
+  /usr/local/etc/php/ext-30-pdo_odbc.ini || \
+  cat usr/local/etc/php/ext-30-pdo_odbc.ini >> \
+    /usr/local/etc/php/ext-30-pdo_odbc.ini
+```
+
+This keeps `pdo_odbc.connection_pooling` disabled while preserving any existing
+extension-loading lines installed by the PHP package.
+
 ## Configure unixODBC
 
 Register the MariaDB ODBC driver:
@@ -184,12 +206,12 @@ odbcinst -j
 Create or edit `/usr/local/etc/odbc.ini`:
 
 ```ini
-[swallowtail]
+[eelKit]
 Driver=MariaDB
-Description=Swallowtail MariaDB
+Description=eelKit MariaDB
 SERVER=127.0.0.1
 PORT=3306
-DATABASE=swallowtail
+DATABASE=eelKit
 USER=local
 PASSWORD=replace_with_real_password
 CHARSET=utf8mb4
@@ -199,8 +221,8 @@ Test the DSN:
 
 ```sh
 odbcinst -q -s
-isql -v swallowtail
-isql -v swallowtail local 'replace_with_real_password'
+isql -v eelKit
+isql -v eelKit local 'replace_with_real_password'
 ```
 
 ## Configure Services
@@ -266,7 +288,7 @@ Or configure the database DSN explicitly:
 ```sh
 php tools/php/setupDb.php \
   --driver=odbc \
-  --odbc-name=swallowtail \
+  --odbc-name=eelKit \
   --user=local
 ```
 

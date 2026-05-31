@@ -1,12 +1,12 @@
 # FreeBSD Stack
 
 This document records the recommended FreeBSD package stack for running and
-maintaining Swallowtail/eelKit on the `swallowtail` server.
+maintaining eelKit on a FreeBSD server.
 
-The verified reference host is:
+The verified server platform is:
 
 ```text
-FreeBSD swallowtail 15.0-RELEASE-p9 GENERIC amd64
+FreeBSD 15.0-RELEASE-p9 GENERIC amd64
 ```
 
 ## Runtime Stack

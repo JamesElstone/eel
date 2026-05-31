@@ -116,6 +116,15 @@ odbcinst -q -d -n MariaDB
 Create or edit `/usr/local/etc/odbc.ini`:
 
 ```ini
+[eelKit-admin]
+Driver=MariaDB
+Description=eelKit MariaDB admin connection
+SERVER=127.0.0.1
+PORT=3306
+USER=local
+PASSWORD=replace_with_real_password
+CHARSET=utf8mb4
+
 [eelKit]
 Driver=MariaDB
 Description=eelKit MariaDB
@@ -127,16 +136,32 @@ PASSWORD=replace_with_real_password
 CHARSET=utf8mb4
 ```
 
-Test the DSN:
+Check the unixODBC configuration:
 
 ```sh
 odbcinst -j
 odbcinst -q -s
+```
+
+## 5. Create Database
+
+Create the empty eelKit database with the expected charset and collation:
+
+```sh
+printf 'CREATE DATABASE IF NOT EXISTS `eelKit` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n' | \
+  isql -v eelKit-admin local 'replace_with_real_password' -b
+```
+
+Test the application DSN:
+
+```sh
 isql -v eelKit
 isql -v eelKit local 'replace_with_real_password'
 ```
 
-## 5. Configure PHP-FPM
+`setupDb.php` creates and migrates the eelKit table schema later.
+
+## 6. Configure PHP-FPM
 
 Enable PHP-FPM:
 
@@ -158,7 +183,7 @@ group = www
 listen = 127.0.0.1:9000
 ```
 
-## 6. Configure Apache Document Root
+## 7. Configure Apache Document Root
 
 Create an Apache include for eelKit:
 
@@ -212,7 +237,7 @@ find /usr/local/eelKit/secure /usr/local/eelKit/file_logs -type f \
   -exec chmod 664 {} +
 ```
 
-## 7. Start Services
+## 8. Start Services
 
 ```sh
 sysrc apache24_enable=YES
@@ -227,9 +252,10 @@ service php_fpm restart
 service apache24 restart
 ```
 
-## 8. Configure eelKit
+## 9. Configure eelKit
 
-From the eelKit project root:
+From the eelKit project root, hydrate configuration and create or migrate the
+table schema:
 
 ```sh
 php tools/php/setupDb.php
@@ -256,7 +282,7 @@ Run the test suite:
 php web_root/tests/index.php
 ```
 
-## 9. Production Checks
+## 10. Production Checks
 
 ```sh
 php -m | grep -Ei 'PDO|PDO_ODBC|mbstring|session|curl|gd'

@@ -101,6 +101,12 @@ $harness->check(UserManagementService::class, 'prevents self destructive admin a
     });
 });
 
+$harness->check(UserManagementService::class, 'normalises mobile numbers by stripping local leading zeroes', function () use ($harness): void {
+    $harness->assertSame('+447123456789', UserManagementService::normaliseMobileNumberFromParts('+44', '07123 456789'));
+    $harness->assertSame('+447123456789', UserManagementService::normaliseMobileNumberFromParts('+44', '+44 07123 456789'));
+    $harness->assertSame('+447123456789', UserManagementService::normaliseMobileNumberFromParts('+44', '0044 07123 456789'));
+});
+
 $harness->check(UserManagementService::class, 'updates current user only with a valid current password', function () use ($harness, $withTemporaryManagedUsers): void {
     $withTemporaryManagedUsers(function (UserManagementService $service, UserAuthenticationService $authService, int $adminId, int $targetId) use ($harness): void {
         $withoutPassword = $service->updateCurrentUser($targetId, 'Target Renamed', 'target-renamed@example.test', '', '');

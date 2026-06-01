@@ -210,8 +210,17 @@ final class UserManagementService
         if (str_starts_with($mobileNumber, '+') || str_starts_with($mobileNumber, '00')) {
             $prefix = str_starts_with($mobileNumber, '00') ? '+' . substr($mobileNumber, 2) : $mobileNumber;
             $digits = preg_replace('/\D+/', '', $prefix);
+            $countryDigits = ltrim(self::normaliseMobileCountryCode($countryCode), '+');
 
-            return is_string($digits) && $digits !== '' ? '+' . $digits : '';
+            if (!is_string($digits) || $digits === '') {
+                return '';
+            }
+
+            if ($countryDigits !== '' && str_starts_with($digits, $countryDigits)) {
+                return '+' . $countryDigits . ltrim(substr($digits, strlen($countryDigits)), '0');
+            }
+
+            return '+' . $digits;
         }
 
         $countryCode = self::normaliseMobileCountryCode($countryCode);

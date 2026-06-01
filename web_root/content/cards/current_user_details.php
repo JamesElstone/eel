@@ -65,7 +65,7 @@ final class _current_user_detailsCard extends CardBaseFramework
                         <select class="selector-input mobile-country-code" id="users-mobile-country-code" name="mobile_country_code" autocomplete="tel-country-code">
                             ' . $this->mobileCountryCodeOptionsHtml((string)($mobileParts['country_code'] ?? UserManagementService::defaultMobileCountryCode())) . '
                         </select>
-                        <input class="input" id="users-mobile-number" name="mobile_number" type="tel" value="' . HelperFramework::escape((string)($mobileParts['local_number'] ?? '')) . '" autocomplete="tel-national" inputmode="tel" data-lpignore="true" data-form-type="other">
+                        <input class="input mobile-number-input" id="users-mobile-number" name="mobile_number" type="tel" value="' . HelperFramework::escape((string)($mobileParts['local_number'] ?? '')) . '" autocomplete="tel-national" inputmode="tel" maxlength="16" data-lpignore="true" data-form-type="other">
                     </div>
                 </div>
                 <div class="form-row half">

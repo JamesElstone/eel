@@ -2209,13 +2209,25 @@ table.table-condensed .select {
 
 .mobile-input-row {
   display: grid;
-  grid-template-columns: minmax(128px, max-content) minmax(0, 1fr);
+  grid-template-columns: max-content minmax(0, 16ch);
   gap: 8px;
   align-items: center;
+  width: fit-content;
+  max-width: 100%;
 }
 
 .mobile-country-code {
-  width: 100%;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.mobile-number-input {
+  width: 16ch;
+  max-width: 100%;
+}
+
+.input-action-row .mobile-number-input {
+  flex: 0 1 16ch;
 }
 
 .form-grid > .form-row:last-child,
@@ -2230,7 +2242,12 @@ label {
 
 @media (max-width: 560px) {
   .mobile-input-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+  }
+
+  .mobile-input-row .mobile-number-input {
+    width: 100%;
   }
 }
 

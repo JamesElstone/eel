@@ -66,7 +66,7 @@ final class _add_userCard extends CardBaseFramework
                 </div>
                 <div class="form-row full">
                     <label for="add-user-mobile-number">Mobile number</label>
-                    <div class="mobile-input-row">
+                    <div class="input-action-row">
                         <select class="selector-input mobile-country-code" id="add-user-mobile-country-code" name="new_mobile_country_code" autocomplete="tel-country-code">
                             ' . $this->mobileCountryCodeOptionsHtml(UserManagementService::defaultMobileCountryCode()) . '
                         </select>

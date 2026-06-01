@@ -117,9 +117,10 @@ final class UserAuthenticationService
         string $displayName,
         string $emailAddress,
         string $password,
-        bool $isActive = true
+        bool $isActive = true,
+        string $mobileNumber = ''
     ): array {
-        $input = $this->normaliseUserInput($displayName, $emailAddress, $isActive);
+        $input = $this->normaliseUserInput($displayName, $emailAddress, $isActive, $mobileNumber);
         $errors = $this->validateCreateInput($input, $password);
 
         if ($errors !== []) {
@@ -137,17 +138,20 @@ final class UserAuthenticationService
             'INSERT INTO users (
                 display_name,
                 email_address,
+                mobile_number,
                 password_hash,
                 is_active
             ) VALUES (
                 :display_name,
                 :email_address,
+                :mobile_number,
                 :password_hash,
                 :is_active
             )',
             [
                 'display_name' => $input['display_name'],
                 'email_address' => $input['email_address'],
+                'mobile_number' => $input['mobile_number'],
                 'password_hash' => $hash,
                 'is_active' => $input['is_active'],
             ]
@@ -201,7 +205,8 @@ final class UserAuthenticationService
         string $displayName,
         string $emailAddress,
         ?string $password = null,
-        ?bool $isActive = null
+        ?bool $isActive = null,
+        ?string $mobileNumber = null
     ): array {
         $existingUser = $this->loadUserById($userId);
 
@@ -217,7 +222,8 @@ final class UserAuthenticationService
         $input = $this->normaliseUserInput(
             $displayName,
             $emailAddress,
-            $isActive ?? ((int)($existingUser['is_active'] ?? 0) === 1)
+            $isActive ?? ((int)($existingUser['is_active'] ?? 0) === 1),
+            $mobileNumber ?? (string)($existingUser['mobile_number'] ?? '')
         );
         $errors = $this->validateUpdateInput($userId, $input, $password);
 
@@ -234,6 +240,7 @@ final class UserAuthenticationService
             'id' => $userId,
             'display_name' => $input['display_name'],
             'email_address' => $input['email_address'],
+            'mobile_number' => $input['mobile_number'],
             'is_active' => $input['is_active'],
         ];
         $passwordSql = '';
@@ -250,6 +257,7 @@ final class UserAuthenticationService
             'UPDATE users
              SET display_name = :display_name,
                  email_address = :email_address,
+                 mobile_number = :mobile_number,
                  is_active = :is_active' . $passwordSql . ',
                  updated_at = CURRENT_TIMESTAMP
              WHERE id = :id',
@@ -909,6 +917,7 @@ final class UserAuthenticationService
             'id',
             'display_name',
             'email_address',
+            'mobile_number',
             'password_hash',
             'must_change_password',
             'otp_required',
@@ -952,6 +961,26 @@ final class UserAuthenticationService
     private function normaliseEmailAddress(string $emailAddress): string
     {
         return strtolower(trim($emailAddress));
+    }
+
+    private function normaliseMobileNumber(string $mobileNumber): string
+    {
+        $mobileNumber = trim($mobileNumber);
+        if ($mobileNumber === '') {
+            return '';
+        }
+
+        if (str_starts_with($mobileNumber, '00')) {
+            $mobileNumber = '+' . substr($mobileNumber, 2);
+        }
+
+        $prefix = str_starts_with($mobileNumber, '+') ? '+' : '';
+        $digits = preg_replace('/\D+/', '', $mobileNumber);
+        if (!is_string($digits) || $digits === '') {
+            return '';
+        }
+
+        return $prefix . $digits;
     }
 
     private function emptyLoginRateLimitStatus(string $emailAddress): array
@@ -1152,11 +1181,13 @@ final class UserAuthenticationService
     private function normaliseUserInput(
         string $displayName,
         string $emailAddress,
-        bool $isActive
+        bool $isActive,
+        string $mobileNumber = ''
     ): array {
         return [
             'display_name' => trim($displayName),
             'email_address' => $this->normaliseEmailAddress($emailAddress),
+            'mobile_number' => $this->normaliseMobileNumber($mobileNumber),
             'is_active' => $isActive ? 1 : 0,
         ];
     }
@@ -1208,6 +1239,11 @@ final class UserAuthenticationService
             $errors[] = 'Email address is required.';
         } elseif (!filter_var((string)$input['email_address'], FILTER_VALIDATE_EMAIL)) {
             $errors[] = 'Email address must be valid.';
+        }
+
+        $mobileNumber = trim((string)($input['mobile_number'] ?? ''));
+        if ($mobileNumber !== '' && preg_match('/^\+[1-9][0-9]{6,14}$/', $mobileNumber) !== 1) {
+            $errors[] = 'Mobile number must include a valid country code and 7 to 15 digits.';
         }
 
         return $errors;

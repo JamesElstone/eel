@@ -39,9 +39,10 @@ final class _current_user_detailsCard extends CardBaseFramework
     {
         $user = (array)(($context['services'] ?? [])['current_user'] ?? []);
         $csrfToken = (string)($context['page']['csrf_token'] ?? '');
+        $mobileParts = UserManagementService::mobileNumberParts((string)($user['mobile_number'] ?? ''));
 
         return '
-            <p class="helper">Update your display name, email address, or password. A current password is only required when changing your own password.</p>
+            <p class="helper">Update your display name, email address, mobile number, or password. A current password is required before changing account details.</p>
             <form method="post" action="?page=users" data-ajax="true" class="form-flex-flow" autocomplete="off">
                 ' . $this->hiddenFields($context) . '
                 <input type="hidden" name="action" value="users-update-current-user">
@@ -57,6 +58,15 @@ final class _current_user_detailsCard extends CardBaseFramework
                 <div class="form-row half">
                     <label for="users-email-address">Email address</label>
                     <input class="input" id="users-email-address" name="email_address" type="email" value="' . HelperFramework::escape((string)($user['email_address'] ?? '')) . '" autocomplete="off" data-lpignore="true" data-form-type="other" required>
+                </div>
+                <div class="form-row full">
+                    <label for="users-mobile-number">Mobile number</label>
+                    <div class="mobile-input-row">
+                        <select class="selector-input mobile-country-code" id="users-mobile-country-code" name="mobile_country_code" autocomplete="tel-country-code">
+                            ' . $this->mobileCountryCodeOptionsHtml((string)($mobileParts['country_code'] ?? UserManagementService::defaultMobileCountryCode())) . '
+                        </select>
+                        <input class="input" id="users-mobile-number" name="mobile_number" type="tel" value="' . HelperFramework::escape((string)($mobileParts['local_number'] ?? '')) . '" autocomplete="tel-national" inputmode="tel" data-lpignore="true" data-form-type="other">
+                    </div>
                 </div>
                 <div class="form-row half">
                     <label for="users-current-password">Current password</label>
@@ -81,6 +91,20 @@ final class _current_user_detailsCard extends CardBaseFramework
 
         foreach ((array)($context['page']['page_cards'] ?? []) as $cardKey) {
             $html .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
+        }
+
+        return $html;
+    }
+
+    private function mobileCountryCodeOptionsHtml(string $selectedCountryCode): string
+    {
+        $html = '';
+
+        foreach (UserManagementService::mobileCountryCodeOptions() as $countryCode => $label) {
+            $selected = $countryCode === $selectedCountryCode ? ' selected' : '';
+            $html .= '<option value="' . HelperFramework::escape($countryCode) . '"' . $selected . '>'
+                . HelperFramework::escape($label)
+                . '</option>';
         }
 
         return $html;

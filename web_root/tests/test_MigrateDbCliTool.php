@@ -134,6 +134,7 @@ $harness->check('migrateDb.php', 'tracks expected application tables for empty d
 
     foreach ([
         'roles',
+        'mobile_country_codes',
         'users',
         'role_card_permissions',
         'user_login_rate_limits',

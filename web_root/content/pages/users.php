@@ -112,7 +112,9 @@ final class _users extends PageContextFramework
                     (string)$request->input('display_name', ''),
                     (string)$request->input('email_address', ''),
                     (string)$request->input('current_password', ''),
-                    (string)$request->input('new_password', '')
+                    (string)$request->input('new_password', ''),
+                    (string)$request->input('mobile_country_code', UserManagementService::defaultMobileCountryCode()),
+                    (string)$request->input('mobile_number', '')
                 ),
                 'Current user details updated.',
                 ['current.user.details', 'current.users', 'layout.sidebar']
@@ -136,7 +138,9 @@ final class _users extends PageContextFramework
                         $currentUserId,
                         (string)$request->input('new_display_name', ''),
                         (string)$request->input('new_email_address', ''),
-                        (string)$request->input('new_password', '')
+                        (string)$request->input('new_password', ''),
+                        (string)$request->input('new_mobile_country_code', UserManagementService::defaultMobileCountryCode()),
+                        (string)$request->input('new_mobile_number', '')
                     )
                     : ['success' => false, 'errors' => ['You do not have permission to manage users.']],
                 'New user created successfully.',

@@ -73,11 +73,12 @@ $withTemporaryManagedUsers = function (callable $callback) use ($harness, $userM
 $harness->check(UserManagementService::class, 'requires management permission for admin actions', function () use ($harness, $withTemporaryManagedUsers): void {
     $withTemporaryManagedUsers(function (UserManagementService $service, UserAuthenticationService $authService, int $adminId, int $targetId, int $ordinaryId) use ($harness): void {
         $unauthorisedCreate = $service->createUser($ordinaryId, 'Blocked User', 'blocked@example.test', 'Strong Password 1!');
-        $authorisedCreate = $service->createUser($adminId, 'Created User', 'created@example.test', 'Strong Password 1!');
+        $authorisedCreate = $service->createUser($adminId, 'Created User', 'created@example.test', 'Strong Password 1!', '+44', '07123 456789');
 
         $harness->assertTrue(empty($unauthorisedCreate['success']));
         $harness->assertTrue(!empty($authorisedCreate['success']));
         $harness->assertTrue((int)($authorisedCreate['user_id'] ?? 0) > 0);
+        $harness->assertSame('+447123456789', (string)(($authorisedCreate['user'] ?? [])['mobile_number'] ?? ''));
 
         $auditCount = InterfaceDB::countWhere('user_account_audit', [
             'affected_user_id' => (int)$authorisedCreate['user_id'],
@@ -104,11 +105,12 @@ $harness->check(UserManagementService::class, 'updates current user only with a 
     $withTemporaryManagedUsers(function (UserManagementService $service, UserAuthenticationService $authService, int $adminId, int $targetId) use ($harness): void {
         $withoutPassword = $service->updateCurrentUser($targetId, 'Target Renamed', 'target-renamed@example.test', '', '');
         $wrongPassword = $service->updateCurrentUser($targetId, 'Target Renamed', 'target-renamed@example.test', 'wrong', '');
-        $success = $service->updateCurrentUser($targetId, 'Target Renamed', 'target-renamed@example.test', 'Strong Password 1!', 'New Strong Password 1!');
+        $success = $service->updateCurrentUser($targetId, 'Target Renamed', 'target-renamed@example.test', 'Strong Password 1!', 'New Strong Password 1!', '+44', '07123 456789');
 
         $harness->assertTrue(empty($withoutPassword['success']));
         $harness->assertTrue(empty($wrongPassword['success']));
         $harness->assertTrue(!empty($success['success']));
+        $harness->assertSame('+447123456789', (string)(($success['user'] ?? [])['mobile_number'] ?? ''));
         $harness->assertTrue(is_array($authService->authenticateByEmailAddress('target-renamed@example.test', 'New Strong Password 1!')));
     });
 });

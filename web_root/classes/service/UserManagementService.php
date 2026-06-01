@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 final class UserManagementService
 {
+    private const DEFAULT_MOBILE_COUNTRY_CODE = '+44';
+
     private readonly UserAuthenticationService $userAuthenticationService;
     private readonly RoleAssignmentService $roleAssignmentService;
     private readonly OtpService $otpService;
@@ -138,12 +140,160 @@ final class UserManagementService
         return UserAuthenticationService::passwordPolicyDescription();
     }
 
+    public static function mobileCountryCodeOptions(): array
+    {
+        $options = self::mobileCountryCodeOptionsFromDatabase();
+        if ($options !== []) {
+            return $options;
+        }
+
+        return self::fallbackMobileCountryCodeOptions();
+    }
+
+    private static function mobileCountryCodeOptionsFromDatabase(): array
+    {
+        if (!InterfaceDB::tableExists('mobile_country_codes')) {
+            return [];
+        }
+
+        $rows = InterfaceDB::fetchAll(
+            'SELECT country_code,
+                    display_name
+             FROM mobile_country_codes
+             ORDER BY is_default DESC, display_name ASC, country_code ASC'
+        );
+        $options = [];
+
+        foreach ($rows as $row) {
+            $countryCode = self::normaliseMobileCountryCodeValue((string)($row['country_code'] ?? ''));
+            $displayName = trim((string)($row['display_name'] ?? ''));
+
+            if ($countryCode === '' || $displayName === '') {
+                continue;
+            }
+
+            $options[$countryCode] = $displayName . ' (' . $countryCode . ')';
+        }
+
+        return $options;
+    }
+
+    private static function fallbackMobileCountryCodeOptions(): array
+    {
+        return [
+            '+44' => 'UK (+44)',
+            '+1' => 'US / Canada (+1)',
+            '+353' => 'Ireland (+353)',
+            '+33' => 'France (+33)',
+            '+49' => 'Germany (+49)',
+            '+34' => 'Spain (+34)',
+            '+39' => 'Italy (+39)',
+            '+31' => 'Netherlands (+31)',
+            '+61' => 'Australia (+61)',
+            '+64' => 'New Zealand (+64)',
+            '+91' => 'India (+91)',
+        ];
+    }
+
+    public static function defaultMobileCountryCode(): string
+    {
+        return self::DEFAULT_MOBILE_COUNTRY_CODE;
+    }
+
+    public static function normaliseMobileNumberFromParts(string $countryCode, string $mobileNumber): string
+    {
+        $mobileNumber = trim($mobileNumber);
+        if ($mobileNumber === '') {
+            return '';
+        }
+
+        if (str_starts_with($mobileNumber, '+') || str_starts_with($mobileNumber, '00')) {
+            $prefix = str_starts_with($mobileNumber, '00') ? '+' . substr($mobileNumber, 2) : $mobileNumber;
+            $digits = preg_replace('/\D+/', '', $prefix);
+
+            return is_string($digits) && $digits !== '' ? '+' . $digits : '';
+        }
+
+        $countryCode = self::normaliseMobileCountryCode($countryCode);
+        $digits = preg_replace('/\D+/', '', $mobileNumber);
+        if (!is_string($digits) || $digits === '') {
+            return '';
+        }
+
+        return $countryCode . ltrim($digits, '0');
+    }
+
+    private static function normaliseMobileCountryCodeValue(string $countryCode): string
+    {
+        $countryCode = trim($countryCode);
+        if ($countryCode === '') {
+            return '';
+        }
+
+        $digits = preg_replace('/\D+/', '', $countryCode);
+        if (!is_string($digits) || $digits === '') {
+            return '';
+        }
+
+        return '+' . $digits;
+    }
+
+    private static function normaliseMobileCountryCode(string $countryCode): string
+    {
+        $countryCode = self::normaliseMobileCountryCodeValue($countryCode);
+
+        return array_key_exists($countryCode, self::mobileCountryCodeOptions())
+            ? $countryCode
+            : self::DEFAULT_MOBILE_COUNTRY_CODE;
+    }
+
+    public static function mobileNumberParts(string $mobileNumber): array
+    {
+        $mobileNumber = trim($mobileNumber);
+        if ($mobileNumber === '') {
+            return [
+                'country_code' => self::DEFAULT_MOBILE_COUNTRY_CODE,
+                'local_number' => '',
+            ];
+        }
+
+        $normalised = self::normaliseMobileNumberFromParts(self::DEFAULT_MOBILE_COUNTRY_CODE, $mobileNumber);
+        $digits = ltrim($normalised, '+');
+        $countryCodes = array_keys(self::mobileCountryCodeOptions());
+        usort($countryCodes, static fn(string $left, string $right): int => strlen($right) <=> strlen($left));
+
+        foreach ($countryCodes as $countryCode) {
+            $codeDigits = ltrim($countryCode, '+');
+            if (str_starts_with($digits, $codeDigits)) {
+                return [
+                    'country_code' => $countryCode,
+                    'local_number' => substr($digits, strlen($codeDigits)),
+                ];
+            }
+        }
+
+        return [
+            'country_code' => self::DEFAULT_MOBILE_COUNTRY_CODE,
+            'local_number' => $digits,
+        ];
+    }
+
+    public static function formattedMobileNumber(string $mobileNumber): string
+    {
+        $parts = self::mobileNumberParts($mobileNumber);
+        $localNumber = (string)($parts['local_number'] ?? '');
+
+        return $localNumber === '' ? '' : (string)$parts['country_code'] . ' ' . $localNumber;
+    }
+
     public function updateCurrentUser(
         int $actorUserId,
         string $displayName,
         string $emailAddress,
         string $currentPassword,
-        string $newPassword
+        string $newPassword,
+        string $mobileCountryCode = self::DEFAULT_MOBILE_COUNTRY_CODE,
+        string $mobileNumber = ''
     ): array {
         $user = $this->userAuthenticationService->userById($actorUserId);
         if ($user === null) {
@@ -154,11 +304,14 @@ final class UserManagementService
         $emailAddress = trim($emailAddress);
         $currentPassword = (string)$currentPassword;
         $newPassword = (string)$newPassword;
+        $normalisedMobileNumber = self::normaliseMobileNumberFromParts($mobileCountryCode, $mobileNumber);
 
         $existingDisplayName = (string)($user['display_name'] ?? '');
         $existingEmailAddress = (string)($user['email_address'] ?? '');
+        $existingMobileNumber = (string)($user['mobile_number'] ?? '');
         $detailsChanged = $existingDisplayName !== $displayName
-            || strtolower($existingEmailAddress) !== strtolower($emailAddress);
+            || strtolower($existingEmailAddress) !== strtolower($emailAddress)
+            || $existingMobileNumber !== $normalisedMobileNumber;
         $passwordChanged = trim($newPassword) !== '';
 
         if ($detailsChanged || $passwordChanged) {
@@ -176,7 +329,9 @@ final class UserManagementService
             $actorUserId,
             $displayName,
             $emailAddress,
-            $passwordToSet
+            $passwordToSet,
+            null,
+            $normalisedMobileNumber
         );
 
         if (empty($result['success'])) {
@@ -207,6 +362,17 @@ final class UserManagementService
             );
         }
 
+        if ($existingMobileNumber !== $normalisedMobileNumber) {
+            $this->userHistoryStore->recordAccountAudit(
+                $actorUserId,
+                $actorUserId,
+                'mobile_number_changed',
+                'The user updated their mobile number.',
+                ['old_mobile_number' => $existingMobileNumber, 'new_mobile_number' => $normalisedMobileNumber],
+                $metadata
+            );
+        }
+
         if ($passwordToSet !== null) {
             $this->userHistoryStore->recordAccountAudit(
                 $actorUserId,
@@ -221,14 +387,28 @@ final class UserManagementService
         return $result;
     }
 
-    public function createUser(int $actorUserId, string $displayName, string $emailAddress, string $password): array
+    public function createUser(
+        int $actorUserId,
+        string $displayName,
+        string $emailAddress,
+        string $password,
+        string $mobileCountryCode = self::DEFAULT_MOBILE_COUNTRY_CODE,
+        string $mobileNumber = ''
+    ): array
     {
         $authorisationError = $this->authoriseUserManagementActor($actorUserId);
         if ($authorisationError !== null) {
             return ['success' => false, 'errors' => [$authorisationError]];
         }
 
-        $result = $this->userAuthenticationService->createUser($displayName, $emailAddress, $password, true);
+        $normalisedMobileNumber = self::normaliseMobileNumberFromParts($mobileCountryCode, $mobileNumber);
+        $result = $this->userAuthenticationService->createUser(
+            $displayName,
+            $emailAddress,
+            $password,
+            true,
+            $normalisedMobileNumber
+        );
 
         if (!empty($result['success']) && (int)($result['user_id'] ?? 0) > 0) {
             $this->userHistoryStore->recordAccountAudit(
@@ -236,7 +416,11 @@ final class UserManagementService
                 $actorUserId,
                 'user_created',
                 'An administrator created a new user account.',
-                ['email_address' => strtolower(trim($emailAddress)), 'display_name' => trim($displayName)],
+                [
+                    'email_address' => strtolower(trim($emailAddress)),
+                    'display_name' => trim($displayName),
+                    'mobile_number' => $normalisedMobileNumber,
+                ],
                 $this->userSessionService->buildRequestMetadata()
             );
         }

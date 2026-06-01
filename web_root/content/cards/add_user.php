@@ -65,6 +65,15 @@ final class _add_userCard extends CardBaseFramework
                     <input class="input" id="add-user-email-address" name="new_email_address" type="email" required>
                 </div>
                 <div class="form-row full">
+                    <label for="add-user-mobile-number">Mobile number</label>
+                    <div class="mobile-input-row">
+                        <select class="selector-input mobile-country-code" id="add-user-mobile-country-code" name="new_mobile_country_code" autocomplete="tel-country-code">
+                            ' . $this->mobileCountryCodeOptionsHtml(UserManagementService::defaultMobileCountryCode()) . '
+                        </select>
+                        <input class="input" id="add-user-mobile-number" name="new_mobile_number" type="tel" autocomplete="tel-national" inputmode="tel">
+                    </div>
+                </div>
+                <div class="form-row full">
                     <label for="add-user-password">Password</label>
                     <input class="input" id="add-user-password" name="new_password" type="password" autocomplete="new-password" minlength="12" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{12,}" title="' . $passwordPolicy . '" required>
                 </div>
@@ -81,6 +90,20 @@ final class _add_userCard extends CardBaseFramework
 
         foreach ((array)($context['page']['page_cards'] ?? []) as $cardKey) {
             $html .= '<input type="hidden" name="cards[]" value="' . HelperFramework::escape((string)$cardKey) . '">';
+        }
+
+        return $html;
+    }
+
+    private function mobileCountryCodeOptionsHtml(string $selectedCountryCode): string
+    {
+        $html = '';
+
+        foreach (UserManagementService::mobileCountryCodeOptions() as $countryCode => $label) {
+            $selected = $countryCode === $selectedCountryCode ? ' selected' : '';
+            $html .= '<option value="' . HelperFramework::escape($countryCode) . '"' . $selected . '>'
+                . HelperFramework::escape($label)
+                . '</option>';
         }
 
         return $html;

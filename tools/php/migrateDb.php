@@ -74,6 +74,7 @@ function eel_migration_application_tables(): array
 {
     return [
         'roles',
+        'mobile_country_codes',
         'users',
         'role_card_permissions',
         'user_login_rate_limits',

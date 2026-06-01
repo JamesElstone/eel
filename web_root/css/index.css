@@ -2207,6 +2207,17 @@ table.table-condensed .select {
   grid-column: 1 / -1;
 }
 
+.mobile-input-row {
+  display: grid;
+  grid-template-columns: minmax(128px, max-content) minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.mobile-country-code {
+  width: 100%;
+}
+
 .form-grid > .form-row:last-child,
 .form-flex-flow > .form-row:last-child {
   padding-bottom: 0;
@@ -2215,6 +2226,12 @@ table.table-condensed .select {
 label {
   font-size: 0.9rem;
   font-weight: 700;
+}
+
+@media (max-width: 560px) {
+  .mobile-input-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 .checkbox-grid {

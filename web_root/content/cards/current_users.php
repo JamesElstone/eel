@@ -86,6 +86,7 @@ final class _current_usersCard extends CardBaseFramework
                 export: static fn(array $row): string => (string)($row['display_name'] ?? '')
             )
             ->textColumn('email_address', 'Email')
+            ->textColumn('mobile_number_label', 'Mobile', fallback: 'Not set')
             ->column(
                 'role_label',
                 'Role',
@@ -272,6 +273,7 @@ final class _current_usersCard extends CardBaseFramework
 
             $user['is_current_user'] = (int)($user['id'] ?? 0) === (int)($currentUser['id'] ?? 0);
             $user['role_label'] = $this->roleLabel($user, $rolesById);
+            $user['mobile_number_label'] = UserManagementService::formattedMobileNumber((string)($user['mobile_number'] ?? ''));
             $user['status_label'] = $this->statusLabel($user);
             $user['otp_required_label'] = (int)($user['otp_required'] ?? 1) === 1 ? 'Required' : 'Optional';
             $user['session_summary'] = $this->sessionSummary($user);

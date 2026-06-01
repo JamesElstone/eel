@@ -95,7 +95,7 @@ $harness->check(UserAuthenticationService::class, 'creates users and rejects dup
         ]);
 
         try {
-            $created = $service->createUser('Test User', 'USER@example.test', 'Strong Password 1!');
+            $created = $service->createUser('Test User', 'USER@example.test', 'Strong Password 1!', true, '+447123456789');
             $duplicate = $service->createUser('Duplicate User', 'user@example.test', 'Strong Password 1!');
             $authenticated = $service->authenticateByEmailAddress(' user@example.test ', 'Strong Password 1!');
 
@@ -103,6 +103,7 @@ $harness->check(UserAuthenticationService::class, 'creates users and rejects dup
             $harness->assertTrue(empty($duplicate['success']));
             $harness->assertTrue(is_array($authenticated));
             $harness->assertTrue(!array_key_exists('password_hash', $created['user'] ?? []));
+            $harness->assertSame('+447123456789', (string)(($created['user'] ?? [])['mobile_number'] ?? ''));
         } finally {
             if (is_file($path)) {
                 unlink($path);
@@ -125,9 +126,11 @@ $harness->check(UserAuthenticationService::class, 'validates user updates and in
             $userId = (int)($created['user_id'] ?? 0);
 
             $blankPassword = $service->updateUser($userId, 'Update User', 'update@example.test', '');
+            $updatedMobile = $service->updateUser($userId, 'Update User', 'update@example.test', null, null, '+447987654321');
             $inactive = $service->setUserActive($userId, false);
 
             $harness->assertTrue(empty($blankPassword['success']));
+            $harness->assertSame('+447987654321', (string)(($updatedMobile['user'] ?? [])['mobile_number'] ?? ''));
             $harness->assertTrue(!empty($inactive['success']));
             $harness->assertTrue($service->authenticateByEmailAddress('update@example.test', 'Strong Password 1!') === false);
         } finally {

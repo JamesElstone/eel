@@ -38,6 +38,10 @@ final class _settings extends PageContextFramework
             'check_file_paths',
             'settings_setup_health',
             'application_settings',
+            'web_environment',
+            'invitation_settings',
+            'sms_settings',
+            'smtp_settings',
          ];
     }
 

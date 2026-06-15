@@ -134,8 +134,13 @@ $harness->check('migrateDb.php', 'tracks expected application tables for empty d
 
     foreach ([
         'roles',
+        'mobile_country_codes',
         'users',
+        'user_account_invites',
+        'user_account_invite_deliveries',
         'role_card_permissions',
+        'signup_token_rate_limits',
+        'signup_verification_rate_limits',
         'user_login_rate_limits',
         'application_activity_flash_history',
         'user_account_audit',
@@ -147,7 +152,7 @@ $harness->check('migrateDb.php', 'tracks expected application tables for empty d
 });
 
 $harness->check('migrateDb.php', 'can parse the baseline schema used to hydrate an empty database', function () use ($harness): void {
-    $schemaFile = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'eelKit.schema.sql';
+    $schemaFile = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'eel_accounts.schema.sql';
     $sql = file_get_contents($schemaFile);
 
     if (!is_string($sql)) {

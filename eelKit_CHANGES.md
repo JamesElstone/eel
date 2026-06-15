@@ -1,5 +1,15 @@
 # eelKit Changes
 
+## User mobile numbers
+
+Feature name: `user_mobile_numbers`.
+
+User accounts now support an optional mobile number. The Users page includes a mobile number field when creating a user, a Mobile column in the Current Users table, and a mobile number field in Current User Details so signed-in users can update their own number after confirming their current password.
+
+Mobile numbers are stored in international format. The forms split entry into a country-code selector and local number field, defaulting to United Kingdom `+44`; local leading zeroes are stripped before saving, so `07123 456789` with `+44` is stored as `+447123456789`.
+
+Country codes are held in the new `mobile_country_codes` table and are seeded from the ITU-T E.164 assigned country-code list. Existing installs should run the database migration tool to add `users.mobile_number` and populate the country-code table.
+
 ## Clickable table heading sorting
 
 Feature name: `table_heading_sorting`.

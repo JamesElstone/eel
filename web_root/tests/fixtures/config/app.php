@@ -39,5 +39,15 @@ return array (
   array (
     'service' => 'AccountingContextService',
   ),
+  'reverse_proxy' => 
+  array (
+    'trusted_proxy_ips' => 
+    array (
+    ),
+    'client_ip_headers' => 
+    array (
+      0 => 'X-Forwarded-For',
+      1 => 'X-Real-IP',
+    ),
+  ),
 );
-

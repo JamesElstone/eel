@@ -58,4 +58,21 @@ $harness->run(RequestFramework::class, function (GeneratedServiceClassTestHarnes
         $harness->assertSame('443', $request->remotePort());
         $harness->assertTrue($request->isSecure());
     });
+
+    $harness->check(RequestFramework::class, 'uses the submitted card action when duplicate card action fields are posted', function () use ($harness): void {
+        $request = new RequestFramework(
+            ['page' => 'settings'],
+            [],
+            [
+                'REQUEST_METHOD' => 'POST',
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_ACCEPT' => 'application/json',
+            ],
+            [],
+            [],
+            '{"card_action":["SmsSettings","SmsTest"],"_ajax":"1"}'
+        );
+
+        $harness->assertSame('SmsTest', $request->cardAction());
+    });
 });

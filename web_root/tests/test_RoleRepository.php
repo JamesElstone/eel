@@ -69,8 +69,7 @@ $harness->run(RoleRepository::class, static function (GeneratedServiceClassTestH
                 'Role Repo User',
                 'role-repo-' . bin2hex(random_bytes(6)) . '@example.test',
                 'RoleRepo Password 1!',
-                false,
-                true
+                false
             );
             $userId = (int)($created['user_id'] ?? 0);
             $roleId = $repository->createRole('Repo Assigned ' . bin2hex(random_bytes(6)));

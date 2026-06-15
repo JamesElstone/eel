@@ -63,6 +63,8 @@ final class TestPageArchitectureHarness
         $this->assertSame(
             [
                 'activity',
+                'signup_token_lockouts',
+                'signup_verification_lockouts',
                 'user_account_audit_log',
                 'user_logon_history_log',
             ],

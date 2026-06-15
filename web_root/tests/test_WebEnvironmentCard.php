@@ -13,14 +13,29 @@ require_once APP_CARDS . 'web_environment.php';
 $harness = new GeneratedServiceClassTestHarness();
 
 $harness->check(_web_environmentCard::class, 'renders base URL and reverse proxy settings', function () use ($harness): void {
-    $html = (new _web_environmentCard())->render([
-        'page' => [
-            'csrf_token' => 'test-csrf',
-            'page_cards' => ['web_environment'],
-        ],
-    ]);
+    $previousServerAddress = $_SERVER['SERVER_ADDR'] ?? null;
+    $_SERVER['SERVER_ADDR'] = '203.0.113.7';
+
+    try {
+        $html = (new _web_environmentCard())->render([
+            'page' => [
+                'csrf_token' => 'test-csrf',
+                'page_cards' => ['web_environment'],
+            ],
+        ]);
+    } finally {
+        if ($previousServerAddress === null) {
+            unset($_SERVER['SERVER_ADDR']);
+        } else {
+            $_SERVER['SERVER_ADDR'] = $previousServerAddress;
+        }
+    }
 
     $harness->assertTrue(str_contains($html, 'name="card_action" value="WebEnvironment"'));
+    $harness->assertTrue(str_contains($html, '<legend>Server Address</legend>'));
+    $harness->assertTrue(str_contains($html, 'Current server IP address'));
+    $harness->assertTrue(str_contains($html, '<code>203.0.113.7</code>'));
+    $harness->assertTrue(strpos($html, '<legend>Server Address</legend>') < strpos($html, '<legend>Web Environment</legend>'));
     $harness->assertTrue(str_contains($html, 'External Base Web URL (Blank for Automatic)'));
     $harness->assertTrue(str_contains($html, 'Trusted Reverse Proxy IPs'));
     $harness->assertTrue(str_contains($html, 'name="add_current_reverse_proxy" value="1"'));

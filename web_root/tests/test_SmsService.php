@@ -29,14 +29,14 @@ $withSmsSettings = static function (array $settings, callable $callback): void {
 
 $harness->check(SmsService::class, 'builds sms-gateway send URLs from telephone-number templates', function () use ($harness, $withSmsSettings): void {
     $withSmsSettings([
-        'api_url' => 'http://hydrogen.int.elstone.net/sms-gateway/send/{telephone_number}',
+        'api_url' => 'http://sms.api.server/sms-gateway/send/{telephone_number}',
     ], function () use ($harness): void {
         $service = new SmsService();
         $method = new ReflectionMethod(SmsService::class, 'sendUrl');
         $method->setAccessible(true);
 
         $harness->assertSame(
-            'http://hydrogen.int.elstone.net/sms-gateway/send/%2B447700900000',
+            'http://sms.api.server/sms-gateway/send/%2B447700900000',
             $method->invoke($service, '+447700900000')
         );
     });

@@ -298,7 +298,7 @@ final class AppConfigurationStore
             ],
             'sms' => [
                 'enabled' => false,
-                'api_url' => 'http://hydrogen.int.elstone.net/sms-gateway/send/{telephone_number}',
+                'api_url' => 'http://sms.api.server/sms-gateway/send/{telephone_number}',
                 'method' => 'POST',
                 'auth_header' => 'X-SMS-Gateway-Token',
                 'auth_token' => '',

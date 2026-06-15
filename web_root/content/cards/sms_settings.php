@@ -56,7 +56,7 @@ final class _sms_settingsCard extends CardBaseFramework
                     <span class="checkbox-copy"><span>Test mode: generate SMS messages but do not send.</span></span>
                 </label>
                 <div class="form-grid">
-                    ' . $this->input('sms-api-url', 'SMS Gateway URL', 'sms_api_url', (string)($sms['api_url'] ?? ''), 'text', true, 'http://hydrogen.int.elstone.net/sms-gateway/send/{telephone_number}', 'e.g. http://<sms gateway service api server>/send/{telephone_number}') . '
+                    ' . $this->input('sms-api-url', 'SMS Gateway URL', 'sms_api_url', (string)($sms['api_url'] ?? ''), 'text', true, 'http://sms.api.server/sms-gateway/send/{telephone_number}', 'e.g. http://<sms gateway service api server>/send/{telephone_number}') . '
                     ' . $this->input('sms-auth-header', 'Auth Header Name', 'sms_auth_header', (string)($sms['auth_header'] ?? 'X-SMS-Gateway-Token'), 'text', false, 'X-SMS-Gateway-Token', 'Authorisation Header name to use, e.g. X-SMS-Gateway-Token') . '
                     ' . $this->input('sms-auth-token', 'Auth Token', 'sms_auth_token', '', 'password', false, $hasToken ? 'Saved token unchanged when blank' : '', 'Secret token to pass in the header when calling the SMS API service') . '
                     <div class="form-row full sms-settings-actions">

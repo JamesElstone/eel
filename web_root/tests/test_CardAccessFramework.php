@@ -49,7 +49,7 @@ $harness->run(CardAccessFramework::class, static function (GeneratedServiceClass
         }
     });
 
-    $harness->check(CardAccessFramework::class, 'expands user-management card access to lockout management', static function () use ($harness, $framework, $service): void {
+    $harness->check(CardAccessFramework::class, 'expands user-management card access to related management cards', static function () use ($harness, $framework, $service): void {
         InterfaceDB::beginTransaction();
 
         try {
@@ -59,9 +59,9 @@ $harness->run(CardAccessFramework::class, static function (GeneratedServiceClass
             $roleId = (int)($create['role_id'] ?? 0);
             $service->setCardAllowedForRole($adminUserId, $roleId, 'current_users', true);
 
-            $allowed = $framework->allowedCardsForRole($roleId, ['current_users', 'add_user', 'user_login_lockouts', 'role_assignment']);
+            $allowed = $framework->allowedCardsForRole($roleId, ['current_users', 'add_user', 'user_login_lockouts', 'invited_users', 'invite_user', 'role_assignment']);
 
-            $harness->assertSame(['current_users', 'add_user', 'user_login_lockouts'], $allowed);
+            $harness->assertSame(['current_users', 'add_user', 'user_login_lockouts', 'invited_users', 'invite_user'], $allowed);
         } finally {
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();

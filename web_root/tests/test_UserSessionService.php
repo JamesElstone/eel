@@ -69,8 +69,27 @@ $harness->check(UserSessionService::class, 'builds request metadata with browser
     $metadata = (new UserSessionService())->buildRequestMetadata('device-a');
 
     $harness->assertSame('device-a', $metadata['device_id']);
-    $harness->assertSame('198.51.100.10', $metadata['ip_address']);
+    $harness->assertSame('10.0.0.2', $metadata['ip_address']);
     $harness->assertSame('Chrome', $metadata['browser_label']);
+
+    $configPath = AppConfigurationStore::configPath();
+    $originalConfig = is_file($configPath) ? (string)file_get_contents($configPath) : '';
+
+    try {
+        AppConfigurationStore::setWebEnvironmentSettings([
+            'base_url_override' => '',
+            'trusted_proxy_ips' => ['10.0.0.2'],
+            'client_ip_headers' => ['X-Forwarded-For'],
+        ]);
+
+        $metadata = (new UserSessionService())->buildRequestMetadata('device-a');
+        $harness->assertSame('198.51.100.10', $metadata['ip_address']);
+    } finally {
+        if ($originalConfig !== '') {
+            file_put_contents($configPath, $originalConfig);
+            AppConfigurationStore::config(true);
+        }
+    }
 });
 
 $harness->check(UserSessionService::class, 'starts and validates authenticated sessions', function () use ($harness, $withTemporaryUserSessionUser): void {

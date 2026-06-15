@@ -65,12 +65,12 @@ final class RequestFramework
 
     public function action(): string
     {
-        return trim((string)$this->input('action', ''));
+        return $this->stringInput('action');
     }
 
     public function cardAction(): string
     {
-        return trim((string)$this->input('card_action', ''));
+        return $this->stringInput('card_action');
     }
 
     public function query(string $key, mixed $default = null): mixed
@@ -290,6 +290,16 @@ final class RequestFramework
         $stringValue = trim((string)$value);
 
         return $stringValue === '' ? null : $stringValue;
+    }
+
+    private function stringInput(string $key): string
+    {
+        $value = $this->input($key, '');
+        if (is_array($value)) {
+            $value = end($value);
+        }
+
+        return is_scalar($value) || $value === null ? trim((string)$value) : '';
     }
 }
 

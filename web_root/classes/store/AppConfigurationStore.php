@@ -109,6 +109,64 @@ final class AppConfigurationStore
         return self::config(true);
     }
 
+    public static function setInvitationSettings(array $settings): array
+    {
+        $config = self::readStoredConfig();
+        $current = is_array($config['invitation'] ?? null) ? $config['invitation'] : [];
+        $config['invitation'] = array_replace($current, $settings);
+        self::writeStoredConfig($config);
+
+        return self::config(true);
+    }
+
+    public static function setWebEnvironmentSettings(array $settings): array
+    {
+        $config = self::readStoredConfig();
+        $currentInvitation = is_array($config['invitation'] ?? null) ? $config['invitation'] : [];
+        $currentReverseProxy = is_array($config['reverse_proxy'] ?? null) ? $config['reverse_proxy'] : [];
+
+        $config['invitation'] = array_replace($currentInvitation, [
+            'base_url_override' => (string)($settings['base_url_override'] ?? ''),
+        ]);
+        $reverseProxySettings = [];
+        if (array_key_exists('trusted_proxy_ips', $settings)) {
+            $reverseProxySettings['trusted_proxy_ips'] = array_values((array)$settings['trusted_proxy_ips']);
+        }
+        if (array_key_exists('client_ip_headers', $settings)) {
+            $reverseProxySettings['client_ip_headers'] = array_values((array)$settings['client_ip_headers']);
+        }
+        $config['reverse_proxy'] = array_replace($currentReverseProxy, $reverseProxySettings);
+        self::writeStoredConfig($config);
+
+        return self::config(true);
+    }
+
+    public static function setSmsSettings(array $settings): array
+    {
+        $config = self::readStoredConfig();
+        $current = is_array($config['sms'] ?? null) ? $config['sms'] : [];
+        if (($settings['auth_token'] ?? '') === '__unchanged__') {
+            unset($settings['auth_token']);
+        }
+        $config['sms'] = array_replace($current, $settings);
+        self::writeStoredConfig($config);
+
+        return self::config(true);
+    }
+
+    public static function setSmtpSettings(array $settings): array
+    {
+        $config = self::readStoredConfig();
+        $current = is_array($config['smtp'] ?? null) ? $config['smtp'] : [];
+        if (($settings['password'] ?? '') === '__unchanged__') {
+            unset($settings['password']);
+        }
+        $config['smtp'] = array_replace($current, $settings);
+        self::writeStoredConfig($config);
+
+        return self::config(true);
+    }
+
     public static function set(string $path, mixed $value): array
     {
         $segments = self::configPathSegments($path);
@@ -204,6 +262,13 @@ final class AppConfigurationStore
                 ],
                 'hide_collapsed_link_initials' => false,
             ],
+            'reverse_proxy' => [
+                'trusted_proxy_ips' => [],
+                'client_ip_headers' => [
+                    'X-Forwarded-For',
+                    'X-Real-IP',
+                ],
+            ],
             'antifraud' => [
                 'vendor_license_ids' => '1234',
                 'vendor_product_name' => 'eelKit',
@@ -222,6 +287,36 @@ final class AppConfigurationStore
             ],
             'site_context' => [
                 'service' => '',
+            ],
+            'invitation' => [
+                'enabled' => true,
+                'expiry_days' => 5,
+                'base_url_override' => '',
+                'sms_template' => 'You have been invited to complete your account setup for {app_name}. Use this secure link: {link}',
+                'email_subject_template' => 'Complete your {app_name} account setup',
+                'email_body_template' => "You have been invited to complete your account setup for {app_name}.\n\nUse this secure link:\n\n{link}\n\nThis link will expire on {expires_at}.",
+            ],
+            'sms' => [
+                'enabled' => false,
+                'api_url' => 'http://hydrogen.int.elstone.net/sms-gateway/send/{telephone_number}',
+                'method' => 'POST',
+                'auth_header' => 'X-SMS-Gateway-Token',
+                'auth_token' => '',
+                'sender_id' => '',
+                'development_mode' => true,
+            ],
+            'smtp' => [
+                'enabled' => false,
+                'transport' => 'smtp',
+                'host' => '',
+                'port' => 587,
+                'username' => '',
+                'password' => '',
+                'encryption' => 'starttls',
+                'auth_mode' => 'login',
+                'from_address' => '',
+                'from_name' => '',
+                'development_mode' => true,
             ],
             'totp' => [
                 'encryption_key_fact' => 'totp_encryption_key',

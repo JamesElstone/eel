@@ -1287,7 +1287,7 @@ CREATE TABLE `user_account_audit` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `affected_user_id` int(11) NOT NULL,
   `actor_user_id` int(11) DEFAULT NULL,
-  `action_type` enum('user_created','user_enabled','user_disabled','password_set_admin','password_change_required_admin','password_changed_self','email_changed','display_name_changed','otp_requirement_changed','otp_reset_admin','login_lockout_reset_admin','otp_rotation_started','otp_rotation_completed','mfa_authenticated','role_changed') NOT NULL,
+  `action_type` enum('user_created','user_enabled','user_disabled','password_set_admin','password_change_required_admin','password_changed_self','email_changed','display_name_changed','mobile_number_changed','otp_requirement_changed','otp_reset_admin','login_lockout_reset_admin','otp_rotation_started','otp_rotation_completed','mfa_authenticated','role_changed','invite_created','invite_link_copied','invite_email_sent','invite_sms_sent','invite_opened','invite_verification_failed','invite_verification_succeeded','invite_completion_failed','invite_completed','invite_expired','invite_revoked','invite_locked') NOT NULL,
   `reason` varchar(255) DEFAULT NULL,
   `details_json` longtext DEFAULT NULL,
   `device_id` varchar(64) DEFAULT NULL,
@@ -1404,7 +1404,8 @@ CREATE TABLE `users` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `display_name` varchar(255) NOT NULL,
   `email_address` varchar(255) DEFAULT NULL,
-  `password_hash` varchar(255) NOT NULL,
+  `mobile_number` varchar(32) DEFAULT NULL,
+  `password_hash` varchar(255) DEFAULT NULL,
   `current_session_token_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
   `current_session_started_at` datetime DEFAULT NULL,
   `current_session_last_seen_at` datetime DEFAULT NULL,
@@ -1414,10 +1415,12 @@ CREATE TABLE `users` (
   `current_session_browser_label` varchar(255) DEFAULT NULL,
   `last_login_at` datetime DEFAULT NULL,
   `password_changed_at` datetime DEFAULT NULL,
+  `account_completed_at` datetime DEFAULT NULL,
   `must_change_password` tinyint(1) NOT NULL DEFAULT 0,
   `otp_required` tinyint(1) NOT NULL DEFAULT 1,
   `confirmed_director` tinyint(1) NOT NULL DEFAULT 0,
   `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `account_status` varchar(30) NOT NULL DEFAULT 'active',
   `role_id` int(11) NOT NULL DEFAULT -1,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
@@ -1426,6 +1429,152 @@ CREATE TABLE `users` (
   UNIQUE KEY `uq_users_current_session_token_hash` (`current_session_token_hash`),
   KEY `idx_users_role_id` (`role_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=261 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `mobile_country_codes`
+--
+
+DROP TABLE IF EXISTS `mobile_country_codes`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `mobile_country_codes` (
+  `country_code` varchar(8) NOT NULL,
+  `display_name` varchar(255) NOT NULL,
+  `is_default` tinyint(1) NOT NULL DEFAULT 0,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`country_code`),
+  KEY `idx_mobile_country_codes_default_sort` (`is_default`,`display_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `user_account_invites`
+--
+
+DROP TABLE IF EXISTS `user_account_invites`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `user_account_invites` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) NOT NULL,
+  `token_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `token_value` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `purpose` varchar(50) NOT NULL DEFAULT 'account_completion',
+  `status` varchar(30) NOT NULL DEFAULT 'pending',
+  `expires_at` datetime NOT NULL,
+  `used_at` datetime DEFAULT NULL,
+  `revoked_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `created_by_user_id` int(11) DEFAULT NULL,
+  `last_sent_at` datetime DEFAULT NULL,
+  `send_attempts` int(11) NOT NULL DEFAULT 0,
+  `failed_attempts` int(11) NOT NULL DEFAULT 0,
+  `last_failed_at` datetime DEFAULT NULL,
+  `next_allowed_attempt_at` datetime DEFAULT NULL,
+  `locked_at` datetime DEFAULT NULL,
+  `lock_expires_at` datetime DEFAULT NULL,
+  `opened_at` datetime DEFAULT NULL,
+  `verified_at` datetime DEFAULT NULL,
+  `completed_at` datetime DEFAULT NULL,
+  `ip_created` varchar(45) DEFAULT NULL,
+  `ip_opened` varchar(45) DEFAULT NULL,
+  `ip_used` varchar(45) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_user_account_invites_token_hash` (`token_hash`),
+  KEY `idx_user_account_invites_user_id` (`user_id`),
+  KEY `idx_user_account_invites_status` (`status`),
+  KEY `idx_user_account_invites_expires_at` (`expires_at`),
+  CONSTRAINT `fk_user_account_invites_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_user_account_invites_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `chk_user_account_invites_purpose_not_blank` CHECK (`purpose` <> ''),
+  CONSTRAINT `chk_user_account_invites_status_not_blank` CHECK (`status` <> '')
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `user_account_invite_deliveries`
+--
+
+DROP TABLE IF EXISTS `user_account_invite_deliveries`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `user_account_invite_deliveries` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `invite_id` int(11) NOT NULL,
+  `contact_method` varchar(20) NOT NULL,
+  `sent_to` varchar(255) NOT NULL,
+  `status` varchar(30) NOT NULL DEFAULT 'created',
+  `sent_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `created_by_user_id` int(11) DEFAULT NULL,
+  `error_summary` varchar(255) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_user_account_invite_deliveries_invite_id` (`invite_id`),
+  KEY `idx_user_account_invite_deliveries_contact_method` (`contact_method`),
+  KEY `idx_user_account_invite_deliveries_sent_at` (`sent_at`),
+  KEY `idx_user_account_invite_deliveries_created_by` (`created_by_user_id`),
+  CONSTRAINT `fk_user_account_invite_deliveries_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_user_account_invite_deliveries_invite` FOREIGN KEY (`invite_id`) REFERENCES `user_account_invites` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `chk_user_account_invite_deliveries_contact_method_not_blank` CHECK (`contact_method` <> ''),
+  CONSTRAINT `chk_user_account_invite_deliveries_sent_to_not_blank` CHECK (`sent_to` <> ''),
+  CONSTRAINT `chk_user_account_invite_deliveries_status_not_blank` CHECK (`status` <> '')
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `signup_token_rate_limits`
+--
+
+DROP TABLE IF EXISTS `signup_token_rate_limits`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `signup_token_rate_limits` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `client_ip` varchar(45) NOT NULL,
+  `failed_attempts` int(10) unsigned NOT NULL DEFAULT 0,
+  `window_started_at` datetime DEFAULT NULL,
+  `last_failed_at` datetime DEFAULT NULL,
+  `blocked_at` datetime DEFAULT NULL,
+  `block_expires_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_signup_token_rate_limits_client_ip` (`client_ip`),
+  KEY `idx_signup_token_rate_limits_block_expires_at` (`block_expires_at`),
+  KEY `idx_signup_token_rate_limits_last_failed_at` (`last_failed_at`),
+  CONSTRAINT `chk_signup_token_rate_limits_client_ip_not_blank` CHECK (`client_ip` <> '')
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `signup_verification_rate_limits`
+--
+
+DROP TABLE IF EXISTS `signup_verification_rate_limits`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `signup_verification_rate_limits` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `scope_type` varchar(20) NOT NULL,
+  `scope_key` varchar(80) NOT NULL,
+  `scope_label` varchar(80) NOT NULL,
+  `failed_attempts` int(10) unsigned NOT NULL DEFAULT 0,
+  `window_started_at` datetime DEFAULT NULL,
+  `last_failed_at` datetime DEFAULT NULL,
+  `blocked_at` datetime DEFAULT NULL,
+  `block_expires_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_signup_verification_rate_limits_scope` (`scope_type`,`scope_key`),
+  KEY `idx_signup_verification_rate_limits_block_expires_at` (`block_expires_at`),
+  KEY `idx_signup_verification_rate_limits_last_failed_at` (`last_failed_at`),
+  CONSTRAINT `chk_signup_verification_rate_limits_scope_type_not_blank` CHECK (`scope_type` <> ''),
+  CONSTRAINT `chk_signup_verification_rate_limits_scope_key_not_blank` CHECK (`scope_key` <> '')
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1501,6 +1650,28 @@ CREATE TABLE `year_end_reviews` (
   KEY `idx_year_end_reviews_accounting_period` (`accounting_period_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `schema_migrations`
+--
+
+DROP TABLE IF EXISTS `schema_migrations`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `schema_migrations` (
+  `migration` varchar(255) NOT NULL,
+  `applied_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`migration`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+INSERT INTO `schema_migrations` (`migration`) VALUES
+  ('2026_06_01_001_user_mobile_number.sql'),
+  ('2026_06_01_002_mobile_country_codes.sql'),
+  ('2026_06_01_003_invited_account_completion.sql'),
+  ('2026_06_15_001_invite_deliveries.sql'),
+  ('2026_06_15_002_signup_token_rate_limits.sql'),
+  ('2026_06_15_003_signup_verification_rate_limits.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

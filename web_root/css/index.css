@@ -2148,6 +2148,15 @@ table.table-condensed .select {
   box-shadow: none;
 }
 
+.form-row-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.form-row-actions.align-right {
+  justify-content: flex-end;
+}
+
 .list {
   display: grid;
   gap: 12px;
@@ -2256,6 +2265,78 @@ table.table-condensed .select {
   grid-column: 1 / -1;
 }
 
+.smtp-connection-row {
+  display: flex;
+  flex-flow: row nowrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: start;
+  overflow-x: auto;
+}
+
+.smtp-connection-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  width: max-content;
+}
+
+.smtp-connection-field .input,
+.smtp-connection-field .selector-input {
+  width: fit-content;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.smtp-settings-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.smtp-settings-column {
+  display: grid;
+  gap: 14px;
+}
+
+.smtp-settings-column-field {
+  display: grid;
+  gap: 5px;
+}
+
+.smtp-settings-actions,
+.sms-settings-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mobile-input-row {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 16ch);
+  gap: 8px;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.mobile-country-code {
+  width: fit-content;
+  max-width: 100%;
+}
+
+.mobile-number-input {
+  width: 16ch;
+  max-width: 100%;
+}
+
+.input-action-row .mobile-number-input {
+  flex: 0 1 16ch;
+}
+
 .form-grid > .form-row:last-child,
 .form-flex-flow > .form-row:last-child {
   padding-bottom: 0;
@@ -2264,6 +2345,17 @@ table.table-condensed .select {
 label {
   font-size: 0.9rem;
   font-weight: 700;
+}
+
+@media (max-width: 560px) {
+  .mobile-input-row {
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+  }
+
+  .mobile-input-row .mobile-number-input {
+    width: 100%;
+  }
 }
 
 .checkbox-grid {
@@ -2360,6 +2452,10 @@ label {
   color: var(--muted);
   font-size: 0.88rem;
   position: relative;
+}
+
+.helper + .helper {
+  margin-top: 12px;
 }
 
 .helper + button {
@@ -3313,6 +3409,10 @@ label {
 
 .card-body .helper {
   margin: 0px;
+}
+
+.card-body .helper + .helper {
+  margin-top: 12px;
 }
 
 .standout {

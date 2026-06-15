@@ -2642,6 +2642,10 @@
             return;
         }
 
+        if (select.dataset.noSubmitOnChange === 'true') {
+            return;
+        }
+
         const form = select.closest('form[data-ajax="true"]');
         if (!(form instanceof HTMLFormElement)) {
             return;

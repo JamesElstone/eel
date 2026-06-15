@@ -36,6 +36,15 @@ final class _web_environmentCard extends CardBaseFramework
             <input type="hidden" name="card_action" value="WebEnvironment">
             <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
             <fieldset class="form-row full settings-fieldset">
+                <legend>Server Address</legend>
+                <div class="form-grid">
+                    <div class="form-row full">
+                        <p class="helper">Current server IP address</p>
+                        <p><code>' . HelperFramework::escape($this->serverIpAddress()) . '</code></p>
+                    </div>
+                </div>
+            </fieldset>
+            <fieldset class="form-row full settings-fieldset">
                 <legend>Web Environment</legend>
                 <div class="form-grid">
                     ' . $this->input('web-base-url', 'External Base Web URL (Blank for Automatic)', 'web_base_url_override', (string)($invitation['base_url_override'] ?? ''), 'url') . '
@@ -54,6 +63,18 @@ final class _web_environmentCard extends CardBaseFramework
                 </div>
             </fieldset>
         </form>';
+    }
+
+    private function serverIpAddress(): string
+    {
+        foreach (['SERVER_ADDR', 'LOCAL_ADDR'] as $serverKey) {
+            $ip = trim((string)($_SERVER[$serverKey] ?? ''));
+            if (filter_var($ip, FILTER_VALIDATE_IP) !== false) {
+                return mb_substr($ip, 0, 45);
+            }
+        }
+
+        return 'Unavailable';
     }
 
     private function input(string $id, string $label, string $name, string $value, string $type = 'text'): string

@@ -9,7 +9,7 @@ declare(strict_types=1);
 
 final class UserManagementService
 {
-    private const DEFAULT_MOBILE_COUNTRY_CODE = '+44';
+    private const DEFAULT_MOBILE_COUNTRY_CODE = MobileNumberService::DEFAULT_COUNTRY_CODE;
 
     private readonly UserAuthenticationService $userAuthenticationService;
     private readonly RoleAssignmentService $roleAssignmentService;
@@ -112,10 +112,33 @@ final class UserManagementService
             ];
         }
 
+        $users = $this->userAuthenticationService->listUsers();
+        $latestInvites = (new AccountInviteService())->latestInviteForUsers(array_map(
+            static fn(array $user): int => (int)($user['id'] ?? 0),
+            $users
+        ));
+
         return [
             'current_user' => $this->currentUserDetails($currentUserId),
-            'current_users' => $this->userAuthenticationService->listUsers(),
+            'current_users' => $users,
             'roles' => $this->roleAssignmentService->listRolesForSelect(),
+            'latest_invites' => $latestInvites,
+        ];
+    }
+
+    public function invitedUsersDashboard(int $currentUserId = 0): array
+    {
+        $currentUserId = $this->resolveCurrentUserId($currentUserId);
+        if ($currentUserId <= 0 || !$this->canManageUsers($currentUserId)) {
+            return [
+                'current_user' => [],
+                'invites' => [],
+            ];
+        }
+
+        return [
+            'current_user' => $this->currentUserDetails($currentUserId),
+            'invites' => (new AccountInviteService())->listInvites(),
         ];
     }
 
@@ -142,57 +165,7 @@ final class UserManagementService
 
     public static function mobileCountryCodeOptions(): array
     {
-        $options = self::mobileCountryCodeOptionsFromDatabase();
-        if ($options !== []) {
-            return $options;
-        }
-
-        return self::fallbackMobileCountryCodeOptions();
-    }
-
-    private static function mobileCountryCodeOptionsFromDatabase(): array
-    {
-        if (!InterfaceDB::tableExists('mobile_country_codes')) {
-            return [];
-        }
-
-        $rows = InterfaceDB::fetchAll(
-            'SELECT country_code,
-                    display_name
-             FROM mobile_country_codes
-             ORDER BY is_default DESC, display_name ASC, country_code ASC'
-        );
-        $options = [];
-
-        foreach ($rows as $row) {
-            $countryCode = self::normaliseMobileCountryCodeValue((string)($row['country_code'] ?? ''));
-            $displayName = trim((string)($row['display_name'] ?? ''));
-
-            if ($countryCode === '' || $displayName === '') {
-                continue;
-            }
-
-            $options[$countryCode] = $displayName . ' (' . $countryCode . ')';
-        }
-
-        return $options;
-    }
-
-    private static function fallbackMobileCountryCodeOptions(): array
-    {
-        return [
-            '+44' => 'UK (+44)',
-            '+1' => 'US / Canada (+1)',
-            '+353' => 'Ireland (+353)',
-            '+33' => 'France (+33)',
-            '+49' => 'Germany (+49)',
-            '+34' => 'Spain (+34)',
-            '+39' => 'Italy (+39)',
-            '+31' => 'Netherlands (+31)',
-            '+61' => 'Australia (+61)',
-            '+64' => 'New Zealand (+64)',
-            '+91' => 'India (+91)',
-        ];
+        return MobileNumberService::countryCodeOptions();
     }
 
     public static function defaultMobileCountryCode(): string
@@ -202,97 +175,17 @@ final class UserManagementService
 
     public static function normaliseMobileNumberFromParts(string $countryCode, string $mobileNumber): string
     {
-        $mobileNumber = trim($mobileNumber);
-        if ($mobileNumber === '') {
-            return '';
-        }
-
-        if (str_starts_with($mobileNumber, '+') || str_starts_with($mobileNumber, '00')) {
-            $prefix = str_starts_with($mobileNumber, '00') ? '+' . substr($mobileNumber, 2) : $mobileNumber;
-            $digits = preg_replace('/\D+/', '', $prefix);
-            $countryDigits = ltrim(self::normaliseMobileCountryCode($countryCode), '+');
-
-            if (!is_string($digits) || $digits === '') {
-                return '';
-            }
-
-            if ($countryDigits !== '' && str_starts_with($digits, $countryDigits)) {
-                return '+' . $countryDigits . ltrim(substr($digits, strlen($countryDigits)), '0');
-            }
-
-            return '+' . $digits;
-        }
-
-        $countryCode = self::normaliseMobileCountryCode($countryCode);
-        $digits = preg_replace('/\D+/', '', $mobileNumber);
-        if (!is_string($digits) || $digits === '') {
-            return '';
-        }
-
-        return $countryCode . ltrim($digits, '0');
-    }
-
-    private static function normaliseMobileCountryCodeValue(string $countryCode): string
-    {
-        $countryCode = trim($countryCode);
-        if ($countryCode === '') {
-            return '';
-        }
-
-        $digits = preg_replace('/\D+/', '', $countryCode);
-        if (!is_string($digits) || $digits === '') {
-            return '';
-        }
-
-        return '+' . $digits;
-    }
-
-    private static function normaliseMobileCountryCode(string $countryCode): string
-    {
-        $countryCode = self::normaliseMobileCountryCodeValue($countryCode);
-
-        return array_key_exists($countryCode, self::mobileCountryCodeOptions())
-            ? $countryCode
-            : self::DEFAULT_MOBILE_COUNTRY_CODE;
+        return MobileNumberService::normaliseFromParts($countryCode, $mobileNumber);
     }
 
     public static function mobileNumberParts(string $mobileNumber): array
     {
-        $mobileNumber = trim($mobileNumber);
-        if ($mobileNumber === '') {
-            return [
-                'country_code' => self::DEFAULT_MOBILE_COUNTRY_CODE,
-                'local_number' => '',
-            ];
-        }
-
-        $normalised = self::normaliseMobileNumberFromParts(self::DEFAULT_MOBILE_COUNTRY_CODE, $mobileNumber);
-        $digits = ltrim($normalised, '+');
-        $countryCodes = array_keys(self::mobileCountryCodeOptions());
-        usort($countryCodes, static fn(string $left, string $right): int => strlen($right) <=> strlen($left));
-
-        foreach ($countryCodes as $countryCode) {
-            $codeDigits = ltrim($countryCode, '+');
-            if (str_starts_with($digits, $codeDigits)) {
-                return [
-                    'country_code' => $countryCode,
-                    'local_number' => substr($digits, strlen($codeDigits)),
-                ];
-            }
-        }
-
-        return [
-            'country_code' => self::DEFAULT_MOBILE_COUNTRY_CODE,
-            'local_number' => $digits,
-        ];
+        return MobileNumberService::parts($mobileNumber);
     }
 
     public static function formattedMobileNumber(string $mobileNumber): string
     {
-        $parts = self::mobileNumberParts($mobileNumber);
-        $localNumber = (string)($parts['local_number'] ?? '');
-
-        return $localNumber === '' ? '' : (string)$parts['country_code'] . ' ' . $localNumber;
+        return MobileNumberService::formatted($mobileNumber);
     }
 
     public function updateCurrentUser(
@@ -506,6 +399,187 @@ final class UserManagementService
         }
 
         return $result;
+    }
+
+    public function createInvitedUser(
+        int $actorUserId,
+        string $displayName,
+        string $emailAddress,
+        string $mobileCountryCode = self::DEFAULT_MOBILE_COUNTRY_CODE,
+        string $mobileNumber = '',
+        int $roleId = 0
+    ): array {
+        $authorisationError = $this->authoriseUserManagementActor($actorUserId);
+        if ($authorisationError !== null) {
+            return ['success' => false, 'errors' => [$authorisationError], 'user_id' => 0];
+        }
+
+        $input = $this->normaliseInvitedUserInput($displayName, $emailAddress, $mobileCountryCode, $mobileNumber);
+        $errors = $this->validateInvitedUserInput(0, $input);
+        $roleId = $this->normaliseAssignableRoleId($roleId);
+
+        if ($errors !== []) {
+            return ['success' => false, 'errors' => $errors, 'user_id' => 0];
+        }
+
+        InterfaceDB::transaction(function () use ($input, $roleId): void {
+            InterfaceDB::prepareExecute(
+                'INSERT INTO users (
+                    display_name,
+                    email_address,
+                    mobile_number,
+                    password_hash,
+                    is_active,
+                    account_status,
+                    role_id
+                ) VALUES (
+                    :display_name,
+                    :email_address,
+                    :mobile_number,
+                    NULL,
+                    0,
+                    :account_status,
+                    :role_id
+                )',
+                [
+                    'display_name' => $input['display_name'],
+                    'email_address' => $input['email_address'] !== '' ? $input['email_address'] : null,
+                    'mobile_number' => $input['mobile_number'] !== '' ? $input['mobile_number'] : null,
+                    'account_status' => 'pending_invitation',
+                    'role_id' => $roleId,
+                ]
+            );
+        });
+
+        $userId = (int)InterfaceDB::fetchColumn('SELECT COALESCE(MAX(id), 0) FROM users');
+        if ($userId <= 0) {
+            return ['success' => false, 'errors' => ['The invited user was created but could not be resolved.'], 'user_id' => 0];
+        }
+        UserAuthenticationService::forgetUserByIdCache($userId);
+
+        $this->userHistoryStore->recordAccountAudit(
+            $userId,
+            $actorUserId,
+            'user_created',
+            'An administrator created a pending invited user account.',
+            [
+                'email_address' => $input['email_address'],
+                'display_name' => $input['display_name'],
+                'mobile_number' => $input['mobile_number'],
+                'account_status' => 'pending_invitation',
+            ],
+            $this->userSessionService->buildRequestMetadata()
+        );
+
+        return [
+            'success' => true,
+            'errors' => [],
+            'user_id' => $userId,
+            'user' => $this->userAuthenticationService->userById($userId),
+        ];
+    }
+
+    public function updateInvitedUser(
+        int $actorUserId,
+        int $targetUserId,
+        string $displayName,
+        string $emailAddress,
+        string $mobileCountryCode = self::DEFAULT_MOBILE_COUNTRY_CODE,
+        string $mobileNumber = '',
+        int $roleId = 0
+    ): array {
+        $authorisationError = $this->authoriseUserManagementActor($actorUserId);
+        if ($authorisationError !== null) {
+            return ['success' => false, 'errors' => [$authorisationError]];
+        }
+
+        $targetUser = $this->userAuthenticationService->userById($targetUserId);
+        if ($targetUser === null || (string)($targetUser['account_status'] ?? '') !== 'pending_invitation') {
+            return ['success' => false, 'errors' => ['The selected pending invited user could not be found.']];
+        }
+
+        $input = $this->normaliseInvitedUserInput($displayName, $emailAddress, $mobileCountryCode, $mobileNumber);
+        $errors = $this->validateInvitedUserInput($targetUserId, $input);
+        $roleId = $this->normaliseAssignableRoleId($roleId);
+
+        if ($errors !== []) {
+            return ['success' => false, 'errors' => $errors];
+        }
+
+        InterfaceDB::prepareExecute(
+            'UPDATE users
+             SET display_name = :display_name,
+                 email_address = :email_address,
+                 mobile_number = :mobile_number,
+                 role_id = :role_id,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = :id
+               AND account_status = :account_status',
+            [
+                'id' => $targetUserId,
+                'display_name' => $input['display_name'],
+                'email_address' => $input['email_address'] !== '' ? $input['email_address'] : null,
+                'mobile_number' => $input['mobile_number'] !== '' ? $input['mobile_number'] : null,
+                'role_id' => $roleId,
+                'account_status' => 'pending_invitation',
+            ]
+        );
+        UserAuthenticationService::forgetUserByIdCache($targetUserId);
+
+        $this->userHistoryStore->recordAccountAudit(
+            $targetUserId,
+            $actorUserId,
+            'display_name_changed',
+            'An administrator updated a pending invited user account.',
+            [
+                'email_address' => $input['email_address'],
+                'display_name' => $input['display_name'],
+                'mobile_number' => $input['mobile_number'],
+                'account_status' => 'pending_invitation',
+            ],
+            $this->userSessionService->buildRequestMetadata()
+        );
+
+        return [
+            'success' => true,
+            'errors' => [],
+            'user_id' => $targetUserId,
+            'user' => $this->userAuthenticationService->userById($targetUserId),
+        ];
+    }
+
+    public function createInviteLinkForUser(int $actorUserId, int $targetUserId, string $contactMethod, string $baseUrl): array
+    {
+        $authorisationError = $this->authoriseUserManagementActor($actorUserId);
+        if ($authorisationError !== null) {
+            return ['success' => false, 'errors' => [$authorisationError]];
+        }
+
+        return (new AccountInviteService())->createInviteLink($actorUserId, $targetUserId, $contactMethod, $baseUrl);
+    }
+
+    public function sendInviteForUser(int $actorUserId, int $targetUserId, string $contactMethod, string $baseUrl): array
+    {
+        $authorisationError = $this->authoriseUserManagementActor($actorUserId);
+        if ($authorisationError !== null) {
+            return ['success' => false, 'errors' => [$authorisationError]];
+        }
+
+        $inviteService = new AccountInviteService();
+
+        return strtolower(trim($contactMethod)) === 'sms'
+            ? $inviteService->sendSmsInvite($actorUserId, $targetUserId, $baseUrl)
+            : $inviteService->sendEmailInvite($actorUserId, $targetUserId, $baseUrl);
+    }
+
+    public function revokeInvite(int $actorUserId, int $inviteId): array
+    {
+        $authorisationError = $this->authoriseUserManagementActor($actorUserId);
+        if ($authorisationError !== null) {
+            return ['success' => false, 'errors' => [$authorisationError]];
+        }
+
+        return (new AccountInviteService())->revokeInvite($actorUserId, $inviteId);
     }
 
     public function requirePasswordChangeForUser(int $actorUserId, int $targetUserId): array
@@ -722,6 +796,73 @@ final class UserManagementService
         }
 
         return null;
+    }
+
+    private function normaliseInvitedUserInput(string $displayName, string $emailAddress, string $mobileCountryCode, string $mobileNumber): array
+    {
+        return [
+            'display_name' => trim($displayName),
+            'email_address' => strtolower(trim($emailAddress)),
+            'mobile_number' => self::normaliseMobileNumberFromParts($mobileCountryCode, $mobileNumber),
+        ];
+    }
+
+    private function validateInvitedUserInput(int $userId, array $input): array
+    {
+        $errors = [];
+
+        if ((string)$input['display_name'] === '') {
+            $errors[] = 'Display name is required.';
+        }
+
+        $emailAddress = (string)$input['email_address'];
+        $mobileNumber = (string)$input['mobile_number'];
+
+        if ($emailAddress === '' && $mobileNumber === '') {
+            $errors[] = 'At least one contact method is required.';
+        }
+
+        if ($emailAddress !== '' && !filter_var($emailAddress, FILTER_VALIDATE_EMAIL)) {
+            $errors[] = 'Email address must be valid.';
+        }
+
+        if ($emailAddress !== '' && $this->emailAddressUsedByAnotherUser($userId, $emailAddress)) {
+            $errors[] = 'A user with that email address already exists.';
+        }
+
+        if ($mobileNumber !== '' && preg_match('/^\+[1-9][0-9]{6,14}$/', $mobileNumber) !== 1) {
+            $errors[] = 'Mobile number must include a valid country code and 7 to 15 digits.';
+        }
+
+        return $errors;
+    }
+
+    private function emailAddressUsedByAnotherUser(int $userId, string $emailAddress): bool
+    {
+        $row = InterfaceDB::fetchOne(
+            'SELECT id
+             FROM users
+             WHERE email_address = :email_address
+               AND id <> :id
+             LIMIT 1',
+            [
+                'email_address' => strtolower(trim($emailAddress)),
+                'id' => max(0, $userId),
+            ]
+        );
+
+        return is_array($row);
+    }
+
+    private function normaliseAssignableRoleId(int $roleId): int
+    {
+        foreach ($this->roleAssignmentService->listRolesForSelect() as $role) {
+            if ((int)($role['id'] ?? 0) === $roleId) {
+                return $roleId;
+            }
+        }
+
+        return RoleAssignmentService::ADMIN_ROLE_ID;
     }
 
     private function resolveCurrentUserId(int $currentUserId): int

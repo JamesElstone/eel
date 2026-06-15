@@ -96,11 +96,17 @@ final class _current_usersCard extends CardBaseFramework
             ->column(
                 'status_label',
                 'Status',
-                html: static fn(array $row): string => '<span class="badge ' . ((int)($row['is_active'] ?? 0) === 1 ? 'success' : 'danger') . '">'
-                    . ((int)($row['is_active'] ?? 0) === 1 ? 'Enabled' : 'Disabled')
+                html: static fn(array $row): string => '<span class="badge ' . HelperFramework::escape((string)($row['status_badge_class'] ?? 'warning')) . '">'
+                    . HelperFramework::escape((string)($row['status_label'] ?? ''))
                     . '</span>'
                     . (!empty($row['must_change_password']) ? ' <span class="badge warning">Password change required</span>' : ''),
                 export: static fn(array $row): string => (string)($row['status_label'] ?? '')
+            )
+            ->column(
+                'invite_status_label',
+                'Invite',
+                html: fn(array $row): string => $this->inviteStatusHtml($row),
+                export: static fn(array $row): string => (string)($row['invite_status_label'] ?? '')
             )
             ->column(
                 'otp_required_label',
@@ -196,11 +202,13 @@ final class _current_usersCard extends CardBaseFramework
         $csrfToken = (string)($context['page']['csrf_token'] ?? '');
         $enableState = (int)($user['is_active'] ?? 0) === 1 ? '0' : '1';
         $enableLabel = $enableState === '1' ? 'Enable' : 'Disable';
+        $isPendingInvitation = (string)($user['account_status'] ?? '') === 'pending_invitation';
         $toggleButton = $isCurrentUser && $enableState === '0'
             ? '<button class="button primary disabled" type="button" aria-disabled="true">Disable</button>'
             : '<button class="button primary" type="submit">' . HelperFramework::escape($enableLabel) . '</button>';
 
         return '<div class="actions-row">
+            ' . ($isPendingInvitation ? $this->inviteActionsHtml($context, $user) : '') . '
             <form method="post" action="?page=users" data-ajax="true">
                 ' . $cards . '
                 <input type="hidden" name="action" value="users-toggle-user">
@@ -209,7 +217,7 @@ final class _current_usersCard extends CardBaseFramework
                 <input type="hidden" name="target_state" value="' . HelperFramework::escape($enableState) . '">
                 ' . $toggleButton . '
             </form>
-            <form method="post" action="?page=users" data-ajax="true">
+            ' . ($isPendingInvitation ? '' : '<form method="post" action="?page=users" data-ajax="true">
                 ' . $cards . '
                 <input type="hidden" name="action" value="users-reset-otp">
                 <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
@@ -222,18 +230,68 @@ final class _current_usersCard extends CardBaseFramework
                 <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
                 <input type="hidden" name="target_user_id" value="' . HelperFramework::escape((string)$userId) . '">
                 <button class="button primary" type="submit">Force Password Change</button>
-            </form>
+            </form>') . '
             ' . ($isCurrentUser
                 ? '<span class="badge info">Use Current User Details to change password</span>'
-                : '<form method="post" action="?page=users" data-ajax="true" class="input-action-row">
+                : ($isPendingInvitation ? '' : '<form method="post" action="?page=users" data-ajax="true" class="input-action-row">
                 ' . $cards . '
                 <input type="hidden" name="action" value="users-set-password">
                 <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
                 <input type="hidden" name="target_user_id" value="' . HelperFramework::escape((string)$userId) . '">
                 <input class="input" name="target_password" type="password" placeholder="New password" autocomplete="new-password" required>
                 <button class="button button-inline primary" type="submit">Set Password</button>
-            </form>') . '
+            </form>')) . '
         </div>';
+    }
+
+    private function inviteStatusHtml(array $user): string
+    {
+        $label = (string)($user['invite_status_label'] ?? 'Not invited');
+        $status = (string)($user['invite_status'] ?? '');
+        $class = match ($status) {
+            'completed' => 'success',
+            'revoked', 'expired', 'locked' => 'danger',
+            'pending', 'sent', 'opened', 'verified' => 'warning',
+            default => 'info',
+        };
+
+        return '<span class="badge ' . HelperFramework::escape($class) . '">' . HelperFramework::escape($label) . '</span>';
+    }
+
+    private function inviteActionsHtml(array $context, array $user): string
+    {
+        $userId = max(0, (int)($user['id'] ?? 0));
+        if ($userId <= 0) {
+            return '';
+        }
+
+        $csrfToken = (string)($context['page']['csrf_token'] ?? '');
+        $cards = $this->hiddenFields($context);
+        $emailAddress = trim((string)($user['email_address'] ?? ''));
+        $mobileNumber = trim((string)($user['mobile_number'] ?? ''));
+        $html = '';
+
+        $html .= $this->inviteButton($cards, $csrfToken, $userId, 'copy', 'auto', 'Copy Link');
+        if ($emailAddress !== '') {
+            $html .= $this->inviteButton($cards, $csrfToken, $userId, 'email', 'email', 'Email Link');
+        }
+        if ($mobileNumber !== '') {
+            $html .= $this->inviteButton($cards, $csrfToken, $userId, 'sms', 'sms', 'SMS Link');
+        }
+
+        return $html;
+    }
+
+    private function inviteButton(string $cards, string $csrfToken, int $userId, string $mode, string $contactMethod, string $label): string
+    {
+        return '<form method="post" action="?page=users" data-ajax="true">
+            ' . $cards . '
+            <input type="hidden" name="action" value="' . ($mode === 'copy' ? 'users-copy-invite-link' : 'users-send-invite') . '">
+            <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
+            <input type="hidden" name="target_user_id" value="' . HelperFramework::escape((string)$userId) . '">
+            <input type="hidden" name="contact_method" value="' . HelperFramework::escape($contactMethod) . '">
+            <button class="button primary" type="submit">' . HelperFramework::escape($label) . '</button>
+        </form>';
     }
 
     private function hiddenFields(array $context): string
@@ -272,9 +330,13 @@ final class _current_usersCard extends CardBaseFramework
             }
 
             $user['is_current_user'] = (int)($user['id'] ?? 0) === (int)($currentUser['id'] ?? 0);
+            $latestInvite = (array)(($dashboard['latest_invites'] ?? [])[(int)($user['id'] ?? 0)] ?? []);
             $user['role_label'] = $this->roleLabel($user, $rolesById);
             $user['mobile_number_label'] = UserManagementService::formattedMobileNumber((string)($user['mobile_number'] ?? ''));
-            $user['status_label'] = $this->statusLabel($user);
+            $user['status_label'] = $this->statusLabel($user, $latestInvite);
+            $user['status_badge_class'] = $this->statusBadgeClass($user, $latestInvite);
+            $user['invite_status'] = (string)($latestInvite['status'] ?? '');
+            $user['invite_status_label'] = $this->inviteStatusLabel($latestInvite);
             $user['otp_required_label'] = (int)($user['otp_required'] ?? 1) === 1 ? 'Required' : 'Optional';
             $user['session_summary'] = $this->sessionSummary($user);
             $rows[] = $user;
@@ -294,8 +356,18 @@ final class _current_usersCard extends CardBaseFramework
             : 'No role assigned';
     }
 
-    private function statusLabel(array $user): string
+    private function statusLabel(array $user, array $latestInvite = []): string
     {
+        $accountStatus = (string)($user['account_status'] ?? 'active');
+        if ($accountStatus === 'pending_invitation') {
+            return match ((string)($latestInvite['status'] ?? '')) {
+                'revoked' => 'Invitation cancelled',
+                'expired' => 'Invitation expired',
+                'locked' => 'Invitation locked',
+                default => 'Pending invitation',
+            };
+        }
+
         $parts = [(int)($user['is_active'] ?? 0) === 1 ? 'Enabled' : 'Disabled'];
 
         if (!empty($user['must_change_password'])) {
@@ -303,6 +375,26 @@ final class _current_usersCard extends CardBaseFramework
         }
 
         return implode(' | ', $parts);
+    }
+
+    private function statusBadgeClass(array $user, array $latestInvite = []): string
+    {
+        $accountStatus = (string)($user['account_status'] ?? 'active');
+        if ($accountStatus === 'pending_invitation') {
+            return match ((string)($latestInvite['status'] ?? '')) {
+                'revoked', 'expired', 'locked' => 'danger',
+                default => 'warning',
+            };
+        }
+
+        return (int)($user['is_active'] ?? 0) === 1 ? 'success' : 'warning';
+    }
+
+    private function inviteStatusLabel(array $invite): string
+    {
+        $status = trim((string)($invite['status'] ?? ''));
+
+        return $status === '' ? 'Not invited' : HelperFramework::labelFromKey($status);
     }
 
     private function sessionSummary(array $user): string

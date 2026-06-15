@@ -43,7 +43,7 @@ final class _current_user_detailsCard extends CardBaseFramework
 
         return '
             <p class="helper">Update your display name, email address, mobile number, or password. A current password is required before changing account details.</p>
-            <form method="post" action="?page=users" data-ajax="true" class="form-flex-flow" autocomplete="off">
+            <form method="post" action="?page=users" data-ajax="true" data-invalidate-page="true" class="form-flex-flow" autocomplete="off">
                 ' . $this->hiddenFields($context) . '
                 <input type="hidden" name="action" value="users-update-current-user">
                 <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
@@ -62,7 +62,7 @@ final class _current_user_detailsCard extends CardBaseFramework
                 <div class="form-row full">
                     <label for="users-mobile-number">Mobile number</label>
                     <div class="mobile-input-row">
-                        <select class="selector-input mobile-country-code" id="users-mobile-country-code" name="mobile_country_code" autocomplete="tel-country-code">
+                        <select class="selector-input mobile-country-code" id="users-mobile-country-code" name="mobile_country_code" autocomplete="tel-country-code" data-no-submit-on-change="true">
                             ' . $this->mobileCountryCodeOptionsHtml((string)($mobileParts['country_code'] ?? UserManagementService::defaultMobileCountryCode())) . '
                         </select>
                         <input class="input mobile-number-input" id="users-mobile-number" name="mobile_number" type="tel" value="' . HelperFramework::escape((string)($mobileParts['local_number'] ?? '')) . '" autocomplete="tel-national" inputmode="tel" maxlength="16" data-lpignore="true" data-form-type="other">
@@ -70,10 +70,12 @@ final class _current_user_detailsCard extends CardBaseFramework
                 </div>
                 <div class="form-row half">
                     <label for="users-current-password">Current password</label>
+                    <small class="helper">Enter your current password to confirm changes</small>
                     <input class="input" id="users-current-password" name="current_password" type="password" value="" autocomplete="off" data-lpignore="true" data-form-type="other">
                 </div>
                 <div class="form-row half">
                     <label for="users-new-password">New password</label>
+                    <small class="helper">Leave this field blank to keep current password</small>
                     <input class="input" id="users-new-password" name="new_password" type="password" value="" autocomplete="new-password" data-lpignore="true" data-form-type="other">
                 </div>
                 <div class="form-row full">

@@ -140,13 +140,17 @@ final class UserAuthenticationService
                 email_address,
                 mobile_number,
                 password_hash,
-                is_active
+                is_active,
+                account_status,
+                account_completed_at
             ) VALUES (
                 :display_name,
                 :email_address,
                 :mobile_number,
                 :password_hash,
-                :is_active
+                :is_active,
+                :account_status,
+                CURRENT_TIMESTAMP
             )',
             [
                 'display_name' => $input['display_name'],
@@ -154,6 +158,7 @@ final class UserAuthenticationService
                 'mobile_number' => $input['mobile_number'],
                 'password_hash' => $hash,
                 'is_active' => $input['is_active'],
+                'account_status' => 'active',
             ]
         );
 
@@ -338,9 +343,13 @@ final class UserAuthenticationService
             'SELECT ' . $this->userSelectColumns() . '
              FROM users
              WHERE is_active = 1
+               AND account_status = :account_status
                AND email_address = :email_address
              ORDER BY id ASC',
-            ['email_address' => $emailAddress]
+            [
+                'account_status' => 'active',
+                'email_address' => $emailAddress,
+            ]
         );
 
         if ($users === []) {
@@ -376,10 +385,10 @@ final class UserAuthenticationService
 
         $userId = max(0, (int)($user['id'] ?? 0));
 
-        if ((int)($user['is_active'] ?? 0) !== 1) {
+        if ((int)($user['is_active'] ?? 0) !== 1 || (string)($user['account_status'] ?? 'active') !== 'active') {
             return [
                 'user_id' => $userId > 0 ? $userId : null,
-                'reason' => 'Email address belongs to a disabled account.',
+                'reason' => 'Email address belongs to an inactive account.',
             ];
         }
 
@@ -615,6 +624,10 @@ final class UserAuthenticationService
             return;
         }
 
+        if (!array_key_exists('mobile_number', $user)) {
+            return;
+        }
+
         self::$userByIdCache[$userId] = $user;
     }
 
@@ -837,7 +850,11 @@ final class UserAuthenticationService
     {
         $user = $this->loadUserById($userId);
 
-        return is_array($user) && (int)($user['is_active'] ?? 0) === 1 ? $user : null;
+        return is_array($user)
+            && (int)($user['is_active'] ?? 0) === 1
+            && (string)($user['account_status'] ?? 'active') === 'active'
+            ? $user
+            : null;
     }
 
     private function loadUserById(int $userId): ?array
@@ -932,8 +949,10 @@ final class UserAuthenticationService
             'current_session_browser_label',
             'last_login_at',
             'password_changed_at',
+            'account_completed_at',
             'created_at',
             'updated_at',
+            'account_status',
         ]);
     }
 
@@ -965,22 +984,7 @@ final class UserAuthenticationService
 
     private function normaliseMobileNumber(string $mobileNumber): string
     {
-        $mobileNumber = trim($mobileNumber);
-        if ($mobileNumber === '') {
-            return '';
-        }
-
-        if (str_starts_with($mobileNumber, '00')) {
-            $mobileNumber = '+' . substr($mobileNumber, 2);
-        }
-
-        $prefix = str_starts_with($mobileNumber, '+') ? '+' : '';
-        $digits = preg_replace('/\D+/', '', $mobileNumber);
-        if (!is_string($digits) || $digits === '') {
-            return '';
-        }
-
-        return $prefix . $digits;
+        return MobileNumberService::normaliseFromParts(MobileNumberService::DEFAULT_COUNTRY_CODE, $mobileNumber);
     }
 
     private function emptyLoginRateLimitStatus(string $emailAddress): array

@@ -39,6 +39,8 @@ final class _users extends PageContextFramework
         return [
             'current_users',
             'user_login_lockouts',
+            'invited_users',
+            'invite_user',
             'add_user',
             'user_logon_history_log',
             'current_user_details',
@@ -54,6 +56,8 @@ final class _users extends PageContextFramework
                 'cards' => [
                     'current_users',
                     'user_login_lockouts',
+                    'invited_users',
+                    'invite_user',
                     'add_user',
                     'user_logon_history_log',
                 ],
@@ -145,6 +149,69 @@ final class _users extends PageContextFramework
                     : ['success' => false, 'errors' => ['You do not have permission to manage users.']],
                 'New user created successfully.',
                 ['current.users', 'add.user']
+            ),
+            'users-create-invited-user' => $this->resultFromArray(
+                $canManageUsers
+                    ? $userManagementService->createInvitedUser(
+                        $currentUserId,
+                        (string)$request->input('invite_display_name', ''),
+                        (string)$request->input('invite_email_address', ''),
+                        (string)$request->input('invite_mobile_country_code', UserManagementService::defaultMobileCountryCode()),
+                        (string)$request->input('invite_mobile_number', ''),
+                        (int)$request->input('invite_role_id', 0)
+                    )
+                    : ['success' => false, 'errors' => ['You do not have permission to manage users.']],
+                'Pending invited user created.',
+                ['current.users', 'invited.users', 'invite.user']
+            ),
+            'users-update-invited-user' => $this->resultFromArray(
+                $canManageUsers
+                    ? $userManagementService->updateInvitedUser(
+                        $currentUserId,
+                        max(0, (int)$request->input('target_user_id', 0)),
+                        (string)$request->input('invite_display_name', ''),
+                        (string)$request->input('invite_email_address', ''),
+                        (string)$request->input('invite_mobile_country_code', UserManagementService::defaultMobileCountryCode()),
+                        (string)$request->input('invite_mobile_number', ''),
+                        (int)$request->input('invite_role_id', 0)
+                    )
+                    : ['success' => false, 'errors' => ['You do not have permission to manage users.']],
+                'Pending invited user updated.',
+                ['current.users', 'invited.users']
+            ),
+            'users-copy-invite-link' => $this->resultFromInviteArray(
+                $canManageUsers
+                    ? $userManagementService->createInviteLinkForUser(
+                        $currentUserId,
+                        max(0, (int)$request->input('target_user_id', 0)),
+                        (string)$request->input('contact_method', 'auto'),
+                        (new AccountInviteService())->buildBaseUrl($request)
+                    )
+                    : ['success' => false, 'errors' => ['You do not have permission to manage users.']],
+                'Invitation link generated.',
+                ['current.users', 'invited.users']
+            ),
+            'users-send-invite' => $this->resultFromArray(
+                $canManageUsers
+                    ? $userManagementService->sendInviteForUser(
+                        $currentUserId,
+                        max(0, (int)$request->input('target_user_id', 0)),
+                        (string)$request->input('contact_method', 'email'),
+                        (new AccountInviteService())->buildBaseUrl($request)
+                    )
+                    : ['success' => false, 'errors' => ['You do not have permission to manage users.']],
+                'Invitation sent.',
+                ['current.users', 'invited.users']
+            ),
+            'users-revoke-invite' => $this->resultFromArray(
+                $canManageUsers
+                    ? $userManagementService->revokeInvite(
+                        $currentUserId,
+                        max(0, (int)$request->input('invite_id', 0))
+                    )
+                    : ['success' => false, 'errors' => ['You do not have permission to manage users.']],
+                'Invitation cancelled.',
+                ['current.users', 'invited.users']
             ),
             'users-toggle-user' => $this->resultFromArray(
                 $canManageUsers
@@ -267,6 +334,33 @@ final class _users extends PageContextFramework
             $success,
             $changedFacts,
             $flashMessages,
+            []
+        );
+    }
+
+    private function resultFromInviteArray(array $result, string $successMessage, array $changedFacts): ActionResultFramework
+    {
+        if (empty($result['success'])) {
+            return $this->resultFromArray($result, $successMessage, $changedFacts);
+        }
+
+        $link = trim((string)($result['link'] ?? ''));
+        $message = $successMessage;
+        $messageHtml = HelperFramework::escape($successMessage);
+
+        if ($link !== '') {
+            $message = $successMessage . ' Copy this link: ' . $link;
+            $messageHtml = HelperFramework::escape($successMessage) . '<br><code>' . HelperFramework::escape($link) . '</code>';
+        }
+
+        return new ActionResultFramework(
+            true,
+            $changedFacts,
+            [[
+                'type' => 'success',
+                'message' => $message,
+                'message_html' => $messageHtml,
+            ]],
             []
         );
     }

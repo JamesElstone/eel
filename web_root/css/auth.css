@@ -167,6 +167,14 @@ h1 {
   color: var(--ink);
   font: inherit;
 }
+.auth-composite-input {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 10px;
+}
+.auth-select {
+  min-width: 0;
+}
 .auth-input-code {
   letter-spacing: 0.35em;
   text-align: center;

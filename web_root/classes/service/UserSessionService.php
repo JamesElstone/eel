@@ -96,7 +96,11 @@ final class UserSessionService
 
         $row = $this->loadCurrentSessionRow($userId);
 
-        if (!is_array($row) || (int)($row['is_active'] ?? 0) !== 1) {
+        if (
+            !is_array($row)
+            || (int)($row['is_active'] ?? 0) !== 1
+            || (string)($row['account_status'] ?? 'active') !== 'active'
+        ) {
             return [
                 'valid' => false,
                 'logout_notice' => $this->buildLogoutNotice(null),
@@ -234,6 +238,7 @@ final class UserSessionService
                 id,
                 display_name,
                 email_address,
+                mobile_number,
                 password_hash,
                 is_active,
                 role_id,
@@ -246,8 +251,10 @@ final class UserSessionService
                 current_session_browser_label,
                 last_login_at,
                 password_changed_at,
+                account_completed_at,
                 must_change_password,
                 otp_required,
+                account_status,
                 created_at,
                 updated_at
              FROM users
@@ -271,16 +278,7 @@ final class UserSessionService
 
     private function currentIpAddress(): string
     {
-        $forwardedFor = trim((string)($_SERVER['HTTP_X_FORWARDED_FOR'] ?? ''));
-        if ($forwardedFor !== '') {
-            $parts = preg_split('/\s*,\s*/', $forwardedFor) ?: [];
-            $first = trim((string)($parts[0] ?? ''));
-            if ($first !== '') {
-                return mb_substr($first, 0, 45);
-            }
-        }
-
-        return mb_substr(trim((string)($_SERVER['REMOTE_ADDR'] ?? '')), 0, 45);
+        return (new ReverseProxyService())->clientIpAddress(RequestFramework::fromGlobals());
     }
 
     private function browserLabelFromUserAgent(string $userAgent): string

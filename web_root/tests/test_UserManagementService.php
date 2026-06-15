@@ -103,8 +103,19 @@ $harness->check(UserManagementService::class, 'prevents self destructive admin a
 
 $harness->check(UserManagementService::class, 'normalises mobile numbers by stripping local leading zeroes', function () use ($harness): void {
     $harness->assertSame('+447123456789', UserManagementService::normaliseMobileNumberFromParts('+44', '07123 456789'));
+    $harness->assertSame('+447775633330', UserManagementService::normaliseMobileNumberFromParts('+44', '7775633330'));
     $harness->assertSame('+447123456789', UserManagementService::normaliseMobileNumberFromParts('+44', '+44 07123 456789'));
     $harness->assertSame('+447123456789', UserManagementService::normaliseMobileNumberFromParts('+44', '0044 07123 456789'));
+});
+
+$harness->check(UserManagementService::class, 'splits stored mobile numbers with or without a leading plus', function () use ($harness): void {
+    $withPlus = UserManagementService::mobileNumberParts('+447775633330');
+    $withoutPlus = UserManagementService::mobileNumberParts('447775633330');
+
+    $harness->assertSame('+44', (string)($withPlus['country_code'] ?? ''));
+    $harness->assertSame('7775633330', (string)($withPlus['local_number'] ?? ''));
+    $harness->assertSame('+44', (string)($withoutPlus['country_code'] ?? ''));
+    $harness->assertSame('7775633330', (string)($withoutPlus['local_number'] ?? ''));
 });
 
 $harness->check(UserManagementService::class, 'updates current user only with a valid current password', function () use ($harness, $withTemporaryManagedUsers): void {
@@ -118,6 +129,43 @@ $harness->check(UserManagementService::class, 'updates current user only with a 
         $harness->assertTrue(!empty($success['success']));
         $harness->assertSame('+447123456789', (string)(($success['user'] ?? [])['mobile_number'] ?? ''));
         $harness->assertTrue(is_array($authService->authenticateByEmailAddress('target-renamed@example.test', 'New Strong Password 1!')));
+    });
+});
+
+$harness->check(UserManagementService::class, 'updates current user mobile number without changing password', function () use ($harness, $withTemporaryManagedUsers): void {
+    $withTemporaryManagedUsers(function (UserManagementService $service, UserAuthenticationService $authService, int $adminId, int $targetId): void {
+        $target = $authService->userById($targetId);
+        $success = $service->updateCurrentUser(
+            $targetId,
+            (string)($target['display_name'] ?? ''),
+            (string)($target['email_address'] ?? ''),
+            'Strong Password 1!',
+            '',
+            '+44',
+            '7775633330'
+        );
+
+        $harness = new GeneratedServiceClassTestHarness();
+        $harness->assertTrue(!empty($success['success']));
+        $harness->assertSame('+447775633330', (string)(($success['user'] ?? [])['mobile_number'] ?? ''));
+    });
+});
+
+$harness->check(UserManagementService::class, 'does not lose mobile number when incomplete user cache rows are offered', function () use ($harness, $withTemporaryManagedUsers): void {
+    $withTemporaryManagedUsers(function (UserManagementService $service, UserAuthenticationService $authService, int $adminId, int $targetId): void {
+        $updatedMobile = $authService->updateUser($targetId, 'Target User', 'target@example.test', null, null, '+447775633330');
+        UserAuthenticationService::forgetUserByIdCache($targetId);
+        UserAuthenticationService::primeUserByIdCache([
+            'id' => $targetId,
+            'display_name' => 'Target User',
+            'email_address' => 'target@example.test',
+        ]);
+
+        $currentUser = $service->currentUserDetails($targetId);
+
+        $harness = new GeneratedServiceClassTestHarness();
+        $harness->assertTrue(!empty($updatedMobile['success']));
+        $harness->assertSame('+447775633330', (string)($currentUser['mobile_number'] ?? ''));
     });
 });
 

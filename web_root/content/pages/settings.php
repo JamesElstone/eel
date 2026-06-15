@@ -28,6 +28,10 @@ final class _settings extends PageContextFramework
     {
         return [
             'application_settings',
+            'web_environment',
+            'invitation_settings',
+            'sms_settings',
+            'smtp_settings',
          ];
     }
 

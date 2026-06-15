@@ -572,7 +572,7 @@ final class SessionAuthenticationService
 
     private function regenerateSessionId(): void
     {
-        if (session_status() === PHP_SESSION_ACTIVE) {
+        if (session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
             session_regenerate_id(true);
         }
     }

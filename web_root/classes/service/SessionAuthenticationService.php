@@ -579,7 +579,16 @@ final class SessionAuthenticationService
 
     private function isSecureRequest(): bool
     {
-        return $this->request()->isSecure();
+        $request = $this->request();
+        if ($request->isSecure()) {
+            return true;
+        }
+
+        if ($this->trustedForwardedScheme($request) === 'https') {
+            return true;
+        }
+
+        return $this->configuredExternalBaseUrlScheme() === 'https';
     }
 
     public function cookieSecure(): bool
@@ -617,5 +626,43 @@ final class SessionAuthenticationService
     private function request(): RequestFramework
     {
         return $this->request ?? RequestFramework::fromGlobals();
+    }
+
+    private function trustedForwardedScheme(RequestFramework $request): string
+    {
+        if (!(new ReverseProxyService())->isTrustedProxyRequest($request)) {
+            return '';
+        }
+
+        $scheme = $this->normaliseUrlScheme((string)$request->header('X-Forwarded-Proto', ''));
+        if ($scheme !== '') {
+            return $scheme;
+        }
+
+        foreach (preg_split('/,/', (string)$request->header('Forwarded', '')) ?: [] as $segment) {
+            if (preg_match('/(?:^|;)\s*proto=(?:"?([^;,"\s]+)"?)/i', $segment, $matches) === 1) {
+                $scheme = $this->normaliseUrlScheme((string)$matches[1]);
+                if ($scheme !== '') {
+                    return $scheme;
+                }
+            }
+        }
+
+        return '';
+    }
+
+    private function configuredExternalBaseUrlScheme(): string
+    {
+        return $this->normaliseUrlScheme((string)parse_url(
+            trim((string)AppConfigurationStore::get('invitation.base_url_override', '')),
+            PHP_URL_SCHEME
+        ));
+    }
+
+    private function normaliseUrlScheme(string $value): string
+    {
+        $scheme = strtolower(trim(explode(',', $value)[0]));
+
+        return in_array($scheme, ['http', 'https'], true) ? $scheme : '';
     }
 }

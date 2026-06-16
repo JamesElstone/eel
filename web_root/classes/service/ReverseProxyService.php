@@ -40,6 +40,13 @@ final class ReverseProxyService
         return $this->normaliseList(AppConfigurationStore::get('reverse_proxy.trusted_proxy_ips', []));
     }
 
+    public function isTrustedProxyRequest(RequestFramework $request): bool
+    {
+        $remoteAddress = $this->normaliseIp((string)($request->remoteAddress() ?? ''));
+
+        return $remoteAddress !== '' && $this->isTrustedProxy($remoteAddress);
+    }
+
     public function clientIpHeaders(): array
     {
         $headers = [];

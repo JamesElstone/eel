@@ -17,6 +17,12 @@ The project is deliberately simple: no package manager is required for the curre
 - Built-in SVG chart rendering for common dashboard and reporting graphs, without external chart libraries.
 - Built-in developer test runner with broad class coverage.
 
+## Invitations, SMS, and SMTP
+
+eelKit supports administrator-created pending accounts, allowing a delegated user manager to invite someone by email, SMS, or a copied signup link. Invitees complete their own account setup through the public signup flow, where token checks, identity verification, session-bound completion state, expiry, revocation, and rate limits protect the process before the account becomes active.
+
+The settings area includes cards for invitation templates, external base URL and trusted reverse proxy handling, SMS gateway delivery, and SMTP or PHP `mail()` delivery. SMS and SMTP can be tested from the UI, secrets are preserved when left blank, and signup token or verification lockouts can be reviewed and reset from the logs page.
+
 ## Requirements
 
 - PHP 8.4 or newer is recommended.

@@ -14,7 +14,13 @@ Its goal is simple:
 
 ---
 
-## Overview
+## Invitations, SMS, and SMTP
+
+eelKit supports administrator-created pending accounts, allowing a delegated user manager to invite someone by email, SMS, or a copied signup link. Invitees complete their own account setup through the public signup flow, where token checks, identity verification, session-bound completion state, expiry, revocation, and rate limits protect the process before the account becomes active.
+
+The settings area includes cards for invitation templates, external base URL and trusted reverse proxy handling, SMS gateway delivery, and SMTP or PHP `mail()` delivery. SMS and SMTP can be tested from the UI, secrets are preserved when left blank, and signup token or verification lockouts can be reviewed and reset from the logs page.
+
+## Requirements
 
 eel turns raw bank statement data into structured financial outputs suitable for FRS 105 micro-entity statutory reporting.
 

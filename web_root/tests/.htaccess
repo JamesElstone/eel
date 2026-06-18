@@ -1,1 +1,3 @@
-Require all denied
+<FilesMatch "^(?!index\.php$).+">
+    Require all denied
+</FilesMatch>

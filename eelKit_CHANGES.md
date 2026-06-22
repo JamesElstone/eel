@@ -39,6 +39,8 @@ When enabled, entries are appended to `{configured-directory}/{yyyy-mm-dd}_trace
 
 Relative trace paths resolve under `APP_ROOT`, matching eelKit's existing log-path convention.
 
+The trace logger implementation is loaded lazily on the first `logDetails()` call, so pages that do not call `logDetails()` only pay for the small global wrapper declared during bootstrap.
+
 ## User mobile numbers
 
 Feature name: `user_mobile_numbers`.

@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+require_once APP_CLASSES . 'framework' . DIRECTORY_SEPARATOR . 'TraceLogFramework.php';
 
 final class TraceLogFrameworkTestCaller
 {

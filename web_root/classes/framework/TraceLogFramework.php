@@ -121,10 +121,3 @@ final class TraceLogFramework
         return implode(',', $escaped);
     }
 }
-
-if (!function_exists('logDetails')) {
-    function logDetails(): void
-    {
-        TraceLogFramework::logDetails();
-    }
-}

@@ -20,6 +20,10 @@ return array (
     'sqlite_schema' => '../db_schema/eelKit.schema.sql',
   ),
   'developer_options' => true,
+  'trace' =>
+  array (
+    'log_path' => '',
+  ),
   'navigation' => 
   array (
     'default_order' => 

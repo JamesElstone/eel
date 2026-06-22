@@ -60,6 +60,13 @@ $harness->check(AppConfigurationStore::class, 'does not generate a default datab
     $harness->assertSame('', $defaults['db']['dsn'] ?? null);
 });
 
+$harness->check(AppConfigurationStore::class, 'keeps function tracing disabled by default', function () use ($harness): void {
+    $method = new ReflectionMethod(AppConfigurationStore::class, 'defaults');
+    $defaults = $method->invoke(null);
+
+    $harness->assertSame('', $defaults['trace']['log_path'] ?? null);
+});
+
 $harness->check(AppConfigurationStore::class, 'updates database connection settings without dropping other db options', function () use ($harness): void {
     $path = AppConfigurationStore::configPath();
     $original = file_get_contents($path);

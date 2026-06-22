@@ -1,5 +1,44 @@
 # eelKit Changes
 
+## Function trace logging
+
+Feature name: `function_trace_logging`.
+
+Downstream projects can now add lightweight function-entry trace logging while investigating slow pages. The framework provides a global helper:
+
+```php
+logDetails();
+```
+
+Call it at the top of selected page, card, or service methods:
+
+```php
+public function render(array $context = []): string
+{
+    logDetails();
+
+    // Existing render logic...
+}
+```
+
+Tracing is disabled by default. Enable it in `secure/app.php` by setting `trace.log_path` to a directory that already exists:
+
+```php
+'trace' => [
+    'log_path' => '../file_logs/trace',
+],
+```
+
+If `trace.log_path` is empty, null, or points to a missing directory, `logDetails()` caches that disabled state for the request and returns quickly. The helper does not create the directory.
+
+When enabled, entries are appended to `{configured-directory}/{yyyy-mm-dd}_trace.csv` with one CSV-safe line per call:
+
+```text
+"2026-06-22-14:30:12.123 - function: ExampleCard::render"
+```
+
+Relative trace paths resolve under `APP_ROOT`, matching eelKit's existing log-path convention.
+
 ## User mobile numbers
 
 Feature name: `user_mobile_numbers`.

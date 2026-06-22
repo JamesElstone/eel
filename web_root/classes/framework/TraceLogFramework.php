@@ -26,8 +26,12 @@ final class TraceLogFramework
         $line = self::toCsvLine([$timestamp . ' - function: ' . self::callerName()]) . PHP_EOL;
 
         try {
-            @file_put_contents($file, $line, FILE_APPEND | LOCK_EX);
+            $result = @file_put_contents($file, $line, FILE_APPEND | LOCK_EX);
+            if ($result === false) {
+                self::disableTracing();
+            }
         } catch (Throwable) {
+            self::disableTracing();
             return;
         }
     }
@@ -69,6 +73,12 @@ final class TraceLogFramework
         self::$traceDirectory = $directory;
 
         return self::$traceDirectory;
+    }
+
+    private static function disableTracing(): void
+    {
+        self::$initialised = true;
+        self::$traceDirectory = '';
     }
 
     private static function joinPath(string $directory, string $filename): string

@@ -115,6 +115,33 @@ $harness->check(TraceLogFramework::class, 'writes caller details to the daily tr
     });
 });
 
+$harness->check(TraceLogFramework::class, 'disables tracing after a write failure', function () use ($harness, $withTraceConfig, $ensureTraceTestDirectory, $traceTestRoot): void {
+    $directory = $traceTestRoot . DIRECTORY_SEPARATOR . 'write-failure';
+    $file = $directory . DIRECTORY_SEPARATOR . date('Y-m-d') . '_trace.csv';
+    $ensureTraceTestDirectory($directory);
+    @unlink($file);
+
+    if (!is_dir($file) && !mkdir($file) && !is_dir($file)) {
+        $harness->skip('Unable to create blocking trace path.');
+    }
+
+    try {
+        $withTraceConfig($directory, function () use ($harness, $file): void {
+            TraceLogFrameworkTestCaller::writeLine();
+            @rmdir($file);
+            TraceLogFrameworkTestCaller::writeLine();
+
+            $harness->assertTrue(!is_file($file));
+        });
+    } finally {
+        if (is_dir($file)) {
+            @rmdir($file);
+        } elseif (is_file($file)) {
+            @unlink($file);
+        }
+    }
+});
+
 $harness->check(TraceLogFramework::class, 'resolves relative trace paths under APP_ROOT', function () use ($harness, $withTraceConfig, $ensureTraceTestDirectory, $traceTestRoot): void {
     $directory = $traceTestRoot . DIRECTORY_SEPARATOR . 'relative';
     $file = $directory . DIRECTORY_SEPARATOR . date('Y-m-d') . '_trace.csv';

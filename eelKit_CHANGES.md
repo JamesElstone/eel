@@ -31,6 +31,8 @@ Tracing is disabled by default. Enable it in `secure/app.php` by setting `trace.
 
 If `trace.log_path` is empty, null, or points to a missing directory, `logDetails()` caches that disabled state for the request and returns quickly. The helper does not create the directory.
 
+If a trace write fails after tracing has been enabled, `logDetails()` disables tracing for the rest of the request so repeated failed writes do not slow the page down.
+
 When enabled, entries are appended to `{configured-directory}/{yyyy-mm-dd}_trace.csv` with one CSV-safe line per call:
 
 ```text

@@ -127,6 +127,15 @@ $harness->check(TraceLogFramework::class, 'resolves relative trace paths under A
     });
 });
 
+$harness->check(TraceLogFramework::class, 'preserves root absolute trace paths', function () use ($harness): void {
+    $method = new ReflectionMethod(TraceLogFramework::class, 'normaliseConfigPath');
+    $method->setAccessible(true);
+
+    $normalised = $method->invoke(null, '/var/log/eelkit-trace/');
+
+    $harness->assertSame(DIRECTORY_SEPARATOR . 'var' . DIRECTORY_SEPARATOR . 'log' . DIRECTORY_SEPARATOR . 'eelkit-trace' . DIRECTORY_SEPARATOR, $normalised);
+});
+
 $harness->check(TraceLogFramework::class, 'reuses the cached trace directory after config changes', function () use ($harness, $withTraceConfig, $ensureTraceTestDirectory, $traceTestRoot): void {
     $firstDirectory = $traceTestRoot . DIRECTORY_SEPARATOR . 'cached-first';
     $secondDirectory = $traceTestRoot . DIRECTORY_SEPARATOR . 'cached-second';

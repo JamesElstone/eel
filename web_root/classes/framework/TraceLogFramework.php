@@ -88,7 +88,10 @@ final class TraceLogFramework
         }
 
         $normalised = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $path);
-        if (preg_match('/^(?:[A-Za-z]:[\\\\\\/]|[\\\\\\/]{2})/', $normalised) === 1) {
+        if (
+            preg_match('/^(?:[A-Za-z]:[\\\\\\/]|[\\\\\\/]{2})/', $normalised) === 1
+            || str_starts_with($normalised, DIRECTORY_SEPARATOR)
+        ) {
             return $normalised;
         }
 

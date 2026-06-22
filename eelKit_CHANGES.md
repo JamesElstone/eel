@@ -37,7 +37,7 @@ When enabled, entries are appended to `{configured-directory}/{yyyy-mm-dd}_trace
 "2026-06-22-14:30:12.123 - function: ExampleCard::render"
 ```
 
-Relative trace paths resolve under `APP_ROOT`, matching eelKit's existing log-path convention.
+Relative trace paths resolve under `APP_ROOT`, matching eelKit's existing log-path convention. Windows drive paths, UNC paths, and root-absolute paths such as `/var/log/eelkit-trace/` are preserved as absolute paths.
 
 The trace logger implementation is loaded lazily on the first `logDetails()` call, so pages that do not call `logDetails()` only pay for the small global wrapper declared during bootstrap.
 

@@ -78,29 +78,33 @@ $withPageFiles = static function (array $files, callable $callback) use ($remove
     }
 };
 
-$harness->check(NavigationFramework::class, 'includes developer-only pages when developer options are enabled', function () use ($harness, $withConfig, $baseConfig): void {
-    $config = $baseConfig;
-    $config['developer_options'] = true;
-    $config['navigation']['developer_only_pages'] = ['test'];
+$harness->check(NavigationFramework::class, 'includes developer-only pages when developer options are enabled', function () use ($harness, $withConfig, $withPageFiles, $baseConfig): void {
+    $withPageFiles(['developer_page.php' => '<?php'], function (string $directory) use ($harness, $withConfig, $baseConfig): void {
+        $config = $baseConfig;
+        $config['developer_options'] = true;
+        $config['navigation']['developer_only_pages'] = ['developer_page'];
 
-    $withConfig($config, function () use ($harness): void {
-        $items = (new NavigationFramework(APP_PAGES, 'dashboard', '/?page='))->build();
-        $keys = array_column($items, 'key');
+        $withConfig($config, function () use ($harness, $directory): void {
+            $items = (new NavigationFramework($directory, 'developer_page', '/?page='))->build();
+            $keys = array_column($items, 'key');
 
-        $harness->assertTrue(in_array('test', $keys, true));
+            $harness->assertTrue(in_array('developer_page', $keys, true));
+        });
     });
 });
 
-$harness->check(NavigationFramework::class, 'excludes developer-only pages when developer options are disabled', function () use ($harness, $withConfig, $baseConfig): void {
-    $config = $baseConfig;
-    $config['developer_options'] = false;
-    $config['navigation']['developer_only_pages'] = ['test'];
+$harness->check(NavigationFramework::class, 'excludes developer-only pages when developer options are disabled', function () use ($harness, $withConfig, $withPageFiles, $baseConfig): void {
+    $withPageFiles(['developer_page.php' => '<?php'], function (string $directory) use ($harness, $withConfig, $baseConfig): void {
+        $config = $baseConfig;
+        $config['developer_options'] = false;
+        $config['navigation']['developer_only_pages'] = ['developer_page'];
 
-    $withConfig($config, function () use ($harness): void {
-        $items = (new NavigationFramework(APP_PAGES, 'dashboard', '/?page='))->build();
-        $keys = array_column($items, 'key');
+        $withConfig($config, function () use ($harness, $directory): void {
+            $items = (new NavigationFramework($directory, 'dashboard', '/?page='))->build();
+            $keys = array_column($items, 'key');
 
-        $harness->assertTrue(!in_array('test', $keys, true));
+            $harness->assertTrue(!in_array('developer_page', $keys, true));
+        });
     });
 });
 

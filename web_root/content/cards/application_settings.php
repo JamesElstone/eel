@@ -55,7 +55,7 @@ final class _application_settingsCard extends CardBaseFramework
                         </div>
                         <div class="form-row half">
                             <label for="settings-brand-mark">Brand mark</label>
-                            <input class="input" id="settings-brand-mark" name="brand_mark" type="text" value="' . HelperFramework::escape((string)($config['brand-mark'] ?? '')) . '" maxlength="8" required>
+                            <input class="input" id="settings-brand-mark" name="brand_mark" type="text" value="' . HelperFramework::escape((string)($config['brand-mark'] ?? '')) . '" maxlength="255" required>
                         </div>
                         <div class="form-row full">
                             <label for="settings-app-strapline">Application strapline</label>

@@ -12,6 +12,40 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARAT
 $harness = new GeneratedServiceClassTestHarness();
 
 $harness->check('logDetails', 'is available without eagerly loading the trace logger class', function () use ($harness): void {
-    $harness->assertTrue(function_exists('logDetails'));
-    $harness->assertTrue(!class_exists('TraceLogFramework', false));
+    $command = [
+        PHP_BINARY,
+        '-r',
+        implode(
+            ' ',
+            [
+                'require ' . var_export(__DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php', true) . ';',
+                '$ok = function_exists("logDetails") && !class_exists("TraceLogFramework", false);',
+                'echo $ok ? "ok" : "fail";',
+                'exit($ok ? 0 : 1);',
+            ]
+        ),
+    ];
+
+    $descriptorSpec = [
+        1 => ['pipe', 'w'],
+        2 => ['pipe', 'w'],
+    ];
+
+    $process = proc_open($command, $descriptorSpec, $pipes, PROJECT_ROOT);
+    if (!is_resource($process)) {
+        throw new RuntimeException('Unable to start isolated PHP process.');
+    }
+
+    $output = stream_get_contents($pipes[1]);
+    $errorOutput = stream_get_contents($pipes[2]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+
+    $status = proc_close($process);
+
+    if ($status !== 0 || trim((string)$output) !== 'ok') {
+        throw new RuntimeException('Isolated lazy-load check failed: ' . trim((string)$output . ' ' . (string)$errorOutput));
+    }
+
+    $harness->assertTrue(true);
 });

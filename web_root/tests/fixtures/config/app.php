@@ -20,7 +20,7 @@ return array (
     'sqlite_schema' => '../db_schema/eelKit.schema.sql',
   ),
   'developer_options' => true,
-  'trace' =>
+  'trace' => 
   array (
     'log_path' => '',
   ),

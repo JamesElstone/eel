@@ -289,7 +289,7 @@ final class PageRendererFramework
         $displayName = $this->currentSidebarDisplayName($sessionAuthenticationService);
         global $appName;
         $escapedAppName = HelperFramework::escape((string)($appName ?? 'eelKit Framework'));
-        $escapedBrandMark = HelperFramework::escape($this->brandMark());
+        $brandMarkHtml = $this->renderBrandMark();
         $escapedAppStrapline = HelperFramework::escape(AppConfigurationStore::appStrapline());
         $hideCollapsedLinkInitials = $this->hideCollapsedLinkInitials();
         $showCollapsedLinkInitials = !$hideCollapsedLinkInitials;
@@ -298,7 +298,7 @@ final class PageRendererFramework
         $html = '<aside id="sidebar-shell" class="' . $sidebarClass . '">
         <div class="brand-block">
             <div class="brand">
-                <div class="brand-mark">' . $escapedBrandMark . '</div>
+                <div class="brand-mark">' . $brandMarkHtml . '</div>
                 <div class="brand-copy">
                     <div class="brand-title">' . $escapedAppName . '</div>
                     <div class="brand-subtitle">' . $escapedAppStrapline . '</div>
@@ -346,6 +346,30 @@ final class PageRendererFramework
         $brandMark = trim((string)AppConfigurationStore::get('brand-mark', 'E'));
 
         return $brandMark !== '' ? $brandMark : 'E';
+    }
+
+    private function renderBrandMark(): string
+    {
+        $brandMark = $this->brandMark();
+
+        if ($this->isBrandMarkImagePath($brandMark)) {
+            return '<img class="brand-mark-image" src="' . HelperFramework::escape($brandMark) . '" alt="" aria-hidden="true">';
+        }
+
+        return HelperFramework::escape($brandMark);
+    }
+
+    private function isBrandMarkImagePath(string $brandMark): bool
+    {
+        if (!preg_match('/\.(?:jpg|png)\z/i', $brandMark)) {
+            return false;
+        }
+
+        if (preg_match('/^[a-z][a-z0-9+.-]*:/i', $brandMark)) {
+            return false;
+        }
+
+        return !str_starts_with($brandMark, '//') && !str_contains($brandMark, '\\');
     }
 
     private function hideCollapsedLinkInitials(): bool

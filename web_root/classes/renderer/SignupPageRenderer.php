@@ -86,6 +86,7 @@ final class SignupPageRenderer
 
     private function shell(string $title, string $message, array $errors, string $formHtml, string $beforeMessageHtml = ''): string
     {
+        $brandMarkHtml = BrandMarkRenderer::html('auth-logo-mark-image');
         $errorHtml = '';
         foreach ($errors as $error) {
             $errorHtml .= '<div class="auth-error">' . HelperFramework::escape((string)$error) . '</div>';
@@ -103,7 +104,7 @@ final class SignupPageRenderer
                 <body>
                     <main class="auth-shell">
                         <div class="auth-logo">
-                            <div class="auth-logo-mark">E</div>
+                            <div class="auth-logo-mark">' . $brandMarkHtml . '</div>
                             <div class="auth-logo-copy">
                                 <div class="auth-logo-title">' . HelperFramework::escape($this->appName) . '</div>
                                 <div class="auth-logo-subtitle">' . HelperFramework::escape($this->appStrapline) . '</div>

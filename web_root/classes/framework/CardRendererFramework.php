@@ -46,7 +46,9 @@ final class CardRendererFramework
                             aria-expanded="true">' . HelperFramework::escape($card->contextTitle($cardContext)) . '</h2>
                         ' . $helperMarkup . '
                     </div>
-                    <div class="card-header-meta">' 
+                    <div class="card-header-meta">
+                        ' . $this->renderCardSizeToggle() . '
+                        '
                      . ($showDeveloperMetadata ? '<p class="eyebrow card-header-corner-eyebrow">Card: ' . HelperFramework::escape($cardKey) . '</p>' : '')
                      . '
                         <div class="card-service-pills">'
@@ -60,6 +62,16 @@ final class CardRendererFramework
                 ' . $body . '
                 </div>
             </section>';
+    }
+
+    private function renderCardSizeToggle(): string
+    {
+        return '<div class="card_size">'
+            . '<button class="card-size-toggle" type="button" data-card-size-toggle aria-label="Maximize card" aria-pressed="false">'
+            . '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="card-size-icon card-size-icon-maximize icon icon-tabler icons-tabler-outline icon-tabler-arrows-maximize" aria-hidden="true" focusable="false"><path stroke="none" d="M0 0h24v24H0z" fill="none" /><path d="M16 4l4 0l0 4" /><path d="M14 10l6 -6" /><path d="M8 20l-4 0l0 -4" /><path d="M4 20l6 -6" /><path d="M16 20l4 0l0 -4" /><path d="M14 14l6 6" /><path d="M8 4l-4 0l0 4" /><path d="M4 4l6 6" /></svg>'
+            . '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="card-size-icon card-size-icon-minimize icon icon-tabler icons-tabler-outline icon-tabler-arrows-minimize" aria-hidden="true" focusable="false"><path stroke="none" d="M0 0h24v24H0z" fill="none" /><path d="M5 9l4 0l0 -4" /><path d="M3 3l6 6" /><path d="M5 15l4 0l0 4" /><path d="M3 21l6 -6" /><path d="M19 9l-4 0l0 -4" /><path d="M15 9l6 -6" /><path d="M19 15l-4 0l0 4" /><path d="M15 15l6 6" /></svg>'
+            . '</button>'
+            . '</div>';
     }
 
     function getServicesUsedPills(CardInterfaceFramework $card): string

@@ -22,26 +22,26 @@ $baseConfig = AppConfigurationStore::config(true);
 
 $harness->check(PageAccessFramework::class, 'marks configured pages as developer-only', function () use ($harness, $setConfig, $baseConfig): void {
     $config = $baseConfig;
-    $config['navigation']['developer_only_pages'] = ['test'];
+    $config['navigation']['developer_only_pages'] = ['developer_page'];
     $setConfig($config);
 
-    $harness->assertTrue(PageAccessFramework::isDeveloperOnlyPage('test'));
+    $harness->assertTrue(PageAccessFramework::isDeveloperOnlyPage('developer_page'));
     $harness->assertTrue(!PageAccessFramework::isDeveloperOnlyPage('dashboard'));
 });
 
 $harness->check(PageAccessFramework::class, 'only allows developer-only pages when developer options are enabled', function () use ($harness, $setConfig, $baseConfig): void {
     $config = $baseConfig;
     $config['developer_options'] = false;
-    $config['navigation']['developer_only_pages'] = ['test'];
+    $config['navigation']['developer_only_pages'] = ['developer_page'];
     $setConfig($config);
 
-    $harness->assertTrue(!PageAccessFramework::isPageAvailable('test'));
+    $harness->assertTrue(!PageAccessFramework::isPageAvailable('developer_page'));
     $harness->assertTrue(PageAccessFramework::isPageAvailable('dashboard'));
 
     $config['developer_options'] = true;
     $setConfig($config);
 
-    $harness->assertTrue(PageAccessFramework::isPageAvailable('test'));
+    $harness->assertTrue(PageAccessFramework::isPageAvailable('developer_page'));
 });
 
 AppConfigurationStore::config(true);

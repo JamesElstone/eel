@@ -255,6 +255,9 @@ final class AppConfigurationStore
                 'pass' => '',
                 'logfile' => '',
             ],
+            'trace' => [
+                'log_path' => '',
+            ],
             'navigation' => [
                 'default_order' => [],
                 'developer_only_pages' => [

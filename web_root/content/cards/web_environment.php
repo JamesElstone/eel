@@ -44,6 +44,7 @@ final class _web_environmentCard extends CardBaseFramework
                     </div>
                 </div>
             </fieldset>
+            ' . $this->uploadLimitsHtml() . '
             <fieldset class="form-row full settings-fieldset">
                 <legend>Web Environment</legend>
                 <div class="form-grid">
@@ -63,6 +64,33 @@ final class _web_environmentCard extends CardBaseFramework
                 </div>
             </fieldset>
         </form>';
+    }
+
+    private function uploadLimitsHtml(): string
+    {
+        $limits = [
+            'upload_max_filesize' => 'Upload max filesize',
+            'post_max_size' => 'Post max size',
+            'max_file_uploads' => 'Max file uploads',
+            'memory_limit' => 'Memory limit',
+        ];
+
+        $html = '<fieldset class="form-row full settings-fieldset">
+            <legend>Upload Limits</legend>
+            <div class="web-environment-soft-panels">';
+
+        foreach ($limits as $key => $label) {
+            $value = ini_get($key);
+            $html .= '<div class="web-environment-soft-panel">
+                <p class="helper">' . HelperFramework::escape($label) . '</p>
+                <p><code>' . HelperFramework::escape($value === false ? 'Unavailable' : (string)$value) . '</code></p>
+            </div>';
+        }
+
+        $html .= '</div>
+        </fieldset>';
+
+        return $html;
     }
 
     private function serverIpAddress(): string

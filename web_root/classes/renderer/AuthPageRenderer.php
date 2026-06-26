@@ -201,6 +201,7 @@ final class AuthPageRenderer
         $escapedMessage = HelperFramework::escape($message);
         $escapedAppName = HelperFramework::escape($this->appName);
         $escapedAppStrapline = HelperFramework::escape($this->appStrapline);
+        $brandMarkHtml = BrandMarkRenderer::html('auth-logo-mark-image');
         $errorHtml = '';
 
         foreach ($errors as $error) {
@@ -220,7 +221,7 @@ final class AuthPageRenderer
                 <body>
                     <main class="auth-shell">
                         <div class="auth-logo">
-                            <div class="auth-logo-mark">E</div>
+                            <div class="auth-logo-mark">' . $brandMarkHtml . '</div>
                             <div class="auth-logo-copy">
                                 <div class="auth-logo-title">' . $escapedAppName . '</div>
                                 <div class="auth-logo-subtitle">' . $escapedAppStrapline . '</div>

@@ -92,6 +92,13 @@ body {
   font-size: 1.2rem;
   font-weight: 700;
   text-shadow: 0 1px 1px rgba(0,0,0,0.16);
+  overflow: hidden;
+}
+.auth-logo-mark-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
 }
 .auth-logo-copy {
   display: flex;

@@ -69,6 +69,8 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
     $requestedVisibleCard->setAccessible(true);
     $brandMark = new ReflectionMethod(PageRendererFramework::class, 'brandMark');
     $brandMark->setAccessible(true);
+    $renderBrandMark = new ReflectionMethod(PageRendererFramework::class, 'renderBrandMark');
+    $renderBrandMark->setAccessible(true);
     $renderDeveloperOptionsStatus = new ReflectionMethod(PageRendererFramework::class, 'renderDeveloperOptionsStatus');
     $renderDeveloperOptionsStatus->setAccessible(true);
 
@@ -208,6 +210,32 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
 
     $harness->check(PageRendererFramework::class, 'reads the sidebar brand mark from application config', function () use ($harness, $instance, $brandMark): void {
         $harness->assertSame('T', $brandMark->invoke($instance));
+    });
+
+    $harness->check(PageRendererFramework::class, 'renders local image paths as sidebar brand mark images', function () use ($harness, $instance, $renderBrandMark): void {
+        $path = AppConfigurationStore::configPath();
+        $original = file_get_contents($path);
+
+        if (!is_string($original)) {
+            throw new RuntimeException('Unable to read fixture config.');
+        }
+
+        try {
+            AppConfigurationStore::set('brand-mark', 'swallowtail_butterfly_42x42.png');
+            $harness->assertSame(
+                '<img class="brand-mark-image" src="/swallowtail_butterfly_42x42.png" alt="" aria-hidden="true">',
+                $renderBrandMark->invoke($instance)
+            );
+
+            AppConfigurationStore::set('brand-mark', 'https://example.test/logo.png');
+            $harness->assertSame('https://example.test/logo.png', $renderBrandMark->invoke($instance));
+
+            AppConfigurationStore::set('brand-mark', 'EK');
+            $harness->assertSame('EK', $renderBrandMark->invoke($instance));
+        } finally {
+            file_put_contents($path, $original, LOCK_EX);
+            AppConfigurationStore::config(true);
+        }
     });
 
     $harness->check(PageRendererFramework::class, 'renders developer options badge only when enabled', function () use ($harness, $instance, $renderDeveloperOptionsStatus): void {

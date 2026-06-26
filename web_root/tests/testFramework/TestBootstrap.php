@@ -21,6 +21,20 @@ defined('APP_CSS') || define('APP_CSS', APP_ROOT . 'css' . DIRECTORY_SEPARATOR);
 defined('AF_HEADER_PREFIX') || define('AF_HEADER_PREFIX', 'X-AntiFraud-');
 defined('AF_COOKIE_PREFIX') || define('AF_COOKIE_PREFIX', 'af_');
 
+if (!function_exists('logDetails')) {
+    function logDetails(): void
+    {
+        static $loaded = false;
+
+        if (!$loaded) {
+            require_once APP_CLASSES . 'framework' . DIRECTORY_SEPARATOR . 'TraceLogFramework.php';
+            $loaded = true;
+        }
+
+        TraceLogFramework::logDetails();
+    }
+}
+
 spl_autoload_register(
     static function (string $className): void {
         $className = ltrim($className, '\\');

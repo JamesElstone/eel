@@ -129,6 +129,38 @@ $harness->run(CardRendererFramework::class, function (GeneratedServiceClassTestH
         $harness->assertSame(false, str_contains($html, 'data-card-refresh-fact='));
     });
 
+    $harness->check(CardRendererFramework::class, 'renders card size toggle before developer metadata', function () use ($harness, $instance, $services): void {
+        $path = AppConfigurationStore::configPath();
+        $original = file_get_contents($path);
+
+        if (!is_string($original)) {
+            throw new RuntimeException('Unable to read fixture config.');
+        }
+
+        try {
+            AppConfigurationStore::set('developer_options', true);
+            $enabledHtml = $instance->render('test', 'service_metadata_test', ['page' => ['page_id' => 'test']], $services);
+
+            AppConfigurationStore::set('developer_options', false);
+            $disabledHtml = $instance->render('test', 'service_metadata_test', ['page' => ['page_id' => 'test']], $services);
+
+            $togglePosition = strpos($enabledHtml, 'class="card_size"');
+            $metadataPosition = strpos($enabledHtml, 'Card: service_metadata_test');
+
+            $harness->assertTrue($togglePosition !== false);
+            $harness->assertTrue($metadataPosition !== false);
+            $harness->assertTrue($togglePosition < $metadataPosition);
+            $harness->assertTrue(str_contains($enabledHtml, '<button class="card-size-toggle" type="button" data-card-size-toggle aria-label="Maximize card" aria-pressed="false">'));
+            $harness->assertTrue(str_contains($enabledHtml, 'card-size-icon-maximize'));
+            $harness->assertTrue(str_contains($enabledHtml, 'card-size-icon-minimize'));
+            $harness->assertTrue(str_contains($disabledHtml, 'data-card-size-toggle'));
+            $harness->assertSame(false, str_contains($disabledHtml, 'Card: service_metadata_test'));
+        } finally {
+            file_put_contents($path, $original, LOCK_EX);
+            AppConfigurationStore::config(true);
+        }
+    });
+
     $harness->check(CardRendererFramework::class, 'shows service metadata only when developer options are enabled', function () use ($harness, $instance, $services): void {
         $path = AppConfigurationStore::configPath();
         $original = file_get_contents($path);

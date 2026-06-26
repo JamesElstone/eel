@@ -35,7 +35,13 @@ $harness->check(_web_environmentCard::class, 'renders base URL and reverse proxy
     $harness->assertTrue(str_contains($html, '<legend>Server Address</legend>'));
     $harness->assertTrue(str_contains($html, 'Current server IP address'));
     $harness->assertTrue(str_contains($html, '<code>203.0.113.7</code>'));
-    $harness->assertTrue(strpos($html, '<legend>Server Address</legend>') < strpos($html, '<legend>Web Environment</legend>'));
+    $harness->assertTrue(str_contains($html, '<legend>Upload Limits</legend>'));
+    $harness->assertTrue(str_contains($html, 'Upload max filesize'));
+    $harness->assertTrue(str_contains($html, 'Post max size'));
+    $harness->assertTrue(str_contains($html, 'Max file uploads'));
+    $harness->assertTrue(str_contains($html, 'Memory limit'));
+    $harness->assertTrue(strpos($html, '<legend>Server Address</legend>') < strpos($html, '<legend>Upload Limits</legend>'));
+    $harness->assertTrue(strpos($html, '<legend>Upload Limits</legend>') < strpos($html, '<legend>Web Environment</legend>'));
     $harness->assertTrue(str_contains($html, 'External Base Web URL (Blank for Automatic)'));
     $harness->assertTrue(str_contains($html, 'Trusted Reverse Proxy IPs'));
     $harness->assertTrue(str_contains($html, 'name="add_current_reverse_proxy" value="1"'));

@@ -289,7 +289,7 @@ final class PageRendererFramework
         $displayName = $this->currentSidebarDisplayName($sessionAuthenticationService);
         global $appName;
         $escapedAppName = HelperFramework::escape((string)($appName ?? 'eelKit Framework'));
-        $escapedBrandMark = HelperFramework::escape($this->brandMark());
+        $brandMarkHtml = $this->renderBrandMark();
         $escapedAppStrapline = HelperFramework::escape(AppConfigurationStore::appStrapline());
         $hideCollapsedLinkInitials = $this->hideCollapsedLinkInitials();
         $showCollapsedLinkInitials = !$hideCollapsedLinkInitials;
@@ -298,7 +298,7 @@ final class PageRendererFramework
         $html = '<aside id="sidebar-shell" class="' . $sidebarClass . '">
         <div class="brand-block">
             <div class="brand">
-                <div class="brand-mark">' . $escapedBrandMark . '</div>
+                <div class="brand-mark">' . $brandMarkHtml . '</div>
                 <div class="brand-copy">
                     <div class="brand-title">' . $escapedAppName . '</div>
                     <div class="brand-subtitle">' . $escapedAppStrapline . '</div>
@@ -343,9 +343,12 @@ final class PageRendererFramework
 
     private function brandMark(): string
     {
-        $brandMark = trim((string)AppConfigurationStore::get('brand-mark', 'E'));
+        return BrandMarkRenderer::configuredMark();
+    }
 
-        return $brandMark !== '' ? $brandMark : 'E';
+    private function renderBrandMark(): string
+    {
+        return BrandMarkRenderer::html('brand-mark-image');
     }
 
     private function hideCollapsedLinkInitials(): bool

@@ -60,6 +60,13 @@ $harness->check(AppConfigurationStore::class, 'does not generate a default datab
     $harness->assertSame('', $defaults['db']['dsn'] ?? null);
 });
 
+$harness->check(AppConfigurationStore::class, 'keeps function tracing disabled by default', function () use ($harness): void {
+    $method = new ReflectionMethod(AppConfigurationStore::class, 'defaults');
+    $defaults = $method->invoke(null);
+
+    $harness->assertSame('', $defaults['trace']['log_path'] ?? null);
+});
+
 $harness->check(AppConfigurationStore::class, 'updates database connection settings without dropping other db options', function () use ($harness): void {
     $path = AppConfigurationStore::configPath();
     $original = file_get_contents($path);
@@ -101,7 +108,7 @@ $harness->check(AppConfigurationStore::class, 'updates editable application sett
                     'settings' => 920,
                 ],
                 'developer_only_pages' => [
-                    'test',
+                    'developer_page',
                 ],
                 'hide_collapsed_link_initials' => true,
             ],
@@ -121,7 +128,7 @@ $harness->check(AppConfigurationStore::class, 'updates editable application sett
         $harness->assertSame('US', $updated['brand-mark'] ?? null);
         $harness->assertSame(false, $updated['developer_options'] ?? null);
         $harness->assertSame(920, $updated['navigation']['default_order']['settings'] ?? null);
-        $harness->assertSame('test', $updated['navigation']['developer_only_pages'][0] ?? null);
+        $harness->assertSame('developer_page', $updated['navigation']['developer_only_pages'][0] ?? null);
         $harness->assertSame(true, $updated['navigation']['hide_collapsed_link_initials'] ?? null);
         $harness->assertSame('203.0.113.10', $updated['antifraud']['vendor_public_ip'] ?? null);
         $harness->assertSame('true', $updated['session']['cookie_secure'] ?? null);

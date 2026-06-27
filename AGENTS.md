@@ -17,7 +17,7 @@ In downstream projects, treat these paths as upstream eelKit framework code unle
 - `web_root/css/index.css`
 - `web_root/index.php`
 - `web_root/js/index.js`
-- `web_root/tests/`
+- `web_root/tests/` except downstream-owned project tests
 - `tools/php/`
 - `db_schema/`
 - `secure/`
@@ -42,6 +42,12 @@ If a downstream project needs behavior that appears to require changing eelKit, 
 - the proposed API or framework change
 - compatibility concerns
 - any temporary downstream workaround
+
+## Downstream project tests
+
+Downstream projects can add and alter their own tests under `web_root/tests/`.
+
+Treat tests that exercise downstream project behavior as downstream application code, even when they live under `web_root/tests/`. Do not modify eelKit framework tests in that directory unless the user explicitly asks to patch eelKit itself.
 
 ## Styling
 

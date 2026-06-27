@@ -37,7 +37,7 @@ final class _add_userCard extends CardBaseFramework
 
     public function helper(array $context): string
     {
-        return 'Create a new active user account. OTP enrollment will be required on first successful sign-in.';
+        return 'Create a new active user account. OTP enrollment follows the configured user default.';
     }
 
     public function render(array $context): string

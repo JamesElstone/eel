@@ -16,6 +16,7 @@ $harness->check(AppConfigurationStore::class, 'loads configuration from the test
     $harness->assertSame('Test strapline', AppConfigurationStore::get('app_strapline'));
     $harness->assertSame('', AppConfigurationStore::get('app_footer'));
     $harness->assertSame([], AppConfigurationStore::get('navigation.topbar_disabled_pages'));
+    $harness->assertSame(true, AppConfigurationStore::get('user_defaults.new_user_otp_required'));
     $harness->assertSame('Test strapline', AppConfigurationStore::appStrapline());
 });
 
@@ -24,6 +25,7 @@ $harness->check(AppConfigurationStore::class, 'centralises the default applicati
     $defaults = $method->invoke(null);
 
     $harness->assertSame('Bookkeeping without the fog and panic', $defaults['app_strapline'] ?? null);
+    $harness->assertSame(true, $defaults['user_defaults']['new_user_otp_required'] ?? null);
 });
 
 $harness->check(AppConfigurationStore::class, 'falls back to the default application strapline when configured blank', function () use ($harness): void {
@@ -128,6 +130,9 @@ $harness->check(AppConfigurationStore::class, 'updates editable application sett
                 'cookie_secure' => 'true',
                 'cookie_samesite' => 'Lax',
             ],
+            'user_defaults' => [
+                'new_user_otp_required' => false,
+            ],
         ]);
 
         $harness->assertSame('Updated Settings Test', $updated['app_name'] ?? null);
@@ -140,6 +145,7 @@ $harness->check(AppConfigurationStore::class, 'updates editable application sett
         $harness->assertSame(true, $updated['navigation']['hide_collapsed_link_initials'] ?? null);
         $harness->assertSame('203.0.113.10', $updated['antifraud']['vendor_public_ip'] ?? null);
         $harness->assertSame('true', $updated['session']['cookie_secure'] ?? null);
+        $harness->assertSame(false, $updated['user_defaults']['new_user_otp_required'] ?? null);
         $harness->assertSame('../db_schema/eelKit.schema.sql', $updated['db']['sqlite_schema'] ?? null);
     } finally {
         file_put_contents($path, $original, LOCK_EX);

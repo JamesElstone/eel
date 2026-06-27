@@ -118,7 +118,8 @@ final class UserAuthenticationService
         string $emailAddress,
         string $password,
         bool $isActive = true,
-        string $mobileNumber = ''
+        string $mobileNumber = '',
+        bool $otpRequired = true
     ): array {
         $input = $this->normaliseUserInput($displayName, $emailAddress, $isActive, $mobileNumber);
         $errors = $this->validateCreateInput($input, $password);
@@ -140,6 +141,7 @@ final class UserAuthenticationService
                 email_address,
                 mobile_number,
                 password_hash,
+                otp_required,
                 is_active,
                 account_status,
                 account_completed_at
@@ -148,6 +150,7 @@ final class UserAuthenticationService
                 :email_address,
                 :mobile_number,
                 :password_hash,
+                :otp_required,
                 :is_active,
                 :account_status,
                 CURRENT_TIMESTAMP
@@ -157,6 +160,7 @@ final class UserAuthenticationService
                 'email_address' => $input['email_address'],
                 'mobile_number' => $input['mobile_number'],
                 'password_hash' => $hash,
+                'otp_required' => $otpRequired ? 1 : 0,
                 'is_active' => $input['is_active'],
                 'account_status' => 'active',
             ]

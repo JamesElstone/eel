@@ -83,6 +83,9 @@ final class ApplicationSettingsAction implements ActionInterfaceFramework
                     'cookie_secure' => $this->cookieSecureValue((string)$request->input('session_cookie_secure', 'auto')),
                     'cookie_samesite' => $this->cookieSameSiteValue((string)$request->input('session_cookie_samesite', 'Strict')),
                 ]),
+                'user_defaults' => array_replace($this->configArray($previousConfig, 'user_defaults'), [
+                    'new_user_otp_required' => $this->otpRequiredValue((string)$request->input('new_user_otp_required', '1')),
+                ]),
             ];
             $successMessage = $this->successFlashMessage($previousConfig, $settings, $lookedUpVendorPublicIp);
 
@@ -189,6 +192,10 @@ final class ApplicationSettingsAction implements ActionInterfaceFramework
 
         if ($this->configArray($previousConfig, 'session') !== $this->configArray($settings, 'session')) {
             $changes[] = 'Session cookie settings updated.';
+        }
+
+        if ($this->configArray($previousConfig, 'user_defaults') !== $this->configArray($settings, 'user_defaults')) {
+            $changes[] = 'User defaults updated.';
         }
 
         return $changes;
@@ -322,6 +329,11 @@ final class ApplicationSettingsAction implements ActionInterfaceFramework
             'none' => 'None',
             default => 'Strict',
         };
+    }
+
+    private function otpRequiredValue(string $value): bool
+    {
+        return trim($value) !== '0';
     }
 
     private function currentUserIdFromSession(SessionAuthenticationService $sessionAuthenticationService): int

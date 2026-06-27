@@ -83,6 +83,9 @@ $harness->check(ApplicationSettingsAction::class, 'explains application setting 
             'cookie_secure' => 'auto',
             'cookie_samesite' => 'Strict',
         ],
+        'user_defaults' => [
+            'new_user_otp_required' => true,
+        ],
     ];
 
     $settings = $previousConfig;
@@ -117,6 +120,13 @@ $harness->check(ApplicationSettingsAction::class, 'explains application setting 
     $settings['navigation']['topbar_disabled_pages'] = ['dashboard'];
     $harness->assertSame(
         'Page topbar visibility updated.',
+        $method->invoke($action, $previousConfig, $settings, false)
+    );
+
+    $settings = $previousConfig;
+    $settings['user_defaults']['new_user_otp_required'] = false;
+    $harness->assertSame(
+        'User defaults updated.',
         $method->invoke($action, $previousConfig, $settings, false)
     );
 });

@@ -64,3 +64,9 @@ $harness->check(SmtpSettingsAction::class, 'limits SMTP port to the valid TCP po
     $harness->assertSame(587, $method->invoke($action, 587));
     $harness->assertSame(65535, $method->invoke($action, 70000));
 });
+
+$harness->check(SmtpSettingsAction::class, 'invalidates add user card after settings changes', function () use ($harness): void {
+    $source = (string)file_get_contents(APP_ACTIONS . 'SmtpSettingsAction.php');
+
+    $harness->assertTrue(str_contains($source, "ActionResultFramework::success(['smtp.settings', 'add.user']"));
+});

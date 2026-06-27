@@ -216,6 +216,18 @@ body.sidebar-collapsed .layout {
   cursor: not-allowed;
 }
 
+.selector-input.select-placeholder-muted:required:invalid {
+  color: var(--muted);
+}
+
+.selector-input.select-placeholder-muted option {
+  color: var(--text);
+}
+
+.selector-input.select-placeholder-muted option[disabled] {
+  color: var(--muted);
+}
+
 .sidebar-select {
   width: 100%;
   min-width: 0;
@@ -341,6 +353,11 @@ body.sidebar-collapsed .layout {
 .sidebar-toggle svg {
   width: 18px;
   height: 18px;
+  transition: transform 0.2s ease;
+}
+
+body.sidebar-collapsed .sidebar-toggle svg {
+  transform: rotate(180deg);
 }
 
 .nav-group {
@@ -651,10 +668,24 @@ body.sidebar-collapsed .sidebar-hide-collapsed-link-initials .nav-link-short {
   min-width: 0;
 }
 
-.page-load-time {
+.page-footer {
   margin-top: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
   font-size: 0.8rem;
   color: var(--muted);
+}
+
+.application-footer {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.page-load-time {
+  margin-left: auto;
+  white-space: nowrap;
   text-align: right;
 }
 
@@ -2517,10 +2548,20 @@ label {
 }
 
 .settings-order-actions {
+  align-items: center;
   display: flex;
   gap: 8px;
   justify-content: flex-end;
   flex-wrap: wrap;
+}
+
+.settings-order-topbar-toggle {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 4px;
+  white-space: nowrap;
 }
 
 .settings-order-actions .button {

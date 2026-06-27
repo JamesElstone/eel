@@ -32,3 +32,9 @@ $harness->check(InvitationSettingsAction::class, 'explains invited account compl
         $method->invoke($action, false, false)
     );
 });
+
+$harness->check(InvitationSettingsAction::class, 'invalidates add user card after settings changes', function () use ($harness): void {
+    $source = (string)file_get_contents(APP_ACTIONS . 'InvitationSettingsAction.php');
+
+    $harness->assertTrue(str_contains($source, "ActionResultFramework::success(['invitation.settings', 'add.user']"));
+});

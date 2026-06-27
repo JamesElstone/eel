@@ -96,14 +96,18 @@ $harness->check(UserAuthenticationService::class, 'creates users and rejects dup
 
         try {
             $created = $service->createUser('Test User', 'USER@example.test', 'Strong Password 1!', true, '+447123456789');
+            $optionalOtp = $service->createUser('Optional OTP User', 'optional-otp@example.test', 'Strong Password 1!', true, '', false);
             $duplicate = $service->createUser('Duplicate User', 'user@example.test', 'Strong Password 1!');
             $authenticated = $service->authenticateByEmailAddress(' user@example.test ', 'Strong Password 1!');
 
             $harness->assertTrue(!empty($created['success']));
+            $harness->assertTrue(!empty($optionalOtp['success']));
             $harness->assertTrue(empty($duplicate['success']));
             $harness->assertTrue(is_array($authenticated));
             $harness->assertTrue(!array_key_exists('password_hash', $created['user'] ?? []));
             $harness->assertSame('+447123456789', (string)(($created['user'] ?? [])['mobile_number'] ?? ''));
+            $harness->assertSame(1, (int)(($created['user'] ?? [])['otp_required'] ?? 0));
+            $harness->assertSame(0, (int)(($optionalOtp['user'] ?? [])['otp_required'] ?? 1));
         } finally {
             if (is_file($path)) {
                 unlink($path);

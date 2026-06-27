@@ -24,3 +24,9 @@ $harness->check(SmsSettingsAction::class, 'explains SMS invitation and developme
         $method->invoke($action, false, true)
     );
 });
+
+$harness->check(SmsSettingsAction::class, 'invalidates add user card after settings changes', function () use ($harness): void {
+    $source = (string)file_get_contents(APP_ACTIONS . 'SmsSettingsAction.php');
+
+    $harness->assertTrue(str_contains($source, "ActionResultFramework::success(['sms.settings', 'add.user']"));
+});

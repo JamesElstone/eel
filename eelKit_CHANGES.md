@@ -15,7 +15,7 @@ Canonical validation attributes:
 <input type="text" data-validate-ascii>
 ```
 
-`data-validate-int` allows ASCII digits only. `data-validate-float` allows ASCII digits and one decimal point. `data-validate-ascii` strips non-ASCII input. `data-validate-boolean` ensures a select value is either `true` or `false`.
+`data-validate-int` allows ASCII digits only. `data-validate-float` allows ASCII digits and one decimal point at the browser character-filtering layer. Server validation is stricter: float values must contain at least one digit after any decimal point, so `.5` is accepted but `1.` and `.` are rejected. `data-validate-ascii` strips non-ASCII input. `data-validate-boolean` ensures a select value is either `true` or `false`.
 
 For tables where a row's type control determines a separate value control, pair them with a shared token:
 

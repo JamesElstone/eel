@@ -35,7 +35,7 @@ final class SmsSettingsAction implements ActionInterfaceFramework
             'development_mode' => $developmentMode,
         ]);
 
-        return ActionResultFramework::success(['sms.settings'], [[
+        return ActionResultFramework::success(['sms.settings', 'add.user'], [[
             'type' => 'success',
             'message' => $this->successFlashMessage($enabled, $developmentMode),
         ]]);

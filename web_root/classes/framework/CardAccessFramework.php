@@ -10,7 +10,7 @@ declare(strict_types=1);
 final class CardAccessFramework
 {
     private const IMPLIED_CARD_ACCESS = [
-        'current_users' => ['add_user', 'user_login_lockouts', 'invited_users', 'invite_user'],
+        'current_users' => ['add_user', 'user_login_lockouts', 'invited_users'],
     ];
 
     public function __construct(

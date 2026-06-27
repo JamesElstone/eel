@@ -61,13 +61,16 @@ final class ApplicationSettingsAction implements ActionInterfaceFramework
                 ? (new ExternalIpLookupOutbound())->lookupPublicIp()
                 : trim((string)$request->input('antifraud_vendor_public_ip', ''));
             $developerOptions = $this->checkboxValue($request, 'developer_options');
+            $navigationOrder = $this->navigationOrderFromRequest($request);
             $settings = [
                 'app_name' => $appName,
                 'app_strapline' => trim((string)$request->input('app_strapline', '')),
+                'app_footer' => trim((string)$request->input('app_footer', '')),
                 'brand-mark' => $brandMark,
                 'developer_options' => $developerOptions,
                 'navigation' => array_replace($this->configArray($previousConfig, 'navigation'), [
-                    'default_order' => $this->navigationOrderFromRequest($request),
+                    'default_order' => $navigationOrder,
+                    'topbar_disabled_pages' => $this->topbarDisabledPagesFromRequest($request, array_keys($navigationOrder)),
                     'hide_collapsed_link_initials' => $this->checkboxValue($request, 'hide_collapsed_link_initials'),
                 ]),
                 'antifraud' => array_replace($this->configArray($previousConfig, 'antifraud'), [
@@ -79,6 +82,9 @@ final class ApplicationSettingsAction implements ActionInterfaceFramework
                 'session' => array_replace($this->configArray($previousConfig, 'session'), [
                     'cookie_secure' => $this->cookieSecureValue((string)$request->input('session_cookie_secure', 'auto')),
                     'cookie_samesite' => $this->cookieSameSiteValue((string)$request->input('session_cookie_samesite', 'Strict')),
+                ]),
+                'user_defaults' => array_replace($this->configArray($previousConfig, 'user_defaults'), [
+                    'new_user_otp_required' => $this->otpRequiredValue((string)$request->input('new_user_otp_required', '1')),
                 ]),
             ];
             $successMessage = $this->successFlashMessage($previousConfig, $settings, $lookedUpVendorPublicIp);
@@ -98,7 +104,7 @@ final class ApplicationSettingsAction implements ActionInterfaceFramework
         }
 
         return ActionResultFramework::success(
-            ['application.settings', 'layout.sidebar'],
+            ['application.settings', 'layout.sidebar', 'layout.topbar', 'layout.footer'],
             [[
                 'type' => 'success',
                 'message' => $successMessage,
@@ -153,6 +159,7 @@ final class ApplicationSettingsAction implements ActionInterfaceFramework
 
         if ((string)($previousConfig['app_name'] ?? '') !== (string)($settings['app_name'] ?? '')
             || (string)($previousConfig['app_strapline'] ?? '') !== (string)($settings['app_strapline'] ?? '')
+            || (string)($previousConfig['app_footer'] ?? '') !== (string)($settings['app_footer'] ?? '')
             || (string)($previousConfig['brand-mark'] ?? '') !== (string)($settings['brand-mark'] ?? '')) {
             $changes[] = 'Branding updated.';
         }
@@ -175,12 +182,20 @@ final class ApplicationSettingsAction implements ActionInterfaceFramework
             $changes[] = 'Navigation order updated.';
         }
 
+        if (($previousNavigation['topbar_disabled_pages'] ?? []) !== ($currentNavigation['topbar_disabled_pages'] ?? [])) {
+            $changes[] = 'Page topbar visibility updated.';
+        }
+
         if ($this->configArray($previousConfig, 'antifraud') !== $this->configArray($settings, 'antifraud')) {
             $changes[] = 'Anti-fraud header defaults updated.';
         }
 
         if ($this->configArray($previousConfig, 'session') !== $this->configArray($settings, 'session')) {
             $changes[] = 'Session cookie settings updated.';
+        }
+
+        if ($this->configArray($previousConfig, 'user_defaults') !== $this->configArray($settings, 'user_defaults')) {
+            $changes[] = 'User defaults updated.';
         }
 
         return $changes;
@@ -208,6 +223,30 @@ final class ApplicationSettingsAction implements ActionInterfaceFramework
         }
 
         return $order;
+    }
+
+    private function topbarDisabledPagesFromRequest(RequestFramework $request, array $orderedPageKeys): array
+    {
+        $enabledValues = $request->input('topbar_enabled_pages', []);
+        $enabledValues = is_array($enabledValues) ? array_values($enabledValues) : [];
+        $enabled = [];
+
+        foreach ($enabledValues as $value) {
+            $pageKey = $this->normalisePageKey((string)$value);
+            if ($pageKey !== null) {
+                $enabled[$pageKey] = true;
+            }
+        }
+
+        $disabled = [];
+        foreach ($orderedPageKeys as $pageKey) {
+            $pageKey = $this->normalisePageKey((string)$pageKey);
+            if ($pageKey !== null && !isset($enabled[$pageKey])) {
+                $disabled[] = $pageKey;
+            }
+        }
+
+        return $disabled;
     }
 
     private function navigationOrderAction(string $value): ?array
@@ -290,6 +329,11 @@ final class ApplicationSettingsAction implements ActionInterfaceFramework
             'none' => 'None',
             default => 'Strict',
         };
+    }
+
+    private function otpRequiredValue(string $value): bool
+    {
+        return trim($value) !== '0';
     }
 
     private function currentUserIdFromSession(SessionAuthenticationService $sessionAuthenticationService): int

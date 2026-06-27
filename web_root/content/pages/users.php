@@ -40,11 +40,11 @@ final class _users extends PageContextFramework
             'current_users',
             'user_login_lockouts',
             'invited_users',
-            'invite_user',
             'add_user',
             'user_logon_history_log',
             'current_user_details',
             'set_new_otp_secret',
+            'restore_deleted_user',
         ];
     }
 
@@ -57,7 +57,6 @@ final class _users extends PageContextFramework
                     'current_users',
                     'user_login_lockouts',
                     'invited_users',
-                    'invite_user',
                     'add_user',
                     'user_logon_history_log',
                 ],
@@ -68,6 +67,7 @@ final class _users extends PageContextFramework
                 'cards' => [
                     'current_user_details',
                     'set_new_otp_secret',
+                    'restore_deleted_user',
                 ],
             ],
         ];
@@ -152,17 +152,18 @@ final class _users extends PageContextFramework
             ),
             'users-create-invited-user' => $this->resultFromArray(
                 $canManageUsers
-                    ? $userManagementService->createInvitedUser(
+                    ? $userManagementService->createInvitedUserAndSendInvites(
                         $currentUserId,
                         (string)$request->input('invite_display_name', ''),
                         (string)$request->input('invite_email_address', ''),
                         (string)$request->input('invite_mobile_country_code', UserManagementService::defaultMobileCountryCode()),
                         (string)$request->input('invite_mobile_number', ''),
-                        (int)$request->input('invite_role_id', 0)
-                    )
+                        (int)$request->input('invite_role_id', 0),
+                        (new AccountInviteService())->buildBaseUrl($request)
+                )
                     : ['success' => false, 'errors' => ['You do not have permission to manage users.']],
-                'Pending invited user created.',
-                ['current.users', 'invited.users', 'invite.user']
+                'Pending invited user created and invitation sent.',
+                ['current.users', 'invited.users', 'add.user']
             ),
             'users-update-invited-user' => $this->resultFromArray(
                 $canManageUsers
@@ -212,6 +213,17 @@ final class _users extends PageContextFramework
                     : ['success' => false, 'errors' => ['You do not have permission to manage users.']],
                 'Invitation cancelled.',
                 ['current.users', 'invited.users']
+            ),
+            'users-restore-deleted-user' => $this->resultFromArray(
+                $canManageUsers
+                    ? $userManagementService->restoreArchivedUserAndSendInvites(
+                        $currentUserId,
+                        max(0, (int)$request->input('target_user_id', 0)),
+                        (new AccountInviteService())->buildBaseUrl($request)
+                    )
+                    : ['success' => false, 'errors' => ['You do not have permission to manage users.']],
+                'Deleted user restored and invitation sent.',
+                ['current.users', 'invited.users', 'restore.deleted.user']
             ),
             'users-toggle-user' => $this->resultFromArray(
                 $canManageUsers

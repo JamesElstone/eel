@@ -35,10 +35,14 @@ final class _application_settingsCard extends CardBaseFramework
         $navigationOrder = is_array($config['navigation']['default_order'] ?? null)
             ? $config['navigation']['default_order']
             : [];
+        $topbarDisabledPages = is_array($config['navigation']['topbar_disabled_pages'] ?? null)
+            ? $config['navigation']['topbar_disabled_pages']
+            : [];
         $csrfToken = (string)($context['page']['csrf_token'] ?? '');
         $cookieSecure = $this->cookieSecureDisplayValue($config['session']['cookie_secure'] ?? 'auto');
         $cookieSameSite = (string)($config['session']['cookie_samesite'] ?? 'Strict');
         $hideCollapsedLinkInitials = !empty($config['navigation']['hide_collapsed_link_initials']);
+        $newUserOtpRequired = $this->otpRequiredDisplayValue($config['user_defaults']['new_user_otp_required'] ?? true);
 
         return '
             <form method="post" action="?page=settings" data-ajax="true" class="form-grid application-settings-form">
@@ -62,6 +66,10 @@ final class _application_settingsCard extends CardBaseFramework
                             <input class="input" id="settings-app-strapline" name="app_strapline" type="text" value="' . HelperFramework::escape((string)($config['app_strapline'] ?? '')) . '">
                         </div>
                         <div class="form-row full">
+                            <label for="settings-app-footer">Application footer</label>
+                            <input class="input" id="settings-app-footer" name="app_footer" type="text" value="' . HelperFramework::escape((string)($config['app_footer'] ?? '')) . '" maxlength="255">
+                        </div>
+                        <div class="form-row full">
                             <button class="button primary" type="submit" data-processing-text="Saving" data-processing-state="disabled">Save</button>
                         </div>
                     </div>
@@ -78,6 +86,19 @@ final class _application_settingsCard extends CardBaseFramework
                 </fieldset>
 
                 <fieldset class="form-row full settings-fieldset">
+                    <legend>User Defaults</legend>
+                    <div class="form-grid">
+                        <div class="form-row half">
+                            <label for="settings-new-user-otp-required">New user OTP requirement</label>
+                            <select class="select" id="settings-new-user-otp-required" name="new_user_otp_required">
+                                ' . $this->option('1', 'Required', $newUserOtpRequired) . '
+                                ' . $this->option('0', 'Optional', $newUserOtpRequired) . '
+                            </select>
+                        </div>
+                    </div>
+                </fieldset>
+
+                <fieldset class="form-row full settings-fieldset">
                     <legend>Navigation order</legend>
                     <label class="checkbox-item" for="settings-hide-collapsed-link-initials">
                         <input type="hidden" name="hide_collapsed_link_initials" value="0">
@@ -87,7 +108,7 @@ final class _application_settingsCard extends CardBaseFramework
                         </span>
                     </label>
                     <div class="checkbox-grid">
-                        ' . $this->navigationOrderFields($navigationOrder) . '
+                        ' . $this->navigationOrderFields($navigationOrder, $topbarDisabledPages) . '
                     </div>
                 </fieldset>
 
@@ -130,10 +151,16 @@ final class _application_settingsCard extends CardBaseFramework
         ';
     }
 
-    private function navigationOrderFields(array $navigationOrder): string
+    private function navigationOrderFields(array $navigationOrder, array $topbarDisabledPages): string
     {
         $html = '';
         $rows = $this->navigationOrderRows($navigationOrder);
+        $topbarDisabledLookup = array_fill_keys(array_values(array_filter(
+            array_map(
+                fn(mixed $pageKey): ?string => $this->normalisePageKey((string)$pageKey),
+                $topbarDisabledPages
+            )
+        )), true);
 
         foreach ($rows as $index => $row) {
             $pageKey = (string)$row['key'];
@@ -144,6 +171,7 @@ final class _application_settingsCard extends CardBaseFramework
             $removeButton = $isOrphan
                 ? '<button class="button button-inline danger" type="submit" name="navigation_order_action" value="remove:' . HelperFramework::escape($pageKey) . '">Remove orphan</button>'
                 : '';
+            $topbarChecked = isset($topbarDisabledLookup[$pageKey]) ? '' : ' checked';
 
             $html .= '<div class="settings-order-row">
                 <input type="hidden" name="navigation_order_keys[]" value="' . HelperFramework::escape($pageKey) . '">
@@ -152,6 +180,10 @@ final class _application_settingsCard extends CardBaseFramework
                     ' . $orphanBadge . '
                 </div>
                 <div class="settings-order-actions">
+                    <label class="settings-order-topbar-toggle" for="settings-topbar-enabled-' . HelperFramework::escape($pageKey) . '">
+                        <input id="settings-topbar-enabled-' . HelperFramework::escape($pageKey) . '" name="topbar_enabled_pages[]" type="checkbox" value="' . HelperFramework::escape($pageKey) . '" data-submit-on-change="true"' . $topbarChecked . '>
+                        <span>Topbar</span>
+                    </label>
                     <button class="button button-inline" type="' . ($isFirst ? 'button' : 'submit') . '" name="navigation_order_action" value="up:' . HelperFramework::escape($pageKey) . '"' . ($isFirst ? ' disabled' : '') . ' title="Move up" aria-label="Move ' . HelperFramework::escape((string)$row['label']) . ' up">+</button>
                     <button class="button button-inline" type="' . ($isLast ? 'button' : 'submit') . '" name="navigation_order_action" value="down:' . HelperFramework::escape($pageKey) . '"' . ($isLast ? ' disabled' : '') . ' title="Move down" aria-label="Move ' . HelperFramework::escape((string)$row['label']) . ' down">-</button>
                     ' . $removeButton . '
@@ -264,6 +296,15 @@ final class _application_settingsCard extends CardBaseFramework
         $value = strtolower(trim((string)$value));
 
         return in_array($value, ['auto', 'true', 'false'], true) ? $value : 'auto';
+    }
+
+    private function otpRequiredDisplayValue(mixed $value): string
+    {
+        if (is_bool($value)) {
+            return $value ? '1' : '0';
+        }
+
+        return trim((string)$value) === '0' ? '0' : '1';
     }
 
     private function hiddenFields(array $context): string

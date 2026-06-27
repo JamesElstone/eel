@@ -33,7 +33,7 @@ final class InvitationSettingsAction implements ActionInterfaceFramework
             'email_body_template' => trim((string)$request->input('invitation_email_body_template', '')),
         ]);
 
-        return ActionResultFramework::success(['invitation.settings'], [[
+        return ActionResultFramework::success(['invitation.settings', 'add.user'], [[
             'type' => 'success',
             'message' => $this->successFlashMessage((bool)($previousInvitation['enabled'] ?? false), $enabled),
         ]]);

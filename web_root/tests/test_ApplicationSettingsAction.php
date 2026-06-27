@@ -32,6 +32,29 @@ $harness->check(ApplicationSettingsAction::class, 'reads checkbox values from aj
     $harness->assertSame(false, $method->invoke($action, $request, 'missing'));
 });
 
+$harness->check(ApplicationSettingsAction::class, 'maps topbar page checkboxes to disabled pages', function () use ($harness): void {
+    $action = new ApplicationSettingsAction();
+    $method = new ReflectionMethod(ApplicationSettingsAction::class, 'topbarDisabledPagesFromRequest');
+    $method->setAccessible(true);
+
+    $request = new RequestFramework(
+        ['page' => 'settings'],
+        [],
+        [
+            'REQUEST_METHOD' => 'POST',
+            'CONTENT_TYPE' => 'application/json',
+        ],
+        [],
+        [],
+        '{"topbar_enabled_pages":["dashboard"]}'
+    );
+
+    $harness->assertSame(
+        ['settings'],
+        $method->invoke($action, $request, ['dashboard', 'settings'])
+    );
+});
+
 $harness->check(ApplicationSettingsAction::class, 'explains application setting changes in plain language', function () use ($harness): void {
     $action = new ApplicationSettingsAction();
     $method = new ReflectionMethod(ApplicationSettingsAction::class, 'successFlashMessage');
@@ -40,12 +63,14 @@ $harness->check(ApplicationSettingsAction::class, 'explains application setting 
     $previousConfig = [
         'app_name' => 'eelKit Framework',
         'app_strapline' => 'Old strapline',
+        'app_footer' => '',
         'brand-mark' => 'E',
         'developer_options' => true,
         'navigation' => [
             'default_order' => [
                 'dashboard' => 10,
             ],
+            'topbar_disabled_pages' => [],
             'hide_collapsed_link_initials' => false,
         ],
         'antifraud' => [
@@ -57,6 +82,9 @@ $harness->check(ApplicationSettingsAction::class, 'explains application setting 
         'session' => [
             'cookie_secure' => 'auto',
             'cookie_samesite' => 'Strict',
+        ],
+        'user_defaults' => [
+            'new_user_otp_required' => true,
         ],
     ];
 
@@ -79,5 +107,26 @@ $harness->check(ApplicationSettingsAction::class, 'explains application setting 
     $harness->assertSame(
         'No changes needed; application settings are already up to date.',
         $method->invoke($action, $previousConfig, $previousConfig, false)
+    );
+
+    $settings = $previousConfig;
+    $settings['app_footer'] = 'Updated footer';
+    $harness->assertSame(
+        'Branding updated.',
+        $method->invoke($action, $previousConfig, $settings, false)
+    );
+
+    $settings = $previousConfig;
+    $settings['navigation']['topbar_disabled_pages'] = ['dashboard'];
+    $harness->assertSame(
+        'Page topbar visibility updated.',
+        $method->invoke($action, $previousConfig, $settings, false)
+    );
+
+    $settings = $previousConfig;
+    $settings['user_defaults']['new_user_otp_required'] = false;
+    $harness->assertSame(
+        'User defaults updated.',
+        $method->invoke($action, $previousConfig, $settings, false)
     );
 });

@@ -398,18 +398,320 @@
         tick();
     }
 
-    function normaliseDigitsOnlyInput(input) {
-        if (!(input instanceof HTMLInputElement) || input.dataset.digitsOnly !== 'true') {
+    function normaliseValidationType(value) {
+        const type = String(value || '').trim().toLowerCase();
+
+        if (type === 'bool' || type === 'boolean') {
+            return 'boolean';
+        }
+
+        if (type === 'int' || type === 'integer') {
+            return 'int';
+        }
+
+        if (type === 'float' || type === 'decimal' || type === 'number') {
+            return 'float';
+        }
+
+        if (type === 'string' || type === 'ascii') {
+            return 'ascii';
+        }
+
+        return type === 'null' ? 'null' : '';
+    }
+
+    function validationTypeControlSelector(token) {
+        const attributeValue = String(token).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+        return `[data-validate-type-control="${attributeValue}"]`;
+    }
+
+    function validationTypeTargetSelector(token) {
+        const attributeValue = String(token).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+        return `[data-validate-type-target="${attributeValue}"]`;
+    }
+
+    function validationPairScope(control) {
+        if (!(control instanceof HTMLElement)) {
+            return document;
+        }
+
+        const form = control.closest('form');
+
+        return form instanceof HTMLFormElement ? form : document;
+    }
+
+    function dynamicValidationType(control) {
+        if (!(control instanceof HTMLElement)) {
+            return '';
+        }
+
+        const token = String(control.dataset.validateTypeTarget || '').trim();
+        if (token === '') {
+            return '';
+        }
+
+        const source = validationPairScope(control).querySelector(validationTypeControlSelector(token));
+        if (!isFormControl(source)) {
+            return '';
+        }
+
+        return normaliseValidationType(source.value);
+    }
+
+    function validationTypeForControl(control) {
+        if (!(control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement || control instanceof HTMLSelectElement)) {
+            return '';
+        }
+
+        const dynamicType = dynamicValidationType(control);
+        if (dynamicType !== '') {
+            return dynamicType;
+        }
+
+        if (control instanceof HTMLInputElement && control.dataset.digitsOnly === 'true') {
+            return 'int';
+        }
+
+        if (control.hasAttribute('data-validate-boolean')) {
+            return 'boolean';
+        }
+
+        if (control.hasAttribute('data-validate-int')) {
+            return 'int';
+        }
+
+        if (control.hasAttribute('data-validate-float') || control.hasAttribute('data-validate-number')) {
+            return 'float';
+        }
+
+        if (control.hasAttribute('data-validate-ascii') || control.hasAttribute('data-validate-string')) {
+            return 'ascii';
+        }
+
+        return '';
+    }
+
+    function sanitizeValidationValue(value, type) {
+        const stringValue = String(value || '');
+
+        if (type === 'int') {
+            return stringValue.replace(/[^0-9]/g, '');
+        }
+
+        if (type === 'float') {
+            let hasDecimalPoint = false;
+            let sanitized = '';
+
+            Array.from(stringValue).forEach((character) => {
+                if (character >= '0' && character <= '9') {
+                    sanitized += character;
+                    return;
+                }
+
+                if (character === '.' && !hasDecimalPoint) {
+                    sanitized += character;
+                    hasDecimalPoint = true;
+                }
+            });
+
+            return sanitized;
+        }
+
+        if (type === 'ascii') {
+            return Array.from(stringValue)
+                .filter((character) => character.charCodeAt(0) < 128)
+                .join('');
+        }
+
+        return stringValue;
+    }
+
+    function validatedBeforeInputValue(input, insertedValue) {
+        const value = input.value;
+        const start = Number.isFinite(input.selectionStart) ? input.selectionStart : value.length;
+        const end = Number.isFinite(input.selectionEnd) ? input.selectionEnd : start;
+
+        return value.substring(0, start) + insertedValue + value.substring(end);
+    }
+
+    function insertedValueMatchesValidation(insertedValue, type, input) {
+        if (type === 'int') {
+            return /^[0-9]*$/.test(insertedValue);
+        }
+
+        if (type === 'float') {
+            return /^[0-9.]*$/.test(insertedValue)
+                && (validatedBeforeInputValue(input, insertedValue).match(/\./g) || []).length <= 1;
+        }
+
+        if (type === 'ascii') {
+            return Array.from(insertedValue).every((character) => character.charCodeAt(0) < 128);
+        }
+
+        return true;
+    }
+
+    function enforceValidatedInputBeforeInput(event) {
+        const input = event.target;
+        if (!(input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) || event.isComposing) {
             return;
         }
 
-        const maxLength = Number.parseInt(input.getAttribute('maxlength') || '0', 10);
-        const digits = input.value.replace(/\D/g, '');
-        const nextValue = maxLength > 0 ? digits.substring(0, maxLength) : digits;
-
-        if (input.value !== nextValue) {
-            input.value = nextValue;
+        const type = validationTypeForControl(input);
+        if (type === '' || type === 'boolean') {
+            return;
         }
+
+        if (type === 'null') {
+            event.preventDefault();
+            return;
+        }
+
+        const insertedValue = event.data;
+        if (typeof insertedValue !== 'string' || insertedValue === '') {
+            return;
+        }
+
+        if (!insertedValueMatchesValidation(insertedValue, type, input)) {
+            event.preventDefault();
+        }
+    }
+
+    function restoreValidationDisabledState(control) {
+        if (!(control instanceof HTMLElement) || control.dataset.validationNullDisabled !== '1') {
+            return;
+        }
+
+        if (isFormControl(control)) {
+            control.disabled = control.dataset.validationWasDisabled === 'true';
+        }
+
+        delete control.dataset.validationNullDisabled;
+        delete control.dataset.validationWasDisabled;
+    }
+
+    function syncDynamicValidationAttributes(control, type) {
+        if (!(control instanceof HTMLElement) || String(control.dataset.validateTypeTarget || '').trim() === '') {
+            return;
+        }
+
+        [
+            'data-validate-boolean',
+            'data-validate-int',
+            'data-validate-float',
+            'data-validate-ascii',
+            'data-validate-number',
+            'data-validate-string',
+        ].forEach((attributeName) => control.removeAttribute(attributeName));
+
+        const attributeName = {
+            boolean: 'data-validate-boolean',
+            int: 'data-validate-int',
+            float: 'data-validate-float',
+            ascii: 'data-validate-ascii',
+        }[type] || '';
+
+        if (attributeName !== '') {
+            control.setAttribute(attributeName, '');
+        }
+
+        if (type !== '') {
+            control.dataset.activeValidationType = type;
+        } else {
+            delete control.dataset.activeValidationType;
+        }
+    }
+
+    function applyNullValidationState(control, type) {
+        if (!isFormControl(control)) {
+            return;
+        }
+
+        if (type !== 'null') {
+            restoreValidationDisabledState(control);
+            return;
+        }
+
+        if (control.dataset.validationNullDisabled !== '1') {
+            control.dataset.validationWasDisabled = control.disabled ? 'true' : 'false';
+        }
+
+        control.dataset.validationNullDisabled = '1';
+        control.disabled = true;
+        if ('value' in control) {
+            control.value = '';
+        }
+    }
+
+    function sanitizeValidatedInput(control) {
+        if (!(control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement || control instanceof HTMLSelectElement)) {
+            return;
+        }
+
+        const type = validationTypeForControl(control);
+        syncDynamicValidationAttributes(control, type);
+        applyNullValidationState(control, type);
+
+        if (type === '' || type === 'null') {
+            return;
+        }
+
+        if (control instanceof HTMLSelectElement) {
+            if (type === 'boolean' && !['true', 'false'].includes(control.value)) {
+                control.value = '';
+            }
+            return;
+        }
+
+        if (type === 'boolean') {
+            return;
+        }
+
+        const previousValue = control.value;
+        const previousStart = control.selectionStart;
+        const previousEnd = control.selectionEnd;
+        const nextValue = sanitizeValidationValue(previousValue, type);
+        const maxLength = Number.parseInt(control.getAttribute('maxlength') || '0', 10);
+        const constrainedValue = maxLength > 0 ? nextValue.substring(0, maxLength) : nextValue;
+
+        if (previousValue === constrainedValue) {
+            return;
+        }
+
+        control.value = constrainedValue;
+
+        if (
+            document.activeElement === control
+            && typeof control.setSelectionRange === 'function'
+            && Number.isFinite(previousStart)
+            && Number.isFinite(previousEnd)
+        ) {
+            const removedBeforeCursor = previousValue.substring(0, previousStart).length
+                - sanitizeValidationValue(previousValue.substring(0, previousStart), type).length;
+            const nextStart = Math.max(0, previousStart - removedBeforeCursor);
+            const nextEnd = Math.max(nextStart, previousEnd - removedBeforeCursor);
+            control.setSelectionRange(
+                Math.min(nextStart, constrainedValue.length),
+                Math.min(nextEnd, constrainedValue.length)
+            );
+        }
+    }
+
+    function syncDynamicValidationTargets(control) {
+        if (!(control instanceof HTMLElement)) {
+            return;
+        }
+
+        const token = String(control.dataset.validateTypeControl || '').trim();
+        if (token === '') {
+            return;
+        }
+
+        validationPairScope(control).querySelectorAll(validationTypeTargetSelector(token)).forEach((target) => {
+            sanitizeValidatedInput(target);
+        });
     }
 
     function afFormatTimezone() {
@@ -2409,6 +2711,129 @@
         current.innerHTML = typeof html === 'string' ? html : '';
     }
 
+    function replaceTopbar(html) {
+        if (typeof html !== 'string') {
+            return;
+        }
+
+        const current = document.getElementById('topbar-shell');
+        if (html.trim() === '') {
+            if (current instanceof HTMLElement) {
+                current.remove();
+            }
+            return;
+        }
+
+        const template = document.createElement('template');
+        template.innerHTML = html.trim();
+        const replacement = template.content.firstElementChild;
+        if (!(replacement instanceof HTMLElement)) {
+            return;
+        }
+
+        if (current instanceof HTMLElement) {
+            current.replaceWith(replacement);
+            return;
+        }
+
+        const flash = document.getElementById('flash-messages');
+        if (flash instanceof HTMLElement) {
+            flash.before(replacement);
+        }
+    }
+
+    function replacePageFooter(html) {
+        if (typeof html !== 'string' || html.trim() === '') {
+            return;
+        }
+
+        const current = document.getElementById('page-footer');
+        if (!(current instanceof HTMLElement)) {
+            return;
+        }
+
+        const template = document.createElement('template');
+        template.innerHTML = html.trim();
+        const replacement = template.content.firstElementChild;
+
+        if (replacement instanceof HTMLElement) {
+            current.replaceWith(replacement);
+            renderPageLoadTime();
+        }
+    }
+
+    function formHasRequiredInviteContact(form) {
+        if (!(form instanceof HTMLFormElement) || form.dataset.requireInviteContact !== 'true') {
+            return true;
+        }
+
+        const email = form.querySelector('[data-invite-contact-field="email"]');
+        const mobile = form.querySelector('[data-invite-contact-field="mobile"]');
+        const hasEmail = email instanceof HTMLInputElement && email.value.trim() !== '';
+        const hasMobile = mobile instanceof HTMLInputElement && mobile.value.trim() !== '';
+        const clearContactValidity = () => {
+            if (email instanceof HTMLInputElement) {
+                email.setCustomValidity('');
+            }
+            if (mobile instanceof HTMLInputElement) {
+                mobile.setCustomValidity('');
+            }
+        };
+
+        if (hasEmail || hasMobile) {
+            clearContactValidity();
+            return true;
+        }
+
+        const message = 'Enter an email address or mobile number.';
+        if (email instanceof HTMLInputElement) {
+            email.setCustomValidity(message);
+            email.reportValidity();
+            email.addEventListener('input', clearContactValidity, { once: true });
+            if (mobile instanceof HTMLInputElement) {
+                mobile.addEventListener('input', clearContactValidity, { once: true });
+            }
+            return false;
+        }
+
+        if (mobile instanceof HTMLInputElement) {
+            mobile.setCustomValidity(message);
+            mobile.reportValidity();
+            mobile.addEventListener('input', clearContactValidity, { once: true });
+        }
+
+        return false;
+    }
+
+    function selectUserCreateMode(button) {
+        if (!(button instanceof HTMLButtonElement)) {
+            return;
+        }
+
+        const mode = String(button.dataset.userCreateModeButton || '').trim();
+        const container = button.closest('.card-body');
+        if (mode === '' || !(container instanceof HTMLElement)) {
+            return;
+        }
+
+        container.querySelectorAll('[data-user-create-mode-button]').forEach((candidate) => {
+            if (!(candidate instanceof HTMLButtonElement)) {
+                return;
+            }
+
+            candidate.setAttribute('aria-selected', candidate === button ? 'true' : 'false');
+        });
+
+        container.querySelectorAll('[data-user-create-mode-panel]').forEach((panel) => {
+            if (!(panel instanceof HTMLElement)) {
+                return;
+            }
+
+            const selected = String(panel.dataset.userCreateModePanel || '').trim() === mode;
+            panel.hidden = !selected;
+        });
+    }
+
     function applyAjaxPayloadFragment(name, callback) {
         try {
             callback();
@@ -2542,6 +2967,10 @@
 
         event.preventDefault();
 
+        if (!formHasRequiredInviteContact(form)) {
+            return;
+        }
+
         if (!passChickenCheck(event.submitter)) {
             return;
         }
@@ -2597,6 +3026,8 @@
             }
 
             applyAjaxPayloadFragment('sidebar', () => replaceSidebar(payload.sidebar_html));
+            applyAjaxPayloadFragment('topbar', () => replaceTopbar(payload.topbar_html));
+            applyAjaxPayloadFragment('footer', () => replacePageFooter(payload.footer_html));
             applyAjaxPayloadFragment('site context', () => replaceSiteContextSlots(payload.site_context_html));
             applyAjaxPayloadFragment('developer options status', () => replaceDeveloperOptionsStatus(payload.developer_options_status_html));
             applyAjaxPayloadFragment('cards', () => replaceCards(payload.cards));
@@ -2646,6 +3077,13 @@
             return;
         }
 
+        const userCreateModeButton = event.target instanceof Element ? event.target.closest('[data-user-create-mode-button]') : null;
+        if (userCreateModeButton instanceof HTMLButtonElement) {
+            event.preventDefault();
+            selectUserCreateMode(userCreateModeButton);
+            return;
+        }
+
         const link = event.target instanceof Element ? event.target.closest('[data-ajax-link="true"]') : null;
         if (!(link instanceof HTMLAnchorElement)) {
             const title = event.target instanceof Element ? event.target.closest('.card-title-toggle') : null;
@@ -2689,9 +3127,13 @@
         toggleCardBody(title);
     });
 
+    document.addEventListener('beforeinput', enforceValidatedInputBeforeInput);
+
     document.addEventListener('change', (event) => {
         if (isFormControl(event.target)) {
             syncVisibleWhenField(event.target);
+            syncDynamicValidationTargets(event.target);
+            sanitizeValidatedInput(event.target);
         }
 
         const submitOnChangeControl = event.target instanceof Element
@@ -2724,7 +3166,7 @@
     });
 
     document.addEventListener('input', (event) => {
-        normaliseDigitsOnlyInput(event.target);
+        sanitizeValidatedInput(event.target);
 
         if (isFormControl(event.target)) {
             syncVisibleWhenField(event.target);

@@ -10,6 +10,42 @@ declare(strict_types=1);
 // Automatic Class Loader
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'classes' . DIRECTORY_SEPARATOR . 'bootstrap.php';
 
+const EEL_INDEX_HTML_COPYRIGHT_HEADER = '<!-- eelKit Framework - Copyright (c) 2026 James Elstone - Licensed under the BSD 3-Clause License - See LICENSE file for details. -->';
+
+function eel_index_send_response(ResponseFramework $response): void
+{
+    if (stripos($response->contentType(), 'text/html') !== 0) {
+        $response->send();
+        return;
+    }
+
+    ob_start();
+    $response->send();
+    $html = (string)ob_get_clean();
+
+    echo eel_index_html_with_copyright_header($html);
+}
+
+function eel_index_html_with_copyright_header(string $html): string
+{
+    if (str_contains($html, EEL_INDEX_HTML_COPYRIGHT_HEADER)) {
+        return $html;
+    }
+
+    $htmlWithHeader = preg_replace(
+        '/(<!DOCTYPE html>)/i',
+        '$1' . PHP_EOL . EEL_INDEX_HTML_COPYRIGHT_HEADER,
+        $html,
+        1
+    );
+
+    if (is_string($htmlWithHeader) && $htmlWithHeader !== $html) {
+        return $htmlWithHeader;
+    }
+
+    return EEL_INDEX_HTML_COPYRIGHT_HEADER . PHP_EOL . $html;
+}
+
 $appName = trim((string)AppConfigurationStore::get('app_name', 'eelKit Framework'));
 if ($appName === '') {
     $appName = 'eelKit Framework';
@@ -75,7 +111,7 @@ $ajaxNonceResponse = $pageRequestGuard->ajaxNonceResponse(
 );
 
 if ($ajaxNonceResponse instanceof ResponseFramework) {
-    $ajaxNonceResponse->send();
+    eel_index_send_response($ajaxNonceResponse);
     return;
 }
 
@@ -118,7 +154,7 @@ $authResponse = $authController->response(
 
 // Send authentication flow if unauthenticated (null)
 if ($authResponse instanceof ResponseFramework) {
-    $authResponse->send();
+    eel_index_send_response($authResponse);
     return;
 }
 
@@ -134,7 +170,7 @@ $requestedPageKey = $request->getPage();
 $pageAccessPolicyResponse = $pageRequestGuard->pagePolicyResponse($request, $requestedPageKey);
 
 if ($pageAccessPolicyResponse instanceof ResponseFramework) {
-    $pageAccessPolicyResponse->send();
+    eel_index_send_response($pageAccessPolicyResponse);
     return;
 }
 
@@ -151,7 +187,7 @@ $pageAccessResponse = $pageRequestGuard->pageAccessResponse(
 
 // If they dont have valid permissions, show the access error
 if ($pageAccessResponse instanceof ResponseFramework) {
-    $pageAccessResponse->send();
+    eel_index_send_response($pageAccessResponse);
     return;
 }
 
@@ -167,7 +203,7 @@ $pageServices->setSiteContextCoordinator(SiteContextCoordinatorFramework::fromCo
 $response = $page->handle($request, $pageServices);
 
 // Send page and cards back to the client.
-$response->send();
+eel_index_send_response($response);
 
 // == EOL ==
 // ================================================================================

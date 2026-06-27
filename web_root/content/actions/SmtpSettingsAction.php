@@ -42,7 +42,7 @@ final class SmtpSettingsAction implements ActionInterfaceFramework
 
         AppConfigurationStore::setSmtpSettings($settings);
 
-        return ActionResultFramework::success(['smtp.settings'], [[
+        return ActionResultFramework::success(['smtp.settings', 'add.user'], [[
             'type' => 'success',
             'message' => $this->successFlashMessage($previousSmtp, $settings),
         ]]);

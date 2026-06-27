@@ -22,7 +22,22 @@ final class _add_userCard extends CardBaseFramework
                 'service' => UserManagementService::class,
                 'method' => 'passwordPolicyDescription',
             ],
+            [
+                'key' => 'current_users_dashboard',
+                'service' => UserManagementService::class,
+                'method' => 'currentUsersDashboard',
+            ],
+            [
+                'key' => 'invite_availability',
+                'service' => UserManagementService::class,
+                'method' => 'userCreationInviteAvailability',
+            ],
         ];
+    }
+
+    public function title(): string
+    {
+        return 'Create User';
     }
 
     protected function additionalInvalidationFacts(): array
@@ -37,16 +52,25 @@ final class _add_userCard extends CardBaseFramework
 
     public function helper(array $context): string
     {
-        return 'Create a new active user account. OTP enrollment will be required on first successful sign-in.';
+        return 'Create an active user directly, or invite a pending user when a live delivery channel is available.';
     }
 
     public function render(array $context): string
     {
         $csrfToken = (string)($context['page']['csrf_token'] ?? '');
         $passwordPolicy = HelperFramework::escape((string)(($context['services'] ?? [])['password_policy'] ?? ''));
+        $inviteAvailability = (array)(($context['services'] ?? [])['invite_availability'] ?? []);
+        $inviteAvailable = !empty($inviteAvailability['available']);
+        $inviteEmailAvailable = !empty($inviteAvailability['smtp_ready']);
+        $inviteSmsAvailable = !empty($inviteAvailability['sms_ready']);
+        $addPanelId = 'add-user-create-direct-panel';
+        $invitePanelId = 'add-user-create-invite-panel';
+        $addPanelAttributes = $inviteAvailable
+            ? ' id="' . HelperFramework::escape($addPanelId) . '" data-user-create-mode-panel="add" role="tabpanel"'
+            : '';
 
-        return '
-            <form method="post" action="?page=users" data-ajax="true" class="form-grid">
+        $addForm = '
+            <form method="post" action="?page=users" data-ajax="true" class="form-grid"' . $addPanelAttributes . '>
                 ' . $this->hiddenFields($context) . '
                 <input type="hidden" name="action" value="users-create-user">
                 <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
@@ -82,6 +106,74 @@ final class _add_userCard extends CardBaseFramework
                 </div>
             </form>
         ';
+
+        if (!$inviteAvailable) {
+            return $addForm;
+        }
+
+        $inviteEmailField = $inviteEmailAvailable ? '
+                <div class="form-row half">
+                    <label for="invite-user-email-address">Email address</label>
+                    <input class="input" id="invite-user-email-address" name="invite_email_address" type="email" data-invite-contact-field="email">
+                </div>' : '';
+        $inviteMobileField = $inviteSmsAvailable ? '
+                <div class="form-row full">
+                    <label for="invite-user-mobile-number">Mobile number</label>
+                    <div class="input-action-row">
+                        <select class="selector-input mobile-country-code" id="invite-user-mobile-country-code" name="invite_mobile_country_code" autocomplete="tel-country-code" data-no-submit-on-change="true">
+                            ' . $this->mobileCountryCodeOptionsHtml(UserManagementService::defaultMobileCountryCode()) . '
+                        </select>
+                        <input class="input mobile-number-input" id="invite-user-mobile-number" name="invite_mobile_number" type="tel" autocomplete="tel-national" inputmode="tel" maxlength="16" data-invite-contact-field="mobile">
+                    </div>
+                </div>' : '';
+
+        return '
+            <div class="form-row full segmented-control" role="tablist" aria-label="User creation mode">
+                <button class="segmented-option" type="button" role="tab" aria-selected="true" aria-controls="' . HelperFramework::escape($addPanelId) . '" data-user-create-mode-button="add">Add directly</button>
+                <button class="segmented-option" type="button" role="tab" aria-selected="false" aria-controls="' . HelperFramework::escape($invitePanelId) . '" data-user-create-mode-button="invite">Invite</button>
+            </div>
+            ' . $addForm . '
+            <form method="post" action="?page=users" data-ajax="true" data-require-invite-contact="true" class="form-grid" id="' . HelperFramework::escape($invitePanelId) . '" data-user-create-mode-panel="invite" role="tabpanel" hidden>
+                ' . $this->hiddenFields($context) . '
+                <input type="hidden" name="action" value="users-create-invited-user">
+                <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
+                <div class="form-row half">
+                    <label for="invite-user-display-name">Display name</label>
+                    <input class="input" id="invite-user-display-name" name="invite_display_name" type="text" required>
+                </div>
+                ' . $inviteEmailField . '
+                ' . $inviteMobileField . '
+                <div class="form-row half">
+                    <label for="invite-user-role">Role</label>
+                    <select class="selector-input" id="invite-user-role" name="invite_role_id" data-no-submit-on-change="true">
+                        ' . $this->roleOptionsHtml($context) . '
+                    </select>
+                </div>
+                <div class="form-row full">
+                    <button class="button primary" type="submit">Create invitation</button>
+                </div>
+            </form>
+        ';
+    }
+
+    private function roleOptionsHtml(array $context): string
+    {
+        $roles = (array)((($context['services'] ?? [])['current_users_dashboard'] ?? [])['roles'] ?? []);
+        $html = '';
+
+        foreach ($roles as $role) {
+            $roleId = (int)($role['id'] ?? 0);
+            $roleName = trim((string)($role['role_name'] ?? ''));
+            if ($roleName === '') {
+                continue;
+            }
+
+            $html .= '<option value="' . HelperFramework::escape((string)$roleId) . '">'
+                . HelperFramework::escape($roleName)
+                . '</option>';
+        }
+
+        return $html;
     }
 
     private function hiddenFields(array $context): string

@@ -126,6 +126,8 @@ final class PageRendererFramework
         $cards = [];
         $changedFacts = $actionResult->changedFacts();
         $sidebarHtml = null;
+        $topbarHtml = null;
+        $footerHtml = null;
         $siteContextHtml = [];
         $invalidateAllCards = in_array('page.reload', $changedFacts, true);
 
@@ -150,6 +152,15 @@ final class PageRendererFramework
             $sidebarHtml = $this->renderSidebar($page, $context, (string)($siteContextSlots['sidebar'] ?? ''));
         }
 
+        if (in_array('layout.footer', $changedFacts, true)) {
+            $footerHtml = $this->renderPageFooter();
+        }
+
+        if (in_array('layout.topbar', $changedFacts, true)) {
+            $siteContextSlots = $siteContextSlots ?? $services->siteContextCoordinator()->renderSlotHtml($page, $request, $context);
+            $topbarHtml = $this->renderTopbar($page, (array)$siteContextSlots);
+        }
+
         if ($services->siteContextCoordinator()->shouldRenderAjaxSlots($changedFacts)) {
             $siteContextHtml = $services->siteContextCoordinator()->renderSlotHtml($page, $request, $context);
         }
@@ -159,6 +170,8 @@ final class PageRendererFramework
             'page' => $page->id(),
             'cards' => $cards,
             'sidebar_html' => $sidebarHtml,
+            'topbar_html' => $topbarHtml,
+            'footer_html' => $footerHtml,
             'site_context_html' => $siteContextHtml,
             'developer_options_status_html' => $this->renderDeveloperOptionsStatus(),
             'flash_html' => $this->renderFlashMessages($actionResult->flashMessages()),
@@ -179,7 +192,6 @@ final class PageRendererFramework
     {
         $pageId = $page->id();
         $title = HelperFramework::escape($page->title());
-        $subtitle = HelperFramework::escape($page->subtitle());
         $siteContextHtml = $services->siteContextCoordinator()->renderSlotHtml($page, $request, $context);
         global $appName;
         $escapedAppName = HelperFramework::escape((string)($appName ?? 'eelKit Framework'));
@@ -200,24 +212,10 @@ final class PageRendererFramework
                 <div class="layout">
                     ' . $this->renderSidebar($page, $context, (string)($siteContextHtml['sidebar'] ?? '')) . '
                     <main class="main" data-current-page="' . HelperFramework::escape($pageId) . '">
-                        <div class="topbar">
-
-                            <!-- LEFT COLUMN -->
-                            <div class="topbar-left">
-                                <h1>' . $title . '</h1>
-                                <p>' . $subtitle . '</p>
-                            </div>
-
-                            <div class="topbar-right">
-                                <div id="developer-options-status-slot">' . $this->renderDeveloperOptionsStatus() . '</div>
-                                <div id="site-context-summary-slot" class="site-context-slot site-context-summary-slot">' . (string)($siteContextHtml['summary'] ?? '') . '</div>
-                                <div id="site-context-topbar-slot" class="site-context-slot site-context-topbar-slot">' . (string)($siteContextHtml['topbar'] ?? '') . '</div>
-                            </div>
-
-                        </div>
+                        ' . $this->renderTopbar($page, $siteContextHtml) . '
                         <div id="flash-messages" class="flash-messages">' . $this->renderFlashMessages($actionResult->flashMessages()) . '</div>
                         <section class="' . $pageStackClasses . '" data-page-id="' . HelperFramework::escape($pageId) . '">' . $contentHtml . '</section>
-                        <div id="page-load-time" class="page-load-time" aria-live="polite"></div>
+                        ' . $this->renderPageFooter() . '
                     </main>
                 </div>
                 ' . $this->renderAjaxSecurityBootstrap($request) . '
@@ -242,6 +240,258 @@ final class PageRendererFramework
         return '<div id="ajax-security-bootstrap" hidden data-nonce-payload="'
             . HelperFramework::escape($json)
             . '"></div>';
+    }
+
+    private function renderTopbar(PageInterfaceFramework $page, array $siteContextHtml): string
+    {
+        if (!$this->topbarEnabled($page->id())) {
+            return '';
+        }
+
+        $title = HelperFramework::escape($page->title());
+        $subtitle = HelperFramework::escape($page->subtitle());
+
+        return '<div id="topbar-shell" class="topbar">
+            <div class="topbar-left">
+                <h1>' . $title . '</h1>
+                <p>' . $subtitle . '</p>
+            </div>
+            <div class="topbar-right">
+                <div id="developer-options-status-slot">' . $this->renderDeveloperOptionsStatus() . '</div>
+                <div id="site-context-summary-slot" class="site-context-slot site-context-summary-slot">' . (string)($siteContextHtml['summary'] ?? '') . '</div>
+                <div id="site-context-topbar-slot" class="site-context-slot site-context-topbar-slot">' . (string)($siteContextHtml['topbar'] ?? '') . '</div>
+            </div>
+        </div>';
+    }
+
+    private function topbarEnabled(string $pageId): bool
+    {
+        $disabledPages = AppConfigurationStore::get('navigation.topbar_disabled_pages', []);
+        if (!is_array($disabledPages)) {
+            return true;
+        }
+
+        return !in_array($pageId, array_map('strval', $disabledPages), true);
+    }
+
+    private function renderPageFooter(): string
+    {
+        return '<div id="page-footer" class="page-footer">
+            ' . $this->renderApplicationFooter() . '
+            <div id="page-load-time" class="page-load-time" aria-live="polite"></div>
+        </div>';
+    }
+
+    private function renderApplicationFooter(): string
+    {
+        $footer = trim((string)AppConfigurationStore::get('app_footer', ''));
+
+        if ($footer === '') {
+            return '<div id="application-footer" class="application-footer"></div>';
+        }
+
+        return '<div id="application-footer" class="application-footer">' . $this->sanitizeApplicationFooterHtml($footer) . '</div>';
+    }
+
+    private function sanitizeApplicationFooterHtml(string $html): string
+    {
+        $html = html_entity_decode($html, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+        if (!class_exists(DOMDocument::class)) {
+            return $this->sanitizeApplicationFooterHtmlFallback($html);
+        }
+
+        $previousLibxmlState = libxml_use_internal_errors(true);
+        $document = new DOMDocument('1.0', 'UTF-8');
+        $loaded = $document->loadHTML(
+            '<?xml encoding="UTF-8"><div id="application-footer-fragment">' . $html . '</div>',
+            LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD
+        );
+        libxml_clear_errors();
+        libxml_use_internal_errors($previousLibxmlState);
+
+        if (!$loaded) {
+            return $this->sanitizeApplicationFooterHtmlFallback($html);
+        }
+
+        $root = $document->getElementById('application-footer-fragment');
+        if (!$root instanceof DOMElement) {
+            return $this->sanitizeApplicationFooterHtmlFallback($html);
+        }
+
+        $sanitized = '';
+        foreach ($root->childNodes as $child) {
+            $sanitized .= $this->sanitizeApplicationFooterNode($child);
+        }
+
+        return $sanitized;
+    }
+
+    private function sanitizeApplicationFooterHtmlFallback(string $html): string
+    {
+        $tokens = preg_split('/(<[^>]*>)/', $html, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY);
+        if (!is_array($tokens)) {
+            return HelperFramework::escape($html);
+        }
+
+        $sanitized = '';
+        $openLinks = 0;
+
+        foreach ($tokens as $token) {
+            if (!str_starts_with($token, '<')) {
+                $sanitized .= HelperFramework::escape($token);
+                continue;
+            }
+
+            if (preg_match('/^<br\s*\/?>$/i', $token) === 1) {
+                $sanitized .= '<br>';
+                continue;
+            }
+
+            if (preg_match('/^<\/a\s*>$/i', $token) === 1) {
+                if ($openLinks > 0) {
+                    $sanitized .= '</a>';
+                    $openLinks--;
+                }
+                continue;
+            }
+
+            if (preg_match('/^<a\b([^>]*)>$/i', $token, $matches) !== 1) {
+                continue;
+            }
+
+            $attributes = $this->sanitizeApplicationFooterAnchorAttributes($matches[1] ?? '');
+            if ($attributes === '') {
+                continue;
+            }
+
+            $sanitized .= '<a' . $attributes . '>';
+            $openLinks++;
+        }
+
+        if ($openLinks > 0) {
+            $sanitized .= str_repeat('</a>', $openLinks);
+        }
+
+        return $sanitized;
+    }
+
+    private function sanitizeApplicationFooterNode(DOMNode $node): string
+    {
+        if ($node instanceof DOMText) {
+            return HelperFramework::escape($node->nodeValue);
+        }
+
+        if (!$node instanceof DOMElement) {
+            return '';
+        }
+
+        $tag = strtolower($node->tagName);
+        $children = '';
+        foreach ($node->childNodes as $child) {
+            $children .= $this->sanitizeApplicationFooterNode($child);
+        }
+
+        if ($tag === 'br') {
+            return '<br>';
+        }
+
+        if ($tag !== 'a') {
+            return $children;
+        }
+
+        $href = $this->sanitizeApplicationFooterHref($node->getAttribute('href'));
+        if ($href === '') {
+            return $children;
+        }
+
+        $attributes = ' href="' . HelperFramework::escape($href) . '"';
+        $title = trim($node->getAttribute('title'));
+        if ($title !== '') {
+            $attributes .= ' title="' . HelperFramework::escape($title) . '"';
+        }
+
+        $target = trim($node->getAttribute('target'));
+        if ($target === '_blank') {
+            $attributes .= ' target="_blank" rel="noopener noreferrer"';
+        }
+
+        return '<a' . $attributes . '>' . $children . '</a>';
+    }
+
+    private function sanitizeApplicationFooterAnchorAttributes(string $attributeText): string
+    {
+        $attributes = $this->applicationFooterAttributes($attributeText);
+        $href = $this->sanitizeApplicationFooterHref((string)($attributes['href'] ?? ''));
+        if ($href === '') {
+            return '';
+        }
+
+        $sanitized = ' href="' . HelperFramework::escape($href) . '"';
+        $title = trim((string)($attributes['title'] ?? ''));
+        if ($title !== '') {
+            $sanitized .= ' title="' . HelperFramework::escape($title) . '"';
+        }
+
+        $target = trim((string)($attributes['target'] ?? ''));
+        if ($target === '_blank') {
+            $sanitized .= ' target="_blank" rel="noopener noreferrer"';
+        }
+
+        return $sanitized;
+    }
+
+    private function applicationFooterAttributes(string $attributeText): array
+    {
+        preg_match_all(
+            '/\s([a-zA-Z_:][a-zA-Z0-9_:.-]*)\s*=\s*("([^"]*)"|\'([^\']*)\'|([^\s"\'=<>`]+))/',
+            $attributeText,
+            $matches,
+            PREG_SET_ORDER
+        );
+
+        $attributes = [];
+        foreach ($matches as $match) {
+            $name = strtolower($match[1]);
+            if (!in_array($name, ['href', 'title', 'target'], true)) {
+                continue;
+            }
+
+            $value = '';
+            foreach ([3, 4, 5] as $index) {
+                if (isset($match[$index]) && $match[$index] !== '') {
+                    $value = (string)$match[$index];
+                    break;
+                }
+            }
+
+            $attributes[$name] = html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        }
+
+        return $attributes;
+    }
+
+    private function sanitizeApplicationFooterHref(string $href): string
+    {
+        $href = trim(html_entity_decode($href, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+        if ($href === '') {
+            return '';
+        }
+
+        if (preg_match('/[\x00-\x1F\x7F]/', $href) === 1) {
+            return '';
+        }
+
+        if (preg_match('/^[a-z][a-z0-9+.-]*:/i', $href) === 1) {
+            $scheme = strtolower((string)parse_url($href, PHP_URL_SCHEME));
+            return in_array($scheme, ['http', 'https', 'mailto', 'tel'], true) ? $href : '';
+        }
+
+        if (str_starts_with($href, '//')) {
+            return '';
+        }
+
+        return $href;
     }
 
     private function renderDeveloperOptionsStatus(): string

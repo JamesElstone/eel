@@ -14,6 +14,8 @@ $harness->check(AppConfigurationStore::class, 'loads configuration from the test
     $harness->assertSame('eelKit Framework Test', AppConfigurationStore::get('app_name'));
     $harness->assertSame('T', AppConfigurationStore::get('brand-mark'));
     $harness->assertSame('Test strapline', AppConfigurationStore::get('app_strapline'));
+    $harness->assertSame('', AppConfigurationStore::get('app_footer'));
+    $harness->assertSame([], AppConfigurationStore::get('navigation.topbar_disabled_pages'));
     $harness->assertSame('Test strapline', AppConfigurationStore::appStrapline());
 });
 
@@ -100,6 +102,7 @@ $harness->check(AppConfigurationStore::class, 'updates editable application sett
         $updated = AppConfigurationStore::setEditableApplicationSettings([
             'app_name' => 'Updated Settings Test',
             'app_strapline' => 'Updated strapline',
+            'app_footer' => 'Updated footer',
             'brand-mark' => 'US',
             'developer_options' => false,
             'navigation' => [
@@ -109,6 +112,9 @@ $harness->check(AppConfigurationStore::class, 'updates editable application sett
                 ],
                 'developer_only_pages' => [
                     'developer_page',
+                ],
+                'topbar_disabled_pages' => [
+                    'settings',
                 ],
                 'hide_collapsed_link_initials' => true,
             ],
@@ -125,10 +131,12 @@ $harness->check(AppConfigurationStore::class, 'updates editable application sett
         ]);
 
         $harness->assertSame('Updated Settings Test', $updated['app_name'] ?? null);
+        $harness->assertSame('Updated footer', $updated['app_footer'] ?? null);
         $harness->assertSame('US', $updated['brand-mark'] ?? null);
         $harness->assertSame(false, $updated['developer_options'] ?? null);
         $harness->assertSame(920, $updated['navigation']['default_order']['settings'] ?? null);
         $harness->assertSame('developer_page', $updated['navigation']['developer_only_pages'][0] ?? null);
+        $harness->assertSame('settings', $updated['navigation']['topbar_disabled_pages'][0] ?? null);
         $harness->assertSame(true, $updated['navigation']['hide_collapsed_link_initials'] ?? null);
         $harness->assertSame('203.0.113.10', $updated['antifraud']['vendor_public_ip'] ?? null);
         $harness->assertSame('true', $updated['session']['cookie_secure'] ?? null);

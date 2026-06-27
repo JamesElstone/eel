@@ -71,6 +71,12 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
     $brandMark->setAccessible(true);
     $renderBrandMark = new ReflectionMethod(PageRendererFramework::class, 'renderBrandMark');
     $renderBrandMark->setAccessible(true);
+    $renderApplicationFooter = new ReflectionMethod(PageRendererFramework::class, 'renderApplicationFooter');
+    $renderApplicationFooter->setAccessible(true);
+    $renderTopbar = new ReflectionMethod(PageRendererFramework::class, 'renderTopbar');
+    $renderTopbar->setAccessible(true);
+    $topbarEnabled = new ReflectionMethod(PageRendererFramework::class, 'topbarEnabled');
+    $topbarEnabled->setAccessible(true);
     $renderDeveloperOptionsStatus = new ReflectionMethod(PageRendererFramework::class, 'renderDeveloperOptionsStatus');
     $renderDeveloperOptionsStatus->setAccessible(true);
 
@@ -210,6 +216,47 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
 
     $harness->check(PageRendererFramework::class, 'reads the sidebar brand mark from application config', function () use ($harness, $instance, $brandMark): void {
         $harness->assertSame('T', $brandMark->invoke($instance));
+    });
+
+    $harness->check(PageRendererFramework::class, 'renders the configured application footer safely', function () use ($harness, $instance, $renderApplicationFooter): void {
+        $path = AppConfigurationStore::configPath();
+        $original = file_get_contents($path);
+
+        if (!is_string($original)) {
+            throw new RuntimeException('Unable to read fixture config.');
+        }
+
+        try {
+            AppConfigurationStore::set('app_footer', 'Footer & diagnostics');
+
+            $harness->assertSame(
+                '<div id="application-footer" class="application-footer">Footer &amp; diagnostics</div>',
+                $renderApplicationFooter->invoke($instance)
+            );
+        } finally {
+            file_put_contents($path, $original, LOCK_EX);
+            AppConfigurationStore::config(true);
+        }
+    });
+
+    $harness->check(PageRendererFramework::class, 'hides the topbar for configured pages', function () use ($harness, $instance, $renderTopbar, $topbarEnabled): void {
+        $path = AppConfigurationStore::configPath();
+        $original = file_get_contents($path);
+
+        if (!is_string($original)) {
+            throw new RuntimeException('Unable to read fixture config.');
+        }
+
+        try {
+            AppConfigurationStore::set('navigation.topbar_disabled_pages', ['legacy_layout_test']);
+
+            $harness->assertSame(false, $topbarEnabled->invoke($instance, 'legacy_layout_test'));
+            $harness->assertSame('', $renderTopbar->invoke($instance, new PageRendererLegacyLayoutTestPage(), []));
+            $harness->assertSame(true, $topbarEnabled->invoke($instance, 'card_layout_test'));
+        } finally {
+            file_put_contents($path, $original, LOCK_EX);
+            AppConfigurationStore::config(true);
+        }
     });
 
     $harness->check(PageRendererFramework::class, 'renders local image paths as sidebar brand mark images', function () use ($harness, $instance, $renderBrandMark): void {

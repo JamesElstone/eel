@@ -126,6 +126,8 @@ final class PageRendererFramework
         $cards = [];
         $changedFacts = $actionResult->changedFacts();
         $sidebarHtml = null;
+        $topbarHtml = null;
+        $footerHtml = null;
         $siteContextHtml = [];
         $invalidateAllCards = in_array('page.reload', $changedFacts, true);
 
@@ -150,6 +152,15 @@ final class PageRendererFramework
             $sidebarHtml = $this->renderSidebar($page, $context, (string)($siteContextSlots['sidebar'] ?? ''));
         }
 
+        if (in_array('layout.footer', $changedFacts, true)) {
+            $footerHtml = $this->renderPageFooter();
+        }
+
+        if (in_array('layout.topbar', $changedFacts, true)) {
+            $siteContextSlots = $siteContextSlots ?? $services->siteContextCoordinator()->renderSlotHtml($page, $request, $context);
+            $topbarHtml = $this->renderTopbar($page, (array)$siteContextSlots);
+        }
+
         if ($services->siteContextCoordinator()->shouldRenderAjaxSlots($changedFacts)) {
             $siteContextHtml = $services->siteContextCoordinator()->renderSlotHtml($page, $request, $context);
         }
@@ -159,6 +170,8 @@ final class PageRendererFramework
             'page' => $page->id(),
             'cards' => $cards,
             'sidebar_html' => $sidebarHtml,
+            'topbar_html' => $topbarHtml,
+            'footer_html' => $footerHtml,
             'site_context_html' => $siteContextHtml,
             'developer_options_status_html' => $this->renderDeveloperOptionsStatus(),
             'flash_html' => $this->renderFlashMessages($actionResult->flashMessages()),
@@ -179,7 +192,6 @@ final class PageRendererFramework
     {
         $pageId = $page->id();
         $title = HelperFramework::escape($page->title());
-        $subtitle = HelperFramework::escape($page->subtitle());
         $siteContextHtml = $services->siteContextCoordinator()->renderSlotHtml($page, $request, $context);
         global $appName;
         $escapedAppName = HelperFramework::escape((string)($appName ?? 'eelKit Framework'));
@@ -200,24 +212,10 @@ final class PageRendererFramework
                 <div class="layout">
                     ' . $this->renderSidebar($page, $context, (string)($siteContextHtml['sidebar'] ?? '')) . '
                     <main class="main" data-current-page="' . HelperFramework::escape($pageId) . '">
-                        <div class="topbar">
-
-                            <!-- LEFT COLUMN -->
-                            <div class="topbar-left">
-                                <h1>' . $title . '</h1>
-                                <p>' . $subtitle . '</p>
-                            </div>
-
-                            <div class="topbar-right">
-                                <div id="developer-options-status-slot">' . $this->renderDeveloperOptionsStatus() . '</div>
-                                <div id="site-context-summary-slot" class="site-context-slot site-context-summary-slot">' . (string)($siteContextHtml['summary'] ?? '') . '</div>
-                                <div id="site-context-topbar-slot" class="site-context-slot site-context-topbar-slot">' . (string)($siteContextHtml['topbar'] ?? '') . '</div>
-                            </div>
-
-                        </div>
+                        ' . $this->renderTopbar($page, $siteContextHtml) . '
                         <div id="flash-messages" class="flash-messages">' . $this->renderFlashMessages($actionResult->flashMessages()) . '</div>
                         <section class="' . $pageStackClasses . '" data-page-id="' . HelperFramework::escape($pageId) . '">' . $contentHtml . '</section>
-                        <div id="page-load-time" class="page-load-time" aria-live="polite"></div>
+                        ' . $this->renderPageFooter() . '
                     </main>
                 </div>
                 ' . $this->renderAjaxSecurityBootstrap($request) . '
@@ -242,6 +240,57 @@ final class PageRendererFramework
         return '<div id="ajax-security-bootstrap" hidden data-nonce-payload="'
             . HelperFramework::escape($json)
             . '"></div>';
+    }
+
+    private function renderTopbar(PageInterfaceFramework $page, array $siteContextHtml): string
+    {
+        if (!$this->topbarEnabled($page->id())) {
+            return '';
+        }
+
+        $title = HelperFramework::escape($page->title());
+        $subtitle = HelperFramework::escape($page->subtitle());
+
+        return '<div id="topbar-shell" class="topbar">
+            <div class="topbar-left">
+                <h1>' . $title . '</h1>
+                <p>' . $subtitle . '</p>
+            </div>
+            <div class="topbar-right">
+                <div id="developer-options-status-slot">' . $this->renderDeveloperOptionsStatus() . '</div>
+                <div id="site-context-summary-slot" class="site-context-slot site-context-summary-slot">' . (string)($siteContextHtml['summary'] ?? '') . '</div>
+                <div id="site-context-topbar-slot" class="site-context-slot site-context-topbar-slot">' . (string)($siteContextHtml['topbar'] ?? '') . '</div>
+            </div>
+        </div>';
+    }
+
+    private function topbarEnabled(string $pageId): bool
+    {
+        $disabledPages = AppConfigurationStore::get('navigation.topbar_disabled_pages', []);
+        if (!is_array($disabledPages)) {
+            return true;
+        }
+
+        return !in_array($pageId, array_map('strval', $disabledPages), true);
+    }
+
+    private function renderPageFooter(): string
+    {
+        return '<div id="page-footer" class="page-footer">
+            ' . $this->renderApplicationFooter() . '
+            <div id="page-load-time" class="page-load-time" aria-live="polite"></div>
+        </div>';
+    }
+
+    private function renderApplicationFooter(): string
+    {
+        $footer = trim((string)AppConfigurationStore::get('app_footer', ''));
+
+        if ($footer === '') {
+            return '<div id="application-footer" class="application-footer"></div>';
+        }
+
+        return '<div id="application-footer" class="application-footer">' . HelperFramework::escape($footer) . '</div>';
     }
 
     private function renderDeveloperOptionsStatus(): string

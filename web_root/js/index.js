@@ -2409,6 +2409,57 @@
         current.innerHTML = typeof html === 'string' ? html : '';
     }
 
+    function replaceTopbar(html) {
+        if (typeof html !== 'string') {
+            return;
+        }
+
+        const current = document.getElementById('topbar-shell');
+        if (html.trim() === '') {
+            if (current instanceof HTMLElement) {
+                current.remove();
+            }
+            return;
+        }
+
+        const template = document.createElement('template');
+        template.innerHTML = html.trim();
+        const replacement = template.content.firstElementChild;
+        if (!(replacement instanceof HTMLElement)) {
+            return;
+        }
+
+        if (current instanceof HTMLElement) {
+            current.replaceWith(replacement);
+            return;
+        }
+
+        const flash = document.getElementById('flash-messages');
+        if (flash instanceof HTMLElement) {
+            flash.before(replacement);
+        }
+    }
+
+    function replacePageFooter(html) {
+        if (typeof html !== 'string' || html.trim() === '') {
+            return;
+        }
+
+        const current = document.getElementById('page-footer');
+        if (!(current instanceof HTMLElement)) {
+            return;
+        }
+
+        const template = document.createElement('template');
+        template.innerHTML = html.trim();
+        const replacement = template.content.firstElementChild;
+
+        if (replacement instanceof HTMLElement) {
+            current.replaceWith(replacement);
+            renderPageLoadTime();
+        }
+    }
+
     function applyAjaxPayloadFragment(name, callback) {
         try {
             callback();
@@ -2597,6 +2648,8 @@
             }
 
             applyAjaxPayloadFragment('sidebar', () => replaceSidebar(payload.sidebar_html));
+            applyAjaxPayloadFragment('topbar', () => replaceTopbar(payload.topbar_html));
+            applyAjaxPayloadFragment('footer', () => replacePageFooter(payload.footer_html));
             applyAjaxPayloadFragment('site context', () => replaceSiteContextSlots(payload.site_context_html));
             applyAjaxPayloadFragment('developer options status', () => replaceDeveloperOptionsStatus(payload.developer_options_status_html));
             applyAjaxPayloadFragment('cards', () => replaceCards(payload.cards));

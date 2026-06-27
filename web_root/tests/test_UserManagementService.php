@@ -150,6 +150,247 @@ $harness->check(UserManagementService::class, 'creates pending users and sends i
     }
 });
 
+$harness->check(UserManagementService::class, 'lists archived users with valid restore contact methods', function () use ($harness, $withTemporaryManagedUsers): void {
+    $withTemporaryManagedUsers(function (UserManagementService $service, UserAuthenticationService $authService, int $adminId, int $targetId, int $ordinaryId) use ($harness): void {
+        InterfaceDB::prepareExecute(
+            'UPDATE users
+             SET account_status = :account_status,
+                 is_active = 0,
+                 mobile_number = :mobile_number
+             WHERE id = :id',
+            [
+                'account_status' => 'archived',
+                'mobile_number' => '+447123456789',
+                'id' => $targetId,
+            ]
+        );
+        InterfaceDB::prepareExecute(
+            'UPDATE users
+             SET account_status = :account_status,
+                 is_active = 0,
+                 email_address = NULL,
+                 mobile_number = NULL
+             WHERE id = :id',
+            [
+                'account_status' => 'archived',
+                'id' => $ordinaryId,
+            ]
+        );
+        UserAuthenticationService::forgetUserByIdCache($targetId);
+        UserAuthenticationService::forgetUserByIdCache($ordinaryId);
+
+        $dashboard = $service->restorableArchivedUsersDashboard($adminId);
+        $users = (array)($dashboard['users'] ?? []);
+
+        $harness->assertCount(1, $users);
+        $harness->assertSame($targetId, (int)($users[0]['id'] ?? 0));
+        $harness->assertSame('email + mobile', (string)($users[0]['contact_label'] ?? ''));
+    });
+});
+
+$harness->check(UserManagementService::class, 'restores archived users to pending invitation and sends every stored invite method', function () use ($harness, $withTemporaryManagedUsers): void {
+    if (
+        !InterfaceDB::tableExists('user_account_invites')
+        || !InterfaceDB::tableExists('user_account_invite_deliveries')
+    ) {
+        $harness->skip('invitation tables are not available.');
+    }
+
+    $property = new ReflectionProperty(AppConfigurationStore::class, 'config');
+    $property->setAccessible(true);
+    $baseConfig = AppConfigurationStore::config(true);
+
+    try {
+        $config = $baseConfig;
+        $config['smtp']['enabled'] = true;
+        $config['smtp']['development_mode'] = true;
+        $config['sms']['enabled'] = true;
+        $config['sms']['development_mode'] = true;
+        $property->setValue(null, $config);
+
+        $withTemporaryManagedUsers(function (UserManagementService $service, UserAuthenticationService $authService, int $adminId, int $targetId) use ($harness): void {
+            InterfaceDB::prepareExecute(
+                'UPDATE users
+                 SET account_status = :account_status,
+                     is_active = 0,
+                     mobile_number = :mobile_number,
+                     must_change_password = 1,
+                     account_completed_at = CURRENT_TIMESTAMP,
+                     current_session_token_hash = :session_hash,
+                     current_session_started_at = CURRENT_TIMESTAMP,
+                     current_session_last_seen_at = CURRENT_TIMESTAMP
+                 WHERE id = :id',
+                [
+                    'account_status' => 'archived',
+                    'mobile_number' => '+447123456789',
+                    'session_hash' => 'restore-test-session',
+                    'id' => $targetId,
+                ]
+            );
+            UserAuthenticationService::forgetUserByIdCache($targetId);
+
+            $result = $service->restoreArchivedUserAndSendInvites($adminId, $targetId, 'https://example.test');
+            $user = InterfaceDB::fetchOne(
+                'SELECT account_status,
+                        is_active,
+                        password_hash,
+                        must_change_password,
+                        account_completed_at,
+                        current_session_token_hash
+                 FROM users
+                 WHERE id = :id',
+                ['id' => $targetId]
+            );
+
+            $harness->assertTrue(!empty($result['success']));
+            $harness->assertSame(2, (int)($result['sent_invite_count'] ?? 0));
+            $harness->assertSame('pending_invitation', (string)($user['account_status'] ?? ''));
+            $harness->assertSame(0, (int)($user['is_active'] ?? 1));
+            $harness->assertSame(null, $user['password_hash'] ?? null);
+            $harness->assertSame(0, (int)($user['must_change_password'] ?? 1));
+            $harness->assertSame(null, $user['account_completed_at'] ?? null);
+            $harness->assertSame(null, $user['current_session_token_hash'] ?? null);
+
+            $inviteId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM user_account_invites WHERE user_id = :user_id ORDER BY id DESC LIMIT 1',
+                ['user_id' => $targetId]
+            );
+            $deliveries = InterfaceDB::fetchAll(
+                'SELECT contact_method, status
+                 FROM user_account_invite_deliveries
+                 WHERE invite_id = :invite_id
+                 ORDER BY id ASC',
+                ['invite_id' => $inviteId]
+            );
+
+            $harness->assertCount(2, $deliveries);
+            $harness->assertSame('email', (string)($deliveries[0]['contact_method'] ?? ''));
+            $harness->assertSame('sms', (string)($deliveries[1]['contact_method'] ?? ''));
+            $harness->assertSame(1, InterfaceDB::countWhere('user_account_audit', [
+                'affected_user_id' => $targetId,
+                'actor_user_id' => $adminId,
+                'action_type' => 'user_restored',
+            ]));
+        });
+    } finally {
+        $property->setValue(null, $baseConfig);
+    }
+});
+
+$harness->check(UserManagementService::class, 'sends only the available contact method when restoring archived users', function () use ($harness, $withTemporaryManagedUsers): void {
+    if (
+        !InterfaceDB::tableExists('user_account_invites')
+        || !InterfaceDB::tableExists('user_account_invite_deliveries')
+    ) {
+        $harness->skip('invitation tables are not available.');
+    }
+
+    $property = new ReflectionProperty(AppConfigurationStore::class, 'config');
+    $property->setAccessible(true);
+    $baseConfig = AppConfigurationStore::config(true);
+
+    try {
+        $config = $baseConfig;
+        $config['smtp']['enabled'] = false;
+        $config['sms']['enabled'] = true;
+        $config['sms']['development_mode'] = true;
+        $property->setValue(null, $config);
+
+        $withTemporaryManagedUsers(function (UserManagementService $service, UserAuthenticationService $authService, int $adminId, int $targetId) use ($harness): void {
+            InterfaceDB::prepareExecute(
+                'UPDATE users
+                 SET account_status = :account_status,
+                     is_active = 0,
+                     email_address = NULL,
+                     mobile_number = :mobile_number
+                 WHERE id = :id',
+                [
+                    'account_status' => 'archived',
+                    'mobile_number' => '+447123456789',
+                    'id' => $targetId,
+                ]
+            );
+            UserAuthenticationService::forgetUserByIdCache($targetId);
+
+            $result = $service->restoreArchivedUserAndSendInvites($adminId, $targetId, 'https://example.test');
+            $inviteId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM user_account_invites WHERE user_id = :user_id ORDER BY id DESC LIMIT 1',
+                ['user_id' => $targetId]
+            );
+            $deliveries = InterfaceDB::fetchAll(
+                'SELECT contact_method, status
+                 FROM user_account_invite_deliveries
+                 WHERE invite_id = :invite_id
+                 ORDER BY id ASC',
+                ['invite_id' => $inviteId]
+            );
+
+            $harness->assertTrue(!empty($result['success']));
+            $harness->assertSame(1, (int)($result['sent_invite_count'] ?? 0));
+            $harness->assertCount(1, $deliveries);
+            $harness->assertSame('sms', (string)($deliveries[0]['contact_method'] ?? ''));
+        });
+    } finally {
+        $property->setValue(null, $baseConfig);
+    }
+});
+
+$harness->check(UserManagementService::class, 'rejects non archived users during restore', function () use ($harness, $withTemporaryManagedUsers): void {
+    $withTemporaryManagedUsers(function (UserManagementService $service, UserAuthenticationService $authService, int $adminId, int $targetId) use ($harness): void {
+        $result = $service->restoreArchivedUserAndSendInvites($adminId, $targetId, 'https://example.test');
+        $user = $authService->userById($targetId);
+
+        $harness->assertTrue(empty($result['success']));
+        $harness->assertSame('active', (string)($user['account_status'] ?? ''));
+    });
+});
+
+$harness->check(UserManagementService::class, 'keeps restored users pending when invite delivery fails', function () use ($harness, $withTemporaryManagedUsers): void {
+    if (
+        !InterfaceDB::tableExists('user_account_invites')
+        || !InterfaceDB::tableExists('user_account_invite_deliveries')
+    ) {
+        $harness->skip('invitation tables are not available.');
+    }
+
+    $property = new ReflectionProperty(AppConfigurationStore::class, 'config');
+    $property->setAccessible(true);
+    $baseConfig = AppConfigurationStore::config(true);
+
+    try {
+        $config = $baseConfig;
+        $config['smtp']['enabled'] = false;
+        $config['sms']['enabled'] = false;
+        $property->setValue(null, $config);
+
+        $withTemporaryManagedUsers(function (UserManagementService $service, UserAuthenticationService $authService, int $adminId, int $targetId) use ($harness): void {
+            InterfaceDB::prepareExecute(
+                'UPDATE users
+                 SET account_status = :account_status,
+                     is_active = 0,
+                     mobile_number = NULL
+                 WHERE id = :id',
+                [
+                    'account_status' => 'archived',
+                    'id' => $targetId,
+                ]
+            );
+            UserAuthenticationService::forgetUserByIdCache($targetId);
+
+            $result = $service->restoreArchivedUserAndSendInvites($adminId, $targetId, 'https://example.test');
+            $user = $authService->userById($targetId);
+
+            $harness->assertTrue(empty($result['success']));
+            $harness->assertTrue((array)($result['errors'] ?? []) !== []);
+            $harness->assertSame(['email'], (array)($result['failed_channels'] ?? []));
+            $harness->assertSame('pending_invitation', (string)($user['account_status'] ?? ''));
+            $harness->assertSame(null, InterfaceDB::fetchColumn('SELECT password_hash FROM users WHERE id = :id', ['id' => $targetId]));
+        });
+    } finally {
+        $property->setValue(null, $baseConfig);
+    }
+});
+
 $harness->check(UserManagementService::class, 'rejects pending invited users without a contact method', function () use ($harness, $withTemporaryManagedUsers): void {
     $withTemporaryManagedUsers(function (UserManagementService $service, UserAuthenticationService $authService, int $adminId): void {
         $harness = new GeneratedServiceClassTestHarness();

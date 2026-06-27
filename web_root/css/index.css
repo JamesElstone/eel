@@ -215,6 +215,18 @@ body.sidebar-collapsed .layout {
   cursor: not-allowed;
 }
 
+.selector-input.select-placeholder-muted:required:invalid {
+  color: var(--muted);
+}
+
+.selector-input.select-placeholder-muted option {
+  color: var(--text);
+}
+
+.selector-input.select-placeholder-muted option[disabled] {
+  color: var(--muted);
+}
+
 .sidebar-select {
   background: rgba(255,255,255,0.08);
   border-color: rgba(255,255,255,0.12);

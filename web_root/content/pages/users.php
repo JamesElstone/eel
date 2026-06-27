@@ -45,6 +45,7 @@ final class _users extends PageContextFramework
             'user_logon_history_log',
             'current_user_details',
             'set_new_otp_secret',
+            'restore_deleted_user',
         ];
     }
 
@@ -68,6 +69,7 @@ final class _users extends PageContextFramework
                 'cards' => [
                     'current_user_details',
                     'set_new_otp_secret',
+                    'restore_deleted_user',
                 ],
             ],
         ];
@@ -213,6 +215,17 @@ final class _users extends PageContextFramework
                     : ['success' => false, 'errors' => ['You do not have permission to manage users.']],
                 'Invitation cancelled.',
                 ['current.users', 'invited.users']
+            ),
+            'users-restore-deleted-user' => $this->resultFromArray(
+                $canManageUsers
+                    ? $userManagementService->restoreArchivedUserAndSendInvites(
+                        $currentUserId,
+                        max(0, (int)$request->input('target_user_id', 0)),
+                        (new AccountInviteService())->buildBaseUrl($request)
+                    )
+                    : ['success' => false, 'errors' => ['You do not have permission to manage users.']],
+                'Deleted user restored and invitation sent.',
+                ['current.users', 'invited.users', 'restore.deleted.user']
             ),
             'users-toggle-user' => $this->resultFromArray(
                 $canManageUsers

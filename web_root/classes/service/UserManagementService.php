@@ -142,6 +142,50 @@ final class UserManagementService
         ];
     }
 
+    public function restorableArchivedUsersDashboard(int $currentUserId = 0): array
+    {
+        $currentUserId = $this->resolveCurrentUserId($currentUserId);
+        if ($currentUserId <= 0 || !$this->canManageUsers($currentUserId)) {
+            return ['users' => []];
+        }
+
+        $users = InterfaceDB::fetchAll(
+            'SELECT id,
+                    display_name,
+                    email_address,
+                    mobile_number,
+                    account_status,
+                    is_active,
+                    role_id
+             FROM users
+             WHERE account_status = :account_status
+             ORDER BY display_name ASC, id ASC',
+            ['account_status' => 'archived']
+        );
+
+        $restorableUsers = [];
+        foreach ($users as $user) {
+            $contactMethods = $this->validStoredInviteContactMethods($user);
+            if ($contactMethods === []) {
+                continue;
+            }
+
+            $displayName = trim((string)($user['display_name'] ?? ''));
+            $displayName = $displayName !== '' ? $displayName : 'User #' . (int)($user['id'] ?? 0);
+            $contactLabel = implode(' + ', array_map(
+                static fn(string $method): string => $method === 'sms' ? 'mobile' : 'email',
+                $contactMethods
+            ));
+
+            $user['contact_methods'] = $contactMethods;
+            $user['contact_label'] = $contactLabel;
+            $user['option_label'] = $displayName . ' (' . $contactLabel . ')';
+            $restorableUsers[] = $user;
+        }
+
+        return ['users' => $restorableUsers];
+    }
+
     public function loginLockoutsDashboard(int $currentUserId = 0): array
     {
         $currentUserId = $this->resolveCurrentUserId($currentUserId);
@@ -620,6 +664,108 @@ final class UserManagementService
         ]);
     }
 
+    public function restoreArchivedUserAndSendInvites(int $actorUserId, int $targetUserId, string $baseUrl = ''): array
+    {
+        $authorisationError = $this->authoriseUserManagementActor($actorUserId);
+        if ($authorisationError !== null) {
+            return ['success' => false, 'errors' => [$authorisationError]];
+        }
+
+        $targetUser = $this->userAuthenticationService->userById($targetUserId);
+        if ($targetUser === null || (string)($targetUser['account_status'] ?? '') !== 'archived') {
+            return ['success' => false, 'errors' => ['The selected deleted user could not be found.']];
+        }
+
+        $contactMethods = $this->validStoredInviteContactMethods($targetUser);
+        if ($contactMethods === []) {
+            return ['success' => false, 'errors' => ['The selected deleted user does not have a valid email address or mobile number.']];
+        }
+
+        $statement = InterfaceDB::prepareExecute(
+            'UPDATE users
+             SET account_status = :pending_status,
+                 is_active = 0,
+                 password_hash = NULL,
+                 must_change_password = 0,
+                 account_completed_at = NULL,
+                 current_session_token_hash = NULL,
+                 current_session_started_at = NULL,
+                 current_session_last_seen_at = NULL,
+                 current_session_device_id = NULL,
+                 current_session_ip_address = NULL,
+                 current_session_user_agent = NULL,
+                 current_session_browser_label = NULL,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = :id
+               AND account_status = :archived_status',
+            [
+                'id' => $targetUserId,
+                'pending_status' => 'pending_invitation',
+                'archived_status' => 'archived',
+            ]
+        );
+
+        if ($statement->rowCount() < 1) {
+            UserAuthenticationService::forgetUserByIdCache($targetUserId);
+            return ['success' => false, 'errors' => ['The selected deleted user could not be restored.']];
+        }
+
+        UserAuthenticationService::forgetUserByIdCache($targetUserId);
+
+        $this->userHistoryStore->recordAccountAudit(
+            $targetUserId,
+            $actorUserId,
+            'user_restored',
+            'An administrator restored this deleted user to pending invitation.',
+            [
+                'account_status' => 'pending_invitation',
+                'contact_methods' => $contactMethods,
+            ],
+            $this->userSessionService->buildRequestMetadata()
+        );
+
+        $sendResults = [];
+        $errors = [];
+        $failedChannels = [];
+
+        foreach ($contactMethods as $contactMethod) {
+            $sendResult = $this->sendInviteForUser($actorUserId, $targetUserId, $contactMethod, $baseUrl);
+            $sendResults[$contactMethod] = $sendResult;
+
+            if (empty($sendResult['success'])) {
+                $failedChannels[] = $contactMethod;
+                $defaultError = $contactMethod === 'sms'
+                    ? 'The invite SMS could not be sent.'
+                    : 'The invite email could not be sent.';
+                foreach ((array)($sendResult['errors'] ?? [$defaultError]) as $error) {
+                    $errors[] = 'Deleted user was restored, but ' . lcfirst((string)$error);
+                }
+            }
+        }
+
+        $restoredUser = $this->userAuthenticationService->userById($targetUserId);
+
+        if ($errors !== []) {
+            return [
+                'success' => false,
+                'errors' => $errors,
+                'user_id' => $targetUserId,
+                'user' => $restoredUser,
+                'invite_results' => $sendResults,
+                'failed_channels' => $failedChannels,
+            ];
+        }
+
+        return [
+            'success' => true,
+            'errors' => [],
+            'user_id' => $targetUserId,
+            'user' => $restoredUser,
+            'invite_results' => $sendResults,
+            'sent_invite_count' => count($sendResults),
+        ];
+    }
+
     public function createInviteLinkForUser(int $actorUserId, int $targetUserId, string $contactMethod, string $baseUrl): array
     {
         $authorisationError = $this->authoriseUserManagementActor($actorUserId);
@@ -907,6 +1053,23 @@ final class UserManagementService
         }
 
         return $errors;
+    }
+
+    private function validStoredInviteContactMethods(array $user): array
+    {
+        $methods = [];
+        $emailAddress = strtolower(trim((string)($user['email_address'] ?? '')));
+        $mobileNumber = trim((string)($user['mobile_number'] ?? ''));
+
+        if ($emailAddress !== '' && filter_var($emailAddress, FILTER_VALIDATE_EMAIL)) {
+            $methods[] = 'email';
+        }
+
+        if ($mobileNumber !== '' && preg_match('/^\+[1-9][0-9]{6,14}$/', $mobileNumber) === 1) {
+            $methods[] = 'sms';
+        }
+
+        return $methods;
     }
 
     private function emailAddressUsedByAnotherUser(int $userId, string $emailAddress): bool

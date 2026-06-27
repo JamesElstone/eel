@@ -1,5 +1,23 @@
 # eelKit Changes
 
+## Project asset hooks
+
+Feature name: `project_asset_hooks`.
+
+eelKit now checks for `web_root/css/project.css` while sending HTML responses through `web_root/index.php`. When the file exists, eelKit adds this browser stylesheet link to the document head:
+
+```html
+<link rel="stylesheet" href="css/project.css">
+```
+
+eelKit also checks for `web_root/js/project.js`. When the file exists, eelKit adds this browser script tag before the document body closes:
+
+```html
+<script src="js/project.js"></script>
+```
+
+This gives downstream projects lightweight CSS and JavaScript extension points without editing eelKit-owned `web_root/css/auth.css`, `web_root/css/index.css`, `web_root/js/index.js`, or page renderers. If either project asset is absent, generated HTML for that asset is unchanged.
+
 ## Auth context for cards
 
 Feature name: `auth_context_for_cards`.

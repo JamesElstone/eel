@@ -13,8 +13,10 @@ When working in the eelKit repository itself, source changes are allowed only wh
 In downstream projects, treat these paths as upstream eelKit framework code unless the project documents an intentional override:
 
 - `web_root/classes/`
+- `web_root/css/auth.css`
 - `web_root/css/index.css`
 - `web_root/index.php`
+- `web_root/js/index.js`
 - `web_root/tests/`
 - `tools/php/`
 - `db_schema/`
@@ -44,5 +46,9 @@ If a downstream project needs behavior that appears to require changing eelKit, 
 ## Styling
 
 When working in downstream projects, reuse existing eelKit styling from `web_root/css/index.css` before creating project-specific add-on CSS. Prefer existing CSS variables, layout patterns, utility classes, and component styles.
+
+Downstream projects can add `web_root/css/project.css` for project-specific styles. eelKit's `web_root/index.php` checks for that file and adds it to HTML responses after the eelKit CSS when present.
+
+Downstream projects can add `web_root/js/project.js` for project-specific browser JavaScript. eelKit's `web_root/index.php` checks for that file and adds it to HTML responses after the eelKit JavaScript when present.
 
 If a downstream project needs styling that should be reusable across eelKit applications, propose the change for eelKit instead of duplicating or overriding framework styles downstream.

@@ -82,6 +82,30 @@ $harness->check(SecurityStore::class, 'loads and preserves generated security fa
     }
 });
 
+$harness->check(SecurityStore::class, 'keeps generated security fact files private where supported', function () use ($harness, $testTempDirectory): void {
+    $path = $testTempDirectory . DIRECTORY_SEPARATOR . 'security-store-private-' . bin2hex(random_bytes(8)) . '.keys';
+
+    try {
+        SecurityStore::ensureFact('Pepper', $path);
+        $harness->assertTrue(is_file($path));
+
+        if (DIRECTORY_SEPARATOR === '\\') {
+            $harness->skip('POSIX file modes are not available on Windows.');
+        }
+
+        $mode = fileperms($path);
+        if ($mode === false) {
+            throw new RuntimeException('Unable to read generated security key file mode.');
+        }
+
+        $harness->assertSame('0600', substr(sprintf('%04o', $mode), -4));
+    } finally {
+        if (is_file($path)) {
+            unlink($path);
+        }
+    }
+});
+
 $harness->check(SecurityStore::class, 'rejects blank security fact keys', function () use ($harness, $testTempDirectory): void {
     try {
         SecurityStore::ensureFact('   ', $testTempDirectory . DIRECTORY_SEPARATOR . 'unused-security.keys');

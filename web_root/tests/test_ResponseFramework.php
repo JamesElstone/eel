@@ -27,7 +27,7 @@ $harness->check(ResponseFramework::class, 'builds HTML responses through the fac
     $response = ResponseFramework::html('<p>Hello</p>', 201);
     $reflection = new ReflectionClass($response);
 
-    $harness->assertSame(201, $reflection->getProperty('statusCode')->getValue($response));
+    $harness->assertSame(201, $response->statusCode());
     $harness->assertSame('text/html; charset=utf-8', $reflection->getProperty('contentType')->getValue($response));
     $harness->assertSame('<p>Hello</p>', $reflection->getProperty('body')->getValue($response));
     $harness->assertSame($expectedHeaders, $reflection->getProperty('headers')->getValue($response));
@@ -39,7 +39,7 @@ $harness->check(ResponseFramework::class, 'builds JSON responses through the fac
     $response = ResponseFramework::json(['ok' => true], 202);
     $reflection = new ReflectionClass($response);
 
-    $harness->assertSame(202, $reflection->getProperty('statusCode')->getValue($response));
+    $harness->assertSame(202, $response->statusCode());
     $harness->assertSame('application/json; charset=utf-8', $reflection->getProperty('contentType')->getValue($response));
     $harness->assertSame('{"ok":true}', $reflection->getProperty('body')->getValue($response));
     $harness->assertSame($expectedHeaders, $reflection->getProperty('headers')->getValue($response));

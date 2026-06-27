@@ -72,6 +72,68 @@ final class ActivityStore
         }
     }
 
+    public function recordApiActivity(
+        string $pageId,
+        string $actionName,
+        string $messageType,
+        string $messageText,
+        ?int $userId = null,
+        array $metadata = [],
+        ?string $cardActionName = null,
+        ?string $requestMethod = null,
+        ?string $requestUri = null
+    ): void {
+        $messageText = $this->plainText($messageText);
+        if ($messageText === '' || !InterfaceDB::tableExists('application_activity_flash_history')) {
+            return;
+        }
+
+        InterfaceDB::prepareExecute(
+            'INSERT INTO application_activity_flash_history (
+                user_id,
+                page_id,
+                action_name,
+                card_action_name,
+                message_type,
+                message_text,
+                message_html_text,
+                request_method,
+                is_ajax,
+                device_id,
+                ip_address,
+                user_agent,
+                request_uri
+            ) VALUES (
+                :user_id,
+                :page_id,
+                :action_name,
+                :card_action_name,
+                :message_type,
+                :message_text,
+                NULL,
+                :request_method,
+                0,
+                :device_id,
+                :ip_address,
+                :user_agent,
+                :request_uri
+            )',
+            [
+                'user_id' => $userId !== null && $userId > 0 ? $userId : null,
+                'page_id' => $this->normaliseRequiredString($pageId, 255),
+                'action_name' => $this->normaliseOptionalString($actionName, 255),
+                'card_action_name' => $this->normaliseOptionalString($cardActionName, 255),
+                'message_type' => strtolower(trim($messageType)) === 'error' ? 'error' : 'success',
+                'message_text' => $messageText,
+                'request_method' => $this->normaliseOptionalString($requestMethod, 10),
+                'device_id' => $this->normaliseOptionalString($metadata['device_id'] ?? null, 64),
+                'ip_address' => $this->normaliseOptionalString($metadata['ip_address'] ?? null, 45),
+                'user_agent' => $this->normaliseOptionalString($metadata['user_agent'] ?? null, 1000),
+                'request_uri' => $this->normaliseOptionalString($requestUri, 2048),
+            ]
+        );
+    }
+
     private function normaliseFlashMessages(array $flashMessages): array
     {
         $messages = [];
@@ -129,7 +191,7 @@ final class ActivityStore
 
         return [
             'device_id' => $this->normaliseOptionalString($deviceId, 64),
-            'ip_address' => $this->normaliseOptionalString($request->remoteAddress(), 45),
+            'ip_address' => $this->normaliseOptionalString((new ReverseProxyService())->clientIpAddress($request), 45),
             'user_agent' => $this->normaliseOptionalString($request->header('User-Agent', $request->server('HTTP_USER_AGENT', '')), 1000),
             'request_uri' => $this->normaliseOptionalString($request->server('REQUEST_URI', ''), 2048),
         ];

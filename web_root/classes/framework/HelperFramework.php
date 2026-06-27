@@ -215,19 +215,35 @@ final class HelperFramework
 
     public static function paginationItemsLabel(array $pagination, string $itemLabel = 'Items'): string
     {
-        $total = max(0, (int)($pagination['total'] ?? 0));
+        $total = max(0, (int)($pagination['total'] ?? $pagination['total_items'] ?? 0));
+
+        if ($total === 0) {
+            return $itemLabel . ' 0 of 0';
+        }
+
+        if (array_key_exists('first_item', $pagination) && array_key_exists('last_item', $pagination)) {
+            $rangeStart = max(1, min($total, (int)$pagination['first_item']));
+            $rangeEnd = max($rangeStart, min($total, (int)$pagination['last_item']));
+
+            return $rangeStart === $rangeEnd
+                ? $itemLabel . ' ' . (string)$rangeStart . ' of ' . (string)$total
+                : $itemLabel . ' ' . (string)$rangeStart . '-' . (string)$rangeEnd . ' of ' . (string)$total;
+        }
+
         $page = max(1, (int)($pagination['page'] ?? 1));
         $pageSize = max(1, (int)($pagination['page_size'] ?? 1));
         $itemCount = count((array)($pagination['items'] ?? []));
 
-        if ($total === 0 || $itemCount === 0) {
+        if ($itemCount === 0) {
             return $itemLabel . ' 0 of 0';
         }
 
-        $rangeStart = (($page - 1) * $pageSize) + 1;
+        $rangeStart = min($total, (($page - 1) * $pageSize) + 1);
         $rangeEnd = min($total, $rangeStart + $itemCount - 1);
 
-        return $itemLabel . ' ' . $rangeStart . '-' . $rangeEnd . ' of ' . $total;
+        return $rangeStart === $rangeEnd
+            ? $itemLabel . ' ' . (string)$rangeStart . ' of ' . (string)$total
+            : $itemLabel . ' ' . (string)$rangeStart . '-' . (string)$rangeEnd . ' of ' . (string)$total;
     }
 
     public static function paginationFormButton(

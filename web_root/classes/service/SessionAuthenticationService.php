@@ -584,7 +584,7 @@ final class SessionAuthenticationService
             return true;
         }
 
-        if ($this->trustedForwardedScheme($request) === 'https') {
+        if ((new ReverseProxyService())->forwardedScheme($request) === 'https') {
             return true;
         }
 
@@ -626,29 +626,6 @@ final class SessionAuthenticationService
     private function request(): RequestFramework
     {
         return $this->request ?? RequestFramework::fromGlobals();
-    }
-
-    private function trustedForwardedScheme(RequestFramework $request): string
-    {
-        if (!(new ReverseProxyService())->isTrustedProxyRequest($request)) {
-            return '';
-        }
-
-        $scheme = $this->normaliseUrlScheme((string)$request->header('X-Forwarded-Proto', ''));
-        if ($scheme !== '') {
-            return $scheme;
-        }
-
-        foreach (preg_split('/,/', (string)$request->header('Forwarded', '')) ?: [] as $segment) {
-            if (preg_match('/(?:^|;)\s*proto=(?:"?([^;,"\s]+)"?)/i', $segment, $matches) === 1) {
-                $scheme = $this->normaliseUrlScheme((string)$matches[1]);
-                if ($scheme !== '') {
-                    return $scheme;
-                }
-            }
-        }
-
-        return '';
     }
 
     private function configuredExternalBaseUrlScheme(): string

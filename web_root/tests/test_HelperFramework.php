@@ -66,4 +66,28 @@ $harness->run(HelperFramework::class, function (GeneratedServiceClassTestHarness
         $harness->assertSame(false, $emptyPagination['has_previous_page']);
         $harness->assertSame(false, $emptyPagination['has_next_page']);
     });
+
+    $harness->check(HelperFramework::class, 'labels explicit pagination ranges and single items', function () use ($harness): void {
+        $harness->assertSame('Rows 11-20 of 30', HelperFramework::paginationItemsLabel([
+            'total_items' => 30,
+            'first_item' => 11,
+            'last_item' => 20,
+        ], 'Rows'));
+        $harness->assertSame('Rows 3 of 10', HelperFramework::paginationItemsLabel([
+            'total_items' => 10,
+            'first_item' => 3,
+            'last_item' => 3,
+        ], 'Rows'));
+        $harness->assertSame('Rows 10 of 10', HelperFramework::paginationItemsLabel([
+            'total_items' => 10,
+            'first_item' => 50,
+            'last_item' => 60,
+        ], 'Rows'));
+        $harness->assertSame('Rows 5 of 5', HelperFramework::paginationItemsLabel([
+            'total' => 5,
+            'page' => 2,
+            'page_size' => 4,
+            'items' => ['last'],
+        ], 'Rows'));
+    });
 });

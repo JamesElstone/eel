@@ -141,6 +141,25 @@ $harness->run(RequestFramework::class, function (GeneratedServiceClassTestHarnes
         $harness->assertSame('Bearer upload-token-123', $request->header('Authorization'));
     });
 
+    $harness->check(RequestFramework::class, 'keeps explicit authorization headers ahead of CGI fallbacks', function () use ($harness): void {
+        $request = new RequestFramework(
+            [],
+            [],
+            [
+                'AUTHORIZATION' => 'Bearer cgi-token',
+                'REDIRECT_HTTP_AUTHORIZATION' => 'Bearer redirect-token',
+            ],
+            [],
+            [
+                'Authorization' => 'Bearer explicit-token',
+            ],
+            null,
+            []
+        );
+
+        $harness->assertSame('Bearer explicit-token', $request->header('Authorization'));
+    });
+
     $harness->check(RequestFramework::class, 'uses the submitted card action when duplicate card action fields are posted', function () use ($harness): void {
         $request = new RequestFramework(
             ['page' => 'settings'],

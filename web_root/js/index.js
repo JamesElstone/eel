@@ -2762,6 +2762,49 @@
         }
     }
 
+    function formHasRequiredInviteContact(form) {
+        if (!(form instanceof HTMLFormElement) || form.dataset.requireInviteContact !== 'true') {
+            return true;
+        }
+
+        const email = form.querySelector('[data-invite-contact-field="email"]');
+        const mobile = form.querySelector('[data-invite-contact-field="mobile"]');
+        const hasEmail = email instanceof HTMLInputElement && email.value.trim() !== '';
+        const hasMobile = mobile instanceof HTMLInputElement && mobile.value.trim() !== '';
+        const clearContactValidity = () => {
+            if (email instanceof HTMLInputElement) {
+                email.setCustomValidity('');
+            }
+            if (mobile instanceof HTMLInputElement) {
+                mobile.setCustomValidity('');
+            }
+        };
+
+        if (hasEmail || hasMobile) {
+            clearContactValidity();
+            return true;
+        }
+
+        const message = 'Enter an email address or mobile number.';
+        if (email instanceof HTMLInputElement) {
+            email.setCustomValidity(message);
+            email.reportValidity();
+            email.addEventListener('input', clearContactValidity, { once: true });
+            if (mobile instanceof HTMLInputElement) {
+                mobile.addEventListener('input', clearContactValidity, { once: true });
+            }
+            return false;
+        }
+
+        if (mobile instanceof HTMLInputElement) {
+            mobile.setCustomValidity(message);
+            mobile.reportValidity();
+            mobile.addEventListener('input', clearContactValidity, { once: true });
+        }
+
+        return false;
+    }
+
     function applyAjaxPayloadFragment(name, callback) {
         try {
             callback();
@@ -2894,6 +2937,10 @@
         }
 
         event.preventDefault();
+
+        if (!formHasRequiredInviteContact(form)) {
+            return;
+        }
 
         if (!passChickenCheck(event.submitter)) {
             return;

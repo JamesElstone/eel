@@ -548,6 +548,78 @@ final class UserManagementService
         ];
     }
 
+    public function createInvitedUserAndSendInvites(
+        int $actorUserId,
+        string $displayName,
+        string $emailAddress,
+        string $mobileCountryCode = self::DEFAULT_MOBILE_COUNTRY_CODE,
+        string $mobileNumber = '',
+        int $roleId = 0,
+        string $baseUrl = ''
+    ): array {
+        $result = $this->createInvitedUser(
+            $actorUserId,
+            $displayName,
+            $emailAddress,
+            $mobileCountryCode,
+            $mobileNumber,
+            $roleId
+        );
+
+        if (empty($result['success'])) {
+            return $result;
+        }
+
+        $userId = (int)($result['user_id'] ?? 0);
+        $user = is_array($result['user'] ?? null) ? $result['user'] : [];
+        $sendResults = [];
+        $errors = [];
+
+        if (trim((string)($user['email_address'] ?? '')) !== '') {
+            $emailResult = $this->sendInviteForUser($actorUserId, $userId, 'email', $baseUrl);
+            $sendResults['email'] = $emailResult;
+            if (empty($emailResult['success'])) {
+                foreach ((array)($emailResult['errors'] ?? ['The invite email could not be sent.']) as $error) {
+                    $errors[] = 'Pending invited user was created, but ' . lcfirst((string)$error);
+                }
+            }
+        }
+
+        if (trim((string)($user['mobile_number'] ?? '')) !== '') {
+            $smsResult = $this->sendInviteForUser($actorUserId, $userId, 'sms', $baseUrl);
+            $sendResults['sms'] = $smsResult;
+            if (empty($smsResult['success'])) {
+                foreach ((array)($smsResult['errors'] ?? ['The invite SMS could not be sent.']) as $error) {
+                    $errors[] = 'Pending invited user was created, but ' . lcfirst((string)$error);
+                }
+            }
+        }
+
+        if ($sendResults === []) {
+            return [
+                'success' => false,
+                'errors' => ['At least one contact method is required.'],
+                'user_id' => $userId,
+                'user' => $user,
+            ];
+        }
+
+        if ($errors !== []) {
+            return [
+                'success' => false,
+                'errors' => $errors,
+                'user_id' => $userId,
+                'user' => $user,
+                'invite_results' => $sendResults,
+            ];
+        }
+
+        return array_replace($result, [
+            'invite_results' => $sendResults,
+            'sent_invite_count' => count($sendResults),
+        ]);
+    }
+
     public function createInviteLinkForUser(int $actorUserId, int $targetUserId, string $contactMethod, string $baseUrl): array
     {
         $authorisationError = $this->authoriseUserManagementActor($actorUserId);

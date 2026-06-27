@@ -1,5 +1,29 @@
 # eelKit Changes
 
+## Auth context for cards
+
+Feature name: `auth_context_for_cards`.
+
+eelKit now adds authenticated user metadata to the standard page/card context before card `handle()` and `render()` run:
+
+```php
+$context['auth'] = [
+    'user_id' => 123,
+    'role_id' => 2,
+];
+```
+
+Unauthenticated requests receive `0` for both values. Card service params can reference the values with dotted context paths:
+
+```php
+'params' => [
+    'userId' => ':auth.user_id',
+    'roleId' => ':auth.role_id',
+],
+```
+
+This context is metadata only. It does not replace card access checks or downstream authorization logic.
+
 ## Typed field validation controls
 
 Feature name: `typed_field_validation_controls`.

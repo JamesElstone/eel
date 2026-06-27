@@ -20,6 +20,14 @@ final class CardRendererOptionalParamTestService
     {
         return ['filter' => $filter];
     }
+
+    public function authMetadata(int $userId, int $roleId): array
+    {
+        return [
+            'user_id' => $userId,
+            'role_id' => $roleId,
+        ];
+    }
 }
 
 if (!class_exists('_refreshing_testCard', false)) {
@@ -113,6 +121,32 @@ $harness->run(CardRendererFramework::class, function (GeneratedServiceClassTestH
 
         $harness->assertSame('error', $result['status'] ?? null);
         $harness->assertSame('missing_param', $result['error']['type'] ?? null);
+    });
+
+    $harness->check(CardRendererFramework::class, 'resolves auth context service params', function () use ($harness, $instance, $services, $resolveCardService): void {
+        $result = $resolveCardService->invoke(
+            $instance,
+            'auth_metadata',
+            [
+                'key' => 'auth_metadata',
+                'service' => CardRendererOptionalParamTestService::class,
+                'method' => 'authMetadata',
+                'params' => [
+                    'userId' => ':auth.user_id',
+                    'roleId' => ':auth.role_id',
+                ],
+            ],
+            [
+                'auth' => [
+                    'user_id' => 123,
+                    'role_id' => 2,
+                ],
+            ],
+            $services
+        );
+
+        $harness->assertSame('ok', $result['status'] ?? null);
+        $harness->assertSame(['user_id' => 123, 'role_id' => 2], $result['data'] ?? null);
     });
 
     $harness->check(CardRendererFramework::class, 'adds card refresh attributes when requested', function () use ($harness, $instance, $services): void {

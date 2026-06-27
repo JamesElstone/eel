@@ -42,6 +42,7 @@ final class _application_settingsCard extends CardBaseFramework
         $cookieSecure = $this->cookieSecureDisplayValue($config['session']['cookie_secure'] ?? 'auto');
         $cookieSameSite = (string)($config['session']['cookie_samesite'] ?? 'Strict');
         $hideCollapsedLinkInitials = !empty($config['navigation']['hide_collapsed_link_initials']);
+        $newUserOtpRequired = $this->otpRequiredDisplayValue($config['user_defaults']['new_user_otp_required'] ?? true);
 
         return '
             <form method="post" action="?page=settings" data-ajax="true" class="form-grid application-settings-form">
@@ -82,6 +83,19 @@ final class _application_settingsCard extends CardBaseFramework
                             <span>Show developer-only tools, cards, and diagnostics where enabled.</span>
                         </span>
                     </label>
+                </fieldset>
+
+                <fieldset class="form-row full settings-fieldset">
+                    <legend>User Defaults</legend>
+                    <div class="form-grid">
+                        <div class="form-row half">
+                            <label for="settings-new-user-otp-required">New user OTP requirement</label>
+                            <select class="select" id="settings-new-user-otp-required" name="new_user_otp_required">
+                                ' . $this->option('1', 'Required', $newUserOtpRequired) . '
+                                ' . $this->option('0', 'Optional', $newUserOtpRequired) . '
+                            </select>
+                        </div>
+                    </div>
                 </fieldset>
 
                 <fieldset class="form-row full settings-fieldset">
@@ -282,6 +296,15 @@ final class _application_settingsCard extends CardBaseFramework
         $value = strtolower(trim((string)$value));
 
         return in_array($value, ['auto', 'true', 'false'], true) ? $value : 'auto';
+    }
+
+    private function otpRequiredDisplayValue(mixed $value): string
+    {
+        if (is_bool($value)) {
+            return $value ? '1' : '0';
+        }
+
+        return trim((string)$value) === '0' ? '0' : '1';
     }
 
     private function hiddenFields(array $context): string

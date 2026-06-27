@@ -89,6 +89,43 @@ $harness->check(UserManagementService::class, 'requires management permission fo
     });
 });
 
+$harness->check(UserManagementService::class, 'uses configured OTP defaults for new active and invited users', function () use ($harness, $withTemporaryManagedUsers): void {
+    $property = new ReflectionProperty(AppConfigurationStore::class, 'config');
+    $property->setAccessible(true);
+    $baseConfig = AppConfigurationStore::config(true);
+
+    try {
+        $config = $baseConfig;
+        $config['user_defaults']['new_user_otp_required'] = false;
+        $property->setValue(null, $config);
+
+        $withTemporaryManagedUsers(function (UserManagementService $service, UserAuthenticationService $authService, int $adminId) use ($harness): void {
+            $marker = bin2hex(random_bytes(4));
+            $created = $service->createUser(
+                $adminId,
+                'Default Optional User',
+                'default-optional-' . $marker . '@example.test',
+                'Strong Password 1!'
+            );
+            $invited = $service->createInvitedUser(
+                $adminId,
+                'Default Optional Invite',
+                'default-optional-invite-' . $marker . '@example.test',
+                UserManagementService::defaultMobileCountryCode(),
+                '',
+                RoleAssignmentService::ADMIN_ROLE_ID
+            );
+
+            $harness->assertTrue(!empty($created['success']));
+            $harness->assertTrue(!empty($invited['success']));
+            $harness->assertSame(0, (int)(($created['user'] ?? [])['otp_required'] ?? 1));
+            $harness->assertSame(0, (int)(($invited['user'] ?? [])['otp_required'] ?? 1));
+        });
+    } finally {
+        $property->setValue(null, $baseConfig);
+    }
+});
+
 $harness->check(UserManagementService::class, 'creates pending users and sends invites to every supplied contact method', function () use ($harness, $withTemporaryManagedUsers): void {
     if (
         !InterfaceDB::tableExists('user_account_invites')

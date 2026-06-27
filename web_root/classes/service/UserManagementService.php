@@ -339,7 +339,8 @@ final class UserManagementService
         string $emailAddress,
         string $password,
         string $mobileCountryCode = self::DEFAULT_MOBILE_COUNTRY_CODE,
-        string $mobileNumber = ''
+        string $mobileNumber = '',
+        ?bool $otpRequired = null
     ): array
     {
         $authorisationError = $this->authoriseUserManagementActor($actorUserId);
@@ -353,7 +354,8 @@ final class UserManagementService
             $emailAddress,
             $password,
             true,
-            $normalisedMobileNumber
+            $normalisedMobileNumber,
+            $this->newUserOtpRequiredDefault($otpRequired)
         );
 
         if (!empty($result['success']) && (int)($result['user_id'] ?? 0) > 0) {
@@ -451,7 +453,8 @@ final class UserManagementService
         string $emailAddress,
         string $mobileCountryCode = self::DEFAULT_MOBILE_COUNTRY_CODE,
         string $mobileNumber = '',
-        int $roleId = 0
+        int $roleId = 0,
+        ?bool $otpRequired = null
     ): array {
         $authorisationError = $this->authoriseUserManagementActor($actorUserId);
         if ($authorisationError !== null) {
@@ -466,13 +469,16 @@ final class UserManagementService
             return ['success' => false, 'errors' => $errors, 'user_id' => 0];
         }
 
-        InterfaceDB::transaction(function () use ($input, $roleId): void {
+        $resolvedOtpRequired = $this->newUserOtpRequiredDefault($otpRequired);
+
+        InterfaceDB::transaction(function () use ($input, $roleId, $resolvedOtpRequired): void {
             InterfaceDB::prepareExecute(
                 'INSERT INTO users (
                     display_name,
                     email_address,
                     mobile_number,
                     password_hash,
+                    otp_required,
                     is_active,
                     account_status,
                     role_id
@@ -481,6 +487,7 @@ final class UserManagementService
                     :email_address,
                     :mobile_number,
                     NULL,
+                    :otp_required,
                     0,
                     :account_status,
                     :role_id
@@ -489,6 +496,7 @@ final class UserManagementService
                     'display_name' => $input['display_name'],
                     'email_address' => $input['email_address'] !== '' ? $input['email_address'] : null,
                     'mobile_number' => $input['mobile_number'] !== '' ? $input['mobile_number'] : null,
+                    'otp_required' => $resolvedOtpRequired ? 1 : 0,
                     'account_status' => 'pending_invitation',
                     'role_id' => $roleId,
                 ]
@@ -599,7 +607,8 @@ final class UserManagementService
         string $mobileCountryCode = self::DEFAULT_MOBILE_COUNTRY_CODE,
         string $mobileNumber = '',
         int $roleId = 0,
-        string $baseUrl = ''
+        string $baseUrl = '',
+        ?bool $otpRequired = null
     ): array {
         $result = $this->createInvitedUser(
             $actorUserId,
@@ -607,7 +616,8 @@ final class UserManagementService
             $emailAddress,
             $mobileCountryCode,
             $mobileNumber,
-            $roleId
+            $roleId,
+            $otpRequired
         );
 
         if (empty($result['success'])) {
@@ -1014,6 +1024,20 @@ final class UserManagementService
         }
 
         return null;
+    }
+
+    private function newUserOtpRequiredDefault(?bool $otpRequired): bool
+    {
+        if ($otpRequired !== null) {
+            return $otpRequired;
+        }
+
+        $configured = AppConfigurationStore::get('user_defaults.new_user_otp_required', true);
+        if (is_bool($configured)) {
+            return $configured;
+        }
+
+        return trim((string)$configured) !== '0';
     }
 
     private function normaliseInvitedUserInput(string $displayName, string $emailAddress, string $mobileCountryCode, string $mobileNumber): array

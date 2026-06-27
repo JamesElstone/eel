@@ -99,6 +99,7 @@ final class AppConfigurationStore
             'navigation',
             'antifraud',
             'session',
+            'user_defaults',
         ] as $key) {
             if (array_key_exists($key, $settings)) {
                 $config[$key] = $settings[$key];
@@ -290,6 +291,9 @@ final class AppConfigurationStore
             'session' => [
                 'cookie_secure' => 'auto',
                 'cookie_samesite' => 'Strict',
+            ],
+            'user_defaults' => [
+                'new_user_otp_required' => true,
             ],
             'site_context' => [
                 'service' => '',

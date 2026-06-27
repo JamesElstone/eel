@@ -345,6 +345,11 @@ body.sidebar-collapsed .layout {
 .sidebar-toggle svg {
   width: 18px;
   height: 18px;
+  transition: transform 0.2s ease;
+}
+
+body.sidebar-collapsed .sidebar-toggle svg {
+  transform: rotate(180deg);
 }
 
 .nav-group {

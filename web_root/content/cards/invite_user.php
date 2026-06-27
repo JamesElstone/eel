@@ -39,7 +39,7 @@ final class _invite_userCard extends CardBaseFramework
     {
         $csrfToken = (string)($context['page']['csrf_token'] ?? '');
 
-        return '<form method="post" action="?page=users" data-ajax="true" class="form-grid">
+        return '<form method="post" action="?page=users" data-ajax="true" data-require-invite-contact="true" class="form-grid">
             ' . $this->hiddenFields($context) . '
             <input type="hidden" name="action" value="users-create-invited-user">
             <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
@@ -49,7 +49,7 @@ final class _invite_userCard extends CardBaseFramework
             </div>
             <div class="form-row half">
                 <label for="invite-user-email-address">Email address</label>
-                <input class="input" id="invite-user-email-address" name="invite_email_address" type="email">
+                <input class="input" id="invite-user-email-address" name="invite_email_address" type="email" data-invite-contact-field="email">
             </div>
             <div class="form-row full">
                 <label for="invite-user-mobile-number">Mobile number</label>
@@ -57,7 +57,7 @@ final class _invite_userCard extends CardBaseFramework
                     <select class="selector-input mobile-country-code" id="invite-user-mobile-country-code" name="invite_mobile_country_code" autocomplete="tel-country-code" data-no-submit-on-change="true">
                         ' . $this->mobileCountryCodeOptionsHtml(UserManagementService::defaultMobileCountryCode()) . '
                     </select>
-                    <input class="input mobile-number-input" id="invite-user-mobile-number" name="invite_mobile_number" type="tel" autocomplete="tel-national" inputmode="tel" maxlength="16">
+                    <input class="input mobile-number-input" id="invite-user-mobile-number" name="invite_mobile_number" type="tel" autocomplete="tel-national" inputmode="tel" maxlength="16" data-invite-contact-field="mobile">
                 </div>
             </div>
             <div class="form-row half">

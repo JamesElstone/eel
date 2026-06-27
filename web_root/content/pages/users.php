@@ -152,16 +152,17 @@ final class _users extends PageContextFramework
             ),
             'users-create-invited-user' => $this->resultFromArray(
                 $canManageUsers
-                    ? $userManagementService->createInvitedUser(
+                    ? $userManagementService->createInvitedUserAndSendInvites(
                         $currentUserId,
                         (string)$request->input('invite_display_name', ''),
                         (string)$request->input('invite_email_address', ''),
                         (string)$request->input('invite_mobile_country_code', UserManagementService::defaultMobileCountryCode()),
                         (string)$request->input('invite_mobile_number', ''),
-                        (int)$request->input('invite_role_id', 0)
+                        (int)$request->input('invite_role_id', 0),
+                        (new AccountInviteService())->buildBaseUrl($request)
                     )
                     : ['success' => false, 'errors' => ['You do not have permission to manage users.']],
-                'Pending invited user created.',
+                'Pending invited user created and invitation sent.',
                 ['current.users', 'invited.users', 'invite.user']
             ),
             'users-update-invited-user' => $this->resultFromArray(

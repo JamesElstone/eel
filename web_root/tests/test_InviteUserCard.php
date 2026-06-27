@@ -32,4 +32,7 @@ $harness->check(_invite_userCard::class, 'does not submit create-only selectors 
 
     $harness->assertTrue(str_contains($html, 'name="invite_mobile_country_code" autocomplete="tel-country-code" data-no-submit-on-change="true"'));
     $harness->assertTrue(str_contains($html, 'name="invite_role_id" data-no-submit-on-change="true"'));
+    $harness->assertTrue(str_contains($html, 'data-require-invite-contact="true"'));
+    $harness->assertTrue(str_contains($html, 'name="invite_email_address" type="email" data-invite-contact-field="email"'));
+    $harness->assertTrue(str_contains($html, 'name="invite_mobile_number" type="tel" autocomplete="tel-national" inputmode="tel" maxlength="16" data-invite-contact-field="mobile"'));
 });

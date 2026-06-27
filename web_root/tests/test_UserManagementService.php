@@ -89,6 +89,85 @@ $harness->check(UserManagementService::class, 'requires management permission fo
     });
 });
 
+$harness->check(UserManagementService::class, 'creates pending users and sends invites to every supplied contact method', function () use ($harness, $withTemporaryManagedUsers): void {
+    if (
+        !InterfaceDB::tableExists('user_account_invites')
+        || !InterfaceDB::tableExists('user_account_invite_deliveries')
+    ) {
+        $harness->skip('invitation tables are not available.');
+    }
+
+    $property = new ReflectionProperty(AppConfigurationStore::class, 'config');
+    $property->setAccessible(true);
+    $baseConfig = AppConfigurationStore::config(true);
+
+    try {
+        $config = $baseConfig;
+        $config['smtp']['enabled'] = true;
+        $config['smtp']['development_mode'] = true;
+        $config['sms']['enabled'] = true;
+        $config['sms']['development_mode'] = true;
+        $property->setValue(null, $config);
+
+        $withTemporaryManagedUsers(function (UserManagementService $service, UserAuthenticationService $authService, int $adminId): void {
+            $harness = new GeneratedServiceClassTestHarness();
+            $marker = bin2hex(random_bytes(4));
+            $result = $service->createInvitedUserAndSendInvites(
+                $adminId,
+                'Invited User',
+                'invited-' . $marker . '@example.test',
+                '+44',
+                '07123 456789',
+                RoleAssignmentService::ADMIN_ROLE_ID,
+                'https://example.test'
+            );
+
+            $userId = (int)($result['user_id'] ?? 0);
+            $harness->assertTrue(!empty($result['success']));
+            $harness->assertSame(2, (int)($result['sent_invite_count'] ?? 0));
+            $harness->assertTrue($userId > 0);
+
+            $inviteId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM user_account_invites WHERE user_id = :user_id ORDER BY id DESC LIMIT 1',
+                ['user_id' => $userId]
+            );
+            $deliveries = InterfaceDB::fetchAll(
+                'SELECT contact_method, status
+                 FROM user_account_invite_deliveries
+                 WHERE invite_id = :invite_id
+                 ORDER BY id ASC',
+                ['invite_id' => $inviteId]
+            );
+
+            $harness->assertCount(2, $deliveries);
+            $harness->assertSame('email', (string)($deliveries[0]['contact_method'] ?? ''));
+            $harness->assertSame('sent', (string)($deliveries[0]['status'] ?? ''));
+            $harness->assertSame('sms', (string)($deliveries[1]['contact_method'] ?? ''));
+            $harness->assertSame('sent', (string)($deliveries[1]['status'] ?? ''));
+        });
+    } finally {
+        $property->setValue(null, $baseConfig);
+    }
+});
+
+$harness->check(UserManagementService::class, 'rejects pending invited users without a contact method', function () use ($harness, $withTemporaryManagedUsers): void {
+    $withTemporaryManagedUsers(function (UserManagementService $service, UserAuthenticationService $authService, int $adminId): void {
+        $harness = new GeneratedServiceClassTestHarness();
+        $result = $service->createInvitedUserAndSendInvites(
+            $adminId,
+            'No Contact User',
+            '',
+            '+44',
+            '',
+            RoleAssignmentService::ADMIN_ROLE_ID,
+            'https://example.test'
+        );
+
+        $harness->assertTrue(empty($result['success']));
+        $harness->assertSame('At least one contact method is required.', (string)(($result['errors'] ?? [])[0] ?? ''));
+    });
+});
+
 $harness->check(UserManagementService::class, 'prevents self destructive admin account changes', function () use ($harness, $withTemporaryManagedUsers): void {
     $withTemporaryManagedUsers(function (UserManagementService $service, UserAuthenticationService $authService, int $adminId): void {
         $harness = new GeneratedServiceClassTestHarness();

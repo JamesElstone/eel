@@ -1,5 +1,74 @@
 # eelKit Changes
 
+## Typed field validation controls
+
+Feature name: `typed_field_validation_controls`.
+
+Downstream projects can now declare simple typed form validation rules directly in markup. eelKit's browser script binds at document level, so validation continues to work after AJAX card replacement and does not need per-card rebinding.
+
+Canonical validation attributes:
+
+```html
+<select data-validate-boolean></select>
+<input type="text" data-validate-int>
+<input type="text" data-validate-float>
+<input type="text" data-validate-ascii>
+```
+
+`data-validate-int` allows ASCII digits only. `data-validate-float` allows ASCII digits and one decimal point. `data-validate-ascii` strips non-ASCII input. `data-validate-boolean` ensures a select value is either `true` or `false`.
+
+For tables where a row's type control determines a separate value control, pair them with a shared token:
+
+```html
+<select name="internal_profile_value_type" data-validate-type-control="profile-12">
+    <option value="bool">bool</option>
+    <option value="int">int</option>
+    <option value="float">float</option>
+    <option value="string">string</option>
+    <option value="null">null</option>
+</select>
+
+<input
+    class="input"
+    name="internal_profile_value"
+    type="text"
+    data-validate-type-target="profile-12">
+```
+
+The paired value control is sanitized when the type changes. A `null` type clears and disables the paired value control in the browser. Use unique pairing tokens per row; do not rely on duplicate `id="value"` / `id="type"` attributes in repeated table rows.
+
+The reusable PHP helper is `FieldValidationFramework`:
+
+```php
+$result = FieldValidationFramework::validateTypedValue($submittedValue, $row['value_type']);
+
+if (empty($result['success'])) {
+    return new ActionResultFramework(false, ['internal.profiles'], [[
+        'type' => 'error',
+        'message' => $result['error'],
+    ]]);
+}
+
+$valueToStore = $result['value'];
+```
+
+Supported type aliases are `bool` / `boolean`, `int` / `integer`, `float` / `decimal` / `number`, `string` / `ascii`, and `null`. Boolean values are canonicalized to lowercase `true` or `false`; `null` ignores the submitted value and returns PHP `null`.
+
+`FieldValidationFramework::renderTypedValueControl()` can render the matching control for a row:
+
+```php
+echo FieldValidationFramework::renderTypedValueControl(
+    'internal_profile_value',
+    $row['value'] ?? '',
+    $row['value_type'] ?? 'string',
+    ['type_token' => 'profile-' . (int)$row['id']]
+);
+```
+
+For Internal Profiles-style rows, downstream projects should render `bool`/`boolean` as a `true`/`false` select, `int` as text plus `inputmode="numeric"`, `float` as text plus `inputmode="decimal"`, `string` as ASCII text, and `null` as a disabled empty text input plus a hidden submitted field.
+
+Client validation is only a user-experience layer. Downstream save handlers must still call `FieldValidationFramework::validateTypedValue()` before storing values, because requests can bypass JavaScript.
+
 ## Function trace logging
 
 Feature name: `function_trace_logging`.

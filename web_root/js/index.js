@@ -398,18 +398,320 @@
         tick();
     }
 
-    function normaliseDigitsOnlyInput(input) {
-        if (!(input instanceof HTMLInputElement) || input.dataset.digitsOnly !== 'true') {
+    function normaliseValidationType(value) {
+        const type = String(value || '').trim().toLowerCase();
+
+        if (type === 'bool' || type === 'boolean') {
+            return 'boolean';
+        }
+
+        if (type === 'int' || type === 'integer') {
+            return 'int';
+        }
+
+        if (type === 'float' || type === 'decimal' || type === 'number') {
+            return 'float';
+        }
+
+        if (type === 'string' || type === 'ascii') {
+            return 'ascii';
+        }
+
+        return type === 'null' ? 'null' : '';
+    }
+
+    function validationTypeControlSelector(token) {
+        const attributeValue = String(token).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+        return `[data-validate-type-control="${attributeValue}"]`;
+    }
+
+    function validationTypeTargetSelector(token) {
+        const attributeValue = String(token).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+        return `[data-validate-type-target="${attributeValue}"]`;
+    }
+
+    function validationPairScope(control) {
+        if (!(control instanceof HTMLElement)) {
+            return document;
+        }
+
+        const form = control.closest('form');
+
+        return form instanceof HTMLFormElement ? form : document;
+    }
+
+    function dynamicValidationType(control) {
+        if (!(control instanceof HTMLElement)) {
+            return '';
+        }
+
+        const token = String(control.dataset.validateTypeTarget || '').trim();
+        if (token === '') {
+            return '';
+        }
+
+        const source = validationPairScope(control).querySelector(validationTypeControlSelector(token));
+        if (!isFormControl(source)) {
+            return '';
+        }
+
+        return normaliseValidationType(source.value);
+    }
+
+    function validationTypeForControl(control) {
+        if (!(control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement || control instanceof HTMLSelectElement)) {
+            return '';
+        }
+
+        const dynamicType = dynamicValidationType(control);
+        if (dynamicType !== '') {
+            return dynamicType;
+        }
+
+        if (control instanceof HTMLInputElement && control.dataset.digitsOnly === 'true') {
+            return 'int';
+        }
+
+        if (control.hasAttribute('data-validate-boolean')) {
+            return 'boolean';
+        }
+
+        if (control.hasAttribute('data-validate-int')) {
+            return 'int';
+        }
+
+        if (control.hasAttribute('data-validate-float') || control.hasAttribute('data-validate-number')) {
+            return 'float';
+        }
+
+        if (control.hasAttribute('data-validate-ascii') || control.hasAttribute('data-validate-string')) {
+            return 'ascii';
+        }
+
+        return '';
+    }
+
+    function sanitizeValidationValue(value, type) {
+        const stringValue = String(value || '');
+
+        if (type === 'int') {
+            return stringValue.replace(/[^0-9]/g, '');
+        }
+
+        if (type === 'float') {
+            let hasDecimalPoint = false;
+            let sanitized = '';
+
+            Array.from(stringValue).forEach((character) => {
+                if (character >= '0' && character <= '9') {
+                    sanitized += character;
+                    return;
+                }
+
+                if (character === '.' && !hasDecimalPoint) {
+                    sanitized += character;
+                    hasDecimalPoint = true;
+                }
+            });
+
+            return sanitized;
+        }
+
+        if (type === 'ascii') {
+            return Array.from(stringValue)
+                .filter((character) => character.charCodeAt(0) < 128)
+                .join('');
+        }
+
+        return stringValue;
+    }
+
+    function validatedBeforeInputValue(input, insertedValue) {
+        const value = input.value;
+        const start = Number.isFinite(input.selectionStart) ? input.selectionStart : value.length;
+        const end = Number.isFinite(input.selectionEnd) ? input.selectionEnd : start;
+
+        return value.substring(0, start) + insertedValue + value.substring(end);
+    }
+
+    function insertedValueMatchesValidation(insertedValue, type, input) {
+        if (type === 'int') {
+            return /^[0-9]*$/.test(insertedValue);
+        }
+
+        if (type === 'float') {
+            return /^[0-9.]*$/.test(insertedValue)
+                && (validatedBeforeInputValue(input, insertedValue).match(/\./g) || []).length <= 1;
+        }
+
+        if (type === 'ascii') {
+            return Array.from(insertedValue).every((character) => character.charCodeAt(0) < 128);
+        }
+
+        return true;
+    }
+
+    function enforceValidatedInputBeforeInput(event) {
+        const input = event.target;
+        if (!(input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) || event.isComposing) {
             return;
         }
 
-        const maxLength = Number.parseInt(input.getAttribute('maxlength') || '0', 10);
-        const digits = input.value.replace(/\D/g, '');
-        const nextValue = maxLength > 0 ? digits.substring(0, maxLength) : digits;
-
-        if (input.value !== nextValue) {
-            input.value = nextValue;
+        const type = validationTypeForControl(input);
+        if (type === '' || type === 'boolean') {
+            return;
         }
+
+        if (type === 'null') {
+            event.preventDefault();
+            return;
+        }
+
+        const insertedValue = event.data;
+        if (typeof insertedValue !== 'string' || insertedValue === '') {
+            return;
+        }
+
+        if (!insertedValueMatchesValidation(insertedValue, type, input)) {
+            event.preventDefault();
+        }
+    }
+
+    function restoreValidationDisabledState(control) {
+        if (!(control instanceof HTMLElement) || control.dataset.validationNullDisabled !== '1') {
+            return;
+        }
+
+        if (isFormControl(control)) {
+            control.disabled = control.dataset.validationWasDisabled === 'true';
+        }
+
+        delete control.dataset.validationNullDisabled;
+        delete control.dataset.validationWasDisabled;
+    }
+
+    function syncDynamicValidationAttributes(control, type) {
+        if (!(control instanceof HTMLElement) || String(control.dataset.validateTypeTarget || '').trim() === '') {
+            return;
+        }
+
+        [
+            'data-validate-boolean',
+            'data-validate-int',
+            'data-validate-float',
+            'data-validate-ascii',
+            'data-validate-number',
+            'data-validate-string',
+        ].forEach((attributeName) => control.removeAttribute(attributeName));
+
+        const attributeName = {
+            boolean: 'data-validate-boolean',
+            int: 'data-validate-int',
+            float: 'data-validate-float',
+            ascii: 'data-validate-ascii',
+        }[type] || '';
+
+        if (attributeName !== '') {
+            control.setAttribute(attributeName, '');
+        }
+
+        if (type !== '') {
+            control.dataset.activeValidationType = type;
+        } else {
+            delete control.dataset.activeValidationType;
+        }
+    }
+
+    function applyNullValidationState(control, type) {
+        if (!isFormControl(control)) {
+            return;
+        }
+
+        if (type !== 'null') {
+            restoreValidationDisabledState(control);
+            return;
+        }
+
+        if (control.dataset.validationNullDisabled !== '1') {
+            control.dataset.validationWasDisabled = control.disabled ? 'true' : 'false';
+        }
+
+        control.dataset.validationNullDisabled = '1';
+        control.disabled = true;
+        if ('value' in control) {
+            control.value = '';
+        }
+    }
+
+    function sanitizeValidatedInput(control) {
+        if (!(control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement || control instanceof HTMLSelectElement)) {
+            return;
+        }
+
+        const type = validationTypeForControl(control);
+        syncDynamicValidationAttributes(control, type);
+        applyNullValidationState(control, type);
+
+        if (type === '' || type === 'null') {
+            return;
+        }
+
+        if (control instanceof HTMLSelectElement) {
+            if (type === 'boolean' && !['true', 'false'].includes(control.value)) {
+                control.value = '';
+            }
+            return;
+        }
+
+        if (type === 'boolean') {
+            return;
+        }
+
+        const previousValue = control.value;
+        const previousStart = control.selectionStart;
+        const previousEnd = control.selectionEnd;
+        const nextValue = sanitizeValidationValue(previousValue, type);
+        const maxLength = Number.parseInt(control.getAttribute('maxlength') || '0', 10);
+        const constrainedValue = maxLength > 0 ? nextValue.substring(0, maxLength) : nextValue;
+
+        if (previousValue === constrainedValue) {
+            return;
+        }
+
+        control.value = constrainedValue;
+
+        if (
+            document.activeElement === control
+            && typeof control.setSelectionRange === 'function'
+            && Number.isFinite(previousStart)
+            && Number.isFinite(previousEnd)
+        ) {
+            const removedBeforeCursor = previousValue.substring(0, previousStart).length
+                - sanitizeValidationValue(previousValue.substring(0, previousStart), type).length;
+            const nextStart = Math.max(0, previousStart - removedBeforeCursor);
+            const nextEnd = Math.max(nextStart, previousEnd - removedBeforeCursor);
+            control.setSelectionRange(
+                Math.min(nextStart, constrainedValue.length),
+                Math.min(nextEnd, constrainedValue.length)
+            );
+        }
+    }
+
+    function syncDynamicValidationTargets(control) {
+        if (!(control instanceof HTMLElement)) {
+            return;
+        }
+
+        const token = String(control.dataset.validateTypeControl || '').trim();
+        if (token === '') {
+            return;
+        }
+
+        validationPairScope(control).querySelectorAll(validationTypeTargetSelector(token)).forEach((target) => {
+            sanitizeValidatedInput(target);
+        });
     }
 
     function afFormatTimezone() {
@@ -2725,9 +3027,13 @@
         toggleCardBody(title);
     });
 
+    document.addEventListener('beforeinput', enforceValidatedInputBeforeInput);
+
     document.addEventListener('change', (event) => {
         if (isFormControl(event.target)) {
             syncVisibleWhenField(event.target);
+            syncDynamicValidationTargets(event.target);
+            sanitizeValidatedInput(event.target);
         }
 
         const submitOnChangeControl = event.target instanceof Element
@@ -2760,7 +3066,7 @@
     });
 
     document.addEventListener('input', (event) => {
-        normaliseDigitsOnlyInput(event.target);
+        sanitizeValidatedInput(event.target);
 
         if (isFormControl(event.target)) {
             syncVisibleWhenField(event.target);

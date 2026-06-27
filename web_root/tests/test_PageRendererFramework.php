@@ -73,6 +73,10 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
     $renderBrandMark->setAccessible(true);
     $renderApplicationFooter = new ReflectionMethod(PageRendererFramework::class, 'renderApplicationFooter');
     $renderApplicationFooter->setAccessible(true);
+    $sanitizeApplicationFooterHtml = new ReflectionMethod(PageRendererFramework::class, 'sanitizeApplicationFooterHtml');
+    $sanitizeApplicationFooterHtml->setAccessible(true);
+    $sanitizeApplicationFooterHtmlFallback = new ReflectionMethod(PageRendererFramework::class, 'sanitizeApplicationFooterHtmlFallback');
+    $sanitizeApplicationFooterHtmlFallback->setAccessible(true);
     $renderTopbar = new ReflectionMethod(PageRendererFramework::class, 'renderTopbar');
     $renderTopbar->setAccessible(true);
     $topbarEnabled = new ReflectionMethod(PageRendererFramework::class, 'topbarEnabled');
@@ -237,6 +241,25 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
             file_put_contents($path, $original, LOCK_EX);
             AppConfigurationStore::config(true);
         }
+    });
+
+    $harness->check(PageRendererFramework::class, 'renders absolute application footer links safely', function () use ($harness, $instance, $sanitizeApplicationFooterHtml): void {
+        $footer = '<a href="https://www.github.com/JamesElstone/SwallowTail">https://www.github.com/JamesElstone/SwallowTail</a>';
+
+        $harness->assertSame(
+            $footer,
+            $sanitizeApplicationFooterHtml->invoke($instance, $footer)
+        );
+    });
+
+    $harness->check(PageRendererFramework::class, 'fallback sanitizer preserves safe application footer links', function () use ($harness, $instance, $sanitizeApplicationFooterHtmlFallback): void {
+        $harness->assertSame(
+            '<a href="https://www.github.com/JamesElstone/SwallowTail">https://www.github.com/JamesElstone/SwallowTail</a> Bad Plain<br>',
+            $sanitizeApplicationFooterHtmlFallback->invoke(
+                $instance,
+                '<a href="https://www.github.com/JamesElstone/SwallowTail" onclick="alert(1)">https://www.github.com/JamesElstone/SwallowTail</a> <a href="javascript:alert(1)">Bad</a> <strong>Plain</strong><br>'
+            )
+        );
     });
 
     $harness->check(PageRendererFramework::class, 'hides the topbar for configured pages', function () use ($harness, $instance, $renderTopbar, $topbarEnabled): void {

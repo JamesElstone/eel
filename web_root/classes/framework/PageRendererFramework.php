@@ -298,7 +298,7 @@ final class PageRendererFramework
         $html = html_entity_decode($html, ENT_QUOTES | ENT_HTML5, 'UTF-8');
 
         if (!class_exists(DOMDocument::class)) {
-            return HelperFramework::escape($html);
+            return $this->sanitizeApplicationFooterHtmlFallback($html);
         }
 
         $previousLibxmlState = libxml_use_internal_errors(true);
@@ -311,17 +311,66 @@ final class PageRendererFramework
         libxml_use_internal_errors($previousLibxmlState);
 
         if (!$loaded) {
-            return HelperFramework::escape($html);
+            return $this->sanitizeApplicationFooterHtmlFallback($html);
         }
 
         $root = $document->getElementById('application-footer-fragment');
         if (!$root instanceof DOMElement) {
-            return HelperFramework::escape($html);
+            return $this->sanitizeApplicationFooterHtmlFallback($html);
         }
 
         $sanitized = '';
         foreach ($root->childNodes as $child) {
             $sanitized .= $this->sanitizeApplicationFooterNode($child);
+        }
+
+        return $sanitized;
+    }
+
+    private function sanitizeApplicationFooterHtmlFallback(string $html): string
+    {
+        $tokens = preg_split('/(<[^>]*>)/', $html, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY);
+        if (!is_array($tokens)) {
+            return HelperFramework::escape($html);
+        }
+
+        $sanitized = '';
+        $openLinks = 0;
+
+        foreach ($tokens as $token) {
+            if (!str_starts_with($token, '<')) {
+                $sanitized .= HelperFramework::escape($token);
+                continue;
+            }
+
+            if (preg_match('/^<br\s*\/?>$/i', $token) === 1) {
+                $sanitized .= '<br>';
+                continue;
+            }
+
+            if (preg_match('/^<\/a\s*>$/i', $token) === 1) {
+                if ($openLinks > 0) {
+                    $sanitized .= '</a>';
+                    $openLinks--;
+                }
+                continue;
+            }
+
+            if (preg_match('/^<a\b([^>]*)>$/i', $token, $matches) !== 1) {
+                continue;
+            }
+
+            $attributes = $this->sanitizeApplicationFooterAnchorAttributes($matches[1] ?? '');
+            if ($attributes === '') {
+                continue;
+            }
+
+            $sanitized .= '<a' . $attributes . '>';
+            $openLinks++;
+        }
+
+        if ($openLinks > 0) {
+            $sanitized .= str_repeat('</a>', $openLinks);
         }
 
         return $sanitized;
@@ -368,6 +417,58 @@ final class PageRendererFramework
         }
 
         return '<a' . $attributes . '>' . $children . '</a>';
+    }
+
+    private function sanitizeApplicationFooterAnchorAttributes(string $attributeText): string
+    {
+        $attributes = $this->applicationFooterAttributes($attributeText);
+        $href = $this->sanitizeApplicationFooterHref((string)($attributes['href'] ?? ''));
+        if ($href === '') {
+            return '';
+        }
+
+        $sanitized = ' href="' . HelperFramework::escape($href) . '"';
+        $title = trim((string)($attributes['title'] ?? ''));
+        if ($title !== '') {
+            $sanitized .= ' title="' . HelperFramework::escape($title) . '"';
+        }
+
+        $target = trim((string)($attributes['target'] ?? ''));
+        if ($target === '_blank') {
+            $sanitized .= ' target="_blank" rel="noopener noreferrer"';
+        }
+
+        return $sanitized;
+    }
+
+    private function applicationFooterAttributes(string $attributeText): array
+    {
+        preg_match_all(
+            '/\s([a-zA-Z_:][a-zA-Z0-9_:.-]*)\s*=\s*("([^"]*)"|\'([^\']*)\'|([^\s"\'=<>`]+))/',
+            $attributeText,
+            $matches,
+            PREG_SET_ORDER
+        );
+
+        $attributes = [];
+        foreach ($matches as $match) {
+            $name = strtolower($match[1]);
+            if (!in_array($name, ['href', 'title', 'target'], true)) {
+                continue;
+            }
+
+            $value = '';
+            foreach ([3, 4, 5] as $index) {
+                if (isset($match[$index]) && $match[$index] !== '') {
+                    $value = (string)$match[$index];
+                    break;
+                }
+            }
+
+            $attributes[$name] = html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        }
+
+        return $attributes;
     }
 
     private function sanitizeApplicationFooterHref(string $href): string

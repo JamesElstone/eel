@@ -8,6 +8,12 @@ When working in a downstream project, do not modify eelKit source files unless t
 
 When working in the eelKit repository itself, source changes are allowed only when the requested task is eelKit framework work.
 
+## Git remotes
+
+Do not push to the `eelKit.git` remote repository unless the user explicitly asks for that exact upstream eelKit push.
+
+For all other remote repositories, follow the downstream project's own instructions and the user's request.
+
 ## eelKit-owned paths
 
 In downstream projects, treat these paths as upstream eelKit framework code unless the project documents an intentional override:

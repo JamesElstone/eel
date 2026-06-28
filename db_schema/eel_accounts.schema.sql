@@ -23,6 +23,37 @@
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
 
 --
+-- Table structure for table `application_activity_flash_history`
+--
+
+DROP TABLE IF EXISTS `application_activity_flash_history`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `application_activity_flash_history` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) DEFAULT NULL,
+  `page_id` varchar(255) NOT NULL,
+  `action_name` varchar(255) DEFAULT NULL,
+  `card_action_name` varchar(255) DEFAULT NULL,
+  `message_type` enum('success','error') NOT NULL,
+  `message_text` longtext NOT NULL,
+  `message_html_text` longtext DEFAULT NULL,
+  `request_method` varchar(10) DEFAULT NULL,
+  `is_ajax` tinyint(1) NOT NULL DEFAULT 0,
+  `device_id` varchar(64) DEFAULT NULL,
+  `ip_address` varchar(45) DEFAULT NULL,
+  `user_agent` varchar(1000) DEFAULT NULL,
+  `request_uri` varchar(2048) DEFAULT NULL,
+  `occurred_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_application_activity_flash_user_time` (`user_id`,`occurred_at`),
+  KEY `idx_application_activity_flash_page_time` (`page_id`,`occurred_at`),
+  KEY `idx_application_activity_flash_type_time` (`message_type`,`occurred_at`),
+  CONSTRAINT `fk_application_activity_flash_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `categorisation_rules`
 --
 
@@ -1666,6 +1697,7 @@ CREATE TABLE `schema_migrations` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 INSERT INTO `schema_migrations` (`migration`) VALUES
+  ('2026_05_14_001_application_activity_flash_history.sql'),
   ('2026_06_01_001_user_mobile_number.sql'),
   ('2026_06_01_002_mobile_country_codes.sql'),
   ('2026_06_01_003_invited_account_completion.sql'),

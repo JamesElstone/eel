@@ -102,7 +102,7 @@ Keep context keys predictable and grouped. Framework-wide page data belongs unde
 
 ## Styling
 
-When working in downstream projects, reuse existing eelKit styling from `web_root/css/index.css` before creating project-specific add-on CSS. Prefer existing CSS variables, layout patterns, utility classes, and component styles.
+When working in downstream projects, reuse existing eelKit controls, helpers, and styling from `web_root/css/index.css` before creating project-specific controls, helper code, or add-on CSS. Prefer existing CSS variables, layout patterns, utility classes, and component styles. Reusing established framework building blocks keeps the look and feel consistent, avoids reinventing the wheel, and helps keep the codebase smaller.
 
 Downstream projects can add `web_root/css/project.css` for project-specific styles. eelKit's `web_root/index.php` checks for that file and adds it to HTML responses after the eelKit CSS when present.
 

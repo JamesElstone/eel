@@ -89,7 +89,7 @@ The normal context flow is:
 - the page builds base context, including page identity and requested cards,
 - an `ActionResultFramework` can merge extra context from a page action or card action,
 - site context is injected by the site context coordinator,
-- auth context is added at `$context['auth']`,
+- auth context is added at `$context['auth']`; every page context includes `user_id` and `role_id` there,
 - allowed card keys and card DOM IDs are added under `$context['page']`,
 - each allowed card's `handle()` method can refine the shared context before rendering,
 - the card renderer adds per-card `services` and `service_errors` entries for the card currently being rendered.
@@ -98,7 +98,7 @@ Use a card's `handle()` method for card-local request state such as pagination, 
 
 Use `ActionResultFramework::success()` to report changed invalidation facts, flash messages, redirect/query state, and action-produced context. Match card `invalidationFacts()` to the facts returned by actions so AJAX updates refresh the smallest sensible set of cards.
 
-Keep context keys predictable and grouped. Framework-wide page data belongs under `page`, authentication data under `auth`, service results under `services`, service errors under `service_errors`, and feature-specific shared data under a clear feature key.
+Keep context keys predictable and grouped. Framework-wide page data belongs under `page`, authentication data under `auth`, service results under `services`, service errors under `service_errors`, and feature-specific shared data under a clear feature key. Use `$context['auth']['user_id']` and `$context['auth']['role_id']` for the current user and role identifiers; they are available in every page context.
 
 ## Styling
 

@@ -125,6 +125,32 @@ $harness->check(SessionAuthenticationService::class, 'uses standard Forwarded pr
     });
 });
 
+$harness->check(SessionAuthenticationService::class, 'ignores invalid forwarded proto from configured reverse proxies', function () use ($harness, $withRestoredConfig): void {
+    $withRestoredConfig(function () use ($harness): void {
+        AppConfigurationStore::setWebEnvironmentSettings([
+            'base_url_override' => '',
+            'trusted_proxy_ips' => ['198.51.100.10'],
+            'client_ip_headers' => ['X-Forwarded-For', 'X-Real-IP'],
+        ]);
+
+        $request = new RequestFramework(
+            [],
+            [],
+            [
+                'REQUEST_METHOD' => 'GET',
+                'HTTPS' => 'off',
+                'SERVER_PORT' => 80,
+                'REMOTE_ADDR' => '198.51.100.10',
+                'HTTP_X_FORWARDED_PROTO' => 'ftp',
+            ],
+            [],
+            []
+        );
+
+        $harness->assertTrue(!(new SessionAuthenticationService(request: $request))->cookieSecure());
+    });
+});
+
 $harness->check(SessionAuthenticationService::class, 'uses HTTPS external base URL when secure cookie config is auto', function () use ($harness, $withRestoredConfig): void {
     $withRestoredConfig(function () use ($harness): void {
         AppConfigurationStore::setWebEnvironmentSettings([

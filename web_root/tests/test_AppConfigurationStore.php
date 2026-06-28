@@ -24,7 +24,7 @@ $harness->check(AppConfigurationStore::class, 'centralises the default applicati
     $method = new ReflectionMethod(AppConfigurationStore::class, 'defaults');
     $defaults = $method->invoke(null);
 
-    $harness->assertSame('Bookkeeping without the fog and panic', $defaults['app_strapline'] ?? null);
+    $harness->assertSame('A simple useful and secure PHP framework', $defaults['app_strapline'] ?? null);
     $harness->assertSame(true, $defaults['user_defaults']['new_user_otp_required'] ?? null);
 });
 
@@ -45,7 +45,7 @@ $harness->check(AppConfigurationStore::class, 'falls back to the default applica
         $config['app_strapline'] = '   ';
         file_put_contents($path, "<?php\nreturn " . var_export($config, true) . ";\n", LOCK_EX);
 
-        $harness->assertSame('Bookkeeping without the fog and panic', AppConfigurationStore::appStrapline(true));
+        $harness->assertSame('A simple useful and secure PHP framework', AppConfigurationStore::appStrapline(true));
     } finally {
         file_put_contents($path, $original, LOCK_EX);
         AppConfigurationStore::config(true);

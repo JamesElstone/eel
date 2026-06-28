@@ -98,7 +98,12 @@ final class RequestFramework
 
     public function postValues(): array
     {
-        return array_merge($this->post, $this->jsonInput);
+        return array_merge($this->jsonInput, $this->post);
+    }
+
+    public function files(): array
+    {
+        return $this->files;
     }
 
     public function server(string $key, mixed $default = null): mixed
@@ -253,6 +258,14 @@ final class RequestFramework
             }
 
             $headers[HelperFramework::httpHeaderLabelFromServerKey($key)] = is_scalar($value) ? (string)$value : '';
+        }
+
+        foreach (['AUTHORIZATION', 'REDIRECT_HTTP_AUTHORIZATION'] as $authorizationKey) {
+            if (trim((string)($headers['Authorization'] ?? '')) !== '' || !array_key_exists($authorizationKey, $server)) {
+                continue;
+            }
+
+            $headers['Authorization'] = is_scalar($server[$authorizationKey]) ? (string)$server[$authorizationKey] : '';
         }
 
         foreach (['CONTENT_TYPE', 'CONTENT_LENGTH', 'CONTENT_MD5'] as $contentKey) {

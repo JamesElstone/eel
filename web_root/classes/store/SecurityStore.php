@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 final class SecurityStore
 {
+    private const SECURITY_FILE_MODE = 0600;
+
     public static function apiKeysPath(?string $overridePath = null): string
     {
         return self::configuredPath($overridePath, ['api_keys', 'path'], '../secure/api.keys');
@@ -175,6 +177,8 @@ final class SecurityStore
         }
 
         try {
+            self::ensurePrivateFileMode($path);
+
             if (!flock($handle, LOCK_EX)) {
                 throw new RuntimeException('Security key file could not be locked: ' . $path);
             }
@@ -187,6 +191,7 @@ final class SecurityStore
 
             $facts[$normalisedKey] = self::generateFact();
             self::writeFactsToHandle($handle, $facts);
+            self::ensurePrivateFileMode($path);
 
             return $facts[$normalisedKey];
         } finally {
@@ -338,6 +343,17 @@ final class SecurityStore
         }
 
         fflush($handle);
+    }
+
+    private static function ensurePrivateFileMode(string $path): void
+    {
+        if (DIRECTORY_SEPARATOR === '\\' || !function_exists('chmod')) {
+            return;
+        }
+
+        if (!@chmod($path, self::SECURITY_FILE_MODE)) {
+            throw new RuntimeException('Unable to set security key file permissions: ' . $path);
+        }
     }
 
     private static function csvLine(array $values): string

@@ -47,6 +47,11 @@ final class ResponseFramework
         return $this->body;
     }
 
+    public function statusCode(): int
+    {
+        return $this->statusCode;
+    }
+
     public function contentType(): string
     {
         return $this->contentType;

@@ -15,6 +15,33 @@ $harness->check(CardBaseFramework::class, 'loads as an abstract base class', fun
     $harness->assertTrue($reflection->isAbstract());
 });
 
+if (!class_exists('_pagination_controls_testCard', false)) {
+    final class _pagination_controls_testCard extends CardBaseFramework
+    {
+        public function render(array $context): string
+        {
+            return $this->paginationControls(
+                $context,
+                [
+                    'items' => [11, 12, 13, 14, 15],
+                    'page' => 3,
+                    'page_size' => 5,
+                    'total_items' => 30,
+                    'total_pages' => 6,
+                ],
+                'Rows',
+                'list',
+                ['filter' => 'active'],
+                'get',
+                ['data-test' => 'pager'],
+                'button compact',
+                '<span class="page-marker">Page 3</span>',
+                'pagination-extra'
+            );
+        }
+    }
+}
+
 $harness->check(CardBaseFramework::class, 'array pagination controls do not require shared card actions', function () use ($harness): void {
     $card = new _user_logon_history_logCard();
     $rows = [];
@@ -51,4 +78,23 @@ $harness->check(CardBaseFramework::class, 'array pagination controls do not requ
     $harness->assertSame(false, str_contains($html, 'name="card_action" value="UserLogonHistory"'));
     $harness->assertTrue(str_contains($html, 'name="_pagination" value="1"'));
     $harness->assertTrue(str_contains($html, 'name="user_logon_history_log_page" value="2"'));
+});
+
+$harness->check(CardBaseFramework::class, 'renders first last and custom pagination controls', function () use ($harness): void {
+    $html = (new _pagination_controls_testCard())->render([
+        'page' => [
+            'page_id' => 'users',
+        ],
+    ]);
+
+    $harness->assertTrue(str_contains($html, '<div class="status-head pagination-extra">'));
+    $harness->assertTrue(str_contains($html, 'Rows 11-15 of 30'));
+    $harness->assertTrue(str_contains($html, '<span class="page-marker">Page 3</span>'));
+    $harness->assertTrue(str_contains($html, '>First</button>'));
+    $harness->assertTrue(str_contains($html, '>Prev</button>'));
+    $harness->assertTrue(str_contains($html, '>Next</button>'));
+    $harness->assertTrue(str_contains($html, '>Last</button>'));
+    $harness->assertTrue(str_contains($html, 'method="get"'));
+    $harness->assertTrue(str_contains($html, 'name="pagination_controls_test_list" value="6"'));
+    $harness->assertTrue(str_contains($html, 'name="filter" value="active"'));
 });

@@ -164,12 +164,20 @@ $harness->check(AccountInviteService::class, 'creates a new invite token after r
     });
 });
 
-$harness->check(AccountInviteService::class, 'resolves base URL from forwarded request headers', function () use ($harness): void {
+$harness->check(AccountInviteService::class, 'resolves base URL from trusted forwarded request headers', function () use ($harness, $setInMemoryConfig): void {
+    $baseConfig = AppConfigurationStore::config(true);
+    $config = $baseConfig;
+    $config['invitation']['base_url_override'] = '';
+    $config['reverse_proxy']['trusted_proxy_ips'] = ['198.51.100.10'];
+    $config['reverse_proxy']['client_ip_headers'] = ['X-Forwarded-For'];
+    $setInMemoryConfig($config);
+
     $request = new RequestFramework(
         [],
         [],
         [
             'REQUEST_METHOD' => 'POST',
+            'REMOTE_ADDR' => '198.51.100.10',
             'HTTP_X_FORWARDED_PROTO' => 'https',
             'HTTP_X_FORWARDED_HOST' => 'eel.example.test',
         ],
@@ -177,7 +185,40 @@ $harness->check(AccountInviteService::class, 'resolves base URL from forwarded r
         []
     );
 
-    $harness->assertSame('https://eel.example.test', (new AccountInviteService())->buildBaseUrl($request));
+    try {
+        $harness->assertSame('https://eel.example.test', (new AccountInviteService())->buildBaseUrl($request));
+    } finally {
+        $setInMemoryConfig($baseConfig);
+    }
+});
+
+$harness->check(AccountInviteService::class, 'ignores untrusted forwarded base URL headers', function () use ($harness, $setInMemoryConfig): void {
+    $baseConfig = AppConfigurationStore::config(true);
+    $config = $baseConfig;
+    $config['invitation']['base_url_override'] = '';
+    $config['reverse_proxy']['trusted_proxy_ips'] = [];
+    $config['reverse_proxy']['client_ip_headers'] = ['X-Forwarded-For'];
+    $setInMemoryConfig($config);
+
+    $request = new RequestFramework(
+        [],
+        [],
+        [
+            'REQUEST_METHOD' => 'POST',
+            'REMOTE_ADDR' => '198.51.100.20',
+            'HTTP_X_FORWARDED_PROTO' => 'https',
+            'HTTP_X_FORWARDED_HOST' => 'evil.example.test',
+            'HTTP_HOST' => 'eel.example.test',
+        ],
+        [],
+        []
+    );
+
+    try {
+        $harness->assertSame('http://eel.example.test', (new AccountInviteService())->buildBaseUrl($request));
+    } finally {
+        $setInMemoryConfig($baseConfig);
+    }
 });
 
 $harness->check(AccountInviteService::class, 'resolves actor display names for invite templates', function () use ($harness, $withInviteUser): void {

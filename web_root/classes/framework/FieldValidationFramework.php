@@ -153,9 +153,18 @@ final class FieldValidationFramework
             'type' => 'text',
             'disabled' => true,
         ]);
+        $hiddenFormAttribute = '';
+        $attributes = (array)($options['attributes'] ?? []);
+        $formId = $attributes['form'] ?? '';
+        if (is_scalar($formId)) {
+            $formId = (string)$formId;
+            if ($formId !== '') {
+                $hiddenFormAttribute = ' form="' . HelperFramework::escape($formId) . '"';
+            }
+        }
 
         return '<input' . $visibleAttributes . ' value="">'
-            . '<input type="hidden" name="' . HelperFramework::escape($name) . '" value="">';
+            . '<input type="hidden" name="' . HelperFramework::escape($name) . '"' . $hiddenFormAttribute . ' value="">';
     }
 
     private static function renderValue(mixed $value, string $type): string

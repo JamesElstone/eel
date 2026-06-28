@@ -73,6 +73,12 @@ $harness->check(FieldValidationFramework::class, 'renders typed controls with ca
     $null = FieldValidationFramework::renderTypedValueControl('profile_value', 'ignored', 'null', [
         'id' => 'profile-value-null',
     ]);
+    $detachedNull = FieldValidationFramework::renderTypedValueControl('profile_value', 'ignored', 'null', [
+        'id' => 'profile-value-null-detached',
+        'attributes' => [
+            'form' => 'profile-form',
+        ],
+    ]);
 
     $harness->assertTrue(str_contains($boolean, '<select class="select" name="profile_value" id="profile-value-bool" data-validate-type-target="row-1" data-validate-boolean>'));
     $harness->assertTrue(str_contains($boolean, '<option value="true">true</option>'));
@@ -82,4 +88,6 @@ $harness->check(FieldValidationFramework::class, 'renders typed controls with ca
     $harness->assertTrue(str_contains($ascii, '<input class="input" name="profile_value" type="text" data-validate-ascii value="abc">'));
     $harness->assertTrue(str_contains($null, '<input class="input" id="profile-value-null" type="text" disabled value="">'));
     $harness->assertTrue(str_contains($null, '<input type="hidden" name="profile_value" value="">'));
+    $harness->assertTrue(str_contains($detachedNull, '<input class="input" id="profile-value-null-detached" form="profile-form" type="text" disabled value="">'));
+    $harness->assertTrue(str_contains($detachedNull, '<input type="hidden" name="profile_value" form="profile-form" value="">'));
 });

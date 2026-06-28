@@ -19,9 +19,9 @@ $tests = [
             }
         }
     },
-    'loads framework helpers directly required by bootstrap' => static function (): void {
-        if (!class_exists('HelperFramework', false)) {
-            throw new RuntimeException('bootstrap.php did not load HelperFramework.php.');
+    'autoloads framework helpers required by bootstrap' => static function (): void {
+        if (!class_exists('HelperFramework')) {
+            throw new RuntimeException('bootstrap.php did not autoload HelperFramework.php.');
         }
 
         if (!method_exists('HelperFramework', 'escape')) {
@@ -47,6 +47,68 @@ $tests = [
 
         if (!method_exists('InterfaceDB', 'fetchAll')) {
             throw new RuntimeException('InterfaceDB::fetchAll() was not available after bootstrap.');
+        }
+    },
+    'autoloads namespaced downstream project classes from namespace paths' => static function (): void {
+        $className = 'ProjectName\\Service\\SomeClassService';
+        $directory = APP_CLASSES . 'projectname' . DIRECTORY_SEPARATOR . 'service';
+        $file = $directory . DIRECTORY_SEPARATOR . 'SomeClassService.php';
+
+        if (class_exists($className, false)) {
+            throw new RuntimeException('Namespaced test class was already loaded before the autoload test.');
+        }
+
+        if (class_exists('ProjectName\\Service\\MissingService')) {
+            throw new RuntimeException('Autoloader resolved a missing namespaced downstream class.');
+        }
+
+        if (!is_dir($directory) && !mkdir($directory, 0777, true) && !is_dir($directory)) {
+            throw new RuntimeException('Unable to create namespaced autoload test directory.');
+        }
+
+        $source = <<<'PHP'
+<?php
+declare(strict_types=1);
+
+namespace ProjectName\Service;
+
+final class SomeClassService
+{
+    public function marker(): string
+    {
+        return 'loaded';
+    }
+}
+PHP;
+
+        if (file_put_contents($file, $source) === false) {
+            throw new RuntimeException('Unable to write namespaced autoload test fixture.');
+        }
+
+        try {
+            if (!class_exists($className)) {
+                throw new RuntimeException('Autoloader did not resolve a namespaced downstream class.');
+            }
+
+            $instance = new $className();
+
+            if ($instance->marker() !== 'loaded') {
+                throw new RuntimeException('Namespaced downstream class fixture did not instantiate correctly.');
+            }
+        } finally {
+            if (is_file($file)) {
+                unlink($file);
+            }
+
+            if (is_dir($directory)) {
+                rmdir($directory);
+            }
+
+            $projectDirectory = dirname($directory);
+
+            if (is_dir($projectDirectory)) {
+                rmdir($projectDirectory);
+            }
         }
     },
     'suggests the migration tool for schema exceptions' => static function (): void {

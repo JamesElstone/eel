@@ -25,9 +25,12 @@ In downstream projects, treat these paths as upstream eelKit framework code unle
 - `web_root/js/index.js`
 - `web_root/tests/` except downstream-owned project tests
 - `tools/php/`
-- `db_schema/`
+- `db_schema/eelKit.schema.sql`
+- eelKit-owned migrations or framework database artifacts under `db_schema/`
 - `secure/`
 - `FreeBSD/`
+
+Downstream projects may add and alter their own SQL files under `db_schema/`. This includes downstream migration files and downstream master schema files alongside `db_schema/eelKit.schema.sql`, such as `db_schema/{project_name}.schema.sql`. Treat those downstream-named SQL files as downstream application code, not eelKit framework code.
 
 ## Downstream project classes
 

@@ -211,8 +211,10 @@ $harness->run(CardRendererFramework::class, function (GeneratedServiceClassTestH
             $disabledHtml = $instance->render('test', 'service_metadata_test', ['page' => ['page_id' => 'test']], $services);
 
             $harness->assertTrue(str_contains($enabledHtml, 'Card: service_metadata_test'));
+            $harness->assertSame(1, preg_match('/Card: service_metadata_test \[s:\d+ms, h:\d+ms, r:\d+ms\]/', $enabledHtml));
             $harness->assertTrue(str_contains($enabledHtml, 'Using ' . CardRendererOptionalParamTestService::class));
             $harness->assertSame(false, str_contains($disabledHtml, 'Card: service_metadata_test'));
+            $harness->assertSame(false, str_contains($disabledHtml, '[s:'));
             $harness->assertSame(false, str_contains($disabledHtml, 'Using ' . CardRendererOptionalParamTestService::class));
         } finally {
             file_put_contents($path, $original, LOCK_EX);

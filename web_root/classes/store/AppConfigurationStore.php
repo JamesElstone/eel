@@ -9,7 +9,7 @@ declare(strict_types=1);
 
 final class AppConfigurationStore
 {
-    private const DEFAULT_APP_STRAPLINE = 'Bookkeeping without the fog and panic';
+    private const DEFAULT_APP_STRAPLINE = 'A simple useful and secure PHP framework';
 
     private static ?array $config = null;
 

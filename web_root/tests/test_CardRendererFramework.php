@@ -20,6 +20,14 @@ final class CardRendererOptionalParamTestService
     {
         return ['filter' => $filter];
     }
+
+    public function authMetadata(int $userId, int $roleId): array
+    {
+        return [
+            'user_id' => $userId,
+            'role_id' => $roleId,
+        ];
+    }
 }
 
 if (!class_exists('_refreshing_testCard', false)) {
@@ -115,6 +123,32 @@ $harness->run(CardRendererFramework::class, function (GeneratedServiceClassTestH
         $harness->assertSame('missing_param', $result['error']['type'] ?? null);
     });
 
+    $harness->check(CardRendererFramework::class, 'resolves auth context service params', function () use ($harness, $instance, $services, $resolveCardService): void {
+        $result = $resolveCardService->invoke(
+            $instance,
+            'auth_metadata',
+            [
+                'key' => 'auth_metadata',
+                'service' => CardRendererOptionalParamTestService::class,
+                'method' => 'authMetadata',
+                'params' => [
+                    'userId' => ':auth.user_id',
+                    'roleId' => ':auth.role_id',
+                ],
+            ],
+            [
+                'auth' => [
+                    'user_id' => 123,
+                    'role_id' => 2,
+                ],
+            ],
+            $services
+        );
+
+        $harness->assertSame('ok', $result['status'] ?? null);
+        $harness->assertSame(['user_id' => 123, 'role_id' => 2], $result['data'] ?? null);
+    });
+
     $harness->check(CardRendererFramework::class, 'adds card refresh attributes when requested', function () use ($harness, $instance, $services): void {
         $html = $instance->render('test', 'refreshing_test', ['page' => ['page_id' => 'test']], $services);
 
@@ -177,8 +211,10 @@ $harness->run(CardRendererFramework::class, function (GeneratedServiceClassTestH
             $disabledHtml = $instance->render('test', 'service_metadata_test', ['page' => ['page_id' => 'test']], $services);
 
             $harness->assertTrue(str_contains($enabledHtml, 'Card: service_metadata_test'));
+            $harness->assertSame(1, preg_match('/Card: service_metadata_test \[s:\d+ms, h:\d+ms, r:\d+ms\]/', $enabledHtml));
             $harness->assertTrue(str_contains($enabledHtml, 'Using ' . CardRendererOptionalParamTestService::class));
             $harness->assertSame(false, str_contains($disabledHtml, 'Card: service_metadata_test'));
+            $harness->assertSame(false, str_contains($disabledHtml, '[s:'));
             $harness->assertSame(false, str_contains($disabledHtml, 'Using ' . CardRendererOptionalParamTestService::class));
         } finally {
             file_put_contents($path, $original, LOCK_EX);

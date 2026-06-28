@@ -546,14 +546,14 @@ final class PdoDB
             return [];
         }
 
-        $filtered = [];
+        $boundParams = [];
         foreach (array_values(array_unique($namedOrder)) as $placeholder) {
             if (array_key_exists($placeholder, $params)) {
-                $filtered[$placeholder] = $params[$placeholder];
+                $boundParams[$placeholder] = $params[$placeholder];
             }
         }
 
-        return $filtered;
+        return $boundParams;
     }
 
     public static function prepareOn(PDO $pdo, string $sql, array $options = []): PDOStatement|false {

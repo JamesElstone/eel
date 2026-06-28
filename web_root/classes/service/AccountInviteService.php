@@ -356,18 +356,15 @@ final class AccountInviteService
             return rtrim($override, '/');
         }
 
-        $scheme = strtolower((string)$request->header('X-Forwarded-Proto', ''));
+        $reverseProxy = new ReverseProxyService();
+        $scheme = $reverseProxy->forwardedScheme($request);
         if ($scheme === '') {
             $scheme = $request->isSecure() ? 'https' : 'http';
-        } else {
-            $scheme = trim(explode(',', $scheme)[0]);
         }
 
-        $host = trim((string)$request->header('X-Forwarded-Host', ''));
+        $host = $reverseProxy->forwardedHost($request);
         if ($host === '') {
             $host = trim((string)$request->header('Host', ''));
-        } else {
-            $host = trim(explode(',', $host)[0]);
         }
 
         if ($host === '') {

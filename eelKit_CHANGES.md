@@ -1,5 +1,96 @@
 # eelKit Changes
 
+## Generic framework review updates
+
+Feature name: `accepted_upstream_framework_review_updates`.
+
+eelKit now includes the remaining generic framework behaviours accepted from downstream review, so downstream projects can rely on framework APIs instead of patching eelKit-owned files locally.
+
+Response objects now expose their HTTP status through:
+
+```php
+$statusCode = $response->statusCode();
+```
+
+`ReverseProxyService` now centralizes trusted forwarded request metadata:
+
+```php
+$clientIp = (new ReverseProxyService())->clientIpAddress($request);
+$host = (new ReverseProxyService())->forwardedHost($request);
+$scheme = (new ReverseProxyService())->forwardedScheme($request);
+```
+
+Forwarded host and scheme values are only returned when the immediate remote address is listed in `reverse_proxy.trusted_proxy_ips`. eelKit accepts `X-Forwarded-Host`, `X-Forwarded-Proto`, and standard `Forwarded` `host=` / `proto=` values, but rejects invalid hosts, unsupported schemes, and all forwarded values from untrusted remotes. Invitation base URL generation and automatic secure-cookie detection now use this trusted proxy service.
+
+`ActivityStore` now supports API/action flows that do not produce an `ActionResultFramework`:
+
+```php
+(new ActivityStore())->recordApiActivity(
+    pageId: 'api_uploads',
+    actionName: 'UploadFile',
+    messageType: 'success',
+    messageText: 'Upload accepted',
+    userId: $userId,
+    metadata: [
+        'device_id' => $deviceId,
+        'ip_address' => $clientIp,
+        'user_agent' => $userAgent,
+    ],
+    requestMethod: $request->method(),
+    requestUri: (string)$request->server('REQUEST_URI', '')
+);
+```
+
+Flash-message activity metadata also uses `ReverseProxyService::clientIpAddress()`, so recorded IP addresses honor the same trusted proxy configuration as other request handling.
+
+Generated `security.keys` files are now kept private where the platform supports POSIX file modes. eelKit applies `0600` when creating or updating security facts through `SecurityStore::ensureFact()`. Windows skips chmod, and API credential files are unchanged.
+
+Pagination helpers now handle richer framework metadata. `HelperFramework::paginationItemsLabel()` accepts `total_items`, `first_item`, and `last_item`, clamps displayed ranges, and renders single-item ranges as `Items 3 of 10` instead of `Items 3-3 of 10`. `CardBaseFramework::paginationControls()` can render First/Prev/Next/Last controls and accepts optional trusted middle HTML plus an additional wrapper class while preserving existing call signatures.
+
+Request handling keeps the existing framework precedence guarantees: form POST values win over JSON body values in merged post data, and explicit normalized headers win over CGI/FastCGI Authorization fallbacks.
+
+## Project asset hooks
+
+Feature name: `project_asset_hooks`.
+
+eelKit now checks for `web_root/css/project.css` while sending HTML responses through `web_root/index.php`. When the file exists, eelKit adds this browser stylesheet link to the document head:
+
+```html
+<link rel="stylesheet" href="css/project.css">
+```
+
+eelKit also checks for `web_root/js/project.js`. When the file exists, eelKit adds this browser script tag before the document body closes:
+
+```html
+<script src="js/project.js"></script>
+```
+
+This gives downstream projects lightweight CSS and JavaScript extension points without editing eelKit-owned `web_root/css/auth.css`, `web_root/css/index.css`, `web_root/js/index.js`, or page renderers. If either project asset is absent, generated HTML for that asset is unchanged.
+
+## Auth context for cards
+
+Feature name: `auth_context_for_cards`.
+
+eelKit now adds authenticated user metadata to the standard page/card context before card `handle()` and `render()` run:
+
+```php
+$context['auth'] = [
+    'user_id' => 123,
+    'role_id' => 2,
+];
+```
+
+Unauthenticated requests receive `0` for both values. Card service params can reference the values with dotted context paths:
+
+```php
+'params' => [
+    'userId' => ':auth.user_id',
+    'roleId' => ':auth.role_id',
+],
+```
+
+This context is metadata only. It does not replace card access checks or downstream authorization logic.
+
 ## Typed field validation controls
 
 Feature name: `typed_field_validation_controls`.

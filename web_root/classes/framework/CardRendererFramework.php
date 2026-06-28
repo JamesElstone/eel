@@ -20,20 +20,52 @@ final class CardRendererFramework
     {
         $card = $this->cards->create($cardKey);
         $domId = HelperFramework::cardDomId($pageId, $cardKey);
-        $cardContext = $this->buildContextForCard($card, $context, $services);
-        $body = $card->render($cardContext);
+        $showDeveloperMetadata = $this->developerOptionsEnabled();
+        $timings = [
+            'services' => 0,
+            'helper' => 0,
+            'render' => 0,
+        ];
+
+        if ($showDeveloperMetadata) {
+            $start = hrtime(true);
+            $cardContext = $this->buildContextForCard($card, $context, $services);
+            $timings['services'] += $this->elapsedMilliseconds($start);
+
+            $start = hrtime(true);
+            $body = $card->render($cardContext);
+            $timings['render'] += $this->elapsedMilliseconds($start);
+        } else {
+            $cardContext = $this->buildContextForCard($card, $context, $services);
+            $body = $card->render($cardContext);
+        }
+
         if (trim($body) === '') {
             return '';
         }
 
-        $helperMarkupContent = $this->renderHelperMarkupContent($card->helper($cardContext));
+        if ($showDeveloperMetadata) {
+            $start = hrtime(true);
+            $helper = $card->helper($cardContext);
+            $timings['helper'] += $this->elapsedMilliseconds($start);
+        } else {
+            $helper = $card->helper($cardContext);
+        }
+
+        $helperMarkupContent = $this->renderHelperMarkupContent($helper);
         $helperMarkup = $helperMarkupContent !== ''
             ? '<div class="helper">' . $helperMarkupContent . '</div>'
             : '';
 
         $errorSummary = $this->renderErrorSummaryMarkup((array)($cardContext['service_errors'] ?? []));
         $refreshAttributes = $this->renderRefreshAttributes($card, $cardContext);
-        $showDeveloperMetadata = $this->developerOptionsEnabled();
+        $servicePills = '';
+
+        if ($showDeveloperMetadata) {
+            $start = hrtime(true);
+            $servicePills = $this->getServicesUsedPills($card);
+            $timings['services'] += $this->elapsedMilliseconds($start);
+        }
 
         return '
             <section id="' . HelperFramework::escape($domId) . '" class="card" data-card-key="' . HelperFramework::escape($cardKey) . '"' . $refreshAttributes . '>
@@ -49,10 +81,10 @@ final class CardRendererFramework
                     <div class="card-header-meta">
                         ' . $this->renderCardSizeToggle() . '
                         '
-                     . ($showDeveloperMetadata ? '<p class="eyebrow card-header-corner-eyebrow">Card: ' . HelperFramework::escape($cardKey) . '</p>' : '')
+                     . ($showDeveloperMetadata ? $this->renderDeveloperMetadataLine($cardKey, $timings) : '')
                      . '
                         <div class="card-service-pills">'
-                     . ($showDeveloperMetadata ? $this->getServicesUsedPills($card) : '')
+                     . $servicePills
                      . '
                         </div>
                     </div>
@@ -99,6 +131,21 @@ final class CardRendererFramework
     private function developerOptionsEnabled(): bool
     {
         return (bool)AppConfigurationStore::get('developer_options', false);
+    }
+
+    private function renderDeveloperMetadataLine(string $cardKey, array $timings): string
+    {
+        return '<p class="eyebrow card-header-corner-eyebrow">Card: '
+            . HelperFramework::escape($cardKey)
+            . ' [s:' . HelperFramework::escape((string)($timings['services'] ?? 0)) . 'ms'
+            . ', h:' . HelperFramework::escape((string)($timings['helper'] ?? 0)) . 'ms'
+            . ', r:' . HelperFramework::escape((string)($timings['render'] ?? 0)) . 'ms]'
+            . '</p>';
+    }
+
+    private function elapsedMilliseconds(int $start): int
+    {
+        return max(0, (int)round((hrtime(true) - $start) / 1000000));
     }
 
     public function cardInvalidationFacts(string $cardKey): array

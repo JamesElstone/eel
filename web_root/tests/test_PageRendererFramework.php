@@ -71,6 +71,8 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
     $brandMark->setAccessible(true);
     $renderBrandMark = new ReflectionMethod(PageRendererFramework::class, 'renderBrandMark');
     $renderBrandMark->setAccessible(true);
+    $brandMarkClass = new ReflectionMethod(PageRendererFramework::class, 'brandMarkClass');
+    $brandMarkClass->setAccessible(true);
     $renderApplicationFooter = new ReflectionMethod(PageRendererFramework::class, 'renderApplicationFooter');
     $renderApplicationFooter->setAccessible(true);
     $sanitizeApplicationFooterHtml = new ReflectionMethod(PageRendererFramework::class, 'sanitizeApplicationFooterHtml');
@@ -244,7 +246,7 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
     });
 
     $harness->check(PageRendererFramework::class, 'renders absolute application footer links safely', function () use ($harness, $instance, $sanitizeApplicationFooterHtml): void {
-        $footer = '<a href="https://www.github.com/JamesElstone/SwallowTail">https://www.github.com/JamesElstone/SwallowTail</a>';
+        $footer = '<a href="https://example.test/project">https://example.test/project</a>';
 
         $harness->assertSame(
             $footer,
@@ -254,10 +256,10 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
 
     $harness->check(PageRendererFramework::class, 'fallback sanitizer preserves safe application footer links', function () use ($harness, $instance, $sanitizeApplicationFooterHtmlFallback): void {
         $harness->assertSame(
-            '<a href="https://www.github.com/JamesElstone/SwallowTail">https://www.github.com/JamesElstone/SwallowTail</a> Bad Plain<br>',
+            '<a href="https://example.test/project">https://example.test/project</a> Bad Plain<br>',
             $sanitizeApplicationFooterHtmlFallback->invoke(
                 $instance,
-                '<a href="https://www.github.com/JamesElstone/SwallowTail" onclick="alert(1)">https://www.github.com/JamesElstone/SwallowTail</a> <a href="javascript:alert(1)">Bad</a> <strong>Plain</strong><br>'
+                '<a href="https://example.test/project" onclick="alert(1)">https://example.test/project</a> <a href="javascript:alert(1)">Bad</a> <strong>Plain</strong><br>'
             )
         );
     });
@@ -302,6 +304,32 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
 
             AppConfigurationStore::set('brand-mark', 'EK');
             $harness->assertSame('EK', $renderBrandMark->invoke($instance));
+        } finally {
+            file_put_contents($path, $original, LOCK_EX);
+            AppConfigurationStore::config(true);
+        }
+    });
+
+    $harness->check(PageRendererFramework::class, 'adds image class only for sidebar png and jpg brand marks', function () use ($harness, $instance, $brandMarkClass): void {
+        $path = AppConfigurationStore::configPath();
+        $original = file_get_contents($path);
+
+        if (!is_string($original)) {
+            throw new RuntimeException('Unable to read fixture config.');
+        }
+
+        try {
+            AppConfigurationStore::set('brand-mark', 'swallowtail_butterfly_42x42.png');
+            $harness->assertSame('brand-mark brand-mark-is-image', $brandMarkClass->invoke($instance));
+
+            AppConfigurationStore::set('brand-mark', 'images/logo.JPG');
+            $harness->assertSame('brand-mark brand-mark-is-image', $brandMarkClass->invoke($instance));
+
+            AppConfigurationStore::set('brand-mark', 'https://example.test/logo.png');
+            $harness->assertSame('brand-mark', $brandMarkClass->invoke($instance));
+
+            AppConfigurationStore::set('brand-mark', 'EK');
+            $harness->assertSame('brand-mark', $brandMarkClass->invoke($instance));
         } finally {
             file_put_contents($path, $original, LOCK_EX);
             AppConfigurationStore::config(true);

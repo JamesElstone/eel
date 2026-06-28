@@ -66,6 +66,8 @@ abstract class PageBaseFramework implements PageInterfaceFramework
 
         $context = $services->siteContextCoordinator()->injectContext($request, $this, $services, $context);
 
+        $context['auth'] = $this->authContext();
+
         $context['page']['page_cards'] = $this->allowedPageCards($context, $services);
 
         $context['page']['cards_dom_ids'] = array_map(
@@ -108,6 +110,21 @@ abstract class PageBaseFramework implements PageInterfaceFramework
         return $sessionAuthenticationService->authenticatedUserId($currentDeviceId);
     }
 
+    protected function currentUserRoleId(int $userId): int
+    {
+        return (new CardAccessFramework())->roleIdForUser($userId);
+    }
+
+    private function authContext(): array
+    {
+        $userId = $this->currentUserId();
+
+        return [
+            'user_id' => $userId,
+            'role_id' => $userId > 0 ? $this->currentUserRoleId($userId) : 0,
+        ];
+    }
+
     private function recordFlashActivity(RequestFramework $request, ActionResultFramework $actionResult): void
     {
         if ($actionResult->flashMessages() === []) {
@@ -130,6 +147,10 @@ abstract class PageBaseFramework implements PageInterfaceFramework
             static fn(mixed $cardKey): string => (string)$cardKey,
             is_array($requestedCards) ? $requestedCards : []
         ));
+
+        if ($requestedCards === []) {
+            return [];
+        }
 
         $currentUserId = $this->currentUserId();
         if ($currentUserId <= 0) {

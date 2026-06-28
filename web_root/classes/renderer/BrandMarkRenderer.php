@@ -27,6 +27,11 @@ final class BrandMarkRenderer
         return HelperFramework::escape($brandMark);
     }
 
+    public static function isConfiguredImage(): bool
+    {
+        return self::isImagePath(self::configuredMark());
+    }
+
     private static function isImagePath(string $brandMark): bool
     {
         if (!preg_match('/\.(?:jpg|png)\z/i', $brandMark)) {

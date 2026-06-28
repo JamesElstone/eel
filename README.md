@@ -47,10 +47,6 @@ The settings area includes cards for invitation templates, external base URL and
 - `secure` - local secrets such as generated security keys and bootstrap code.
 - `file_logs` - local log output.
 
-## Development Guidance
-
-When adding UI or application behavior, try to reuse existing controls, CSS styles, and helper classes before creating new ones. Reusing the framework's established building blocks keeps the look and feel consistent, avoids reinventing the wheel, and helps keep the codebase smaller.
-
 ## Installation
 
 1. Clone or copy the project to the server.

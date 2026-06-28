@@ -55,6 +55,51 @@ Downstream projects can add and alter their own tests under `web_root/tests/`.
 
 Treat tests that exercise downstream project behavior as downstream application code, even when they live under `web_root/tests/`. Do not modify eelKit framework tests in that directory unless the user explicitly asks to patch eelKit itself.
 
+## Page, card, action, and context architecture
+
+Prefer eelKit's page -> card -> action pipeline for user-facing application behavior where sensible.
+
+- Pages live in `web_root/content/pages/` and define the route-level shell: page identity, title/subtitle, page-level actions, base context, and the ordered card set or card layout.
+- Cards live in `web_root/content/cards/` and define reusable UI panels: card-specific context handling, service-backed data needs, table definitions, helper text, rendering, refresh intervals, and invalidation facts.
+- Shared card actions live in `web_root/content/actions/` and handle submitted `card_action` requests. A submitted value such as `SmsSettings` resolves to `SmsSettingsAction`, which must implement `ActionInterfaceFramework`.
+
+Use page actions for page-scoped intents submitted with `action`. Use shared card actions for reusable card behavior submitted with `card_action`. Keep rendering and display decisions in cards, and keep mutation/command handling in actions unless a page-specific action is the clearer fit.
+
+When adding a new feature, first consider whether it can be expressed as:
+
+- a page that selects and arranges cards,
+- one or more cards that render data and declare their service needs,
+- action classes that perform mutations and return changed invalidation facts,
+- context values that carry request, action, page, and card state through the render.
+
+### Card `services()` handlers
+
+A card's `services()` method declares the service calls needed to render that card. Each definition should provide a stable `key`, a service class, a method, and optional params. During rendering, `CardRendererFramework` resolves those definitions through `PageServiceFramework`, invokes the service method, and exposes the result at `$context['services'][$key]`.
+
+Use card `services()` when a card needs read-model data, status rows, counts, table records, or other render-time data that should not be manually fetched inside `render()`. This keeps cards declarative, makes developer metadata more useful, centralizes service error handling, and lets the renderer cache duplicate service calls with the same parameters during a request.
+
+Service params can reference context values by prefixing a string with `:`. Dot notation resolves nested context values, for example `':auth.user_id'` or `':page.page_id'`. If a required context value is missing and the service method parameter has no default, the renderer records a service error for the card instead of silently inventing data.
+
+### Context flow
+
+Context is the shared request-scoped data array passed through pages, cards, services, actions, and renderers. Prefer adding explicit, well-named context values over reaching back into globals or duplicating request parsing in multiple cards.
+
+The normal context flow is:
+
+- the page builds base context, including page identity and requested cards,
+- an `ActionResultFramework` can merge extra context from a page action or card action,
+- site context is injected by the site context coordinator,
+- auth context is added at `$context['auth']`,
+- allowed card keys and card DOM IDs are added under `$context['page']`,
+- each allowed card's `handle()` method can refine the shared context before rendering,
+- the card renderer adds per-card `services` and `service_errors` entries for the card currently being rendered.
+
+Use a card's `handle()` method for card-local request state such as pagination, sorting, selected rows, filters, or preparing context that later cards can consume. Always return the full updated context array. Start from `parent::handle()` when the card should retain the framework's default pagination behavior.
+
+Use `ActionResultFramework::success()` to report changed invalidation facts, flash messages, redirect/query state, and action-produced context. Match card `invalidationFacts()` to the facts returned by actions so AJAX updates refresh the smallest sensible set of cards.
+
+Keep context keys predictable and grouped. Framework-wide page data belongs under `page`, authentication data under `auth`, service results under `services`, service errors under `service_errors`, and feature-specific shared data under a clear feature key.
+
 ## Styling
 
 When working in downstream projects, reuse existing eelKit styling from `web_root/css/index.css` before creating project-specific add-on CSS. Prefer existing CSS variables, layout patterns, utility classes, and component styles.

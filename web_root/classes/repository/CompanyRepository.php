@@ -453,7 +453,7 @@ final class CompanyRepository
             'SELECT COUNT(*) FROM categorisation_rules WHERE nominal_account_id = :nominal_id',
             'SELECT COUNT(*) FROM expense_claim_lines WHERE nominal_account_id = :nominal_id',
             'SELECT COUNT(*) FROM journal_lines WHERE nominal_account_id = :nominal_id',
-            'SELECT COUNT(*) FROM ct_treatment_rules WHERE nominal_account_id = :nominal_id',
+            'SELECT COUNT(*) FROM corporation_tax_treatment_rules WHERE nominal_account_id = :nominal_id',
             'SELECT COUNT(*) FROM transaction_category_audit WHERE old_nominal_account_id = :nominal_id OR new_nominal_account_id = :nominal_id',
             'SELECT COUNT(*) FROM transactions WHERE nominal_account_id = :nominal_id',
             'SELECT COUNT(*) FROM asset_register WHERE nominal_account_id = :nominal_id OR accum_dep_nominal_id = :nominal_id',

@@ -276,7 +276,7 @@ final class NominalAccountRepository
                 'where' => 'nominal_account_id = %s',
             ],
             [
-                'table' => 'ct_treatment_rules',
+                'table' => 'corporation_tax_treatment_rules',
                 'columns' => ['nominal_account_id'],
                 'where' => 'nominal_account_id = %s',
             ],

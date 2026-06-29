@@ -375,12 +375,30 @@
 }
 
 .transactions-imported-controls {
-  justify-content: flex-start;
+  align-items: flex-end;
+  justify-content: space-between;
 }
 
-.transactions-imported-controls .toolbar,
-.transactions-imported-controls .pill-row {
-  align-items: center;
+.transactions-imported-primary-controls {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.transactions-imported-primary-controls .toolbar {
+  align-items: flex-end;
+}
+
+.transactions-imported-primary-controls form {
+  margin: 0;
+}
+
+.transactions-imported-summary {
+  justify-content: flex-end;
+  margin-left: auto;
+  max-width: 100%;
 }
 
 .role-assignment-create {

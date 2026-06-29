@@ -159,7 +159,7 @@ $harness->run(_nominals_add_accountCard::class, function (GeneratedServiceClassT
 
 $harness->run(_nominals_categoriesCard::class, function (GeneratedServiceClassTestHarness $harness, _nominals_categoriesCard $card): void {
     $harness->check(_nominals_categoriesCard::class, 'renders category rows from card service context', function () use ($harness, $card): void {
-        $html = $card->render([
+        $context = [
             'page' => ['page_id' => 'portable_page'],
             'services' => [
                 'nominal_subtypes' => [[
@@ -171,10 +171,43 @@ $harness->run(_nominals_categoriesCard::class, function (GeneratedServiceClassTe
                     'is_active' => 1,
                 ]],
             ],
-        ]);
+        ];
+        $html = $card->render($context);
+        $tables = $card->tables($context);
+        $table = $tables[0] ?? null;
 
+        $harness->assertSame(true, $table instanceof TableFramework);
+        $csv = $table->exportCsv();
+        $harness->assertTrue(str_contains($html, '<div class="table-scroll"><table>'));
+        $harness->assertTrue(str_contains($html, 'Condensed View'));
+        $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="csv"'));
+        $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="xlsx"'));
         $harness->assertTrue(str_contains($html, 'direct_costs'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="edit_nominal_subtype"'));
+        $harness->assertTrue(str_contains($csv, "Code,Name,\"Parent Type\",Sort,Status\n"));
+        $harness->assertTrue(str_contains($csv, 'direct_costs,"Direct costs",expense,20,Active'));
+        $harness->assertSame(false, str_contains($csv, 'Edit'));
+    });
+});
+
+$harness->run(_nominals_account_typesCard::class, function (GeneratedServiceClassTestHarness $harness, _nominals_account_typesCard $card): void {
+    $harness->check(_nominals_account_typesCard::class, 'renders account type rows through table framework', function () use ($harness, $card): void {
+        $context = ['page' => ['page_id' => 'portable_page']];
+        $html = $card->render($context);
+        $tables = $card->tables($context);
+        $table = $tables[0] ?? null;
+
+        $harness->assertSame(true, $table instanceof TableFramework);
+        $csv = $table->exportCsv();
+        $harness->assertTrue(str_contains($html, '<div class="table-scroll"><table>'));
+        $harness->assertTrue(str_contains($html, 'Condensed View'));
+        $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="csv"'));
+        $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="xlsx"'));
+        $harness->assertTrue(str_contains($html, 'cost_of_sales'));
+        $harness->assertTrue(str_contains($html, 'Direct costs of delivering work or goods'));
+        $harness->assertTrue(str_contains($csv, "\"Account Type\",\"Typical Use\"\n"));
+        $harness->assertTrue(str_contains($csv, 'asset,"Bank, debtors, fixed assets, and other resources the company owns or controls."'));
+        $harness->assertTrue(str_contains($csv, 'expense,"Overheads and operating costs such as software, insurance, motor, and office costs."'));
     });
 });
 

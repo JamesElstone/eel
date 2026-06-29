@@ -113,8 +113,8 @@ final class _uploads_bank_transactionsCard extends CardBaseFramework
                                 <ul class="file-list" data-upload-file-list hidden></ul>
                             </div>
                             <div class="form-row">
-                                <button class="button primary" type="submit" title="Select both the account and files for upload." disabled data-upload-submit>Upload CSV</button>
-                                <img class="upload-processing-icon is-hidden" src="svg/loader.svg" alt="" aria-hidden="true" data-upload-processing-icon>
+                                <button class="button primary" type="submit" title="Select both the account and files for upload." disabled data-upload-submit>Upload CSV
+                                <img class="upload-processing-icon is-hidden" src="svg/loader.svg" alt="" aria-hidden="true" data-upload-processing-icon></button>
                             </div>
                         </div>
                     </div>

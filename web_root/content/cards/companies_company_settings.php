@@ -46,6 +46,28 @@ final class _companies_company_settingsCard extends CardBaseFramework
             . ($companyName !== '' && $companyNumber !== '' ? ' for ' . $companyName . ' (' . $companyNumber . ')' : '');
     }
 
+    private function associatedCompanyCountOptions(int $selectedCount): string
+    {
+        $options = '';
+
+        for ($count = 0; $count <= 10; $count++) {
+            $label = $count === 0
+                ? '0 - none'
+                : (string)$count . ' other compan' . ($count === 1 ? 'y' : 'ies');
+            $options .= '<option value="' . $count . '"' . ($selectedCount === $count ? ' selected' : '') . '>'
+                . HelperFramework::escape($label)
+                . '</option>';
+        }
+
+        if ($selectedCount > 10) {
+            $options .= '<option value="' . $selectedCount . '" selected>'
+                . HelperFramework::escape((string)$selectedCount . ' other companies')
+                . '</option>';
+        }
+
+        return $options;
+    }
+
     public function render(array $context): string
     {
 
@@ -94,7 +116,9 @@ final class _companies_company_settingsCard extends CardBaseFramework
                     </div>
                     <div class="form-row">
                         <label for="associated_company_count">Associated companies excluding this company</label>
-                        <input class="input" id="associated_company_count" name="associated_company_count" type="number" min="0" step="1" value="' . HelperFramework::escape((string)$associatedCompanyCount) . '" data-state-default="' . HelperFramework::escape((string)$associatedCompanyCount) . '">
+                        <select class="select" id="associated_company_count" name="associated_company_count" data-state-default="' . HelperFramework::escape((string)$associatedCompanyCount) . '">
+                            ' . $this->associatedCompanyCountOptions($associatedCompanyCount) . '
+                        </select>
                     </div>
                     <div class="form-row">
                         <label for="default_currency">Currency</label>

@@ -95,8 +95,7 @@ final class _uploads_bank_transactionsCard extends CardBaseFramework
                 <input type="hidden" name="filter" value="' . HelperFramework::escape($selectedUploadHistoryFilter) . '">
                 <input type="hidden" name="page" value="' . $selectedUploadHistoryPage . '">
                 <div class="stack">
-                    <div class="helper">The first row must be headings, ideally clear names like <strong>date, description, amount, balance</strong>.</div>
-                    <div class="helper">Transactions must be in statement order, either oldest first or newest first, so balances can be checked before import.</div>
+                    <p class="helper">The first row must be headings, ideally clear names like <strong>date, description, amount, balance</strong>.<br>Transactions must be in statement order, either oldest first or newest first, so balances can be checked before import.</p>
                     <div class="upload-box upload-dropzone" data-upload-dropzone data-upload-max-files="' . \eel_accounts\Service\StatementUploadService::MAX_BATCH_UPLOAD_FILES . '">
                         <div class="flex-controls">
                             <div class="form-row">

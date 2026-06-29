@@ -116,7 +116,9 @@ final class UploadsAction implements ActionInterfaceFramework
             !empty($result['success']),
             $flashMessages,
             $flashErrors,
-            ['upload_id' => (int)($result['statement_upload_id'] ?? 0)]
+            ['upload_id' => (int)($result['statement_upload_id'] ?? 0)],
+            ['page.context', 'uploads.details'],
+            ['show_card' => 'uploads_details']
         );
     }
 
@@ -438,7 +440,9 @@ final class UploadsAction implements ActionInterfaceFramework
         bool $success,
         array $flashMessages = [],
         array $flashErrors = [],
-        array $extraContext = []
+        array $extraContext = [],
+        array $changedFacts = ['page.context'],
+        array $query = []
     ): ActionResultFramework {
         $uploadId = array_key_exists('upload_id', $extraContext)
             ? max(0, (int)$extraContext['upload_id'])
@@ -448,8 +452,9 @@ final class UploadsAction implements ActionInterfaceFramework
 
         return new ActionResultFramework(
             success: $success,
-            changedFacts: ['page.context'],
+            changedFacts: $changedFacts,
             flashMessages: $this->flashMessages($flashMessages, $flashErrors),
+            query: $query,
             context: [
                 'uploads' => [
                     'id' => $uploadId,

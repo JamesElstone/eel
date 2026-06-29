@@ -46,4 +46,38 @@ $harness->run(UploadsAction::class, static function (GeneratedServiceClassTestHa
         $harness->assertSame('', $message);
         $harness->assertSame('statement.csv: upload failed. The uploaded file could not be read.', $error);
     });
+
+    $harness->check(UploadsAction::class, 'can target upload details after committing transactions', static function () use ($harness): void {
+        $action = new UploadsAction();
+        $method = new ReflectionMethod(UploadsAction::class, 'actionResult');
+        $method->setAccessible(true);
+        $request = new RequestFramework([], [
+            'upload_id' => '7',
+            'filter' => 'ready',
+            'page' => '2',
+        ], [
+            'REQUEST_METHOD' => 'POST',
+        ], [], []);
+
+        $result = $method->invoke(
+            $action,
+            $request,
+            true,
+            [],
+            [],
+            ['upload_id' => 7],
+            ['page.context', 'uploads.details'],
+            ['show_card' => 'uploads_details']
+        );
+
+        $harness->assertSame(['page.context', 'uploads.details'], $result->changedFacts());
+        $harness->assertSame(['show_card' => 'uploads_details'], $result->query());
+        $harness->assertSame([
+            'uploads' => [
+                'id' => 7,
+                'filter' => 'ready',
+                'page' => 2,
+            ],
+        ], $result->context());
+    });
 });

@@ -128,7 +128,7 @@ final class _uploads_detailsCard extends CardBaseFramework
                             <input type="hidden" name="upload_id" value="' . (int)($upload['id'] ?? 0) . '">
                             <input type="hidden" name="filter" value="' . HelperFramework::escape($selectedUploadHistoryFilter) . '">
                             <input type="hidden" name="page" value="' . $selectedUploadHistoryPage . '">
-                            <button class="button" type="submit" data-show-card="statement_field_mapping" data-page-card-switch-tab="Field Mappings">Field Mappings</button>
+                            <button class="button" type="submit" data-show-card="statement_field_mapping" data-page-card-switch-tab="Review Uploads">Field Mappings</button>
                         </form>
                         <form method="post" action="?page=uploads" data-ajax="true">
                             <input type="hidden" name="card_action" value="Uploads">

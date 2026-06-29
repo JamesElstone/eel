@@ -322,7 +322,7 @@ final class _uploads_validate_commitCard extends CardBaseFramework
 
         if ($mapping === []) {
             return sprintf(
-                'This CSV has %d uploaded row(s). Open Field Mappings, save the mapping, then preview and validate rows.',
+                'This CSV has %d uploaded row(s). Open Review Uploads, save the mapping, then preview and validate rows.',
                 $uploadedRows
             );
         }

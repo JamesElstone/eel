@@ -15,6 +15,9 @@
   --primary: #1d4ed8;
   --accent: var(--primary);
   --primary-soft: #dbeafe;
+  --link: var(--primary);
+  --link-hover: #1e40af;
+  --link-visited: #6d28d9;
   --success: #166534;
   --success-soft: #dcfce7;
   --warning: #92400e;
@@ -87,7 +90,32 @@ body {
     text-align: right;
 }
 
-a { color: inherit; text-decoration: none; }
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+a:not(.button):not(.nav-link) {
+  color: var(--link);
+  text-decoration: underline;
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 2px;
+}
+
+a:not(.button):not(.nav-link):visited {
+  color: var(--link-visited);
+}
+
+a:not(.button):not(.nav-link):hover {
+  color: var(--link-hover);
+  text-decoration-thickness: 0.12em;
+}
+
+a:not(.button):not(.nav-link):focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
 
 .layout {
   display: grid;

@@ -193,6 +193,7 @@ final class UploadStatementCoverageService
                     $periodStart,
                     $periodEnd,
                     $accountLabel,
+                    (array)($uniqueRowsByAccountMonth[$accountId] ?? []),
                     (array)($tradeActivityByAccountMonth[$accountId] ?? [])
                 )
                 : $this->baseAccountHeatmapMonths(
@@ -294,7 +295,7 @@ final class UploadStatementCoverageService
         return $months;
     }
 
-    private function baseTradeAccountHeatmapMonths(string $periodStart, string $periodEnd, string $accountLabel, array $activityByMonth): array
+    private function baseTradeAccountHeatmapMonths(string $periodStart, string $periodEnd, string $accountLabel, array $uploadedRowsByMonth, array $activityByMonth): array
     {
         $months = [];
         $cursor = (new \DateTimeImmutable($periodStart))->modify('first day of this month');
@@ -303,20 +304,22 @@ final class UploadStatementCoverageService
         while ($cursor <= $end) {
             $monthKey = $cursor->format('Y-m-01');
             $label = $cursor->format('M Y');
+            $rawRows = (int)($uploadedRowsByMonth[$monthKey] ?? 0);
             $activity = is_array($activityByMonth[$monthKey] ?? null) ? $activityByMonth[$monthKey] : [];
             $ledgerLines = (int)($activity['ledger_lines'] ?? 0);
             $transferTransactions = (int)($activity['transfer_transactions'] ?? 0);
-            $displayCount = $ledgerLines > 0 ? $ledgerLines : $transferTransactions;
-            $status = $ledgerLines > 0 || $transferTransactions > 0 ? 'pass' : 'warning';
-            $tooltip = $ledgerLines > 0 || $transferTransactions > 0
+            $displayCount = $rawRows > 0 ? $rawRows : ($ledgerLines > 0 ? $ledgerLines : $transferTransactions);
+            $status = $rawRows > 0 || $ledgerLines > 0 || $transferTransactions > 0 ? 'pass' : 'warning';
+            $tooltip = $rawRows > 0 || $ledgerLines > 0 || $transferTransactions > 0
                 ? sprintf(
-                    '%s, %s: %d tagged ledger line(s), %d transfer transaction(s).',
+                    '%s, %s: %d uploaded row(s), %d tagged ledger line(s), %d transfer transaction(s).',
                     $accountLabel,
                     $label,
+                    $rawRows,
                     $ledgerLines,
                     $transferTransactions
                 )
-                : sprintf('%s, %s: no tagged ledger lines or transfer transactions found.', $accountLabel, $label);
+                : sprintf('%s, %s: no uploaded CSV rows, tagged ledger lines, or transfer transactions found.', $accountLabel, $label);
 
             $months[$monthKey] = [
                 'month_key' => $monthKey,

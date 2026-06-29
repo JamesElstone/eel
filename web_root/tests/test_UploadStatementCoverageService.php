@@ -446,6 +446,9 @@ $harness->run(\eel_accounts\Service\UploadStatementCoverageService::class, stati
                 '2025-01-01' => 5,
                 '2025-03-01' => 7,
             ],
+            12 => [
+                '2025-01-01' => 28,
+            ],
         ], [
             10 => [
                 '2025-01-01' => 5,
@@ -480,11 +483,14 @@ $harness->run(\eel_accounts\Service\UploadStatementCoverageService::class, stati
         $harness->assertSame(0, $savingsMonths['2025-01-01']['value'] ?? null);
         $harness->assertTrue(str_contains((string)($savingsMonths['2025-01-01']['tooltip'] ?? ''), 'Savings Account (Test Bank), Jan 2025'));
 
-        $harness->assertSame('warning', $tradeMonths['2025-01-01']['status'] ?? null);
-        $harness->assertSame(0, $tradeMonths['2025-01-01']['value'] ?? null);
-        $harness->assertTrue(str_contains((string)($tradeMonths['2025-01-01']['tooltip'] ?? ''), 'Trade Creditor, Jan 2025: no tagged ledger lines or transfer transactions found.'));
+        $harness->assertSame('pass', $tradeMonths['2025-01-01']['status'] ?? null);
+        $harness->assertSame(28, $tradeMonths['2025-01-01']['value'] ?? null);
+        $harness->assertTrue(str_contains((string)($tradeMonths['2025-01-01']['tooltip'] ?? ''), 'Trade Creditor, Jan 2025: 28 uploaded row(s), 0 tagged ledger line(s), 0 transfer transaction(s).'));
         $harness->assertSame('pass', $tradeMonths['2025-02-01']['status'] ?? null);
         $harness->assertSame(3, $tradeMonths['2025-02-01']['value'] ?? null);
-        $harness->assertTrue(str_contains((string)($tradeMonths['2025-02-01']['tooltip'] ?? ''), 'Trade Creditor, Feb 2025: 3 tagged ledger line(s), 1 transfer transaction(s).'));
+        $harness->assertTrue(str_contains((string)($tradeMonths['2025-02-01']['tooltip'] ?? ''), 'Trade Creditor, Feb 2025: 0 uploaded row(s), 3 tagged ledger line(s), 1 transfer transaction(s).'));
+        $harness->assertSame('warning', $tradeMonths['2025-03-01']['status'] ?? null);
+        $harness->assertSame(0, $tradeMonths['2025-03-01']['value'] ?? null);
+        $harness->assertTrue(str_contains((string)($tradeMonths['2025-03-01']['tooltip'] ?? ''), 'Trade Creditor, Mar 2025: no uploaded CSV rows, tagged ledger lines, or transfer transactions found.'));
     });
 });

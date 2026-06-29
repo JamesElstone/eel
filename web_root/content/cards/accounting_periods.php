@@ -286,9 +286,9 @@ final class _accounting_periodsCard extends CardBaseFramework
                 <div class="settings-stack">
                     ' . $missingHtml . '
                     ' . $mainHtml . '
-                    ' . $guidanceHtml . '
                 </div>
-                <div>
+                <div class="settings-stack">
+                    ' . $guidanceHtml . '
                     ' . $coverageHtml . '
                 </div>
             </div>

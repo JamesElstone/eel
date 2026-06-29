@@ -21,6 +21,7 @@ final class NominalsAction implements ActionInterfaceFramework
             'cancel_nominal_edit' => $this->cancelNominalEdit($request),
             'add_nominal_account' => $this->saveNominalAccount($request, null),
             'save_nominal_account' => $this->saveNominalAccount($request, max(0, (int)$request->input('nominal_account_id', 0))),
+            'delete_nominal_account' => $this->deleteNominalAccount($request),
             'add_nominal_subtype' => $this->saveNominalSubtype($request, null),
             'save_nominal_subtype' => $this->saveNominalSubtype($request, max(0, (int)$request->input('subtype_id', 0))),
             default => ActionResultFramework::none(),
@@ -78,6 +79,62 @@ final class NominalsAction implements ActionInterfaceFramework
                 'edit_nominal_id' => null,
                 'edit_subtype_id' => null,
                 'show_card' => trim((string)$request->input('show_card', '')) ?: null,
+            ],
+            [
+                'nominals' => [
+                    'editing_nominal_id' => 0,
+                    'editing_subtype_id' => 0,
+                ],
+            ]
+        );
+    }
+
+    private function deleteNominalAccount(RequestFramework $request): ActionResultFramework
+    {
+        if (!(bool)AppConfigurationStore::get('developer_options', false)) {
+            return $this->errorResult('Developer options must be enabled before nominal accounts can be deleted.');
+        }
+
+        $nominalId = max(0, (int)$request->input('nominal_account_id', 0));
+        if ($nominalId <= 0) {
+            return $this->errorResult('Select a nominal account before deleting it.');
+        }
+
+        $accountRepository = new NominalAccountRepository();
+        $nominal = $accountRepository->findById($nominalId);
+        if ($nominal === null) {
+            return $this->errorResult('The selected nominal account could not be found.');
+        }
+
+        if (!$accountRepository->canDeleteNominalAccount($nominalId)) {
+            return $this->errorResult('This nominal account is in use and cannot be deleted.');
+        }
+
+        try {
+            InterfaceDB::beginTransaction();
+            $deleted = $accountRepository->deleteNominalAccountIfUnused($nominalId);
+            InterfaceDB::commit();
+        } catch (Throwable $exception) {
+            InterfaceDB::rollBack();
+            return $this->errorResult($exception->getMessage());
+        }
+
+        if (!$deleted) {
+            return $this->errorResult('This nominal account is in use and cannot be deleted.');
+        }
+
+        $label = FormattingFramework::nominalLabel($nominal);
+
+        return ActionResultFramework::success(
+            ['page.context'],
+            [[
+                'type' => 'success',
+                'message' => 'Nominal account deleted: ' . $label . '.',
+            ]],
+            [
+                'edit_nominal_id' => null,
+                'edit_subtype_id' => null,
+                'show_card' => 'nominals_accounts',
             ],
             [
                 'nominals' => [

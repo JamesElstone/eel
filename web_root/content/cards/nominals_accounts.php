@@ -112,13 +112,21 @@ final class _nominals_accountsCard extends CardBaseFramework
 
     private function actionsHtml(array $nominal, string $pageId): string
     {
-        return '<form method="post" data-ajax="true">
+        $nominalId = (int)($nominal['id'] ?? 0);
+        $deleteButton = '';
+
+        if ((bool)AppConfigurationStore::get('developer_options', false) && (int)($nominal['can_delete'] ?? 0) === 1) {
+            $deleteButton = '<button class="button button-inline danger" name="intent" value="delete_nominal_account" type="submit" data-chicken-check="true" data-chicken-message="Delete this unused nominal account?<br><br>This developer-only action cannot be undone." data-chicken-confirm-text="Delete" title="Developer only">Delete</button>';
+        }
+
+        return '<form method="post" class="actions-row actions-row-nowrap" data-ajax="true">
             <input type="hidden" name="card_action" value="Nominals">
-            <input type="hidden" name="intent" value="edit_nominal_account">
             <input type="hidden" name="page" value="' . HelperFramework::escape($pageId) . '">
             <input type="hidden" name="show_card" value="nominals_add_account">
-            <input type="hidden" name="edit_nominal_id" value="' . (int)($nominal['id'] ?? 0) . '">
-            <button class="button" type="submit">Edit</button>
+            <input type="hidden" name="edit_nominal_id" value="' . $nominalId . '">
+            <input type="hidden" name="nominal_account_id" value="' . $nominalId . '">
+            <button class="button button-inline" name="intent" value="edit_nominal_account" type="submit">Edit</button>
+            ' . $deleteButton . '
         </form>';
     }
 }

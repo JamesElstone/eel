@@ -16,7 +16,7 @@ final class NominalAccountRepository
 
     public function fetchNominalAccountCatalog(): array
     {
-        return InterfaceDB::fetchAll($this->fetchNominalAccountCatalogSql());
+        return $this->withDeleteEligibility(InterfaceDB::fetchAll($this->fetchNominalAccountCatalogSql()));
     }
 
     public function findByCode(string $code): ?array
@@ -31,6 +31,61 @@ final class NominalAccountRepository
 
         return is_array($row) ? $row : null;
     }
+
+    public function findById(int $id): ?array
+    {
+        if ($id <= 0) {
+            return null;
+        }
+
+        $row = InterfaceDB::fetchOne(
+            'SELECT id, code, name, account_type, account_subtype_id, tax_treatment, is_active, sort_order
+             FROM nominal_accounts
+             WHERE id = :id
+             LIMIT 1',
+            ['id' => $id]
+        );
+
+        return is_array($row) ? $row : null;
+    }
+
+    public function nominalReferenceCount(int $nominalId): int
+    {
+        if ($nominalId <= 0) {
+            return 0;
+        }
+
+        $count = 0;
+        foreach ($this->availableNominalReferenceQueries() as $sql) {
+            $count += (int)InterfaceDB::fetchColumn($sql, ['nominal_id' => $nominalId]);
+        }
+
+        return $count;
+    }
+
+    public function canDeleteNominalAccount(int $nominalId): bool
+    {
+        return $nominalId > 0
+            && $this->findById($nominalId) !== null
+            && $this->nominalReferenceSchemaComplete()
+            && $this->nominalReferenceCount($nominalId) === 0;
+    }
+
+    public function deleteNominalAccountIfUnused(int $nominalId): bool
+    {
+        if ($nominalId <= 0) {
+            return false;
+        }
+
+        if (!$this->nominalReferenceSchemaComplete()) {
+            return false;
+        }
+
+        $stmt = InterfaceDB::prepareExecute($this->deleteNominalAccountIfUnusedSql($this->availableNominalReferenceSources()), ['nominal_id' => $nominalId]);
+
+        return $stmt->rowCount() > 0;
+    }
+
     public function validateInput(array $input, array $subtypeIndex, ?int $ignoreId = null): array
     {
         $errors = [];
@@ -126,6 +181,177 @@ final class NominalAccountRepository
              WHERE id = ?',
             [...$payload, 'manual', $id]
         );
+    }
+
+    private function withDeleteEligibility(array $rows): array
+    {
+        $schemaComplete = $this->nominalReferenceSchemaComplete();
+
+        foreach ($rows as $index => $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $rows[$index]['reference_count'] = null;
+            $rows[$index]['can_delete'] = 0;
+
+            if (!$schemaComplete) {
+                continue;
+            }
+
+            try {
+                $referenceCount = $this->nominalReferenceCount((int)($row['id'] ?? 0));
+                $rows[$index]['reference_count'] = $referenceCount;
+                $rows[$index]['can_delete'] = $referenceCount === 0 ? 1 : 0;
+            } catch (Throwable) {
+                $rows[$index]['reference_count'] = null;
+                $rows[$index]['can_delete'] = 0;
+            }
+        }
+
+        return $rows;
+    }
+
+    private function availableNominalReferenceQueries(): array
+    {
+        $queries = [];
+
+        foreach ($this->availableNominalReferenceSources() as $source) {
+            $queries[] = 'SELECT COUNT(*) FROM ' . $source['table'] . ' WHERE ' . $this->nominalReferenceWhereSql($source, ':nominal_id');
+        }
+
+        return $queries;
+    }
+
+    private function availableNominalReferenceSources(): array
+    {
+        return array_values(array_filter(
+            $this->nominalReferenceSources(),
+            fn(array $source): bool => $this->referenceSourceAvailable($source)
+        ));
+    }
+
+    private function nominalReferenceSchemaComplete(): bool
+    {
+        return count($this->availableNominalReferenceSources()) === count($this->nominalReferenceSources());
+    }
+
+    private function referenceSourceAvailable(array $source): bool
+    {
+        $table = (string)($source['table'] ?? '');
+        $columns = (array)($source['columns'] ?? []);
+
+        if ($table === '' || $columns === []) {
+            return false;
+        }
+
+        try {
+            return InterfaceDB::tableExists($table) && InterfaceDB::columnsExists($table, $columns);
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    private function nominalReferenceSources(): array
+    {
+        return [
+            [
+                'table' => 'company_accounts',
+                'columns' => ['nominal_account_id'],
+                'where' => 'nominal_account_id = %s',
+            ],
+            [
+                'table' => 'categorisation_rules',
+                'columns' => ['nominal_account_id'],
+                'where' => 'nominal_account_id = %s',
+            ],
+            [
+                'table' => 'expense_claim_lines',
+                'columns' => ['nominal_account_id'],
+                'where' => 'nominal_account_id = %s',
+            ],
+            [
+                'table' => 'journal_lines',
+                'columns' => ['nominal_account_id'],
+                'where' => 'nominal_account_id = %s',
+            ],
+            [
+                'table' => 'ct_treatment_rules',
+                'columns' => ['nominal_account_id'],
+                'where' => 'nominal_account_id = %s',
+            ],
+            [
+                'table' => 'transaction_category_audit',
+                'columns' => ['old_nominal_account_id', 'new_nominal_account_id'],
+                'where' => 'old_nominal_account_id = %s OR new_nominal_account_id = %s',
+            ],
+            [
+                'table' => 'transactions',
+                'columns' => ['nominal_account_id'],
+                'where' => 'nominal_account_id = %s',
+            ],
+            [
+                'table' => 'asset_register',
+                'columns' => ['nominal_account_id', 'accum_dep_nominal_id'],
+                'where' => 'nominal_account_id = %s OR accum_dep_nominal_id = %s',
+            ],
+            [
+                'table' => 'company_settings',
+                'columns' => ['setting', 'value'],
+                'where' => $this->companySettingsNominalReferenceWhereSql('%s'),
+            ],
+        ];
+    }
+
+    private function nominalReferenceWhereSql(array $source, string $nominalExpression): string
+    {
+        $where = (string)($source['where'] ?? '');
+        $placeholderCount = substr_count($where, '%s');
+
+        if ($where === '' || $placeholderCount < 1) {
+            throw new RuntimeException('Nominal reference source is invalid.');
+        }
+
+        return vsprintf($where, array_fill(0, $placeholderCount, $nominalExpression));
+    }
+
+    private function companySettingsNominalReferenceWhereSql(string $nominalExpression): string
+    {
+        $quotedSettings = array_map(
+            static fn(string $setting): string => "'" . str_replace("'", "''", $setting) . "'",
+            $this->nominalSettingKeys()
+        );
+
+        return 'setting IN (' . implode(', ', $quotedSettings) . ')
+                AND TRIM(COALESCE(value, \'\')) = CAST(' . $nominalExpression . ' AS CHAR)';
+    }
+
+    private function deleteNominalAccountIfUnusedSql(array $referenceSources): string
+    {
+        $guards = [];
+        foreach ($referenceSources as $source) {
+            $guards[] = 'AND NOT EXISTS (SELECT 1 FROM '
+                . $source['table']
+                . ' WHERE '
+                . $this->nominalReferenceWhereSql($source, 'nominal_accounts.id')
+                . ')';
+        }
+
+        return 'DELETE FROM nominal_accounts
+                WHERE id = :nominal_id
+                  ' . implode("\n                  ", $guards);
+    }
+
+    private function nominalSettingKeys(): array
+    {
+        return [
+            'default_bank_nominal_id',
+            'default_trade_nominal_id',
+            'default_expense_nominal_id',
+            'director_loan_nominal_id',
+            'vat_nominal_id',
+            'uncategorised_nominal_id',
+        ];
     }
 
     /**

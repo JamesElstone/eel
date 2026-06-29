@@ -61,6 +61,70 @@ $harness->run(_nominals_accountsCard::class, function (GeneratedServiceClassTest
         $harness->assertTrue(str_contains($html, 'name="card_action" value="Nominals"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="edit_nominal_account"'));
     });
+
+    $harness->check(_nominals_accountsCard::class, 'shows developer delete for unused account rows only', function () use ($harness, $card): void {
+        $html = $card->render([
+            'page' => ['page_id' => 'portable_page'],
+            'services' => [
+                'nominal_account_catalog' => [[
+                    'id' => 12,
+                    'code' => '5000',
+                    'name' => 'Materials',
+                    'account_type' => 'expense',
+                    'tax_treatment' => 'allowable',
+                    'sort_order' => 50,
+                    'is_active' => 1,
+                    'can_delete' => 1,
+                ], [
+                    'id' => 4,
+                    'code' => '1000',
+                    'name' => 'Current Account',
+                    'account_type' => 'asset',
+                    'tax_treatment' => 'capital',
+                    'sort_order' => 500,
+                    'is_active' => 1,
+                    'can_delete' => 0,
+                ]],
+            ],
+        ]);
+
+        $harness->assertSame(1, substr_count($html, 'value="delete_nominal_account"'));
+        $harness->assertSame(true, str_contains($html, 'data-chicken-message="Delete this unused nominal account?'));
+    });
+
+    $harness->check(_nominals_accountsCard::class, 'hides delete account rows when developer options are disabled', function () use ($harness, $card): void {
+        $path = AppConfigurationStore::configPath();
+        $original = file_get_contents($path);
+
+        if (!is_string($original)) {
+            throw new RuntimeException('Unable to read fixture config.');
+        }
+
+        try {
+            AppConfigurationStore::set('developer_options', false);
+
+            $html = $card->render([
+                'page' => ['page_id' => 'portable_page'],
+                'services' => [
+                    'nominal_account_catalog' => [[
+                        'id' => 12,
+                        'code' => '5000',
+                        'name' => 'Materials',
+                        'account_type' => 'expense',
+                        'tax_treatment' => 'allowable',
+                        'sort_order' => 50,
+                        'is_active' => 1,
+                        'can_delete' => 1,
+                    ]],
+                ],
+            ]);
+
+            $harness->assertSame(false, str_contains($html, 'value="delete_nominal_account"'));
+        } finally {
+            file_put_contents($path, $original, LOCK_EX);
+            AppConfigurationStore::config(true);
+        }
+    });
 });
 
 $harness->run(_nominals_add_accountCard::class, function (GeneratedServiceClassTestHarness $harness, _nominals_add_accountCard $card): void {

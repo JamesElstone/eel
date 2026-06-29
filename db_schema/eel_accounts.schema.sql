@@ -860,13 +860,19 @@ DROP TABLE IF EXISTS `statement_import_mappings`;
 CREATE TABLE `statement_import_mappings` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `upload_id` int(11) NOT NULL,
-  `source_type` varchar(50) NOT NULL DEFAULT 'Account_money',
+  `source_type` varchar(50) NOT NULL DEFAULT 'bank_account',
+  `mapping_origin` varchar(20) NOT NULL DEFAULT 'manual',
+  `source_mapping_upload_id` int(11) DEFAULT NULL,
   `original_headers_json` longtext NOT NULL,
   `mapping_json` longtext NOT NULL,
+  `confirmed_at` datetime DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_statement_import_mappings_upload` (`upload_id`),
+  KEY `idx_statement_import_mappings_origin` (`mapping_origin`),
+  KEY `idx_statement_import_mappings_source_upload` (`source_mapping_upload_id`),
+  CONSTRAINT `fk_statement_import_mappings_source_upload` FOREIGN KEY (`source_mapping_upload_id`) REFERENCES `statement_uploads` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_statement_import_mappings_upload` FOREIGN KEY (`upload_id`) REFERENCES `statement_uploads` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=187 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -933,8 +939,8 @@ CREATE TABLE `statement_uploads` (
   `company_id` int(11) NOT NULL,
   `accounting_period_id` int(11) DEFAULT NULL,
   `account_id` int(11) DEFAULT NULL,
-  `source_type` varchar(50) NOT NULL DEFAULT 'Account_money',
-  `workflow_status` enum('uploaded','mapped','staged','committed','completed') NOT NULL DEFAULT 'uploaded',
+  `source_type` varchar(50) NOT NULL DEFAULT 'bank_account',
+  `workflow_status` enum('uploaded','mapped','staged','needs_accounting_period','committed','completed') NOT NULL DEFAULT 'uploaded',
   `statement_month` date NOT NULL,
   `original_filename` varchar(255) NOT NULL,
   `stored_filename` varchar(255) NOT NULL,
@@ -1496,6 +1502,41 @@ CREATE TABLE `mobile_country_codes` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `sic_section`
+--
+
+DROP TABLE IF EXISTS `sic_section`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `sic_section` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `section_letter` char(1) NOT NULL,
+  `description` varchar(255) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_sic_section_letter` (`section_letter`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `sic_codes`
+--
+
+DROP TABLE IF EXISTS `sic_codes`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `sic_codes` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `section_id` int(11) NOT NULL,
+  `sic_code` varchar(10) NOT NULL,
+  `description` varchar(255) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_sic_code` (`sic_code`),
+  KEY `idx_sic_codes_section_id` (`section_id`),
+  CONSTRAINT `fk_sic_codes_section` FOREIGN KEY (`section_id`) REFERENCES `sic_section` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `user_account_invites`
 --
 
@@ -1711,13 +1752,30 @@ CREATE TABLE `schema_migrations` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 INSERT INTO `schema_migrations` (`migration`) VALUES
+  ('2026_05_07_001_initial_schema.sql'),
+  ('2026_05_08_001_schema_integrity.sql'),
+  ('2026_05_08_002_force_password_change.sql'),
+  ('2026_05_08_003_user_otp_optional.sql'),
+  ('2026_05_09_001_login_lockout_reset_audit.sql'),
   ('2026_05_14_001_application_activity_flash_history.sql'),
+  ('2026_05_25_001_company_account_nominals.sql'),
+  ('2026_05_26_001_corporation_tax_rate_rules.sql'),
+  ('2026_05_26_002_drop_legacy_tax_loss_pools.sql'),
+  ('2026_05_26_003_fixed_asset_register.sql'),
+  ('2026_05_26_004_corporation_tax_treatment_rules.sql'),
+  ('2026_05_26_005_accounting_period_ct_periods.sql'),
+  ('2026_05_27_001_trade_creditors_default_nominal.sql'),
+  ('2026_05_27_002_repair_default_trade_nominal.sql'),
   ('2026_06_01_001_user_mobile_number.sql'),
   ('2026_06_01_002_mobile_country_codes.sql'),
   ('2026_06_01_003_invited_account_completion.sql'),
   ('2026_06_15_001_invite_deliveries.sql'),
   ('2026_06_15_002_signup_token_rate_limits.sql'),
-  ('2026_06_15_003_signup_verification_rate_limits.sql');
+  ('2026_06_15_003_signup_verification_rate_limits.sql'),
+  ('2026_06_29_001_ixbrl_export_metadata.sql'),
+  ('2026_06_29_002_ixbrl_external_validation.sql'),
+  ('2026_06_29_003_nominal_account_origin.sql'),
+  ('2026_06_29_004_database_integrity_alignment.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

@@ -11,6 +11,45 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(_uploads_detailsCard::class, static function (GeneratedServiceClassTestHarness $harness, _uploads_detailsCard $card): void {
+    $harness->check(_uploads_detailsCard::class, 'defaults upload history filter to ready to import', static function () use ($harness, $card): void {
+        $request = new RequestFramework([], [], ['REQUEST_METHOD' => 'GET'], [], []);
+        $services = new PageServiceFramework(new AppService(APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp'));
+
+        $context = $card->handle($request, $services, ['page' => []], ActionResultFramework::none());
+        $harness->assertSame('ready', $context['uploads']['filter'] ?? null);
+
+        $explicitContext = $card->handle(
+            $request,
+            $services,
+            [
+                'page' => [],
+                'uploads' => [
+                    'filter' => 'all',
+                ],
+            ],
+            ActionResultFramework::none()
+        );
+        $harness->assertSame('all', $explicitContext['uploads']['filter'] ?? null);
+    });
+
+    $harness->check(_uploads_detailsCard::class, 'marks ready to import as selected when no filter is provided', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => [
+                'id' => 12,
+            ],
+            'services' => [
+                'filter_terms' => [
+                    'all' => 'All uploads',
+                    'ready' => 'Ready to import',
+                ],
+                'upload_history' => [],
+                'upload_summary_by_accounting_period' => [],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, '<option value="ready" selected>Ready to import</option>'));
+    });
+
     $harness->check(_uploads_detailsCard::class, 'renders upload summary by accounting period beside the history filter', static function () use ($harness, $card): void {
         $html = $card->render([
             'company' => [

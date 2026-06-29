@@ -95,13 +95,34 @@ final class _statement_field_mappingCard extends CardBaseFramework
         $action = $pageId !== '' ? '?page=' . rawurlencode($pageId) : '';
         $cardAction = in_array($pageId, ['source_accounts', 'bank_accounts', 'banking'], true) ? 'Banking' : 'Uploads';
 
-        $mode = $selectedUploadId > 0 ? 'upload' : 'account';
+        $mode = $selectedUploadId > 0 || $pageId === 'uploads' ? 'upload' : 'account';
         $preview = $mode === 'upload'
             ? (array)($context['services']['selected_upload_preview'] ?? [])
             : (array)($context['services']['account_mapping_preview'] ?? []);
 
         if ($preview === []) {
-            return $this->renderEmptyState($mode, $bankingMappingAccountId, $activeCompanyAccounts, $action, $cardAction);
+            if ($mode === 'upload') {
+                return $this->renderUploadMappingInterface(
+                    [],
+                    [],
+                    ['headers' => [], 'rows' => []],
+                    [],
+                    [],
+                    false,
+                    [],
+                    $activeCompanyAccounts,
+                    0,
+                    0,
+                    $selectedUploadId,
+                    $bankingMappingAccountId,
+                    $companyId,
+                    $accountingPeriodId,
+                    $action,
+                    $cardAction
+                );
+            }
+
+            return $this->renderEmptyState($bankingMappingAccountId, $activeCompanyAccounts, $action, $cardAction);
         }
 
         $upload = is_array($preview['upload'] ?? null) ? $preview['upload'] : [];
@@ -123,21 +144,65 @@ final class _statement_field_mappingCard extends CardBaseFramework
         $uploadId = (int)($upload['id'] ?? $selectedUploadId);
         $accountId = (int)($upload['account_id'] ?? $bankingMappingAccountId);
 
-        $summaryHtml = $this->renderSummary(
-            $mode,
+        return $this->renderUploadMappingInterface(
             $upload,
             $mappingRow,
+            $sourceSample,
+            $sourceHeaders,
+            $mappingView,
             $hasConfirmedMapping,
             $extraHeaders,
             $activeCompanyAccounts,
             $accountId,
+            $uploadId,
+            $selectedUploadId,
+            $bankingMappingAccountId,
+            $companyId,
+            $accountingPeriodId,
             $action,
-            $cardAction
+            $cardAction,
+            $mode,
         );
+    }
+
+    private function renderUploadMappingInterface(
+        array $upload,
+        array $mappingRow,
+        array $sourceSample,
+        array $sourceHeaders,
+        array $mappingView,
+        bool $hasConfirmedMapping,
+        array $extraHeaders,
+        array $activeCompanyAccounts,
+        int $accountId,
+        int $uploadId,
+        int $selectedUploadId,
+        int $bankingMappingAccountId,
+        int $companyId,
+        int $accountingPeriodId,
+        string $action,
+        string $cardAction,
+        string $mode = 'upload'
+    ): string {
+        $summaryHtml = $upload !== []
+            ? $this->renderSummary(
+                $mode,
+                $upload,
+                $mappingRow,
+                $hasConfirmedMapping,
+                $extraHeaders,
+                $activeCompanyAccounts,
+                $accountId,
+                $action,
+                $cardAction
+            )
+            : '';
         $sampleHtml = $this->renderSourceSample($sourceSample);
-        $mappingFieldsHtml = $this->renderMappingFields($mappingView, $sourceHeaders, $mode);
+        $mappingDisabled = $mode === 'upload' && ($uploadId <= 0 || $accountId <= 0);
+        $mappingFieldsHtml = $this->renderMappingFields($mappingView, $sourceHeaders, $mode, $mappingDisabled);
         $accountSelectHtml = $mode === 'upload' ? $this->renderAccountSelector($activeCompanyAccounts, $accountId, $mode) : '';
         $buttonsHtml = $this->renderButtons($mode, $hasConfirmedMapping, $uploadId, $companyId, $accountingPeriodId, $accountId);
+        $saveDisabled = $mappingDisabled ? ' disabled' : '';
 
         return '
             <div class="stack">
@@ -155,7 +220,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
                         ' . $mappingFieldsHtml . '
                     </div>
                     <div>
-                        <button class="button primary" type="submit" disabled data-change-submit-button>Save Mapping</button>
+                        <button class="button primary" type="submit"' . $saveDisabled . ' data-statement-mapping-requires-account data-change-submit-button>Save Mapping</button>
                     </div>
                 </form>
                 ' . $buttonsHtml . '
@@ -164,30 +229,25 @@ final class _statement_field_mappingCard extends CardBaseFramework
     }
 
     private function renderEmptyState(
-        string $mode,
         int $bankingMappingAccountId,
         array $accounts,
         string $action,
         string $cardAction
     ): string
     {
-        if ($mode === 'account') {
-            $accountSwitcherHtml = $this->renderAccountMappingSwitcher($accounts, $bankingMappingAccountId, $action, $cardAction);
+        $accountSwitcherHtml = $this->renderAccountMappingSwitcher($accounts, $bankingMappingAccountId, $action, $cardAction);
 
-            if ($bankingMappingAccountId <= 0) {
-                return '<div class="statement-mapping-summary">
-                    <div class="statement-mapping-summary-copy"></div>
-                    ' . $accountSwitcherHtml . '
-                </div>';
-            }
-
+        if ($bankingMappingAccountId <= 0) {
             return '<div class="statement-mapping-summary">
-                <div class="helper statement-mapping-summary-copy">Upload a CSV for this account first. This card will then let you maintain the saved mapping for that account.</div>
+                <div class="statement-mapping-summary-copy"></div>
                 ' . $accountSwitcherHtml . '
             </div>';
         }
 
-        return '<div class="helper">Select an upload from Review &amp; Commit Transactions to view, adjust, or reuse its field mapping.</div>';
+        return '<div class="statement-mapping-summary">
+            <div class="helper statement-mapping-summary-copy">Upload a CSV for this account first. This card will then let you maintain the saved mapping for that account.</div>
+            ' . $accountSwitcherHtml . '
+        </div>';
     }
 
     private function renderSummary(
@@ -292,7 +352,8 @@ final class _statement_field_mappingCard extends CardBaseFramework
 
     private function renderAccountSelector(array $accounts, int $selectedAccountId, string $mode): string
     {
-        $options = '<option value="">Select account</option>';
+        $placeholderSelected = $selectedAccountId <= 0 ? ' selected' : '';
+        $options = '<option value="" disabled' . $placeholderSelected . '></option>';
 
         foreach ($accounts as $account) {
             $accountId = (int)($account['id'] ?? 0);
@@ -309,7 +370,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
 
         return '<div class="form-row">
             <label for="' . HelperFramework::escape($idPrefix) . '_mapping_account_id">Default Account to use</label>
-            <select class="select" id="' . HelperFramework::escape($idPrefix) . '_mapping_account_id" name="account_id" required>' . $options . '</select>
+            <select class="select" id="' . HelperFramework::escape($idPrefix) . '_mapping_account_id" name="account_id" required data-no-submit-on-change="true" data-statement-mapping-account-selector>' . $options . '</select>
         </div>';
     }
 
@@ -340,10 +401,11 @@ final class _statement_field_mappingCard extends CardBaseFramework
         </form>';
     }
 
-    private function renderMappingFields(array $mappingView, array $sourceHeaders, string $mode): string
+    private function renderMappingFields(array $mappingView, array $sourceHeaders, string $mode, bool $disabled = false): string
     {
         $html = '';
         $idPrefix = $mode === 'upload' ? 'upload_mapping' : 'account_mapping';
+        $disabledAttributes = $disabled ? ' disabled data-statement-mapping-requires-account' : ' data-statement-mapping-requires-account';
 
         foreach (\eel_accounts\Service\StatementUploadService::fieldDefinitions() as $fieldName => $definition) {
             $selectedHeader = $this->selectedMappingValue($fieldName, $mappingView[$fieldName] ?? null);
@@ -368,7 +430,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
                     . HelperFramework::escape((string)($definition['label'] ?? $fieldName))
                     . (!empty($definition['required']) ? ' *' : '')
                     . '</label>
-                <select class="select" id="' . HelperFramework::escape($idPrefix . '_' . $fieldName) . '" name="mapping_' . HelperFramework::escape($fieldName) . '">'
+                <select class="select" id="' . HelperFramework::escape($idPrefix . '_' . $fieldName) . '" name="mapping_' . HelperFramework::escape($fieldName) . '" data-no-submit-on-change="true"' . $disabledAttributes . '>'
                     . $options
                     . '</select>
             </div>';

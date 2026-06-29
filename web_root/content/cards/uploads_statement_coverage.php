@@ -21,7 +21,7 @@ final class _uploads_statement_coverageCard extends CardBaseFramework
 
     public function helper(array $context): string
     {
-        return 'Red months indicate balance-continuity failures. Amber months have no uploaded rows unless surrounding statement balances prove no missing movement.';
+        return 'Coverage is shown separately for each bank account. Red months indicate balance-continuity failures. Amber months have no uploaded rows unless surrounding statement balances prove no missing movement.';
     }
 
     public function services(): array
@@ -63,6 +63,27 @@ final class _uploads_statement_coverageCard extends CardBaseFramework
             $options['label'] = 'Statement Coverage from ' . $accountingPeriodLabel;
         }
 
-        return (new ChartService())->monthHeatmap($options);
+        $chartService = new ChartService();
+        $accountHeatmaps = (array)($options['account_heatmaps'] ?? []);
+
+        if ($accountHeatmaps !== []) {
+            $html = '<div class="stack">';
+
+            foreach ($accountHeatmaps as $accountOptions) {
+                if (!is_array($accountOptions)) {
+                    continue;
+                }
+
+                if ($accountingPeriodLabel !== '') {
+                    $accountOptions['label'] = trim((string)($accountOptions['account_label'] ?? $accountOptions['label'] ?? 'Statement Coverage')) . ' from ' . $accountingPeriodLabel;
+                }
+
+                $html .= $chartService->monthHeatmap($accountOptions);
+            }
+
+            return $html . '</div>';
+        }
+
+        return $chartService->monthHeatmap($options);
     }
 }

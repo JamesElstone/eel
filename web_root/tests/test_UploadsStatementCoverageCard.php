@@ -57,4 +57,65 @@ $harness->run(_uploads_statement_coverageCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, '<span class="month-heatmap-cell-value" aria-hidden="true">(5)</span>'));
         $harness->assertTrue(str_contains($html, 'title="Sep 2022: no uploaded CSV rows or committed transactions found."'));
     });
+
+    $harness->check(_uploads_statement_coverageCard::class, 'renders account-level statement coverage heatmaps', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'accounting_period' => [
+                'label' => '05/09/2022 to 30/09/2023',
+            ],
+            'services' => [
+                'statement_coverage_heatmap' => [
+                    'id' => 'uploads-statement-coverage',
+                    'label' => 'Statement coverage',
+                    'start' => '2022-09-05',
+                    'end' => '2022-10-31',
+                    'months' => [],
+                    'account_heatmaps' => [
+                        [
+                            'id' => 'uploads-statement-coverage-account-1',
+                            'label' => 'Current Account',
+                            'account_label' => 'Current Account',
+                            'start' => '2022-09-05',
+                            'end' => '2022-10-31',
+                            'months' => [
+                                [
+                                    'month_key' => '2022-09-01',
+                                    'label' => 'Sep 2022',
+                                    'status' => 'pass',
+                                    'value' => 12,
+                                    'display_value' => '(12)',
+                                    'tooltip' => 'Current Account, Sep 2022: 12 uploaded row(s), 12 committed transaction(s).',
+                                ],
+                            ],
+                        ],
+                        [
+                            'id' => 'uploads-statement-coverage-account-2',
+                            'label' => 'Savings Account',
+                            'account_label' => 'Savings Account',
+                            'start' => '2022-09-05',
+                            'end' => '2022-10-31',
+                            'months' => [
+                                [
+                                    'month_key' => '2022-09-01',
+                                    'label' => 'Sep 2022',
+                                    'status' => 'warning',
+                                    'value' => 0,
+                                    'display_value' => '(0)',
+                                    'tooltip' => 'Savings Account, Sep 2022: no uploaded CSV rows or committed transactions found.',
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $harness->assertSame(2, substr_count($html, 'class="month-heatmap"'));
+        $harness->assertTrue(str_contains($html, 'id="uploads-statement-coverage-account-1"'));
+        $harness->assertTrue(str_contains($html, 'id="uploads-statement-coverage-account-2"'));
+        $harness->assertTrue(str_contains($html, '<h3>Current Account from 05/09/2022 to 30/09/2023</h3>'));
+        $harness->assertTrue(str_contains($html, '<h3>Savings Account from 05/09/2022 to 30/09/2023</h3>'));
+        $harness->assertTrue(str_contains($html, 'Current Account, Sep 2022: 12 uploaded row(s), 12 committed transaction(s).'));
+        $harness->assertTrue(str_contains($html, 'Savings Account, Sep 2022: no uploaded CSV rows or committed transactions found.'));
+    });
 });

@@ -381,4 +381,94 @@ $harness->run(\eel_accounts\Service\UploadStatementCoverageService::class, stati
         $harness->assertTrue(str_contains((string)($months['2025-09-01']['tooltip'] ?? ''), 'Statement date-range overlap'));
         $harness->assertTrue(str_contains((string)($months['2025-09-01']['tooltip'] ?? ''), 'Previous statement closes on 30/09/2025, but this statement opens on 15/09/2025'));
     });
+
+    $harness->check(\eel_accounts\Service\UploadStatementCoverageService::class, 'builds account-level heatmap options for configured bank accounts', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod(\eel_accounts\Service\UploadStatementCoverageService::class, 'buildAccountHeatmapOptions');
+        $method->setAccessible(true);
+
+        $options = $method->invoke($service, [
+            'period_start' => '2025-01-01',
+            'period_end' => '2025-03-31',
+        ], [
+            [
+                'account' => [
+                    'id' => 10,
+                    'account_name' => 'Current Account',
+                    'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
+                    'account_identifier' => '1234',
+                ],
+                'uploads' => [
+                    [
+                        'upload' => [
+                            'id' => 100,
+                            'date_range_start' => '2025-01-01',
+                            'statement_month' => '2025-01-01',
+                        ],
+                        'closing_date' => '2025-01-31',
+                        'opening_balance' => 10.0,
+                        'closing_balance' => 20.0,
+                        'running_balance_status' => 'pass',
+                        'running_balance_note' => '10 rows tested, 0 breaks',
+                    ],
+                    [
+                        'upload' => [
+                            'id' => 101,
+                            'date_range_start' => '2025-03-01',
+                            'statement_month' => '2025-03-01',
+                        ],
+                        'closing_date' => '2025-03-31',
+                        'opening_balance' => 20.0,
+                        'closing_balance' => 30.0,
+                        'running_balance_status' => 'pass',
+                        'running_balance_note' => '12 rows tested, 0 breaks',
+                    ],
+                ],
+            ],
+            [
+                'account' => [
+                    'id' => 11,
+                    'account_name' => 'Savings Account',
+                    'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
+                    'institution_name' => 'Test Bank',
+                ],
+                'uploads' => [],
+            ],
+            [
+                'account' => [
+                    'id' => 12,
+                    'account_name' => 'Trade Creditor',
+                    'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_TRADE,
+                ],
+                'uploads' => [],
+            ],
+        ], [
+            10 => [
+                '2025-01-01' => 5,
+                '2025-03-01' => 7,
+            ],
+        ], [
+            10 => [
+                '2025-01-01' => 5,
+                '2025-03-01' => 7,
+            ],
+        ]);
+
+        $harness->assertCount(2, $options);
+        $harness->assertSame('Current Account (1234)', $options[0]['label'] ?? null);
+        $harness->assertSame('Savings Account (Test Bank)', $options[1]['label'] ?? null);
+
+        $currentMonths = array_column((array)($options[0]['months'] ?? []), null, 'month_key');
+        $savingsMonths = array_column((array)($options[1]['months'] ?? []), null, 'month_key');
+
+        $harness->assertSame('pass', $currentMonths['2025-01-01']['status'] ?? null);
+        $harness->assertSame(5, $currentMonths['2025-01-01']['value'] ?? null);
+        $harness->assertSame('pass', $currentMonths['2025-02-01']['status'] ?? null);
+        $harness->assertTrue(str_contains((string)($currentMonths['2025-02-01']['tooltip'] ?? ''), 'surrounding statement balances match'));
+        $harness->assertSame('pass', $currentMonths['2025-03-01']['status'] ?? null);
+        $harness->assertSame(7, $currentMonths['2025-03-01']['value'] ?? null);
+
+        $harness->assertSame('warning', $savingsMonths['2025-01-01']['status'] ?? null);
+        $harness->assertSame(0, $savingsMonths['2025-01-01']['value'] ?? null);
+        $harness->assertTrue(str_contains((string)($savingsMonths['2025-01-01']['tooltip'] ?? ''), 'Savings Account (Test Bank), Jan 2025'));
+    });
 });

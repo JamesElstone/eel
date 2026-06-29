@@ -26,6 +26,43 @@ $harness->run(StatementUploadService::class, static function (GeneratedServiceCl
         $harness->assertSame('Zero-row CSVs', $options['zero_row_csv'] ?? null);
     });
 
+    $harness->check(StatementUploadService::class, 'rejects more than thirteen CSV files in one batch', static function () use ($harness, $service): void {
+        $fileNames = [];
+        $fileTypes = [];
+        $tmpNames = [];
+        $errors = [];
+        $sizes = [];
+
+        for ($index = 1; $index <= 14; $index++) {
+            $fileNames[] = 'statement-' . $index . '.csv';
+            $fileTypes[] = 'text/csv';
+            $tmpNames[] = 'statement-' . $index . '.csv';
+            $errors[] = UPLOAD_ERR_OK;
+            $sizes[] = 123;
+        }
+
+        $result = $service->importUploadedStatements([
+            'company_id' => 1,
+            'account_id' => 1,
+            'accounting_period_id' => 1,
+        ], [
+            'statement_files' => [
+                'name' => $fileNames,
+                'type' => $fileTypes,
+                'tmp_name' => $tmpNames,
+                'error' => $errors,
+                'size' => $sizes,
+            ],
+        ]);
+
+        $harness->assertSame(false, $result['success'] ?? true);
+        $harness->assertSame(400, $result['http_status'] ?? null);
+        $harness->assertSame(
+            ['You can upload at most 13 CSV files at once.'],
+            $result['errors'] ?? null
+        );
+    });
+
     $harness->check(StatementUploadService::class, 'treats missing accounting period uploads as action required', static function () use ($harness, $service): void {
         $method = new ReflectionMethod(StatementUploadService::class, 'uploadMatchesHistoryFilter');
         $method->setAccessible(true);

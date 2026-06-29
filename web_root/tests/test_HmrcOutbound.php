@@ -10,9 +10,9 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 $harness = new GeneratedServiceClassTestHarness();
-$harness->run(HmrcOutbound::class, function (GeneratedServiceClassTestHarness $harness, HmrcOutbound $outbound): void {
-    $harness->check(HmrcOutbound::class, 'normalises VAT numbers and strips GB prefix', function () use ($harness): void {
-        $outbound = new HmrcOutbound(
+$harness->run(\eel_accounts\Outbound\HmrcOutbound::class, function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Outbound\HmrcOutbound $outbound): void {
+    $harness->check(\eel_accounts\Outbound\HmrcOutbound::class, 'normalises VAT numbers and strips GB prefix', function () use ($harness): void {
+        $outbound = new \eel_accounts\Outbound\HmrcOutbound(
             ['mode' => 'TEST', 'test_base_url' => 'https://example.test'],
             static fn(): array => ['status_code' => 200, 'headers' => [], 'body' => '{}']
         );
@@ -20,8 +20,8 @@ $harness->run(HmrcOutbound::class, function (GeneratedServiceClassTestHarness $h
         $harness->assertSame('123456789', $outbound->normaliseVatNumber(' GB 123 456 789 '));
     });
 
-    $harness->check(HmrcOutbound::class, 'supports GB VAT lookups', function () use ($harness): void {
-        $outbound = new HmrcOutbound(
+    $harness->check(\eel_accounts\Outbound\HmrcOutbound::class, 'supports GB VAT lookups', function () use ($harness): void {
+        $outbound = new \eel_accounts\Outbound\HmrcOutbound(
             ['mode' => 'TEST', 'test_base_url' => 'https://example.test'],
             static fn(): array => ['status_code' => 404, 'headers' => [], 'body' => '{}']
         );
@@ -30,8 +30,8 @@ $harness->run(HmrcOutbound::class, function (GeneratedServiceClassTestHarness $h
         $harness->assertTrue(!$outbound->supports('FR'));
     });
 
-    $harness->check(HmrcOutbound::class, 'returns an error result for blank VAT numbers', function () use ($harness): void {
-        $outbound = new HmrcOutbound(
+    $harness->check(\eel_accounts\Outbound\HmrcOutbound::class, 'returns an error result for blank VAT numbers', function () use ($harness): void {
+        $outbound = new \eel_accounts\Outbound\HmrcOutbound(
             ['mode' => 'TEST', 'test_base_url' => 'https://example.test'],
             static fn(): array => ['status_code' => 404, 'headers' => [], 'body' => '{}']
         );
@@ -39,8 +39,8 @@ $harness->run(HmrcOutbound::class, function (GeneratedServiceClassTestHarness $h
         $harness->assertSame('error', $outbound->validate('GB', '')->status);
     });
 
-    $harness->check(HmrcOutbound::class, 'builds anti-fraud validator config with HMRC defaults', function () use ($harness): void {
-        $config = HmrcOutbound::antiFraudValidatorConfig('LIVE');
+    $harness->check(\eel_accounts\Outbound\HmrcOutbound::class, 'builds anti-fraud validator config with HMRC defaults', function () use ($harness): void {
+        $config = \eel_accounts\Outbound\HmrcOutbound::antiFraudValidatorConfig('LIVE');
 
         $harness->assertSame('HMRC', $config['credential_provider'] ?? null);
         $harness->assertSame('FPH_VALIDATOR', $config['credential_tag'] ?? null);
@@ -48,9 +48,9 @@ $harness->run(HmrcOutbound::class, function (GeneratedServiceClassTestHarness $h
         $harness->assertSame('LIVE', $config['mode'] ?? null);
     });
 
-    $harness->check(HmrcOutbound::class, 'sends translated Gov headers through anti-fraud validation requests', function () use ($harness): void {
+    $harness->check(\eel_accounts\Outbound\HmrcOutbound::class, 'sends translated Gov headers through anti-fraud validation requests', function () use ($harness): void {
         $captured = null;
-        $outbound = new HmrcOutbound(
+        $outbound = new \eel_accounts\Outbound\HmrcOutbound(
             [
                 'mode' => 'TEST',
                 'test_base_url' => 'https://example.test',
@@ -85,8 +85,8 @@ $harness->run(HmrcOutbound::class, function (GeneratedServiceClassTestHarness $h
         $harness->assertSame('application/vnd.hmrc.1.0+json', $captured['headers']['Accept'] ?? null);
     });
 
-    $harness->check(HmrcOutbound::class, 'reports anti-fraud base URL configuration errors with anti-fraud wording', function () use ($harness): void {
-        $outbound = new HmrcOutbound([
+    $harness->check(\eel_accounts\Outbound\HmrcOutbound::class, 'reports anti-fraud base URL configuration errors with anti-fraud wording', function () use ($harness): void {
+        $outbound = new \eel_accounts\Outbound\HmrcOutbound([
             'mode' => 'TEST',
             'credential_provider' => 'HMRC',
             'credential_tag' => 'FPH_VALIDATOR',
@@ -108,7 +108,7 @@ $harness->run(HmrcOutbound::class, function (GeneratedServiceClassTestHarness $h
         }
     });
 
-    $harness->check(HmrcOutbound::class, 'reports anti-fraud credentials with missing tag details', function () use ($harness): void {
+    $harness->check(\eel_accounts\Outbound\HmrcOutbound::class, 'reports anti-fraud credentials with missing tag details', function () use ($harness): void {
         $tempPath = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR . 'hmrc-antifraud-api-keys.csv';
 
         if (!is_dir(dirname($tempPath))) {
@@ -123,7 +123,7 @@ $harness->run(HmrcOutbound::class, function (GeneratedServiceClassTestHarness $h
             ]) . PHP_EOL
         );
 
-        $outbound = new HmrcOutbound([
+        $outbound = new \eel_accounts\Outbound\HmrcOutbound([
             'mode' => 'TEST',
             'credential_provider' => 'HMRC',
             'credential_tag' => 'FPH_VALIDATOR',

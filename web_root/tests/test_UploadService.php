@@ -10,12 +10,12 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 $harness = new GeneratedServiceClassTestHarness();
-$harness->run(StatementUploadService::class, static function (GeneratedServiceClassTestHarness $harness, StatementUploadService $service): void {
-    $harness->check(StatementUploadService::class, 'returns no month status without a selected company or period', static function () use ($harness, $service): void {
+$harness->run(\eel_accounts\Service\StatementUploadService::class, static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\StatementUploadService $service): void {
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'returns no month status without a selected company or period', static function () use ($harness, $service): void {
         $harness->assertSame([], $service->buildMonthStatus(0, 0));
     });
 
-    $harness->check(StatementUploadService::class, 'provides upload history filter labels', static function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'provides upload history filter labels', static function () use ($harness, $service): void {
         $options = $service->uploadsHistoryFilterOptions();
 
         $harness->assertSame('All uploads', $options['all'] ?? null);
@@ -26,7 +26,7 @@ $harness->run(StatementUploadService::class, static function (GeneratedServiceCl
         $harness->assertSame('Zero-row CSVs', $options['zero_row_csv'] ?? null);
     });
 
-    $harness->check(StatementUploadService::class, 'rejects more than thirteen CSV files in one batch', static function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'rejects more than thirteen CSV files in one batch', static function () use ($harness, $service): void {
         $fileNames = [];
         $fileTypes = [];
         $tmpNames = [];
@@ -63,8 +63,8 @@ $harness->run(StatementUploadService::class, static function (GeneratedServiceCl
         );
     });
 
-    $harness->check(StatementUploadService::class, 'treats missing accounting period uploads as action required', static function () use ($harness, $service): void {
-        $method = new ReflectionMethod(StatementUploadService::class, 'uploadMatchesHistoryFilter');
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'treats missing accounting period uploads as action required', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod(\eel_accounts\Service\StatementUploadService::class, 'uploadMatchesHistoryFilter');
         $method->setAccessible(true);
 
         $harness->assertSame(true, $method->invoke(null, ['workflow_status' => 'uploaded'], 'action_required'));
@@ -73,24 +73,24 @@ $harness->run(StatementUploadService::class, static function (GeneratedServiceCl
         $harness->assertSame(true, $method->invoke(null, ['workflow_status' => 'staged'], 'ready'));
     });
 
-    $harness->check(StatementUploadService::class, 'matches zero-row uploads in the upload history filter', static function () use ($harness): void {
-        $method = new ReflectionMethod(StatementUploadService::class, 'uploadMatchesHistoryFilter');
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'matches zero-row uploads in the upload history filter', static function () use ($harness): void {
+        $method = new ReflectionMethod(\eel_accounts\Service\StatementUploadService::class, 'uploadMatchesHistoryFilter');
         $method->setAccessible(true);
 
         $harness->assertSame(true, $method->invoke(null, ['rows_parsed' => 0], 'zero_row_csv'));
         $harness->assertSame(false, $method->invoke(null, ['rows_parsed' => 1], 'zero_row_csv'));
     });
 
-    $harness->check(StatementUploadService::class, 'can fetch upload history without selected accounting period filtering', static function () use ($harness): void {
-        $method = new ReflectionMethod(StatementUploadService::class, 'fetchUploadHistory');
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'can fetch upload history without selected accounting period filtering', static function () use ($harness): void {
+        $method = new ReflectionMethod(\eel_accounts\Service\StatementUploadService::class, 'fetchUploadHistory');
         $parameters = $method->getParameters();
 
         $harness->assertSame('respectSelectedAccountingPeriod', $parameters[2]->getName() ?? null);
         $harness->assertSame(true, $parameters[2]->getDefaultValue() ?? null);
     });
 
-    $harness->check(StatementUploadService::class, 'marks duplicate file uploads by file hash', static function () use ($harness): void {
-        $method = new ReflectionMethod(StatementUploadService::class, 'annotateDuplicateFileUploads');
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'marks duplicate file uploads by file hash', static function () use ($harness): void {
+        $method = new ReflectionMethod(\eel_accounts\Service\StatementUploadService::class, 'annotateDuplicateFileUploads');
         $method->setAccessible(true);
 
         $rows = $method->invoke(null, [
@@ -103,8 +103,8 @@ $harness->run(StatementUploadService::class, static function (GeneratedServiceCl
         $harness->assertSame([true, false, true, false], array_map(static fn(array $row): bool => !empty($row['duplicate_file']), $rows));
     });
 
-    $harness->check(StatementUploadService::class, 'counts uploaded CSV data rows without requiring field mapping', static function () use ($harness, $service): void {
-        $method = new ReflectionMethod(StatementUploadService::class, 'countSourceDataRows');
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'counts uploaded CSV data rows without requiring field mapping', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod(\eel_accounts\Service\StatementUploadService::class, 'countSourceDataRows');
         $method->setAccessible(true);
         $errors = [];
 
@@ -115,8 +115,8 @@ $harness->run(StatementUploadService::class, static function (GeneratedServiceCl
         $harness->assertSame(93, $count);
     });
 
-    $harness->check(StatementUploadService::class, 'auto mapping defaults currency to GBP when no currency header exists', static function () use ($harness): void {
-        $mapping = StatementUploadService::autoMapHeaders([
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'auto mapping defaults currency to GBP when no currency header exists', static function () use ($harness): void {
+        $mapping = \eel_accounts\Service\StatementUploadService::autoMapHeaders([
             'date',
             'description',
             'amount',

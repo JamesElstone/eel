@@ -10,9 +10,9 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 $harness = new GeneratedServiceClassTestHarness();
-$harness->run(UploadStatementCoverageService::class, static function (GeneratedServiceClassTestHarness $harness, UploadStatementCoverageService $service): void {
-    $harness->check(UploadStatementCoverageService::class, 'builds month heatmap options from upload and continuity status', static function () use ($harness, $service): void {
-        $method = new ReflectionMethod(UploadStatementCoverageService::class, 'buildOptionsFromInputs');
+$harness->run(\eel_accounts\Service\UploadStatementCoverageService::class, static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\UploadStatementCoverageService $service): void {
+    $harness->check(\eel_accounts\Service\UploadStatementCoverageService::class, 'builds month heatmap options from upload and continuity status', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod(\eel_accounts\Service\UploadStatementCoverageService::class, 'buildOptionsFromInputs');
         $method->setAccessible(true);
 
         $options = $method->invoke($service, [
@@ -181,8 +181,8 @@ $harness->run(UploadStatementCoverageService::class, static function (GeneratedS
         $harness->assertTrue(str_contains((string)($months['2025-06-01']['tooltip'] ?? ''), '2 rows tested, 1 balance break'));
     });
 
-    $harness->check(UploadStatementCoverageService::class, 'marks opening accounting period boundary mismatches on the first rendered month', static function () use ($harness, $service): void {
-        $method = new ReflectionMethod(UploadStatementCoverageService::class, 'buildOptionsFromInputs');
+    $harness->check(\eel_accounts\Service\UploadStatementCoverageService::class, 'marks opening accounting period boundary mismatches on the first rendered month', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod(\eel_accounts\Service\UploadStatementCoverageService::class, 'buildOptionsFromInputs');
         $method->setAccessible(true);
 
         $options = $method->invoke($service, [
@@ -238,8 +238,8 @@ $harness->run(UploadStatementCoverageService::class, static function (GeneratedS
         $harness->assertTrue(str_contains((string)($months['2025-01-01']['tooltip'] ?? ''), '31/12/2024 at GBP 20.00; this statement opens on 02/01/2025 at GBP 30.00'));
     });
 
-    $harness->check(UploadStatementCoverageService::class, 'ignores overlapping duplicate statements when checking accounting period boundaries', static function () use ($harness, $service): void {
-        $method = new ReflectionMethod(UploadStatementCoverageService::class, 'buildOptionsFromInputs');
+    $harness->check(\eel_accounts\Service\UploadStatementCoverageService::class, 'ignores overlapping duplicate statements when checking accounting period boundaries', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod(\eel_accounts\Service\UploadStatementCoverageService::class, 'buildOptionsFromInputs');
         $method->setAccessible(true);
 
         $options = $method->invoke($service, [
@@ -325,8 +325,8 @@ $harness->run(UploadStatementCoverageService::class, static function (GeneratedS
         $harness->assertSame(false, str_contains((string)($months['2025-09-01']['tooltip'] ?? ''), '30/09/2025 at GBP 911.03; this statement opens on 01/09/2025 at GBP 49.02'));
     });
 
-    $harness->check(UploadStatementCoverageService::class, 'reports non-duplicate overlapping statement ranges', static function () use ($harness, $service): void {
-        $method = new ReflectionMethod(UploadStatementCoverageService::class, 'buildOptionsFromInputs');
+    $harness->check(\eel_accounts\Service\UploadStatementCoverageService::class, 'reports non-duplicate overlapping statement ranges', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod(\eel_accounts\Service\UploadStatementCoverageService::class, 'buildOptionsFromInputs');
         $method->setAccessible(true);
 
         $options = $method->invoke($service, [

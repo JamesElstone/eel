@@ -26,7 +26,7 @@ final class _license_fontsCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $text = (new LicenseService())->licenseText('fonts');
+        $text = (new \eel_accounts\Service\LicenseService())->licenseText('fonts');
 
         return '<pre class="license-text-panel">' . HelperFramework::escape($text) . '</pre>';
     }

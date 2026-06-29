@@ -42,6 +42,6 @@ function createTestPageServiceFramework(): PageServiceFramework
 {
     return new PageServiceFramework(
         new AppService(testPageServiceUploadBasePath()),
-        new SiteContextCoordinatorFramework(new AccountingContextService(), true)
+        new SiteContextCoordinatorFramework(new \eel_accounts\Service\AccountingContextService(), true)
     );
 }

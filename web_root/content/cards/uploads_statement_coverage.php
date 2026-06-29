@@ -29,7 +29,7 @@ final class _uploads_statement_coverageCard extends CardBaseFramework
         return [
             [
                 'key' => 'statement_coverage_heatmap',
-                'service' => UploadStatementCoverageService::class,
+                'service' => \eel_accounts\Service\UploadStatementCoverageService::class,
                 'method' => 'buildHeatmapOptions',
                 'params' => [
                     'companyId' => ':company.id',

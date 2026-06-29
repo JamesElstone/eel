@@ -9,11 +9,11 @@ declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
-(new GeneratedServiceClassTestHarness())->run(TransactionJournalService::class, static function (GeneratedServiceClassTestHarness $harness, TransactionJournalService $service): void {
-    $buildDesiredJournal = new ReflectionMethod(TransactionJournalService::class, 'buildDesiredJournal');
+(new GeneratedServiceClassTestHarness())->run(\eel_accounts\Service\TransactionJournalService::class, static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\TransactionJournalService $service): void {
+    $buildDesiredJournal = new ReflectionMethod(\eel_accounts\Service\TransactionJournalService::class, 'buildDesiredJournal');
     $buildDesiredJournal->setAccessible(true);
 
-    $harness->check(TransactionJournalService::class, 'posts bank payment to a trade creditor nominal', static function () use ($harness, $service, $buildDesiredJournal): void {
+    $harness->check(\eel_accounts\Service\TransactionJournalService::class, 'posts bank payment to a trade creditor nominal', static function () use ($harness, $service, $buildDesiredJournal): void {
         $journal = $buildDesiredJournal->invoke($service, [
             'id' => 501,
             'company_id' => 1,
@@ -26,10 +26,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             'category_status' => 'manual',
             'is_internal_transfer' => 1,
             'source_account_name' => 'BANK Current',
-            'source_account_type' => CompanyAccountService::TYPE_BANK,
+            'source_account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
             'source_account_nominal_id' => 1001,
             'transfer_account_name' => 'Example Trade Supplier',
-            'transfer_account_type' => CompanyAccountService::TYPE_TRADE,
+            'transfer_account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_TRADE,
             'transfer_account_nominal_id' => 2001,
         ], 0);
 
@@ -40,7 +40,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $harness->assertSame('100.00', (string)$lines[1]['credit']);
     });
 
-    $harness->check(TransactionJournalService::class, 'posts trade purchase on credit to creditor nominal', static function () use ($harness, $service, $buildDesiredJournal): void {
+    $harness->check(\eel_accounts\Service\TransactionJournalService::class, 'posts trade purchase on credit to creditor nominal', static function () use ($harness, $service, $buildDesiredJournal): void {
         $journal = $buildDesiredJournal->invoke($service, [
             'id' => 502,
             'company_id' => 1,
@@ -52,7 +52,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             'nominal_account_id' => 5000,
             'category_status' => 'manual',
             'source_account_name' => 'Example Trade Supplier',
-            'source_account_type' => CompanyAccountService::TYPE_TRADE,
+            'source_account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_TRADE,
             'source_account_nominal_id' => 2001,
         ], 0);
 

@@ -10,9 +10,9 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 $harness = new GeneratedServiceClassTestHarness();
-$harness->run(DashboardRepository::class, function (GeneratedServiceClassTestHarness $harness): void {
-    $harness->check(DashboardRepository::class, 'normalises month and category filters', function () use ($harness): void {
-        $repository = new DashboardRepository();
+$harness->run(\eel_accounts\Repository\DashboardRepository::class, function (GeneratedServiceClassTestHarness $harness): void {
+    $harness->check(\eel_accounts\Repository\DashboardRepository::class, 'normalises month and category filters', function () use ($harness): void {
+        $repository = new \eel_accounts\Repository\DashboardRepository();
 
         $harness->assertSame('2026-03-01', $repository->normaliseTransactionMonthFilter('2026-03-01'));
         $harness->assertSame('', $repository->normaliseTransactionMonthFilter('2026-03-15'));
@@ -20,9 +20,9 @@ $harness->run(DashboardRepository::class, function (GeneratedServiceClassTestHar
         $harness->assertSame('all', $repository->normaliseTransactionCategoryFilter('unexpected'));
     });
 
-    $harness->check(DashboardRepository::class, 'maps red setup health rows into dashboard actions', function () use ($harness): void {
-        $repository = new DashboardRepository();
-        $method = new ReflectionMethod(DashboardRepository::class, 'setupHealthContextToActionItems');
+    $harness->check(\eel_accounts\Repository\DashboardRepository::class, 'maps red setup health rows into dashboard actions', function () use ($harness): void {
+        $repository = new \eel_accounts\Repository\DashboardRepository();
+        $method = new ReflectionMethod(\eel_accounts\Repository\DashboardRepository::class, 'setupHealthContextToActionItems');
         $method->setAccessible(true);
 
         $actions = $method->invoke($repository, [
@@ -58,9 +58,9 @@ $harness->run(DashboardRepository::class, function (GeneratedServiceClassTestHar
         $harness->assertSame('Company Health: Nominal accounts', $actions[1]['title'] ?? '');
     });
 
-    $harness->check(DashboardRepository::class, 'keeps company requirement visible with setup health actions', function () use ($harness): void {
-        $repository = new DashboardRepository();
-        $method = new ReflectionMethod(DashboardRepository::class, 'finaliseActivity');
+    $harness->check(\eel_accounts\Repository\DashboardRepository::class, 'keeps company requirement visible with setup health actions', function () use ($harness): void {
+        $repository = new \eel_accounts\Repository\DashboardRepository();
+        $method = new ReflectionMethod(\eel_accounts\Repository\DashboardRepository::class, 'finaliseActivity');
         $method->setAccessible(true);
 
         $activity = $method->invoke($repository, [
@@ -80,9 +80,9 @@ $harness->run(DashboardRepository::class, function (GeneratedServiceClassTestHar
         $harness->assertSame('Company Health: Company', $activity[1]['title'] ?? '');
     });
 
-    $harness->check(DashboardRepository::class, 'adds onboarding actions for missing bank accounts and uploads', function () use ($harness): void {
-        $repository = new DashboardRepository();
-        $method = new ReflectionMethod(DashboardRepository::class, 'appendCompanySetupActions');
+    $harness->check(\eel_accounts\Repository\DashboardRepository::class, 'adds onboarding actions for missing bank accounts and uploads', function () use ($harness): void {
+        $repository = new \eel_accounts\Repository\DashboardRepository();
+        $method = new ReflectionMethod(\eel_accounts\Repository\DashboardRepository::class, 'appendCompanySetupActions');
         $method->setAccessible(true);
         $activity = [];
 
@@ -95,9 +95,9 @@ $harness->run(DashboardRepository::class, function (GeneratedServiceClassTestHar
         $harness->assertSame('No bank statement files have been uploaded for this company yet.', $activity[1]['detail'] ?? '');
     });
 
-    $harness->check(DashboardRepository::class, 'skips onboarding actions when bank accounts and uploads exist', function () use ($harness): void {
-        $repository = new DashboardRepository();
-        $method = new ReflectionMethod(DashboardRepository::class, 'appendCompanySetupActions');
+    $harness->check(\eel_accounts\Repository\DashboardRepository::class, 'skips onboarding actions when bank accounts and uploads exist', function () use ($harness): void {
+        $repository = new \eel_accounts\Repository\DashboardRepository();
+        $method = new ReflectionMethod(\eel_accounts\Repository\DashboardRepository::class, 'appendCompanySetupActions');
         $method->setAccessible(true);
         $activity = [];
 
@@ -106,9 +106,9 @@ $harness->run(DashboardRepository::class, function (GeneratedServiceClassTestHar
         $harness->assertCount(0, $activity);
     });
 
-    $harness->check(DashboardRepository::class, 'adds missing transaction action when selected year has no transactions', function () use ($harness): void {
-        $repository = new DashboardRepository();
-        $method = new ReflectionMethod(DashboardRepository::class, 'appendMissingTransactionAction');
+    $harness->check(\eel_accounts\Repository\DashboardRepository::class, 'adds missing transaction action when selected year has no transactions', function () use ($harness): void {
+        $repository = new \eel_accounts\Repository\DashboardRepository();
+        $method = new ReflectionMethod(\eel_accounts\Repository\DashboardRepository::class, 'appendMissingTransactionAction');
         $method->setAccessible(true);
         $activity = [];
 
@@ -119,9 +119,9 @@ $harness->run(DashboardRepository::class, function (GeneratedServiceClassTestHar
         $harness->assertSame('The selected accounting period is missing any transaction records.', $activity[0]['detail'] ?? '');
     });
 
-    $harness->check(DashboardRepository::class, 'skips missing transaction action when selected year has transactions', function () use ($harness): void {
-        $repository = new DashboardRepository();
-        $method = new ReflectionMethod(DashboardRepository::class, 'appendMissingTransactionAction');
+    $harness->check(\eel_accounts\Repository\DashboardRepository::class, 'skips missing transaction action when selected year has transactions', function () use ($harness): void {
+        $repository = new \eel_accounts\Repository\DashboardRepository();
+        $method = new ReflectionMethod(\eel_accounts\Repository\DashboardRepository::class, 'appendMissingTransactionAction');
         $method->setAccessible(true);
         $activity = [];
 

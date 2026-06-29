@@ -21,11 +21,11 @@ $harness->run(_banking_reconciliationCard::class, static function (GeneratedServ
                     [
                         'account' => [
                             'account_name' => 'Current Account',
-                            'account_type' => CompanyAccountService::TYPE_BANK,
+                            'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
                             'institution_name' => 'Example Bank',
                             'account_identifier' => '',
                         ],
-                        'account_type' => CompanyAccountService::TYPE_BANK,
+                        'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
                         'statement_continuity_status' => 'pass',
                         'running_balance_status' => 'pass',
                         'ledger_reconciliation_status' => 'warning',
@@ -55,11 +55,11 @@ $harness->run(_banking_reconciliationCard::class, static function (GeneratedServ
                     [
                         'account' => [
                             'account_name' => 'Example Bank - Saving Pot (20%)',
-                            'account_type' => CompanyAccountService::TYPE_BANK,
+                            'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
                             'institution_name' => 'Example Bank',
                             'account_identifier' => 'POT(20%)',
                         ],
-                        'account_type' => CompanyAccountService::TYPE_BANK,
+                        'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
                         'statement_continuity_status' => 'not_available',
                         'running_balance_status' => 'not_available',
                         'ledger_reconciliation_status' => 'not_available',
@@ -72,11 +72,11 @@ $harness->run(_banking_reconciliationCard::class, static function (GeneratedServ
                     [
                         'account' => [
                             'account_name' => 'Example Trade Supplier',
-                            'account_type' => CompanyAccountService::TYPE_TRADE,
+                            'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_TRADE,
                             'institution_name' => 'Example Trade Supplier',
                             'account_identifier' => 'E57808',
                         ],
-                        'account_type' => CompanyAccountService::TYPE_TRADE,
+                        'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_TRADE,
                         'ledger_reconciliation_status' => 'pass',
                         'uploads' => [],
                         'trade_summary' => [
@@ -138,10 +138,10 @@ $harness->run(_banking_reconciliationCard::class, static function (GeneratedServ
                         'account' => [
                             'id' => 47,
                             'account_name' => 'Current Account',
-                            'account_type' => CompanyAccountService::TYPE_BANK,
+                            'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
                             'institution_name' => 'Example Bank',
                         ],
-                        'account_type' => CompanyAccountService::TYPE_BANK,
+                        'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
                         'statement_continuity_status' => 'pass',
                         'running_balance_status' => 'pass',
                         'ledger_reconciliation_status' => 'warning',
@@ -152,10 +152,10 @@ $harness->run(_banking_reconciliationCard::class, static function (GeneratedServ
                         'account' => [
                             'id' => 48,
                             'account_name' => 'Example Trade Supplier',
-                            'account_type' => CompanyAccountService::TYPE_TRADE,
+                            'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_TRADE,
                             'institution_name' => 'Example Trade Supplier',
                         ],
-                        'account_type' => CompanyAccountService::TYPE_TRADE,
+                        'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_TRADE,
                         'ledger_reconciliation_status' => 'pass',
                         'trade_summary' => [],
                     ],

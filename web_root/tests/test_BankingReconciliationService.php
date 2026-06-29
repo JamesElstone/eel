@@ -10,8 +10,8 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 $harness = new GeneratedServiceClassTestHarness();
-$harness->run(BankingReconciliationService::class, static function (GeneratedServiceClassTestHarness $harness, BankingReconciliationService $service): void {
-    $harness->check(BankingReconciliationService::class, 'uses adjacent previous statement for selected-period opening continuity', static function () use ($harness, $service): void {
+$harness->run(\eel_accounts\Service\BankingReconciliationService::class, static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\BankingReconciliationService $service): void {
+    $harness->check(\eel_accounts\Service\BankingReconciliationService::class, 'uses adjacent previous statement for selected-period opening continuity', static function () use ($harness, $service): void {
         $applyContinuity = banking_reconciliation_private_method($service, 'applyContinuityChecks');
         $filterAccountingPeriod = banking_reconciliation_private_method($service, 'filterUploadAnalysesForAccountingPeriod');
 
@@ -28,7 +28,7 @@ $harness->run(BankingReconciliationService::class, static function (GeneratedSer
         $harness->assertSame('Opening balance matches the previous statement closing balance.', $visible[0]['continuity_note'] ?? null);
     });
 
-    $harness->check(BankingReconciliationService::class, 'hides adjacent context statements from normal banking reconciliation uploads', static function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\BankingReconciliationService::class, 'hides adjacent context statements from normal banking reconciliation uploads', static function () use ($harness, $service): void {
         $applyContinuity = banking_reconciliation_private_method($service, 'applyContinuityChecks');
         $filterAccountingPeriod = banking_reconciliation_private_method($service, 'filterUploadAnalysesForAccountingPeriod');
 
@@ -46,7 +46,7 @@ $harness->run(BankingReconciliationService::class, static function (GeneratedSer
         ));
     });
 
-    $harness->check(BankingReconciliationService::class, 'ledger summary uses latest selected-period statement after adjacent filtering', static function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\BankingReconciliationService::class, 'ledger summary uses latest selected-period statement after adjacent filtering', static function () use ($harness, $service): void {
         $applyContinuity = banking_reconciliation_private_method($service, 'applyContinuityChecks');
         $filterAccountingPeriod = banking_reconciliation_private_method($service, 'filterUploadAnalysesForAccountingPeriod');
         $buildLedgerSummary = banking_reconciliation_private_method($service, 'buildLedgerReconciliationSummary');
@@ -64,7 +64,7 @@ $harness->run(BankingReconciliationService::class, static function (GeneratedSer
     });
 });
 
-function banking_reconciliation_private_method(BankingReconciliationService $service, string $methodName): ReflectionMethod
+function banking_reconciliation_private_method(\eel_accounts\Service\BankingReconciliationService $service, string $methodName): ReflectionMethod
 {
     $method = (new ReflectionClass($service))->getMethod($methodName);
     $method->setAccessible(true);

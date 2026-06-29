@@ -53,7 +53,7 @@ final class TestPageArchitectureHarness
 
         $page = (new PageFactoryFramework())->create('dashboard');
         $this->assertSame(_dashboard::class, $page::class);
-        $this->assertSame([CompanyAccountService::class], $page->services());
+        $this->assertSame([\eel_accounts\Service\CompanyAccountService::class], $page->services());
     }
 
     private function testLogsPageResolvesAllCards(): void
@@ -417,6 +417,11 @@ final class TestPageArchitectureHarness
 
     private function loadPageCards(string $pageKey): PageInterfaceFramework
     {
+        $navPageFile = APP_PAGES . $pageKey . '.nav.php';
+        if (is_file($navPageFile)) {
+            require_once $navPageFile;
+        }
+
         $page = (new PageFactoryFramework())->create($pageKey);
 
         foreach ($page->cards() as $cardKey) {

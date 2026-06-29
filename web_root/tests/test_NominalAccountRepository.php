@@ -10,8 +10,8 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 $harness = new GeneratedServiceClassTestHarness();
-$harness->run(NominalAccountRepository::class, function (GeneratedServiceClassTestHarness $harness, NominalAccountRepository $repository): void {
-    $harness->check(NominalAccountRepository::class, 'deletes unused nominal accounts', function () use ($harness, $repository): void {
+$harness->run(\eel_accounts\Repository\NominalAccountRepository::class, function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Repository\NominalAccountRepository $repository): void {
+    $harness->check(\eel_accounts\Repository\NominalAccountRepository::class, 'deletes unused nominal accounts', function () use ($harness, $repository): void {
         $nominalId = nominalAccountRepositoryInsertNominal('Unused Delete Fixture');
 
         $harness->assertSame(0, $repository->nominalReferenceCount($nominalId));
@@ -20,7 +20,7 @@ $harness->run(NominalAccountRepository::class, function (GeneratedServiceClassTe
         $harness->assertSame(null, $repository->findById($nominalId));
     });
 
-    $harness->check(NominalAccountRepository::class, 'blocks deleting nominal accounts assigned as company defaults', function () use ($harness, $repository): void {
+    $harness->check(\eel_accounts\Repository\NominalAccountRepository::class, 'blocks deleting nominal accounts assigned as company defaults', function () use ($harness, $repository): void {
         $nominalId = nominalAccountRepositoryInsertNominal('Default Reference Fixture');
         $companyId = nominalAccountRepositoryInsertCompany('Default Reference Fixture Limited');
 
@@ -41,7 +41,7 @@ $harness->run(NominalAccountRepository::class, function (GeneratedServiceClassTe
         $harness->assertSame(true, $repository->findById($nominalId) !== null);
     });
 
-    $harness->check(NominalAccountRepository::class, 'blocks deleting nominal accounts assigned to bank or trade accounts', function () use ($harness, $repository): void {
+    $harness->check(\eel_accounts\Repository\NominalAccountRepository::class, 'blocks deleting nominal accounts assigned to bank or trade accounts', function () use ($harness, $repository): void {
         $nominalId = nominalAccountRepositoryInsertNominal('Account Reference Fixture');
         $companyId = nominalAccountRepositoryInsertCompany('Account Reference Fixture Limited');
 
@@ -61,12 +61,12 @@ $harness->run(NominalAccountRepository::class, function (GeneratedServiceClassTe
         $harness->assertSame(false, $repository->deleteNominalAccountIfUnused($nominalId));
     });
 
-    $harness->check(NominalAccountRepository::class, 'catalog still renders when an optional reference table is absent', function () use ($harness): void {
+    $harness->check(\eel_accounts\Repository\NominalAccountRepository::class, 'catalog still renders when an optional reference table is absent', function () use ($harness): void {
         $nominalId = nominalAccountRepositoryInsertNominal('Missing Reference Table Fixture');
 
         InterfaceDB::execute('DROP TABLE IF EXISTS corporation_tax_treatment_rules');
 
-        $repository = new NominalAccountRepository();
+        $repository = new \eel_accounts\Repository\NominalAccountRepository();
         $catalog = $repository->fetchNominalAccountCatalog();
         $fixtureRow = null;
 

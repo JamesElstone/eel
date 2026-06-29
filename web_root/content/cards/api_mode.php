@@ -22,8 +22,8 @@ final class _api_modeCard extends CardBaseFramework
     {
         $page = (array)($context['page'] ?? []);
 
-        $companiesHouseApiMode = AccountingConfigurationStore::companiesHouseMode();
-        $hmrcApiMode = AccountingConfigurationStore::hmrcMode();
+        $companiesHouseApiMode = \eel_accounts\Store\AccountingConfigurationStore::companiesHouseMode();
+        $hmrcApiMode = \eel_accounts\Store\AccountingConfigurationStore::hmrcMode();
 
         $apiCredentialCheckResults = (array)($page['api_credential_check_results'] ?? []);
         $messages = (array)($page['api_mode_messages'] ?? []);

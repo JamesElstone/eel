@@ -10,9 +10,9 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 (new GeneratedServiceClassTestHarness())->run(
-    AssetService::class,
-    static function (GeneratedServiceClassTestHarness $harness, AssetService $service): void {
-        $harness->check(AssetService::class, 'fixed asset schema is available', static function () use ($harness, $service): void {
+    \eel_accounts\Service\AssetService::class,
+    static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\AssetService $service): void {
+        $harness->check(\eel_accounts\Service\AssetService::class, 'fixed asset schema is available', static function () use ($harness, $service): void {
             $harness->assertTrue(InterfaceDB::tableExists('asset_register'));
             $harness->assertTrue(InterfaceDB::tableExists('asset_depreciation_entries'));
 
@@ -20,7 +20,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(true, $pageData['schema_ready'] ?? false);
         });
 
-        $harness->check(AssetService::class, 'journal source enum supports asset postings', static function () use ($harness): void {
+        $harness->check(\eel_accounts\Service\AssetService::class, 'journal source enum supports asset postings', static function () use ($harness): void {
             if (InterfaceDB::driverName() === 'sqlite') {
                 $schemaPath = PROJECT_ROOT . 'db_schema' . DIRECTORY_SEPARATOR . 'eel_accounts.schema.sql';
                 $columnType = is_file($schemaPath) ? (string)file_get_contents($schemaPath) : '';

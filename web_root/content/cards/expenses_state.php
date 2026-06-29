@@ -19,7 +19,7 @@ final class _expenses_stateCard extends CardBaseFramework
         return [
             [
                 'key' => 'expensesPageData',
-                'service' => ExpenseClaimService::class,
+                'service' => \eel_accounts\Service\ExpenseClaimService::class,
                 'method' => 'fetchPageData',
                 'params' => [
                     'companyId' => ':company_id',

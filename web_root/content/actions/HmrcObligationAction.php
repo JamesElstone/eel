@@ -13,7 +13,7 @@ final class HmrcObligationAction implements ActionInterfaceFramework
     {
         $intent = trim((string)$request->input('intent', $request->input('global_action', '')));
         $companyId = (int)$request->input('company_id', 0);
-        $service = new HmrcObligationService();
+        $service = new \eel_accounts\Service\HmrcObligationService();
 
         try {
             $result = match ($intent) {

@@ -9,7 +9,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
-(new GeneratedServiceClassTestHarness())->run(ApiHelperOutbound::class, static function (GeneratedServiceClassTestHarness $harness): void {
+(new GeneratedServiceClassTestHarness())->run(\ApiHelperOutbound::class, static function (GeneratedServiceClassTestHarness $harness): void {
     $tempPath = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR . 'outbound-helper-commented-api-keys.csv';
 
     if (!is_dir(dirname($tempPath))) {
@@ -27,16 +27,16 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         ]) . PHP_EOL
     );
 
-    $harness->check(ApiHelperOutbound::class, 'ignores hash-prefixed comment lines in api.keys', static function () use ($harness, $tempPath): void {
-        $catalog = ApiHelperOutbound::credentialCatalog($tempPath);
+    $harness->check(\ApiHelperOutbound::class, 'ignores hash-prefixed comment lines in api.keys', static function () use ($harness, $tempPath): void {
+        $catalog = \ApiHelperOutbound::credentialCatalog($tempPath);
 
         $harness->assertCount(2, $catalog);
         $harness->assertSame('test-key:', $catalog['COMPANIESHOUSE']['COMPANY_LOOKUP']['TEST']['api_key']);
         $harness->assertSame('client-id:client-secret', $catalog['HMRC']['VAT_CHECK']['TEST']['api_key']);
     });
 
-    $harness->check(ApiHelperOutbound::class, 'loads credentials correctly when comments precede the header row', static function () use ($harness, $tempPath): void {
-        $credential = ApiHelperOutbound::loadCredential('COMPANIESHOUSE', 'COMPANY_LOOKUP', 'TEST', $tempPath);
+    $harness->check(\ApiHelperOutbound::class, 'loads credentials correctly when comments precede the header row', static function () use ($harness, $tempPath): void {
+        $credential = \ApiHelperOutbound::loadCredential('COMPANIESHOUSE', 'COMPANY_LOOKUP', 'TEST', $tempPath);
 
         $harness->assertSame('COMPANIESHOUSE', $credential['provider']);
         $harness->assertSame('COMPANY_LOOKUP', $credential['tag']);
@@ -44,3 +44,4 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $harness->assertSame('HTTPS', $credential['schema']);
     });
 });
+

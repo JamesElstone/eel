@@ -142,8 +142,8 @@ function ensureCompanyStoreCompany(): int
 }
 
 $harness = new GeneratedServiceClassTestHarness();
-$harness->run(AccountingContextService::class, function (GeneratedServiceClassTestHarness $harness, AccountingContextService $service): void {
-    $harness->check(AccountingContextService::class, 'returns empty selector options when no companies exist', function () use (
+$harness->run(\eel_accounts\Service\AccountingContextService::class, function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\AccountingContextService $service): void {
+    $harness->check(\eel_accounts\Service\AccountingContextService::class, 'returns empty selector options when no companies exist', function () use (
         $harness,
         $service
     ): void {
@@ -179,18 +179,12 @@ $harness->run(AccountingContextService::class, function (GeneratedServiceClassTe
         $harness->assertSame(true, $selectors[1]['disabled'] ?? null);
     });
 
-    $harness->check(AccountingContextService::class, 'returns company and topbar accounting-period selectors when companies exist', function () use (
+    $harness->check(\eel_accounts\Service\AccountingContextService::class, 'returns company and topbar accounting-period selectors when companies exist', function () use (
         $harness,
         $service
     ): void {
         resetCompanyStoreSession();
-        $companies = (new CompanyRepository())->fetchCompanySelectorRows();
-        if ($companies === []) {
-            ensureCompanyStoreCompany();
-            $companies = (new CompanyRepository())->fetchCompanySelectorRows();
-        }
-
-        $requestedCompanyId = (int)($companies[0]['id'] ?? 0);
+        $requestedCompanyId = ensureCompanyStoreCompany();
         if ($requestedCompanyId <= 0) {
             $harness->skip('skipped, due to no resolvable company id');
         }
@@ -203,7 +197,7 @@ $harness->run(AccountingContextService::class, function (GeneratedServiceClassTe
         );
         $context = $result->context();
         $selectors = $result->selectors();
-        $expectedAccountingPeriods = (new AccountingPeriodRepository())->fetchAccountingPeriods($requestedCompanyId);
+        $expectedAccountingPeriods = (new \eel_accounts\Repository\AccountingPeriodRepository())->fetchAccountingPeriods($requestedCompanyId);
 
         $harness->assertSame($requestedCompanyId, (int)($context['site_context']['company_id'] ?? 0));
         $harness->assertSame($requestedCompanyId, (int)($context['company']['id'] ?? 0));
@@ -220,18 +214,12 @@ $harness->run(AccountingContextService::class, function (GeneratedServiceClassTe
         }
     });
 
-    $harness->check(AccountingContextService::class, 'handles named site-context selector input values', function () use (
+    $harness->check(\eel_accounts\Service\AccountingContextService::class, 'handles named site-context selector input values', function () use (
         $harness,
         $service
     ): void {
         resetCompanyStoreSession();
-        $companies = (new CompanyRepository())->fetchCompanySelectorRows();
-        if ($companies === []) {
-            ensureCompanyStoreCompany();
-            $companies = (new CompanyRepository())->fetchCompanySelectorRows();
-        }
-
-        $companyId = (int)($companies[0]['id'] ?? 0);
+        $companyId = ensureCompanyStoreCompany();
         if ($companyId <= 0) {
             $harness->skip('skipped, due to no resolvable company id');
         }
@@ -245,10 +233,10 @@ $harness->run(AccountingContextService::class, function (GeneratedServiceClassTe
         $harness->assertTrue($result->isSuccess());
         $harness->assertSame($companyId, $service->companyId());
 
-        $accountingPeriods = (new AccountingPeriodRepository())->fetchAccountingPeriods($companyId);
+        $accountingPeriods = (new \eel_accounts\Repository\AccountingPeriodRepository())->fetchAccountingPeriods($companyId);
         if ($accountingPeriods === []) {
             ensureCompanyStoreCompany();
-            $accountingPeriods = (new AccountingPeriodRepository())->fetchAccountingPeriods($companyId);
+            $accountingPeriods = (new \eel_accounts\Repository\AccountingPeriodRepository())->fetchAccountingPeriods($companyId);
         }
 
         $accountingPeriodId = (int)($accountingPeriods[0]['id'] ?? 0);

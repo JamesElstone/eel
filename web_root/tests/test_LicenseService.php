@@ -11,24 +11,24 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 $harness = new GeneratedServiceClassTestHarness();
 
-$harness->run('LicenseService', function (GeneratedServiceClassTestHarness $harness, object $instance): void {
-    if (!$instance instanceof LicenseService) {
+$harness->run('eel_accounts\Service\LicenseService', function (GeneratedServiceClassTestHarness $harness, object $instance): void {
+    if (!$instance instanceof \eel_accounts\Service\LicenseService) {
         throw new RuntimeException('Unexpected LicenseService instance.');
     }
 
-    $harness->check('LicenseService', 'lists the three project license areas', function () use ($harness, $instance): void {
+    $harness->check('eel_accounts\Service\LicenseService', 'lists the three project license areas', function () use ($harness, $instance): void {
         $licenses = $instance->licenseIndex();
 
         $harness->assertSame(['bsd_3_clause', 'agpl_3_0', 'fonts'], array_keys($licenses));
     });
 
-    $harness->check('LicenseService', 'reads bundled license text from project files', function () use ($harness, $instance): void {
+    $harness->check('eel_accounts\Service\LicenseService', 'reads bundled license text from project files', function () use ($harness, $instance): void {
         $harness->assertTrue(str_contains($instance->licenseText('bsd_3_clause'), 'BSD 3-Clause License'));
         $harness->assertTrue(str_contains($instance->licenseText('agpl_3_0'), 'GNU AFFERO GENERAL PUBLIC LICENSE'));
         $harness->assertTrue(str_contains($instance->licenseText('fonts'), 'SIL OPEN FONT LICENSE'));
     });
 
-    $harness->check('LicenseService', 'rejects unknown license keys', function () use ($harness, $instance): void {
+    $harness->check('eel_accounts\Service\LicenseService', 'rejects unknown license keys', function () use ($harness, $instance): void {
         $thrown = false;
 
         try {

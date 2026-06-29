@@ -11,8 +11,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 $harness = new GeneratedServiceClassTestHarness();
 
-$harness->run('FileCheckService', function (GeneratedServiceClassTestHarness $harness, object $instance): void {
-    if (!$instance instanceof FileCheckService) {
+$harness->run('eel_accounts\Service\FileCheckService', function (GeneratedServiceClassTestHarness $harness, object $instance): void {
+    if (!$instance instanceof \eel_accounts\Service\FileCheckService) {
         throw new RuntimeException('Unexpected FileCheckService instance.');
     }
 
@@ -29,7 +29,7 @@ $harness->run('FileCheckService', function (GeneratedServiceClassTestHarness $ha
         43 => '00001234',
         44 => 'ACME123',
     ];
-    $service = new FileCheckService(
+    $service = new \eel_accounts\Service\FileCheckService(
         $uploads,
         null,
         static fn(int $companyId): string => (string)($companyNumbersById[$companyId] ?? '')
@@ -45,62 +45,62 @@ $harness->run('FileCheckService', function (GeneratedServiceClassTestHarness $ha
     file_put_contents($existingFile, 'probe', LOCK_EX);
 
     try {
-        $harness->check('FileCheckService', 'test directory handler returns true for an existing directory', function () use ($harness, $existingDirectory): void {
+        $harness->check('eel_accounts\Service\FileCheckService', 'test directory handler returns true for an existing directory', function () use ($harness, $existingDirectory): void {
             $harness->assertTrue(fileCheckTestDirectoryExists($existingDirectory));
         });
 
-        $harness->check('FileCheckService', 'test directory handler returns false for a missing directory', function () use ($harness, $missingDirectory): void {
+        $harness->check('eel_accounts\Service\FileCheckService', 'test directory handler returns false for a missing directory', function () use ($harness, $missingDirectory): void {
             $harness->assertSame(false, fileCheckTestDirectoryExists($missingDirectory));
         });
 
-        $harness->check('FileCheckService', 'test file handler returns true for an existing file', function () use ($harness, $existingFile): void {
+        $harness->check('eel_accounts\Service\FileCheckService', 'test file handler returns true for an existing file', function () use ($harness, $existingFile): void {
             $harness->assertTrue(fileCheckTestFileExists($existingFile));
         });
 
-        $harness->check('FileCheckService', 'test file handler returns false for a missing file', function () use ($harness, $missingDirectory): void {
+        $harness->check('eel_accounts\Service\FileCheckService', 'test file handler returns false for a missing file', function () use ($harness, $missingDirectory): void {
             $harness->assertSame(false, fileCheckTestFileExists($missingDirectory . DIRECTORY_SEPARATOR . 'missing.txt'));
         });
 
-        $harness->check('FileCheckService', 'test read handler returns true for an existing readable directory', function () use ($harness, $existingDirectory): void {
+        $harness->check('eel_accounts\Service\FileCheckService', 'test read handler returns true for an existing readable directory', function () use ($harness, $existingDirectory): void {
             $harness->assertTrue(fileCheckTestCanRead($existingDirectory));
         });
 
-        $harness->check('FileCheckService', 'test read handler returns false for a missing directory', function () use ($harness, $missingDirectory): void {
+        $harness->check('eel_accounts\Service\FileCheckService', 'test read handler returns false for a missing directory', function () use ($harness, $missingDirectory): void {
             $harness->assertSame(false, fileCheckTestCanRead($missingDirectory));
         });
 
-        $harness->check('FileCheckService', 'test temporary file handler creates and removes a probe file', function () use ($harness, $existingDirectory): void {
+        $harness->check('eel_accounts\Service\FileCheckService', 'test temporary file handler creates and removes a probe file', function () use ($harness, $existingDirectory): void {
             $before = glob($existingDirectory . DIRECTORY_SEPARATOR . '.eel_filecheck_*');
             $harness->assertTrue(fileCheckTestCanWriteTemporaryFile($existingDirectory));
             $after = glob($existingDirectory . DIRECTORY_SEPARATOR . '.eel_filecheck_*');
             $harness->assertCount(count(is_array($before) ? $before : []), is_array($after) ? $after : []);
         });
 
-        $harness->check('FileCheckService', 'test temporary directory handler creates and removes a probe directory', function () use ($harness, $existingDirectory): void {
+        $harness->check('eel_accounts\Service\FileCheckService', 'test temporary directory handler creates and removes a probe directory', function () use ($harness, $existingDirectory): void {
             $before = glob($existingDirectory . DIRECTORY_SEPARATOR . '.eel_filecheck_*');
             $harness->assertTrue(fileCheckTestCanWriteTemporaryDirectory($existingDirectory));
             $after = glob($existingDirectory . DIRECTORY_SEPARATOR . '.eel_filecheck_*');
             $harness->assertCount(count(is_array($before) ? $before : []), is_array($after) ? $after : []);
         });
 
-        $harness->check('FileCheckService', 'test create directory handler creates a missing directory', function () use ($harness, $creatableDirectory): void {
+        $harness->check('eel_accounts\Service\FileCheckService', 'test create directory handler creates a missing directory', function () use ($harness, $creatableDirectory): void {
             $harness->assertTrue(fileCheckTestCreateDirectory($creatableDirectory));
             $harness->assertTrue(is_dir($creatableDirectory));
         });
 
-        $harness->check('FileCheckService', 'test create directory handler returns true for an existing directory', function () use ($harness, $existingDirectory): void {
+        $harness->check('eel_accounts\Service\FileCheckService', 'test create directory handler returns true for an existing directory', function () use ($harness, $existingDirectory): void {
             $harness->assertTrue(fileCheckTestCreateDirectory($existingDirectory));
         });
 
-        $harness->check('FileCheckService', 'getUpload returns the configured upload base directory', function () use ($harness, $service, $uploads): void {
+        $harness->check('eel_accounts\Service\FileCheckService', 'getUpload returns the configured upload base directory', function () use ($harness, $service, $uploads): void {
             $harness->assertSame($uploads['upload_base_dir'], $service->getUpload());
         });
 
-        $harness->check('FileCheckService', 'getPathDebug returns the configured debug flag', function () use ($harness, $service): void {
+        $harness->check('eel_accounts\Service\FileCheckService', 'getPathDebug returns the configured debug flag', function () use ($harness, $service): void {
             $harness->assertTrue($service->getPathDebug());
         });
 
-        $harness->check('FileCheckService', 'inspectDirectory reports a missing directory correctly', function () use ($harness, $service, $missingDirectory): void {
+        $harness->check('eel_accounts\Service\FileCheckService', 'inspectDirectory reports a missing directory correctly', function () use ($harness, $service, $missingDirectory): void {
             $inspection = $service->inspectDirectory($missingDirectory, 'missing test directory');
 
             $harness->assertSame(false, $inspection['state'] ?? true);
@@ -110,7 +110,7 @@ $harness->run('FileCheckService', function (GeneratedServiceClassTestHarness $ha
             $harness->assertSame('The missing test directory path does not exist.', $inspection['detail'] ?? '');
         });
 
-        $harness->check('FileCheckService', 'company and category path helpers build expected paths from company id', function () use ($harness, $service, $uploads): void {
+        $harness->check('eel_accounts\Service\FileCheckService', 'company and category path helpers build expected paths from company id', function () use ($harness, $service, $uploads): void {
             $companyId = 42;
 
             $harness->assertSame(
@@ -135,7 +135,7 @@ $harness->run('FileCheckService', function (GeneratedServiceClassTestHarness $ha
             );
         });
 
-        $harness->check('FileCheckService', 'resolved numeric company numbers preserve leading zeros', function () use ($harness, $service, $uploads): void {
+        $harness->check('eel_accounts\Service\FileCheckService', 'resolved numeric company numbers preserve leading zeros', function () use ($harness, $service, $uploads): void {
             $companyId = 43;
 
             $harness->assertSame(
@@ -148,7 +148,7 @@ $harness->run('FileCheckService', function (GeneratedServiceClassTestHarness $ha
             );
         });
 
-        $harness->check('FileCheckService', 'ensureCompanyUploadDirectories creates all expected company upload folders', function () use ($harness, $service, $uploads): void {
+        $harness->check('eel_accounts\Service\FileCheckService', 'ensureCompanyUploadDirectories creates all expected company upload folders', function () use ($harness, $service, $uploads): void {
             $harness->assertTrue($service->ensureCompanyUploadDirectories(44));
             $harness->assertTrue(is_dir($uploads['upload_base_dir'] . DIRECTORY_SEPARATOR . 'ACME123'));
             $harness->assertTrue(is_dir($uploads['upload_base_dir'] . DIRECTORY_SEPARATOR . 'ACME123' . DIRECTORY_SEPARATOR . 'statements'));
@@ -156,7 +156,7 @@ $harness->run('FileCheckService', function (GeneratedServiceClassTestHarness $ha
             $harness->assertTrue(is_dir($uploads['upload_base_dir'] . DIRECTORY_SEPARATOR . 'ACME123' . DIRECTORY_SEPARATOR . 'transaction_receipts'));
         });
 
-        $harness->check('FileCheckService', 'ensureStatementDirectory creates the company statement directory within an existing base upload root', function () use ($harness, $service, $uploads): void {
+        $harness->check('eel_accounts\Service\FileCheckService', 'ensureStatementDirectory creates the company statement directory within an existing base upload root', function () use ($harness, $service, $uploads): void {
             $directory = $uploads['upload_base_dir'] . DIRECTORY_SEPARATOR . '12345678' . DIRECTORY_SEPARATOR . 'statements';
 
             $resolved = $service->ensureStatementDirectory(42);
@@ -165,9 +165,9 @@ $harness->run('FileCheckService', function (GeneratedServiceClassTestHarness $ha
             $harness->assertTrue(is_dir($directory));
         });
 
-        $harness->check('FileCheckService', 'ensureStatementDirectory rejects creation when the configured base upload root is missing', function () use ($harness, $uploads): void {
+        $harness->check('eel_accounts\Service\FileCheckService', 'ensureStatementDirectory rejects creation when the configured base upload root is missing', function () use ($harness, $uploads): void {
             $missingBase = dirname($uploads['upload_base_dir']) . DIRECTORY_SEPARATOR . 'missing-upload-root';
-            $service = new FileCheckService([
+            $service = new \eel_accounts\Service\FileCheckService([
                 'upload_base_dir' => $missingBase,
                 'statement_relative_path' => './statements/',
             ], null, static fn(int $companyId): string => $companyId === 42 ? '12345678' : '');

@@ -19,12 +19,12 @@ final class _nominals_add_accountCard extends CardBaseFramework
         return [
             [
                 'key' => 'nominal_account_catalog',
-                'service' => NominalAccountRepository::class,
+                'service' => \eel_accounts\Repository\NominalAccountRepository::class,
                 'method' => 'fetchNominalAccountCatalog',
             ],
             [
                 'key' => 'nominal_subtypes',
-                'service' => NominalSubtypeRepository::class,
+                'service' => \eel_accounts\Repository\NominalSubtypeRepository::class,
                 'method' => 'fetchNominalSubtypes',
             ],
         ];
@@ -70,7 +70,7 @@ final class _nominals_add_accountCard extends CardBaseFramework
         $taxTreatmentOptions = '';
         foreach ($this->validNominalTaxTreatments() as $taxTreatment) {
             $selected = (string)($editingNominal['tax_treatment'] ?? 'allowable') === $taxTreatment ? ' selected' : '';
-            $taxTreatmentOptions .= '<option value="' . HelperFramework::escape($taxTreatment) . '"' . $selected . '>' . HelperFramework::escape(AccountingFormattingService::nominalTaxTreatmentLabel($taxTreatment)) . '</option>';
+            $taxTreatmentOptions .= '<option value="' . HelperFramework::escape($taxTreatment) . '"' . $selected . '>' . HelperFramework::escape(\eel_accounts\Service\AccountingFormattingService::nominalTaxTreatmentLabel($taxTreatment)) . '</option>';
         }
 
         $cancelFormId = 'nominals-account-cancel-form';

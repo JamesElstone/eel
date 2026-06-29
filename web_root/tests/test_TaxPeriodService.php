@@ -10,8 +10,8 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 $harness = new GeneratedServiceClassTestHarness();
-$harness->run(TaxPeriodService::class, function (GeneratedServiceClassTestHarness $harness, TaxPeriodService $deriver): void {
-    $harness->check(TaxPeriodService::class, 'splits long accounting periods into continuous CT periods', function () use ($harness, $deriver): void {
+$harness->run(\eel_accounts\Service\TaxPeriodService::class, function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\TaxPeriodService $deriver): void {
+    $harness->check(\eel_accounts\Service\TaxPeriodService::class, 'splits long accounting periods into continuous CT periods', function () use ($harness, $deriver): void {
         $periods = $deriver->derive('2024-01-01', '2025-03-31');
 
         $harness->assertCount(2, $periods);
@@ -22,7 +22,7 @@ $harness->run(TaxPeriodService::class, function (GeneratedServiceClassTestHarnes
         $harness->assertSame('2025-03-31', $periods[1]['end']);
     });
 
-    $harness->check(TaxPeriodService::class, 'suggests the first accounting period', function () use ($harness, $deriver): void {
+    $harness->check(\eel_accounts\Service\TaxPeriodService::class, 'suggests the first accounting period', function () use ($harness, $deriver): void {
         $first = $deriver->suggestFirstPeriod(new DateTimeImmutable('2024-01-15'));
 
         $harness->assertSame('2024-01-15', $first['start']);
@@ -31,17 +31,17 @@ $harness->run(TaxPeriodService::class, function (GeneratedServiceClassTestHarnes
         $harness->assertSame('suggested_first_period', $first['source']);
     });
 
-    $harness->check(TaxPeriodService::class, 'uses four digit year codes for canonical labels', function () use ($harness, $deriver): void {
+    $harness->check(\eel_accounts\Service\TaxPeriodService::class, 'uses four digit year codes for canonical labels', function () use ($harness, $deriver): void {
         $periods = $deriver->derive('2024-01-01', '2024-12-31');
 
         $harness->assertSame('01/01/2024 to 31/12/2024', $periods[0]['label']);
         $harness->assertSame(
             '01/10/2023 to 30/09/2024',
-            TaxPeriodService::accountingPeriodLabel('2023-10-01', '2024-09-30')
+            \eel_accounts\Service\TaxPeriodService::accountingPeriodLabel('2023-10-01', '2024-09-30')
         );
     });
 
-    $harness->check(TaxPeriodService::class, 'filters out existing suggested periods', function () use ($harness, $deriver): void {
+    $harness->check(\eel_accounts\Service\TaxPeriodService::class, 'filters out existing suggested periods', function () use ($harness, $deriver): void {
         $first = $deriver->suggestFirstPeriod(new DateTimeImmutable('2024-01-15'));
         $missing = $deriver->missingSuggestedPeriods(
             [

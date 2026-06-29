@@ -19,14 +19,14 @@ $harness->run(LogsRepository::class, static function (GeneratedServiceClassTestH
 
 });
 
-$harness->run(AccountingAuditRepository::class, static function (GeneratedServiceClassTestHarness $harness, AccountingAuditRepository $repository): void {
-    $harness->check(AccountingAuditRepository::class, 'returns an array for recent transaction category audit', static function () use ($harness, $repository): void {
+$harness->run(\eel_accounts\Repository\AccountingAuditRepository::class, static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Repository\AccountingAuditRepository $repository): void {
+    $harness->check(\eel_accounts\Repository\AccountingAuditRepository::class, 'returns an array for recent transaction category audit', static function () use ($harness, $repository): void {
         $rows = $repository->fetchRecentTransactionCategoryAudit(5);
 
         $harness->assertTrue(is_array($rows));
     });
 
-    $harness->check(AccountingAuditRepository::class, 'returns an array for recent year end audit', static function () use ($harness, $repository): void {
+    $harness->check(\eel_accounts\Repository\AccountingAuditRepository::class, 'returns an array for recent year end audit', static function () use ($harness, $repository): void {
         $rows = $repository->fetchRecentYearEndAudit(5);
 
         $harness->assertTrue(is_array($rows));

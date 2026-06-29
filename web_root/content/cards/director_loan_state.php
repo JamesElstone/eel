@@ -19,7 +19,7 @@ final class _director_loan_stateCard extends CardBaseFramework
         return [
             [
                 'key' => 'directorLoanStatement',
-                'service' => DirectorLoanService::class,
+                'service' => \eel_accounts\Service\DirectorLoanService::class,
                 'method' => 'fetchStatement',
                 'params' => [
                     'companyId' => ':company_id',

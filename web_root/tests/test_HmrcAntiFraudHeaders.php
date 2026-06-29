@@ -10,8 +10,8 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 $harness = new GeneratedServiceClassTestHarness();
-$harness->run(HmrcOutbound::class, function (GeneratedServiceClassTestHarness $harness): void {
-    $harness->check(HmrcOutbound::class, 'validates anti-fraud headers against HMRC sandbox', function () use ($harness): void {
+$harness->run(\eel_accounts\Outbound\HmrcOutbound::class, function (GeneratedServiceClassTestHarness $harness): void {
+    $harness->check(\eel_accounts\Outbound\HmrcOutbound::class, 'validates anti-fraud headers against HMRC sandbox', function () use ($harness): void {
         $companyId = 0;
 
         try {
@@ -27,12 +27,12 @@ $harness->run(HmrcOutbound::class, function (GeneratedServiceClassTestHarness $h
         }
 
         $hmrcMode = HelperFramework::normaliseEnvironmentMode(
-            (string)(new CompanySettingsStore($companyId))->get('hmrc_mode', 'TEST')
+            (string)(new \eel_accounts\Store\CompanySettingsStore($companyId))->get('hmrc_mode', 'TEST')
         );
-        $config = HmrcOutbound::antiFraudValidatorConfig($hmrcMode);
+        $config = \eel_accounts\Outbound\HmrcOutbound::antiFraudValidatorConfig($hmrcMode);
 
         try {
-            HmrcOutbound::loadCredential(
+            \eel_accounts\Outbound\HmrcOutbound::loadCredential(
                 (string)($config['credential_tag'] ?? 'FPH_VALIDATOR'),
                 $hmrcMode,
                 (string)($config['keys_path'] ?? ''),
@@ -64,7 +64,7 @@ $harness->run(HmrcOutbound::class, function (GeneratedServiceClassTestHarness $h
         unset($GLOBALS['antifraud_data']);
 
         try {
-            $response = (new HmrcOutbound($config))->validateAntiFraudHeaders();
+            $response = (new \eel_accounts\Outbound\HmrcOutbound($config))->validateAntiFraudHeaders();
         } finally {
             $_SERVER = $previousServer;
             $_COOKIE = $previousCookie;

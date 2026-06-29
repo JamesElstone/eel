@@ -29,7 +29,7 @@ $harness->run(AppPathsAction::class, function (GeneratedServiceClassTestHarness 
     ensureAppPathsDirectory($receiptDirectory);
 
     $companyNumberResolver = static fn(int $resolvedCompanyId): string => (string)$resolvedCompanyId;
-    $fileCheckService = new FileCheckService([
+    $fileCheckService = new \eel_accounts\Service\FileCheckService([
         'upload_base_dir' => $baseDirectory,
         'statement_relative_path' => './statements/',
         'expense_receipts_relative_path' => './expense_receipts/',
@@ -72,7 +72,7 @@ $harness->run(AppPathsAction::class, function (GeneratedServiceClassTestHarness 
             ensureAppPathsDirectory($missingBaseDirectory);
 
             try {
-                $service = new FileCheckService([
+                $service = new \eel_accounts\Service\FileCheckService([
                     'upload_base_dir' => $missingBaseDirectory,
                     'statement_relative_path' => './statements/',
                     'expense_receipts_relative_path' => './expense_receipts/',
@@ -108,7 +108,7 @@ $harness->run(AppPathsAction::class, function (GeneratedServiceClassTestHarness 
             ensureAppPathsDirectory($createBaseDirectory);
 
             try {
-                $service = new FileCheckService([
+                $service = new \eel_accounts\Service\FileCheckService([
                     'upload_base_dir' => $createBaseDirectory,
                     'statement_relative_path' => './statements/',
                     'expense_receipts_relative_path' => './expense_receipts/',

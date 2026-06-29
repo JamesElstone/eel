@@ -22,7 +22,7 @@ final class AccountingPeriodsAction implements ActionInterfaceFramework
 
     private function createSuggestedPeriods(RequestFramework $request): ActionResultFramework
     {
-        $companyId = (new AccountingContextService())->authCompanyId();
+        $companyId = (new \eel_accounts\Service\AccountingContextService())->authCompanyId();
 
         if ($companyId <= 0) {
             return new ActionResultFramework(
@@ -36,7 +36,7 @@ final class AccountingPeriodsAction implements ActionInterfaceFramework
         }
 
         try {
-            $guidance = (new AccountingGuidanceService())->build($companyId);
+            $guidance = (new \eel_accounts\Service\AccountingGuidanceService())->build($companyId);
             $missing = (array)($guidance['missing_suggested_periods'] ?? []);
 
             if ($missing === []) {
@@ -50,7 +50,7 @@ final class AccountingPeriodsAction implements ActionInterfaceFramework
                 );
             }
 
-            $accountingPeriodRepository = new AccountingPeriodRepository();
+            $accountingPeriodRepository = new \eel_accounts\Repository\AccountingPeriodRepository();
 
             foreach ($missing as $period) {
                 $accountingPeriodRepository->createPeriod(
@@ -84,7 +84,7 @@ final class AccountingPeriodsAction implements ActionInterfaceFramework
 
     private function createRequiredPeriodsForUpload(RequestFramework $request): ActionResultFramework
     {
-        $companyId = (new AccountingContextService())->authCompanyId();
+        $companyId = (new \eel_accounts\Service\AccountingContextService())->authCompanyId();
 
         if ($companyId <= 0) {
             return new ActionResultFramework(
@@ -111,7 +111,7 @@ final class AccountingPeriodsAction implements ActionInterfaceFramework
         }
 
         try {
-            $guidance = (new AccountingGuidanceService())->build($companyId);
+            $guidance = (new \eel_accounts\Service\AccountingGuidanceService())->build($companyId);
             $missing = array_values(array_filter(
                 (array)($guidance['missing_suggested_periods'] ?? []),
                 static function (mixed $period) use ($requiredPeriodEnd): bool {
@@ -153,7 +153,7 @@ final class AccountingPeriodsAction implements ActionInterfaceFramework
                 );
             }
 
-            $accountingPeriodRepository = new AccountingPeriodRepository();
+            $accountingPeriodRepository = new \eel_accounts\Repository\AccountingPeriodRepository();
 
             foreach ($missing as $period) {
                 $accountingPeriodRepository->createPeriod(

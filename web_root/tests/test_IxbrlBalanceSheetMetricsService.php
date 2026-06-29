@@ -10,9 +10,9 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 (new GeneratedServiceClassTestHarness())->run(
-    IxbrlBalanceSheetMetricsService::class,
-    static function (GeneratedServiceClassTestHarness $harness, IxbrlBalanceSheetMetricsService $service): void {
-        $harness->check(IxbrlBalanceSheetMetricsService::class, 'uses closing balances across prior and current journals', static function () use ($harness, $service): void {
+    \eel_accounts\Service\IxbrlBalanceSheetMetricsService::class,
+    static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\IxbrlBalanceSheetMetricsService $service): void {
+        $harness->check(\eel_accounts\Service\IxbrlBalanceSheetMetricsService::class, 'uses closing balances across prior and current journals', static function () use ($harness, $service): void {
             $fixture = ixbrlBalanceSheetMetricsFixture();
             $metrics = $service->fetchClosingMetrics((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
             $buckets = (array)($metrics['buckets'] ?? []);

@@ -21,7 +21,7 @@ final class _transaction_category_audit_logCard extends CardBaseFramework
         return [
             [
                 'key' => 'transaction_audit_rows',
-                'service' => AccountingAuditRepository::class,
+                'service' => \eel_accounts\Repository\AccountingAuditRepository::class,
                 'method' => 'fetchRecentTransactionCategoryAudit',
                 'params' => [
                     'limit' => 200,

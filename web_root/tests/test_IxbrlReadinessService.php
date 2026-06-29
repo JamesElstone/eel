@@ -4,15 +4,15 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 (new GeneratedServiceClassTestHarness())->run(
-    IxbrlReadinessService::class,
-    static function (GeneratedServiceClassTestHarness $harness, IxbrlReadinessService $service): void {
-        $harness->check(IxbrlReadinessService::class, 'blocks generation when company and period are missing', static function () use ($harness, $service): void {
+    \eel_accounts\Service\IxbrlReadinessService::class,
+    static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\IxbrlReadinessService $service): void {
+        $harness->check(\eel_accounts\Service\IxbrlReadinessService::class, 'blocks generation when company and period are missing', static function () use ($harness, $service): void {
             $readiness = $service->getReadiness(0, 0);
             $harness->assertSame(false, $readiness['can_build_facts']);
             $harness->assertTrue(count($readiness['blocking_errors']) > 0);
         });
 
-        $harness->check(IxbrlReadinessService::class, 'surfaces deferred tax as a non-blocking FRS 105 warning', static function () use ($harness, $service): void {
+        $harness->check(\eel_accounts\Service\IxbrlReadinessService::class, 'surfaces deferred tax as a non-blocking FRS 105 warning', static function () use ($harness, $service): void {
             $fixture = ixbrlReadinessDeferredTaxFixture();
 
             try {
@@ -28,7 +28,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             }
         });
 
-        $harness->check(IxbrlReadinessService::class, 'passes the deferred tax readiness check when the fixture nominal is inactive', static function () use ($harness, $service): void {
+        $harness->check(\eel_accounts\Service\IxbrlReadinessService::class, 'passes the deferred tax readiness check when the fixture nominal is inactive', static function () use ($harness, $service): void {
             $fixture = ixbrlReadinessDeferredTaxFixture();
             ixbrlReadinessDeactivateNominal((int)$fixture['nominal_id']);
             if (ixbrlReadinessActiveDeferredTaxNominalCount() > 0) {

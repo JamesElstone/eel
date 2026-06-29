@@ -10,17 +10,17 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 $harness = new GeneratedServiceClassTestHarness();
-$harness->run(CompanySettingsService::class, static function (GeneratedServiceClassTestHarness $harness, CompanySettingsService $service): void {
-    $harness->check(CompanySettingsService::class, 'strips whitespace from pasted HMRC UTR values', static function () use ($harness, $service): void {
-        $method = new ReflectionMethod(CompanySettingsService::class, 'normaliseUtr');
+$harness->run(\eel_accounts\Service\CompanySettingsService::class, static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\CompanySettingsService $service): void {
+    $harness->check(\eel_accounts\Service\CompanySettingsService::class, 'strips whitespace from pasted HMRC UTR values', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod(\eel_accounts\Service\CompanySettingsService::class, 'normaliseUtr');
         $method->setAccessible(true);
 
         $harness->assertSame('2794616478', $method->invoke($service, '27946 16478'));
         $harness->assertSame('2794616478', $method->invoke($service, " 27946\t16478\n"));
     });
 
-    $harness->check(CompanySettingsService::class, 'suggests a default trade nominal from trade creditor liabilities', static function () use ($harness, $service): void {
-        $method = new ReflectionMethod(CompanySettingsService::class, 'buildNominalDefaultSuggestions');
+    $harness->check(\eel_accounts\Service\CompanySettingsService::class, 'suggests a default trade nominal from trade creditor liabilities', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod(\eel_accounts\Service\CompanySettingsService::class, 'buildNominalDefaultSuggestions');
         $method->setAccessible(true);
 
         $suggestions = $method->invoke($service, [

@@ -26,7 +26,7 @@ final class _dashboard extends PageContextFramework
 
     public function services(): array
     {
-        return [CompanyAccountService::class];
+        return [\eel_accounts\Service\CompanyAccountService::class];
     }
 
     public function cards(): array

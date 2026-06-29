@@ -30,7 +30,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
         return [
             [
                 'key' => 'activeCompanyAccounts',
-                'service' => CompanyAccountService::class,
+                'service' => \eel_accounts\Service\CompanyAccountService::class,
                 'method' => 'fetchAccounts',
                 'params' => [
                     'companyId' => ':company.id',
@@ -39,7 +39,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
             ],
             [
                 'key' => 'selected_upload_preview',
-                'service' => StatementUploadService::class,
+                'service' => \eel_accounts\Service\StatementUploadService::class,
                 'method' => 'fetchUploadPreview',
                 'params' => [
                     'companyId' => ':company.id',
@@ -48,7 +48,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
             ],
             [
                 'key' => 'selected_upload_mapping_status',
-                'service' => StatementUploadService::class,
+                'service' => \eel_accounts\Service\StatementUploadService::class,
                 'method' => 'describeUploadAccountMappingStatus',
                 'params' => [
                     'companyId' => ':company.id',
@@ -57,7 +57,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
             ],
             [
                 'key' => 'account_mapping_preview',
-                'service' => StatementUploadService::class,
+                'service' => \eel_accounts\Service\StatementUploadService::class,
                 'method' => 'fetchAccountMappingPreview',
                 'params' => [
                     'companyId' => ':company.id',
@@ -109,7 +109,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
         $mappingView = $this->decodeJsonArrayValue((string)($mappingRow['mapping_json'] ?? ''));
 
         if ($mappingView === []) {
-            $mappingView = StatementUploadService::autoMapHeaders($sourceHeaders);
+            $mappingView = \eel_accounts\Service\StatementUploadService::autoMapHeaders($sourceHeaders);
         }
 
         $mappingStatus = $mode === 'upload'
@@ -258,7 +258,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
         foreach ($accounts as $account) {
             $accountId = (int)($account['id'] ?? 0);
             $selected = $selectedAccountId === $accountId ? ' selected' : '';
-            $type = CompanyAccountService::accountTypes()[(string)($account['account_type'] ?? '')]
+            $type = \eel_accounts\Service\CompanyAccountService::accountTypes()[(string)($account['account_type'] ?? '')]
                 ?? ucfirst((string)($account['account_type'] ?? ''));
 
             $options .= '<option value="' . $accountId . '"' . $selected . '>'
@@ -279,12 +279,12 @@ final class _statement_field_mappingCard extends CardBaseFramework
         $html = '';
         $idPrefix = $mode === 'upload' ? 'upload_mapping' : 'account_mapping';
 
-        foreach (StatementUploadService::fieldDefinitions() as $fieldName => $definition) {
+        foreach (\eel_accounts\Service\StatementUploadService::fieldDefinitions() as $fieldName => $definition) {
             $selectedHeader = $this->selectedMappingValue($fieldName, $mappingView[$fieldName] ?? null);
             $options = '<option value="">Not mapped</option>';
 
             if ($fieldName === 'currency') {
-                $gbpValue = StatementUploadService::CURRENCY_DEFAULT_OPTION_GBP;
+                $gbpValue = \eel_accounts\Service\StatementUploadService::CURRENCY_DEFAULT_OPTION_GBP;
                 $options .= '<option value="' . HelperFramework::escape($gbpValue) . '"'
                     . ($selectedHeader === $gbpValue ? ' selected' : '')
                     . '>£ GBP</option>';
@@ -352,7 +352,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
         }
 
         if ($fieldName === 'currency' && array_key_exists('default_value', $mapping)) {
-            return StatementUploadService::CURRENCY_DEFAULT_OPTION_GBP;
+            return \eel_accounts\Service\StatementUploadService::CURRENCY_DEFAULT_OPTION_GBP;
         }
 
         return (string)($mapping['header'] ?? '');

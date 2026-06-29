@@ -71,7 +71,7 @@ $harness->run(TestPageContextFrameworkDouble::class, function (GeneratedServiceC
 
         $context = $page->exposedBuildContext($request, $services, ActionResultFramework::none());
         $singleCompanyId = 0;
-        $companies = (new CompanyRepository())->fetchCompanySelectorRows();
+        $companies = (new \eel_accounts\Repository\CompanyRepository())->fetchCompanySelectorRows();
         if (count($companies) === 1) {
             $singleCompanyId = (int)($companies[0]['id'] ?? 0);
         }

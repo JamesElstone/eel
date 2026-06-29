@@ -29,7 +29,7 @@ final class _companies_company_settingsCard extends CardBaseFramework
         return [
             [
                 'key' => 'company_detail',
-                'service' => CompanyRepository::class,
+                'service' => \eel_accounts\Repository\CompanyRepository::class,
                 'method' => 'fetchCompanyDetails',
                 'params' => ['companyId' => ':company.id'],
             ],

@@ -19,7 +19,7 @@ final class _year_end_stateCard extends CardBaseFramework
         return [
             [
                 'key' => 'yearEndChecklist',
-                'service' => YearEndChecklistService::class,
+                'service' => \eel_accounts\Service\YearEndChecklistService::class,
                 'method' => 'fetchChecklist',
                 'params' => [
                     'companyId' => ':company_id',
@@ -29,7 +29,7 @@ final class _year_end_stateCard extends CardBaseFramework
             ],
             [
                 'key' => 'yearEndTaxReadiness',
-                'service' => YearEndTaxReadinessService::class,
+                'service' => \eel_accounts\Service\YearEndTaxReadinessService::class,
                 'method' => 'fetchSummary',
                 'params' => [
                     'companyId' => ':company_id',
@@ -38,7 +38,7 @@ final class _year_end_stateCard extends CardBaseFramework
             ],
             [
                 'key' => 'yearEndOpeningBalances',
-                'service' => OpeningBalanceService::class,
+                'service' => \eel_accounts\Service\OpeningBalanceService::class,
                 'method' => 'fetchContext',
                 'params' => [
                     'companyId' => ':company_id',
@@ -47,7 +47,7 @@ final class _year_end_stateCard extends CardBaseFramework
             ],
             [
                 'key' => 'yearEndAdjustments',
-                'service' => YearEndAdjustmentService::class,
+                'service' => \eel_accounts\Service\YearEndAdjustmentService::class,
                 'method' => 'fetchContext',
                 'params' => [
                     'companyId' => ':company_id',
@@ -56,7 +56,7 @@ final class _year_end_stateCard extends CardBaseFramework
             ],
             [
                 'key' => 'yearEndCompaniesHouseComparison',
-                'service' => YearEndCompaniesHouseComparisonService::class,
+                'service' => \eel_accounts\Service\YearEndCompaniesHouseComparisonService::class,
                 'method' => 'fetchComparison',
                 'params' => [
                     'companyId' => ':company_id',

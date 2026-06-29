@@ -19,7 +19,7 @@ final class _asset_registerCard extends CardBaseFramework
         return [
             [
                 'key' => 'assetPageData',
-                'service' => AssetService::class,
+                'service' => \eel_accounts\Service\AssetService::class,
                 'method' => 'fetchPageData',
                 'params' => [
                     'companyId' => ':company_id',

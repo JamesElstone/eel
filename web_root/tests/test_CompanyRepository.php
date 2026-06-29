@@ -10,15 +10,15 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 $harness = new GeneratedServiceClassTestHarness();
-$harness->run(CompanyRepository::class, function (GeneratedServiceClassTestHarness $harness): void {
-    $harness->check(CompanyRepository::class, 'fetchCompanyDetails returns null for non-positive ids', function () use ($harness): void {
-        $repository = new CompanyRepository();
+$harness->run(\eel_accounts\Repository\CompanyRepository::class, function (GeneratedServiceClassTestHarness $harness): void {
+    $harness->check(\eel_accounts\Repository\CompanyRepository::class, 'fetchCompanyDetails returns null for non-positive ids', function () use ($harness): void {
+        $repository = new \eel_accounts\Repository\CompanyRepository();
 
         $harness->assertSame(null, $repository->fetchCompanyDetails(0));
     });
 
-    $harness->check(CompanyRepository::class, 'normalises Companies House profile fields for storage', function () use ($harness): void {
-        $repository = new CompanyRepository();
+    $harness->check(\eel_accounts\Repository\CompanyRepository::class, 'normalises Companies House profile fields for storage', function () use ($harness): void {
+        $repository = new \eel_accounts\Repository\CompanyRepository();
         $result = $repository->normaliseCompaniesHouseProfileForStorage([
             'company_status' => 'active',
             'type' => 'ltd',
@@ -39,8 +39,8 @@ $harness->run(CompanyRepository::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame('LIVE', $result['companies_house_environment'] ?? null);
     });
 
-    $harness->check(CompanyRepository::class, 'deletes unreferenced auto-created company account nominals', function () use ($harness): void {
-        $repository = new CompanyRepository();
+    $harness->check(\eel_accounts\Repository\CompanyRepository::class, 'deletes unreferenced auto-created company account nominals', function () use ($harness): void {
+        $repository = new \eel_accounts\Repository\CompanyRepository();
         $fixture = companyRepositoryNominalDeleteFixture('Delete Auto Nominal Fixture Limited');
 
         $result = $repository->deleteCompany((int)$fixture['company_id']);
@@ -51,8 +51,8 @@ $harness->run(CompanyRepository::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(0, (int)(($result['auto_nominals'] ?? [])['skipped'] ?? 0));
     });
 
-    $harness->check(CompanyRepository::class, 'retains manual shared nominals when deleting a company', function () use ($harness): void {
-        $repository = new CompanyRepository();
+    $harness->check(\eel_accounts\Repository\CompanyRepository::class, 'retains manual shared nominals when deleting a company', function () use ($harness): void {
+        $repository = new \eel_accounts\Repository\CompanyRepository();
         $fixture = companyRepositoryNominalDeleteFixture('Retain Manual Nominal Fixture Limited', 'manual');
 
         $result = $repository->deleteCompany((int)$fixture['company_id']);
@@ -61,8 +61,8 @@ $harness->run(CompanyRepository::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(0, (int)(($result['auto_nominals'] ?? [])['deleted'] ?? 0));
     });
 
-    $harness->check(CompanyRepository::class, 'skips auto-created company account nominals still referenced elsewhere', function () use ($harness): void {
-        $repository = new CompanyRepository();
+    $harness->check(\eel_accounts\Repository\CompanyRepository::class, 'skips auto-created company account nominals still referenced elsewhere', function () use ($harness): void {
+        $repository = new \eel_accounts\Repository\CompanyRepository();
         $fixture = companyRepositoryNominalDeleteFixture('Skip Referenced Nominal Fixture Limited');
         $otherCompanyId = companyRepositoryInsertCompany('Other Referencer Limited');
 

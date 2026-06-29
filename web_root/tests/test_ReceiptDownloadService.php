@@ -11,14 +11,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 $harness = new GeneratedServiceClassTestHarness();
 
-$harness->run(ReceiptDownloadService::class, function (GeneratedServiceClassTestHarness $harness, ReceiptDownloadService $service): void {
-    $harness->check(ReceiptDownloadService::class, 'receipt path helpers use the shared transaction receipt helpers', function () use ($harness): void {
+$harness->run(\eel_accounts\Service\ReceiptDownloadService::class, function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\ReceiptDownloadService $service): void {
+    $harness->check(\eel_accounts\Service\ReceiptDownloadService::class, 'receipt path helpers use the shared transaction receipt helpers', function () use ($harness): void {
         $baseDirectory = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR . 'receipt-download-service';
-        $fileCheckService = new FileCheckService([
+        $fileCheckService = new \eel_accounts\Service\FileCheckService([
             'upload_base_dir' => $baseDirectory,
             'transaction_receipts_relative_path' => './transaction_receipts/',
         ], null, static fn(int $companyId): string => $companyId === 42 ? '12345678' : '');
-        $service = new ReceiptDownloadService($baseDirectory, fileCheckService: $fileCheckService);
+        $service = new \eel_accounts\Service\ReceiptDownloadService($baseDirectory, fileCheckService: $fileCheckService);
         $reflection = new ReflectionClass($service);
         $directoryMethod = $reflection->getMethod('receiptDirectoryForCompany');
         $directoryMethod->setAccessible(true);

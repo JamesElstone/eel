@@ -10,13 +10,13 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 $harness = new GeneratedServiceClassTestHarness();
-$harness->run(VatRegistrationFactoryService::class, function (GeneratedServiceClassTestHarness $harness, VatRegistrationFactoryService $factory): void {
-    $harness->check(VatRegistrationFactoryService::class, 'creates a VAT registration service from config', function () use ($harness): void {
+$harness->run(\eel_accounts\Service\VatRegistrationFactoryService::class, function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\VatRegistrationFactoryService $factory): void {
+    $harness->check(\eel_accounts\Service\VatRegistrationFactoryService::class, 'creates a VAT registration service from config', function () use ($harness): void {
         $harness->assertTrue(
-            VatRegistrationFactoryService::createFromConfig(
+            \eel_accounts\Service\VatRegistrationFactoryService::createFromConfig(
                 ['hmrc' => ['vat' => ['mode' => 'TEST', 'test_base_url' => 'https://example.test']]],
                 'LIVE'
-            ) instanceof VatRegistrationService
+            ) instanceof \eel_accounts\Service\VatRegistrationService
         );
     });
 });

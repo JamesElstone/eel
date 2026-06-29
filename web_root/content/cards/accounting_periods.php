@@ -21,19 +21,19 @@ final class _accounting_periodsCard extends CardBaseFramework
         return [
             [
                 'key' => 'company_detail',
-                'service' => CompanyRepository::class,
+                'service' => \eel_accounts\Repository\CompanyRepository::class,
                 'method' => 'fetchCompanyDetails',
                 'params' => ['companyId' => ':company.id'],
             ],
             [
                 'key' => 'accounting_periods',
-                'service' => AccountingPeriodRepository::class,
+                'service' => \eel_accounts\Repository\AccountingPeriodRepository::class,
                 'method' => 'fetchAccountingPeriods',
                 'params' => ['companyId' => ':company.id'],
             ],
             [
                 'key' => 'accounting_guidance',
-                'service' => AccountingGuidanceService::class,
+                'service' => \eel_accounts\Service\AccountingGuidanceService::class,
                 'method' => 'build',
                 'params' => ['companyId' => ':company.id'],
             ],

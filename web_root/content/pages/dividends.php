@@ -69,7 +69,7 @@ final class _dividends extends PageContextFramework
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $asAtDate = trim((string)$request->input('as_at_date', ''));
-        $dividendService = new DividendService();
+        $dividendService = new \eel_accounts\Service\DividendService();
 
         $nominals = $companyId > 0
             ? $dividendService->ensureDividendNominals($companyId)

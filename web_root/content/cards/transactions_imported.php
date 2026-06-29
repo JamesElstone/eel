@@ -21,7 +21,7 @@ final class _transactions_importedCard extends CardBaseFramework
         return [
             [
                 'key' => 'month_status',
-                'service' => StatementUploadService::class,
+                'service' => \eel_accounts\Service\StatementUploadService::class,
                 'method' => 'buildMonthStatus',
                 'params' => [
                     'companyId' => ':company.id',
@@ -30,7 +30,7 @@ final class _transactions_importedCard extends CardBaseFramework
             ],
             [
                 'key' => 'transactions_by_month',
-                'service' => DashboardRepository::class,
+                'service' => \eel_accounts\Repository\DashboardRepository::class,
                 'method' => 'fetchTransactionsForMonth',
                 'params' => [
                     'companyId' => ':company.id',
@@ -41,12 +41,12 @@ final class _transactions_importedCard extends CardBaseFramework
             ],
             [
                 'key' => 'nominal_accounts',
-                'service' => NominalAccountRepository::class,
+                'service' => \eel_accounts\Repository\NominalAccountRepository::class,
                 'method' => 'fetchNominalAccounts',
             ],
             [
                 'key' => 'company_accounts',
-                'service' => CompanyAccountService::class,
+                'service' => \eel_accounts\Service\CompanyAccountService::class,
                 'method' => 'fetchAccounts',
                 'params' => [
                     'companyId' => ':company.id',
@@ -321,7 +321,7 @@ final class _transactions_importedCard extends CardBaseFramework
         return array_values(array_filter(
             (array)($services['company_accounts'] ?? []),
             static fn(mixed $account): bool => is_array($account)
-                && in_array((string)($account['account_type'] ?? ''), [CompanyAccountService::TYPE_BANK, CompanyAccountService::TYPE_TRADE], true)
+                && in_array((string)($account['account_type'] ?? ''), [\eel_accounts\Service\CompanyAccountService::TYPE_BANK, \eel_accounts\Service\CompanyAccountService::TYPE_TRADE], true)
                 && (int)($account['is_active'] ?? 0) === 1
         ));
     }
@@ -397,7 +397,7 @@ final class _transactions_importedCard extends CardBaseFramework
                     continue;
                 }
                 $accountType = (string)($account['account_type'] ?? '');
-                $accountTypeLabel = CompanyAccountService::accountTypes()[$accountType] ?? ucfirst($accountType);
+                $accountTypeLabel = \eel_accounts\Service\CompanyAccountService::accountTypes()[$accountType] ?? ucfirst($accountType);
                 $transferOptions .= '<option value="' . (int)($account['id'] ?? 0) . '"' . ((string)($account['id'] ?? '') === $selectedTransferAccountId ? ' selected' : '') . '>' . HelperFramework::escape((string)($account['account_name'] ?? '') . ' [' . $accountTypeLabel . ']') . '</option>';
             }
 

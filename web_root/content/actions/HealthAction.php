@@ -15,7 +15,7 @@ final class HealthAction implements ActionInterfaceFramework
             return ActionResultFramework::none();
         }
 
-        $companyId = (new AccountingContextService())->authCompanyId();
+        $companyId = (new \eel_accounts\Service\AccountingContextService())->authCompanyId();
 
         return ActionResultFramework::success(
             ['settings_setup_health'],
@@ -27,6 +27,6 @@ final class HealthAction implements ActionInterfaceFramework
 
     public function buildHealthContext(int $companyId): array
     {
-        return (new SetupHealthService())->buildContext($companyId);
+        return (new \eel_accounts\Service\SetupHealthService())->buildContext($companyId);
     }
 }

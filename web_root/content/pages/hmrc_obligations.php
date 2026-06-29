@@ -55,7 +55,7 @@ final class _hmrc_obligations extends PageContextFramework
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $filter = trim((string)$request->input('hmrc_filter', 'all'));
-        $service = new HmrcObligationService();
+        $service = new \eel_accounts\Service\HmrcObligationService();
         if ($companyId > 0) {
             $service->syncObligationsForCompany($companyId);
         } else {

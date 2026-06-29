@@ -14,13 +14,13 @@ final class ApiModeAction implements ActionInterfaceFramework
         
         $intent = trim((string)$request->input('intent'));
 
-        $current_chMode = AccountingConfigurationStore::companiesHouseMode();
-        $current_hmrcMode = AccountingConfigurationStore::hmrcMode();
+        $current_chMode = \eel_accounts\Store\AccountingConfigurationStore::companiesHouseMode();
+        $current_hmrcMode = \eel_accounts\Store\AccountingConfigurationStore::hmrcMode();
 
         switch ($intent) {
             case 'check':
 
-                $credentialCheckService = new ApiCredentialCheckService();
+                $credentialCheckService = new \eel_accounts\Service\ApiCredentialCheckService();
 
                 $apiCredentialCheckResults = $credentialCheckService->checkSelectedModes($current_chMode, $current_hmrcMode);
 
@@ -52,13 +52,13 @@ final class ApiModeAction implements ActionInterfaceFramework
 
 
                 if ($current_chMode <> $requested_chMode) {
-                    AccountingConfigurationStore::setCompaniesHouseMode($requested_chMode);
+                    \eel_accounts\Store\AccountingConfigurationStore::setCompaniesHouseMode($requested_chMode);
                     $flashMessages[] = 'Companies House API mode saved as ' . $requested_chMode . '.';
                     $changed = true;
                 }
 
                 if ($current_hmrcMode <> $requested_hmrcMode) {
-                    AccountingConfigurationStore::setHmrcMode($requested_hmrcMode);
+                    \eel_accounts\Store\AccountingConfigurationStore::setHmrcMode($requested_hmrcMode);
                     $flashMessages[] = 'HMRC API mode saved as ' . $requested_hmrcMode . '.';
                     $changed = true;
                 }

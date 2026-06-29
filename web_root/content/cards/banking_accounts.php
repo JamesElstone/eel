@@ -19,7 +19,7 @@ final class _banking_accountsCard extends CardBaseFramework
         return [
             [
                 'key' => 'companyAccounts',
-                'service' => CompanyAccountService::class,
+                'service' => \eel_accounts\Service\CompanyAccountService::class,
                 'method' => 'fetchAccounts',
                 'params' => [
                     'companyId' => ':company.id',
@@ -173,8 +173,8 @@ final class _banking_accountsCard extends CardBaseFramework
             }
 
             $accountType = (string)($account['account_type'] ?? '');
-            $account['account_type_label'] = CompanyAccountService::accountTypes()[$accountType] ?? ucfirst($accountType);
-            $account['transfer_marker'] = $accountType === CompanyAccountService::TYPE_BANK
+            $account['account_type_label'] = \eel_accounts\Service\CompanyAccountService::accountTypes()[$accountType] ?? ucfirst($accountType);
+            $account['transfer_marker'] = $accountType === \eel_accounts\Service\CompanyAccountService::TYPE_BANK
                 ? (string)($account['internal_transfer_marker'] ?? '')
                 : '';
             $account['nominal_label'] = $this->nominalLabel($account);

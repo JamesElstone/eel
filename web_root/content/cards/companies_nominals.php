@@ -19,7 +19,7 @@ final class _companies_nominalsCard extends CardBaseFramework
         return [
             [
                 'key' => 'company_nominals',
-                'service' => NominalAccountRepository::class,
+                'service' => \eel_accounts\Repository\NominalAccountRepository::class,
                 'method' => 'fetchNominalAccounts',
                 'params' => ['companyId' => ':company.id'],
             ]

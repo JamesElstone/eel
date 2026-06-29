@@ -19,7 +19,7 @@ final class _uploads_validate_commitCard extends CardBaseFramework
         return [
             [
                 'key' => 'selected_upload_preview',
-                'service' => StatementUploadService::class,
+                'service' => \eel_accounts\Service\StatementUploadService::class,
                 'method' => 'fetchUploadPreview',
                 'params' => [
                     'companyId' => ':company.id',
@@ -28,7 +28,7 @@ final class _uploads_validate_commitCard extends CardBaseFramework
             ],
             [
                 'key' => 'accounting_guidance',
-                'service' => AccountingGuidanceService::class,
+                'service' => \eel_accounts\Service\AccountingGuidanceService::class,
                 'method' => 'build',
                 'params' => [
                     'companyId' => ':company.id',
@@ -218,7 +218,7 @@ final class _uploads_validate_commitCard extends CardBaseFramework
 
                 if ($periodStart !== '' && $periodEnd !== '') {
                     if ($periodLabel === '') {
-                        $periodLabel = TaxPeriodService::accountingPeriodLabel($periodStart, $periodEnd);
+                        $periodLabel = \eel_accounts\Service\TaxPeriodService::accountingPeriodLabel($periodStart, $periodEnd);
                     }
 
                     $missingAccountingPeriodHtml .= '<div class="list">

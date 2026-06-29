@@ -1704,15 +1704,6 @@
         });
     }
 
-    function triggerStateSync(field) {
-        if (!(field instanceof HTMLElement)) {
-            return;
-        }
-
-        field.dispatchEvent(new Event('input', { bubbles: true }));
-        field.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-
     function initDangerZoneConfirmationControls(root = document) {
         const forms = root.querySelectorAll ? root.querySelectorAll('form[data-ajax="true"]') : [];
 
@@ -1722,7 +1713,7 @@
             }
 
             const clearInput = form.querySelector('[data-clear-confirm-input]');
-            const clearButton = form.querySelector('#clear-imported-data-button');
+            const clearButton = form.querySelector('[data-clear-confirm-button], #clear-imported-data-button');
             const deleteCheckbox = form.querySelector('[data-delete-confirm-checkbox]');
             const deleteInput = form.querySelector('[data-delete-confirm-input]');
             const deleteButton = form.querySelector('[data-delete-confirm-button]');
@@ -2055,22 +2046,6 @@
             passwordInput.addEventListener('input', () => syncPasswordRequirementPanel(panel));
             passwordInput.addEventListener('change', () => syncPasswordRequirementPanel(panel));
         });
-    }
-
-    function syncSubmitAction(submitter) {
-        if (!(submitter instanceof HTMLButtonElement) || !submitter.form) {
-            return;
-        }
-
-        const actionValue = submitter.dataset.submitAction;
-        if (typeof actionValue !== 'string' || actionValue === '') {
-            return;
-        }
-
-        const actionField = submitter.form.querySelector('#settings_action_field');
-        if (actionField instanceof HTMLInputElement) {
-            actionField.value = actionValue;
-        }
     }
 
     function syncSubmitField(submitter) {
@@ -2975,7 +2950,6 @@
             return;
         }
 
-        syncSubmitAction(event.submitter);
         syncSubmitField(event.submitter);
 
         const formData = new FormData(form);

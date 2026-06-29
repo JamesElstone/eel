@@ -36,7 +36,10 @@ To use this system, the company must meet the following criteria:
 
 - Be registered with Companies House and have a valid company registration number
 - Be active on Companies House (not dissolved or dormant)
-- Qualify as a micro-entity and prepare accounts under FRS 105, the Financial Reporting Standard applicable to the Micro-entities Regime
+- Qualify as a micro-entity and prepare accounts under FRS 105, the Financial Reporting Standard applicable to the Micro-entities Regime. This generally means meeting at least two of the following limits:
+  - Turnover of not more than GBP 1,000,000
+  - Balance sheet total of not more than GBP 500,000
+  - An average of no more than 10 employees
 - Have a valid UTR (Unique Taxpayer Reference) issued by HMRC
 - Not be VAT registered and remain below VAT registration thresholds
 - Have (free) developer API access configured for:

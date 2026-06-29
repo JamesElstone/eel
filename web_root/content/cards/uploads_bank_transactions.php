@@ -115,6 +115,7 @@ final class _uploads_bank_transactionsCard extends CardBaseFramework
                             </div>
                             <div class="form-row">
                                 <button class="button primary" type="submit" title="Select both the account and files for upload." disabled data-upload-submit>Upload CSV</button>
+                                <img class="upload-processing-icon is-hidden" src="svg/loader.svg" alt="" aria-hidden="true" data-upload-processing-icon>
                             </div>
                         </div>
                     </div>

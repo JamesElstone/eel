@@ -116,9 +116,7 @@ final class UploadsAction implements ActionInterfaceFramework
             !empty($result['success']),
             $flashMessages,
             $flashErrors,
-            ['upload_id' => (int)($result['statement_upload_id'] ?? 0)],
-            ['page.context', 'uploads.details'],
-            ['show_card' => 'uploads_details']
+            ['upload_id' => (int)($result['statement_upload_id'] ?? 0)]
         );
     }
 
@@ -294,7 +292,9 @@ final class UploadsAction implements ActionInterfaceFramework
             !empty($result['success']),
             $flashMessages,
             $flashErrors,
-            ['upload_id' => (int)($result['statement_upload_id'] ?? 0)]
+            ['upload_id' => (int)($result['statement_upload_id'] ?? 0)],
+            ['page.context', 'uploads.details'],
+            ['show_card' => 'uploads_details']
         );
     }
 

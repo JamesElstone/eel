@@ -80,4 +80,17 @@ $harness->run(UploadsAction::class, static function (GeneratedServiceClassTestHa
             ],
         ], $result->context());
     });
+
+    $harness->check(UploadsAction::class, 'commit upload result returns to upload details card', static function () use ($harness): void {
+        $method = new ReflectionMethod(UploadsAction::class, 'commitAccountUpload');
+        $lines = file((string)$method->getFileName());
+        $source = implode('', array_slice(
+            $lines === false ? [] : $lines,
+            $method->getStartLine() - 1,
+            $method->getEndLine() - $method->getStartLine() + 1
+        ));
+
+        $harness->assertTrue(str_contains($source, "['page.context', 'uploads.details']"));
+        $harness->assertTrue(str_contains($source, "['show_card' => 'uploads_details']"));
+    });
 });

@@ -70,4 +70,20 @@ $harness->run(CorporationTaxTreatmentRuleService::class, function (GeneratedServ
         $harness->assertSame('allowable', (string)$result['tax_treatment']);
         $harness->assertSame('nominal_accounts', (string)$result['source']);
     });
+
+    $harness->check(CorporationTaxTreatmentRuleService::class, 'does not expose deferred tax as an active CT treatment rule', function () use ($harness): void {
+        if (!InterfaceDB::tableExists('corporation_tax_treatment_rules')) {
+            $harness->skip('corporation_tax_treatment_rules table is not available.');
+        }
+
+        $activeCount = (int)InterfaceDB::fetchColumn(
+            'SELECT COUNT(*)
+             FROM corporation_tax_treatment_rules
+             WHERE rule_code = :rule_code
+               AND is_active = 1',
+            ['rule_code' => 'deferred_tax_not_expected']
+        );
+
+        $harness->assertSame(0, $activeCount);
+    });
 });

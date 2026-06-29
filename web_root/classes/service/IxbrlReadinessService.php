@@ -46,6 +46,16 @@ final class IxbrlReadinessService
         $missingSettings = $this->missingSettings($settings);
         $this->addCheck($checks, 'required_settings', 'Required company settings present', $missingSettings === [], false, $missingSettings === [] ? 'Core company settings are present.' : 'Missing: ' . implode(', ', $missingSettings));
 
+        $deferredTaxExposure = (new Frs105ValidationService())->deferredTaxNominalExposure($companyId, $accountingPeriodId);
+        $this->addCheck(
+            $checks,
+            'frs105_deferred_tax_nominal',
+            'FRS 105 deferred tax recognition',
+            empty($deferredTaxExposure['exists']),
+            false,
+            (string)($deferredTaxExposure['detail'] ?? '')
+        );
+
         $companiesHouseComparison = (new YearEndCompaniesHouseComparisonService())->fetchComparison($companyId, $accountingPeriodId);
         $comparisonFailures = $this->companiesHouseComparisonFailures($companiesHouseComparison);
         $comparisonWarnings = $this->companiesHouseComparisonWarnings($companiesHouseComparison);

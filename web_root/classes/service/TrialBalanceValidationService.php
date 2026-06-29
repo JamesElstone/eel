@@ -48,6 +48,7 @@ final class TrialBalanceValidationService
             (array)((new TrialBalanceComparisonService())->fetchComparison($companyId, $accountingPeriodId)['rows'] ?? []),
             static fn(array $row): bool => (string)($row['status'] ?? '') === 'differs'
         ));
+        $deferredTaxExposure = (new Frs105ValidationService())->deferredTaxNominalExposure($companyId, $accountingPeriodId);
 
         $checks = [
             [
@@ -106,6 +107,18 @@ final class TrialBalanceValidationService
                     ? 'Every month in the selected accounting period is green.'
                     : 'Some months still show no data or unresolved categorisation/suspense issues.',
                 'metric_value' => $monthTiles,
+            ],
+            [
+                'code' => 'frs105_deferred_tax_nominal',
+                'title' => 'FRS 105 deferred tax recognition',
+                'status' => !empty($deferredTaxExposure['exists']) ? 'warning' : 'pass',
+                'detail' => (string)($deferredTaxExposure['detail'] ?? ''),
+                'metric_value' => [
+                    'deferred_tax_nominal_count' => (int)($deferredTaxExposure['count'] ?? 0),
+                    'total_debit' => round((float)($deferredTaxExposure['total_debit'] ?? 0), 2),
+                    'total_credit' => round((float)($deferredTaxExposure['total_credit'] ?? 0), 2),
+                    'net_movement' => round((float)($deferredTaxExposure['net_movement'] ?? 0), 2),
+                ],
             ],
         ];
 

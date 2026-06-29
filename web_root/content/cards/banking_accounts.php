@@ -36,7 +36,7 @@ final class _banking_accountsCard extends CardBaseFramework
 
     public function title(): string
     {
-        return 'Company Accounts';
+        return 'Account Sources';
     }
 
     public function handleError(string $serviceKey, array $error, array $context): string

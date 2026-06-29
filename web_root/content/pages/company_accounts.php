@@ -16,7 +16,7 @@ final class _company_accounts extends PageContextFramework
 
     public function title(): string
     {
-        return 'Company Accounts';
+        return 'Account Sources';
     }
 
     public function subtitle(): string

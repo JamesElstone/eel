@@ -31,6 +31,11 @@ $harness->run(_statement_field_mappingCard::class, static function (GeneratedSer
                         'account_name' => 'Main Current Account',
                         'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
                     ],
+                    [
+                        'id' => 48,
+                        'account_name' => 'Savings Account',
+                        'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
+                    ],
                 ],
                 'account_mapping_preview' => [
                     'upload' => [
@@ -59,8 +64,47 @@ $harness->run(_statement_field_mappingCard::class, static function (GeneratedSer
 
         $harness->assertTrue(str_contains($html, 'Saved account mapping source'));
         $harness->assertTrue(str_contains($html, 'name="mapping_account_id" value="47"'));
+        $harness->assertTrue(str_contains($html, 'class="statement-mapping-account-switcher"'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="select_field_mapping"'));
+        $harness->assertTrue(str_contains($html, 'name="field_mapping_account_id"'));
+        $harness->assertTrue(str_contains($html, '<option value="" disabled></option>'));
         $harness->assertTrue(str_contains($html, '<option value="47" selected>Main Current Account'));
+        $harness->assertTrue(str_contains($html, '<option value="48">Savings Account</option>'));
         $harness->assertTrue(!str_contains($html, 'Select Field Mappings from an account first'));
+    });
+
+    $harness->check(_statement_field_mappingCard::class, 'shows only account switcher before account mapping is selected', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'page' => [
+                'page_id' => 'source_accounts',
+            ],
+            'company' => [
+                'id' => 42,
+                'accounting_period_id' => 61,
+            ],
+            'field_mapping' => [
+                'account_id' => 0,
+            ],
+            'uploads' => [],
+            'services' => [
+                'activeCompanyAccounts' => [
+                    [
+                        'id' => 47,
+                        'account_name' => 'Main Current Account',
+                        'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
+                    ],
+                ],
+                'account_mapping_preview' => [],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, 'class="statement-mapping-account-switcher"'));
+        $harness->assertTrue(str_contains($html, '<option value="" disabled selected></option>'));
+        $harness->assertTrue(str_contains($html, '<option value="47">Main Current Account</option>'));
+        $harness->assertTrue(!str_contains($html, 'Saved account mapping source'));
+        $harness->assertTrue(!str_contains($html, 'Select Field Mappings from an account first'));
+        $harness->assertTrue(!str_contains($html, 'CSV headings and first two rows'));
+        $harness->assertTrue(!str_contains($html, 'Save Mapping'));
     });
 
     $harness->check(_statement_field_mappingCard::class, 'renders first upload mapping from selected upload context', static function () use ($harness, $card): void {
@@ -110,6 +154,8 @@ $harness->run(_statement_field_mappingCard::class, static function (GeneratedSer
         $harness->assertTrue(str_contains($html, 'first-statement.csv'));
         $harness->assertTrue(str_contains($html, 'name="upload_id" value="124"'));
         $harness->assertTrue(str_contains($html, '<option value="47" selected>Main Current Account'));
+        $harness->assertTrue(str_contains($html, 'name="account_id" required'));
+        $harness->assertTrue(!str_contains($html, 'class="statement-mapping-account-switcher"'));
         $harness->assertTrue(str_contains($html, 'Review mapping'));
         $harness->assertTrue(!str_contains($html, 'Select an upload from Review'));
     });

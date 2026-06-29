@@ -1716,6 +1716,26 @@
   grid-column: auto;
 }
 
+.statement-mapping-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 16px;
+}
+
+.statement-mapping-summary-copy {
+  min-width: 0;
+}
+
+.statement-mapping-account-switcher {
+  justify-self: end;
+}
+
+.statement-mapping-account-switcher .select {
+  min-width: 240px;
+  max-width: min(360px, 42vw);
+}
+
 @media (max-width: 900px) {
 .settings-layout,
   .nominals-layout,
@@ -1742,6 +1762,19 @@
   .indexed-section-label {
       writing-mode: horizontal-tb;
       transform: none;
+    }
+
+  .statement-mapping-summary {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+  .statement-mapping-account-switcher {
+      justify-self: stretch;
+    }
+
+  .statement-mapping-account-switcher .select {
+      width: 100%;
+      max-width: none;
     }
 
   .indexed-section-header {

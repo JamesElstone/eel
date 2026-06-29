@@ -136,7 +136,7 @@ final class _uploads_detailsCard extends CardBaseFramework
                             <input type="hidden" name="upload_id" value="' . (int)($upload['id'] ?? 0) . '">
                             <input type="hidden" name="filter" value="' . HelperFramework::escape($selectedUploadHistoryFilter) . '">
                             <input type="hidden" name="page" value="' . $selectedUploadHistoryPage . '">
-                            <button class="button primary" type="submit" data-page-card-switch-tab="Commit Transactions"' . ($canPreviewAndValidate ? '' : ' disabled title="Save field mappings before previewing and validating rows."') . '>Preview And Validate</button>
+                            <button class="button primary" type="submit" data-page-card-switch-tab="Import Transactions"' . ($canPreviewAndValidate ? '' : ' disabled title="Save field mappings before previewing and validating rows."') . '>Import Transactions</button>
                         </form>');
 
                 if ($developerOptions) {

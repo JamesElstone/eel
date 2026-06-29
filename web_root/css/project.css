@@ -1627,6 +1627,23 @@
   box-shadow: 0 0 0 4px rgba(45, 93, 255, 0.08);
 }
 
+.upload-processing-icon {
+  width: 24px;
+  height: 24px;
+  animation: upload-processing-spin 1s linear infinite;
+  vertical-align: middle;
+}
+
+@keyframes upload-processing-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .upload-box h3 {
   margin: 0 0 8px;
   font-size: 1rem;

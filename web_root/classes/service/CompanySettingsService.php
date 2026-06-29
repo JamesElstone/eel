@@ -117,6 +117,7 @@ final class CompanySettingsService
     public function saveCompanySection(CompanySettingsStore $settingsStore, array $settings): void
     {
         $companyRepository = new CompanyRepository();
+        $settings['utr'] = $this->normaliseUtr((string)($settings['utr'] ?? ''));
         InterfaceDB::beginTransaction();
 
         try {
@@ -135,6 +136,11 @@ final class CompanySettingsService
             }
             throw $e;
         }
+    }
+
+    private function normaliseUtr(string $utr): string
+    {
+        return preg_replace('/\s+/', '', trim($utr)) ?? '';
     }
 
     public function saveAccountingSection(CompanySettingsStore $settingsStore, array &$settings): void

@@ -32,4 +32,16 @@ $harness->run(\eel_accounts\Service\CompanySettingsService::class, static functi
 
         $harness->assertSame(15, (int)($suggestions['default_trade_nominal_id']['id'] ?? 0));
     });
+
+    $harness->check(\eel_accounts\Service\CompanySettingsService::class, 'suggests expense claims payable as the default expense nominal', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod(\eel_accounts\Service\CompanySettingsService::class, 'buildNominalDefaultSuggestions');
+        $method->setAccessible(true);
+
+        $suggestions = $method->invoke($service, [
+            ['id' => 14, 'code' => '2110', 'name' => 'Expense Claims Payable', 'account_type' => 'liability', 'subtype_code' => 'expense_payable'],
+            ['id' => 20, 'code' => '5000', 'name' => 'Materials', 'account_type' => 'expense', 'subtype_code' => ''],
+        ]);
+
+        $harness->assertSame(14, (int)($suggestions['default_expense_nominal_id']['id'] ?? 0));
+    });
 });

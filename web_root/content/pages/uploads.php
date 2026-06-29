@@ -27,9 +27,7 @@ final class _uploads extends PageContextFramework
 
     public function cards(): array
     {
-        return [
-            'dump_context', 
-        ];
+        return [];
     }
 
     public function cardLayout(): array
@@ -38,8 +36,8 @@ final class _uploads extends PageContextFramework
             [
                 'tab' => 'Upload',
                 'cards' => [
-                    'uploads_bank_transactions',
                     'uploads_statement_coverage',
+                    'uploads_bank_transactions',
                     'transactions_monthly_status',
                 ],
             ],

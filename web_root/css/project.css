@@ -26,6 +26,23 @@
   min-width: 0;
 }
 
+.expense-claimant-add-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.expense-claimant-add-form .mini-field {
+  flex: 1 1 260px;
+  max-width: 360px;
+}
+
+.expense-claimant-add-form .button {
+  flex: 0 0 auto;
+  margin-bottom: 0;
+}
+
 .flex-controls {
   display: flex;
   align-items: flex-start;

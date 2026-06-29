@@ -1776,7 +1776,8 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_06_29_002_ixbrl_external_validation.sql'),
   ('2026_06_29_003_nominal_account_origin.sql'),
   ('2026_06_29_004_database_integrity_alignment.sql'),
-  ('2026_06_29_005_remove_deferred_tax_ct_rule.sql');
+  ('2026_06_29_005_remove_deferred_tax_ct_rule.sql'),
+  ('2026_06_30_001_ensure_expense_claim_tables.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

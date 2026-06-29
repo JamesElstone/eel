@@ -44,7 +44,12 @@ final class _expense_claimantsCard extends CardBaseFramework
         $data = (array)($context['services']['expensesPageData'] ?? []);
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
+        $hasCompany = $companyId > 0;
         $claimants = (array)($data['claimants'] ?? []);
+        $addDisabled = $hasCompany ? '' : ' disabled';
+        $addHelper = $hasCompany
+            ? 'Manage the people who can submit monthly personal expense claims for this company.'
+            : 'Select or add a company before configuring expense claimants.';
 
         $rows = '';
         foreach ($claimants as $claimant) {
@@ -65,23 +70,23 @@ final class _expense_claimantsCard extends CardBaseFramework
         }
 
         if ($rows === '') {
-            $rows = '<tr><td colspan="3" class="helper">No claimants configured yet. Add one below to enable claim creation.</td></tr>';
+            $rows = '<tr><td colspan="3" class="helper">' . ($hasCompany ? 'No claimants configured yet. Add one below to enable claim creation.' : 'No company is selected.') . '</td></tr>';
         }
 
         return '<section class="panel-soft">
             <div class="status-head">
                 <h3 class="card-title">Claimants</h3>
             </div>
-            <div class="helper">Manage the people who can submit monthly personal expense claims for this company.</div>
-            <form class="toolbar" method="post" action="?page=expenses" data-ajax="true">
+            <div class="helper">' . HelperFramework::escape($addHelper) . '</div>
+            <form class="expense-claimant-add-form" method="post" action="?page=expenses" data-ajax="true">
                 <input type="hidden" name="card_action" value="Expense">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="intent" value="add_claimant">
                 <div class="mini-field">
                     <label for="expense-new-claimant">New claimant</label>
-                    <input class="input" id="expense-new-claimant" name="claimant_name" type="text" placeholder="Add claimant">
+                    <input class="input" id="expense-new-claimant" name="claimant_name" type="text" placeholder="Claimant\'s Name"' . $addDisabled . '>
                 </div>
-                <button class="button primary" type="submit">Add claimant</button>
+                <button class="button primary" type="submit"' . $addDisabled . '>Add claimant</button>
             </form>
             <div class="table-scroll">
                 <table>

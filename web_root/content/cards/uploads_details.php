@@ -241,6 +241,7 @@ final class _uploads_detailsCard extends CardBaseFramework
 
         $periodCells = '';
         $uploadCells = '';
+        $outstandingUploadCells = '';
 
         foreach ($summary as $period) {
             if (!is_array($period)) {
@@ -249,6 +250,7 @@ final class _uploads_detailsCard extends CardBaseFramework
 
             $periodCells .= '<th scope="col">' . $this->accountingPeriodSummaryButton($period) . '</th>';
             $uploadCells .= '<td>' . (int)($period['upload_count'] ?? 0) . ' CSV (' . (int)($period['row_count'] ?? 0) . ' rows)</td>';
+            $outstandingUploadCells .= '<td>' . (int)($period['outstanding_upload_count'] ?? 0) . ' CSV</td>';
         }
 
         if ($periodCells === '') {
@@ -265,6 +267,10 @@ final class _uploads_detailsCard extends CardBaseFramework
                     <tr>
                         <th scope="row">Uploads</th>
                         ' . $uploadCells . '
+                    </tr>
+                    <tr>
+                        <th scope="row">Outstanding CSVs</th>
+                        ' . $outstandingUploadCells . '
                     </tr>
                 </tbody>
             </table>

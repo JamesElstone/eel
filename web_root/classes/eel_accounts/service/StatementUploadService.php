@@ -3623,6 +3623,7 @@ final class StatementUploadService
             $summaryByAccountingPeriodId[$accountingPeriodId] = [
                 'upload_count' => (int)($row['upload_count'] ?? 0),
                 'row_count' => (int)($row['row_count'] ?? 0),
+                'outstanding_upload_count' => (int)($row['outstanding_upload_count'] ?? 0),
             ];
         }
 
@@ -3632,6 +3633,7 @@ final class StatementUploadService
             $counts = $summaryByAccountingPeriodId[$accountingPeriodId] ?? [
                 'upload_count' => 0,
                 'row_count' => 0,
+                'outstanding_upload_count' => 0,
             ];
 
             $summary[] = [
@@ -3641,6 +3643,7 @@ final class StatementUploadService
                 'period_end' => (string)($accountingPeriod['period_end'] ?? ''),
                 'upload_count' => (int)$counts['upload_count'],
                 'row_count' => (int)$counts['row_count'],
+                'outstanding_upload_count' => (int)$counts['outstanding_upload_count'],
             ];
         }
 
@@ -3651,16 +3654,35 @@ final class StatementUploadService
     {
         return 'SELECT upload_accounting_period_id AS accounting_period_id,
                     COUNT(*) AS upload_count,
-                    SUM(rows_parsed) AS row_count
+                    SUM(rows_parsed) AS row_count,
+                    COALESCE(SUM(outstanding_upload_count), 0) AS outstanding_upload_count
              FROM (
                  SELECT COALESCE(su.accounting_period_id, ty.id) AS upload_accounting_period_id,
                         COALESCE(NULLIF(su.file_sha256, \'\'), CONCAT(\'upload:\', su.id)) AS upload_identity,
-                        MAX(su.rows_parsed) AS rows_parsed
+                        MAX(su.rows_parsed) AS rows_parsed,
+                        MAX(
+                            CASE
+                                WHEN su.rows_parsed > 0
+                                 AND su.workflow_status NOT IN (\'committed\', \'completed\')
+                                 AND su.rows_committed = 0
+                                 AND COALESCE(upload_hash_counts.upload_count, 1) <= 1
+                                    THEN 1
+                                ELSE 0
+                            END
+                        ) AS outstanding_upload_count
                  FROM statement_uploads su
                  LEFT JOIN accounting_periods ty
                     ON su.accounting_period_id IS NULL
                    AND ty.company_id = su.company_id
                    AND su.statement_month BETWEEN ty.period_start AND ty.period_end
+                 LEFT JOIN (
+                     SELECT company_id, file_sha256, COUNT(*) AS upload_count
+                     FROM statement_uploads
+                     WHERE file_sha256 <> \'\'
+                     GROUP BY company_id, file_sha256
+                 ) upload_hash_counts
+                    ON upload_hash_counts.company_id = su.company_id
+                   AND upload_hash_counts.file_sha256 = su.file_sha256
                  WHERE su.company_id = :company_id
                    AND COALESCE(su.accounting_period_id, ty.id) IS NOT NULL
                  GROUP BY COALESCE(su.accounting_period_id, ty.id),

@@ -18,13 +18,14 @@ final class IxbrlAction implements ActionInterfaceFramework
 
         try {
             $readiness = (new IxbrlReadinessService())->getReadiness($companyId, $accountingPeriodId);
-            if (empty($readiness['can_build_facts'])) {
+            if ($intent !== 'validate_ixbrl_external' && empty($readiness['can_build_facts'])) {
                 return $this->result(false, (array)($readiness['blocking_errors'] ?? ['iXBRL readiness checks failed.']), $changedFacts);
             }
 
             $result = match ($intent) {
                 'build_ixbrl_facts' => $this->buildFacts($companyId, $accountingPeriodId),
                 'generate_ixbrl_preview' => $this->generatePreview($companyId, $accountingPeriodId),
+                'validate_ixbrl_external' => $this->validateExternal($companyId, $accountingPeriodId),
                 default => ['success' => false, 'errors' => ['Unknown iXBRL builder action.']],
             };
         } catch (Throwable $exception) {
@@ -48,12 +49,26 @@ final class IxbrlAction implements ActionInterfaceFramework
             (new IxbrlFactBuilderService())->buildFacts($companyId, $accountingPeriodId);
         }
 
-        $result = (new IxbrlRenderService())->generatePreview($companyId, $accountingPeriodId);
+        $result = (new IxbrlRenderService())->generateFilingExport($companyId, $accountingPeriodId);
         if (!empty($result['success'])) {
-            $result['messages'] = ['iXBRL preview generated.'];
+            $result['messages'] = ['iXBRL filing export generated.'];
         }
 
         return $result;
+    }
+
+    private function validateExternal(int $companyId, int $accountingPeriodId): array
+    {
+        $result = (new IxbrlExternalValidationService())->validateLatestRun($companyId, $accountingPeriodId);
+        $status = (string)($result['status'] ?? 'error');
+        if ($status === 'passed') {
+            return ['success' => true, 'errors' => [], 'messages' => ['Arelle external validation passed.']];
+        }
+        if ($status === 'not_configured') {
+            return ['success' => false, 'errors' => (array)($result['errors'] ?? ['Arelle is not configured.'])];
+        }
+
+        return ['success' => false, 'errors' => (array)($result['errors'] ?? ['Arelle external validation failed.'])];
     }
 
     private function result(bool $success, array $errors, array $changedFacts, array $messages = []): ActionResultFramework

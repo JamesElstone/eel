@@ -129,6 +129,16 @@ final class IxbrlFactBuilderService
                     company_id INT NOT NULL,
                     accounting_period_id INT NOT NULL,
                     status ENUM('draft','ready','generated','failed') NOT NULL DEFAULT 'draft',
+                    export_type VARCHAR(32) NOT NULL DEFAULT 'preview',
+                    taxonomy_profile VARCHAR(100) NULL,
+                    validation_status VARCHAR(32) NOT NULL DEFAULT 'not_validated',
+                    validation_errors_json LONGTEXT NULL,
+                    external_validator VARCHAR(50) NULL,
+                    external_validation_status VARCHAR(32) NOT NULL DEFAULT 'not_configured',
+                    external_validation_errors_json LONGTEXT NULL,
+                    external_validation_warnings_json LONGTEXT NULL,
+                    external_validation_log_path VARCHAR(1000) NULL,
+                    external_validated_at DATETIME NULL,
                     generated_filename VARCHAR(255) NULL,
                     generated_path VARCHAR(1000) NULL,
                     output_sha256 CHAR(64) NULL,
@@ -142,6 +152,11 @@ final class IxbrlFactBuilderService
                     CONSTRAINT fk_ixbrl_runs_accounting_period FOREIGN KEY (accounting_period_id) REFERENCES accounting_periods(id) ON DELETE CASCADE ON UPDATE CASCADE
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
             );
+        }
+        foreach ($this->runMetadataColumns() as $column => $definition) {
+            if (!InterfaceDB::columnExists('ixbrl_generation_runs', $column)) {
+                InterfaceDB::prepareExecute('ALTER TABLE ixbrl_generation_runs ADD COLUMN ' . $column . ' ' . $definition);
+            }
         }
 
         if (!InterfaceDB::tableExists('ixbrl_generation_facts')) {
@@ -209,6 +224,26 @@ final class IxbrlFactBuilderService
                 $row
             );
         }
+
+        InterfaceDB::prepareExecute(
+            'UPDATE ixbrl_fact_mappings
+             SET taxonomy_concept = :taxonomy_concept,
+                 label = :label,
+                 source_key = :source_key
+             WHERE fact_key = :fact_key',
+            [
+                'taxonomy_concept' => 'uk-gaap:CreditorsDueAfterMoreThanOneYear',
+                'label' => 'Creditors after more than one year',
+                'source_key' => 'creditors_after_more_than_one_year',
+                'fact_key' => 'creditors_after_one_year',
+            ]
+        );
+        InterfaceDB::prepareExecute(
+            'UPDATE ixbrl_fact_mappings
+             SET source_key = :source_key
+             WHERE fact_key = :fact_key',
+            ['source_key' => 'equity_capital_reserves', 'fact_key' => 'equity']
+        );
     }
 
     private function activeMappings(): array
@@ -256,13 +291,40 @@ final class IxbrlFactBuilderService
             'date_value' => $date,
             'unit_ref' => $type === 'numeric' ? 'GBP' : null,
             'decimals_value' => $type === 'numeric' ? '2' : null,
-            'context_ref' => in_array($type, ['numeric', 'date', 'boolean'], true) ? 'current_period' : 'entity',
+            'context_ref' => $this->contextRef((string)$mapping['fact_key'], $type),
             'source' => [
                 'calculation_type' => (string)$mapping['calculation_type'],
                 'source_key' => $sourceKey,
-                'internal_pack_notice' => 'Generated FRS 105 micro-entity accounts preview only; not a complete HMRC CT600 submission.',
+                'export_notice' => 'Generated FRS 105 micro-entity accounts iXBRL export for review and validation before filing.',
             ],
         ];
+    }
+
+    private function contextRef(string $factKey, string $valueType): string
+    {
+        if (in_array($factKey, [
+            'current_assets',
+            'fixed_assets',
+            'creditors_within_one_year',
+            'creditors_after_one_year',
+            'net_current_assets_liabilities',
+            'total_assets_less_current_liabilities',
+            'net_assets_liabilities',
+            'equity',
+        ], true)) {
+            return 'current_period_end';
+        }
+
+        if (in_array($factKey, [
+            'period_start',
+            'period_end',
+            'average_number_employees',
+            'dormant_false',
+        ], true)) {
+            return 'current_period_duration';
+        }
+
+        return $valueType === 'date' ? 'current_period_duration' : 'entity';
     }
 
     private function manualValue(string $factKey): string|int|bool
@@ -326,11 +388,11 @@ final class IxbrlFactBuilderService
             $this->seed('current_assets', 'uk-gaap:CurrentAssets', 'Current assets', 'numeric', 'derived', 'current_assets', 100),
             $this->seed('fixed_assets', 'uk-gaap:FixedAssets', 'Fixed assets', 'numeric', 'derived', 'fixed_assets', 110),
             $this->seed('creditors_within_one_year', 'uk-gaap:CreditorsDueWithinOneYear', 'Creditors within one year', 'numeric', 'derived', 'creditors_within_one_year', 120),
-            $this->seed('creditors_after_one_year', 'uk-gaap:CreditorsDueAfterOneYear', 'Creditors after one year', 'numeric', 'derived', 'creditors_after_one_year', 130),
+            $this->seed('creditors_after_one_year', 'uk-gaap:CreditorsDueAfterMoreThanOneYear', 'Creditors after more than one year', 'numeric', 'derived', 'creditors_after_more_than_one_year', 130),
             $this->seed('net_current_assets_liabilities', 'uk-gaap:NetCurrentAssetsLiabilities', 'Net current assets / liabilities', 'numeric', 'derived', 'net_current_assets_liabilities', 140),
             $this->seed('total_assets_less_current_liabilities', 'uk-gaap:TotalAssetsLessCurrentLiabilities', 'Total assets less current liabilities', 'numeric', 'derived', 'total_assets_less_current_liabilities', 150),
             $this->seed('net_assets_liabilities', 'uk-gaap:NetAssetsLiabilities', 'Net assets / liabilities', 'numeric', 'derived', 'net_assets_liabilities', 160),
-            $this->seed('equity', 'uk-gaap:CapitalAndReserves', 'Equity / capital and reserves', 'numeric', 'derived', 'equity', 170),
+            $this->seed('equity', 'uk-gaap:CapitalAndReserves', 'Equity / capital and reserves', 'numeric', 'derived', 'equity_capital_reserves', 170),
             $this->seed('average_number_employees', 'uk-gaap:AverageNumberEmployeesDuringPeriod', 'Average number of employees', 'numeric', 'manual', null, 200),
             $this->seed('dormant_false', 'uk-bus:EntityDormant', 'Dormant false', 'boolean', 'manual', null, 210),
             $this->seed('micro_entity_statement', 'uk-gaap:MicroEntityAccountsStatement', 'Micro-entity statement', 'text', 'manual', null, 220),
@@ -338,6 +400,22 @@ final class IxbrlFactBuilderService
             $this->seed('directors_responsibility_statement', 'uk-gaap:DirectorsResponsibilityStatement', 'Directors responsibility statement', 'text', 'manual', null, 240),
             $this->seed('members_no_audit_statement', 'uk-gaap:MembersHaveNotRequiredAuditStatement', 'Members no-audit statement', 'text', 'manual', null, 250),
             $this->seed('production_software', 'uk-bus:NameProductionSoftware', 'Production software', 'text', 'manual', null, 260),
+        ];
+    }
+
+    private function runMetadataColumns(): array
+    {
+        return [
+            'export_type' => "VARCHAR(32) NOT NULL DEFAULT 'preview'",
+            'taxonomy_profile' => 'VARCHAR(100) NULL',
+            'validation_status' => "VARCHAR(32) NOT NULL DEFAULT 'not_validated'",
+            'validation_errors_json' => 'LONGTEXT NULL',
+            'external_validator' => 'VARCHAR(50) NULL',
+            'external_validation_status' => "VARCHAR(32) NOT NULL DEFAULT 'not_configured'",
+            'external_validation_errors_json' => 'LONGTEXT NULL',
+            'external_validation_warnings_json' => 'LONGTEXT NULL',
+            'external_validation_log_path' => 'VARCHAR(1000) NULL',
+            'external_validated_at' => 'DATETIME NULL',
         ];
     }
 

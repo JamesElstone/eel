@@ -436,66 +436,18 @@ final class YearEndMetricsService
     }
 
     public function fetchBalanceSheetMetricValues(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array {
-        $rows = InterfaceDB::fetchAll( 'SELECT na.account_type,
-                    COALESCE(nas.code, \'\') AS subtype_code,
-                    COALESCE(SUM(COALESCE(jl.debit, 0) - COALESCE(jl.credit, 0)), 0) AS movement
-             FROM journals j
-             INNER JOIN journal_lines jl ON jl.journal_id = j.id
-             INNER JOIN nominal_accounts na ON na.id = jl.nominal_account_id
-             LEFT JOIN nominal_account_subtypes nas ON nas.id = na.account_subtype_id
-             WHERE j.company_id = :company_id
-               AND j.accounting_period_id = :accounting_period_id
-               AND j.is_posted = 1
-               AND j.journal_date BETWEEN :period_start AND :period_end
-             GROUP BY na.account_type, nas.code', [
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-            'period_start' => $periodStart,
-            'period_end' => $periodEnd,
-        ]);
-
-        $fixedAssets = 0.0;
-        $currentAssets = 0.0;
-        $currentLiabilities = 0.0;
-        $nonCurrentLiabilities = 0.0;
-        $equity = 0.0;
-
-        foreach ($rows as $row) {
-            $accountType = (string)($row['account_type'] ?? '');
-            $subtypeCode = (string)($row['subtype_code'] ?? '');
-            $movement = round((float)($row['movement'] ?? 0), 2);
-
-            if ($accountType === 'asset') {
-                if (in_array($subtypeCode, ['bank', 'trade_debtor', 'director_loan_asset'], true) || $subtypeCode === '') {
-                    $currentAssets += $movement;
-                } else {
-                    $fixedAssets += $movement;
-                }
-            } elseif ($accountType === 'liability') {
-                if ($subtypeCode === 'corp_tax' || $subtypeCode === 'vat_control' || $subtypeCode === 'director_loan_liability' || $subtypeCode === '') {
-                    $currentLiabilities += abs($movement);
-                } else {
-                    $nonCurrentLiabilities += abs($movement);
-                }
-            } elseif ($accountType === 'equity') {
-                $equity += abs($movement);
-            }
-        }
-
-        $totalAssets = round($fixedAssets + $currentAssets, 2);
-        $netCurrentAssets = round($currentAssets - $currentLiabilities, 2);
-        $totalAssetsLessCurrentLiabilities = round($totalAssets - $currentLiabilities, 2);
-        $netAssets = round($totalAssets - $currentLiabilities - $nonCurrentLiabilities, 2);
+        $metrics = (new IxbrlBalanceSheetMetricsService())->fetchClosingMetricsForPeriod($companyId, $periodStart, $periodEnd);
+        $buckets = (array)($metrics['buckets'] ?? []);
 
         return [
-            'fixed_assets' => round($fixedAssets, 2),
-            'current_assets' => round($currentAssets, 2),
-            'creditors_within_one_year' => round($currentLiabilities, 2),
-            'creditors_after_more_than_one_year' => round($nonCurrentLiabilities, 2),
-            'net_current_assets_liabilities' => $netCurrentAssets,
-            'total_assets_less_current_liabilities' => $totalAssetsLessCurrentLiabilities,
-            'net_assets_liabilities' => $netAssets,
-            'equity_capital_reserves' => round($equity !== 0.0 ? $equity : $netAssets, 2),
+            'fixed_assets' => round((float)($buckets['fixed_assets'] ?? 0), 2),
+            'current_assets' => round((float)($buckets['current_assets'] ?? 0), 2),
+            'creditors_within_one_year' => round((float)($buckets['creditors_within_one_year'] ?? 0), 2),
+            'creditors_after_more_than_one_year' => round((float)($buckets['creditors_after_more_than_one_year'] ?? 0), 2),
+            'net_current_assets_liabilities' => round((float)($buckets['net_current_assets_liabilities'] ?? 0), 2),
+            'total_assets_less_current_liabilities' => round((float)($buckets['total_assets_less_current_liabilities'] ?? 0), 2),
+            'net_assets_liabilities' => round((float)($buckets['net_assets_liabilities'] ?? 0), 2),
+            'equity_capital_reserves' => round((float)($buckets['equity_capital_reserves'] ?? 0), 2),
         ];
     }
 

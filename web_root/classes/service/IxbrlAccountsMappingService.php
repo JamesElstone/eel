@@ -12,8 +12,11 @@ final class IxbrlAccountsMappingService
     public function getAccountsMapping(int $companyId, int $accountingPeriodId): array
     {
         $trialBalance = (new IxbrlTrialBalanceService())->getTrialBalance($companyId, $accountingPeriodId);
+        $closingMetrics = (new IxbrlBalanceSheetMetricsService())->fetchClosingMetrics($companyId, $accountingPeriodId);
+        $closingBuckets = (array)($closingMetrics['buckets'] ?? []);
+        $closingSources = (array)($closingMetrics['sources'] ?? []);
         $buckets = $this->emptyBuckets();
-        $sources = [];
+        $sources = $closingSources;
         $income = 0.0;
         $costOfSales = 0.0;
         $expenses = 0.0;
@@ -45,20 +48,6 @@ final class IxbrlAccountsMappingService
                 $this->addSource($sources, 'expenses', $name, $amount);
                 continue;
             }
-            if ($accountType === 'asset') {
-                $amount = round($net, 2);
-                $bucket = in_array($subtype, ['fixed_asset', 'fixed_assets'], true) ? 'fixed_assets' : 'current_assets';
-                $buckets[$bucket] += $amount;
-                $this->addSource($sources, $bucket, $name, $amount);
-                continue;
-            }
-            if ($accountType === 'liability') {
-                $amount = round($credit - $debit, 2);
-                $bucket = in_array($subtype, ['long_term_liability', 'creditors_after_one_year'], true) ? 'creditors_after_one_year' : 'creditors_within_one_year';
-                $buckets[$bucket] += $amount;
-                $this->addSource($sources, $bucket, $name, $amount);
-                continue;
-            }
             if ($accountType === 'equity') {
                 $amount = round($credit - $debit, 2);
                 $explicitEquity += $amount;
@@ -66,21 +55,22 @@ final class IxbrlAccountsMappingService
             }
         }
 
+        foreach (['fixed_assets', 'current_assets', 'creditors_within_one_year', 'creditors_after_more_than_one_year', 'net_current_assets_liabilities', 'total_assets_less_current_liabilities', 'net_assets_liabilities', 'equity_capital_reserves', 'equity'] as $key) {
+            $buckets[$key] = round((float)($closingBuckets[$key] ?? 0), 2);
+        }
+        $buckets['creditors_after_one_year'] = $buckets['creditors_after_more_than_one_year'];
+
         $buckets['turnover'] = round($income, 2);
         $buckets['expenses'] = round($costOfSales + $expenses, 2);
         $buckets['profit_loss'] = round($income - $costOfSales - $expenses, 2);
-        $buckets['net_current_assets_liabilities'] = round($buckets['current_assets'] - $buckets['creditors_within_one_year'], 2);
-        $buckets['total_assets_less_current_liabilities'] = round($buckets['fixed_assets'] + $buckets['current_assets'] - $buckets['creditors_within_one_year'], 2);
-        $buckets['net_assets_liabilities'] = round($buckets['total_assets_less_current_liabilities'] - $buckets['creditors_after_one_year'], 2);
-        $buckets['equity'] = round($buckets['net_assets_liabilities'], 2);
 
         $assumptions = [
-            'Equity / capital and reserves is derived from net assets for this MVP unless later period-close retained earnings support supersedes it.',
+            'Balance sheet facts use closing posted-journal balances up to the period end, including opening and brought-forward journals.',
             'Fixed assets require a fixed_asset nominal subtype; otherwise asset accounts are treated as current assets.',
-            'All liability accounts are treated as due within one year unless a long-term subtype is present.',
+            'All liability accounts are treated as due within one year unless an explicit long-term liability subtype is present.',
         ];
-        if (abs($explicitEquity) >= 0.005 && abs($explicitEquity - $buckets['equity']) >= 0.005) {
-            $assumptions[] = 'Explicit equity nominal balance differs from derived net assets; derived net assets is used for the first-pass accounts fact.';
+        if (abs($explicitEquity) >= 0.005 && abs($explicitEquity - $buckets['equity_capital_reserves']) >= 0.005) {
+            $assumptions[] = 'Explicit current-period equity movement differs from closing capital and reserves; the closing balance sheet metric is used for accounts facts.';
         }
 
         return [
@@ -89,6 +79,9 @@ final class IxbrlAccountsMappingService
             'sources' => $sources,
             'assumptions' => $assumptions,
             'trial_balance_row_count' => count($trialBalance),
+            'closing_balance_row_count' => (int)($closingMetrics['row_count'] ?? 0),
+            'balance_equation_difference' => (float)($closingMetrics['balance_equation_difference'] ?? 0),
+            'is_balance_sheet_balanced' => !empty($closingMetrics['is_balance_sheet_balanced']),
         ];
     }
 
@@ -101,10 +94,12 @@ final class IxbrlAccountsMappingService
             'current_assets' => 0.0,
             'fixed_assets' => 0.0,
             'creditors_within_one_year' => 0.0,
+            'creditors_after_more_than_one_year' => 0.0,
             'creditors_after_one_year' => 0.0,
             'net_current_assets_liabilities' => 0.0,
             'total_assets_less_current_liabilities' => 0.0,
             'net_assets_liabilities' => 0.0,
+            'equity_capital_reserves' => 0.0,
             'equity' => 0.0,
         ];
     }

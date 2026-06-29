@@ -11,6 +11,8 @@ present.
 - eelKit framework files are licensed under the BSD 3-Clause License.
 - Bundled font files under web_root/fonts are licensed under the SIL Open Font
   License version 1.1 (OFL-1.1).
+- Arelle integration files under third_party/arelle document and wrap the
+  separately distributed Arelle validator, which is Apache-2.0 licensed.
 
 If a file does not contain an explicit licence notice, treat the surrounding
 directory, file purpose, and project history as the guide:
@@ -18,6 +20,9 @@ directory, file purpose, and project history as the guide:
 - EEL Accounts application files are AGPLv3.
 - eelKit framework files are BSD 3-Clause.
 - Font assets remain under their upstream font licences.
+- Third-party validator runtimes, caches, taxonomies, and logs under
+  third_party/arelle are governed by their upstream licences and local install
+  terms.
 
 Full licence texts are included in:
 

@@ -11,7 +11,7 @@ final class StatementUploadService
 {
     public const SOURCE_TYPE = 'bank_account';
     public const CURRENCY_DEFAULT_OPTION_GBP = '__default_currency_gbp__';
-    public const MAX_BATCH_UPLOAD_FILES = 12;
+    public const MAX_BATCH_UPLOAD_FILES = 13;
 
     private const OFFLINE_ROW_KEY_HEADER = 'eel_row_key';
     private const WORKFLOW_UPLOADED = 'uploaded';

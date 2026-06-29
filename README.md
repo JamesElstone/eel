@@ -145,6 +145,7 @@ This repository is mixed-licensed.
 - EEL Accounts application-specific files are licensed under the GNU Affero General Public License v3.0 (AGPLv3).
 - eelKit framework files are licensed under the BSD 3-Clause License.
 - Bundled font files are licensed under the SIL Open Font License 1.1 (OFL).
+- Arelle integration files live under `third_party/arelle/`; Arelle itself is Apache-2.0 licensed and is installed locally into git-ignored runtime folders when needed.
 
 See `LICENSE` for the licence index and file-level notices for the licence that applies to each file.
 
@@ -153,6 +154,8 @@ Separate project, support, hosting, consultancy, or commercial terms are set out
 ### Third-Party Assets
 
 This project uses the Inter and Roboto fonts, licensed under the SIL Open Font License 1.1 (OFL). The font files and their licences are included in `web_root/fonts`.
+
+The optional Arelle iXBRL validator integration is kept under `third_party/arelle/` to make the third-party licence boundary explicit. Run `third_party\arelle\bin\install_arelle.bat` on Windows to create a local validator runtime.
 
 ---
 

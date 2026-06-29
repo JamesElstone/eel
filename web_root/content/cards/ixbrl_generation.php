@@ -25,6 +25,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
         $canBuild = !empty($readiness['can_build_facts']);
         $canGenerate = $canBuild && ((int)($run['fact_count'] ?? 0) > 0 || $run === []);
         $fileExists = trim((string)($run['generated_path'] ?? '')) !== '' && is_file((string)$run['generated_path']);
+        $canValidateExternal = $fileExists;
         $download = $fileExists
             ? '<a class="button" href="/outbound/ixbrl/' . rawurlencode((string)$run['generated_filename']) . '">Download Generated File</a>'
             : '';
@@ -40,9 +41,14 @@ final class _ixbrl_generationCard extends CardBaseFramework
                     ' . $this->metric('Output filename', (string)($run['generated_filename'] ?? '')) . '
                     ' . $this->metric('SHA-256', (string)($run['output_sha256'] ?? '')) . '
                     ' . $this->metric('Facts', (string)(int)($run['fact_count'] ?? 0)) . '
+                    ' . $this->metric('Export type', (string)($run['export_type'] ?? '')) . '
+                    ' . $this->metric('Validation', (string)($run['validation_status'] ?? '')) . '
+                    ' . $this->metric('Arelle status', (string)($run['external_validation_status'] ?? 'not_configured')) . '
+                    ' . $this->metric('Arelle validated at', (string)($run['external_validated_at'] ?? '')) . '
                 </div>
                 <div class="helper">' . HelperFramework::escape((string)($run['error_message'] ?? '')) . '</div>
-                <div class="helper">Generated XHTML is a preview-quality internal FRS 105 micro-entity accounts preview, not a complete HMRC CT600 submission.</div>
+                <div class="helper">' . HelperFramework::escape($this->externalSummary($run)) . '</div>
+                <div class="helper">Generated XHTML is an FRS 105 micro-entity accounts iXBRL export for review and validation before filing.</div>
             </section>
             <form method="post" action="?page=ixbrl_builder" data-ajax="true" class="actions-row">
                 <input type="hidden" name="card_action" value="Ixbrl">
@@ -56,8 +62,15 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 <input type="hidden" name="intent" value="generate_ixbrl_preview">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <button class="button primary" type="submit"' . ($canGenerate ? '' : ' disabled') . '>Generate iXBRL Preview</button>
+                <button class="button primary" type="submit"' . ($canGenerate ? '' : ' disabled') . '>Generate Filing Export</button>
                 ' . $download . '
+            </form>
+            <form method="post" action="?page=ixbrl_builder" data-ajax="true" class="actions-row">
+                <input type="hidden" name="card_action" value="Ixbrl">
+                <input type="hidden" name="intent" value="validate_ixbrl_external">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <button class="button" type="submit"' . ($canValidateExternal ? '' : ' disabled') . '>Run External Validation</button>
             </form>
         </div>';
     }
@@ -75,5 +88,27 @@ final class _ixbrl_generationCard extends CardBaseFramework
             'failed' => 'danger',
             default => 'muted',
         };
+    }
+
+    private function externalSummary(array $run): string
+    {
+        $status = (string)($run['external_validation_status'] ?? 'not_configured');
+        $errors = json_decode((string)($run['external_validation_errors_json'] ?? '[]'), true);
+        $warnings = json_decode((string)($run['external_validation_warnings_json'] ?? '[]'), true);
+        $errorCount = is_array($errors) ? count($errors) : 0;
+        $warningCount = is_array($warnings) ? count($warnings) : 0;
+        $logPath = (string)($run['external_validation_log_path'] ?? '');
+
+        if ($status === 'passed') {
+            return 'Arelle external validation passed' . ($warningCount > 0 ? ' with ' . $warningCount . ' warning(s).' : '.');
+        }
+        if ($status === 'failed') {
+            return 'Arelle external validation failed with ' . $errorCount . ' error(s)' . ($logPath !== '' ? '. Log: ' . $logPath : '.');
+        }
+        if ($status === 'error') {
+            return 'Arelle external validation could not be completed' . ($logPath !== '' ? '. Log: ' . $logPath : '.');
+        }
+
+        return 'Arelle external validation has not been configured or run.';
     }
 }

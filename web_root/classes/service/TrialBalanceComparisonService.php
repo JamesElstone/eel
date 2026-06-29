@@ -55,7 +55,8 @@ final class TrialBalanceComparisonService
 
         $rows = [];
         foreach ($this->metricMap() as $metricKey => $label) {
-            $filedValue = array_key_exists($metricKey, $facts) ? round((float)$facts[$metricKey], 2) : null;
+            $filedFact = (array)($facts[$metricKey] ?? []);
+            $filedValue = array_key_exists('value', $filedFact) ? round((float)$filedFact['value'], 2) : null;
             $ledgerValue = array_key_exists($metricKey, $ledger) ? round((float)$ledger[$metricKey], 2) : null;
             $difference = ($filedValue !== null && $ledgerValue !== null) ? round($ledgerValue - $filedValue, 2) : null;
             $status = 'not_mapped';
@@ -71,6 +72,7 @@ final class TrialBalanceComparisonService
                 'current_ledger_value' => $ledgerValue,
                 'difference' => $difference,
                 'status' => $status,
+                'source_concept' => (string)($filedFact['source_concept'] ?? ''),
             ];
         }
 
@@ -126,7 +128,12 @@ final class TrialBalanceComparisonService
             if ($metricKey === null || trim((string)($row['normalised_numeric'] ?? '')) === '') {
                 continue;
             }
-            $facts[$metricKey] = round((float)$row['normalised_numeric'], 2);
+            if (!isset($facts[$metricKey])) {
+                $facts[$metricKey] = [
+                    'value' => round((float)$row['normalised_numeric'], 2),
+                    'source_concept' => $shortName,
+                ];
+            }
         }
 
         return $facts;
@@ -137,6 +144,7 @@ final class TrialBalanceComparisonService
             'FixedAssets' => 'fixed_assets',
             'CurrentAssets' => 'current_assets',
             'CreditorsDueWithinOneYear' => 'creditors_within_one_year',
+            'CreditorsDueAfterOneYear' => 'creditors_after_more_than_one_year',
             'CreditorsDueAfterMoreThanOneYear' => 'creditors_after_more_than_one_year',
             'NetCurrentAssetsLiabilities' => 'net_current_assets_liabilities',
             'TotalAssetsLessCurrentLiabilities' => 'total_assets_less_current_liabilities',

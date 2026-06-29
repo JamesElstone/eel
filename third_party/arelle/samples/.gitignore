@@ -1,0 +1,4 @@
+*
+!.gitignore
+!smoke_inline_xbrl.xhtml
+!smoke_taxonomy.xsd

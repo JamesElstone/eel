@@ -25,6 +25,17 @@ final class IxbrlReadinessService
         $totals = (new IxbrlTrialBalanceService())->getTotals($companyId, $accountingPeriodId);
         $this->addCheck($checks, 'trial_balance_balanced', 'Trial balance balanced', !empty($totals['is_balanced']), true, 'Difference: ' . FormattingFramework::money($totals['difference'] ?? 0));
 
+        $balanceMetrics = (new IxbrlBalanceSheetMetricsService())->fetchClosingMetrics($companyId, $accountingPeriodId);
+        $balanceDifference = (float)($balanceMetrics['balance_equation_difference'] ?? 0);
+        $this->addCheck(
+            $checks,
+            'closing_balance_sheet_balanced',
+            'Closing balance sheet balances',
+            !empty($balanceMetrics['is_balance_sheet_balanced']),
+            true,
+            'Net assets less capital and reserves difference: ' . FormattingFramework::money($balanceDifference)
+        );
+
         $uncategorised = $this->uncategorisedTransactionCount($companyId, $accountingPeriodId);
         $this->addCheck($checks, 'uncategorised_clear', 'Uncategorised transactions clear', $uncategorised === 0, false, $uncategorised . ' uncategorised transactions found.');
 
@@ -35,12 +46,51 @@ final class IxbrlReadinessService
         $missingSettings = $this->missingSettings($settings);
         $this->addCheck($checks, 'required_settings', 'Required company settings present', $missingSettings === [], false, $missingSettings === [] ? 'Core company settings are present.' : 'Missing: ' . implode(', ', $missingSettings));
 
+        $companiesHouseComparison = (new YearEndCompaniesHouseComparisonService())->fetchComparison($companyId, $accountingPeriodId);
+        $comparisonFailures = $this->companiesHouseComparisonFailures($companiesHouseComparison);
+        $comparisonWarnings = $this->companiesHouseComparisonWarnings($companiesHouseComparison);
+        $comparisonScope = (string)($companiesHouseComparison['comparison_scope'] ?? '');
+        $comparisonBlocks = !empty($companiesHouseComparison['available'])
+            && $comparisonScope === 'exact_match'
+            && $comparisonFailures > 0;
+        $comparisonComplete = !empty($companiesHouseComparison['available'])
+            && $comparisonScope === 'exact_match'
+            && $comparisonFailures === 0
+            && $comparisonWarnings === 0;
+        $comparisonDetail = empty($companiesHouseComparison['available'])
+            ? (string)($companiesHouseComparison['errors'][0] ?? 'No stored Companies House filing is available for comparison.')
+            : ($comparisonFailures > 0
+                ? $comparisonFailures . ' material Companies House comparison mismatch(es) found for ' . $comparisonScope . '.'
+                : ($comparisonScope === 'nearest_match'
+                    ? 'Advisory nearest-period comparison only; no exact Companies House filing matched this period.'
+                    : ($comparisonWarnings > 0 ? $comparisonWarnings . ' small Companies House comparison variance warning(s) found.' : 'Companies House comparison did not find material exact-period mismatches.')));
+        $this->addCheck(
+            $checks,
+            'companies_house_exact_period_comparison',
+            'Companies House comparison',
+            $comparisonComplete,
+            $comparisonBlocks,
+            $comparisonDetail
+        );
+
         $latestRun = (new IxbrlFactBuilderService())->getLatestRun($companyId, $accountingPeriodId);
         $factCount = (int)($latestRun['fact_count'] ?? 0);
         $this->addCheck($checks, 'facts_generated', 'Facts generated', $factCount > 0, false, $factCount > 0 ? $factCount . ' generated facts available.' : 'Build facts before generating XHTML.');
 
         $generated = is_array($latestRun) && (string)($latestRun['status'] ?? '') === 'generated' && (string)($latestRun['generated_path'] ?? '') !== '';
-        $this->addCheck($checks, 'ixbrl_generated', 'iXBRL generated', $generated, false, $generated ? 'Generated preview file exists.' : 'No generated preview yet.');
+        $validationPassed = $generated && (string)($latestRun['validation_status'] ?? '') === 'passed';
+        $this->addCheck($checks, 'ixbrl_generated', 'iXBRL export generated', $generated, false, $generated ? 'Generated filing export file exists.' : 'No generated export yet.');
+        $this->addCheck($checks, 'ixbrl_validation_passed', 'iXBRL structural validation passed', $validationPassed, false, $validationPassed ? 'Latest generated export passed internal structural validation.' : 'No internally validated export yet.');
+
+        $externalValidation = (new IxbrlExternalValidationService())->externalStatusForRun($latestRun);
+        $this->addCheck(
+            $checks,
+            'ixbrl_external_validation',
+            'Arelle external validation',
+            (string)($externalValidation['status'] ?? '') === 'passed',
+            !empty($externalValidation['blocking']),
+            (string)($externalValidation['detail'] ?? 'Arelle external validation has not been run.')
+        );
 
         $blocking = array_values(array_filter($checks, static fn(array $check): bool => !empty($check['blocking']) && empty($check['complete'])));
         $warnings = array_values(array_filter($checks, static fn(array $check): bool => empty($check['blocking']) && empty($check['complete'])));
@@ -54,6 +104,9 @@ final class IxbrlReadinessService
             'can_build_facts' => $blocking === [],
             'can_generate' => $blocking === [] && $factCount > 0,
             'latest_run' => $latestRun,
+            'closing_balance_metrics' => $balanceMetrics,
+            'companies_house_comparison' => $companiesHouseComparison,
+            'external_validation' => $externalValidation,
         ];
     }
 
@@ -166,5 +219,37 @@ final class IxbrlReadinessService
         );
 
         return is_array($row);
+    }
+
+    private function companiesHouseComparisonFailures(array $comparison): int
+    {
+        if (empty($comparison['available'])) {
+            return 0;
+        }
+
+        $count = 0;
+        foreach ((array)($comparison['rows'] ?? []) as $row) {
+            if ((string)($row['status'] ?? '') === 'fail') {
+                $count++;
+            }
+        }
+
+        return $count;
+    }
+
+    private function companiesHouseComparisonWarnings(array $comparison): int
+    {
+        if (empty($comparison['available'])) {
+            return 0;
+        }
+
+        $count = 0;
+        foreach ((array)($comparison['rows'] ?? []) as $row) {
+            if ((string)($row['status'] ?? '') === 'warning') {
+                $count++;
+            }
+        }
+
+        return $count;
     }
 }

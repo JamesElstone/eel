@@ -59,7 +59,8 @@ final class YearEndCompaniesHouseComparisonService
 
         foreach ($this->metricMap() as $metricKey => $label) {
             $appValue = isset($appMetrics[$metricKey]) ? round((float)$appMetrics[$metricKey], 2) : null;
-            $filedValue = isset($facts[$metricKey]) ? round((float)$facts[$metricKey], 2) : null;
+            $filedFact = (array)($facts[$metricKey] ?? []);
+            $filedValue = array_key_exists('value', $filedFact) ? round((float)$filedFact['value'], 2) : null;
             $variance = ($appValue !== null && $filedValue !== null) ? round($appValue - $filedValue, 2) : null;
             $status = 'not_applicable';
 
@@ -80,6 +81,7 @@ final class YearEndCompaniesHouseComparisonService
                 'filed_value' => $filedValue,
                 'variance' => $variance,
                 'status' => $status,
+                'source_concept' => (string)($filedFact['source_concept'] ?? ''),
             ];
         }
 
@@ -152,7 +154,12 @@ final class YearEndCompaniesHouseComparisonService
             if ($metricKey === null || trim((string)($row['normalised_numeric'] ?? '')) === '') {
                 continue;
             }
-            $facts[$metricKey] = round((float)$row['normalised_numeric'], 2);
+            if (!isset($facts[$metricKey])) {
+                $facts[$metricKey] = [
+                    'value' => round((float)$row['normalised_numeric'], 2),
+                    'source_concept' => $shortName,
+                ];
+            }
         }
 
         return $facts;
@@ -163,6 +170,7 @@ final class YearEndCompaniesHouseComparisonService
             'FixedAssets' => 'fixed_assets',
             'CurrentAssets' => 'current_assets',
             'CreditorsDueWithinOneYear' => 'creditors_within_one_year',
+            'CreditorsDueAfterOneYear' => 'creditors_after_more_than_one_year',
             'CreditorsDueAfterMoreThanOneYear' => 'creditors_after_more_than_one_year',
             'NetCurrentAssetsLiabilities' => 'net_current_assets_liabilities',
             'TotalAssetsLessCurrentLiabilities' => 'total_assets_less_current_liabilities',

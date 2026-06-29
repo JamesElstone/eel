@@ -21,6 +21,7 @@ final class _ixbrl_readinessCard extends CardBaseFramework
         $company = (array)($readiness['company'] ?? $context['company'] ?? []);
         $accountingPeriod = (array)($readiness['accounting_period'] ?? []);
         $checks = (array)($readiness['checks'] ?? []);
+        $comparison = (array)($readiness['companies_house_comparison'] ?? []);
 
         $items = '';
         foreach ($checks as $check) {
@@ -38,9 +39,48 @@ final class _ixbrl_readinessCard extends CardBaseFramework
                     <span class="badge ' . (!empty($readiness['can_build_facts']) ? 'success' : 'danger') . '">' . HelperFramework::escape(!empty($readiness['can_build_facts']) ? 'Ready to build facts' : 'Blocked') . '</span>
                 </div>
                 <div class="helper">Period: ' . HelperFramework::escape((string)($accountingPeriod['period_start'] ?? '')) . ' to ' . HelperFramework::escape((string)($accountingPeriod['period_end'] ?? '')) . '</div>
-                <div class="helper">This builder creates an internal generated FRS 105 micro-entity accounts preview. It is not a complete HMRC CT600 submission package.</div>
+                <div class="helper">This builder creates a generated FRS 105 micro-entity accounts iXBRL export for review and validation before filing.</div>
             </section>
             <section class="summary-grid">' . $items . '</section>
+            ' . $this->renderCompaniesHouseComparison($comparison) . '
         </div>';
+    }
+
+    private function renderCompaniesHouseComparison(array $comparison): string
+    {
+        if (empty($comparison['available'])) {
+            return '<section class="panel-soft"><h3 class="card-title">Companies House Comparison</h3><div class="helper">' . HelperFramework::escape((string)($comparison['errors'][0] ?? 'No Companies House comparison is available.')) . '</div></section>';
+        }
+
+        $rows = '';
+        foreach ((array)($comparison['rows'] ?? []) as $row) {
+            $rows .= '<tr>
+                <td>' . HelperFramework::escape((string)($row['label'] ?? '')) . '</td>
+                <td>' . HelperFramework::escape(FormattingFramework::nullableMoney($row['app_value'] ?? null, '-')) . '</td>
+                <td>' . HelperFramework::escape(FormattingFramework::nullableMoney($row['filed_value'] ?? null, '-')) . '</td>
+                <td>' . HelperFramework::escape(FormattingFramework::nullableMoney($row['variance'] ?? null, '-')) . '</td>
+                <td>' . HelperFramework::escape((string)($row['source_concept'] ?? '')) . '</td>
+                <td><span class="badge ' . HelperFramework::escape($this->badgeClass((string)($row['status'] ?? ''))) . '">' . HelperFramework::escape(HelperFramework::labelFromKey((string)($row['status'] ?? ''), '_')) . '</span></td>
+            </tr>';
+        }
+
+        $filing = (array)($comparison['filing'] ?? []);
+
+        return '<section class="panel-soft" id="ixbrl-companies-house-comparison">
+            <h3 class="card-title">Companies House Comparison</h3>
+            <div class="helper">' . HelperFramework::escape((string)($comparison['comparison_note'] ?? '')) . '</div>
+            <div class="helper">Filing date: ' . HelperFramework::escape((string)($filing['filing_date'] ?? '')) . ' | Period end: ' . HelperFramework::escape((string)($filing['period_end'] ?? '')) . '</div>
+            <div class="table-scroll"><table class="data-table"><thead><tr><th>Metric</th><th>Generated/app</th><th>Filed</th><th>Variance</th><th>Filed concept</th><th>Status</th></tr></thead><tbody>' . $rows . '</tbody></table></div>
+        </section>';
+    }
+
+    private function badgeClass(string $status): string
+    {
+        return match ($status) {
+            'pass', 'matches' => 'success',
+            'fail', 'differs' => 'danger',
+            'warning' => 'warning',
+            default => 'info',
+        };
     }
 }

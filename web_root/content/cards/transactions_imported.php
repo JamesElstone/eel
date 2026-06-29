@@ -114,8 +114,7 @@ final class _transactions_importedCard extends CardBaseFramework
             $selectedTransactionFilter,
             $nominalAccounts,
             $activeTransferCompanyAccounts,
-            $context,
-            $this->bulkToolbarActionsHtml($companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter)
+            $context
         )->render(
             $context,
             [
@@ -125,27 +124,22 @@ final class _transactions_importedCard extends CardBaseFramework
 
         return '
             <div class="card-toolbar transactions-imported-controls">
-                <form class="toolbar" method="post" action="?page=transactions" data-ajax="true">
-                    <input type="hidden" name="card_action" value="Transaction">
-                    <input type="hidden" name="global_action" value="select_transaction_month">
-                    <input type="hidden" name="selection_source" value="transactions_imported_filters">
-                    <input type="hidden" name="company_id" value="' . $companyId . '">
-                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                    <div class="mini-field">
-                        <label for="transaction_month_key">Month</label>
-                        <select class="select" id="transaction_month_key" name="month_key">' . $monthOptions . '</select>
-                    </div>
-                    <div class="mini-field">
-                        <label for="transaction_category_filter">Category filter</label>
-                        <select class="select" id="transaction_category_filter" name="category_filter">
-                            <option value="all"' . ($selectedTransactionFilter === 'all' ? ' selected' : '') . '>All</option>
-                            <option value="uncategorised"' . ($selectedTransactionFilter === 'uncategorised' ? ' selected' : '') . '>Uncategorised only</option>
-                            <option value="auto"' . ($selectedTransactionFilter === 'auto' ? ' selected' : '') . '>Auto categorised</option>
-                            <option value="manual"' . ($selectedTransactionFilter === 'manual' ? ' selected' : '') . '>Manual categorised</option>
-                        </select>
-                    </div>
-                </form>
-                <div class="pill-row">
+                <div class="transactions-imported-primary-controls">
+                    <form class="toolbar" method="post" action="?page=transactions" data-ajax="true">
+                        <input type="hidden" name="card_action" value="Transaction">
+                        <input type="hidden" name="global_action" value="select_transaction_month">
+                        <input type="hidden" name="selection_source" value="transactions_imported_filters">
+                        <input type="hidden" name="company_id" value="' . $companyId . '">
+                        <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                        <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                        <div class="mini-field">
+                            <label for="transaction_month_key">Month</label>
+                            <select class="select" id="transaction_month_key" name="month_key">' . $monthOptions . '</select>
+                        </div>
+                    </form>
+                    ' . $this->bulkToolbarActionsHtml($companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter) . '
+                </div>
+                <div class="pill-row transactions-imported-summary">
                     <span class="pill">' . (int)$selectedMonthSummary['total'] . ' in month</span>
                     <span class="pill">' . (int)$selectedMonthSummary['uncategorised'] . ' uncategorised</span>
                     <span class="pill">' . (int)$selectedMonthSummary['ready_to_post'] . ' ready to post</span>
@@ -184,8 +178,7 @@ final class _transactions_importedCard extends CardBaseFramework
         string $selectedTransactionFilter,
         array $nominalAccounts,
         array $activeTransferCompanyAccounts,
-        array $context,
-        string $toolbarActionsHtml
+        array $context
     ): TableFramework {
         $rows = array_values(array_filter($transactions, static fn(mixed $row): bool => is_array($row)));
         $pagination = HelperFramework::paginateArray($rows, $this->paginationPage($context), self::PAGE_SIZE);
@@ -200,7 +193,6 @@ final class _transactions_importedCard extends CardBaseFramework
             $activeTransferCompanyAccounts
         )
             ->visibleRows((array)$pagination['items'])
-            ->toolbarActions($toolbarActionsHtml)
             ->pagination(
                 $pagination,
                 'Imported transactions',
@@ -252,6 +244,25 @@ final class _transactions_importedCard extends CardBaseFramework
             ->filename('imported-transactions')
             ->exportLimit(1000)
             ->empty('No imported transactions match the selected month and filter yet.')
+            ->filterSelect(
+                'category_filter',
+                'Category filter',
+                [
+                    'all' => 'All',
+                    'uncategorised' => 'Uncategorised only',
+                    'auto' => 'Auto categorised',
+                    'manual' => 'Manual categorised',
+                ],
+                $selectedTransactionFilter,
+                [
+                    'card_action' => 'Transaction',
+                    'global_action' => 'select_transaction_month',
+                    'selection_source' => 'transactions_imported_filters',
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'month_key' => $selectedTransactionMonth,
+                ]
+            )
             ->column(
                 'txn_date',
                 'Date',
@@ -456,7 +467,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 <div class="actions-row">
                     <button class="button primary js-transaction-action" type="submit" name="global_action" value="save_transaction_category" data-dirty-enable-mode="changed" disabled' . $journalRebuildAttributes . '>' . ($isTransferRow ? 'Save' : 'Manual') . '</button>'
                     . (!$isTransferRow
-                        ? '<button class="button primary js-transaction-action" type="submit" name="global_action" value="auto_create_transaction_rule" data-dirty-enable-mode="selected" disabled' . $journalRebuildAttributes . '>Create Automatic Rule</button>'
+                        ? '<button class="button primary js-transaction-action" type="submit" name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form" data-dirty-enable-mode="selected" disabled' . $journalRebuildAttributes . '>Create Automatic Rule</button>'
                         : '') . '
                     <button class="button primary" type="submit" name="global_action" value="defer_transaction"' . $journalRebuildAttributes . '>Defer</button>
                     <button class="button" type="submit" form="' . HelperFramework::escape($assetFormId) . '" formnovalidate>Create Asset</button>

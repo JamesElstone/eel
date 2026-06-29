@@ -191,11 +191,26 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
 
         $harness->assertSame(true, str_contains($html, '<div class="table-scroll"><table>'));
         $harness->assertSame(true, str_contains($html, 'card-toolbar transactions-imported-controls'));
+        $harness->assertSame(true, str_contains($html, 'id="transaction_month_key" name="month_key"'));
+        $harness->assertSame(true, str_contains($html, 'id="table-filter-transactions_imported-category_filter" name="category_filter"'));
+        $harness->assertSame(false, str_contains($html, 'id="transaction_category_filter"'));
         $harness->assertSame(true, str_contains($html, 'Condensed View'));
         $harness->assertSame(true, str_contains($html, 'name="_table_export_prepare" value="csv"'));
         $harness->assertSame(true, str_contains($html, 'name="_table_export_prepare" value="xlsx"'));
-        $harness->assertSame(true, strpos($html, 'Auto Apply') < strpos($html, 'Condensed View'));
-        $harness->assertSame(true, strpos($html, 'Post Categorised Transactions') < strpos($html, 'Condensed View'));
+        $autoApplyPosition = strpos($html, 'Auto Apply');
+        $postCategorisedPosition = strpos($html, 'Post Categorised Transactions');
+        $categoryFilterPosition = strpos($html, 'Category filter');
+        $condensedViewPosition = strpos($html, 'Condensed View');
+        $harness->assertSame(true, $autoApplyPosition !== false);
+        $harness->assertSame(true, $postCategorisedPosition !== false);
+        $harness->assertSame(true, $categoryFilterPosition !== false);
+        $harness->assertSame(true, $condensedViewPosition !== false);
+        $harness->assertSame(true, $autoApplyPosition < $categoryFilterPosition);
+        $harness->assertSame(true, $postCategorisedPosition < $categoryFilterPosition);
+        $harness->assertSame(true, $categoryFilterPosition < $condensedViewPosition);
+        $harness->assertSame(true, str_contains($html, 'name="global_action" value="run_auto_rules"'));
+        $harness->assertSame(true, str_contains($html, 'name="global_action" value="post_categorised_transactions"'));
+        $harness->assertSame(true, str_contains($html, 'name="month_key" value="2026-03-01"'));
         $harness->assertSame(true, str_contains($html, '<th>Date</th>'));
         $harness->assertSame(true, str_contains($html, 'Test transaction'));
         $harness->assertSame(true, str_contains($html, 'Matched by rule #3 (Test)'));

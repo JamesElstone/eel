@@ -106,10 +106,6 @@ final class NominalsAction implements ActionInterfaceFramework
             return $this->errorResult('The selected nominal account could not be found.');
         }
 
-        if (!$accountRepository->canDeleteNominalAccount($nominalId)) {
-            return $this->errorResult('This nominal account is in use and cannot be deleted.');
-        }
-
         try {
             InterfaceDB::beginTransaction();
             $deleted = $accountRepository->deleteNominalAccountIfUnused($nominalId);

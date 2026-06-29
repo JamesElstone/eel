@@ -91,6 +91,22 @@ final class _nominals_accountsCard extends CardBaseFramework
             $rows[] = $nominal;
         }
 
+        usort($rows, static function (array $left, array $right): int {
+            $codeComparison = strnatcasecmp((string)($left['code'] ?? ''), (string)($right['code'] ?? ''));
+
+            if ($codeComparison !== 0) {
+                return $codeComparison;
+            }
+
+            $nameComparison = strcasecmp((string)($left['name'] ?? ''), (string)($right['name'] ?? ''));
+
+            if ($nameComparison !== 0) {
+                return $nameComparison;
+            }
+
+            return (int)($left['id'] ?? 0) <=> (int)($right['id'] ?? 0);
+        });
+
         return $rows;
     }
 

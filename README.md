@@ -91,6 +91,7 @@ To use this system, the company must meet the following criteria:
 - Double-entry accounting model
 - Director's Loan support
 - Expense claim support
+- Fixed asset depreciation support; amortisation is not currently modelled separately and can be considered later if a real use case appears
 - Tax year/accounting period management
 - iXBRL generation pipeline
 

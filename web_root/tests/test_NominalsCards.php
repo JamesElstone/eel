@@ -33,6 +33,15 @@ $harness->run(_nominals_accountsCard::class, function (GeneratedServiceClassTest
                     'tax_treatment' => 'allowable',
                     'sort_order' => 50,
                     'is_active' => 1,
+                ], [
+                    'id' => 4,
+                    'code' => '1000',
+                    'name' => 'Current Account',
+                    'account_type' => 'asset',
+                    'subtype_name' => 'Bank',
+                    'tax_treatment' => 'capital',
+                    'sort_order' => 500,
+                    'is_active' => 1,
                 ]],
             ],
         ];
@@ -47,6 +56,7 @@ $harness->run(_nominals_accountsCard::class, function (GeneratedServiceClassTest
         $harness->assertTrue(str_contains($html, '5000'));
         $harness->assertTrue(str_contains($html, 'Materials'));
         $harness->assertTrue(str_contains($html, 'Allowable'));
+        $harness->assertTrue(strpos($html, '>1000<') < strpos($html, '>5000<'));
         $harness->assertTrue(str_contains($html, '<th>Tax Treatment</th>'));
         $harness->assertTrue(str_contains($html, 'name="card_action" value="Nominals"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="edit_nominal_account"'));

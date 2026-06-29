@@ -29,43 +29,55 @@ final class _nominals_account_typesCard extends CardBaseFramework
         return '';
     }
 
+    public function tables(array $context): array
+    {
+        return [$this->table()];
+    }
+
     public function render(array $context): string
     {
-        return '
-            <table>
-                <thead>
-                    <tr>
-                        <th>Account Type</th>
-                        <th>Typical Use</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>asset</td>
-                        <td>Bank, debtors, fixed assets, and other resources the company owns or controls.</td>
-                    </tr>
-                    <tr>
-                        <td>liability</td>
-                        <td>VAT, loans, tax, creditors, and other obligations the company owes.</td>
-                    </tr>
-                    <tr>
-                        <td>equity</td>
-                        <td>Share capital, reserves, retained profit, and other ownership balances.</td>
-                    </tr>
-                    <tr>
-                        <td>income</td>
-                        <td>Turnover, sales, and other income earned by the business.</td>
-                    </tr>
-                    <tr>
-                        <td>cost_of_sales</td>
-                        <td>Direct costs of delivering work or goods, such as materials and subcontract costs.</td>
-                    </tr>
-                    <tr>
-                        <td>expense</td>
-                        <td>Overheads and operating costs such as software, insurance, motor, and office costs.</td>
-                    </tr>
-                </tbody>
-            </table>
-        ';
+        return $this->table()->render($context, [
+            'cards[]' => (array)($context['page']['page_cards'] ?? []),
+        ]);
+    }
+
+    private function table(): TableFramework
+    {
+        return TableFramework::make($this->key(), $this->rows())
+            ->filename('nominal-account-types')
+            ->exportLimit(100)
+            ->empty('No nominal account types were found.')
+            ->textColumn('account_type', 'Account Type')
+            ->textColumn('typical_use', 'Typical Use');
+    }
+
+    private function rows(): array
+    {
+        return [
+            [
+                'account_type' => 'asset',
+                'typical_use' => 'Bank, debtors, fixed assets, and other resources the company owns or controls.',
+            ],
+            [
+                'account_type' => 'liability',
+                'typical_use' => 'VAT, loans, tax, creditors, and other obligations the company owes.',
+            ],
+            [
+                'account_type' => 'equity',
+                'typical_use' => 'Share capital, reserves, retained profit, and other ownership balances.',
+            ],
+            [
+                'account_type' => 'income',
+                'typical_use' => 'Turnover, sales, and other income earned by the business.',
+            ],
+            [
+                'account_type' => 'cost_of_sales',
+                'typical_use' => 'Direct costs of delivering work or goods, such as materials and subcontract costs.',
+            ],
+            [
+                'account_type' => 'expense',
+                'typical_use' => 'Overheads and operating costs such as software, insurance, motor, and office costs.',
+            ],
+        ];
     }
 }

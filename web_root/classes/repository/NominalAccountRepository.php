@@ -9,6 +9,9 @@ declare(strict_types=1);
 
 final class NominalAccountRepository
 {
+    private ?array $availableNominalReferenceSources = null;
+    private ?bool $nominalReferenceSchemaComplete = null;
+
     public function fetchNominalAccounts(int $companyId = 0): array
     {
         return InterfaceDB::fetchAll($this->fetchNominalAccountsSql());
@@ -186,6 +189,7 @@ final class NominalAccountRepository
     private function withDeleteEligibility(array $rows): array
     {
         $schemaComplete = $this->nominalReferenceSchemaComplete();
+        $nominalIds = [];
 
         foreach ($rows as $index => $row) {
             if (!is_array($row)) {
@@ -195,12 +199,29 @@ final class NominalAccountRepository
             $rows[$index]['reference_count'] = null;
             $rows[$index]['can_delete'] = 0;
 
-            if (!$schemaComplete) {
+            $nominalId = (int)($row['id'] ?? 0);
+            if ($schemaComplete && $nominalId > 0) {
+                $nominalIds[] = $nominalId;
+            }
+        }
+
+        if (!$schemaComplete || $nominalIds === []) {
+            return $rows;
+        }
+
+        try {
+            $referenceCounts = $this->nominalReferenceCountsForIds($nominalIds);
+        } catch (Throwable) {
+            return $rows;
+        }
+
+        foreach ($rows as $index => $row) {
+            if (!is_array($row)) {
                 continue;
             }
 
             try {
-                $referenceCount = $this->nominalReferenceCount((int)($row['id'] ?? 0));
+                $referenceCount = (int)($referenceCounts[(int)($row['id'] ?? 0)] ?? 0);
                 $rows[$index]['reference_count'] = $referenceCount;
                 $rows[$index]['can_delete'] = $referenceCount === 0 ? 1 : 0;
             } catch (Throwable) {
@@ -210,6 +231,74 @@ final class NominalAccountRepository
         }
 
         return $rows;
+    }
+
+    private function nominalReferenceCountsForIds(array $nominalIds): array
+    {
+        $ids = array_values(array_unique(array_filter(
+            array_map(static fn(mixed $id): int => (int)$id, $nominalIds),
+            static fn(int $id): bool => $id > 0
+        )));
+
+        if ($ids === []) {
+            return [];
+        }
+
+        $counts = array_fill_keys($ids, 0);
+        $placeholders = [];
+        $params = [];
+
+        foreach ($ids as $index => $nominalId) {
+            $placeholder = ':nominal_id_' . $index;
+            $placeholders[] = $placeholder;
+            $params['nominal_id_' . $index] = $nominalId;
+        }
+
+        $inSql = implode(', ', $placeholders);
+
+        foreach ($this->availableNominalReferenceSources() as $source) {
+            foreach ((array)($source['reference_columns'] ?? []) as $column) {
+                $column = (string)$column;
+                if ($column === '') {
+                    continue;
+                }
+
+                $rows = InterfaceDB::prepareExecute(
+                    'SELECT ' . $column . ' AS nominal_id, COUNT(*) AS reference_count
+                     FROM ' . $source['table'] . '
+                     WHERE ' . $column . ' IN (' . $inSql . ')
+                     GROUP BY ' . $column,
+                    $params
+                )->fetchAll();
+
+                foreach ($rows as $row) {
+                    $nominalId = (int)($row['nominal_id'] ?? 0);
+                    if ($nominalId > 0) {
+                        $counts[$nominalId] = (int)($counts[$nominalId] ?? 0) + (int)($row['reference_count'] ?? 0);
+                    }
+                }
+            }
+
+            if (($source['table'] ?? '') === 'company_settings') {
+                $settingRows = InterfaceDB::prepareExecute(
+                    'SELECT TRIM(COALESCE(value, \'\')) AS nominal_id, COUNT(*) AS reference_count
+                     FROM company_settings
+                     WHERE setting IN (' . $this->quotedNominalSettingKeysSql() . ')
+                       AND TRIM(COALESCE(value, \'\')) IN (' . $inSql . ')
+                     GROUP BY TRIM(COALESCE(value, \'\'))',
+                    $params
+                )->fetchAll();
+
+                foreach ($settingRows as $row) {
+                    $nominalId = (int)($row['nominal_id'] ?? 0);
+                    if ($nominalId > 0) {
+                        $counts[$nominalId] = (int)($counts[$nominalId] ?? 0) + (int)($row['reference_count'] ?? 0);
+                    }
+                }
+            }
+        }
+
+        return $counts;
     }
 
     private function availableNominalReferenceQueries(): array
@@ -225,7 +314,11 @@ final class NominalAccountRepository
 
     private function availableNominalReferenceSources(): array
     {
-        return array_values(array_filter(
+        if ($this->availableNominalReferenceSources !== null) {
+            return $this->availableNominalReferenceSources;
+        }
+
+        return $this->availableNominalReferenceSources = array_values(array_filter(
             $this->nominalReferenceSources(),
             fn(array $source): bool => $this->referenceSourceAvailable($source)
         ));
@@ -233,7 +326,11 @@ final class NominalAccountRepository
 
     private function nominalReferenceSchemaComplete(): bool
     {
-        return count($this->availableNominalReferenceSources()) === count($this->nominalReferenceSources());
+        if ($this->nominalReferenceSchemaComplete !== null) {
+            return $this->nominalReferenceSchemaComplete;
+        }
+
+        return $this->nominalReferenceSchemaComplete = count($this->availableNominalReferenceSources()) === count($this->nominalReferenceSources());
     }
 
     private function referenceSourceAvailable(array $source): bool
@@ -258,41 +355,49 @@ final class NominalAccountRepository
             [
                 'table' => 'company_accounts',
                 'columns' => ['nominal_account_id'],
+                'reference_columns' => ['nominal_account_id'],
                 'where' => 'nominal_account_id = %s',
             ],
             [
                 'table' => 'categorisation_rules',
                 'columns' => ['nominal_account_id'],
+                'reference_columns' => ['nominal_account_id'],
                 'where' => 'nominal_account_id = %s',
             ],
             [
                 'table' => 'expense_claim_lines',
                 'columns' => ['nominal_account_id'],
+                'reference_columns' => ['nominal_account_id'],
                 'where' => 'nominal_account_id = %s',
             ],
             [
                 'table' => 'journal_lines',
                 'columns' => ['nominal_account_id'],
+                'reference_columns' => ['nominal_account_id'],
                 'where' => 'nominal_account_id = %s',
             ],
             [
                 'table' => 'corporation_tax_treatment_rules',
                 'columns' => ['nominal_account_id'],
+                'reference_columns' => ['nominal_account_id'],
                 'where' => 'nominal_account_id = %s',
             ],
             [
                 'table' => 'transaction_category_audit',
                 'columns' => ['old_nominal_account_id', 'new_nominal_account_id'],
+                'reference_columns' => ['old_nominal_account_id', 'new_nominal_account_id'],
                 'where' => 'old_nominal_account_id = %s OR new_nominal_account_id = %s',
             ],
             [
                 'table' => 'transactions',
                 'columns' => ['nominal_account_id'],
+                'reference_columns' => ['nominal_account_id'],
                 'where' => 'nominal_account_id = %s',
             ],
             [
                 'table' => 'asset_register',
                 'columns' => ['nominal_account_id', 'accum_dep_nominal_id'],
+                'reference_columns' => ['nominal_account_id', 'accum_dep_nominal_id'],
                 'where' => 'nominal_account_id = %s OR accum_dep_nominal_id = %s',
             ],
             [
@@ -317,13 +422,18 @@ final class NominalAccountRepository
 
     private function companySettingsNominalReferenceWhereSql(string $nominalExpression): string
     {
+        return 'setting IN (' . $this->quotedNominalSettingKeysSql() . ')
+                AND TRIM(COALESCE(value, \'\')) = CAST(' . $nominalExpression . ' AS CHAR)';
+    }
+
+    private function quotedNominalSettingKeysSql(): string
+    {
         $quotedSettings = array_map(
             static fn(string $setting): string => "'" . str_replace("'", "''", $setting) . "'",
             $this->nominalSettingKeys()
         );
 
-        return 'setting IN (' . implode(', ', $quotedSettings) . ')
-                AND TRIM(COALESCE(value, \'\')) = CAST(' . $nominalExpression . ' AS CHAR)';
+        return implode(', ', $quotedSettings);
     }
 
     private function deleteNominalAccountIfUnusedSql(array $referenceSources): string

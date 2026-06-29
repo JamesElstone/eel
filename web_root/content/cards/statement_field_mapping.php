@@ -330,7 +330,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
             <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
             <input type="hidden" name="upload_id" value="' . $uploadId . '">
             <input type="hidden" name="account_id" value="' . $accountId . '">
-            <button class="button primary" type="submit" data-page-card-switch-tab="Commit Transactions">Preview And Validate Rows</button>
+            <button class="button primary" type="submit" data-show-card="uploads_validate_commit" data-processing-text="Preparing import..." data-processing-state="disabled">Preview And Validate Rows</button>
         </form>';
     }
 

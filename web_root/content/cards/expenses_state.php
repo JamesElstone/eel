@@ -48,6 +48,7 @@ final class _expenses_stateCard extends CardBaseFramework
         $claimants = (array)($data['claimants'] ?? []);
         $activeClaimantCount = (int)($data['active_claimant_count'] ?? 0);
         $claims = (array)($data['claims'] ?? []);
+        $claimHeatmapClaims = (array)($data['claim_heatmap_claims'] ?? $claims);
         $filters = (array)($data['filters'] ?? []);
         $currentYear = (int)date('Y');
         $currentMonth = (int)date('n');
@@ -55,13 +56,14 @@ final class _expenses_stateCard extends CardBaseFramework
         return '
             <div id="expenses-app">
                 <div class="settings-stack">
-                    ' . $this->renderClaimsPanel($claims, $claimants, $activeClaimantCount, $filters, $currentYear, $currentMonth, $companySettings, $companyId) . '
+                    ' . $this->renderClaimsPanel($claims, $claimHeatmapClaims, $claimants, $activeClaimantCount, $filters, $currentYear, $currentMonth, $companySettings, $companyId) . '
                 </div>
             </div>';
     }
 
     private function renderClaimsPanel(
         array $claims,
+        array $claimHeatmapClaims,
         array $claimants,
         int $activeClaimantCount,
         array $filters,
@@ -75,6 +77,9 @@ final class _expenses_stateCard extends CardBaseFramework
         $searchFormId = 'expense-search-form';
         $query = (string)($filters['query'] ?? '');
         $status = (string)($filters['status'] ?? 'all');
+        $heatmapClaimantId = $this->selectedHeatmapClaimantId($claimants, (int)($filters['heatmap_claimant_id'] ?? 0));
+        $heatmapYear = $this->selectedHeatmapYear((int)($filters['heatmap_year'] ?? 0), $currentYear);
+        $heatmapDate = $this->normaliseHeatmapDate((string)($filters['heatmap_date'] ?? ''), $heatmapYear);
 
         return '<section class="panel-soft">
             <div class="status-head">
@@ -89,10 +94,10 @@ final class _expenses_stateCard extends CardBaseFramework
                 <input type="hidden" name="intent" value="create_claim">
                 <input type="hidden" name="incorporation_date" value="' . HelperFramework::escape((string)($companySettings['incorporation_date'] ?? '')) . '">
             </form>
-            <div class="toolbar">
+            <div class="toolbar expenses-toolbar">
                 <div class="mini-field">
                     <label for="expense-create-claimant">Claimant</label>
-                    <select class="select" id="expense-create-claimant" name="claimant_id" form="' . $createFormId . '"' . ($createDisabled ? ' disabled' : '') . '>' . $this->claimantOptions($claimants, true) . '</select>
+                    <select class="select" id="expense-create-claimant" name="claimant_id" form="' . $createFormId . '"' . ($createDisabled ? ' disabled' : '') . '>' . $this->claimantOptions($claimants, true, $createDisabled ? 'Add a claimant first...' : 'Choose claimant...') . '</select>
                 </div>
                 <div class="mini-field">
                     <label for="expense-create-year">Year</label>
@@ -104,13 +109,17 @@ final class _expenses_stateCard extends CardBaseFramework
                 </div>
                 <button class="button primary" type="submit" form="' . $createFormId . '" data-show-card="expense_claim_editor"' . ($createDisabled ? ' disabled' : '') . '>Create Expense Claim</button>
             </div>
+            ' . $this->renderClaimHeatmap($claimHeatmapClaims, $claimants, $heatmapClaimantId, $heatmapYear, $heatmapDate, $query, $status, $companyId) . '
             <form id="' . $searchFormId . '" method="get" action="?page=expenses" data-ajax="true">
                 <input type="hidden" name="page" value="expenses">
                 <input type="hidden" name="card_action" value="Expense">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="intent" value="filter_claims">
+                <input type="hidden" name="expense_heatmap_claimant_id" value="' . $heatmapClaimantId . '">
+                <input type="hidden" name="expense_heatmap_year" value="' . $heatmapYear . '">
+                <input type="hidden" name="expense_heatmap_date" value="' . HelperFramework::escape($heatmapDate) . '">
             </form>
-            <div class="toolbar">
+            <div class="toolbar expenses-toolbar">
                 <div class="mini-field">
                     <label for="expense-search-query">Search reference</label>
                     <input class="input" id="expense-search-query" name="expense_query" form="' . $searchFormId . '" type="search" value="' . HelperFramework::escape($query) . '" placeholder="EXP-...">
@@ -130,18 +139,206 @@ final class _expenses_stateCard extends CardBaseFramework
         </section>';
     }
 
-    private function claimantOptions(array $claimants, bool $activeOnly): string
+    private function renderClaimHeatmap(
+        array $claims,
+        array $claimants,
+        int $selectedClaimantId,
+        int $selectedYear,
+        string $selectedDate,
+        string $query,
+        string $status,
+        int $companyId
+    ): string {
+        $formId = 'expense-claim-heatmap-form';
+        $hasClaimants = $claimants !== [];
+        $chartHtml = '<div class="helper">Add a claimant first to see claim activity.</div>';
+
+        if ($hasClaimants) {
+            $chartHtml = (new ChartService())->calendarHeatmap(
+                $this->claimHeatmapDays($claims, $selectedClaimantId, $selectedYear),
+                [
+                    'title' => 'Claim calendar',
+                    'id' => 'expense-claim-calendar',
+                    'start_date' => sprintf('%04d-01-01', $selectedYear),
+                    'end_date' => sprintf('%04d-12-31', $selectedYear),
+                    'selected_date' => $selectedDate,
+                    'years' => $this->heatmapYears($claims, $selectedClaimantId, $selectedYear),
+                    'value_label' => 'claims',
+                    'input_name' => 'expense_heatmap_date',
+                    'year_input_name' => 'expense_heatmap_year',
+                    'ajax_target' => 'expenses-app',
+                ]
+            );
+        }
+
+        return '<div class="expense-claim-heatmap">
+            <form id="' . $formId . '" method="get" action="?page=expenses" data-ajax="true">
+                <input type="hidden" name="page" value="expenses">
+                <input type="hidden" name="card_action" value="Expense">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="intent" value="filter_claims">
+                <input type="hidden" name="expense_query" value="' . HelperFramework::escape($query) . '">
+                <input type="hidden" name="expense_status" value="' . HelperFramework::escape($status) . '">
+                <div class="toolbar expenses-toolbar expense-claim-heatmap-controls">
+                    <div class="mini-field">
+                        <label for="expense-heatmap-claimant">Claim calendar claimant</label>
+                        <select class="select" id="expense-heatmap-claimant" name="expense_heatmap_claimant_id"' . (!$hasClaimants ? ' disabled' : '') . '>' . $this->claimantOptions($claimants, false, 'Add a claimant first...', $selectedClaimantId) . '</select>
+                    </div>
+                </div>
+                ' . $chartHtml . '
+            </form>
+        </div>';
+    }
+
+    private function claimHeatmapDays(array $claims, int $selectedClaimantId, int $selectedYear): array
     {
-        $options = '<option value="">Choose claimant...</option>';
+        $days = [];
+
+        foreach ($claims as $claim) {
+            if ((int)($claim['claimant_id'] ?? 0) !== $selectedClaimantId) {
+                continue;
+            }
+
+            if ((int)($claim['claim_year'] ?? 0) !== $selectedYear) {
+                continue;
+            }
+
+            $date = $this->claimHeatmapDate($claim);
+            if ($date === '') {
+                continue;
+            }
+
+            if (!isset($days[$date])) {
+                $days[$date] = [
+                    'date' => $date,
+                    'value' => 0,
+                    'references' => [],
+                ];
+            }
+
+            $days[$date]['value']++;
+            $reference = trim((string)($claim['claim_reference_code'] ?? ''));
+            if ($reference !== '') {
+                $days[$date]['references'][] = $reference;
+            }
+        }
+
+        foreach ($days as $date => $day) {
+            $count = (int)$day['value'];
+            $references = array_values(array_unique((array)$day['references']));
+            $suffix = $references !== [] ? ': ' . implode(', ', $references) : '';
+            $days[$date]['title'] = $count . ' ' . ($count === 1 ? 'claim' : 'claims') . ' on ' . (new DateTimeImmutable($date))->format('j F Y') . $suffix;
+            unset($days[$date]['references']);
+        }
+
+        return array_values($days);
+    }
+
+    private function selectedHeatmapClaimantId(array $claimants, int $requestedClaimantId): int
+    {
+        foreach ($claimants as $claimant) {
+            if ((int)($claimant['id'] ?? 0) === $requestedClaimantId) {
+                return $requestedClaimantId;
+            }
+        }
+
+        foreach ($claimants as $claimant) {
+            if ((int)($claimant['is_active'] ?? 0) === 1) {
+                return (int)($claimant['id'] ?? 0);
+            }
+        }
+
+        return (int)($claimants[0]['id'] ?? 0);
+    }
+
+    private function selectedHeatmapYear(int $requestedYear, int $currentYear): int
+    {
+        return $requestedYear >= 1900 && $requestedYear <= 2200 ? $requestedYear : $currentYear;
+    }
+
+    private function normaliseHeatmapDate(string $date, int $selectedYear): string
+    {
+        $date = trim($date);
+        if ($date === '') {
+            return '';
+        }
+
+        $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+        $errors = DateTimeImmutable::getLastErrors();
+        if (!$parsed instanceof DateTimeImmutable || (is_array($errors) && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))) {
+            return '';
+        }
+
+        return (int)$parsed->format('Y') === $selectedYear ? $parsed->format('Y-m-d') : '';
+    }
+
+    private function heatmapYears(array $claims, int $selectedClaimantId, int $selectedYear): array
+    {
+        $years = [$selectedYear];
+
+        foreach ($claims as $claim) {
+            if ((int)($claim['claimant_id'] ?? 0) !== $selectedClaimantId) {
+                continue;
+            }
+
+            $year = (int)($claim['claim_year'] ?? 0);
+            if ($year >= 1900 && $year <= 2200) {
+                $years[] = $year;
+            }
+        }
+
+        for ($year = $selectedYear - 4; $year <= $selectedYear + 5; $year++) {
+            if ($year >= 1900 && $year <= 2200) {
+                $years[] = $year;
+            }
+        }
+
+        $years = array_values(array_unique($years));
+        sort($years);
+
+        return $years;
+    }
+
+    private function claimHeatmapDate(array $claim): string
+    {
+        $date = trim((string)($claim['period_start'] ?? ''));
+        if ($date !== '') {
+            $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+            $errors = DateTimeImmutable::getLastErrors();
+            if ($parsed instanceof DateTimeImmutable && (!is_array($errors) || ($errors['warning_count'] === 0 && $errors['error_count'] === 0))) {
+                return $parsed->format('Y-m-d');
+            }
+        }
+
+        $year = (int)($claim['claim_year'] ?? 0);
+        $month = (int)($claim['claim_month'] ?? 0);
+        if ($year < 1900 || $year > 2200 || $month < 1 || $month > 12) {
+            return '';
+        }
+
+        return sprintf('%04d-%02d-01', $year, $month);
+    }
+
+    private function claimantOptions(array $claimants, bool $activeOnly, string $emptyLabel = 'Choose claimant...', int $selectedClaimantId = 0): string
+    {
+        $options = '';
+        $optionCount = 0;
         foreach ($claimants as $claimant) {
             if ($activeOnly && (int)($claimant['is_active'] ?? 0) !== 1) {
                 continue;
             }
 
-            $options .= '<option value="' . (int)($claimant['id'] ?? 0) . '">' . HelperFramework::escape((string)($claimant['claimant_name'] ?? '')) . '</option>';
+            $claimantId = (int)($claimant['id'] ?? 0);
+            $selected = $claimantId === $selectedClaimantId ? ' selected' : '';
+            $options .= '<option value="' . $claimantId . '"' . $selected . '>' . HelperFramework::escape((string)($claimant['claimant_name'] ?? '')) . '</option>';
+            $optionCount++;
         }
 
-        return $options;
+        if ($optionCount === 0) {
+            return '<option value="" selected>' . HelperFramework::escape($emptyLabel) . '</option>';
+        }
+
+        return '<option value="">' . HelperFramework::escape($emptyLabel) . '</option>' . $options;
     }
 
     private function yearOptions(int $selectedYear): string

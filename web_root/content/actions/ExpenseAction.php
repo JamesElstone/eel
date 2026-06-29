@@ -67,11 +67,17 @@ final class ExpenseAction implements ActionInterfaceFramework
             'status' => trim((string)$request->input('status', $request->input('expense_status', 'all'))),
             'claim_id' => max(0, (int)$request->input('claim_id', 0)),
             'claim_reference_code' => trim((string)$request->input('claim_reference_code', '')),
+            'heatmap_claimant_id' => max(0, (int)$request->input('expense_heatmap_claimant_id', 0)),
+            'heatmap_year' => max(0, (int)$request->input('expense_heatmap_year', 0)),
+            'heatmap_date' => trim((string)$request->input('expense_heatmap_date', '')),
         ];
 
         if (isset($result['claim']) && is_array($result['claim'])) {
             $filters['claim_id'] = max(0, (int)($result['claim']['id'] ?? 0));
             $filters['claim_reference_code'] = '';
+            $filters['heatmap_claimant_id'] = max(0, (int)($result['claim']['claimant_id'] ?? $filters['heatmap_claimant_id']));
+            $filters['heatmap_year'] = max(0, (int)($result['claim']['claim_year'] ?? $filters['heatmap_year']));
+            $filters['heatmap_date'] = '';
         }
 
         return array_filter(

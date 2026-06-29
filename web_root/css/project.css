@@ -26,6 +26,25 @@
   min-width: 0;
 }
 
+.expenses-toolbar {
+  align-items: flex-end;
+}
+
+.expenses-toolbar .button {
+  margin-bottom: 0;
+}
+
+.expense-claim-heatmap {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  margin-bottom: 14px;
+}
+
+.expense-claim-heatmap-controls {
+  margin-bottom: 2px;
+}
+
 .expense-claimant-add-form {
   display: flex;
   align-items: flex-end;

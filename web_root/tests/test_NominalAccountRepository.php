@@ -64,7 +64,7 @@ $harness->run(NominalAccountRepository::class, function (GeneratedServiceClassTe
     $harness->check(NominalAccountRepository::class, 'catalog still renders when an optional reference table is absent', function () use ($harness): void {
         $nominalId = nominalAccountRepositoryInsertNominal('Missing Reference Table Fixture');
 
-        InterfaceDB::execute('DROP TABLE IF EXISTS ct_treatment_rules');
+        InterfaceDB::execute('DROP TABLE IF EXISTS corporation_tax_treatment_rules');
 
         $repository = new NominalAccountRepository();
         $catalog = $repository->fetchNominalAccountCatalog();

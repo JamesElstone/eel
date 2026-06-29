@@ -382,7 +382,7 @@ $harness->run(\eel_accounts\Service\UploadStatementCoverageService::class, stati
         $harness->assertTrue(str_contains((string)($months['2025-09-01']['tooltip'] ?? ''), 'Previous statement closes on 30/09/2025, but this statement opens on 15/09/2025'));
     });
 
-    $harness->check(\eel_accounts\Service\UploadStatementCoverageService::class, 'builds account-level heatmap options for configured bank accounts', static function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\UploadStatementCoverageService::class, 'builds account-level heatmap options for configured bank and trade accounts', static function () use ($harness, $service): void {
         $method = new ReflectionMethod(\eel_accounts\Service\UploadStatementCoverageService::class, 'buildAccountHeatmapOptions');
         $method->setAccessible(true);
 
@@ -451,14 +451,23 @@ $harness->run(\eel_accounts\Service\UploadStatementCoverageService::class, stati
                 '2025-01-01' => 5,
                 '2025-03-01' => 7,
             ],
+        ], [
+            12 => [
+                '2025-02-01' => [
+                    'ledger_lines' => 3,
+                    'transfer_transactions' => 1,
+                ],
+            ],
         ]);
 
-        $harness->assertCount(2, $options);
+        $harness->assertCount(3, $options);
         $harness->assertSame('Current Account (1234)', $options[0]['label'] ?? null);
         $harness->assertSame('Savings Account (Test Bank)', $options[1]['label'] ?? null);
+        $harness->assertSame('Trade Creditor', $options[2]['label'] ?? null);
 
         $currentMonths = array_column((array)($options[0]['months'] ?? []), null, 'month_key');
         $savingsMonths = array_column((array)($options[1]['months'] ?? []), null, 'month_key');
+        $tradeMonths = array_column((array)($options[2]['months'] ?? []), null, 'month_key');
 
         $harness->assertSame('pass', $currentMonths['2025-01-01']['status'] ?? null);
         $harness->assertSame(5, $currentMonths['2025-01-01']['value'] ?? null);
@@ -470,5 +479,12 @@ $harness->run(\eel_accounts\Service\UploadStatementCoverageService::class, stati
         $harness->assertSame('warning', $savingsMonths['2025-01-01']['status'] ?? null);
         $harness->assertSame(0, $savingsMonths['2025-01-01']['value'] ?? null);
         $harness->assertTrue(str_contains((string)($savingsMonths['2025-01-01']['tooltip'] ?? ''), 'Savings Account (Test Bank), Jan 2025'));
+
+        $harness->assertSame('warning', $tradeMonths['2025-01-01']['status'] ?? null);
+        $harness->assertSame(0, $tradeMonths['2025-01-01']['value'] ?? null);
+        $harness->assertTrue(str_contains((string)($tradeMonths['2025-01-01']['tooltip'] ?? ''), 'Trade Creditor, Jan 2025: no tagged ledger lines or transfer transactions found.'));
+        $harness->assertSame('pass', $tradeMonths['2025-02-01']['status'] ?? null);
+        $harness->assertSame(3, $tradeMonths['2025-02-01']['value'] ?? null);
+        $harness->assertTrue(str_contains((string)($tradeMonths['2025-02-01']['tooltip'] ?? ''), 'Trade Creditor, Feb 2025: 3 tagged ledger line(s), 1 transfer transaction(s).'));
     });
 });

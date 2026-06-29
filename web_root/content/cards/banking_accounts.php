@@ -119,12 +119,32 @@ final class _banking_accountsCard extends CardBaseFramework
             return '';
         }
 
+        $disabled = $this->hasMissingNominal($context) ? '' : ' disabled title="All account sources already have a nominal assigned."';
+
         return '<form method="post" data-ajax="true" class="toolbar">
             <input type="hidden" name="card_action" value="Banking">
             <input type="hidden" name="intent" value="assign_missing_nominals">
             <input type="hidden" name="company_id" value="' . HelperFramework::escape((string)$companyId) . '">
-            <button class="button danger" type="submit" data-chicken-check="true" data-chicken-message="Create and assign missing company account nominals?<br><br>Bank and trade accounts use the next free code above the configured default nominal." data-chicken-confirm-text="Assign">Assign Missing Nominals</button>
+            <button class="button danger" type="submit"' . $disabled . ' data-chicken-check="true" data-chicken-message="Create and assign missing company account nominals?<br><br>Bank and trade accounts use the next free code above the configured default nominal." data-chicken-confirm-text="Assign">Assign Missing Nominals</button>
         </form>';
+    }
+
+    private function hasMissingNominal(array $context): bool
+    {
+        foreach ((array)($context['services']['companyAccounts'] ?? []) as $account) {
+            if (!is_array($account)) {
+                continue;
+            }
+
+            $code = trim((string)($account['nominal_code'] ?? ''));
+            $name = trim((string)($account['nominal_name'] ?? ''));
+
+            if ($code === '' && $name === '') {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function actionsHtml(array $account): string

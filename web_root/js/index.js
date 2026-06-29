@@ -1704,15 +1704,6 @@
         });
     }
 
-    function triggerStateSync(field) {
-        if (!(field instanceof HTMLElement)) {
-            return;
-        }
-
-        field.dispatchEvent(new Event('input', { bubbles: true }));
-        field.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-
     function initDangerZoneConfirmationControls(root = document) {
         const forms = root.querySelectorAll ? root.querySelectorAll('form[data-ajax="true"]') : [];
 
@@ -1721,11 +1712,11 @@
                 return;
             }
 
-            const clearInput = form.querySelector('[data-clear-confirm-input], [data-clear-company-input]');
+            const clearInput = form.querySelector('[data-clear-confirm-input]');
             const clearButton = form.querySelector('[data-clear-confirm-button], #clear-imported-data-button');
             const deleteCheckbox = form.querySelector('[data-delete-confirm-checkbox]');
             const deleteInput = form.querySelector('[data-delete-confirm-input]');
-            const deleteButton = form.querySelector('[data-delete-confirm-button], [data-delete-company-button]');
+            const deleteButton = form.querySelector('[data-delete-confirm-button]');
 
             if (
                 !(clearInput instanceof HTMLInputElement)
@@ -1803,6 +1794,208 @@
         });
     }
 
+    function updateUploadSelection(dropzone, input) {
+        if (!(dropzone instanceof HTMLElement) || !(input instanceof HTMLInputElement)) {
+            return;
+        }
+
+        const files = input.files ? Array.from(input.files) : [];
+        const form = dropzone.closest('form');
+        const scope = form instanceof HTMLFormElement ? form : dropzone;
+        const list = scope.querySelector('[data-upload-file-list]');
+        const summary = scope.querySelector('[data-upload-selection-summary]');
+        const maxFiles = Number(dropzone.dataset.uploadMaxFiles || '12');
+        const maxReached = files.length > maxFiles;
+
+        if (summary instanceof HTMLElement) {
+            if (files.length === 0) {
+                summary.textContent = 'No files selected yet.';
+            } else if (maxReached) {
+                summary.textContent = `Too many files selected.\nPlease keep it to ${String(maxFiles)} CSV files or fewer.`;
+            } else {
+                summary.textContent = `${String(files.length)} file${files.length > 1 ? 's' : ''} selected:`;
+            }
+        }
+
+        if (!(list instanceof HTMLElement)) {
+            return;
+        }
+
+        list.innerHTML = '';
+
+        if (files.length === 0) {
+            list.hidden = true;
+            return;
+        }
+
+        files.forEach((file) => {
+            const item = document.createElement('li');
+            item.textContent = file.name || 'Unnamed file';
+            list.appendChild(item);
+        });
+
+        list.hidden = false;
+    }
+
+    function assignUploadFiles(input, files) {
+        if (!(input instanceof HTMLInputElement) || !files || typeof DataTransfer !== 'function') {
+            return false;
+        }
+
+        const dataTransfer = new DataTransfer();
+
+        Array.from(files).forEach((file) => {
+            dataTransfer.items.add(file);
+        });
+
+        input.files = dataTransfer.files;
+        return true;
+    }
+
+    function syncUploadSubmitState(form, input, accountSelect) {
+        if (!(form instanceof HTMLFormElement) || !(input instanceof HTMLInputElement)) {
+            return;
+        }
+
+        const submitButton = form.querySelector('[data-upload-submit]');
+        if (!(submitButton instanceof HTMLButtonElement)) {
+            return;
+        }
+
+        const hasAccount = accountSelect instanceof HTMLSelectElement
+            ? String(accountSelect.value || '').trim() !== ''
+            : true;
+        const hasFiles = input.files instanceof FileList && input.files.length > 0;
+        const shouldDisable = !hasAccount || !hasFiles;
+
+        submitButton.disabled = shouldDisable;
+        syncButtonTitleVisibility(submitButton);
+    }
+
+    function initialiseUploadDropzones(root = document) {
+        const dropzones = root.querySelectorAll ? root.querySelectorAll('[data-upload-dropzone]') : [];
+
+        dropzones.forEach((dropzone) => {
+            if (!(dropzone instanceof HTMLElement)) {
+                return;
+            }
+
+            const form = dropzone.closest('form');
+            const input = form instanceof HTMLFormElement
+                ? form.querySelector('[data-upload-input]')
+                : null;
+            const accountSelect = form instanceof HTMLFormElement ? form.querySelector('#upload_account_id') : null;
+            let dragDepth = 0;
+
+            if (!(input instanceof HTMLInputElement)) {
+                return;
+            }
+
+            updateUploadSelection(dropzone, input);
+            syncUploadSubmitState(form, input, accountSelect);
+
+            if (dropzone.dataset.uploadBound === '1') {
+                return;
+            }
+
+            dropzone.dataset.uploadBound = '1';
+
+            input.addEventListener('change', () => {
+                updateUploadSelection(dropzone, input);
+                syncUploadSubmitState(form, input, accountSelect);
+            });
+
+            dropzone.addEventListener('dragenter', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                dragDepth += 1;
+                dropzone.classList.add('is-dragover');
+            });
+
+            dropzone.addEventListener('dragover', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+
+                if (event.dataTransfer) {
+                    event.dataTransfer.dropEffect = 'copy';
+                }
+
+                dropzone.classList.add('is-dragover');
+            });
+
+            ['dragleave', 'dragend'].forEach((eventName) => {
+                dropzone.addEventListener(eventName, (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    dragDepth = Math.max(0, dragDepth - 1);
+
+                    if (dragDepth === 0) {
+                        dropzone.classList.remove('is-dragover');
+                    }
+                });
+            });
+
+            dropzone.addEventListener('drop', (event) => {
+                const droppedFiles = event.dataTransfer ? event.dataTransfer.files : null;
+
+                event.preventDefault();
+                event.stopPropagation();
+                dragDepth = 0;
+                dropzone.classList.remove('is-dragover');
+
+                if (!droppedFiles || droppedFiles.length === 0) {
+                    return;
+                }
+
+                if (!assignUploadFiles(input, droppedFiles)) {
+                    return;
+                }
+
+                updateUploadSelection(dropzone, input);
+                syncUploadSubmitState(form, input, accountSelect);
+            });
+
+            if (!(form instanceof HTMLFormElement)) {
+                return;
+            }
+
+            if (accountSelect instanceof HTMLSelectElement && accountSelect.dataset.uploadAccountBound !== '1') {
+                accountSelect.dataset.uploadAccountBound = '1';
+
+                accountSelect.addEventListener('invalid', () => {
+                    accountSelect.classList.add('input-missing-required');
+                });
+
+                accountSelect.addEventListener('change', () => {
+                    if (accountSelect.value) {
+                        accountSelect.classList.remove('input-missing-required');
+                    }
+
+                    syncUploadSubmitState(form, input, accountSelect);
+                });
+            }
+
+            if (form.dataset.uploadFormBound === '1') {
+                return;
+            }
+
+            form.dataset.uploadFormBound = '1';
+
+            form.addEventListener('submit', (event) => {
+                const maxFiles = Number(dropzone.dataset.uploadMaxFiles || '12');
+
+                if (accountSelect instanceof HTMLSelectElement && !accountSelect.value) {
+                    accountSelect.classList.add('input-missing-required');
+                }
+
+                if (input.files && input.files.length > maxFiles) {
+                    event.preventDefault();
+                    window.alert(`Please upload no more than ${String(maxFiles)} CSV files at once.`);
+                }
+            });
+        });
+    }
+
     function syncPasswordRequirementPanel(panel) {
         if (!(panel instanceof HTMLElement)) {
             return;
@@ -1853,22 +2046,6 @@
             passwordInput.addEventListener('input', () => syncPasswordRequirementPanel(panel));
             passwordInput.addEventListener('change', () => syncPasswordRequirementPanel(panel));
         });
-    }
-
-    function syncSubmitAction(submitter) {
-        if (!(submitter instanceof HTMLButtonElement) || !submitter.form) {
-            return;
-        }
-
-        const actionValue = submitter.dataset.submitAction;
-        if (typeof actionValue !== 'string' || actionValue === '') {
-            return;
-        }
-
-        const actionField = submitter.form.querySelector('#settings_action_field');
-        if (actionField instanceof HTMLInputElement) {
-            actionField.value = actionValue;
-        }
     }
 
     function syncSubmitField(submitter) {
@@ -1992,6 +2169,7 @@
                     initialiseVisibleWhenControls(replacement);
                     initialiseDirtyActionControls(replacement);
                     initDangerZoneConfirmationControls(replacement);
+                    initialiseUploadDropzones(replacement);
                     initialisePasswordRequirementPanels(replacement);
                     initialiseTableCondensedControls(replacement);
                     initialiseCardAutoRefresh(replacement);
@@ -2012,6 +2190,7 @@
                     initialiseVisibleWhenControls(replacement);
                     initialiseDirtyActionControls(replacement);
                     initDangerZoneConfirmationControls(replacement);
+                    initialiseUploadDropzones(replacement);
                     initialisePasswordRequirementPanels(replacement);
                     initialiseTableCondensedControls(replacement);
                     initialiseCardAutoRefresh(replacement);
@@ -2771,7 +2950,6 @@
             return;
         }
 
-        syncSubmitAction(event.submitter);
         syncSubmitField(event.submitter);
 
         const formData = new FormData(form);
@@ -2849,23 +3027,6 @@
     });
 
     document.addEventListener('click', async (event) => {
-        const accountingPeriodSummaryButton = event.target instanceof Element
-            ? event.target.closest('[data-accounting-period-summary-button="true"]')
-            : null;
-
-        if (accountingPeriodSummaryButton instanceof HTMLButtonElement) {
-            event.preventDefault();
-            const accountingPeriodId = String(accountingPeriodSummaryButton.dataset.accountingPeriodId || '').trim();
-            const accountingPeriodSelect = document.querySelector('.site-context-slot select[data-site-context-key="accounting_period_id"]');
-
-            if (accountingPeriodId !== '' && accountingPeriodSelect instanceof HTMLSelectElement) {
-                accountingPeriodSelect.value = accountingPeriodId;
-                accountingPeriodSelect.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-
-            return;
-        }
-
         const cardSizeToggle = event.target instanceof Element ? event.target.closest('[data-card-size-toggle]') : null;
         if (cardSizeToggle instanceof HTMLButtonElement) {
             event.preventDefault();
@@ -2976,6 +3137,7 @@
     initialiseVisibleWhenControls(document);
     initialiseDirtyActionControls(document);
     initDangerZoneConfirmationControls(document);
+    initialiseUploadDropzones(document);
     initialisePasswordRequirementPanels(document);
     initialiseTableCondensedControls(document);
     initialiseCardAutoRefresh(document);

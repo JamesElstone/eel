@@ -842,6 +842,19 @@
   flex: 0 0 auto;
 }
 
+.uploads-statement-coverage-account-heatmaps .month-heatmap-heading {
+  text-align: center;
+}
+
+.uploads-statement-coverage-account-heatmaps .month-heatmap-scroll {
+  justify-content: center;
+  justify-content: safe center;
+}
+
+.uploads-statement-coverage-account-heatmaps > .month-heatmap-legend {
+  justify-content: center;
+}
+
 .document-stack {
   display: grid;
   gap: 8px;
@@ -1412,7 +1425,7 @@
   display: block;
   width: 100%;
   min-height: 128px;
-  padding: 16px;
+  padding: 10px;
   border: 1px solid var(--line);
   border-radius: 16px;
   background: #fff;
@@ -1420,6 +1433,10 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+.card-body .helper + .helper {
+  margin-top: 0px;
 }
 
 .month-card:hover,

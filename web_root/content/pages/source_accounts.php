@@ -7,21 +7,21 @@
  */
 declare(strict_types=1);
 
-final class _company_accounts extends PageContextFramework
+final class _source_accounts extends PageContextFramework
 {
     public function id(): string
     {
-        return 'company_accounts';
+        return 'source_accounts';
     }
 
     public function title(): string
     {
-        return 'Account Sources';
+        return 'Source Accounts';
     }
 
     public function subtitle(): string
     {
-        return 'Maintain company accounts, bank CSV mappings, and account checks in one place.';
+        return 'Maintain bank and trade account sources, CSV mappings, and reconciliation checks in one place.';
     }
 
     public function cards(): array

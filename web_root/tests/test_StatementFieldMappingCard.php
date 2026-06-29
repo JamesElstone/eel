@@ -14,7 +14,7 @@ $harness->run(_statement_field_mappingCard::class, static function (GeneratedSer
     $harness->check(_statement_field_mappingCard::class, 'uses banking field mapping context for account mode', static function () use ($harness, $card): void {
         $html = $card->render([
             'page' => [
-                'page_id' => 'company_accounts',
+                'page_id' => 'source_accounts',
             ],
             'company' => [
                 'id' => 42,

@@ -121,7 +121,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
         $uploadId = (int)($upload['id'] ?? $selectedUploadId);
         $accountId = (int)($upload['account_id'] ?? $bankingMappingAccountId);
         $action = $pageId !== '' ? '?page=' . rawurlencode($pageId) : '';
-        $cardAction = in_array($pageId, ['company_accounts', 'bank_accounts', 'banking'], true) ? 'Banking' : 'Uploads';
+        $cardAction = in_array($pageId, ['source_accounts', 'bank_accounts', 'banking'], true) ? 'Banking' : 'Uploads';
 
         $summaryHtml = $this->renderSummary($mode, $upload, $mappingRow, $hasConfirmedMapping, $extraHeaders);
         $sampleHtml = $this->renderSourceSample($sourceSample);

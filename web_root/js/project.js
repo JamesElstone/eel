@@ -5,82 +5,6 @@
  * See LICENSE file for details.
  */
 (() => {
-    function updateUploadSelection(dropzone, input) {
-        if (!(dropzone instanceof HTMLElement) || !(input instanceof HTMLInputElement)) {
-            return;
-        }
-
-        const files = input.files ? Array.from(input.files) : [];
-        const form = dropzone.closest('form');
-        const scope = form instanceof HTMLFormElement ? form : dropzone;
-        const list = scope.querySelector('[data-upload-file-list]');
-        const summary = scope.querySelector('[data-upload-selection-summary]');
-        const maxFiles = Number(dropzone.dataset.uploadMaxFiles || '12');
-        const maxReached = files.length > maxFiles;
-
-        if (summary instanceof HTMLElement) {
-            if (files.length === 0) {
-                summary.textContent = 'No files selected yet.';
-            } else if (maxReached) {
-                summary.textContent = `Too many files selected.\nPlease keep it to ${String(maxFiles)} CSV files or fewer.`;
-            } else {
-                summary.textContent = `${String(files.length)} file${files.length > 1 ? 's' : ''} selected:`;
-            }
-        }
-
-        if (!(list instanceof HTMLElement)) {
-            return;
-        }
-
-        list.innerHTML = '';
-
-        if (files.length === 0) {
-            list.hidden = true;
-            return;
-        }
-
-        files.forEach((file) => {
-            const item = document.createElement('li');
-            item.textContent = file.name || 'Unnamed file';
-            list.appendChild(item);
-        });
-
-        list.hidden = false;
-    }
-
-    function assignUploadFiles(input, files) {
-        if (!(input instanceof HTMLInputElement) || !files || typeof DataTransfer !== 'function') {
-            return false;
-        }
-
-        const dataTransfer = new DataTransfer();
-
-        Array.from(files).forEach((file) => {
-            dataTransfer.items.add(file);
-        });
-
-        input.files = dataTransfer.files;
-        return true;
-    }
-
-    function syncUploadSubmitState(form, input, accountSelect) {
-        if (!(form instanceof HTMLFormElement) || !(input instanceof HTMLInputElement)) {
-            return;
-        }
-
-        const submitButton = form.querySelector('[data-upload-submit]');
-        if (!(submitButton instanceof HTMLButtonElement)) {
-            return;
-        }
-
-        const hasAccount = accountSelect instanceof HTMLSelectElement
-            ? String(accountSelect.value || '').trim() !== ''
-            : true;
-        const hasFiles = input.files instanceof FileList && input.files.length > 0;
-
-        submitButton.disabled = !hasAccount || !hasFiles;
-    }
-
     function setUploadProcessingState(form, isProcessing) {
         if (!(form instanceof HTMLFormElement)) {
             return;
@@ -90,7 +14,7 @@
         const processingIcon = form.querySelector('[data-upload-processing-icon]');
 
         if (isProcessing && submitButton instanceof HTMLButtonElement) {
-            submitButton.disabled = isProcessing;
+            submitButton.disabled = true;
         }
 
         if (processingIcon instanceof HTMLElement) {
@@ -98,7 +22,7 @@
         }
     }
 
-    function initialiseUploadDropzones(root = document) {
+    function initialiseUploadProcessingIndicators(root = document) {
         const dropzones = root.querySelectorAll ? root.querySelectorAll('[data-upload-dropzone]') : [];
 
         dropzones.forEach((dropzone) => {
@@ -107,136 +31,146 @@
             }
 
             const form = dropzone.closest('form');
-            const input = form instanceof HTMLFormElement
-                ? form.querySelector('[data-upload-input]')
-                : null;
-            const accountSelect = form instanceof HTMLFormElement ? form.querySelector('#upload_account_id') : null;
-            let dragDepth = 0;
-
-            if (!(input instanceof HTMLInputElement)) {
+            if (!(form instanceof HTMLFormElement) || form.dataset.uploadProcessingBound === '1') {
                 return;
             }
 
-            updateUploadSelection(dropzone, input);
-            syncUploadSubmitState(form, input, accountSelect);
+            const input = form.querySelector('[data-upload-input]');
+            const accountSelect = form.querySelector('#upload_account_id');
 
-            if (dropzone.dataset.uploadBound === '1') {
-                return;
+            form.dataset.uploadProcessingBound = '1';
+
+            const clearProcessing = () => setUploadProcessingState(form, false);
+
+            if (input instanceof HTMLInputElement) {
+                input.addEventListener('change', clearProcessing);
             }
 
-            dropzone.dataset.uploadBound = '1';
-
-            input.addEventListener('change', () => {
-                updateUploadSelection(dropzone, input);
-                syncUploadSubmitState(form, input, accountSelect);
-                setUploadProcessingState(form, false);
-            });
-
-            dropzone.addEventListener('dragenter', (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                dragDepth += 1;
-                dropzone.classList.add('is-dragover');
-            });
-
-            dropzone.addEventListener('dragover', (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-
-                if (event.dataTransfer) {
-                    event.dataTransfer.dropEffect = 'copy';
-                }
-
-                dropzone.classList.add('is-dragover');
-            });
-
-            ['dragleave', 'dragend'].forEach((eventName) => {
-                dropzone.addEventListener(eventName, (event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    dragDepth = Math.max(0, dragDepth - 1);
-
-                    if (dragDepth === 0) {
-                        dropzone.classList.remove('is-dragover');
-                    }
-                });
-            });
-
-            dropzone.addEventListener('drop', (event) => {
-                const droppedFiles = event.dataTransfer ? event.dataTransfer.files : null;
-
-                event.preventDefault();
-                event.stopPropagation();
-                dragDepth = 0;
-                dropzone.classList.remove('is-dragover');
-
-                if (!droppedFiles || droppedFiles.length === 0) {
-                    return;
-                }
-
-                if (!assignUploadFiles(input, droppedFiles)) {
-                    return;
-                }
-
-                updateUploadSelection(dropzone, input);
-                syncUploadSubmitState(form, input, accountSelect);
-                setUploadProcessingState(form, false);
-            });
-
-            if (!(form instanceof HTMLFormElement)) {
-                return;
+            if (accountSelect instanceof HTMLSelectElement) {
+                accountSelect.addEventListener('change', clearProcessing);
             }
-
-            if (accountSelect instanceof HTMLSelectElement && accountSelect.dataset.uploadAccountBound !== '1') {
-                accountSelect.dataset.uploadAccountBound = '1';
-
-                accountSelect.addEventListener('invalid', () => {
-                    accountSelect.classList.add('input-missing-required');
-                });
-
-                accountSelect.addEventListener('change', () => {
-                    if (accountSelect.value) {
-                        accountSelect.classList.remove('input-missing-required');
-                    }
-
-                    syncUploadSubmitState(form, input, accountSelect);
-                    setUploadProcessingState(form, false);
-                });
-            }
-
-            if (form.dataset.uploadFormBound === '1') {
-                return;
-            }
-
-            form.dataset.uploadFormBound = '1';
 
             form.addEventListener('submit', (event) => {
                 const maxFiles = Number(dropzone.dataset.uploadMaxFiles || '12');
 
                 if (accountSelect instanceof HTMLSelectElement && !accountSelect.value) {
-                    accountSelect.classList.add('input-missing-required');
-                }
-
-                if (input.files && input.files.length > maxFiles) {
-                    event.preventDefault();
-                    syncUploadSubmitState(form, input, accountSelect);
-                    setUploadProcessingState(form, false);
-                    window.alert(`Please upload no more than ${String(maxFiles)} CSV files at once.`);
+                    clearProcessing();
                     return;
                 }
 
-                setUploadProcessingState(form, true);
+                if (input instanceof HTMLInputElement && input.files && input.files.length > maxFiles) {
+                    clearProcessing();
+                    return;
+                }
+
+                if (!event.defaultPrevented) {
+                    setUploadProcessingState(form, true);
+                }
             });
         });
     }
 
-    initialiseUploadDropzones(document);
+    function checkedVatRegisteredValue(form) {
+        const checked = form.querySelector('[data-vat-registered-control]:checked');
+
+        return checked instanceof HTMLInputElement ? checked.value : '0';
+    }
+
+    function initialiseVatRegistrationForms(root = document) {
+        const forms = root.querySelectorAll ? root.querySelectorAll('[data-vat-registration-form]') : [];
+
+        forms.forEach((form) => {
+            if (!(form instanceof HTMLFormElement)) {
+                return;
+            }
+
+            const country = form.querySelector('[data-vat-country-code]');
+            const number = form.querySelector('[data-vat-number]');
+            const panel = form.querySelector('[data-vat-fields]');
+            const saveButton = form.querySelector('[data-vat-save-button]');
+            const checkButton = form.querySelector('[data-vat-check-button]');
+            const registeredControls = Array.from(form.querySelectorAll('[data-vat-registered-control]'))
+                .filter((control) => control instanceof HTMLInputElement);
+
+            const initialRegistered = registeredControls.length > 0
+                ? String(registeredControls[0].dataset.vatInitialValue || '0')
+                : '0';
+            const initialCountry = country instanceof HTMLSelectElement
+                ? String(country.dataset.vatInitialValue || '')
+                : '';
+            const initialNumber = number instanceof HTMLInputElement
+                ? String(number.dataset.vatInitialValue || '')
+                : '';
+
+            const sync = () => {
+                const registered = checkedVatRegisteredValue(form) === '1';
+                const countryValue = country instanceof HTMLSelectElement ? String(country.value || '') : '';
+                const numberValue = number instanceof HTMLInputElement ? String(number.value || '').trim() : '';
+
+                if (panel instanceof HTMLElement) {
+                    panel.classList.toggle('is-hidden', !registered);
+                }
+
+                if (checkButton instanceof HTMLButtonElement) {
+                    checkButton.disabled = !registered || countryValue === '' || numberValue === '';
+                }
+
+                if (saveButton instanceof HTMLButtonElement) {
+                    saveButton.disabled = checkedVatRegisteredValue(form) === initialRegistered
+                        && countryValue === initialCountry
+                        && numberValue === initialNumber;
+                }
+            };
+
+            sync();
+
+            if (form.dataset.vatRegistrationBound === '1') {
+                return;
+            }
+
+            form.dataset.vatRegistrationBound = '1';
+            registeredControls.forEach((control) => control.addEventListener('change', sync));
+
+            if (country instanceof HTMLSelectElement) {
+                country.addEventListener('change', sync);
+            }
+
+            if (number instanceof HTMLInputElement) {
+                number.addEventListener('input', sync);
+                number.addEventListener('change', sync);
+            }
+        });
+    }
+
+    document.addEventListener('click', (event) => {
+        const accountingPeriodSummaryButton = event.target instanceof Element
+            ? event.target.closest('[data-accounting-period-summary-button="true"]')
+            : null;
+
+        if (!(accountingPeriodSummaryButton instanceof HTMLButtonElement)) {
+            return;
+        }
+
+        event.preventDefault();
+
+        const accountingPeriodId = String(accountingPeriodSummaryButton.dataset.accountingPeriodId || '').trim();
+        const accountingPeriodSelect = document.querySelector('.site-context-slot select[data-site-context-key="accounting_period_id"]');
+
+        if (accountingPeriodId !== '' && accountingPeriodSelect instanceof HTMLSelectElement) {
+            accountingPeriodSelect.value = accountingPeriodId;
+            accountingPeriodSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    });
+
+    initialiseUploadProcessingIndicators(document);
+    initialiseVatRegistrationForms(document);
 
     const observer = new MutationObserver((mutations) => {
         mutations.forEach((mutation) => {
             mutation.addedNodes.forEach((node) => {
                 if (node instanceof HTMLElement) {
-                    initialiseUploadDropzones(node);
+                    initialiseUploadProcessingIndicators(node);
+                    initialiseVatRegistrationForms(node);
                 }
             });
         });

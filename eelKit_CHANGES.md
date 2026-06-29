@@ -67,6 +67,107 @@ eelKit also checks for `web_root/js/project.js`. When the file exists, eelKit ad
 
 This gives downstream projects lightweight CSS and JavaScript extension points without editing eelKit-owned `web_root/css/auth.css`, `web_root/css/index.css`, `web_root/js/index.js`, or page renderers. If either project asset is absent, generated HTML for that asset is unchanged.
 
+## Browser helper contract documentation and cleanup
+
+Feature name: `browser_helper_contracts`.
+
+eelKit now documents the generic browser helpers that downstream cards can opt into by emitting `data-*` attributes. These helpers live in `web_root/js/index.js`, use delegated or card-replacement-safe binding, and are intended for downstream markup even when eelKit's built-in cards do not emit every contract.
+
+Dead or broken helpers were removed:
+
+- `triggerStateSync()` was unused and has been removed.
+- `data-submit-action` / `#settings_action_field` was a project-specific settings helper and has been removed.
+
+### Changed-state button helper
+
+Use `data-state-fields` and `data-state-target` when a form needs to enable a save button only after one or more fields differ from their original values:
+
+```html
+<div data-state-fields="profile-name,profile-type" data-state-target="profile-save"></div>
+<input id="profile-name" name="profile_name" value="Original" data-state-default="Original">
+<select id="profile-type" name="profile_type" data-state-default="string">...</select>
+<button id="profile-save" type="submit" disabled>Save</button>
+```
+
+`data-state-fields` is a comma-separated list of element ids. The target must be a button. If `data-state-default` is omitted, eelKit uses the field's current value at binding time as the unchanged value. Checkbox values are compared as `1` for checked and `0` for unchecked.
+
+### Dirty-action button helper
+
+Use `data-dirty-action-target` on a field when one or more buttons in the same form should remain disabled until the field changes:
+
+```html
+<input
+    name="category_id"
+    value="42"
+    data-initial-value="42"
+    data-dirty-action-target="[name='apply_category']">
+<button name="apply_category" value="1" type="submit" disabled>Apply</button>
+```
+
+The target value is a CSS selector resolved inside the field's owning form, or inside the element referenced by the field's `form` attribute. Set `data-dirty-require-value="1"` when a non-empty value is also required. Set `data-dirty-enable-mode="selected"` on the field or target button when the button should enable whenever the field has a required value, even if the value is unchanged.
+
+### Page-card tab switch helper
+
+Use `data-page-card-switch-tab` when a button or link should activate an existing page-card tab by its visible label:
+
+```html
+<button type="button" data-page-card-switch-tab="Uploads">Show uploads</button>
+```
+
+The helper looks in the closest `.page-card-tabs` container, then falls back to the first page-card tab set on the page. Labels are matched case-insensitively after trimming whitespace.
+
+### Submit-field helper
+
+Use `data-submit-field` and optional `data-submit-value` when a submit button needs to set a hidden field immediately before eelKit builds AJAX `FormData`:
+
+```html
+<button type="submit" data-submit-field="action" data-submit-value="cancel">Cancel</button>
+<input type="hidden" name="action" value="save">
+```
+
+If `data-submit-value` is omitted, eelKit writes `1`. The target may be an `input`, `select`, or `textarea` in the submitting button's form.
+
+### Danger-zone confirmation helper
+
+Use danger-zone confirmation controls when a destructive AJAX form should keep its submit button disabled until the user types an expected value.
+
+Clear-confirm controls use:
+
+```html
+<input data-clear-confirm-input data-expected-value="CLEAR">
+<button type="submit" data-clear-confirm-button disabled>Clear data</button>
+```
+
+For backwards compatibility, eelKit also accepts the legacy clear button id `clear-imported-data-button`.
+
+Delete-confirm controls can require both a checkbox and typed confirmation:
+
+```html
+<input type="checkbox" data-delete-confirm-checkbox>
+<input data-delete-confirm-input data-expected-value="DELETE" disabled>
+<button type="submit" data-delete-confirm-button disabled>Delete</button>
+```
+
+When the checkbox is unchecked, eelKit disables and clears the delete confirmation input. Buttons are enabled only when the expected text exactly matches the trimmed input value.
+
+### Chicken-check submit confirmation
+
+Use `data-chicken-check="true"` on an AJAX submit button when the user should confirm by pressing a generated confirmation button before the original form submits:
+
+```html
+<button
+    type="submit"
+    class="button danger"
+    data-chicken-check="true"
+    data-chicken-title="Confirm delete"
+    data-chicken-message="This cannot be undone."
+    data-chicken-confirm-text="Delete">
+    Delete
+</button>
+```
+
+Optional attributes are `data-chicken-title`, `data-chicken-message`, `data-chicken-confirm-text`, and `data-chicken-button-class`. Messages are rendered as plain text; `<br>` and `<br />` in `data-chicken-message` are converted to line breaks for compatibility.
+
 ## Auth context for cards
 
 Feature name: `auth_context_for_cards`.

@@ -31,10 +31,9 @@ final class _vat_registrationCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $page = (array)($context['page'] ?? []);
         $hasValidSelectedCompany = (int)($context['company']['id'] ?? 0) > 0;
-        $settings = (array)($page['settings'] ?? []);
-        $companyId = (int)($page['selected_company_id'] ?? $context['company']['id'] ?? 0);
+        $settings = (array)($context['company']['settings'] ?? []);
+        $companyId = (int)($context['company']['id'] ?? 0);
 
         if (!$hasValidSelectedCompany) {
             return '<div class="helper">Select or add a company first, and the VAT registration controls will appear here.</div>';
@@ -46,11 +45,16 @@ final class _vat_registrationCard extends CardBaseFramework
         }
 
         $resultsHtml = $this->renderVatResultFields($settings, $companyId);
-        $mismatchHtml = trim((string)($settings['pending_vat_mismatch_warnings'] ?? '')) !== ''
-            ? '<div data-vat-mismatch-panel>' . $this->renderVatMismatchPanel($settings) . '</div>'
+        $mismatchWarnings = $this->vatMismatchWarnings($settings);
+        $mismatchHtml = $mismatchWarnings !== []
+            ? '<div data-vat-mismatch-panel>' . $this->renderVatMismatchPanel($mismatchWarnings) . '</div>'
             : '';
+        $registeredValue = !empty($settings['is_vat_registered']) ? '1' : '0';
 
         return '
+            <form method="post" data-ajax="true" data-vat-registration-form>
+            <input type="hidden" name="card_action" value="VatRegistration">
+            <input type="hidden" name="company_id" value="' . $companyId . '">
             <div class="form-grid">
                 <div class="form-row">
                     <label>Company</label>
@@ -64,11 +68,11 @@ final class _vat_registrationCard extends CardBaseFramework
                     <label>VAT Registered</label>
                     <div class="segmented-control" data-vat-registered-toggle>
                         <label class="segmented-option">
-                            <input type="radio" name="is_vat_registered" value="1"' . (!empty($settings['is_vat_registered']) ? ' checked' : '') . '>
+                            <input type="radio" name="is_vat_registered" value="1" data-vat-registered-control data-vat-initial-value="' . HelperFramework::escape($registeredValue) . '"' . (!empty($settings['is_vat_registered']) ? ' checked' : '') . '>
                             <span>Yes</span>
                         </label>
                         <label class="segmented-option">
-                            <input type="radio" name="is_vat_registered" value="0"' . (empty($settings['is_vat_registered']) ? ' checked' : '') . '>
+                            <input type="radio" name="is_vat_registered" value="0" data-vat-registered-control data-vat-initial-value="' . HelperFramework::escape($registeredValue) . '"' . (empty($settings['is_vat_registered']) ? ' checked' : '') . '>
                             <span>No</span>
                         </label>
                     </div>
@@ -77,13 +81,13 @@ final class _vat_registrationCard extends CardBaseFramework
                     <div class="form-grid">
                         <div class="form-row">
                             <label for="vat_country_code">VAT Country/Prefix</label>
-                            <select class="select" id="vat_country_code" name="vat_country_code">
+                            <select class="select" id="vat_country_code" name="vat_country_code" data-vat-country-code data-vat-initial-value="' . HelperFramework::escape((string)($settings['vat_country_code'] ?? '')) . '">
                                 <option value="">Select country/prefix</option>' . $countryOptions . '
                             </select>
                         </div>
                         <div class="form-row">
                             <label for="vat_number">VAT Registration Number</label>
-                            <input class="input" id="vat_number" name="vat_number" value="' . HelperFramework::escape((string)($settings['vat_number'] ?? '')) . '" placeholder="Enter VAT Registration Number" autocomplete="off">
+                            <input class="input" id="vat_number" name="vat_number" value="' . HelperFramework::escape((string)($settings['vat_number'] ?? '')) . '" placeholder="Enter VAT Registration Number" autocomplete="off" data-vat-number data-vat-initial-value="' . HelperFramework::escape((string)($settings['vat_number'] ?? '')) . '">
                         </div>
                         <div class="form-row full">
                             <div class="vat-actions" data-vat-actions">' . $this->renderVatActionButtons($settings) . '</div>
@@ -97,8 +101,9 @@ final class _vat_registrationCard extends CardBaseFramework
                 </div>
             </div>
             <div>
-                <button class="button primary" type="submit" disabled data-submit-action="save_vat">Save VAT Configuration</button>
+                <button class="button primary" id="save_vat_button" type="submit" name="intent" value="save_vat" disabled data-vat-save-button>Save VAT Configuration</button>
             </div>
+            </form>
         ';
     }
 
@@ -124,8 +129,8 @@ final class _vat_registrationCard extends CardBaseFramework
         $vatNumber = trim((string)($settings['vat_number'] ?? ''));
         $canCheck = $countryCode !== '' && $vatNumber !== '';
 
-        return '<button class="button" type="submit" data-submit-action="validate_vat"' . ($canCheck ? '' : ' disabled') . '>Check VAT Number</button>
-            <button class="button" type="submit" data-submit-action="clear_vat_validation">Reset Validation</button>';
+        return '<button class="button" type="submit" name="intent" value="validate_vat" data-vat-check-button' . ($canCheck ? '' : ' disabled') . '>Check VAT Number</button>
+            <button class="button" type="submit" name="intent" value="clear_vat_validation">Reset Validation</button>';
     }
 
     private function renderVatInlineFeedback(array $messages): string
@@ -141,14 +146,13 @@ final class _vat_registrationCard extends CardBaseFramework
         return $html;
     }
 
-    private function renderVatMismatchPanel(array $settings): string
+    private function renderVatMismatchPanel(array $warnings): string
     {
-        return '<div class="helper">' . HelperFramework::escape((string)($settings['pending_vat_mismatch_warnings'] ?? '')) . '</div>
+        return '<div class="helper">' . HelperFramework::escape(implode(' ', $warnings)) . '</div>
                 <div>
-                    <button class="button" type="submit">Accept Mismatch</button>
+                    <button class="button" type="submit" name="intent" value="accept_vat_mismatch">Accept Mismatch</button>
                 </div>
-            </div>
-        </div>';
+            </div>';
     }
 
     private function renderVatResultFields(array $settings, int $companyId): string
@@ -163,7 +167,7 @@ final class _vat_registrationCard extends CardBaseFramework
             ['Validated at', $this->displayDateTime((string)($settings['vat_validated_at'] ?? ''))],
             ['Validation source', (string)($settings['vat_validation_source'] ?? '')],
             ['Business name', (string)($settings['vat_validation_name'] ?? '')],
-            ['Address', (string)($settings['vat_validation_address'] ?? '')],
+            ['Address', $this->validationAddress($settings)],
             ['Last error', (string)($settings['vat_last_error'] ?? '')],
         ];
 
@@ -188,5 +192,30 @@ final class _vat_registrationCard extends CardBaseFramework
         }
 
         return HelperFramework::displayDateTime($value);
+    }
+
+    private function vatMismatchWarnings(array $settings): array
+    {
+        if ((string)($settings['vat_validation_status'] ?? '') !== 'mismatch_pending') {
+            return [];
+        }
+
+        $result = new \eel_accounts\Service\VatValidationResultService(
+            'valid',
+            (string)($settings['vat_validation_source'] ?? ''),
+            (string)($settings['vat_validation_name'] ?? ''),
+            $this->validationAddress($settings)
+        );
+
+        return (new \eel_accounts\Service\VatRegistrationService())->compareHmrcAndCompaniesHouse($settings, $result);
+    }
+
+    private function validationAddress(array $settings): string
+    {
+        return trim(implode(' ', array_filter([
+            trim((string)($settings['vat_validation_address_line1'] ?? '')),
+            trim((string)($settings['vat_validation_postcode'] ?? '')),
+            trim((string)($settings['vat_validation_country_code'] ?? '')),
+        ], static fn(string $value): bool => $value !== '')));
     }
 }

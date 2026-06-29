@@ -24,7 +24,9 @@ final class VatRegistrationService
         $settings['vat_validated_at'] = '';
         $settings['vat_validation_source'] = '';
         $settings['vat_validation_name'] = '';
-        $settings['vat_validation_address'] = '';
+        $settings['vat_validation_address_line1'] = '';
+        $settings['vat_validation_postcode'] = '';
+        $settings['vat_validation_country_code'] = '';
         $settings['vat_last_error'] = '';
 
         return $settings;
@@ -66,7 +68,9 @@ final class VatRegistrationService
             $settings['vat_validated_at'] = gmdate('Y-m-d H:i:s');
             $settings['vat_validation_source'] = $result->source;
             $settings['vat_validation_name'] = trim((string)$result->name);
-            $settings['vat_validation_address'] = trim((string)$result->address);
+            $settings['vat_validation_address_line1'] = trim((string)$result->address);
+            $settings['vat_validation_postcode'] = '';
+            $settings['vat_validation_country_code'] = '';
             $settings['vat_last_error'] = '';
 
             return $settings;
@@ -77,7 +81,9 @@ final class VatRegistrationService
             $settings['vat_validated_at'] = gmdate('Y-m-d H:i:s');
             $settings['vat_validation_source'] = $result->source;
             $settings['vat_validation_name'] = '';
-            $settings['vat_validation_address'] = '';
+            $settings['vat_validation_address_line1'] = '';
+            $settings['vat_validation_postcode'] = '';
+            $settings['vat_validation_country_code'] = '';
             $settings['vat_last_error'] = '';
 
             return $settings;

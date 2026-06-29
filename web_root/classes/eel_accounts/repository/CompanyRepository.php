@@ -115,25 +115,20 @@ final class CompanyRepository
     public function saveCompanySection(array $settings): void
     {
         $isVatRegistered = !empty($settings['is_vat_registered']);
-        $canPersistVatDetails = $isVatRegistered && in_array(
-            trim((string)($settings['vat_validation_status'] ?? '')),
-            ['valid', 'mismatch_override'],
-            true
-        );
-        $vatCountryCode = $canPersistVatDetails
+        $vatCountryCode = $isVatRegistered
             ? (trim((string)($settings['vat_country_code'] ?? '')) !== '' ? strtoupper(trim((string)$settings['vat_country_code'])) : null)
             : null;
-        $vatNumber = $canPersistVatDetails
+        $vatNumber = $isVatRegistered
             ? (trim((string)($settings['vat_number'] ?? '')) !== '' ? trim((string)$settings['vat_number']) : null)
             : null;
-        $vatValidationStatus = $canPersistVatDetails ? trim((string)($settings['vat_validation_status'] ?? '')) : null;
-        $vatValidatedAt = $canPersistVatDetails ? (trim((string)($settings['vat_validated_at'] ?? '')) !== '' ? trim((string)$settings['vat_validated_at']) : null) : null;
-        $vatValidationSource = $canPersistVatDetails ? (trim((string)($settings['vat_validation_source'] ?? '')) !== '' ? trim((string)$settings['vat_validation_source']) : null) : null;
-        $vatValidationName = $canPersistVatDetails ? (trim((string)($settings['vat_validation_name'] ?? '')) !== '' ? trim((string)$settings['vat_validation_name']) : null) : null;
-        $vatValidationAddressLine1 = $canPersistVatDetails ? (trim((string)($settings['vat_validation_address_line1'] ?? '')) !== '' ? trim((string)$settings['vat_validation_address_line1']) : null) : null;
-        $vatValidationPostcode = $canPersistVatDetails ? (trim((string)($settings['vat_validation_postcode'] ?? '')) !== '' ? trim((string)$settings['vat_validation_postcode']) : null) : null;
-        $vatValidationCountryCode = $canPersistVatDetails ? (trim((string)($settings['vat_validation_country_code'] ?? '')) !== '' ? strtoupper(trim((string)$settings['vat_validation_country_code'])) : null) : null;
-        $vatLastError = $canPersistVatDetails ? (trim((string)($settings['vat_last_error'] ?? '')) !== '' ? trim((string)$settings['vat_last_error']) : null) : null;
+        $vatValidationStatus = $isVatRegistered ? (trim((string)($settings['vat_validation_status'] ?? '')) !== '' ? trim((string)$settings['vat_validation_status']) : null) : null;
+        $vatValidatedAt = $isVatRegistered ? (trim((string)($settings['vat_validated_at'] ?? '')) !== '' ? trim((string)$settings['vat_validated_at']) : null) : null;
+        $vatValidationSource = $isVatRegistered ? (trim((string)($settings['vat_validation_source'] ?? '')) !== '' ? trim((string)$settings['vat_validation_source']) : null) : null;
+        $vatValidationName = $isVatRegistered ? (trim((string)($settings['vat_validation_name'] ?? '')) !== '' ? trim((string)$settings['vat_validation_name']) : null) : null;
+        $vatValidationAddressLine1 = $isVatRegistered ? (trim((string)($settings['vat_validation_address_line1'] ?? '')) !== '' ? trim((string)$settings['vat_validation_address_line1']) : null) : null;
+        $vatValidationPostcode = $isVatRegistered ? (trim((string)($settings['vat_validation_postcode'] ?? '')) !== '' ? trim((string)$settings['vat_validation_postcode']) : null) : null;
+        $vatValidationCountryCode = $isVatRegistered ? (trim((string)($settings['vat_validation_country_code'] ?? '')) !== '' ? strtoupper(trim((string)$settings['vat_validation_country_code'])) : null) : null;
+        $vatLastError = $isVatRegistered ? (trim((string)($settings['vat_last_error'] ?? '')) !== '' ? trim((string)$settings['vat_last_error']) : null) : null;
 
         $sql = 'UPDATE companies
              SET company_name = ?,

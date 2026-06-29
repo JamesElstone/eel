@@ -49,7 +49,7 @@ final class _uploads extends PageContextFramework
                 ],
             ],
             [
-                'tab' => 'Commit Transactions',
+                'tab' => 'Import Transactions',
                 'cards' => [
                     'uploads_validate_commit',
                 ],

@@ -123,6 +123,136 @@ $harness->run(\eel_accounts\Service\StatementUploadService::class, function (Gen
         $harness->assertTrue(str_contains($sql, 'COALESCE(su.date_range_start, su.statement_month) <= ?'));
         $harness->assertTrue(str_contains($sql, 'COALESCE(su.date_range_end, su.statement_month) >= ?'));
     });
+
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'account mapping preview uses committed mappings without confirmed timestamp', function () use ($harness, $service): void {
+        foreach (['companies', 'company_accounts', 'statement_uploads', 'statement_import_mappings', 'statement_import_rows'] as $table) {
+            if (!InterfaceDB::tableExists($table)) {
+                $harness->skip($table . ' table is not available on the default InterfaceDB connection.');
+            }
+        }
+
+        InterfaceDB::beginTransaction();
+
+        try {
+            $marker = 'MAP' . bin2hex(random_bytes(4));
+            InterfaceDB::prepareExecute(
+                'INSERT INTO companies (company_name, company_number) VALUES (:company_name, :company_number)',
+                [
+                    'company_name' => 'Mapping Preview Fixture ' . $marker,
+                    'company_number' => $marker,
+                ]
+            );
+            $companyId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM companies WHERE company_number = :company_number ORDER BY id DESC LIMIT 1',
+                ['company_number' => $marker]
+            );
+
+            InterfaceDB::prepareExecute(
+                'INSERT INTO company_accounts (company_id, account_name, account_type, is_active) VALUES (:company_id, :account_name, :account_type, 1)',
+                [
+                    'company_id' => $companyId,
+                    'account_name' => 'Fixture Current Account ' . $marker,
+                    'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
+                ]
+            );
+            $accountId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM company_accounts WHERE company_id = :company_id AND account_name = :account_name ORDER BY id DESC LIMIT 1',
+                [
+                    'company_id' => $companyId,
+                    'account_name' => 'Fixture Current Account ' . $marker,
+                ]
+            );
+
+            $headers = ['Date', 'Description', 'Amount'];
+            InterfaceDB::prepareExecute(
+                'INSERT INTO statement_uploads (
+                    company_id,
+                    account_id,
+                    source_type,
+                    workflow_status,
+                    statement_month,
+                    original_filename,
+                    stored_filename,
+                    file_sha256,
+                    source_headers_json,
+                    rows_parsed,
+                    rows_committed
+                ) VALUES (
+                    :company_id,
+                    :account_id,
+                    :source_type,
+                    :workflow_status,
+                    :statement_month,
+                    :original_filename,
+                    :stored_filename,
+                    :file_sha256,
+                    :source_headers_json,
+                    :rows_parsed,
+                    :rows_committed
+                )',
+                [
+                    'company_id' => $companyId,
+                    'account_id' => $accountId,
+                    'source_type' => \eel_accounts\Service\StatementUploadService::SOURCE_TYPE,
+                    'workflow_status' => 'committed',
+                    'statement_month' => '2026-01-01',
+                    'original_filename' => 'committed-fixture.csv',
+                    'stored_filename' => 'missing-fixture.csv',
+                    'file_sha256' => hash('sha256', $marker),
+                    'source_headers_json' => json_encode($headers, JSON_THROW_ON_ERROR),
+                    'rows_parsed' => 1,
+                    'rows_committed' => 1,
+                ]
+            );
+            $uploadId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM statement_uploads WHERE company_id = :company_id AND stored_filename = :stored_filename ORDER BY id DESC LIMIT 1',
+                [
+                    'company_id' => $companyId,
+                    'stored_filename' => 'missing-fixture.csv',
+                ]
+            );
+
+            InterfaceDB::prepareExecute(
+                'INSERT INTO statement_import_mappings (
+                    upload_id,
+                    source_type,
+                    mapping_origin,
+                    original_headers_json,
+                    mapping_json,
+                    confirmed_at
+                ) VALUES (
+                    :upload_id,
+                    :source_type,
+                    :mapping_origin,
+                    :original_headers_json,
+                    :mapping_json,
+                    NULL
+                )',
+                [
+                    'upload_id' => $uploadId,
+                    'source_type' => \eel_accounts\Service\StatementUploadService::SOURCE_TYPE,
+                    'mapping_origin' => 'auto',
+                    'original_headers_json' => json_encode($headers, JSON_THROW_ON_ERROR),
+                    'mapping_json' => json_encode([
+                        'created' => ['header' => 'Date', 'index' => 0],
+                        'processed' => null,
+                        'description' => ['header' => 'Description', 'index' => 1],
+                        'amount' => ['header' => 'Amount', 'index' => 2],
+                    ], JSON_THROW_ON_ERROR),
+                ]
+            );
+
+            $preview = $service->fetchAccountMappingPreview($companyId, $accountId);
+
+            $harness->assertSame($uploadId, (int)($preview['upload']['id'] ?? 0));
+            $harness->assertSame('committed-fixture.csv', (string)($preview['upload']['original_filename'] ?? ''));
+            $harness->assertSame('auto', (string)($preview['mapping']['mapping_origin'] ?? ''));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
 });
 
 function statement_upload_test_row(int $rowNumber, string $amount, string $balance): array

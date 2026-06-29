@@ -2390,6 +2390,26 @@ final class StatementUploadService
             return null;
         }
 
+        $confirmedWorkflowStatuses = [
+            self::WORKFLOW_MAPPED,
+            self::WORKFLOW_STAGED,
+            self::WORKFLOW_NEEDS_ACCOUNTING_PERIOD,
+            self::WORKFLOW_COMMITTED,
+            self::WORKFLOW_COMPLETED,
+        ];
+        $confirmedWorkflowPlaceholders = [];
+        $params = [
+            'company_id' => $companyId,
+            'account_id' => $accountId,
+            'source_type' => $sourceType,
+        ];
+
+        foreach ($confirmedWorkflowStatuses as $index => $status) {
+            $placeholder = 'confirmed_workflow_status_' . $index;
+            $confirmedWorkflowPlaceholders[] = ':' . $placeholder;
+            $params[$placeholder] = $status;
+        }
+
         $sql = 'SELECT sim.upload_id,
                        sim.mapping_json,
                        sim.original_headers_json,
@@ -2401,12 +2421,10 @@ final class StatementUploadService
                 WHERE su.company_id = :company_id
                   AND su.account_id = :account_id
                   AND su.source_type = :source_type
-                  AND sim.confirmed_at IS NOT NULL';
-        $params = [
-            'company_id' => $companyId,
-            'account_id' => $accountId,
-            'source_type' => $sourceType,
-        ];
+                  AND (
+                    sim.confirmed_at IS NOT NULL
+                    OR su.workflow_status IN (' . implode(', ', $confirmedWorkflowPlaceholders) . ')
+                  )';
 
         if ($excludeUploadId !== null && $excludeUploadId > 0) {
             $sql .= ' AND su.id <> :exclude_upload_id';

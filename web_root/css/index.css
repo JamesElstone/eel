@@ -965,7 +965,7 @@ body.sidebar-collapsed .sidebar-hide-collapsed-link-initials .nav-link-short {
   transition: opacity 0.45s ease, transform 0.45s ease, max-height 0.45s ease, margin 0.45s ease;
   opacity: 1;
   transform: translateY(0);
-  max-height: 500px;
+  max-height: 1vh;
   overflow: hidden;
 }
 

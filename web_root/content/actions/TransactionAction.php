@@ -14,7 +14,6 @@ final class TransactionAction implements ActionInterfaceFramework
 
     private const TRANSACTION_ACTIONS = [
         'save_transaction_category',
-        'auto_create_transaction_rule',
         'defer_transaction',
     ];
 
@@ -30,8 +29,8 @@ final class TransactionAction implements ActionInterfaceFramework
             'edit_categorisation_rule',
             'cancel_categorisation_rule' => $this->selectionResult($request, $intent),
             'save_transaction_category',
-            'auto_create_transaction_rule',
             'defer_transaction' => $this->saveTransactionCategory($request, $services, $intent),
+            'auto_create_transaction_rule' => $this->draftCategorisationRule($request, $services),
             'run_auto_rules' => $this->runAutoRules($request, $services),
             'post_categorised_transactions' => $this->postCategorisedTransactions($request, $services),
             'save_categorisation_rule' => $this->saveCategorisationRule($request, $services),
@@ -124,7 +123,6 @@ final class TransactionAction implements ActionInterfaceFramework
         $companyId = $this->selectedCompanyId($request);
         $defaultBankNominalId = $this->defaultBankNominalId($companyId);
         $transactionCategorisationService = self::service($services, \eel_accounts\Service\TransactionCategorisationService::class);
-        $categorisationRuleService = self::service($services, \eel_accounts\Service\CategorisationRuleService::class);
         $transactionJournalService = self::service($services, \eel_accounts\Service\TransactionJournalService::class);
         $transactionId = $this->positiveInt($request->post('transaction_id', 0));
         $nominalAccountId = $this->nullablePositiveInt($request->post('nominal_account_id', null));
@@ -143,8 +141,6 @@ final class TransactionAction implements ActionInterfaceFramework
 
         if ($transactionId <= 0 || $existingTransaction === null) {
             $errors[] = 'Select a valid transaction before saving categorisation changes.';
-        } elseif ($globalAction === 'auto_create_transaction_rule' && $isTransferTransaction) {
-            $errors[] = 'Transfer rows cannot be turned into nominal auto-categorisation rules.';
         } elseif (
             $globalAction !== 'defer_transaction'
             && !$isTransferTransaction
@@ -157,8 +153,6 @@ final class TransactionAction implements ActionInterfaceFramework
             && ($targetTransferAccountId === null || $targetTransferAccountId <= 0)
         ) {
             $errors[] = 'Choose the matching owned bank or trade account before saving this transfer.';
-        } elseif ($globalAction === 'auto_create_transaction_rule' && ($targetNominalAccountId === null || $targetNominalAccountId <= 0)) {
-            $errors[] = 'Choose a nominal account before creating a categorisation rule from a transaction.';
         }
 
         if ($errors !== []) {
@@ -205,30 +199,7 @@ final class TransactionAction implements ActionInterfaceFramework
 
                 InterfaceDB::commit();
 
-                if ($globalAction === 'auto_create_transaction_rule') {
-                    $ruleSaveResult = $categorisationRuleService->saveRuleFromTransaction(
-                        $companyId,
-                        $transactionId,
-                        (int)$targetNominalAccountId
-                    );
-
-                    if (empty($ruleSaveResult['success'])) {
-                        throw new RuntimeException(implode(' ', array_map('strval', $ruleSaveResult['errors'] ?? ['The rule could not be created.'])));
-                    }
-
-                    $batchResult = $transactionCategorisationService->applyAutoCategoryBatch(
-                        $companyId,
-                        null,
-                        'uncategorised',
-                        null,
-                        'transactions_page_auto_rule'
-                    );
-
-                    $flashMessages[] = sprintf(
-                        'Rule created and auto-applied: %d uncategorised transaction(s) updated across all years.',
-                        (int)($batchResult['changed'] ?? 0)
-                    );
-                } elseif (!empty($saveResult['changed'])) {
+                if (!empty($saveResult['changed'])) {
                     $flashMessages[] = match ($globalAction) {
                         'defer_transaction' => 'Transaction deferred for manual review.',
                         'save_transaction_category' => $isTransferTransaction
@@ -249,6 +220,49 @@ final class TransactionAction implements ActionInterfaceFramework
         }
 
         return $this->result($errors === [], $errors, $flashMessages, $context);
+    }
+
+    private function draftCategorisationRule(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
+    {
+        $context = $this->filterContext($request);
+        $companyId = $this->selectedCompanyId($request);
+        $transactionId = $this->positiveInt($request->post('transaction_id', 0));
+        $nominalAccountId = $this->nullablePositiveInt($request->post('nominal_account_id', null));
+        $transactionCategorisationService = self::service($services, \eel_accounts\Service\TransactionCategorisationService::class);
+        $categorisationRuleService = self::service($services, \eel_accounts\Service\CategorisationRuleService::class);
+        $existingTransaction = $transactionCategorisationService->fetchTransaction($transactionId);
+        $isTransferTransaction = is_array($existingTransaction) && $this->transactionIsTransferMode($existingTransaction);
+        $errors = [];
+
+        if ($companyId <= 0) {
+            $errors[] = 'Select a company before creating a categorisation rule from a transaction.';
+        } elseif ($transactionId <= 0 || $existingTransaction === null) {
+            $errors[] = 'Select a valid transaction before creating a categorisation rule.';
+        } elseif ($isTransferTransaction) {
+            $errors[] = 'Transfer rows cannot be turned into nominal auto-categorisation rules.';
+        } elseif ($nominalAccountId === null || $nominalAccountId <= 0) {
+            $errors[] = 'Choose a nominal account before creating a categorisation rule from a transaction.';
+        }
+
+        if ($errors !== []) {
+            return $this->result(false, $errors, [], $context);
+        }
+
+        $draft = $categorisationRuleService->buildRuleDraftFromTransaction($transactionId, (int)$nominalAccountId);
+        if ($draft === null) {
+            return $this->result(false, ['The rule could not be created from the selected transaction.'], [], $context);
+        }
+
+        $context['rule_form'] = $draft;
+        $context['editing_rule_id'] = 0;
+
+        return $this->result(
+            true,
+            [],
+            ['Automatic rule draft ready to review.'],
+            $context,
+            array_merge($this->filterQuery($request, $context), ['show_card' => 'transactions_rule_form'])
+        );
     }
 
     private function runAutoRules(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
@@ -492,7 +506,7 @@ final class TransactionAction implements ActionInterfaceFramework
         ];
     }
 
-    private function result(bool $success, array $errors, array $messages, array $context): ActionResultFramework
+    private function result(bool $success, array $errors, array $messages, array $context, array $query = []): ActionResultFramework
     {
         $flashMessages = array_map(
             static fn(string $message): array => ['type' => 'error', 'message' => $message],
@@ -503,7 +517,7 @@ final class TransactionAction implements ActionInterfaceFramework
             $flashMessages[] = ['type' => 'success', 'message' => (string)$message];
         }
 
-        return new ActionResultFramework($success, ['page.context'], $flashMessages, [], $context);
+        return new ActionResultFramework($success, ['page.context'], $flashMessages, $query, $context);
     }
 
     private static function service(PageServiceFramework $services, string $className): object

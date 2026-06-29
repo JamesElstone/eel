@@ -467,7 +467,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 <div class="actions-row">
                     <button class="button primary js-transaction-action" type="submit" name="global_action" value="save_transaction_category" data-dirty-enable-mode="changed" disabled' . $journalRebuildAttributes . '>' . ($isTransferRow ? 'Save' : 'Manual') . '</button>'
                     . (!$isTransferRow
-                        ? '<button class="button primary js-transaction-action" type="submit" name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form" data-dirty-enable-mode="selected" disabled' . $journalRebuildAttributes . '>Create Automatic Rule</button>'
+                        ? '<button class="button primary js-transaction-action" type="submit" name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form" data-dirty-enable-mode="selected" disabled>Create Automatic Rule</button>'
                         : '') . '
                     <button class="button primary" type="submit" name="global_action" value="defer_transaction"' . $journalRebuildAttributes . '>Defer</button>
                     <button class="button" type="submit" form="' . HelperFramework::escape($assetFormId) . '" formnovalidate>Create Asset</button>

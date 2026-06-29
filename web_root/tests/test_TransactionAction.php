@@ -90,6 +90,169 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(42, (int)($result->context()['editing_rule_id'] ?? 0));
     });
 
+    $harness->check('TransactionAction', 'auto_create_transaction_rule opens an unsaved rule draft', function () use ($harness, $instance): void {
+        $marker = (string)random_int(100000, 999999);
+        $companyId = (int)('91' . $marker);
+        $accountingPeriodId = (int)('92' . $marker);
+        $nominalAccountId = (int)('93' . $marker);
+        $uploadId = (int)('94' . $marker);
+        $transactionId = (int)('95' . $marker);
+
+        if (!InterfaceDB::columnExists('company_accounts', 'internal_transfer_marker')) {
+            InterfaceDB::prepareExecute('ALTER TABLE company_accounts ADD COLUMN internal_transfer_marker TEXT DEFAULT NULL');
+        }
+
+        InterfaceDB::prepareExecute(
+            'INSERT INTO companies (id, company_name, company_number, is_active)
+             VALUES (:id, :company_name, :company_number, 1)',
+            [
+                'id' => $companyId,
+                'company_name' => 'Draft Rule Test ' . $marker,
+                'company_number' => 'DR' . $marker,
+            ]
+        );
+        InterfaceDB::prepareExecute(
+            'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end)
+             VALUES (:id, :company_id, :label, :period_start, :period_end)',
+            [
+                'id' => $accountingPeriodId,
+                'company_id' => $companyId,
+                'label' => 'FY ' . $marker,
+                'period_start' => '2026-01-01',
+                'period_end' => '2026-12-31',
+            ]
+        );
+        InterfaceDB::prepareExecute(
+            'INSERT INTO nominal_accounts (id, code, name, account_type, tax_treatment, is_active, sort_order)
+             VALUES (:id, :code, :name, :account_type, :tax_treatment, 1, 100)',
+            [
+                'id' => $nominalAccountId,
+                'code' => 'D' . substr($marker, 0, 4),
+                'name' => 'Draft Rule Materials ' . $marker,
+                'account_type' => 'expense',
+                'tax_treatment' => 'allowable',
+            ]
+        );
+        InterfaceDB::prepareExecute(
+            'INSERT INTO statement_uploads (
+                id,
+                company_id,
+                accounting_period_id,
+                statement_month,
+                original_filename,
+                stored_filename,
+                file_sha256
+             ) VALUES (
+                :id,
+                :company_id,
+                :accounting_period_id,
+                :statement_month,
+                :original_filename,
+                :stored_filename,
+                :file_sha256
+             )',
+            [
+                'id' => $uploadId,
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'statement_month' => '2026-03-01',
+                'original_filename' => 'draft-rule-' . $marker . '.csv',
+                'stored_filename' => 'draft-rule-' . $marker . '.csv',
+                'file_sha256' => hash('sha256', 'draft-rule-upload-' . $marker),
+            ]
+        );
+        InterfaceDB::prepareExecute(
+            'INSERT INTO transactions (
+                id,
+                company_id,
+                accounting_period_id,
+                statement_upload_id,
+                txn_date,
+                description,
+                amount,
+                source_account_label,
+                source_category,
+                dedupe_hash
+             ) VALUES (
+                :id,
+                :company_id,
+                :accounting_period_id,
+                :statement_upload_id,
+                :txn_date,
+                :description,
+                :amount,
+                :source_account_label,
+                :source_category,
+                :dedupe_hash
+             )',
+            [
+                'id' => $transactionId,
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'statement_upload_id' => $uploadId,
+                'txn_date' => '2026-03-15',
+                'description' => 'CARD PAYMENT ACME ELECTRICAL 1234',
+                'amount' => '-42.50',
+                'source_account_label' => 'Main account',
+                'source_category' => 'Materials',
+                'dedupe_hash' => hash('sha256', 'draft-rule-transaction-' . $marker),
+            ]
+        );
+
+        $beforeRules = InterfaceDB::countWhere('categorisation_rules', ['company_id' => $companyId]);
+        $request = new RequestFramework(
+            [],
+            [
+                'card_action' => 'Transaction',
+                'global_action' => 'auto_create_transaction_rule',
+                'company_id' => (string)$companyId,
+                'accounting_period_id' => (string)$accountingPeriodId,
+                'transaction_id' => (string)$transactionId,
+                'nominal_account_id' => (string)$nominalAccountId,
+                'month_key' => '2026-03-01',
+                'category_filter' => 'uncategorised',
+            ],
+            ['REQUEST_METHOD' => 'POST'],
+            [],
+            [],
+            null
+        );
+
+        $result = $instance->handle($request, createTestPageServiceFramework());
+        $draft = (array)($result->context()['rule_form'] ?? []);
+
+        $harness->assertSame(true, $result->isSuccess());
+        $harness->assertSame('transactions_rule_form', (string)($result->query()['show_card'] ?? ''));
+        $harness->assertSame('2026-03-01', (string)($result->context()['month_key'] ?? ''));
+        $harness->assertSame('uncategorised', (string)($result->context()['category_filter'] ?? ''));
+        $harness->assertSame(0, (int)($result->context()['editing_rule_id'] ?? -1));
+        $harness->assertSame($transactionId, (int)($draft['transaction_id'] ?? 0));
+        $harness->assertSame($nominalAccountId, (int)($draft['nominal_account_id'] ?? 0));
+        $harness->assertSame('contains', (string)($draft['match_type'] ?? ''));
+        $harness->assertSame($beforeRules, InterfaceDB::countWhere('categorisation_rules', ['company_id' => $companyId]));
+
+        $missingNominalRequest = new RequestFramework(
+            [],
+            [
+                'card_action' => 'Transaction',
+                'global_action' => 'auto_create_transaction_rule',
+                'company_id' => (string)$companyId,
+                'accounting_period_id' => (string)$accountingPeriodId,
+                'transaction_id' => (string)$transactionId,
+                'month_key' => '2026-03-01',
+                'category_filter' => 'uncategorised',
+            ],
+            ['REQUEST_METHOD' => 'POST'],
+            [],
+            [],
+            null
+        );
+
+        $missingNominalResult = $instance->handle($missingNominalRequest, createTestPageServiceFramework());
+        $harness->assertSame(false, $missingNominalResult->isSuccess());
+        $harness->assertSame($beforeRules, InterfaceDB::countWhere('categorisation_rules', ['company_id' => $companyId]));
+    });
+
     $harness->check('TransactionAction cards', 'transaction cards render Transaction card action forms', function () use ($harness): void {
         $context = [
             'company' => [
@@ -216,6 +379,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, 'Matched by rule #3 (Test)'));
         $harness->assertSame(true, str_contains($html, 'View Receipt'));
         $harness->assertSame(true, str_contains($html, 'name="global_action" value="save_transaction_category"'));
+        $harness->assertSame(true, str_contains($html, 'name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form"'));
         $harness->assertSame(true, str_contains($html, '<span class="badge success">Manual categorised</span>'));
     });
 

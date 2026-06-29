@@ -10,6 +10,7 @@ declare(strict_types=1);
 final class _uploads_detailsCard extends CardBaseFramework
 {
     private const HISTORY_PAGE_SIZE = 5;
+    private const DEFAULT_UPLOAD_HISTORY_FILTER = 'ready';
 
     public function key(): string
     {
@@ -49,6 +50,24 @@ final class _uploads_detailsCard extends CardBaseFramework
         return 'This is a list of files already uploaded.';
     }
 
+    public function handle(
+        RequestFramework $request,
+        PageServiceFramework $services,
+        array $pageContext,
+        ActionResultFramework $actionResult
+    ): array {
+        $pageContext = parent::handle($request, $services, $pageContext, $actionResult);
+        $uploadsContext = is_array($pageContext['uploads'] ?? null) ? $pageContext['uploads'] : [];
+
+        if (trim((string)($uploadsContext['filter'] ?? '')) === '') {
+            $uploadsContext['filter'] = self::DEFAULT_UPLOAD_HISTORY_FILTER;
+        }
+
+        $pageContext['uploads'] = $uploadsContext;
+
+        return $pageContext;
+    }
+
     public function handleError(string $serviceKey, array $error, array $context): string
     {
         return '';
@@ -73,7 +92,7 @@ final class _uploads_detailsCard extends CardBaseFramework
 
         $uploadHistory                  = (array)  ($context['services']['upload_history'] ?? []);
 
-        $selectedUploadHistoryFilter    = (string) ($context['uploads']['filter'] ?? 'all');
+        $selectedUploadHistoryFilter    = (string) ($context['uploads']['filter'] ?? self::DEFAULT_UPLOAD_HISTORY_FILTER);
         $selectedUploadId               = (int)    ($context['uploads']['id'] ?? '');
         $selectedUploadHistoryPage      = (int)    ($context['uploads']['page'] ?? 1);
 
@@ -97,7 +116,7 @@ final class _uploads_detailsCard extends CardBaseFramework
         $uploadSummaryHtml = $this->uploadSummaryTable((array)($context['services']['upload_summary_by_accounting_period'] ?? []));
         
         foreach ($filterTerms as $filterValue => $filterLabel) {
-            $filterOptionsHtml .= '<option value="' . HelperFramework::escape($filterValue) . '"' . (($context['uploads']['filter'] ?? '') === $filterValue ? ' selected' : '') . '>' . HelperFramework::escape($filterLabel) . '</option>';
+            $filterOptionsHtml .= '<option value="' . HelperFramework::escape($filterValue) . '"' . ($selectedUploadHistoryFilter === $filterValue ? ' selected' : '') . '>' . HelperFramework::escape($filterLabel) . '</option>';
         }
 
         if ($uploadHistory === []) {

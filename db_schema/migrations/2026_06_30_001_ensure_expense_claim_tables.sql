@@ -1,0 +1,80 @@
+CREATE TABLE IF NOT EXISTS expense_claimants (
+  id int(11) NOT NULL AUTO_INCREMENT,
+  company_id int(11) NOT NULL,
+  claimant_name varchar(255) NOT NULL,
+  is_active tinyint(1) NOT NULL DEFAULT 1,
+  created_at datetime NOT NULL DEFAULT current_timestamp(),
+  updated_at datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (id),
+  UNIQUE KEY uniq_expense_claimants_company_name (company_id, claimant_name),
+  KEY idx_expense_claimants_company_active (company_id, is_active, claimant_name),
+  CONSTRAINT fk_expense_claimants_company FOREIGN KEY (company_id) REFERENCES companies (id) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS expense_claims (
+  id bigint(20) NOT NULL AUTO_INCREMENT,
+  company_id int(11) NOT NULL,
+  accounting_period_id int(11) NOT NULL,
+  claimant_id int(11) NOT NULL,
+  claim_year smallint(6) NOT NULL,
+  claim_month tinyint(4) NOT NULL,
+  period_start date NOT NULL,
+  period_end date NOT NULL,
+  claim_reference_code varchar(32) NOT NULL,
+  brought_forward_amount decimal(12,2) NOT NULL DEFAULT 0.00,
+  claimed_amount decimal(12,2) NOT NULL DEFAULT 0.00,
+  payments_amount decimal(12,2) NOT NULL DEFAULT 0.00,
+  carried_forward_amount decimal(12,2) NOT NULL DEFAULT 0.00,
+  status enum('draft','posted') NOT NULL DEFAULT 'draft',
+  posted_journal_id bigint(20) DEFAULT NULL,
+  notes text DEFAULT NULL,
+  created_at datetime NOT NULL DEFAULT current_timestamp(),
+  updated_at datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (id),
+  UNIQUE KEY uniq_expense_claims_company_reference (company_id, claim_reference_code),
+  UNIQUE KEY uniq_expense_claims_company_claimant_month (company_id, claimant_id, claim_year, claim_month),
+  KEY idx_expense_claims_company_period (company_id, claim_year, claim_month),
+  KEY idx_expense_claims_accounting_period (accounting_period_id),
+  KEY idx_expense_claims_claimant (claimant_id),
+  KEY idx_expense_claims_posted_journal (posted_journal_id),
+  CONSTRAINT fk_expense_claims_claimant FOREIGN KEY (claimant_id) REFERENCES expense_claimants (id) ON UPDATE CASCADE,
+  CONSTRAINT fk_expense_claims_company FOREIGN KEY (company_id) REFERENCES companies (id) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_expense_claims_posted_journal FOREIGN KEY (posted_journal_id) REFERENCES journals (id) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT fk_expense_claims_accounting_period FOREIGN KEY (accounting_period_id) REFERENCES accounting_periods (id) ON UPDATE CASCADE,
+  CONSTRAINT chk_expense_claims_month CHECK (claim_month between 1 and 12)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS expense_claim_lines (
+  id bigint(20) NOT NULL AUTO_INCREMENT,
+  expense_claim_id bigint(20) NOT NULL,
+  line_number int(11) NOT NULL,
+  expense_date date NOT NULL,
+  description varchar(255) NOT NULL,
+  amount decimal(12,2) NOT NULL,
+  nominal_account_id int(11) DEFAULT NULL,
+  receipt_reference varchar(255) DEFAULT NULL,
+  receipt_file_path varchar(500) DEFAULT NULL,
+  notes text DEFAULT NULL,
+  created_at datetime NOT NULL DEFAULT current_timestamp(),
+  updated_at datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (id),
+  UNIQUE KEY uniq_expense_claim_lines_claim_line (expense_claim_id, line_number),
+  KEY idx_expense_claim_lines_nominal (nominal_account_id),
+  CONSTRAINT fk_expense_claim_lines_claim FOREIGN KEY (expense_claim_id) REFERENCES expense_claims (id) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_expense_claim_lines_nominal FOREIGN KEY (nominal_account_id) REFERENCES nominal_accounts (id) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT chk_expense_claim_lines_amount CHECK (amount > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS expense_claim_payment_links (
+  id bigint(20) NOT NULL AUTO_INCREMENT,
+  expense_claim_id bigint(20) NOT NULL,
+  transaction_id bigint(20) NOT NULL,
+  linked_amount decimal(12,2) NOT NULL,
+  created_at datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (id),
+  UNIQUE KEY uniq_expense_claim_payment_links_claim_transaction (expense_claim_id, transaction_id),
+  KEY idx_expense_claim_payment_links_transaction (transaction_id),
+  CONSTRAINT fk_expense_claim_payment_links_claim FOREIGN KEY (expense_claim_id) REFERENCES expense_claims (id) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_expense_claim_payment_links_transaction FOREIGN KEY (transaction_id) REFERENCES transactions (id) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT chk_expense_claim_payment_links_amount CHECK (linked_amount > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

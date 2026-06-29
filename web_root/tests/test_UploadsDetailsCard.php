@@ -70,12 +70,14 @@ $harness->run(_uploads_detailsCard::class, static function (GeneratedServiceClas
                         'label' => '01/10/2025 to 30/09/2026',
                         'upload_count' => 1,
                         'row_count' => 93,
+                        'outstanding_upload_count' => 2,
                     ],
                     [
                         'accounting_period_id' => 3,
                         'label' => '01/10/2024 to 30/09/2025',
                         'upload_count' => 0,
                         'row_count' => 0,
+                        'outstanding_upload_count' => 0,
                     ],
                 ],
             ],
@@ -87,6 +89,10 @@ $harness->run(_uploads_detailsCard::class, static function (GeneratedServiceClas
         $harness->assertTrue(str_contains($html, 'aria-label="Switch to accounting period 01/10/2025 to 30/09/2026"'));
         $harness->assertTrue(str_contains($html, '1 CSV (93 rows)'));
         $harness->assertTrue(str_contains($html, '0 CSV (0 rows)'));
+        $harness->assertTrue(strpos($html, '<th scope="row">Uploads</th>') < strpos($html, '<th scope="row">Outstanding CSVs</th>'));
+        $harness->assertTrue(str_contains($html, 'Outstanding CSVs'));
+        $harness->assertTrue(str_contains($html, '2 CSV'));
+        $harness->assertTrue(str_contains($html, '0 CSV</td>'));
     });
 
     $harness->check(_uploads_detailsCard::class, 'renders uploaded row totals before mapping is staged', static function () use ($harness, $card): void {

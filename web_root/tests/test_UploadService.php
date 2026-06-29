@@ -115,6 +115,117 @@ $harness->run(\eel_accounts\Service\StatementUploadService::class, static functi
         $harness->assertSame(93, $count);
     });
 
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'counts only importable unimported CSVs as outstanding in period summary', static function () use ($harness, $service): void {
+        if (
+            !InterfaceDB::tableExists('companies')
+            || !InterfaceDB::tableExists('accounting_periods')
+            || !InterfaceDB::tableExists('statement_uploads')
+        ) {
+            $harness->skip('Required database tables are unavailable.');
+        }
+
+        $marker = 'outstanding-summary-' . bin2hex(random_bytes(4));
+
+        InterfaceDB::beginTransaction();
+        try {
+            InterfaceDB::prepareExecute(
+                'INSERT INTO companies (company_name, company_number) VALUES (:company_name, :company_number)',
+                [
+                    'company_name' => 'Outstanding Summary Fixture',
+                    'company_number' => $marker,
+                ]
+            );
+
+            $companyId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM companies WHERE company_number = :company_number',
+                ['company_number' => $marker]
+            );
+
+            InterfaceDB::prepareExecute(
+                'INSERT INTO accounting_periods (company_id, label, period_start, period_end) VALUES (:company_id, :label, :period_start, :period_end)',
+                [
+                    'company_id' => $companyId,
+                    'label' => 'Outstanding Summary FY',
+                    'period_start' => '2025-10-01',
+                    'period_end' => '2026-09-30',
+                ]
+            );
+
+            $periodId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM accounting_periods WHERE company_id = :company_id AND label = :label',
+                [
+                    'company_id' => $companyId,
+                    'label' => 'Outstanding Summary FY',
+                ]
+            );
+
+            $insertUpload = static function (
+                ?int $accountingPeriodId,
+                string $status,
+                int $rowsParsed,
+                int $rowsCommitted,
+                string $fileHash,
+                string $filename
+            ) use ($companyId): void {
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO statement_uploads (
+                        company_id,
+                        accounting_period_id,
+                        workflow_status,
+                        statement_month,
+                        original_filename,
+                        stored_filename,
+                        file_sha256,
+                        rows_parsed,
+                        rows_committed,
+                        uploaded_at
+                    ) VALUES (
+                        :company_id,
+                        :accounting_period_id,
+                        :workflow_status,
+                        :statement_month,
+                        :original_filename,
+                        :stored_filename,
+                        :file_sha256,
+                        :rows_parsed,
+                        :rows_committed,
+                        :uploaded_at
+                    )',
+                    [
+                        'company_id' => $companyId,
+                        'accounting_period_id' => $accountingPeriodId,
+                        'workflow_status' => $status,
+                        'statement_month' => '2026-02-01',
+                        'original_filename' => $filename,
+                        'stored_filename' => $filename,
+                        'file_sha256' => $fileHash,
+                        'rows_parsed' => $rowsParsed,
+                        'rows_committed' => $rowsCommitted,
+                        'uploaded_at' => '2026-02-15 10:00:00',
+                    ]
+                );
+            };
+
+            $insertUpload($periodId, 'uploaded', 10, 0, hash('sha256', $marker . '-uploaded'), 'uploaded.csv');
+            $insertUpload($periodId, 'mapped', 11, 0, hash('sha256', $marker . '-mapped'), 'mapped.csv');
+            $insertUpload($periodId, 'staged', 12, 0, hash('sha256', $marker . '-staged'), 'staged.csv');
+            $insertUpload(null, 'needs_accounting_period', 13, 0, hash('sha256', $marker . '-needs-period'), 'needs-period.csv');
+            $insertUpload($periodId, 'committed', 14, 14, hash('sha256', $marker . '-committed'), 'committed.csv');
+            $insertUpload($periodId, 'uploaded', 0, 0, hash('sha256', $marker . '-zero'), 'zero.csv');
+            $insertUpload($periodId, 'uploaded', 9, 0, hash('sha256', $marker . '-duplicate'), 'duplicate-a.csv');
+            $insertUpload($periodId, 'uploaded', 9, 0, hash('sha256', $marker . '-duplicate'), 'duplicate-b.csv');
+
+            $summary = $service->fetchUploadSummaryByAccountingPeriod($companyId);
+
+            $harness->assertSame(1, count($summary));
+            $harness->assertSame(4, (int)($summary[0]['outstanding_upload_count'] ?? -1));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
     $harness->check(\eel_accounts\Service\StatementUploadService::class, 'auto mapping defaults currency to GBP when no currency header exists', static function () use ($harness): void {
         $mapping = \eel_accounts\Service\StatementUploadService::autoMapHeaders([
             'date',

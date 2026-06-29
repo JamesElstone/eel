@@ -9,6 +9,15 @@ declare(strict_types=1);
 
 final class CompanyRepository
 {
+    private const NOMINAL_SETTING_KEYS = [
+        'default_bank_nominal_id',
+        'default_trade_nominal_id',
+        'default_expense_nominal_id',
+        'director_loan_nominal_id',
+        'vat_nominal_id',
+        'uncategorised_nominal_id',
+    ];
+
     public function fetchCompanies(): array
     {
         return InterfaceDB::fetchAll($this->fetchCompaniesSql());
@@ -333,7 +342,7 @@ final class CompanyRepository
         return (int)$companyId;
     }
 
-    public function deleteCompany(int $companyId): void
+    public function deleteCompany(int $companyId): array
     {
         if ($companyId <= 0) {
             throw new RuntimeException('A valid company must be selected before deletion.');
@@ -343,6 +352,7 @@ final class CompanyRepository
 
         try {
             $companyNumber = trim((string)InterfaceDB::fetchColumn('SELECT company_number FROM companies WHERE id = ?', [$companyId]));
+            $autoNominalIds = $this->fetchAutoNominalIdsForCompany($companyId);
 
             if ($companyNumber !== '') {
                 InterfaceDB::prepareExecute('DELETE FROM companies_house_documents WHERE company_id = ? OR company_number = ?', [$companyId, $companyNumber]);
@@ -358,6 +368,8 @@ final class CompanyRepository
                 throw new RuntimeException('The selected company could not be deleted.');
             }
 
+            $nominalCleanup = $this->deleteUnreferencedAutoNominals($autoNominalIds);
+
             InterfaceDB::commit();
         } catch (Throwable $e) {
             if (InterfaceDB::inTransaction()) {
@@ -366,6 +378,100 @@ final class CompanyRepository
 
             throw $e;
         }
+
+        return [
+            'auto_nominals' => $nominalCleanup ?? [
+                'candidates' => 0,
+                'deleted' => 0,
+                'skipped' => 0,
+            ],
+        ];
+    }
+
+    private function fetchAutoNominalIdsForCompany(int $companyId): array
+    {
+        if ($companyId <= 0) {
+            return [];
+        }
+
+        $ids = InterfaceDB::prepareExecute(
+            'SELECT id
+             FROM nominal_accounts
+             WHERE origin_type = ?
+               AND origin_company_id = ?',
+            ['company_account_auto', $companyId]
+        )->fetchAll(PDO::FETCH_COLUMN);
+
+        return array_values(array_unique(array_filter(array_map('intval', $ids), static fn(int $id): bool => $id > 0)));
+    }
+
+    private function deleteUnreferencedAutoNominals(array $nominalIds): array
+    {
+        $nominalIds = array_values(array_unique(array_filter(array_map('intval', $nominalIds), static fn(int $id): bool => $id > 0)));
+        $summary = [
+            'candidates' => count($nominalIds),
+            'deleted' => 0,
+            'skipped' => 0,
+        ];
+
+        foreach ($nominalIds as $nominalId) {
+            if ($this->nominalReferenceCount($nominalId) > 0) {
+                $summary['skipped']++;
+                continue;
+            }
+
+            $stmt = InterfaceDB::prepareExecute(
+                'DELETE FROM nominal_accounts
+                 WHERE id = ?
+                   AND origin_type = ?',
+                [$nominalId, 'company_account_auto']
+            );
+            $summary['deleted'] += $stmt->rowCount();
+        }
+
+        return $summary;
+    }
+
+    private function nominalReferenceCount(int $nominalId): int
+    {
+        if ($nominalId <= 0) {
+            return 0;
+        }
+
+        $count = 0;
+        foreach ($this->nominalReferenceQueries() as $sql) {
+            $count += (int)InterfaceDB::fetchColumn($sql, ['nominal_id' => $nominalId]);
+        }
+
+        return $count;
+    }
+
+    private function nominalReferenceQueries(): array
+    {
+        return [
+            'SELECT COUNT(*) FROM company_accounts WHERE nominal_account_id = :nominal_id',
+            'SELECT COUNT(*) FROM categorisation_rules WHERE nominal_account_id = :nominal_id',
+            'SELECT COUNT(*) FROM expense_claim_lines WHERE nominal_account_id = :nominal_id',
+            'SELECT COUNT(*) FROM journal_lines WHERE nominal_account_id = :nominal_id',
+            'SELECT COUNT(*) FROM ct_treatment_rules WHERE nominal_account_id = :nominal_id',
+            'SELECT COUNT(*) FROM transaction_category_audit WHERE old_nominal_account_id = :nominal_id OR new_nominal_account_id = :nominal_id',
+            'SELECT COUNT(*) FROM transactions WHERE nominal_account_id = :nominal_id',
+            'SELECT COUNT(*) FROM asset_register WHERE nominal_account_id = :nominal_id OR accum_dep_nominal_id = :nominal_id',
+            $this->companySettingsNominalReferenceSql(),
+        ];
+    }
+
+    private function companySettingsNominalReferenceSql(): string
+    {
+        $quotedSettings = array_map(
+            static fn(string $setting): string => "'" . str_replace("'", "''", $setting) . "'",
+            self::NOMINAL_SETTING_KEYS
+        );
+
+        return 'SELECT COUNT(*)
+                FROM company_settings
+                WHERE setting IN (' . implode(', ', $quotedSettings) . ')
+                  AND TRIM(COALESCE(value, \'\')) = CAST(:nominal_id AS CHAR)';
     }
 
     private function fetchCompaniesSql(): string

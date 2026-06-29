@@ -122,7 +122,8 @@ final class CompanyAccountService
 
         try {
             $input['company_id'] = $companyId;
-            $nominalResult = (new CompanyAccountNominalService())->resolveNominalForAccountInput($input);
+            $nominalService = new CompanyAccountNominalService();
+            $nominalResult = $nominalService->resolveNominalForAccountInput($input);
             if (empty($nominalResult['success'])) {
                 if ($ownsTransaction && InterfaceDB::inTransaction()) {
                     InterfaceDB::rollBack();
@@ -203,6 +204,14 @@ final class CompanyAccountService
             'account_type' => $input['account_type'],
             ]);
 
+            if ($accountId !== false && !empty($nominalResult['created'])) {
+                $nominalService->assignAutoNominalOriginAccount(
+                    (int)$nominalResult['nominal_account_id'],
+                    $companyId,
+                    (int)$accountId
+                );
+            }
+
             if ($ownsTransaction) {
                 InterfaceDB::commit();
             }
@@ -268,6 +277,7 @@ final class CompanyAccountService
 
         try {
             $input['company_id'] = $companyId;
+            $input['id'] = $accountId;
             $nominalResult = (new CompanyAccountNominalService())->resolveNominalForAccountInput($input);
             if (empty($nominalResult['success'])) {
                 if ($ownsTransaction && InterfaceDB::inTransaction()) {

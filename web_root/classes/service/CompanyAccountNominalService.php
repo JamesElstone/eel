@@ -161,8 +161,19 @@ final class CompanyAccountNominalService
 
         $name = $this->generatedNominalName((string)($account['account_name'] ?? ''), $accountType);
         InterfaceDB::prepareExecute(
-            'INSERT INTO nominal_accounts (code, name, account_type, account_subtype_id, tax_treatment, is_active, sort_order)
-             VALUES (?, ?, ?, ?, ?, ?, ?)',
+            'INSERT INTO nominal_accounts (
+                code,
+                name,
+                account_type,
+                account_subtype_id,
+                tax_treatment,
+                is_active,
+                sort_order,
+                origin_type,
+                origin_company_id,
+                origin_company_account_id
+            )
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [
                 $code,
                 $name,
@@ -171,6 +182,9 @@ final class CompanyAccountNominalService
                 'other',
                 1,
                 (int)$code,
+                'company_account_auto',
+                (int)($account['company_id'] ?? 0) > 0 ? (int)$account['company_id'] : null,
+                (int)($account['id'] ?? 0) > 0 ? (int)$account['id'] : null,
             ]
         );
 
@@ -190,6 +204,23 @@ final class CompanyAccountNominalService
             'created' => true,
             'errors' => [],
         ];
+    }
+
+    public function assignAutoNominalOriginAccount(int $nominalAccountId, int $companyId, int $companyAccountId): void
+    {
+        if ($nominalAccountId <= 0 || $companyId <= 0 || $companyAccountId <= 0) {
+            return;
+        }
+
+        InterfaceDB::prepareExecute(
+            'UPDATE nominal_accounts
+             SET origin_type = ?,
+                 origin_company_id = ?,
+                 origin_company_account_id = ?
+             WHERE id = ?
+               AND origin_type = ?',
+            ['company_account_auto', $companyId, $companyAccountId, $nominalAccountId, 'company_account_auto']
+        );
     }
 
     private function needsNominalAssignment(array $account, int $defaultBankNominalId, int $defaultTradeNominalId): bool

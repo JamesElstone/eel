@@ -741,7 +741,19 @@ final class CompanyAction implements ActionInterfaceFramework
 
             $deletedCompanyName = trim((string)($company['company_name'] ?? ''));
             $deletedCompanyNumber = (string)($company['company_number'] ?? '');
-            $repository->deleteCompany($companyId);
+            $deleteResult = $repository->deleteCompany($companyId);
+            $autoNominalCleanup = is_array($deleteResult['auto_nominals'] ?? null) ? $deleteResult['auto_nominals'] : [];
+            $deletedAutoNominalCount = (int)($autoNominalCleanup['deleted'] ?? 0);
+            $skippedAutoNominalCount = (int)($autoNominalCleanup['skipped'] ?? 0);
+            $autoNominalMessage = 'Manual/shared nominals were retained; '
+                . $deletedAutoNominalCount
+                . ' auto-created company account nominal'
+                . ($deletedAutoNominalCount === 1 ? '' : 's')
+                . ' removed'
+                . ($skippedAutoNominalCount > 0
+                    ? ', with ' . $skippedAutoNominalCount . ' still referenced and left in place'
+                    : '')
+                . '.';
 
             $remainingCompanies = $repository->fetchCompanies();
             $nextCompany = is_array($remainingCompanies[0] ?? null) ? $remainingCompanies[0] : null;
@@ -766,7 +778,7 @@ final class CompanyAction implements ActionInterfaceFramework
                 ['page.context', SiteContextCoordinatorFramework::UI_INVALIDATION_FACT, 'layout.sidebar', 'settings_setup_health'],
                 [[
                     'type' => 'success',
-                    'message' => 'Company deleted successfully: ' . ($deletedCompanyName !== '' ? $deletedCompanyName : $deletedCompanyNumber) . '. All company-linked data, including stored Companies House reference documents, has been removed; nominal tables were left untouched.',
+                    'message' => 'Company deleted successfully: ' . ($deletedCompanyName !== '' ? $deletedCompanyName : $deletedCompanyNumber) . '. All company-linked data, including stored Companies House reference documents, has been removed. ' . $autoNominalMessage,
                 ]],
                 [],
                 [

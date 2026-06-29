@@ -105,7 +105,7 @@ final class _companies_dangerCard extends CardBaseFramework
             <div class="stack">
                 <div class="panel-soft warn">
                     <h3 class="card-title">Delete Company</h3>
-                    <div class="standout helper">This permanently removes the selected company and all linked company data from the database. Shared nominal account tables are left untouched.</div>
+                    <div class="standout helper">This permanently removes the selected company and all linked company data from the database. Manual/shared nominal accounts are retained; safe unreferenced auto-created company account nominals are removed.</div>
                     <form method="post" data-ajax="true" class="stack">
                         <input type="hidden" name="card_action" value="Company">
                         <input type="hidden" name="intent" value="delete_company">

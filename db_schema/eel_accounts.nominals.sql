@@ -27,7 +27,7 @@
 
 LOCK TABLES `nominal_accounts` WRITE;
 /*!40000 ALTER TABLE `nominal_accounts` DISABLE KEYS */;
-INSERT INTO `nominal_accounts` VALUES
+INSERT INTO `nominal_accounts` (`id`,`code`,`name`,`account_type`,`account_subtype_id`,`tax_treatment`,`is_active`,`sort_order`,`created_at`) VALUES
 (1,'1000','Bank','asset',1,'allowable',1,10,'2026-03-25 14:48:09'),
 (2,'1100','Trade Debtors','asset',2,'allowable',1,20,'2026-03-25 14:48:09'),
 (3,'1200','Director Loan Asset','asset',3,'allowable',1,30,'2026-03-25 14:48:09'),

@@ -802,10 +802,14 @@ CREATE TABLE `nominal_accounts` (
   `is_active` tinyint(1) NOT NULL DEFAULT 1,
   `sort_order` int(11) NOT NULL DEFAULT 100,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `origin_type` enum('manual','company_account_auto') NOT NULL DEFAULT 'manual',
+  `origin_company_id` int(11) DEFAULT NULL,
+  `origin_company_account_id` int(11) DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_nominal_code` (`code`),
   KEY `idx_nominal_type_active` (`account_type`,`is_active`,`sort_order`),
   KEY `idx_nominal_subtype` (`account_subtype_id`),
+  KEY `idx_nominal_origin` (`origin_type`,`origin_company_id`,`origin_company_account_id`),
   CONSTRAINT `fk_nominal_accounts_subtype` FOREIGN KEY (`account_subtype_id`) REFERENCES `nominal_account_subtypes` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=41 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;

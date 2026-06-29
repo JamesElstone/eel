@@ -51,6 +51,67 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame('2301', (string)($result['nominal_code'] ?? ''));
         });
 
+        $harness->check(CompanyAccountNominalService::class, 'tags auto-created account nominals with company account origin', static function () use ($harness): void {
+            $companyId = insertCompanyForCompanyAccountNominalTest('Auto Origin Fixture Limited');
+            $result = (new CompanyAccountService())->createAccount($companyId, [
+                'account_name' => 'Fixture Bank',
+                'account_type' => CompanyAccountService::TYPE_BANK,
+                'institution_name' => 'Fixture Bank',
+                'account_identifier' => 'AUTO-ORIGIN',
+                'contact_name' => 'Accounts',
+                'phone_number' => '01234567890',
+                'address_line_1' => '1 Test Street',
+                'is_active' => '1',
+            ]);
+
+            $harness->assertSame(true, $result['success'] ?? null);
+
+            $origin = InterfaceDB::fetchOne(
+                'SELECT origin_type, origin_company_id, origin_company_account_id
+                 FROM nominal_accounts
+                 WHERE id = :id',
+                ['id' => (int)($result['nominal_account_id'] ?? 0)]
+            );
+
+            $harness->assertSame('company_account_auto', (string)($origin['origin_type'] ?? ''));
+            $harness->assertSame($companyId, (int)($origin['origin_company_id'] ?? 0));
+            $harness->assertSame((int)($result['account_id'] ?? 0), (int)($origin['origin_company_account_id'] ?? 0));
+        });
+
+        $harness->check(CompanyAccountNominalService::class, 'leaves manually selected account nominals as manual origin', static function () use ($harness): void {
+            $companyId = insertCompanyForCompanyAccountNominalTest('Manual Origin Fixture Limited');
+            $manualNominalId = insertNominalAccountForCompanyAccountNominalTest(
+                '9M' . substr(hash('sha256', __FUNCTION__ . microtime(true)), 0, 6),
+                'Manual Fixture Bank',
+                'asset',
+                'bank'
+            );
+            $result = (new CompanyAccountService())->createAccount($companyId, [
+                'account_name' => 'Manual Bank',
+                'account_type' => CompanyAccountService::TYPE_BANK,
+                'nominal_account_id' => (string)$manualNominalId,
+                'institution_name' => 'Manual Bank',
+                'account_identifier' => 'MANUAL-ORIGIN',
+                'contact_name' => 'Accounts',
+                'phone_number' => '01234567890',
+                'address_line_1' => '1 Test Street',
+                'is_active' => '1',
+            ]);
+
+            $harness->assertSame(true, $result['success'] ?? null);
+
+            $origin = InterfaceDB::fetchOne(
+                'SELECT origin_type, origin_company_id, origin_company_account_id
+                 FROM nominal_accounts
+                 WHERE id = :id',
+                ['id' => $manualNominalId]
+            );
+
+            $harness->assertSame('manual', (string)($origin['origin_type'] ?? ''));
+            $harness->assertSame(0, (int)($origin['origin_company_id'] ?? 0));
+            $harness->assertSame(0, (int)($origin['origin_company_account_id'] ?? 0));
+        });
+
         $harness->check(CompanyAccountNominalService::class, 'treats default trade nominal as needing account-specific assignment', static function () use ($harness, $service): void {
             $method = new ReflectionMethod(CompanyAccountNominalService::class, 'needsNominalAssignment');
             $method->setAccessible(true);
@@ -68,6 +129,17 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         });
     }
 );
+
+function insertCompanyForCompanyAccountNominalTest(string $name): int
+{
+    $number = 'CA' . strtoupper(substr(hash('sha256', $name . microtime(true)), 0, 8));
+    InterfaceDB::prepareExecute(
+        'INSERT INTO companies (company_name, company_number) VALUES (:name, :number)',
+        ['name' => $name, 'number' => $number]
+    );
+
+    return (int)InterfaceDB::fetchColumn('SELECT id FROM companies WHERE company_number = :number', ['number' => $number]);
+}
 
 function insertNominalAccountForCompanyAccountNominalTest(string $code, string $name, string $accountType, ?string $subtypeCode = null): int
 {

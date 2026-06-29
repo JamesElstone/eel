@@ -104,18 +104,27 @@ final class NominalAccountRepository
 
         if ($id === null) {
             InterfaceDB::prepareExecute(
-                'INSERT INTO nominal_accounts (code, name, account_type, account_subtype_id, tax_treatment, is_active, sort_order)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)',
-                $payload
+                'INSERT INTO nominal_accounts (code, name, account_type, account_subtype_id, tax_treatment, is_active, sort_order, origin_type, origin_company_id, origin_company_account_id)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [...$payload, 'manual', null, null]
             );
             return;
         }
 
         InterfaceDB::prepareExecute(
             'UPDATE nominal_accounts
-             SET code = ?, name = ?, account_type = ?, account_subtype_id = ?, tax_treatment = ?, is_active = ?, sort_order = ?
+             SET code = ?,
+                 name = ?,
+                 account_type = ?,
+                 account_subtype_id = ?,
+                 tax_treatment = ?,
+                 is_active = ?,
+                 sort_order = ?,
+                 origin_type = ?,
+                 origin_company_id = NULL,
+                 origin_company_account_id = NULL
              WHERE id = ?',
-            [...$payload, $id]
+            [...$payload, 'manual', $id]
         );
     }
 

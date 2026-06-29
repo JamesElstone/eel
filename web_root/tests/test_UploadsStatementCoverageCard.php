@@ -110,6 +110,7 @@ $harness->run(_uploads_statement_coverageCard::class, static function (Generated
             ],
         ]);
 
+        $harness->assertTrue(str_contains($html, 'class="stack uploads-statement-coverage-account-heatmaps"'));
         $harness->assertSame(2, substr_count($html, 'class="month-heatmap"'));
         $harness->assertTrue(str_contains($html, 'id="uploads-statement-coverage-account-1"'));
         $harness->assertTrue(str_contains($html, 'id="uploads-statement-coverage-account-2"'));
@@ -117,5 +118,10 @@ $harness->run(_uploads_statement_coverageCard::class, static function (Generated
         $harness->assertTrue(str_contains($html, '<h3>Savings Account from 05/09/2022 to 30/09/2023</h3>'));
         $harness->assertTrue(str_contains($html, 'Current Account, Sep 2022: 12 uploaded row(s), 12 committed transaction(s).'));
         $harness->assertTrue(str_contains($html, 'Savings Account, Sep 2022: no uploaded CSV rows or committed transactions found.'));
+        $harness->assertSame(1, substr_count($html, 'class="month-heatmap-legend"'));
+        $harness->assertTrue(str_contains($html, '<span class="month-heatmap-legend-swatch month-heatmap-cell--pass"></span>Covered'));
+        $harness->assertTrue(str_contains($html, '<span class="month-heatmap-legend-swatch month-heatmap-cell--warning"></span>Needs review'));
+        $harness->assertTrue(str_contains($html, '<span class="month-heatmap-legend-swatch month-heatmap-cell--fail"></span>Gap'));
+        $harness->assertTrue(str_contains($html, '<span class="month-heatmap-legend-swatch month-heatmap-cell--muted"></span>No data'));
     });
 });

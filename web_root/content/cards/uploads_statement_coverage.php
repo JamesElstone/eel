@@ -67,7 +67,7 @@ final class _uploads_statement_coverageCard extends CardBaseFramework
         $accountHeatmaps = (array)($options['account_heatmaps'] ?? []);
 
         if ($accountHeatmaps !== []) {
-            $html = '<div class="stack">';
+            $html = '<div class="stack uploads-statement-coverage-account-heatmaps">';
 
             foreach ($accountHeatmaps as $accountOptions) {
                 if (!is_array($accountOptions)) {
@@ -78,12 +78,18 @@ final class _uploads_statement_coverageCard extends CardBaseFramework
                     $accountOptions['label'] = trim((string)($accountOptions['account_label'] ?? $accountOptions['label'] ?? 'Statement Coverage')) . ' from ' . $accountingPeriodLabel;
                 }
 
+                $accountOptions['legend'] = false;
                 $html .= $chartService->monthHeatmap($accountOptions);
             }
 
-            return $html . '</div>';
+            return $html . $this->sharedLegend() . '</div>';
         }
 
         return $chartService->monthHeatmap($options);
+    }
+
+    private function sharedLegend(): string
+    {
+        return '<div class="month-heatmap-legend"><span class="month-heatmap-legend-item"><span class="month-heatmap-legend-swatch month-heatmap-cell--pass"></span>Covered</span><span class="month-heatmap-legend-item"><span class="month-heatmap-legend-swatch month-heatmap-cell--warning"></span>Needs review</span><span class="month-heatmap-legend-item"><span class="month-heatmap-legend-swatch month-heatmap-cell--fail"></span>Gap</span><span class="month-heatmap-legend-item"><span class="month-heatmap-legend-swatch month-heatmap-cell--muted"></span>No data</span></div>';
     }
 }

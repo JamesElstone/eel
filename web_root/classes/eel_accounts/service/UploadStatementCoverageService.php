@@ -47,7 +47,8 @@ final class UploadStatementCoverageService
             $accountingPeriod,
             $reconciliationPanels,
             $this->buildUniqueUploadedRowsByAccountMonth($companyId, $accountingPeriodId, $accountingPeriod),
-            $this->buildCommittedTransactionsByAccountMonth($companyId, $accountingPeriod)
+            $this->buildCommittedTransactionsByAccountMonth($companyId, $accountingPeriod),
+            $this->buildTradeActivityByAccountMonth($companyId, $accountingPeriodId, $accountingPeriod)
         );
 
         if ($accountHeatmaps !== []) {
@@ -159,7 +160,7 @@ final class UploadStatementCoverageService
         ];
     }
 
-    private function buildAccountHeatmapOptions(array $accountingPeriod, array $reconciliationPanels, array $uniqueRowsByAccountMonth, array $transactionsByAccountMonth): array
+    private function buildAccountHeatmapOptions(array $accountingPeriod, array $reconciliationPanels, array $uniqueRowsByAccountMonth, array $transactionsByAccountMonth, array $tradeActivityByAccountMonth = []): array
     {
         $periodStart = trim((string)($accountingPeriod['period_start'] ?? ''));
         $periodEnd = trim((string)($accountingPeriod['period_end'] ?? ''));
@@ -176,7 +177,8 @@ final class UploadStatementCoverageService
             }
 
             $account = is_array($panel['account'] ?? null) ? $panel['account'] : [];
-            if ((string)($account['account_type'] ?? '') !== \eel_accounts\Service\CompanyAccountService::TYPE_BANK) {
+            $accountType = (string)($account['account_type'] ?? '');
+            if (!in_array($accountType, [\eel_accounts\Service\CompanyAccountService::TYPE_BANK, \eel_accounts\Service\CompanyAccountService::TYPE_TRADE], true)) {
                 continue;
             }
 
@@ -186,43 +188,52 @@ final class UploadStatementCoverageService
             }
 
             $accountLabel = $this->accountLabel($account);
-            $months = $this->baseAccountHeatmapMonths(
-                $periodStart,
-                $periodEnd,
-                $accountLabel,
-                (array)($uniqueRowsByAccountMonth[$accountId] ?? []),
-                (array)($transactionsByAccountMonth[$accountId] ?? [])
-            );
+            $months = $accountType === \eel_accounts\Service\CompanyAccountService::TYPE_TRADE
+                ? $this->baseTradeAccountHeatmapMonths(
+                    $periodStart,
+                    $periodEnd,
+                    $accountLabel,
+                    (array)($tradeActivityByAccountMonth[$accountId] ?? [])
+                )
+                : $this->baseAccountHeatmapMonths(
+                    $periodStart,
+                    $periodEnd,
+                    $accountLabel,
+                    (array)($uniqueRowsByAccountMonth[$accountId] ?? []),
+                    (array)($transactionsByAccountMonth[$accountId] ?? [])
+                );
 
-            foreach ($this->balanceContinuitySignalsByMonth([$panel], $periodStart, $periodEnd) as $monthKey => $signals) {
-                if (!isset($months[$monthKey])) {
-                    continue;
+            if ($accountType === \eel_accounts\Service\CompanyAccountService::TYPE_BANK) {
+                foreach ($this->balanceContinuitySignalsByMonth([$panel], $periodStart, $periodEnd) as $monthKey => $signals) {
+                    if (!isset($months[$monthKey])) {
+                        continue;
+                    }
+
+                    $hasFail = in_array('fail', array_column($signals, 'status'), true);
+                    if ($hasFail) {
+                        $months[$monthKey]['status'] = 'fail';
+                    } elseif ($months[$monthKey]['status'] !== 'fail' && (int)($months[$monthKey]['value'] ?? 0) === 0) {
+                        $months[$monthKey]['status'] = 'pass';
+                    }
+
+                    $months[$monthKey]['tooltip'] .= ' ' . implode(' ', array_map(
+                        static fn(array $signal): string => (string)$signal['message'],
+                        $signals
+                    ));
                 }
 
-                $hasFail = in_array('fail', array_column($signals, 'status'), true);
-                if ($hasFail) {
-                    $months[$monthKey]['status'] = 'fail';
-                } elseif ($months[$monthKey]['status'] !== 'fail' && (int)($months[$monthKey]['value'] ?? 0) === 0) {
-                    $months[$monthKey]['status'] = 'pass';
+                foreach ($this->reconciliationIssuesByMonth([$panel]) as $monthKey => $issues) {
+                    if (!isset($months[$monthKey])) {
+                        continue;
+                    }
+
+                    $hasFail = in_array('fail', array_column($issues, 'status'), true);
+                    $months[$monthKey]['status'] = $hasFail ? 'fail' : ($months[$monthKey]['status'] === 'fail' ? 'fail' : 'warning');
+                    $months[$monthKey]['tooltip'] .= ' ' . implode(' ', array_map(
+                        static fn(array $issue): string => (string)$issue['message'],
+                        $issues
+                    ));
                 }
-
-                $months[$monthKey]['tooltip'] .= ' ' . implode(' ', array_map(
-                    static fn(array $signal): string => (string)$signal['message'],
-                    $signals
-                ));
-            }
-
-            foreach ($this->reconciliationIssuesByMonth([$panel]) as $monthKey => $issues) {
-                if (!isset($months[$monthKey])) {
-                    continue;
-                }
-
-                $hasFail = in_array('fail', array_column($issues, 'status'), true);
-                $months[$monthKey]['status'] = $hasFail ? 'fail' : ($months[$monthKey]['status'] === 'fail' ? 'fail' : 'warning');
-                $months[$monthKey]['tooltip'] .= ' ' . implode(' ', array_map(
-                    static fn(array $issue): string => (string)$issue['message'],
-                    $issues
-                ));
             }
 
             $heatmaps[] = [
@@ -274,6 +285,45 @@ final class UploadStatementCoverageService
                 'status' => $status,
                 'value' => $rawRows,
                 'display_value' => '(' . $rawRows . ')',
+                'tooltip' => $tooltip,
+            ];
+
+            $cursor = $cursor->modify('+1 month');
+        }
+
+        return $months;
+    }
+
+    private function baseTradeAccountHeatmapMonths(string $periodStart, string $periodEnd, string $accountLabel, array $activityByMonth): array
+    {
+        $months = [];
+        $cursor = (new \DateTimeImmutable($periodStart))->modify('first day of this month');
+        $end = (new \DateTimeImmutable($periodEnd))->modify('first day of this month');
+
+        while ($cursor <= $end) {
+            $monthKey = $cursor->format('Y-m-01');
+            $label = $cursor->format('M Y');
+            $activity = is_array($activityByMonth[$monthKey] ?? null) ? $activityByMonth[$monthKey] : [];
+            $ledgerLines = (int)($activity['ledger_lines'] ?? 0);
+            $transferTransactions = (int)($activity['transfer_transactions'] ?? 0);
+            $displayCount = $ledgerLines > 0 ? $ledgerLines : $transferTransactions;
+            $status = $ledgerLines > 0 || $transferTransactions > 0 ? 'pass' : 'warning';
+            $tooltip = $ledgerLines > 0 || $transferTransactions > 0
+                ? sprintf(
+                    '%s, %s: %d tagged ledger line(s), %d transfer transaction(s).',
+                    $accountLabel,
+                    $label,
+                    $ledgerLines,
+                    $transferTransactions
+                )
+                : sprintf('%s, %s: no tagged ledger lines or transfer transactions found.', $accountLabel, $label);
+
+            $months[$monthKey] = [
+                'month_key' => $monthKey,
+                'label' => $label,
+                'status' => $status,
+                'value' => $displayCount,
+                'display_value' => '(' . $displayCount . ')',
                 'tooltip' => $tooltip,
             ];
 
@@ -425,6 +475,78 @@ final class UploadStatementCoverageService
         }
 
         return $rows;
+    }
+
+    private function buildTradeActivityByAccountMonth(int $companyId, int $accountingPeriodId, array $accountingPeriod): array
+    {
+        $periodStart = trim((string)($accountingPeriod['period_start'] ?? ''));
+        $periodEnd = trim((string)($accountingPeriod['period_end'] ?? ''));
+
+        if ($periodStart === '' || $periodEnd === '') {
+            return [];
+        }
+
+        $activity = [];
+
+        $ledgerStmt = \InterfaceDB::prepare("SELECT jl.company_account_id AS account_id,
+                                                    DATE_FORMAT(j.journal_date, '%Y-%m-01') AS month_key,
+                                                    COUNT(*) AS ledger_line_count
+                                             FROM journals j
+                                             INNER JOIN journal_lines jl
+                                                ON jl.journal_id = j.id
+                                             WHERE j.company_id = ?
+                                               AND j.accounting_period_id = ?
+                                               AND j.is_posted = 1
+                                               AND jl.company_account_id IS NOT NULL
+                                               AND j.journal_date BETWEEN ? AND ?
+                                             GROUP BY jl.company_account_id,
+                                                      DATE_FORMAT(j.journal_date, '%Y-%m-01')
+                                             ORDER BY jl.company_account_id,
+                                                      month_key");
+        $ledgerStmt->execute([$companyId, $accountingPeriodId, $periodStart, $periodEnd]);
+
+        foreach ($ledgerStmt->fetchAll() as $row) {
+            $accountId = (int)($row['account_id'] ?? 0);
+            $monthKey = (string)($row['month_key'] ?? '');
+
+            if ($accountId > 0 && $monthKey !== '') {
+                $activity[$accountId][$monthKey]['ledger_lines'] = (int)($row['ledger_line_count'] ?? 0);
+            }
+        }
+
+        $transferStmt = \InterfaceDB::prepare("SELECT transfer_account_id AS account_id,
+                                                     DATE_FORMAT(txn_date, '%Y-%m-01') AS month_key,
+                                                     COUNT(*) AS transfer_transaction_count
+                                              FROM transactions
+                                              WHERE company_id = ?
+                                                AND accounting_period_id = ?
+                                                AND transfer_account_id IS NOT NULL
+                                                AND txn_date BETWEEN ? AND ?
+                                              GROUP BY transfer_account_id,
+                                                       DATE_FORMAT(txn_date, '%Y-%m-01')
+                                              ORDER BY transfer_account_id,
+                                                       month_key");
+        $transferStmt->execute([$companyId, $accountingPeriodId, $periodStart, $periodEnd]);
+
+        foreach ($transferStmt->fetchAll() as $row) {
+            $accountId = (int)($row['account_id'] ?? 0);
+            $monthKey = (string)($row['month_key'] ?? '');
+
+            if ($accountId > 0 && $monthKey !== '') {
+                $activity[$accountId][$monthKey]['transfer_transactions'] = (int)($row['transfer_transaction_count'] ?? 0);
+            }
+        }
+
+        foreach ($activity as &$months) {
+            foreach ($months as &$month) {
+                $month['ledger_lines'] = (int)($month['ledger_lines'] ?? 0);
+                $month['transfer_transactions'] = (int)($month['transfer_transactions'] ?? 0);
+            }
+            unset($month);
+        }
+        unset($months);
+
+        return $activity;
     }
 
     private function heatmapMonthLabel(string $monthKey, string $fallback): string

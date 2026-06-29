@@ -16,6 +16,7 @@ $missingTests = [];
 $legacyTestNames = [
     'AccountingContextService.php' => ['test_AccountingContextService.php', 'test_CompanyStore.php'],
     'CardBaseFramework.php' => ['test_CardBaseFramework.php', 'test_BaseCardFramework.php'],
+    'Frs105ValidationService.php' => ['test_IxbrlReadinessService.php', 'test_TrialBalanceValidationService.php'],
     'NullSiteContextProviderFramework.php' => ['test_SiteContextFramework.php'],
     'PageBaseFramework.php' => ['test_PageBaseFramework.php', 'test_BasePageFramework.php'],
     'PageContextFramework.php' => ['test_PageContextFramework.php', 'test_BaseModulePageFramework.php'],

@@ -105,8 +105,8 @@ final class _tax_treatment_rulesCard extends CardBaseFramework
             ->column(
                 'tax_treatment',
                 'Treatment',
-                html: fn(array $row): string => HelperFramework::escape(AccountingFormattingService::nominalTaxTreatmentLabel((string)($row['tax_treatment'] ?? 'allowable'))),
-                export: fn(array $row): string => AccountingFormattingService::nominalTaxTreatmentLabel((string)($row['tax_treatment'] ?? 'allowable'))
+                html: fn(array $row): string => HelperFramework::escape(\eel_accounts\Service\AccountingFormattingService::nominalTaxTreatmentLabel((string)($row['tax_treatment'] ?? 'allowable'))),
+                export: fn(array $row): string => \eel_accounts\Service\AccountingFormattingService::nominalTaxTreatmentLabel((string)($row['tax_treatment'] ?? 'allowable'))
             )
             ->column(
                 'effective',

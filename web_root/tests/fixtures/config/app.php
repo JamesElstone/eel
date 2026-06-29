@@ -41,7 +41,7 @@ return array (
   ),
   'site_context' => 
   array (
-    'service' => 'AccountingContextService',
+    'service' => 'eel_accounts\\Service\\AccountingContextService',
   ),
   'reverse_proxy' => 
   array (

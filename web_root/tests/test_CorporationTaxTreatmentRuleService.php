@@ -10,9 +10,9 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 $harness = new GeneratedServiceClassTestHarness();
-$harness->run(CorporationTaxTreatmentRuleService::class, function (GeneratedServiceClassTestHarness $harness): void {
-    $harness->check(CorporationTaxTreatmentRuleService::class, 'overrides nominal treatment with the first matching active rule', function () use ($harness): void {
-        $service = new CorporationTaxTreatmentRuleService([
+$harness->run(\eel_accounts\Service\CorporationTaxTreatmentRuleService::class, function (GeneratedServiceClassTestHarness $harness): void {
+    $harness->check(\eel_accounts\Service\CorporationTaxTreatmentRuleService::class, 'overrides nominal treatment with the first matching active rule', function () use ($harness): void {
+        $service = new \eel_accounts\Service\CorporationTaxTreatmentRuleService([
             [
                 'id' => 2,
                 'priority' => 50,
@@ -47,8 +47,8 @@ $harness->run(CorporationTaxTreatmentRuleService::class, function (GeneratedServ
         );
     });
 
-    $harness->check(CorporationTaxTreatmentRuleService::class, 'falls back to nominal treatment when no rule matches the period', function () use ($harness): void {
-        $service = new CorporationTaxTreatmentRuleService([
+    $harness->check(\eel_accounts\Service\CorporationTaxTreatmentRuleService::class, 'falls back to nominal treatment when no rule matches the period', function () use ($harness): void {
+        $service = new \eel_accounts\Service\CorporationTaxTreatmentRuleService([
             [
                 'id' => 1,
                 'priority' => 10,
@@ -71,7 +71,7 @@ $harness->run(CorporationTaxTreatmentRuleService::class, function (GeneratedServ
         $harness->assertSame('nominal_accounts', (string)$result['source']);
     });
 
-    $harness->check(CorporationTaxTreatmentRuleService::class, 'does not expose deferred tax as an active CT treatment rule', function () use ($harness): void {
+    $harness->check(\eel_accounts\Service\CorporationTaxTreatmentRuleService::class, 'does not expose deferred tax as an active CT treatment rule', function () use ($harness): void {
         if (!InterfaceDB::tableExists('corporation_tax_treatment_rules')) {
             $harness->skip('corporation_tax_treatment_rules table is not available.');
         }

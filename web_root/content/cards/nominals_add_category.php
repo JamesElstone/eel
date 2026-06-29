@@ -19,7 +19,7 @@ final class _nominals_add_categoryCard extends CardBaseFramework
         return [
             [
                 'key' => 'nominal_subtypes',
-                'service' => NominalSubtypeRepository::class,
+                'service' => \eel_accounts\Repository\NominalSubtypeRepository::class,
                 'method' => 'fetchNominalSubtypes',
             ],
         ];

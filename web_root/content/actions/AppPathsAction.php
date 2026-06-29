@@ -11,7 +11,7 @@ final class AppPathsAction implements ActionInterfaceFramework
             return ActionResultFramework::none();
         }
 
-        $pathStatus = $this->buildPathStatus((new AccountingContextService())->authCompanyId(), $intent === 'create');
+        $pathStatus = $this->buildPathStatus((new \eel_accounts\Service\AccountingContextService())->authCompanyId(), $intent === 'create');
 
         // array $changedFacts = [],
         // array $flashMessages = [],
@@ -27,7 +27,7 @@ final class AppPathsAction implements ActionInterfaceFramework
 
     private function buildPathStatus(int $companyId, bool $createMissingPaths = false): array
     {
-        $fileCheckService = new FileCheckService();
+        $fileCheckService = new \eel_accounts\Service\FileCheckService();
         $items = $this->CalculatePathItems($fileCheckService, $companyId, $createMissingPaths);
         $state = 'ok';
         $message = $createMissingPaths
@@ -70,7 +70,7 @@ final class AppPathsAction implements ActionInterfaceFramework
         ];
     }
 
-    private function CalculatePathItems(FileCheckService $fileCheckService, int $companyId, bool $createMissingPaths = false): array
+    private function CalculatePathItems(\eel_accounts\Service\FileCheckService $fileCheckService, int $companyId, bool $createMissingPaths = false): array
     {
         $items = [];
         $items[] = $this->buildPathItem(
@@ -134,7 +134,7 @@ final class AppPathsAction implements ActionInterfaceFramework
         string $title,
         string $path,
         array $inspection,
-        FileCheckService $fileCheckService
+        \eel_accounts\Service\FileCheckService $fileCheckService
     ): array {
         return [
             'title' => $title,

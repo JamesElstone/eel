@@ -10,9 +10,9 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 (new GeneratedServiceClassTestHarness())->run(
-    CorporationTaxRateRuleService::class,
-    static function (GeneratedServiceClassTestHarness $harness, CorporationTaxRateRuleService $service): void {
-        $harness->check(CorporationTaxRateRuleService::class, 'parses GOV.UK Corporation Tax rates table', static function () use ($harness, $service): void {
+    \eel_accounts\Service\CorporationTaxRateRuleService::class,
+    static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\CorporationTaxRateRuleService $service): void {
+        $harness->check(\eel_accounts\Service\CorporationTaxRateRuleService::class, 'parses GOV.UK Corporation Tax rates table', static function () use ($harness, $service): void {
             $html = '<html><body>
                 <p>Updated 1 April 2026</p>
                 <table>
@@ -44,7 +44,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame('2026-04-01', $result['source_updated_at']);
         });
 
-        $harness->check(CorporationTaxRateRuleService::class, 'parses shifted GOV.UK year window without requiring dropped years', static function () use ($harness, $service): void {
+        $harness->check(\eel_accounts\Service\CorporationTaxRateRuleService::class, 'parses shifted GOV.UK year window without requiring dropped years', static function () use ($harness, $service): void {
             $html = '<html><body>
                 <p>Updated 1 April 2027</p>
                 <table>

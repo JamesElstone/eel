@@ -9,8 +9,8 @@ declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
-(new GeneratedServiceClassTestHarness())->run(TrialBalanceValidationService::class, static function (GeneratedServiceClassTestHarness $harness, TrialBalanceValidationService $service): void {
-    $harness->check(TrialBalanceValidationService::class, 'warns when an active deferred tax nominal exists under FRS 105', static function () use ($harness, $service): void {
+(new GeneratedServiceClassTestHarness())->run(\eel_accounts\Service\TrialBalanceValidationService::class, static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\TrialBalanceValidationService $service): void {
+    $harness->check(\eel_accounts\Service\TrialBalanceValidationService::class, 'warns when an active deferred tax nominal exists under FRS 105', static function () use ($harness, $service): void {
         $fixture = trialBalanceValidationDeferredTaxFixture();
 
         try {
@@ -25,7 +25,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         }
     });
 
-    $harness->check(TrialBalanceValidationService::class, 'passes the deferred tax check when the fixture nominal is inactive', static function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\TrialBalanceValidationService::class, 'passes the deferred tax check when the fixture nominal is inactive', static function () use ($harness, $service): void {
         $fixture = trialBalanceValidationDeferredTaxFixture();
         trialBalanceValidationDeactivateNominal((int)$fixture['nominal_id']);
         if (trialBalanceValidationActiveDeferredTaxNominalCount() > 0) {

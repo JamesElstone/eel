@@ -21,13 +21,13 @@ final class _uploads_detailsCard extends CardBaseFramework
         return [
             [
                 'key' => 'filter_terms',
-                'service' => StatementUploadService::class,
+                'service' => \eel_accounts\Service\StatementUploadService::class,
                 'method' => 'uploadsHistoryFilterOptions',
                 'params' => [],
             ],
             [
                 'key' => 'upload_history',
-                'service' => StatementUploadService::class,
+                'service' => \eel_accounts\Service\StatementUploadService::class,
                 'method' => 'filterUploadHistory',
                 'params' => [
                     'filter' => ':uploads.filter',
@@ -35,7 +35,7 @@ final class _uploads_detailsCard extends CardBaseFramework
             ],
             [
                 'key' => 'upload_summary_by_accounting_period',
-                'service' => StatementUploadService::class,
+                'service' => \eel_accounts\Service\StatementUploadService::class,
                 'method' => 'fetchUploadSummaryByAccountingPeriod',
                 'params' => [
                     'companyId' => ':company.id',
@@ -161,7 +161,7 @@ final class _uploads_detailsCard extends CardBaseFramework
                     </td>
                     <td>
                         <div>' . HelperFramework::escape((string)($upload['account_name'] ?? '') !== '' ? (string)$upload['account_name'] : 'No account selected') . '</div>'
-                        . ($accountType !== '' ? '<div class="helper">' . HelperFramework::escape(CompanyAccountService::accountTypes()[$accountType] ?? ucfirst($accountType)) . '</div>' : '') . '
+                        . ($accountType !== '' ? '<div class="helper">' . HelperFramework::escape(\eel_accounts\Service\CompanyAccountService::accountTypes()[$accountType] ?? ucfirst($accountType)) . '</div>' : '') . '
                     </td>
                     <td><span class="badge ' . HelperFramework::escape($statusClass) . '">' . HelperFramework::escape($statusLabel) . '</span></td>
                     <td>' . HelperFramework::escape($this->uploadRowsLabel($upload)) . '</td>

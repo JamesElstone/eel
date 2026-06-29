@@ -144,7 +144,7 @@ final class UploadsAction implements ActionInterfaceFramework
 
     private function previewUpload(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
-        $companyId = (new AccountingContextService())->authCompanyId();
+        $companyId = (new \eel_accounts\Service\AccountingContextService())->authCompanyId();
         $uploadId = max(0, (int)$request->input('upload_id', 0));
 
         if ($companyId <= 0 || $uploadId <= 0) {
@@ -185,7 +185,7 @@ final class UploadsAction implements ActionInterfaceFramework
             'account_id' => $request->input('account_id'),
         ];
 
-        foreach (array_keys(StatementUploadService::fieldDefinitions()) as $fieldName) {
+        foreach (array_keys(\eel_accounts\Service\StatementUploadService::fieldDefinitions()) as $fieldName) {
             $payload['mapping_' . $fieldName] = $request->input('mapping_' . $fieldName, '');
         }
 
@@ -226,7 +226,7 @@ final class UploadsAction implements ActionInterfaceFramework
         }
 
         $result = $this->statementUploadService($services)->recalculateCompanyChecksums(
-            (new AccountingContextService())->authCompanyId()
+            (new \eel_accounts\Service\AccountingContextService())->authCompanyId()
         );
         [$flashMessages, $flashErrors] = $this->messagesFromResult($result);
 
@@ -248,7 +248,7 @@ final class UploadsAction implements ActionInterfaceFramework
         }
 
         $result = $this->statementUploadService($services)->backfillTransactionTypesFromStagedImportJson(
-            (new AccountingContextService())->authCompanyId()
+            (new \eel_accounts\Service\AccountingContextService())->authCompanyId()
         );
         [, $flashErrors] = $this->messagesFromResult($result);
         $flashMessages = [];
@@ -269,7 +269,7 @@ final class UploadsAction implements ActionInterfaceFramework
     private function commitAccountUpload(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
         $result = $this->statementUploadService($services)->commitUpload(
-            (new AccountingContextService())->authCompanyId(),
+            (new \eel_accounts\Service\AccountingContextService())->authCompanyId(),
             max(0, (int)$request->input('upload_id', 0))
         );
         [$flashMessages, $flashErrors] = $this->messagesFromResult($result);
@@ -298,12 +298,12 @@ final class UploadsAction implements ActionInterfaceFramework
 
     private function exportCsvUpload(RequestFramework $request, PageServiceFramework $services): never
     {
-        $companyId = (new AccountingContextService())->authCompanyId();
+        $companyId = (new \eel_accounts\Service\AccountingContextService())->authCompanyId();
         $uploadId = max(0, (int)$request->input('upload_id', 0));
         $exportMonth = trim((string)$request->input('export_month', ''));
-        $exportService = $services->get(StatementCsvExportService::class);
+        $exportService = $services->get(\eel_accounts\Service\StatementCsvExportService::class);
 
-        if (!$exportService instanceof StatementCsvExportService) {
+        if (!$exportService instanceof \eel_accounts\Service\StatementCsvExportService) {
             header('Content-Type: text/plain; charset=utf-8', true, 500);
             echo 'The CSV export service is unavailable.';
             exit;
@@ -326,12 +326,12 @@ final class UploadsAction implements ActionInterfaceFramework
 
     private function exportXlsxUpload(RequestFramework $request, PageServiceFramework $services): never
     {
-        $companyId = (new AccountingContextService())->authCompanyId();
+        $companyId = (new \eel_accounts\Service\AccountingContextService())->authCompanyId();
         $uploadId = max(0, (int)$request->input('upload_id', 0));
         $exportMonth = trim((string)$request->input('export_month', ''));
-        $exportService = $services->get(StatementCsvExportService::class);
+        $exportService = $services->get(\eel_accounts\Service\StatementCsvExportService::class);
 
-        if (!$exportService instanceof StatementCsvExportService) {
+        if (!$exportService instanceof \eel_accounts\Service\StatementCsvExportService) {
             header('Content-Type: text/plain; charset=utf-8', true, 500);
             echo 'The XLSX export service is unavailable.';
             exit;
@@ -355,7 +355,7 @@ final class UploadsAction implements ActionInterfaceFramework
     private function stageUploadAction(RequestFramework $request, PageServiceFramework $services, string $summaryPrefix): ActionResultFramework
     {
         $result = $this->statementUploadService($services)->stageUploadRows(
-            (new AccountingContextService())->authCompanyId(),
+            (new \eel_accounts\Service\AccountingContextService())->authCompanyId(),
             max(0, (int)$request->input('upload_id', 0)),
             $this->defaultCurrency()
         );
@@ -382,7 +382,7 @@ final class UploadsAction implements ActionInterfaceFramework
         array &$flashErrors,
         string $labelPrefix = ''
     ): bool {
-        $companyId = (new AccountingContextService())->authCompanyId();
+        $companyId = (new \eel_accounts\Service\AccountingContextService())->authCompanyId();
         $uploadService = $this->statementUploadService($services);
         $mappingStatus = $uploadService->describeUploadAccountMappingStatus($companyId, $uploadId);
         $extraHeaders = is_array($mappingStatus['extra_headers'] ?? null) ? $mappingStatus['extra_headers'] : [];
@@ -491,8 +491,8 @@ final class UploadsAction implements ActionInterfaceFramework
 
     private function defaultCurrency(): string
     {
-        $companyId = (new AccountingContextService())->authCompanyId();
-        $settings = $companyId > 0 ? (new CompanySettingsStore($companyId))->all() : CompanySettingsStore::defaults();
+        $companyId = (new \eel_accounts\Service\AccountingContextService())->authCompanyId();
+        $settings = $companyId > 0 ? (new \eel_accounts\Store\CompanySettingsStore($companyId))->all() : \eel_accounts\Store\CompanySettingsStore::defaults();
 
         return (string)($settings['default_currency'] ?? 'GBP');
     }
@@ -502,11 +502,11 @@ final class UploadsAction implements ActionInterfaceFramework
         return (bool)(AppConfigurationStore::get('developer_options', false));
     }
 
-    private function statementUploadService(PageServiceFramework $services): StatementUploadService
+    private function statementUploadService(PageServiceFramework $services): \eel_accounts\Service\StatementUploadService
     {
-        $service = $services->get(StatementUploadService::class);
+        $service = $services->get(\eel_accounts\Service\StatementUploadService::class);
 
-        if (!$service instanceof StatementUploadService) {
+        if (!$service instanceof \eel_accounts\Service\StatementUploadService) {
             throw new RuntimeException('StatementUploadService is unavailable.');
         }
 

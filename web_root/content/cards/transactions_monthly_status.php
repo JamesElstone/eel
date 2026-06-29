@@ -24,7 +24,7 @@ final class _transactions_monthly_statusCard extends CardBaseFramework
         return [
             [
                 'key' => 'month_status',
-                'service' => StatementUploadService::class,
+                'service' => \eel_accounts\Service\StatementUploadService::class,
                 'method' => 'buildMonthStatus',
                 'params' => [
                     'companyId' => ':company.id',

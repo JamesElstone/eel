@@ -10,14 +10,14 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 $harness = new GeneratedServiceClassTestHarness();
-$harness->run(CompanyAccountService::class, function (GeneratedServiceClassTestHarness $harness, CompanyAccountService $service): void {
-    $harness->check(CompanyAccountService::class, 'returns expected account types', function () use ($harness): void {
+$harness->run(\eel_accounts\Service\CompanyAccountService::class, function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\CompanyAccountService $service): void {
+    $harness->check(\eel_accounts\Service\CompanyAccountService::class, 'returns expected account types', function () use ($harness): void {
         $harness->assertSame(
             [
-                CompanyAccountService::TYPE_BANK => 'Bank',
-                CompanyAccountService::TYPE_TRADE => 'Trade',
+                \eel_accounts\Service\CompanyAccountService::TYPE_BANK => 'Bank',
+                \eel_accounts\Service\CompanyAccountService::TYPE_TRADE => 'Trade',
             ],
-            CompanyAccountService::accountTypes()
+            \eel_accounts\Service\CompanyAccountService::accountTypes()
         );
     });
 });

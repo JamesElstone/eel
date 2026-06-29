@@ -29,7 +29,7 @@ final class ExternalIpLookupOutbound
             return trim((string)$response);
         }
 
-        $response = ApiHelperOutbound::request([
+        $response = \ApiHelperOutbound::request([
             'url' => $url,
             'method' => 'GET',
             'headers' => [

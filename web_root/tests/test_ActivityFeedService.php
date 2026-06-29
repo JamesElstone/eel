@@ -10,9 +10,9 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 $harness = new GeneratedServiceClassTestHarness();
-$harness->run(ActivityFeedService::class, function (GeneratedServiceClassTestHarness $harness, ActivityFeedService $service): void {
-    $harness->check(ActivityFeedService::class, 'formats transaction audit rows for the activity feed', function () use ($harness, $service): void {
-        $method = new ReflectionMethod(ActivityFeedService::class, 'transactionAuditItem');
+$harness->run(\eel_accounts\Service\ActivityFeedService::class, function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\ActivityFeedService $service): void {
+    $harness->check(\eel_accounts\Service\ActivityFeedService::class, 'formats transaction audit rows for the activity feed', function () use ($harness, $service): void {
+        $method = new ReflectionMethod(\eel_accounts\Service\ActivityFeedService::class, 'transactionAuditItem');
         $method->setAccessible(true);
 
         $item = $method->invoke($service, [
@@ -34,8 +34,8 @@ $harness->run(ActivityFeedService::class, function (GeneratedServiceClassTestHar
         $harness->assertSame('James', $item['meta'] ?? '');
     });
 
-    $harness->check(ActivityFeedService::class, 'formats year-end audit rows for the activity feed', function () use ($harness, $service): void {
-        $method = new ReflectionMethod(ActivityFeedService::class, 'yearEndAuditItem');
+    $harness->check(\eel_accounts\Service\ActivityFeedService::class, 'formats year-end audit rows for the activity feed', function () use ($harness, $service): void {
+        $method = new ReflectionMethod(\eel_accounts\Service\ActivityFeedService::class, 'yearEndAuditItem');
         $method->setAccessible(true);
 
         $item = $method->invoke($service, [
@@ -52,8 +52,8 @@ $harness->run(ActivityFeedService::class, function (GeneratedServiceClassTestHar
         $harness->assertSame('2025-01-01 to 2025-12-31: Reviewed', $item['detail'] ?? '');
     });
 
-    $harness->check(ActivityFeedService::class, 'filters activity rows by selected window', function () use ($harness, $service): void {
-        $method = new ReflectionMethod(ActivityFeedService::class, 'filterByWindow');
+    $harness->check(\eel_accounts\Service\ActivityFeedService::class, 'filters activity rows by selected window', function () use ($harness, $service): void {
+        $method = new ReflectionMethod(\eel_accounts\Service\ActivityFeedService::class, 'filterByWindow');
         $method->setAccessible(true);
         $now = new DateTimeImmutable('now');
 

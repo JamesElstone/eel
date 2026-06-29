@@ -29,8 +29,8 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
         header('Content-Type: text/plain; charset=utf-8');
         header('X-Content-Type-Options: nosniff');
 
-        $service = new HmrcCorporationTaxSubmissionService();
-        $fraud = new HmrcFraudPreventionHeaderService();
+        $service = new \eel_accounts\Service\HmrcCorporationTaxSubmissionService();
+        $fraud = new \eel_accounts\Service\HmrcFraudPreventionHeaderService();
         $companyId = (int)$request->input('company_id', 0);
         $accountingPeriodId = (int)$request->input('accounting_period_id', 0);
         $ctPeriodId = (int)$request->input('ct_period_id', 0);
@@ -65,7 +65,7 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
                 $line('error', (string)$error);
             }
             $line('info', 'HMRC fraud prevention validator request starting.');
-            $response = (new HmrcApiClient())->testFraudPreventionHeaders($headers, $mode);
+            $response = (new \eel_accounts\Client\HmrcApiClient())->testFraudPreventionHeaders($headers, $mode);
             $line('info', 'HMRC endpoint target: ' . (string)($response['endpoint'] ?? ''));
             $line('info', 'Response status: ' . (int)($response['status_code'] ?? 0));
             $line(!empty($response['success']) ? 'success' : 'error', !empty($response['success']) ? 'Fraud prevention validator completed.' : (string)($response['error'] ?? $response['body'] ?? 'Fraud prevention validator failed.'));
@@ -106,7 +106,7 @@ final class HmrcSubmissionAction implements ActionInterfaceFramework
             return;
         }
 
-        $authorisation = new HmrcSubmissionAuthorisationService();
+        $authorisation = new \eel_accounts\Service\HmrcSubmissionAuthorisationService();
         $authority = $authorisation->validate($request, $companyId, $intent);
         if (empty($authority['success'])) {
             foreach ((array)($authority['errors'] ?? []) as $error) {

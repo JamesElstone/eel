@@ -11,10 +11,10 @@ final class ExpenseAction implements ActionInterfaceFramework
 {
     public function handle(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
-        $context = new AccountingContextService();
+        $context = new \eel_accounts\Service\AccountingContextService();
         $companyId = HelperFramework::sanitiseId($request->input('company_id', null), $context->companyId($request));
         $intent = trim((string)$request->input('intent', ''));
-        $service = new ExpenseClaimService();
+        $service = new \eel_accounts\Service\ExpenseClaimService();
 
         try {
             $result = match ($intent) {

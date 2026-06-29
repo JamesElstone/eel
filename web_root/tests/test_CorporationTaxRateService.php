@@ -10,9 +10,9 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 (new GeneratedServiceClassTestHarness())->run(
-    CorporationTaxRateService::class,
-    static function (GeneratedServiceClassTestHarness $harness, CorporationTaxRateService $service): void {
-        $rateService = new CorporationTaxRateService([
+    \eel_accounts\Service\CorporationTaxRateService::class,
+    static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\CorporationTaxRateService $service): void {
+        $rateService = new \eel_accounts\Service\CorporationTaxRateService([
             [
                 'financial_year_start' => '2022-04-01',
                 'financial_year_end' => '2023-03-31',
@@ -37,21 +37,21 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             ],
         ]);
 
-        $harness->check(CorporationTaxRateService::class, 'uses 19 percent flat rate before 1 April 2023', static function () use ($harness, $rateService): void {
+        $harness->check(\eel_accounts\Service\CorporationTaxRateService::class, 'uses 19 percent flat rate before 1 April 2023', static function () use ($harness, $rateService): void {
             $result = $rateService->calculate('2022-04-01', '2023-03-31', 100000.0);
 
             $harness->assertSame(19000.0, $result['liability']);
             $harness->assertSame(0.19, $result['effective_rate']);
         });
 
-        $harness->check(CorporationTaxRateService::class, 'uses small profits rate from 1 April 2023', static function () use ($harness, $rateService): void {
+        $harness->check(\eel_accounts\Service\CorporationTaxRateService::class, 'uses small profits rate from 1 April 2023', static function () use ($harness, $rateService): void {
             $result = $rateService->calculate('2026-04-01', '2027-03-31', 40000.0);
 
             $harness->assertSame(7600.0, $result['liability']);
             $harness->assertSame(0.19, $result['effective_rate']);
         });
 
-        $harness->check(CorporationTaxRateService::class, 'applies marginal relief from 1 April 2023', static function () use ($harness, $rateService): void {
+        $harness->check(\eel_accounts\Service\CorporationTaxRateService::class, 'applies marginal relief from 1 April 2023', static function () use ($harness, $rateService): void {
             $result = $rateService->calculate('2026-04-01', '2027-03-31', 100000.0);
 
             $harness->assertSame(22750.0, $result['liability']);
@@ -59,7 +59,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame('fixture', $result['bands'][0]['rule_version']);
         });
 
-        $harness->check(CorporationTaxRateService::class, 'reduces thresholds for associated companies', static function () use ($harness, $rateService): void {
+        $harness->check(\eel_accounts\Service\CorporationTaxRateService::class, 'reduces thresholds for associated companies', static function () use ($harness, $rateService): void {
             $result = $rateService->calculate('2026-04-01', '2027-03-31', 60000.0, 3);
 
             $harness->assertSame(14962.5, $result['liability']);

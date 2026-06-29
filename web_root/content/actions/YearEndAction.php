@@ -21,16 +21,16 @@ final class YearEndAction implements ActionInterfaceFramework
 
         try {
             $result = match ($intent) {
-                'recalculate' => (new YearEndChecklistService())->recalculateChecklist($companyId, $accountingPeriodId),
-                'lock_period' => (new YearEndChecklistService())->lockPeriod($companyId, $accountingPeriodId),
-                'unlock_period' => (new YearEndChecklistService())->unlockPeriod($companyId, $accountingPeriodId),
-                'save_notes' => (new YearEndChecklistService())->saveNotes($companyId, $accountingPeriodId, (string)$request->input('review_notes', '')),
-                'save_opening_balance' => (new OpeningBalanceService())->saveOpeningBalance(
+                'recalculate' => (new \eel_accounts\Service\YearEndChecklistService())->recalculateChecklist($companyId, $accountingPeriodId),
+                'lock_period' => (new \eel_accounts\Service\YearEndChecklistService())->lockPeriod($companyId, $accountingPeriodId),
+                'unlock_period' => (new \eel_accounts\Service\YearEndChecklistService())->unlockPeriod($companyId, $accountingPeriodId),
+                'save_notes' => (new \eel_accounts\Service\YearEndChecklistService())->saveNotes($companyId, $accountingPeriodId, (string)$request->input('review_notes', '')),
+                'save_opening_balance' => (new \eel_accounts\Service\OpeningBalanceService())->saveOpeningBalance(
                     $companyId,
                     $accountingPeriodId,
                     $this->openingBalancePayload($request)
                 ),
-                'create_adjustment' => (new YearEndAdjustmentService())->createAdjustment(
+                'create_adjustment' => (new \eel_accounts\Service\YearEndAdjustmentService())->createAdjustment(
                     $companyId,
                     $accountingPeriodId,
                     $this->adjustmentPayload($request)

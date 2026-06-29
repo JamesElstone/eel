@@ -11,6 +11,6 @@ final class hmrcCheckAction implements ActionInterfaceFramework
 {
     public function handle(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
-        return (new hmrcService())->runHmrcAntiFraudTest($request);
+        return (new \eel_accounts\Service\hmrcService())->runHmrcAntiFraudTest($request);
     }
 }

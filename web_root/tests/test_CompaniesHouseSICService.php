@@ -10,8 +10,8 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 $harness = new GeneratedServiceClassTestHarness();
-$harness->run(CompaniesHouseSICService::class, function (GeneratedServiceClassTestHarness $harness, CompaniesHouseSICService $service): void {
-    $harness->check(CompaniesHouseSICService::class, 'extracts SIC codes from stored Companies House profile json', function () use ($harness, $service): void {
+$harness->run(\eel_accounts\Service\CompaniesHouseSICService::class, function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\CompaniesHouseSICService $service): void {
+    $harness->check(\eel_accounts\Service\CompaniesHouseSICService::class, 'extracts SIC codes from stored Companies House profile json', function () use ($harness, $service): void {
         $codes = $service->extractSicCodesFromProfileJson(json_encode([
             'sic_codes' => ['33130', '43210', '43210', 'invalid'],
         ], JSON_UNESCAPED_SLASHES));
@@ -19,7 +19,7 @@ $harness->run(CompaniesHouseSICService::class, function (GeneratedServiceClassTe
         $harness->assertSame(['33130', '43210'], $codes);
     });
 
-    $harness->check(CompaniesHouseSICService::class, 'parses sections and SIC codes from Companies House HTML', function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\CompaniesHouseSICService::class, 'parses sections and SIC codes from Companies House HTML', function () use ($harness, $service): void {
         $parsed = $service->parseLookupHtml(<<<'HTML'
 <!DOCTYPE html>
 <html>
@@ -60,7 +60,7 @@ HTML);
         $harness->assertSame('F', $parsed['codes'][2]['section_letter'] ?? '');
     });
 
-    $harness->check(CompaniesHouseSICService::class, 'formats resolved SIC codes for display', function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\CompaniesHouseSICService::class, 'formats resolved SIC codes for display', function () use ($harness, $service): void {
         $lines = $service->formatResolvedCodesForDisplay([
             [
                 'sic_code' => '43210',

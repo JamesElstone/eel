@@ -21,7 +21,7 @@ final class _transactions_rulesCard extends CardBaseFramework
         return [
             [
                 'key' => 'categorisation_rules',
-                'service' => CategorisationRuleService::class,
+                'service' => \eel_accounts\Service\CategorisationRuleService::class,
                 'method' => 'fetchRules',
                 'params' => [
                     'companyId' => ':company.id',

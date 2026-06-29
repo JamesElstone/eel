@@ -60,7 +60,10 @@ final class TestPagesHarness
 
         sort($files);
 
-        return array_values(array_filter($files, 'is_file'));
+        return array_values(array_filter(
+            $files,
+            static fn(string $file): bool => is_file($file) && !str_ends_with(basename($file, '.php'), '.nav')
+        ));
     }
 
     private function assertSame(mixed $expected, mixed $actual): void

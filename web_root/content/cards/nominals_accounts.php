@@ -19,7 +19,7 @@ final class _nominals_accountsCard extends CardBaseFramework
         return [
             [
                 'key' => 'nominal_account_catalog',
-                'service' => NominalAccountRepository::class,
+                'service' => \eel_accounts\Repository\NominalAccountRepository::class,
                 'method' => 'fetchNominalAccountCatalog',
             ],
         ];
@@ -83,7 +83,7 @@ final class _nominals_accountsCard extends CardBaseFramework
                 continue;
             }
 
-            $nominal['tax_treatment_label'] = AccountingFormattingService::nominalTaxTreatmentLabel(
+            $nominal['tax_treatment_label'] = \eel_accounts\Service\AccountingFormattingService::nominalTaxTreatmentLabel(
                 (string)($nominal['tax_treatment'] ?? 'allowable')
             );
             $nominal['status_label'] = (int)($nominal['is_active'] ?? 0) === 1 ? 'Active' : 'Inactive';

@@ -41,6 +41,29 @@ spl_autoload_register(
             return;
         }
 
+        if (str_contains($className, '\\')) {
+            $parts = explode('\\', $className);
+            $classBaseName = (string) array_pop($parts);
+
+            foreach ([...$parts, $classBaseName] as $part) {
+                if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $part)) {
+                    return;
+                }
+            }
+
+            $directories = array_map('strtolower', $parts);
+            $file = APP_CLASSES
+                . ($directories === [] ? '' : implode(DIRECTORY_SEPARATOR, $directories) . DIRECTORY_SEPARATOR)
+                . $classBaseName
+                . '.php';
+
+            if (is_file($file)) {
+                require_once $file;
+            }
+
+            return;
+        }
+
         if (str_ends_with($className, 'Action')) {
             $actionFile = APP_ACTIONS . $className . '.php';
 

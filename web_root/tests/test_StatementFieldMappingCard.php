@@ -29,7 +29,7 @@ $harness->run(_statement_field_mappingCard::class, static function (GeneratedSer
                     [
                         'id' => 47,
                         'account_name' => 'Main Current Account',
-                        'account_type' => CompanyAccountService::TYPE_BANK,
+                        'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
                     ],
                 ],
                 'account_mapping_preview' => [
@@ -80,7 +80,7 @@ $harness->run(_statement_field_mappingCard::class, static function (GeneratedSer
                     [
                         'id' => 47,
                         'account_name' => 'Main Current Account',
-                        'account_type' => CompanyAccountService::TYPE_BANK,
+                        'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
                     ],
                 ],
                 'selected_upload_preview' => [

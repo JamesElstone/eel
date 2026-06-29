@@ -10,12 +10,12 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 $harness = new GeneratedServiceClassTestHarness();
-$harness->check(AccountingConfigurationStore::class, 'normalises runtime mode defaults', static function () use ($harness): void {
-    $harness->assertSame('TEST', AccountingConfigurationStore::companiesHouseMode());
-    $harness->assertSame('TEST', AccountingConfigurationStore::hmrcMode());
+$harness->check(\eel_accounts\Store\AccountingConfigurationStore::class, 'normalises runtime mode defaults', static function () use ($harness): void {
+    $harness->assertSame('TEST', \eel_accounts\Store\AccountingConfigurationStore::companiesHouseMode());
+    $harness->assertSame('TEST', \eel_accounts\Store\AccountingConfigurationStore::hmrcMode());
 });
 
-$harness->check(AccountingConfigurationStore::class, 'returns array-backed configuration sections', static function () use ($harness): void {
-    $harness->assertTrue(is_array(AccountingConfigurationStore::uploads()));
-    $harness->assertSame([], AccountingConfigurationStore::hmrcConfig('missing-service'));
+$harness->check(\eel_accounts\Store\AccountingConfigurationStore::class, 'returns array-backed configuration sections', static function () use ($harness): void {
+    $harness->assertTrue(is_array(\eel_accounts\Store\AccountingConfigurationStore::uploads()));
+    $harness->assertSame([], \eel_accounts\Store\AccountingConfigurationStore::hmrcConfig('missing-service'));
 });

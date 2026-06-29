@@ -26,7 +26,7 @@ final class _license_agpl_3_0Card extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $text = (new LicenseService())->licenseText('agpl_3_0');
+        $text = (new \eel_accounts\Service\LicenseService())->licenseText('agpl_3_0');
 
         return '<pre class="license-text-panel">' . HelperFramework::escape($text) . '</pre>';
     }

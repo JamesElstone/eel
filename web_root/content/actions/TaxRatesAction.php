@@ -26,7 +26,7 @@ final class TaxRatesAction implements ActionInterfaceFramework
     private function refreshHmrcRates(): ActionResultFramework
     {
         try {
-            $result = (new CorporationTaxRateRuleService())->refreshFromHmrc();
+            $result = (new \eel_accounts\Service\CorporationTaxRateRuleService())->refreshFromHmrc();
         } catch (Throwable $exception) {
             $result = ['success' => false, 'errors' => [$exception->getMessage()], 'warnings' => []];
         }
@@ -61,7 +61,7 @@ final class TaxRatesAction implements ActionInterfaceFramework
             ]]);
         }
 
-        if ((new CorporationTaxTreatmentRuleService())->setRuleActive($ruleId, $targetActive)) {
+        if ((new \eel_accounts\Service\CorporationTaxTreatmentRuleService())->setRuleActive($ruleId, $targetActive)) {
             return new ActionResultFramework(true, ['tax.treatment.rules', 'page.context'], [[
                 'type' => 'success',
                 'message' => $targetActive ? 'Tax treatment rule enabled.' : 'Tax treatment rule disabled.',
@@ -86,7 +86,7 @@ final class TaxRatesAction implements ActionInterfaceFramework
             ]]);
         }
 
-        if ((new CorporationTaxTreatmentRuleService())->setRuleReviewStatus($ruleId, $reviewStatus)) {
+        if ((new \eel_accounts\Service\CorporationTaxTreatmentRuleService())->setRuleReviewStatus($ruleId, $reviewStatus)) {
             return new ActionResultFramework(true, ['tax.treatment.rules', 'page.context'], [[
                 'type' => 'success',
                 'message' => 'Tax treatment rule review status updated.',

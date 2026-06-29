@@ -19,7 +19,7 @@ final class _uploads_bank_transactionsCard extends CardBaseFramework
         return [
             [
                 'key' => 'activeCompanyAccounts',
-                'service' => CompanyAccountService::class,
+                'service' => \eel_accounts\Service\CompanyAccountService::class,
                 'method' => 'fetchAccounts',
                 'params' => [
                     'companyId' => ':company.id',
@@ -80,7 +80,7 @@ final class _uploads_bank_transactionsCard extends CardBaseFramework
             $selected = (int)($selectedUploadPreview['upload']['account_id'] ?? 0) === (int)($account['id'] ?? 0) ? ' selected' : '';
             $accountOptions .= '<option value="' . (int)($account['id'] ?? 0) . '"' . $selected . '>'
                 . HelperFramework::escape((string)($account['account_name'] ?? '')) . ' ('
-                . HelperFramework::escape(CompanyAccountService::accountTypes()[$accountType] ?? ucfirst($accountType))
+                . HelperFramework::escape(\eel_accounts\Service\CompanyAccountService::accountTypes()[$accountType] ?? ucfirst($accountType))
                 . ')</option>';
         }
 
@@ -97,7 +97,7 @@ final class _uploads_bank_transactionsCard extends CardBaseFramework
                 <div class="stack">
                     <div class="helper">The first row must be headings, ideally clear names like <strong>date, description, amount, balance</strong>.</div>
                     <div class="helper">Transactions must be in statement order, either oldest first or newest first, so balances can be checked before import.</div>
-                    <div class="upload-box upload-dropzone" data-upload-dropzone data-upload-max-files="' . StatementUploadService::MAX_BATCH_UPLOAD_FILES . '">
+                    <div class="upload-box upload-dropzone" data-upload-dropzone data-upload-max-files="' . \eel_accounts\Service\StatementUploadService::MAX_BATCH_UPLOAD_FILES . '">
                         <div class="flex-controls">
                             <div class="form-row">
                                 <label for="statement_file">Drop CSV files here</label>

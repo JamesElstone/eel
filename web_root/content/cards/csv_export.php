@@ -24,7 +24,7 @@ final class _csv_exportCard extends CardBaseFramework
         return [
             [
                 'key' => 'csv_export_months',
-                'service' => StatementCsvExportService::class,
+                'service' => \eel_accounts\Service\StatementCsvExportService::class,
                 'method' => 'fetchExportMonths',
                 'params' => [
                     'companyId' => ':company.id',

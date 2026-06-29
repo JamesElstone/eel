@@ -32,12 +32,12 @@ final class _vat_readinessCard extends CardBaseFramework
     public function render(array $context): string
     {
         $settings = (array)(($context['page'] ?? [])['settings'] ?? []);
-        $vatRegistrationService = new VatRegistrationService();
+        $vatRegistrationService = new \eel_accounts\Service\VatRegistrationService();
 
         return '<div class="list" data-vat-readiness-list">' . $this->renderVatReadinessList($settings, $vatRegistrationService) . '</div>';
     }
 
-    private function renderVatReadinessList(array $settings, VatRegistrationService $service): string
+    private function renderVatReadinessList(array $settings, \eel_accounts\Service\VatRegistrationService $service): string
     {
         $items = [];
         $isVatRegistered = !empty($settings['is_vat_registered']);

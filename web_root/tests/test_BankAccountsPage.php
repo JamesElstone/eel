@@ -93,7 +93,7 @@ $harness->run(_source_accounts::class, static function (GeneratedServiceClassTes
                 'LookupCompanyAccount' => [
                     'id' => 47,
                     'account_name' => 'Main Current Account',
-                    'account_type' => CompanyAccountService::TYPE_BANK,
+                    'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
                     'nominal_account_id' => 7,
                     'is_active' => 1,
                 ],

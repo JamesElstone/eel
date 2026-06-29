@@ -10,9 +10,9 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 (new GeneratedServiceClassTestHarness())->run(
-    CorporationTaxPeriodService::class,
-    static function (GeneratedServiceClassTestHarness $harness, CorporationTaxPeriodService $service): void {
-        $harness->check(CorporationTaxPeriodService::class, 'syncs a long first accounting period into sequential CT periods', static function () use ($harness, $service): void {
+    \eel_accounts\Service\CorporationTaxPeriodService::class,
+    static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\CorporationTaxPeriodService $service): void {
+        $harness->check(\eel_accounts\Service\CorporationTaxPeriodService::class, 'syncs a long first accounting period into sequential CT periods', static function () use ($harness, $service): void {
             $companyNumber = 'CTP' . substr(hash('sha256', __FILE__ . microtime(true)), 0, 10);
 
             InterfaceDB::prepareExecute(

@@ -37,7 +37,7 @@ final class _hmrc_anti_fraud_testCard extends CardBaseFramework
     {
         $page = (array)($context['page'] ?? []);
         $companyId = (int)($context['company']['id'] ?? 0);
-        $hmrcMode = (new hmrcService())->resolveHmrcMode($companyId);
+        $hmrcMode = (new \eel_accounts\Service\hmrcService())->resolveHmrcMode($companyId);
         $result = $context['hmrc_antifraud_test_result'] ?? null;
         $hasApiError = is_array($result) && array_key_exists('success', $result) && !$result['success'];
         $cardsHtml = '';

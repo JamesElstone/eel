@@ -120,7 +120,7 @@ final class CompanyAction implements ActionInterfaceFramework
 
         try {
             if ($companiesHouseProfile === null && $companyNumber !== '') {
-                $profile = (new CompaniesHouseService($environment))->fetchProfileByNumber($companyNumber);
+                $profile = (new \eel_accounts\Service\CompaniesHouseService($environment))->fetchProfileByNumber($companyNumber);
                 $companiesHouseProfile = $profile !== [] ? $profile : null;
             }
 
@@ -130,7 +130,7 @@ final class CompanyAction implements ActionInterfaceFramework
                 $incorporationDate = trim((string)($companiesHouseProfile['date_of_creation'] ?? ''));
             }
 
-            $repository = new CompanyRepository();
+            $repository = new \eel_accounts\Repository\CompanyRepository();
             $existingCompanyId = $repository->findExistingCompanyId($companyName, $companyNumber !== '' ? $companyNumber : null);
             $companyId = $repository->createCompany(
                 $companyName,
@@ -147,7 +147,7 @@ final class CompanyAction implements ActionInterfaceFramework
                     : 'Company added successfully: ' . $companyName . '.',
             ]];
 
-            if (!(new FileCheckService())->ensureCompanyUploadDirectories($companyId)) {
+            if (!(new \eel_accounts\Service\FileCheckService())->ensureCompanyUploadDirectories($companyId)) {
                 $flashMessages[] = [
                     'type' => 'error',
                     'message' => 'The company record was saved, but the upload folders could not be prepared on disk.',
@@ -156,7 +156,7 @@ final class CompanyAction implements ActionInterfaceFramework
 
             if ($companyNumber !== '') {
                 try {
-                    $ingestionResult = (new CompaniesHouseAccountsIngestionService(environment: $environment))
+                    $ingestionResult = (new \eel_accounts\Service\CompaniesHouseAccountsIngestionService(environment: $environment))
                         ->ingestForCompany($companyId, $companyNumber);
 
                     if ((int)($ingestionResult['candidate_count'] ?? 0) > 0) {
@@ -164,7 +164,7 @@ final class CompanyAction implements ActionInterfaceFramework
                             . (int)($ingestionResult['stored_document_count'] ?? 0)
                             . ' Companies House filings including iXBRL information.';
 
-                        $filedPeriodImportResult = (new AccountingGuidanceService())
+                        $filedPeriodImportResult = (new \eel_accounts\Service\AccountingGuidanceService())
                             ->createPeriodsFromCompaniesHouseFiledPeriods($companyId, $companyNumber);
 
                         if ((int)($filedPeriodImportResult['created_count'] ?? 0) > 0) {
@@ -209,12 +209,12 @@ final class CompanyAction implements ActionInterfaceFramework
                 throw new RuntimeException('The added company could not be selected.');
             }
 
-            $accountingPeriods = (new AccountingPeriodRepository())->fetchAccountingPeriods($companyId);
+            $accountingPeriods = (new \eel_accounts\Repository\AccountingPeriodRepository())->fetchAccountingPeriods($companyId);
             $accountingPeriodId = (int)($accountingPeriods[0]['id'] ?? 0);
             $selectedCompanyName = trim((string)($selectedCompany['company_name'] ?? $companyName));
             $selectedCompanyNumber = trim((string)($selectedCompany['company_number'] ?? $companyNumber));
 
-            (new AccountingContextService())->setPageContext(
+            (new \eel_accounts\Service\AccountingContextService())->setPageContext(
                 $companyId,
                 $selectedCompanyName,
                 $selectedCompanyNumber,
@@ -252,7 +252,7 @@ final class CompanyAction implements ActionInterfaceFramework
 
     private function refreshCompany(RequestFramework $request): ActionResultFramework
     {
-        $companyId = (new AccountingContextService())->authCompanyId();
+        $companyId = (new \eel_accounts\Service\AccountingContextService())->authCompanyId();
 
         if ($companyId <= 0) {
             return new ActionResultFramework(
@@ -266,7 +266,7 @@ final class CompanyAction implements ActionInterfaceFramework
         }
 
         try {
-            $repository = new CompanyRepository();
+            $repository = new \eel_accounts\Repository\CompanyRepository();
             $company = $repository->fetchCompanyDetails($companyId);
 
             if ($company === null) {
@@ -287,9 +287,9 @@ final class CompanyAction implements ActionInterfaceFramework
             }
 
             $environment = $this->companiesHouseEnvironment();
-            $documentRepository = new CompaniesHouseDocumentRepository();
+            $documentRepository = new \eel_accounts\Repository\CompaniesHouseDocumentRepository();
             $storedDocumentIdsBeforeRefresh = $documentRepository->fetchStoredDocumentIds($companyId, $companyNumber);
-            $profile = (new CompaniesHouseService($environment))->fetchProfileByNumber($companyNumber);
+            $profile = (new \eel_accounts\Service\CompaniesHouseService($environment))->fetchProfileByNumber($companyNumber);
 
             if ($profile === []) {
                 return new ActionResultFramework(
@@ -318,7 +318,7 @@ final class CompanyAction implements ActionInterfaceFramework
             ]];
 
             try {
-                $ingestionResult = (new CompaniesHouseAccountsIngestionService(environment: $environment))
+                $ingestionResult = (new \eel_accounts\Service\CompaniesHouseAccountsIngestionService(environment: $environment))
                     ->ingestForCompany($companyId, $companyNumber);
                 $storedDocumentIdsAfterRefresh = $documentRepository->fetchStoredDocumentIds($companyId, $companyNumber);
                 $newDocumentCount = count(array_diff($storedDocumentIdsAfterRefresh, $storedDocumentIdsBeforeRefresh));
@@ -341,7 +341,7 @@ final class CompanyAction implements ActionInterfaceFramework
 
                     $flashMessages[] = $refreshMessage;
 
-                    $filedPeriodImportResult = (new AccountingGuidanceService())
+                    $filedPeriodImportResult = (new \eel_accounts\Service\AccountingGuidanceService())
                         ->createPeriodsFromCompaniesHouseFiledPeriods($companyId, $companyNumber);
 
                     if ((int)($filedPeriodImportResult['created_count'] ?? 0) > 0) {
@@ -401,7 +401,7 @@ final class CompanyAction implements ActionInterfaceFramework
     private function refreshSic(RequestFramework $request): ActionResultFramework
     {
         try {
-            $result = (new CompaniesHouseSICService())->refreshLookupData();
+            $result = (new \eel_accounts\Service\CompaniesHouseSICService())->refreshLookupData();
 
             return ActionResultFramework::success(
                 ['page.context'],
@@ -432,7 +432,7 @@ final class CompanyAction implements ActionInterfaceFramework
 
     private function saveCompany(RequestFramework $request): ActionResultFramework
     {
-        $companyId = (new AccountingContextService())->authCompanyId();
+        $companyId = (new \eel_accounts\Service\AccountingContextService())->authCompanyId();
 
         if ($companyId <= 0) {
             return new ActionResultFramework(
@@ -446,15 +446,15 @@ final class CompanyAction implements ActionInterfaceFramework
         }
 
         try {
-            $repository = new CompanyRepository();
+            $repository = new \eel_accounts\Repository\CompanyRepository();
             $company = $repository->fetchCompanyDetails($companyId);
 
             if ($company === null) {
                 throw new RuntimeException('The selected company could not be loaded.');
             }
 
-            $settingsStore = new CompanySettingsStore($companyId);
-            $settingsService = new CompanySettingsService();
+            $settingsStore = new \eel_accounts\Store\CompanySettingsStore($companyId);
+            $settingsService = new \eel_accounts\Service\CompanySettingsService();
 
             $settingsService->saveCompanySection($settingsStore, [
                 'company_id' => (string)$companyId,
@@ -498,7 +498,7 @@ final class CompanyAction implements ActionInterfaceFramework
 
     private function saveImportReview(RequestFramework $request): ActionResultFramework
     {
-        $companyId = (new AccountingContextService())->authCompanyId();
+        $companyId = (new \eel_accounts\Service\AccountingContextService())->authCompanyId();
 
         if ($companyId <= 0) {
             return new ActionResultFramework(
@@ -512,8 +512,8 @@ final class CompanyAction implements ActionInterfaceFramework
         }
 
         try {
-            $settingsStore = new CompanySettingsStore($companyId);
-            $settingsService = new CompanySettingsService();
+            $settingsStore = new \eel_accounts\Store\CompanySettingsStore($companyId);
+            $settingsService = new \eel_accounts\Service\CompanySettingsService();
 
             $settingsService->saveImportReviewSection($settingsStore, [
                 'enable_duplicate_file_check' => $this->checkboxValue($request, 'enable_duplicate_file_check'),
@@ -543,7 +543,7 @@ final class CompanyAction implements ActionInterfaceFramework
 
     private function clearImportedAccountingData(RequestFramework $request): ActionResultFramework
     {
-        $companyId = (new AccountingContextService())->authCompanyId();
+        $companyId = (new \eel_accounts\Service\AccountingContextService())->authCompanyId();
 
         if ($companyId <= 0) {
             return new ActionResultFramework(
@@ -557,12 +557,12 @@ final class CompanyAction implements ActionInterfaceFramework
         }
 
         try {
-            $company = (new CompanyRepository())->fetchCompanyDetails($companyId);
+            $company = (new \eel_accounts\Repository\CompanyRepository())->fetchCompanyDetails($companyId);
             if ($company === null) {
                 throw new RuntimeException('The selected company could not be loaded.');
             }
 
-            $result = (new CompanyDataResetService())->clearImportedAccountingData(
+            $result = (new \eel_accounts\Service\CompanyDataResetService())->clearImportedAccountingData(
                 $companyId,
                 trim((string)$request->post('company_clear_confirmation', '')),
                 'companies_page'
@@ -617,7 +617,7 @@ final class CompanyAction implements ActionInterfaceFramework
 
     private function deleteOrphanedTransferredFiles(RequestFramework $request): ActionResultFramework
     {
-        $companyId = (new AccountingContextService())->authCompanyId();
+        $companyId = (new \eel_accounts\Service\AccountingContextService())->authCompanyId();
 
         if ($companyId <= 0) {
             return new ActionResultFramework(
@@ -631,12 +631,12 @@ final class CompanyAction implements ActionInterfaceFramework
         }
 
         try {
-            $company = (new CompanyRepository())->fetchCompanyDetails($companyId);
+            $company = (new \eel_accounts\Repository\CompanyRepository())->fetchCompanyDetails($companyId);
             if ($company === null) {
                 throw new RuntimeException('The selected company could not be loaded.');
             }
 
-            $cleanupService = new CompanyOrphanedFileCleanupService();
+            $cleanupService = new \eel_accounts\Service\CompanyOrphanedFileCleanupService();
             $result = $cleanupService->deleteOrphanedTransferredFiles($companyId, 'companies_page');
             $counts = is_array($result['counts'] ?? null) ? $result['counts'] : [];
             $deletedCount = (int)($counts['statement_files_deleted'] ?? 0)
@@ -696,7 +696,7 @@ final class CompanyAction implements ActionInterfaceFramework
 
     private function deleteCompany(RequestFramework $request): ActionResultFramework
     {
-        $companyId = (new AccountingContextService())->authCompanyId();
+        $companyId = (new \eel_accounts\Service\AccountingContextService())->authCompanyId();
         $deleteConfirmSwitch = $this->checkboxValue($request, 'delete_company_confirm');
         $deleteConfirmValue = trim((string)$request->post('delete_company_confirm_value', ''));
 
@@ -712,7 +712,7 @@ final class CompanyAction implements ActionInterfaceFramework
         }
 
         try {
-            $repository = new CompanyRepository();
+            $repository = new \eel_accounts\Repository\CompanyRepository();
             $company = $repository->fetchCompanyDetails($companyId);
             if ($company === null) {
                 throw new RuntimeException('The selected company could not be loaded.');
@@ -763,11 +763,11 @@ final class CompanyAction implements ActionInterfaceFramework
             $nextAccountingPeriodId = 0;
 
             if ($nextCompanyId > 0) {
-                $firstAccountingPeriod = (new AccountingPeriodRepository())->fetchAccountingPeriods($nextCompanyId);
+                $firstAccountingPeriod = (new \eel_accounts\Repository\AccountingPeriodRepository())->fetchAccountingPeriods($nextCompanyId);
                 $nextAccountingPeriodId = (int)($firstAccountingPeriod[0]['id'] ?? 0);
             }
 
-            (new AccountingContextService())->setPageContext(
+            (new \eel_accounts\Service\AccountingContextService())->setPageContext(
                 $nextCompanyId,
                 $nextCompanyName,
                 $nextCompanyNumber,
@@ -804,7 +804,7 @@ final class CompanyAction implements ActionInterfaceFramework
 
     private function saveAccountingPeriod(RequestFramework $request, bool $isCreate): ActionResultFramework
     {
-        $companyId = (new AccountingContextService())->authCompanyId();
+        $companyId = (new \eel_accounts\Service\AccountingContextService())->authCompanyId();
 
         if ($companyId <= 0) {
             return new ActionResultFramework(
@@ -831,21 +831,21 @@ final class CompanyAction implements ActionInterfaceFramework
         }
 
         try {
-            $companyRepository = new CompanyRepository();
+            $companyRepository = new \eel_accounts\Repository\CompanyRepository();
             $company = $companyRepository->fetchCompanyDetails($companyId);
 
             if ($company === null) {
                 throw new RuntimeException('The selected company could not be loaded.');
             }
 
-            $settingsStore = new CompanySettingsStore($companyId);
-            $settingsService = new CompanySettingsService();
+            $settingsStore = new \eel_accounts\Store\CompanySettingsStore($companyId);
+            $settingsService = new \eel_accounts\Service\CompanySettingsService();
             $settings = [
                 'company_id' => (string)$companyId,
                 'accounting_period_id' => $isCreate ? '' : (string)$requestedAccountingPeriodId,
                 'financial_period_label' => $financialPeriodLabel !== ''
                     ? $financialPeriodLabel
-                    : TaxPeriodService::accountingPeriodLabel($periodStart, $periodEnd),
+                    : \eel_accounts\Service\TaxPeriodService::accountingPeriodLabel($periodStart, $periodEnd),
                 'period_start' => $periodStart,
                 'period_end' => $periodEnd,
             ];
@@ -857,7 +857,7 @@ final class CompanyAction implements ActionInterfaceFramework
                 throw new RuntimeException('The accounting period could not be saved.');
             }
 
-            (new AccountingContextService())->setPageContext(
+            (new \eel_accounts\Service\AccountingContextService())->setPageContext(
                 $companyId,
                 trim((string)($company['company_name'] ?? '')),
                 trim((string)($company['company_number'] ?? '')),
@@ -924,7 +924,7 @@ final class CompanyAction implements ActionInterfaceFramework
             return $errors;
         }
 
-        $repository = new AccountingPeriodRepository();
+        $repository = new \eel_accounts\Repository\AccountingPeriodRepository();
         $periodId = $isCreate ? 0 : $accountingPeriodId;
 
         if (!$isCreate && $repository->fetchAccountingPeriod($companyId, $accountingPeriodId) === null) {
@@ -948,7 +948,7 @@ final class CompanyAction implements ActionInterfaceFramework
     private function searchCompanies(string $searchTerm): array
     {
         $environment = $this->companiesHouseEnvironment();
-        $service = new CompaniesHouseService($environment);
+        $service = new \eel_accounts\Service\CompaniesHouseService($environment);
         $results = [];
         $mode = ctype_digit($searchTerm) ? 'number' : 'term';
 
@@ -1033,7 +1033,7 @@ final class CompanyAction implements ActionInterfaceFramework
 
     private function companiesHouseEnvironment(): string
     {
-        return AccountingConfigurationStore::companiesHouseMode();
+        return \eel_accounts\Store\AccountingConfigurationStore::companiesHouseMode();
     }
 
     private function ensureSicLookupDataForProfile(?array $profile): void
@@ -1042,7 +1042,7 @@ final class CompanyAction implements ActionInterfaceFramework
             return;
         }
 
-        (new CompaniesHouseSICService())->ensureLookupDataAvailable();
+        (new \eel_accounts\Service\CompaniesHouseSICService())->ensureLookupDataAvailable();
     }
 
     private function checkboxValue(RequestFramework $request, string $field): bool

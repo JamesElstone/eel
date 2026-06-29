@@ -21,7 +21,7 @@ final class _dashboard_recent_transactionsCard extends CardBaseFramework
         return [
             [
                 'key' => 'dashboard_data',
-                'service' => DashboardRepository::class,
+                'service' => \eel_accounts\Repository\DashboardRepository::class,
                 'method' => 'fetchDashboardData',
                 'params' => [
                     'companyId' => ':company.id',

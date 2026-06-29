@@ -21,7 +21,7 @@ final class _year_end_audit_logCard extends CardBaseFramework
         return [
             [
                 'key' => 'year_end_audit_rows',
-                'service' => AccountingAuditRepository::class,
+                'service' => \eel_accounts\Repository\AccountingAuditRepository::class,
                 'method' => 'fetchRecentYearEndAudit',
                 'params' => [
                     'limit' => 200,

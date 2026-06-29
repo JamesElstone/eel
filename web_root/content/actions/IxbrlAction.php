@@ -17,7 +17,7 @@ final class IxbrlAction implements ActionInterfaceFramework
         $changedFacts = ['ixbrl.readiness', 'ixbrl.trial.balance', 'ixbrl.accounts.mapping', 'ixbrl.facts.preview', 'ixbrl.generation', 'page.context'];
 
         try {
-            $readiness = (new IxbrlReadinessService())->getReadiness($companyId, $accountingPeriodId);
+            $readiness = (new \eel_accounts\Service\IxbrlReadinessService())->getReadiness($companyId, $accountingPeriodId);
             if ($intent !== 'validate_ixbrl_external' && empty($readiness['can_build_facts'])) {
                 return $this->result(false, (array)($readiness['blocking_errors'] ?? ['iXBRL readiness checks failed.']), $changedFacts);
             }
@@ -37,19 +37,19 @@ final class IxbrlAction implements ActionInterfaceFramework
 
     private function buildFacts(int $companyId, int $accountingPeriodId): array
     {
-        $runId = (new IxbrlFactBuilderService())->buildFacts($companyId, $accountingPeriodId);
+        $runId = (new \eel_accounts\Service\IxbrlFactBuilderService())->buildFacts($companyId, $accountingPeriodId);
 
         return ['success' => true, 'errors' => [], 'messages' => ['iXBRL facts built for run #' . $runId . '.']];
     }
 
     private function generatePreview(int $companyId, int $accountingPeriodId): array
     {
-        $readiness = (new IxbrlReadinessService())->getReadiness($companyId, $accountingPeriodId);
+        $readiness = (new \eel_accounts\Service\IxbrlReadinessService())->getReadiness($companyId, $accountingPeriodId);
         if (empty($readiness['can_generate'])) {
-            (new IxbrlFactBuilderService())->buildFacts($companyId, $accountingPeriodId);
+            (new \eel_accounts\Service\IxbrlFactBuilderService())->buildFacts($companyId, $accountingPeriodId);
         }
 
-        $result = (new IxbrlRenderService())->generateFilingExport($companyId, $accountingPeriodId);
+        $result = (new \eel_accounts\Service\IxbrlRenderService())->generateFilingExport($companyId, $accountingPeriodId);
         if (!empty($result['success'])) {
             $result['messages'] = ['iXBRL filing export generated.'];
         }
@@ -59,7 +59,7 @@ final class IxbrlAction implements ActionInterfaceFramework
 
     private function validateExternal(int $companyId, int $accountingPeriodId): array
     {
-        $result = (new IxbrlExternalValidationService())->validateLatestRun($companyId, $accountingPeriodId);
+        $result = (new \eel_accounts\Service\IxbrlExternalValidationService())->validateLatestRun($companyId, $accountingPeriodId);
         $status = (string)($result['status'] ?? 'error');
         if ($status === 'passed') {
             return ['success' => true, 'errors' => [], 'messages' => ['Arelle external validation passed.']];

@@ -100,7 +100,7 @@ final class NominalsAction implements ActionInterfaceFramework
             return $this->errorResult('Select a nominal account before deleting it.');
         }
 
-        $accountRepository = new NominalAccountRepository();
+        $accountRepository = new \eel_accounts\Repository\NominalAccountRepository();
         $nominal = $accountRepository->findById($nominalId);
         if ($nominal === null) {
             return $this->errorResult('The selected nominal account could not be found.');
@@ -147,8 +147,8 @@ final class NominalsAction implements ActionInterfaceFramework
             return $this->errorResult('Select a nominal account before saving changes.');
         }
 
-        $subtypeRepository = new NominalSubtypeRepository();
-        $accountRepository = new NominalAccountRepository();
+        $subtypeRepository = new \eel_accounts\Repository\NominalSubtypeRepository();
+        $accountRepository = new \eel_accounts\Repository\NominalAccountRepository();
         $subtypeIndex = [];
 
         foreach ($subtypeRepository->fetchNominalSubtypes() as $subtype) {
@@ -207,7 +207,7 @@ final class NominalsAction implements ActionInterfaceFramework
             return $this->errorResult('Select a nominal category before saving changes.');
         }
 
-        $subtypeRepository = new NominalSubtypeRepository();
+        $subtypeRepository = new \eel_accounts\Repository\NominalSubtypeRepository();
         $input = [
             'code' => trim((string)$request->post('subtype_code', '')),
             'name' => trim((string)$request->post('subtype_name', '')),
@@ -252,15 +252,15 @@ final class NominalsAction implements ActionInterfaceFramework
 
     private function saveNominals(RequestFramework $request): ActionResultFramework
     {
-        $companyId = (new AccountingContextService())->authCompanyId();
+        $companyId = (new \eel_accounts\Service\AccountingContextService())->authCompanyId();
 
         if ($companyId <= 0) {
             return $this->errorResult('Select a company before saving nominal defaults.');
         }
 
         try {
-            $settingsStore = new CompanySettingsStore($companyId);
-            $settingsService = new CompanySettingsService();
+            $settingsStore = new \eel_accounts\Store\CompanySettingsStore($companyId);
+            $settingsService = new \eel_accounts\Service\CompanySettingsService();
             $settings = [
                 'default_bank_nominal_id' => trim((string)$request->post('default_bank_nominal_id', '')),
                 'default_trade_nominal_id' => trim((string)$request->post('default_trade_nominal_id', '')),
@@ -271,7 +271,7 @@ final class NominalsAction implements ActionInterfaceFramework
             ];
 
             $settingsService->saveNominalsSection($settingsStore, $settings);
-            $nominalAccounts = (new NominalAccountRepository())->fetchNominalAccounts($companyId);
+            $nominalAccounts = (new \eel_accounts\Repository\NominalAccountRepository())->fetchNominalAccounts($companyId);
 
             return ActionResultFramework::success(
                 ['page.context'],
@@ -287,16 +287,16 @@ final class NominalsAction implements ActionInterfaceFramework
 
     private function applySuggestions(RequestFramework $request): ActionResultFramework
     {
-        $companyId = (new AccountingContextService())->authCompanyId();
+        $companyId = (new \eel_accounts\Service\AccountingContextService())->authCompanyId();
 
         if ($companyId <= 0) {
             return $this->errorResult('Select a company before applying suggested nominal defaults.');
         }
 
         try {
-            $settingsStore = new CompanySettingsStore($companyId);
-            $settingsService = new CompanySettingsService();
-            $nominalAccounts = (new NominalAccountRepository())->fetchNominalAccounts($companyId);
+            $settingsStore = new \eel_accounts\Store\CompanySettingsStore($companyId);
+            $settingsService = new \eel_accounts\Service\CompanySettingsService();
+            $nominalAccounts = (new \eel_accounts\Repository\NominalAccountRepository())->fetchNominalAccounts($companyId);
             $settings = $settingsService->loadFromDatabase($settingsStore, $companyId, 0);
 
             if (!$settingsService->applyNominalSuggestions($settingsStore, $settings, $nominalAccounts)) {

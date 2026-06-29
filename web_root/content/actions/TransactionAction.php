@@ -58,9 +58,9 @@ final class TransactionAction implements ActionInterfaceFramework
         $company = (array)($pageContext['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
-        $dashboardRepository = self::service($services, DashboardRepository::class);
+        $dashboardRepository = self::service($services, \eel_accounts\Repository\DashboardRepository::class);
         $monthStatus = $companyId > 0 && $accountingPeriodId > 0
-            ? self::service($services, StatementUploadService::class)->buildMonthStatus($companyId, $accountingPeriodId)
+            ? self::service($services, \eel_accounts\Service\StatementUploadService::class)->buildMonthStatus($companyId, $accountingPeriodId)
             : [];
         $context = $actionResult->context();
         $monthKey = $dashboardRepository->normaliseTransactionMonthFilter((string)(
@@ -123,9 +123,9 @@ final class TransactionAction implements ActionInterfaceFramework
         $flashMessages = [];
         $companyId = $this->selectedCompanyId($request);
         $defaultBankNominalId = $this->defaultBankNominalId($companyId);
-        $transactionCategorisationService = self::service($services, TransactionCategorisationService::class);
-        $categorisationRuleService = self::service($services, CategorisationRuleService::class);
-        $transactionJournalService = self::service($services, TransactionJournalService::class);
+        $transactionCategorisationService = self::service($services, \eel_accounts\Service\TransactionCategorisationService::class);
+        $categorisationRuleService = self::service($services, \eel_accounts\Service\CategorisationRuleService::class);
+        $transactionJournalService = self::service($services, \eel_accounts\Service\TransactionJournalService::class);
         $transactionId = $this->positiveInt($request->post('transaction_id', 0));
         $nominalAccountId = $this->nullablePositiveInt($request->post('nominal_account_id', null));
         $transferAccountId = $this->nullablePositiveInt($request->post('transfer_account_id', null));
@@ -272,7 +272,7 @@ final class TransactionAction implements ActionInterfaceFramework
 
         try {
             InterfaceDB::beginTransaction();
-            $batchResult = self::service($services, TransactionCategorisationService::class)->applyAutoCategoryBatch(
+            $batchResult = self::service($services, \eel_accounts\Service\TransactionCategorisationService::class)->applyAutoCategoryBatch(
                 $companyId,
                 $accountingPeriodId,
                 $autoScope,
@@ -281,7 +281,7 @@ final class TransactionAction implements ActionInterfaceFramework
             );
 
             if ($autoScope === 'auto') {
-                $journalService = self::service($services, TransactionJournalService::class);
+                $journalService = self::service($services, \eel_accounts\Service\TransactionJournalService::class);
                 foreach ((array)($batchResult['changed_transaction_ids'] ?? []) as $changedTransactionId) {
                     $journalResult = $journalService->syncJournalForTransaction(
                         (int)$changedTransactionId,
@@ -324,7 +324,7 @@ final class TransactionAction implements ActionInterfaceFramework
         $errors = [];
         $flashMessages = [];
 
-        $postResult = self::service($services, TransactionJournalService::class)->postCategorisedTransactions(
+        $postResult = self::service($services, \eel_accounts\Service\TransactionJournalService::class)->postCategorisedTransactions(
             $companyId,
             $accountingPeriodId,
             $defaultBankNominalId,
@@ -351,7 +351,7 @@ final class TransactionAction implements ActionInterfaceFramework
         $companyId = $this->selectedCompanyId($request);
         $ruleId = $this->nullablePositiveInt($request->post('rule_id', null));
         $postData = $this->postArray($request);
-        $saveResult = self::service($services, CategorisationRuleService::class)->saveRule($companyId, $postData, $ruleId);
+        $saveResult = self::service($services, \eel_accounts\Service\CategorisationRuleService::class)->saveRule($companyId, $postData, $ruleId);
         $errors = array_map('strval', (array)($saveResult['errors'] ?? []));
         $flashMessages = [];
 
@@ -371,7 +371,7 @@ final class TransactionAction implements ActionInterfaceFramework
     private function exportCategorisationRules(RequestFramework $request, PageServiceFramework $services): never
     {
         $companyId = $this->selectedCompanyId($request);
-        $exportPayload = self::service($services, CategorisationRuleService::class)->exportRules($companyId);
+        $exportPayload = self::service($services, \eel_accounts\Service\CategorisationRuleService::class)->exportRules($companyId);
         $encoded = json_encode($exportPayload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
         if ($encoded === false) {
@@ -397,7 +397,7 @@ final class TransactionAction implements ActionInterfaceFramework
         $context = $this->filterContext($request);
         $companyId = $this->selectedCompanyId($request);
         $ruleImportJson = trim((string)$request->post('rules_import_json', ''));
-        $importResult = self::service($services, CategorisationRuleService::class)->importRules($companyId, $ruleImportJson);
+        $importResult = self::service($services, \eel_accounts\Service\CategorisationRuleService::class)->importRules($companyId, $ruleImportJson);
         $errors = array_map('strval', (array)($importResult['errors'] ?? []));
         $flashMessages = [];
         $context['rule_import_json'] = $ruleImportJson;
@@ -426,7 +426,7 @@ final class TransactionAction implements ActionInterfaceFramework
         $context = $this->filterContext($request);
         $ruleId = $this->positiveInt($request->post('rule_id', 0));
 
-        if (self::service($services, CategorisationRuleService::class)->deleteRule($this->selectedCompanyId($request), $ruleId)) {
+        if (self::service($services, \eel_accounts\Service\CategorisationRuleService::class)->deleteRule($this->selectedCompanyId($request), $ruleId)) {
             if ((int)($context['editing_rule_id'] ?? 0) === $ruleId) {
                 $context['editing_rule_id'] = 0;
             }
@@ -443,7 +443,7 @@ final class TransactionAction implements ActionInterfaceFramework
         $ruleId = $this->positiveInt($request->post('rule_id', 0));
         $targetActive = $this->checkboxValue($request, 'target_is_active');
 
-        if (self::service($services, CategorisationRuleService::class)->setRuleActive($this->selectedCompanyId($request), $ruleId, $targetActive)) {
+        if (self::service($services, \eel_accounts\Service\CategorisationRuleService::class)->setRuleActive($this->selectedCompanyId($request), $ruleId, $targetActive)) {
             return $this->result(true, [], [$targetActive ? 'Categorisation rule activated.' : 'Categorisation rule paused.'], $context);
         }
 
@@ -456,7 +456,7 @@ final class TransactionAction implements ActionInterfaceFramework
         $transactionId = $this->positiveInt($request->post('transaction_id', 0));
 
         try {
-            $result = self::service($services, ReceiptDownloadService::class)->downloadReceiptForTransaction($transactionId);
+            $result = self::service($services, \eel_accounts\Service\ReceiptDownloadService::class)->downloadReceiptForTransaction($transactionId);
             if (!empty($result['success'])) {
                 return $this->result(true, [], [(string)($result['message'] ?? 'Receipt download retried.')], $context);
             }
@@ -469,7 +469,7 @@ final class TransactionAction implements ActionInterfaceFramework
 
     private function filterContext(RequestFramework $request): array
     {
-        $dashboardRepository = new DashboardRepository();
+        $dashboardRepository = new \eel_accounts\Repository\DashboardRepository();
 
         return [
             'month_key' => $dashboardRepository->normaliseTransactionMonthFilter((string)$request->input('month_key', '')),
@@ -513,14 +513,14 @@ final class TransactionAction implements ActionInterfaceFramework
 
     private function selectedCompanyId(RequestFramework $request): int
     {
-        $context = new AccountingContextService();
+        $context = new \eel_accounts\Service\AccountingContextService();
 
         return HelperFramework::sanitiseId($request->input('company_id', null), $context->companyId($request));
     }
 
     private function selectedAccountingPeriodId(RequestFramework $request): int
     {
-        $context = new AccountingContextService();
+        $context = new \eel_accounts\Service\AccountingContextService();
 
         return HelperFramework::sanitiseId($request->input('accounting_period_id', null), $context->accountingPeriodId($request));
     }
@@ -531,7 +531,7 @@ final class TransactionAction implements ActionInterfaceFramework
             return 0;
         }
 
-        $settings = (new CompanySettingsStore($companyId))->all();
+        $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
         $value = trim((string)($settings['default_bank_nominal_id'] ?? ''));
 
         return ctype_digit($value) ? (int)$value : 0;

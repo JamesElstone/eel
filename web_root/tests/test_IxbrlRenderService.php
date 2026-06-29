@@ -4,15 +4,15 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 (new GeneratedServiceClassTestHarness())->run(
-    IxbrlRenderService::class,
-    static function (GeneratedServiceClassTestHarness $harness, IxbrlRenderService $service): void {
-        $harness->check(IxbrlRenderService::class, 'refuses generation when no fact run exists', static function () use ($harness, $service): void {
+    \eel_accounts\Service\IxbrlRenderService::class,
+    static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\IxbrlRenderService $service): void {
+        $harness->check(\eel_accounts\Service\IxbrlRenderService::class, 'refuses generation when no fact run exists', static function () use ($harness, $service): void {
             $result = $service->generatePreview(0, 0);
             $harness->assertSame(false, $result['success']);
         });
 
-        $harness->check(IxbrlRenderService::class, 'renders Inline XBRL facts with contexts and units', static function () use ($harness, $service): void {
-            $method = new ReflectionMethod(IxbrlRenderService::class, 'renderXhtml');
+        $harness->check(\eel_accounts\Service\IxbrlRenderService::class, 'renders Inline XBRL facts with contexts and units', static function () use ($harness, $service): void {
+            $method = new ReflectionMethod(\eel_accounts\Service\IxbrlRenderService::class, 'renderXhtml');
             $method->setAccessible(true);
             $xhtml = (string)$method->invoke($service, ixbrlRenderFixtureFacts());
 
@@ -24,7 +24,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue(str_contains($xhtml, '<ix:nonNumeric name="uk-gaap:MicroEntityAccountsStatement"'));
             $harness->assertSame(false, str_contains($xhtml, 'data-ixbrl-concept'));
 
-            $validator = new ReflectionMethod(IxbrlRenderService::class, 'validateInlineXbrl');
+            $validator = new ReflectionMethod(\eel_accounts\Service\IxbrlRenderService::class, 'validateInlineXbrl');
             $validator->setAccessible(true);
             $harness->assertSame([], $validator->invoke($service, $xhtml));
         });

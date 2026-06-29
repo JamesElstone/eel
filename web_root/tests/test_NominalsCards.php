@@ -16,7 +16,7 @@ $harness->run(_nominals_accountsCard::class, function (GeneratedServiceClassTest
         $services = $card->services();
 
         $harness->assertSame('nominal_account_catalog', (string)($services[0]['key'] ?? ''));
-        $harness->assertSame(NominalAccountRepository::class, (string)($services[0]['service'] ?? ''));
+        $harness->assertSame(\eel_accounts\Repository\NominalAccountRepository::class, (string)($services[0]['service'] ?? ''));
         $harness->assertSame('fetchNominalAccountCatalog', (string)($services[0]['method'] ?? ''));
     });
 

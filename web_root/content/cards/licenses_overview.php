@@ -26,7 +26,7 @@ final class _licenses_overviewCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $service = new LicenseService();
+        $service = new \eel_accounts\Service\LicenseService();
         $licenses = $service->licenseIndex();
         $items = '';
 

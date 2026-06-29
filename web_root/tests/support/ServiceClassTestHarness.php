@@ -93,23 +93,14 @@ final class GeneratedServiceClassTestHarness
     private function ensureTypeLoaded(string $typeName): void
     {
         if (
-            class_exists($typeName, false)
-            || interface_exists($typeName, false)
-            || trait_exists($typeName, false)
+            class_exists($typeName)
+            || interface_exists($typeName)
+            || trait_exists($typeName)
         ) {
             return;
         }
 
-        $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(APP_CLASSES));
-
-        foreach ($iterator as $fileInfo) {
-            if (!$fileInfo->isFile() || $fileInfo->getFilename() !== $typeName . '.php') {
-                continue;
-            }
-
-            require_once $fileInfo->getPathname();
-            return;
-        }
+        throw new RuntimeException('Unable to autoload type: ' . $typeName);
     }
 
     private function resolveParameter(ReflectionParameter $parameter): mixed

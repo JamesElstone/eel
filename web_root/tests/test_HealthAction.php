@@ -16,19 +16,19 @@ $harness->run(HealthAction::class, function (GeneratedServiceClassTestHarness $h
         throw new RuntimeException('Unexpected HealthAction instance.');
     }
 
-    $service = new SetupHealthService();
+    $service = new \eel_accounts\Service\SetupHealthService();
 
-    $buildSetupHealthItems = new ReflectionMethod(SetupHealthService::class, 'buildSetupHealthItems');
+    $buildSetupHealthItems = new ReflectionMethod(\eel_accounts\Service\SetupHealthService::class, 'buildSetupHealthItems');
     $buildSetupHealthItems->setAccessible(true);
 
-    $filterSetupHealthItems = new ReflectionMethod(SetupHealthService::class, 'filterSetupHealthItems');
+    $filterSetupHealthItems = new ReflectionMethod(\eel_accounts\Service\SetupHealthService::class, 'filterSetupHealthItems');
     $filterSetupHealthItems->setAccessible(true);
-    $buildAccountingPeriodStatus = new ReflectionMethod(SetupHealthService::class, 'buildAccountingPeriodStatus');
+    $buildAccountingPeriodStatus = new ReflectionMethod(\eel_accounts\Service\SetupHealthService::class, 'buildAccountingPeriodStatus');
     $buildAccountingPeriodStatus->setAccessible(true);
-    $buildDefaultNominalStatus = new ReflectionMethod(SetupHealthService::class, 'buildDefaultNominalStatus');
+    $buildDefaultNominalStatus = new ReflectionMethod(\eel_accounts\Service\SetupHealthService::class, 'buildDefaultNominalStatus');
     $buildDefaultNominalStatus->setAccessible(true);
 
-    $harness->check(SetupHealthService::class, 'buildSetupHealthItems returns expected status rows', function () use (
+    $harness->check(\eel_accounts\Service\SetupHealthService::class, 'buildSetupHealthItems returns expected status rows', function () use (
         $harness,
         $service,
         $buildSetupHealthItems
@@ -68,7 +68,7 @@ $harness->run(HealthAction::class, function (GeneratedServiceClassTestHarness $h
         $harness->assertSame('A UTR is saved for the selected company.', $itemsWithUtr[7]['detail'] ?? '');
     });
 
-    $harness->check(SetupHealthService::class, 'filterSetupHealthItems returns only requested titles', function () use (
+    $harness->check(\eel_accounts\Service\SetupHealthService::class, 'filterSetupHealthItems returns only requested titles', function () use (
         $harness,
         $service,
         $buildSetupHealthItems,
@@ -96,7 +96,7 @@ $harness->run(HealthAction::class, function (GeneratedServiceClassTestHarness $h
         $harness->assertSame('Corporation tax UTR', $filtered[2]['title'] ?? '');
     });
 
-    $harness->check(SetupHealthService::class, 'accounting period status distinguishes missing and gapped accounting periods', function () use (
+    $harness->check(\eel_accounts\Service\SetupHealthService::class, 'accounting period status distinguishes missing and gapped accounting periods', function () use (
         $harness,
         $service,
         $buildAccountingPeriodStatus
@@ -118,7 +118,7 @@ $harness->run(HealthAction::class, function (GeneratedServiceClassTestHarness $h
         $harness->assertSame('ok', $complete['state'] ?? null);
     });
 
-    $harness->check(SetupHealthService::class, 'default nominal status distinguishes none, partial, and complete assignments', function () use (
+    $harness->check(\eel_accounts\Service\SetupHealthService::class, 'default nominal status distinguishes none, partial, and complete assignments', function () use (
         $harness,
         $service,
         $buildDefaultNominalStatus

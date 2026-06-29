@@ -41,7 +41,7 @@ final class _journals extends PageContextFramework
 
         return [
             'journal_entries' => ($companyId > 0 && $accountingPeriodId > 0)
-                ? (new TransactionJournalService())->fetchJournals($companyId, $accountingPeriodId)
+                ? (new \eel_accounts\Service\TransactionJournalService())->fetchJournals($companyId, $accountingPeriodId)
                 : [],
         ];
     }

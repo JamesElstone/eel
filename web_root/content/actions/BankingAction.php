@@ -81,7 +81,7 @@ final class BankingAction implements ActionInterfaceFramework
     private function saveCompanyAccount(RequestFramework $request, PageServiceFramework $services, bool $isUpdate): ActionResultFramework
     {
         $companyAccountService = $this->companyAccountService($services);
-        $accountingContext = new AccountingContextService();
+        $accountingContext = new \eel_accounts\Service\AccountingContextService();
 
         $companyId = $accountingContext->authCompanyId();
         $accountingPeriodId = $accountingContext->authAccountingPeriodId();
@@ -139,7 +139,7 @@ final class BankingAction implements ActionInterfaceFramework
 
     private function deleteCompanyAccount(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
-        $accountingContext = new AccountingContextService();
+        $accountingContext = new \eel_accounts\Service\AccountingContextService();
         $companyId = $accountingContext->authCompanyId();
         $accountingPeriodId = $accountingContext->authAccountingPeriodId();
         $accountId = max(0, (int)$request->input('account_id', 0));
@@ -171,7 +171,7 @@ final class BankingAction implements ActionInterfaceFramework
     private function saveAccountMapping(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
 
-        $accountingContext = new AccountingContextService();
+        $accountingContext = new \eel_accounts\Service\AccountingContextService();
         $companyId = $accountingContext->authCompanyId();
         $accountingPeriodId = $accountingContext->authAccountingPeriodId();
 
@@ -182,7 +182,7 @@ final class BankingAction implements ActionInterfaceFramework
             'account_id' => max(0, (int)$request->input('account_id', $request->input('mapping_account_id', 0))),
         ];
 
-        foreach (array_keys(StatementUploadService::fieldDefinitions()) as $fieldName) {
+        foreach (array_keys(\eel_accounts\Service\StatementUploadService::fieldDefinitions()) as $fieldName) {
             $payload['mapping_' . $fieldName] = $request->input('mapping_' . $fieldName, '');
         }
 
@@ -221,10 +221,10 @@ final class BankingAction implements ActionInterfaceFramework
             );
         }
 
-        $accountingContext = new AccountingContextService();
+        $accountingContext = new \eel_accounts\Service\AccountingContextService();
         $companyId = $accountingContext->authCompanyId();
         $accountingPeriodId = $accountingContext->authAccountingPeriodId();
-        $result = (new CompanyAccountNominalService())->assignMissingNominals($companyId);
+        $result = (new \eel_accounts\Service\CompanyAccountNominalService())->assignMissingNominals($companyId);
         $messages = [];
         $errors = array_map('strval', (array)($result['errors'] ?? []));
 
@@ -252,7 +252,7 @@ final class BankingAction implements ActionInterfaceFramework
     private function queryState(RequestFramework $request, array $overrides = []): array
     {
 
-        $accountingContext = new AccountingContextService();
+        $accountingContext = new \eel_accounts\Service\AccountingContextService();
         $companyId = $accountingContext->authCompanyId();
         $accountingPeriodId = $accountingContext->authAccountingPeriodId();
 
@@ -274,7 +274,7 @@ final class BankingAction implements ActionInterfaceFramework
     {
         return [
             'account_name' => trim((string)$request->input('account_name', '')),
-            'account_type' => trim((string)$request->input('account_type', CompanyAccountService::TYPE_BANK)),
+            'account_type' => trim((string)$request->input('account_type', \eel_accounts\Service\CompanyAccountService::TYPE_BANK)),
             'institution_name' => trim((string)$request->input('institution_name', '')),
             'account_identifier' => trim((string)$request->input('account_identifier', '')),
             'nominal_account_id' => trim((string)$request->input('nominal_account_id', '')),
@@ -321,22 +321,22 @@ final class BankingAction implements ActionInterfaceFramework
         );
     }
 
-    private function companyAccountService(PageServiceFramework $services): CompanyAccountService
+    private function companyAccountService(PageServiceFramework $services): \eel_accounts\Service\CompanyAccountService
     {
-        $service = $services->get(CompanyAccountService::class);
+        $service = $services->get(\eel_accounts\Service\CompanyAccountService::class);
 
-        if (!$service instanceof CompanyAccountService) {
+        if (!$service instanceof \eel_accounts\Service\CompanyAccountService) {
             throw new RuntimeException('CompanyAccountService is unavailable.');
         }
 
         return $service;
     }
 
-    private function statementUploadService(PageServiceFramework $services): StatementUploadService
+    private function statementUploadService(PageServiceFramework $services): \eel_accounts\Service\StatementUploadService
     {
-        $service = $services->get(StatementUploadService::class);
+        $service = $services->get(\eel_accounts\Service\StatementUploadService::class);
 
-        if (!$service instanceof StatementUploadService) {
+        if (!$service instanceof \eel_accounts\Service\StatementUploadService) {
             throw new RuntimeException('StatementUploadService is unavailable.');
         }
 

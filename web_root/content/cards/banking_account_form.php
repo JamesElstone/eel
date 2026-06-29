@@ -19,7 +19,7 @@ final class _banking_account_formCard extends CardBaseFramework
         return [
             [
                 'key' => 'nominal_accounts',
-                'service' => NominalAccountRepository::class,
+                'service' => \eel_accounts\Repository\NominalAccountRepository::class,
                 'method' => 'fetchNominalAccounts',
                 'params' => [
                     'companyId' => ':company.id',
@@ -27,7 +27,7 @@ final class _banking_account_formCard extends CardBaseFramework
             ],
             [
                 'key' => 'LookupCompanyAccount',
-                'service' => CompanyAccountService::class,
+                'service' => \eel_accounts\Service\CompanyAccountService::class,
                 'method' => 'fetchAccount',
                 'params' => [
                     'companyId' => ':company.id',
@@ -87,7 +87,7 @@ final class _banking_account_formCard extends CardBaseFramework
         $bankingAccountForm = $this->buildFormState($LookupCompanyAccount, (array)($context['banking_account_form'] ?? $page['banking_account_form'] ?? []));
 
         $optionsHtml = '';
-        foreach (CompanyAccountService::accountTypes() as $accountType => $accountTypeLabel) {
+        foreach (\eel_accounts\Service\CompanyAccountService::accountTypes() as $accountType => $accountTypeLabel) {
             $selected = (string)$bankingAccountForm['account_type'] === $accountType ? ' selected' : '';
             $optionsHtml .= '<option value="' . HelperFramework::escape($accountType) . '"' . $selected . '>' . HelperFramework::escape($accountTypeLabel) . '</option>';
         }
@@ -185,7 +185,7 @@ final class _banking_account_formCard extends CardBaseFramework
     {
         $defaults = [
             'account_name' => '',
-            'account_type' => CompanyAccountService::TYPE_BANK,
+            'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
             'nominal_account_id' => '',
             'institution_name' => '',
             'account_identifier' => '',

@@ -19,7 +19,7 @@ final class _trial_balance_stateCard extends CardBaseFramework
         return [
             [
                 'key' => 'trialBalancePageData',
-                'service' => TrialBalanceService::class,
+                'service' => \eel_accounts\Service\TrialBalanceService::class,
                 'method' => 'fetchTrialBalance',
                 'params' => [
                     'companyId' => ':company_id',
@@ -31,7 +31,7 @@ final class _trial_balance_stateCard extends CardBaseFramework
             ],
             [
                 'key' => 'trialBalanceValidation',
-                'service' => TrialBalanceValidationService::class,
+                'service' => \eel_accounts\Service\TrialBalanceValidationService::class,
                 'method' => 'fetchValidation',
                 'params' => [
                     'companyId' => ':company_id',
@@ -40,7 +40,7 @@ final class _trial_balance_stateCard extends CardBaseFramework
             ],
             [
                 'key' => 'trialBalanceComparison',
-                'service' => TrialBalanceComparisonService::class,
+                'service' => \eel_accounts\Service\TrialBalanceComparisonService::class,
                 'method' => 'fetchComparison',
                 'params' => [
                     'companyId' => ':company_id',

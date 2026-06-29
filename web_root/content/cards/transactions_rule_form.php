@@ -19,12 +19,12 @@ final class _transactions_rule_formCard extends CardBaseFramework
         return [
             [
                 'key' => 'nominal_accounts',
-                'service' => NominalAccountRepository::class,
+                'service' => \eel_accounts\Repository\NominalAccountRepository::class,
                 'method' => 'fetchNominalAccounts',
             ],
             [
                 'key' => 'editing_rule',
-                'service' => CategorisationRuleService::class,
+                'service' => \eel_accounts\Service\CategorisationRuleService::class,
                 'method' => 'fetchRule',
                 'params' => [
                     'companyId' => ':company.id',
@@ -33,7 +33,7 @@ final class _transactions_rule_formCard extends CardBaseFramework
             ],
             [
                 'key' => 'blank_rule_form',
-                'service' => CategorisationRuleService::class,
+                'service' => \eel_accounts\Service\CategorisationRuleService::class,
                 'method' => 'blankRuleForm',
                 'params' => [
                     'companyId' => ':company.id',

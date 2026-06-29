@@ -11,12 +11,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 $harness = new GeneratedServiceClassTestHarness();
 
-$harness->run(hmrcService::class, function (GeneratedServiceClassTestHarness $harness, object $instance): void {
-    if (!$instance instanceof hmrcService) {
+$harness->run(\eel_accounts\Service\hmrcService::class, function (GeneratedServiceClassTestHarness $harness, object $instance): void {
+    if (!$instance instanceof \eel_accounts\Service\hmrcService) {
         throw new RuntimeException('Unexpected hmrcService instance.');
     }
 
-    $harness->check('hmrcService', 'resolveHmrcMode defaults to TEST for missing company id', function () use (
+    $harness->check('eel_accounts\Service\hmrcService', 'resolveHmrcMode defaults to TEST for missing company id', function () use (
         $harness,
         $instance
     ): void {

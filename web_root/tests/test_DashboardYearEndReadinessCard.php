@@ -11,10 +11,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(_dashboard_year_end_readinessCard::class, static function (GeneratedServiceClassTestHarness $harness, _dashboard_year_end_readinessCard $card): void {
-    $harness->check(YearEndChecklistService::class, 'dashboard summary includes only warning and fail checks as top issues', static function () use ($harness): void {
-        $method = new ReflectionMethod(YearEndChecklistService::class, 'topIssuesFromChecks');
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'dashboard summary includes only warning and fail checks as top issues', static function () use ($harness): void {
+        $method = new ReflectionMethod(\eel_accounts\Service\YearEndChecklistService::class, 'topIssuesFromChecks');
         $method->setAccessible(true);
-        $topIssues = $method->invoke(new YearEndChecklistService(), [
+        $topIssues = $method->invoke(new \eel_accounts\Service\YearEndChecklistService(), [
             [
                 'title' => 'Period exists',
                 'status' => 'pass',

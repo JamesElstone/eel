@@ -43,15 +43,15 @@ final class _tax_rates extends PageContextFramework
         ActionResultFramework $actionResult,
         array $baseContext
     ): array {
-        $service = new CorporationTaxRateRuleService();
+        $service = new \eel_accounts\Service\CorporationTaxRateRuleService();
 
         return [
             'tax_rates' => [
                 'rules' => $service->fetchRules(),
-                'source_url' => CorporationTaxRateRuleService::SOURCE_URL,
+                'source_url' => \eel_accounts\Service\CorporationTaxRateRuleService::SOURCE_URL,
             ],
             'tax_treatment_rules' => [
-                'rules' => (new CorporationTaxTreatmentRuleService())->fetchRules(),
+                'rules' => (new \eel_accounts\Service\CorporationTaxTreatmentRuleService())->fetchRules(),
             ],
         ];
     }

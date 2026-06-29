@@ -83,8 +83,8 @@ $harness->run(NominalsAction::class, function (GeneratedServiceClassTestHarness 
 
     $harness->check('NominalsAction', 'returns a validation error when no complete suggestion set is available', function () use ($harness, $instance): void {
         authenticateTestSession();
-        (new AccountingContextService())->setPageContext(1, 'Test Company', '00000000', 0);
-        $settingsStore = new CompanySettingsStore(1);
+        (new \eel_accounts\Service\AccountingContextService())->setPageContext(1, 'Test Company', '00000000', 0);
+        $settingsStore = new \eel_accounts\Store\CompanySettingsStore(1);
         foreach ([
             'default_bank_nominal_id',
             'default_trade_nominal_id',
@@ -143,53 +143,85 @@ $harness->run(NominalsAction::class, function (GeneratedServiceClassTestHarness 
     });
 
     $harness->check('NominalsAction', 'delete_nominal_account rejects referenced nominal accounts', function () use ($harness, $instance): void {
+        ensureNominalsActionReferenceSchema();
+
+        $path = AppConfigurationStore::configPath();
+        $original = file_get_contents($path);
+
+        if (!is_string($original)) {
+            throw new RuntimeException('Unable to read fixture config.');
+        }
+
         $nominalId = nominalsActionInsertNominal('Referenced Action Delete Fixture');
         $companyId = nominalsActionInsertCompany('Referenced Action Delete Fixture Limited');
 
-        InterfaceDB::prepareExecute(
-            'INSERT INTO company_settings (company_id, setting, type, value)
-             VALUES (:company_id, :setting, :type, :value)',
-            [
-                'company_id' => $companyId,
-                'setting' => 'default_bank_nominal_id',
-                'type' => 'int',
-                'value' => (string)$nominalId,
-            ]
-        );
+        try {
+            AppConfigurationStore::set('developer_options', true);
 
-        $request = new RequestFramework(
-            [],
-            ['card_action' => 'Nominals', 'intent' => 'delete_nominal_account', 'nominal_account_id' => (string)$nominalId],
-            ['REQUEST_METHOD' => 'POST', 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest', 'HTTP_ACCEPT' => 'application/json'],
-            [],
-            [],
-            null
-        );
+            InterfaceDB::prepareExecute(
+                'INSERT INTO company_settings (company_id, setting, type, value)
+                 VALUES (:company_id, :setting, :type, :value)',
+                [
+                    'company_id' => $companyId,
+                    'setting' => 'default_bank_nominal_id',
+                    'type' => 'int',
+                    'value' => (string)$nominalId,
+                ]
+            );
 
-        $result = $instance->handle($request, createTestPageServiceFramework());
+            $request = new RequestFramework(
+                [],
+                ['card_action' => 'Nominals', 'intent' => 'delete_nominal_account', 'nominal_account_id' => (string)$nominalId],
+                ['REQUEST_METHOD' => 'POST', 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest', 'HTTP_ACCEPT' => 'application/json'],
+                [],
+                [],
+                null
+            );
 
-        $harness->assertSame(false, $result->isSuccess());
-        $harness->assertSame('This nominal account is in use and cannot be deleted.', (string)($result->flashMessages()[0]['message'] ?? ''));
-        $harness->assertSame(1, (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM nominal_accounts WHERE id = :id', ['id' => $nominalId]));
+            $result = $instance->handle($request, createTestPageServiceFramework());
+
+            $harness->assertSame(false, $result->isSuccess());
+            $harness->assertSame('This nominal account is in use and cannot be deleted.', (string)($result->flashMessages()[0]['message'] ?? ''));
+            $harness->assertSame(1, (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM nominal_accounts WHERE id = :id', ['id' => $nominalId]));
+        } finally {
+            file_put_contents($path, $original, LOCK_EX);
+            AppConfigurationStore::config(true);
+        }
     });
 
     $harness->check('NominalsAction', 'delete_nominal_account deletes unused nominal accounts', function () use ($harness, $instance): void {
+        ensureNominalsActionReferenceSchema();
+
+        $path = AppConfigurationStore::configPath();
+        $original = file_get_contents($path);
+
+        if (!is_string($original)) {
+            throw new RuntimeException('Unable to read fixture config.');
+        }
+
         $nominalId = nominalsActionInsertNominal('Unused Action Delete Fixture');
 
-        $request = new RequestFramework(
-            [],
-            ['card_action' => 'Nominals', 'intent' => 'delete_nominal_account', 'nominal_account_id' => (string)$nominalId],
-            ['REQUEST_METHOD' => 'POST', 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest', 'HTTP_ACCEPT' => 'application/json'],
-            [],
-            [],
-            null
-        );
+        try {
+            AppConfigurationStore::set('developer_options', true);
 
-        $result = $instance->handle($request, createTestPageServiceFramework());
+            $request = new RequestFramework(
+                [],
+                ['card_action' => 'Nominals', 'intent' => 'delete_nominal_account', 'nominal_account_id' => (string)$nominalId],
+                ['REQUEST_METHOD' => 'POST', 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest', 'HTTP_ACCEPT' => 'application/json'],
+                [],
+                [],
+                null
+            );
 
-        $harness->assertSame(true, $result->isSuccess());
-        $harness->assertSame(0, (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM nominal_accounts WHERE id = :id', ['id' => $nominalId]));
-        $harness->assertSame('nominals_accounts', (string)($result->query()['show_card'] ?? ''));
+            $result = $instance->handle($request, createTestPageServiceFramework());
+
+            $harness->assertSame(true, $result->isSuccess());
+            $harness->assertSame(0, (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM nominal_accounts WHERE id = :id', ['id' => $nominalId]));
+            $harness->assertSame('nominals_accounts', (string)($result->query()['show_card'] ?? ''));
+        } finally {
+            file_put_contents($path, $original, LOCK_EX);
+            AppConfigurationStore::config(true);
+        }
     });
 });
 
@@ -223,4 +255,16 @@ function nominalsActionInsertCompany(string $companyName): int
     );
 
     return (int)InterfaceDB::fetchColumn('SELECT id FROM companies WHERE company_number = :number', ['number' => $number]);
+}
+
+function ensureNominalsActionReferenceSchema(): void
+{
+    if (!InterfaceDB::tableExists('corporation_tax_treatment_rules')) {
+        InterfaceDB::execute(
+            'CREATE TABLE corporation_tax_treatment_rules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nominal_account_id INTEGER NULL
+            )'
+        );
+    }
 }

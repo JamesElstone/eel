@@ -33,12 +33,12 @@ final class _hmrc_submission extends PageContextFramework
         $company = (array)($baseContext['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
-        $service = new HmrcCorporationTaxSubmissionService();
+        $service = new \eel_accounts\Service\HmrcCorporationTaxSubmissionService();
         $service->ensureSchema();
-        $mode = $companyId > 0 ? (new hmrcService())->resolveHmrcMode($companyId) : 'TEST';
-        $package = new HmrcSubmissionPackageService();
-        $settings = $companyId > 0 ? (new CompanySettingsStore($companyId))->all() : [];
-        $ctPeriodService = new CorporationTaxPeriodService();
+        $mode = $companyId > 0 ? (new \eel_accounts\Service\hmrcService())->resolveHmrcMode($companyId) : 'TEST';
+        $package = new \eel_accounts\Service\HmrcSubmissionPackageService();
+        $settings = $companyId > 0 ? (new \eel_accounts\Store\CompanySettingsStore($companyId))->all() : [];
+        $ctPeriodService = new \eel_accounts\Service\CorporationTaxPeriodService();
         $sync = $companyId > 0 && $accountingPeriodId > 0
             ? $ctPeriodService->syncForAccountingPeriod($companyId, $accountingPeriodId)
             : ['periods' => []];

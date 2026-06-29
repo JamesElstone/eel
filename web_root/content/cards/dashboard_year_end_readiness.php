@@ -19,7 +19,7 @@ final class _dashboard_year_end_readinessCard extends CardBaseFramework
         return [
             [
                 'key' => 'year_end_dashboard_summary',
-                'service' => YearEndChecklistService::class,
+                'service' => \eel_accounts\Service\YearEndChecklistService::class,
                 'method' => 'fetchDashboardSummary',
                 'params' => [
                     'companyId' => ':company.id',

@@ -36,7 +36,7 @@ final class _year_end extends PageContextFramework
         array $baseContext
     ): array {
         return [
-            'year_end_audit_rows' => (new AccountingAuditRepository())->fetchRecentYearEndAudit(200),
+            'year_end_audit_rows' => (new \eel_accounts\Repository\AccountingAuditRepository())->fetchRecentYearEndAudit(200),
         ];
     }
 }

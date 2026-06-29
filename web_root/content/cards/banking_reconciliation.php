@@ -26,7 +26,7 @@ final class _banking_reconciliationCard extends CardBaseFramework
         return [
             [
                 'key' => 'reconciliationPanels',
-                'service' => BankingReconciliationService::class,
+                'service' => \eel_accounts\Service\BankingReconciliationService::class,
                 'method' => 'fetchAccountPanels',
                 'params' => [
                     'companyId' => ':company.id',
@@ -36,7 +36,7 @@ final class _banking_reconciliationCard extends CardBaseFramework
             ],
             [
                 'key' => 'accounting_period',
-                'service' => AccountingPeriodRepository::class,
+                'service' => \eel_accounts\Repository\AccountingPeriodRepository::class,
                 'method' => 'fetchAccountingPeriod',
                 'params' => [
                     'companyId' => ':company.id',
@@ -75,8 +75,8 @@ final class _banking_reconciliationCard extends CardBaseFramework
             $account = is_array($panel['account'] ?? null) ? $panel['account'] : [];
             $accountName = trim((string)($account['account_name'] ?? 'Company account'));
             $accountType = (string)($panel['account_type'] ?? $account['account_type'] ?? '');
-            $accountTypeLabel = CompanyAccountService::accountTypes()[$accountType] ?? ucfirst($accountType);
-            $statusBadges = $accountType === CompanyAccountService::TYPE_TRADE
+            $accountTypeLabel = \eel_accounts\Service\CompanyAccountService::accountTypes()[$accountType] ?? ucfirst($accountType);
+            $statusBadges = $accountType === \eel_accounts\Service\CompanyAccountService::TYPE_TRADE
                 ? $this->tradeStatusBadges($panel)
                 : $this->bankStatusBadges($panel);
 
@@ -95,7 +95,7 @@ final class _banking_reconciliationCard extends CardBaseFramework
                             <div class="indexed-section-status">' . $statusBadges . '</div>
                         </header>
                         <div class="indexed-section-body">'
-                            . ($accountType === CompanyAccountService::TYPE_TRADE
+                            . ($accountType === \eel_accounts\Service\CompanyAccountService::TYPE_TRADE
                                 ? $this->renderTradePanel($panel, $accountingPeriodLabel)
                                 : $this->renderBankPanel($panel, $accountingPeriodLabel, $index, $context))
                         . '</div>
@@ -117,7 +117,7 @@ final class _banking_reconciliationCard extends CardBaseFramework
 
             $account = is_array($panel['account'] ?? null) ? $panel['account'] : [];
             $accountType = (string)($panel['account_type'] ?? $account['account_type'] ?? '');
-            if ($accountType !== CompanyAccountService::TYPE_TRADE) {
+            if ($accountType !== \eel_accounts\Service\CompanyAccountService::TYPE_TRADE) {
                 $tables[] = $this->bankUploadsTable($panel, (int)$index);
             }
         }

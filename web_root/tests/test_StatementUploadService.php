@@ -10,8 +10,8 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 
 $harness = new GeneratedServiceClassTestHarness();
-$harness->run(StatementUploadService::class, function (GeneratedServiceClassTestHarness $harness, StatementUploadService $service): void {
-    $harness->check(StatementUploadService::class, 'returns null for a missing file MIME detection', function () use ($harness, $service): void {
+$harness->run(\eel_accounts\Service\StatementUploadService::class, function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\StatementUploadService $service): void {
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'returns null for a missing file MIME detection', function () use ($harness, $service): void {
         $reflection = new ReflectionClass($service);
         $method = $reflection->getMethod('detectMimeType');
         $method->setAccessible(true);
@@ -19,13 +19,13 @@ $harness->run(StatementUploadService::class, function (GeneratedServiceClassTest
         $harness->assertSame(null, $method->invoke($service, APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'missing-file.bin'));
     });
 
-    $harness->check(StatementUploadService::class, 'resolveUploadDirectory uses the shared statement directory helper', function () use ($harness): void {
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'resolveUploadDirectory uses the shared statement directory helper', function () use ($harness): void {
         $baseDirectory = APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp' . DIRECTORY_SEPARATOR . 'statement-upload-service';
-        $fileCheckService = new FileCheckService([
+        $fileCheckService = new \eel_accounts\Service\FileCheckService([
             'upload_base_dir' => $baseDirectory,
             'statement_relative_path' => './statements/',
         ], null, static fn(int $companyId): string => $companyId === 42 ? '12345678' : '');
-        $service = new StatementUploadService($baseDirectory, null, null, $fileCheckService);
+        $service = new \eel_accounts\Service\StatementUploadService($baseDirectory, null, null, $fileCheckService);
         $reflection = new ReflectionClass($service);
         $method = $reflection->getMethod('resolveUploadDirectory');
         $method->setAccessible(true);
@@ -36,7 +36,7 @@ $harness->run(StatementUploadService::class, function (GeneratedServiceClassTest
         );
     });
 
-    $harness->check(StatementUploadService::class, 'running balance check accepts matching rows in upload order', function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'running balance check accepts matching rows in upload order', function () use ($harness, $service): void {
         $method = (new ReflectionClass($service))->getMethod('firstRunningBalanceBreak');
         $method->setAccessible(true);
 
@@ -47,7 +47,7 @@ $harness->run(StatementUploadService::class, function (GeneratedServiceClassTest
         ]));
     });
 
-    $harness->check(StatementUploadService::class, 'running balance check accepts matching rows in reverse upload order', function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'running balance check accepts matching rows in reverse upload order', function () use ($harness, $service): void {
         $method = (new ReflectionClass($service))->getMethod('firstRunningBalanceBreak');
         $method->setAccessible(true);
 
@@ -58,7 +58,7 @@ $harness->run(StatementUploadService::class, function (GeneratedServiceClassTest
         ]));
     });
 
-    $harness->check(StatementUploadService::class, 'running balance break identifies only the trusted prefix', function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'running balance break identifies only the trusted prefix', function () use ($harness, $service): void {
         $method = (new ReflectionClass($service))->getMethod('firstRunningBalanceBreak');
         $method->setAccessible(true);
 
@@ -73,7 +73,7 @@ $harness->run(StatementUploadService::class, function (GeneratedServiceClassTest
         $harness->assertSame([1, 2], $break['trusted_row_numbers'] ?? null);
     });
 
-    $harness->check(StatementUploadService::class, 'duplicate file warning states no new upload record is created', function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'duplicate file warning states no new upload record is created', function () use ($harness, $service): void {
         $method = (new ReflectionClass($service))->getMethod('buildDuplicateFileWarning');
         $method->setAccessible(true);
 
@@ -88,7 +88,7 @@ $harness->run(StatementUploadService::class, function (GeneratedServiceClassTest
         $harness->assertSame(false, str_contains($message, 'A fresh upload record will be created'));
     });
 
-    $harness->check(StatementUploadService::class, 'upload summary query deduplicates exact file hashes', function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'upload summary query deduplicates exact file hashes', function () use ($harness, $service): void {
         $method = (new ReflectionClass($service))->getMethod('uploadSummaryByAccountingPeriodSql');
         $method->setAccessible(true);
 
@@ -100,7 +100,7 @@ $harness->run(StatementUploadService::class, function (GeneratedServiceClassTest
         $harness->assertTrue(str_contains($sql, "COALESCE(NULLIF(su.file_sha256, ''), CONCAT('upload:', su.id))"));
     });
 
-    $harness->check(StatementUploadService::class, 'unique monthly row count query deduplicates exact file hashes by source row', function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'unique monthly row count query deduplicates exact file hashes by source row', function () use ($harness, $service): void {
         $method = (new ReflectionClass($service))->getMethod('uniqueUploadedRowsByMonthSql');
         $method->setAccessible(true);
 
@@ -112,7 +112,7 @@ $harness->run(StatementUploadService::class, function (GeneratedServiceClassTest
         $harness->assertTrue(str_contains($sql, 'MAX(su.rows_parsed) AS raw_row_count'));
     });
 
-    $harness->check(StatementUploadService::class, 'upload history period filter constrains unassigned uploads by statement dates', function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'upload history period filter constrains unassigned uploads by statement dates', function () use ($harness, $service): void {
         $method = (new ReflectionClass($service))->getMethod('uploadHistoryAccountingPeriodFilterClause');
         $method->setAccessible(true);
 

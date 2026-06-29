@@ -38,4 +38,9 @@ $harness->run(_companies_nominalsCard::class, static function (GeneratedServiceC
         $harness->assertTrue(str_contains($html, 'data-state-fields="default_bank_nominal_id,default_trade_nominal_id,default_expense_nominal_id,director_loan_nominal_id,vat_nominal_id,uncategorised_nominal_id"'));
         $harness->assertTrue(str_contains($html, '<option value="15" selected>2300 Trade Creditors</option>'));
     });
+
+    $harness->check(_companies_nominalsCard::class, 'suggests expense claims payable as the default expense nominal', static function () use ($harness, $html): void {
+        $harness->assertTrue(str_contains($html, '<strong>Default expense nominal</strong><span>2110 Expense Claims Payable</span>'));
+        $harness->assertFalse(str_contains($html, '<strong>Default expense nominal</strong><span>5000 Materials</span>'));
+    });
 });

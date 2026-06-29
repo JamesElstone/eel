@@ -206,10 +206,17 @@ final class _companies_nominalsCard extends CardBaseFramework
                 }))
                 : null,
             'default_expense_nominal_id' => !$this->hasAssignedNominal($settings, 'default_expense_nominal_id')
-                ? $this->firstMatchingNominal($normalised, static function (array $row): bool {
+                ? ($this->firstMatchingNominal($normalised, static function (array $row): bool {
+                    $name = strtolower($row['name']);
+                    return $row['id'] > 0
+                        && $row['account_type'] === 'liability'
+                        && ($row['subtype_code'] === 'expense_payable'
+                            || $row['code'] === '2110'
+                            || str_contains($name, 'expense claims payable'));
+                }) ?? $this->firstMatchingNominal($normalised, static function (array $row): bool {
                     $name = strtolower($row['name']);
                     return $row['id'] > 0 && $row['account_type'] === 'expense' && !str_contains($name, 'director loan') && !str_contains($name, 'vat') && !str_contains($name, 'tax');
-                })
+                }))
                 : null,
             'director_loan_nominal_id' => !$this->hasAssignedNominal($settings, 'director_loan_nominal_id')
                 ? $this->firstMatchingNominal($normalised, static fn(array $row): bool => $row['id'] > 0 && ($row['subtype_code'] === 'director_loan_liability' || str_contains(strtolower($row['name']), 'director loan')))

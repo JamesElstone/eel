@@ -320,6 +320,14 @@ final class CompanySettingsService
                 $name = strtolower($row['name']);
 
                 return $row['id'] > 0
+                    && $row['account_type'] === 'liability'
+                    && ($row['subtype_code'] === 'expense_payable'
+                        || $row['code'] === '2110'
+                        || str_contains($name, 'expense claims payable'));
+            }) ?? $this->firstMatchingNominal($normalised, static function (array $row): bool {
+                $name = strtolower($row['name']);
+
+                return $row['id'] > 0
                     && $row['account_type'] === 'expense'
                     && !str_contains($name, 'director loan')
                     && !str_contains($name, 'vat')

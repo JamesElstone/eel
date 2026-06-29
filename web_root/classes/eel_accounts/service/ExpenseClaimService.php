@@ -36,10 +36,14 @@ final class ExpenseClaimService
             'active_claimant_count' => count($this->fetchClaimants($companyId, true)),
             'nominal_accounts' => $this->fetchExpenseNominals(),
             'claims' => $this->listClaims($companyId, $filters),
+            'claim_heatmap_claims' => $this->listClaims($companyId),
             'selected_claim' => $selectedClaim,
             'filters' => [
                 'query' => trim((string)($filters['query'] ?? '')),
                 'status' => $this->normaliseStatusFilter((string)($filters['status'] ?? 'all')),
+                'heatmap_claimant_id' => max(0, (int)($filters['heatmap_claimant_id'] ?? 0)),
+                'heatmap_year' => max(0, (int)($filters['heatmap_year'] ?? 0)),
+                'heatmap_date' => trim((string)($filters['heatmap_date'] ?? '')),
             ],
         ];
     }
@@ -1488,10 +1492,13 @@ final class ExpenseClaimService
     private function formatClaimSummary(array $claim): array {
         return [
             'id' => (int)$claim['id'],
+            'claimant_id' => (int)$claim['claimant_id'],
             'claimant_name' => (string)$claim['claimant_name'],
             'claim_year' => (int)$claim['claim_year'],
             'claim_month' => (int)$claim['claim_month'],
             'claim_period' => sprintf('%04d-%02d', (int)$claim['claim_year'], (int)$claim['claim_month']),
+            'period_start' => (string)$claim['period_start'],
+            'period_end' => (string)$claim['period_end'],
             'claim_reference_code' => (string)$claim['claim_reference_code'],
             'A' => round((float)$claim['brought_forward_amount'], 2),
             'B' => round((float)$claim['claimed_amount'], 2),

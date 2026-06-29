@@ -43,6 +43,9 @@ final class _expenses extends PageContextFramework
                 'status' => trim((string)$request->input('status', $request->input('expense_status', 'all'))),
                 'claim_id' => max(0, (int)$request->input('claim_id', 0)),
                 'claim_reference_code' => trim((string)$request->input('claim_reference_code', '')),
+                'heatmap_claimant_id' => max(0, (int)$request->input('expense_heatmap_claimant_id', 0)),
+                'heatmap_year' => max(0, (int)$request->input('expense_heatmap_year', 0)),
+                'heatmap_date' => trim((string)$request->input('expense_heatmap_date', '')),
             ];
         }
 

@@ -107,6 +107,89 @@ $harness->run(_statement_field_mappingCard::class, static function (GeneratedSer
         $harness->assertTrue(!str_contains($html, 'Save Mapping'));
     });
 
+    $harness->check(_statement_field_mappingCard::class, 'uses upload mode on uploads page without selected upload', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'page' => [
+                'page_id' => 'uploads',
+            ],
+            'company' => [
+                'id' => 42,
+                'accounting_period_id' => 61,
+            ],
+            'uploads' => [],
+            'services' => [
+                'activeCompanyAccounts' => [
+                    [
+                        'id' => 47,
+                        'account_name' => 'Main Current Account',
+                        'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
+                    ],
+                ],
+                'selected_upload_preview' => [],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, 'name="card_action" value="Uploads"'));
+        $harness->assertTrue(str_contains($html, 'name="upload_id" value="0"'));
+        $harness->assertTrue(str_contains($html, 'data-statement-mapping-account-selector'));
+        $harness->assertTrue(str_contains($html, '<option value="" disabled selected></option>'));
+        $harness->assertTrue(str_contains($html, 'data-statement-mapping-requires-account'));
+        $harness->assertTrue(str_contains($html, 'Save Mapping'));
+        $harness->assertTrue(!str_contains($html, 'Select Field Mappings from an account first'));
+    });
+
+    $harness->check(_statement_field_mappingCard::class, 'disables upload mapping controls until account is selected', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'page' => [
+                'page_id' => 'uploads',
+            ],
+            'company' => [
+                'id' => 42,
+                'accounting_period_id' => 61,
+            ],
+            'uploads' => [
+                'id' => 124,
+            ],
+            'services' => [
+                'activeCompanyAccounts' => [
+                    [
+                        'id' => 47,
+                        'account_name' => 'Main Current Account',
+                        'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
+                    ],
+                ],
+                'selected_upload_preview' => [
+                    'upload' => [
+                        'id' => 124,
+                        'account_id' => 0,
+                        'account_name' => '',
+                        'original_filename' => 'unassigned-statement.csv',
+                        'source_headers_json' => json_encode(['Date', 'Description', 'Amount'], JSON_THROW_ON_ERROR),
+                    ],
+                    'mapping' => [],
+                    'source_sample' => [
+                        'headers' => ['Date', 'Description', 'Amount'],
+                        'rows' => [
+                            ['2026-01-01', 'Opening balance', '10.00'],
+                        ],
+                    ],
+                ],
+                'selected_upload_mapping_status' => [
+                    'has_mapping' => false,
+                    'extra_headers' => [],
+                ],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, 'unassigned-statement.csv'));
+        $harness->assertTrue(str_contains($html, 'Field mappings apply to: <strong>No account selected</strong>'));
+        $harness->assertTrue(str_contains($html, '<option value="" disabled selected></option>'));
+        $harness->assertTrue(str_contains($html, 'data-statement-mapping-account-selector'));
+        $harness->assertTrue(str_contains($html, 'name="mapping_description" data-no-submit-on-change="true" disabled data-statement-mapping-requires-account'));
+        $harness->assertTrue(str_contains($html, 'type="submit" disabled data-statement-mapping-requires-account'));
+        $harness->assertTrue(!str_contains($html, 'Select Field Mappings from an account first'));
+    });
+
     $harness->check(_statement_field_mappingCard::class, 'renders first upload mapping from selected upload context', static function () use ($harness, $card): void {
         $html = $card->render([
             'page' => [
@@ -153,9 +236,11 @@ $harness->run(_statement_field_mappingCard::class, static function (GeneratedSer
         $harness->assertTrue(str_contains($html, 'Selected upload'));
         $harness->assertTrue(str_contains($html, 'first-statement.csv'));
         $harness->assertTrue(str_contains($html, 'name="upload_id" value="124"'));
+        $harness->assertTrue(str_contains($html, '<option value="" disabled></option>'));
         $harness->assertTrue(str_contains($html, '<option value="47" selected>Main Current Account'));
         $harness->assertTrue(str_contains($html, 'name="account_id" required'));
         $harness->assertTrue(!str_contains($html, 'class="statement-mapping-account-switcher"'));
+        $harness->assertTrue(!str_contains($html, 'name="mapping_description" data-no-submit-on-change="true" disabled data-statement-mapping-requires-account'));
         $harness->assertTrue(str_contains($html, 'Review mapping'));
         $harness->assertTrue(!str_contains($html, 'Select an upload from Review'));
     });

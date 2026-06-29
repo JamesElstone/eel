@@ -142,6 +142,49 @@
         });
     }
 
+    function initialiseStatementMappingForms(root = document) {
+        const selectors = root.querySelectorAll ? root.querySelectorAll('[data-statement-mapping-account-selector]') : [];
+
+        selectors.forEach((selector) => {
+            if (!(selector instanceof HTMLSelectElement)) {
+                return;
+            }
+
+            const form = selector.closest('form');
+            if (!(form instanceof HTMLFormElement)) {
+                return;
+            }
+
+            const sync = () => {
+                const uploadIdInput = form.querySelector('input[name="upload_id"]');
+                const uploadId = uploadIdInput instanceof HTMLInputElement
+                    ? Number.parseInt(String(uploadIdInput.value || '0'), 10)
+                    : 0;
+                const enabled = String(selector.value || '').trim() !== '' && uploadId > 0;
+
+                form.querySelectorAll('[data-statement-mapping-requires-account]').forEach((control) => {
+                    if (
+                        control instanceof HTMLButtonElement
+                        || control instanceof HTMLInputElement
+                        || control instanceof HTMLSelectElement
+                        || control instanceof HTMLTextAreaElement
+                    ) {
+                        control.disabled = !enabled;
+                    }
+                });
+            };
+
+            sync();
+
+            if (selector.dataset.statementMappingBound === '1') {
+                return;
+            }
+
+            selector.dataset.statementMappingBound = '1';
+            selector.addEventListener('change', sync);
+        });
+    }
+
     document.addEventListener('click', (event) => {
         const accountingPeriodSummaryButton = event.target instanceof Element
             ? event.target.closest('[data-accounting-period-summary-button="true"]')
@@ -164,6 +207,7 @@
 
     initialiseUploadProcessingIndicators(document);
     initialiseVatRegistrationForms(document);
+    initialiseStatementMappingForms(document);
 
     const observer = new MutationObserver((mutations) => {
         mutations.forEach((mutation) => {
@@ -171,6 +215,7 @@
                 if (node instanceof HTMLElement) {
                     initialiseUploadProcessingIndicators(node);
                     initialiseVatRegistrationForms(node);
+                    initialiseStatementMappingForms(node);
                 }
             });
         });

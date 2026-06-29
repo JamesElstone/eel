@@ -1765,9 +1765,9 @@
 }
 
 @-moz-document url-prefix() {
-  :root {
+/*  :root {
     --project-firefox-page-zoom: 0.9;
-  }
+  }*/
 
   body {
     overflow-x: hidden;

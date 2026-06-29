@@ -40,13 +40,13 @@ final class _uploads extends PageContextFramework
                 'cards' => [
                     'uploads_bank_transactions',
                     'uploads_statement_coverage',
-                    'uploads_details',
                     'transactions_monthly_status',
                 ],
             ],
             [
-                'tab' => 'Field Mappings',
+                'tab' => 'Review Uploads',
                 'cards' => [
+                    'uploads_details',
                     'statement_field_mapping',
                 ],
             ],

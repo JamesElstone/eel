@@ -11,6 +11,8 @@ final class _tax_ratesCard extends CardBaseFramework
 {
     private const PAGE_SIZE = 5;
     private const FILTER_FIELD = 'tax_rates_status';
+    private const LIMIT_CURRENCY_CODE = 'GBP';
+    private const LIMIT_CURRENCY_SYMBOL = '£';
 
     public function key(): string
     {
@@ -56,7 +58,7 @@ final class _tax_ratesCard extends CardBaseFramework
         $pagination = HelperFramework::paginateArray($rules, $this->paginationPage($context), self::PAGE_SIZE);
         $table = $this->table($rules, $statusFilter)
             ->visibleRows((array)$pagination['items'])
-            ->toolbarActions($this->refreshRatesAction($statusFilter))
+            ->toolbarActions($this->refreshRatesAction($statusFilter, count($rules) === 0))
             ->pagination(
                 $pagination,
                 'Corporation Tax rate rules',
@@ -179,13 +181,16 @@ final class _tax_ratesCard extends CardBaseFramework
         ];
     }
 
-    private function refreshRatesAction(string $statusFilter): string
+    private function refreshRatesAction(string $statusFilter, bool $isEmpty): string
     {
+        $buttonClass = $isEmpty ? 'button danger' : 'button primary';
+        $buttonLabel = $isEmpty ? 'Import Live HMRC Rates' : 'Refresh HMRC Rates';
+
         return '<form method="post" action="?page=tax_rates" data-ajax="true">
             <input type="hidden" name="card_action" value="TaxRates">
             <input type="hidden" name="intent" value="refresh_hmrc_rates">
             <input type="hidden" name="' . HelperFramework::escape(self::FILTER_FIELD) . '" value="' . HelperFramework::escape($this->normaliseStatusFilter($statusFilter)) . '">
-            <button class="button primary" type="submit">Refresh HMRC Rates</button>
+            <button class="' . HelperFramework::escape($buttonClass) . '" type="submit">' . HelperFramework::escape($buttonLabel) . '</button>
         </form>';
     }
 
@@ -231,7 +236,7 @@ final class _tax_ratesCard extends CardBaseFramework
             return '-';
         }
 
-        return 'GBP ' . FormattingFramework::money($value);
+        return '(' . self::LIMIT_CURRENCY_CODE . ') ' . self::LIMIT_CURRENCY_SYMBOL . FormattingFramework::money($value);
     }
 
     private function fraction(mixed $value): string

@@ -29,10 +29,23 @@ $harness->run(_tax_ratesCard::class, static function (GeneratedServiceClassTestH
         $harness->assertTrue(str_contains($html, '<option value="all">All</option>'));
         $harness->assertTrue(str_contains($html, 'Corporation Tax rate rules 1-5 of 6'));
         $harness->assertTrue(str_contains($html, 'active-version-5'));
+        $harness->assertTrue(str_contains($html, '(GBP) £50,000.00'));
+        $harness->assertTrue(str_contains($html, '(GBP) £250,000.00'));
         $harness->assertSame(false, str_contains($html, 'active-version-6'));
         $harness->assertSame(false, str_contains($html, 'inactive-version'));
         $harness->assertTrue(str_contains($html, 'name="tax_rates_status" value="active"'));
-        $harness->assertTrue(str_contains($html, 'Refresh HMRC Rates'));
+        $harness->assertTrue(str_contains($html, '<button class="button primary" type="submit">Refresh HMRC Rates</button>'));
+        $harness->assertSame(false, str_contains($html, 'Import Live HMRC Rates'));
+    });
+
+    $harness->check(_tax_ratesCard::class, 'empty table prompts live HMRC import', static function () use ($harness, $card, $context): void {
+        $emptyContext = $context;
+        $emptyContext['tax_rates']['rules'] = [];
+        $html = $card->render($emptyContext);
+
+        $harness->assertTrue(str_contains($html, 'No active Corporation Tax rate rules are stored yet.'));
+        $harness->assertTrue(str_contains($html, '<button class="button danger" type="submit">Import Live HMRC Rates</button>'));
+        $harness->assertSame(false, str_contains($html, 'Refresh HMRC Rates'));
     });
 
     $harness->check(_tax_ratesCard::class, 'all filter includes superseded rows and exports filtered rows', static function () use ($harness, $card, $context): void {

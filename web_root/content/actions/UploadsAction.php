@@ -255,7 +255,7 @@ final class UploadsAction implements ActionInterfaceFramework
 
         if (!empty($result['success'])) {
             $flashMessages[] = sprintf(
-                'Transaction type backfill complete: %d scanned, %d updated, %d skipped, %d failed.',
+                'Mapping backfill complete: %d scanned, %d updated, %d skipped, %d failed.',
                 (int)($result['rows_scanned'] ?? 0),
                 (int)($result['rows_updated'] ?? 0),
                 (int)($result['rows_skipped'] ?? 0),

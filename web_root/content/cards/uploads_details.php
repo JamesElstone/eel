@@ -315,7 +315,7 @@ final class _uploads_detailsCard extends CardBaseFramework
                     <input type="hidden" name="upload_id" value="' . $uploadId . '">
                     <input type="hidden" name="filter" value="' . HelperFramework::escape($filter) . '">
                     <input type="hidden" name="page" value="' . $page . '">
-                    <button class="button danger" type="submit">Backfill transaction types from staged import JSON</button>
+                    <button class="button danger" type="submit">Backfill mappings from original JSON</button>
                 </form>
             </div>';
     }

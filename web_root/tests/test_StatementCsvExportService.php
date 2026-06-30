@@ -30,8 +30,8 @@ $harness->run(\eel_accounts\Service\StatementCsvExportService::class, static fun
         ]);
 
         $lines = preg_split('/\r\n|\n|\r/', trim($csv));
-        $harness->assertSame('account,created,processed,type,description,amount,balance,currency,category,document', $lines[0] ?? '');
-        $harness->assertSame(',2026-02-01,,,Example,12.34,,GBP,,', $lines[1] ?? '');
+        $harness->assertSame('account,created,processed,type,description,reference,counterparty,card,amount,balance,currency,category,document', $lines[0] ?? '');
+        $harness->assertSame(',2026-02-01,,,Example,,,,12.34,,GBP,,', $lines[1] ?? '');
     });
 
     $harness->check(\eel_accounts\Service\StatementCsvExportService::class, 'committed transaction values override source CSV values', static function () use ($harness, $service): void {
@@ -60,7 +60,7 @@ $harness->run(\eel_accounts\Service\StatementCsvExportService::class, static fun
         ]);
 
         $lines = preg_split('/\r\n|\n|\r/', trim($csv));
-        $harness->assertSame(',2026-02-02,,,Posted,99.99,,GBP,"5000 - Purchases",', $lines[1] ?? '');
+        $harness->assertSame(',2026-02-02,,,Posted,,,,99.99,,GBP,"5000 - Purchases",', $lines[1] ?? '');
     });
 
     $harness->check(\eel_accounts\Service\StatementCsvExportService::class, 'monthly export only includes rows for the selected transaction month', static function () use ($harness, $service): void {
@@ -82,9 +82,9 @@ $harness->run(\eel_accounts\Service\StatementCsvExportService::class, static fun
         ], [], '2026-02-01');
 
         $lines = preg_split('/\r\n|\n|\r/', trim($csv));
-        $harness->assertSame('account,created,processed,type,description,amount,balance,currency,category,document', $lines[0] ?? '');
-        $harness->assertSame(',2026-01-31,2026-02-01,,February,20.00,,,,', $lines[1] ?? '');
-        $harness->assertSame(',2026-02-15,,,"Created February",30.00,,,,', $lines[2] ?? '');
+        $harness->assertSame('account,created,processed,type,description,reference,counterparty,card,amount,balance,currency,category,document', $lines[0] ?? '');
+        $harness->assertSame(',2026-01-31,2026-02-01,,February,,,,20.00,,,,', $lines[1] ?? '');
+        $harness->assertSame(',2026-02-15,,,"Created February",,,,30.00,,,,', $lines[2] ?? '');
         $harness->assertSame(3, count($lines));
     });
 

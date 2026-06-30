@@ -577,6 +577,10 @@ final class TransactionAction implements ActionInterfaceFramework
 
     private static function positiveInt(mixed $value): int
     {
+        if (!is_scalar($value) && $value !== null) {
+            return 0;
+        }
+
         $value = trim((string)$value);
 
         return ctype_digit($value) ? (int)$value : 0;

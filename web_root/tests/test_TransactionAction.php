@@ -21,6 +21,13 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, $instance instanceof ActionInterfaceFramework);
     });
 
+    $harness->check('TransactionAction', 'treats array id inputs as invalid integers', function () use ($harness): void {
+        $method = new ReflectionMethod(TransactionAction::class, 'positiveInt');
+        $method->setAccessible(true);
+
+        $harness->assertSame(0, $method->invoke(null, ['57', '51']));
+    });
+
     $harness->check('TransactionAction', 'select_transaction_month returns normalised card context', function () use ($harness, $instance): void {
         $request = new RequestFramework(
             [],
@@ -453,6 +460,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, 'data-autosave-submit-target=".js-transaction-autosave-submit"'));
         $harness->assertSame(true, str_contains($html, '<button class="js-transaction-autosave-submit" type="submit" name="global_action" value="save_transaction_category" hidden>Autosave</button>'));
         $harness->assertSame(false, str_contains($html, 'Save Row'));
+        $harness->assertSame(false, str_contains($html, '<input type="hidden" name="nominal_account_id"'));
         $harness->assertSame(true, str_contains($html, 'name="transaction_reference" value="INV-42"'));
         $harness->assertSame(true, str_contains($html, 'name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form"'));
         $harness->assertSame(true, str_contains($html, '<span class="badge success">Manually Categorised</span>'));

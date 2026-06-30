@@ -504,7 +504,7 @@ final class _transactions_importedCard extends CardBaseFramework
             ? ''
             : '<button class="js-transaction-autosave-submit" type="submit" name="global_action" value="save_transaction_category" hidden' . $journalRebuildAttributes . '>Autosave</button>';
         $createAssetAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit" form="' . HelperFramework::escape($assetFormId) . '" formnovalidate';
-        $createRuleHtml = $isTransferRow ? '' : $this->createRuleButtonHtml($transaction);
+        $createRuleHtml = $isTransferRow ? '' : $this->createRuleButtonHtml($transaction, $isPeriodLocked);
 
         return '<form method="post" action="?page=assets" id="' . HelperFramework::escape($assetFormId) . '">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -528,13 +528,12 @@ final class _transactions_importedCard extends CardBaseFramework
             </form>';
     }
 
-    private function createRuleButtonHtml(array $transaction): string
+    private function createRuleButtonHtml(array $transaction, bool $includeNominalInput): string
     {
         $nominalAccountId = (int)($transaction['nominal_account_id'] ?? 0);
-        $nominalInputHtml = '';
-        if ($nominalAccountId > 0) {
-            $nominalInputHtml = '<input type="hidden" name="nominal_account_id" value="' . $nominalAccountId . '">';
-        }
+        $nominalInputHtml = $includeNominalInput && $nominalAccountId > 0
+            ? '<input type="hidden" name="nominal_account_id" value="' . $nominalAccountId . '">'
+            : '';
 
         return $nominalInputHtml
             . '<input type="hidden" name="transaction_reference" value="' . HelperFramework::escape((string)($transaction['reference'] ?? '')) . '">'

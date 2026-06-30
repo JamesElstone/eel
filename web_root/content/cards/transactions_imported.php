@@ -370,14 +370,21 @@ final class _transactions_importedCard extends CardBaseFramework
 
     private function descriptionHtml(array $transaction): string
     {
-        $matchedRuleHtml = '';
-        if ((int)($transaction['auto_rule_id'] ?? 0) > 0) {
-            $matchedRuleHtml = '<div class="helper">Matched by rule #' . (int)($transaction['auto_rule_id'] ?? 0)
-                . (trim((string)($transaction['auto_rule_match_value'] ?? '')) !== '' ? ' (' . HelperFramework::escape((string)($transaction['auto_rule_match_value'] ?? '')) . ')' : '')
-                . '</div>';
+        $helperLines = [];
+        $reference = trim((string)($transaction['reference'] ?? ''));
+        if ($reference !== '') {
+            $helperLines[] = 'Ref: ' . HelperFramework::escape($reference);
         }
 
-        return '<div>' . HelperFramework::escape((string)($transaction['description'] ?? '')) . '</div>' . $matchedRuleHtml;
+        if ((int)($transaction['auto_rule_id'] ?? 0) > 0) {
+            $matchValue = trim((string)($transaction['auto_rule_match_value'] ?? ''));
+            $helperLines[] = 'Matched by rule #' . (int)($transaction['auto_rule_id'] ?? 0)
+                . ($matchValue !== '' ? ' (' . HelperFramework::escape($matchValue) . ')' : '');
+        }
+
+        $helperHtml = $helperLines !== [] ? '<div class="helper">' . implode('<br>', $helperLines) . '</div>' : '';
+
+        return '<div>' . HelperFramework::escape((string)($transaction['description'] ?? '')) . '</div>' . $helperHtml;
     }
 
     private function sourceHtml(array $transaction): string

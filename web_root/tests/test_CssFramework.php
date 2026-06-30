@@ -36,3 +36,10 @@ $harness->check('CssFramework', 'keeps flash messages as a protected viewport ov
     $harness->assertSame(0, substr_count($css, "\n.flash-messages {"));
 });
 
+$harness->check('CssFramework', 'styles warning alerts as advisory messages', function () use ($harness): void {
+    $css = (string)file_get_contents(APP_CSS . 'index.css');
+
+    $harness->assertTrue(str_contains($css, '.alert.warning'));
+    $harness->assertTrue(str_contains($css, 'background: var(--warning-soft);'));
+    $harness->assertTrue(str_contains($css, 'color: var(--warning);'));
+});

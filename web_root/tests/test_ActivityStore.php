@@ -28,12 +28,16 @@ $harness->run(ActivityStore::class, function (GeneratedServiceClassTestHarness $
                 'message' => 'Unable to save.',
             ],
             [
+                'type' => 'warning',
+                'message' => 'Saved with caveats.',
+            ],
+            [
                 'type' => 'success',
                 'message_html' => '<strong>Created</strong> &amp; queued',
             ],
             [
                 'type' => 'ignored',
-                'message' => '',
+                'message' => 'Unknown status.',
             ],
         ]);
 
@@ -49,9 +53,19 @@ $harness->run(ActivityStore::class, function (GeneratedServiceClassTestHarness $
                 'html_text' => null,
             ],
             [
+                'type' => 'warning',
+                'text' => 'Saved with caveats.',
+                'html_text' => null,
+            ],
+            [
                 'type' => 'success',
                 'text' => 'Created & queued',
                 'html_text' => 'Created & queued',
+            ],
+            [
+                'type' => 'success',
+                'text' => 'Unknown status.',
+                'html_text' => null,
             ],
         ], $messages);
     });

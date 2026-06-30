@@ -179,4 +179,20 @@ $harness->check('migrateDb.php', 'can parse the baseline schema used to hydrate 
     $harness->assertTrue(str_contains($combined, 'CREATE TABLE `users`'));
     $harness->assertTrue(str_contains($combined, 'CREATE TABLE `schema_migrations`'));
     $harness->assertTrue(str_contains($combined, 'INSERT INTO `schema_migrations`'));
+    $harness->assertTrue(str_contains($combined, "`message_type` enum('success','warning','error') NOT NULL"));
+    $harness->assertTrue(str_contains($combined, "('2026_06_30_001_warning_flash_messages.sql')"));
+});
+
+$harness->check('migrateDb.php', 'includes migration for warning flash message type', function () use ($harness): void {
+    $migrationFile = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR
+        . 'db_schema' . DIRECTORY_SEPARATOR
+        . 'migrations' . DIRECTORY_SEPARATOR
+        . '2026_06_30_001_warning_flash_messages.sql';
+    $sql = file_get_contents($migrationFile);
+
+    if (!is_string($sql)) {
+        throw new RuntimeException('Warning flash migration could not be read.');
+    }
+
+    $harness->assertTrue(str_contains($sql, "enum('success','warning','error')"));
 });

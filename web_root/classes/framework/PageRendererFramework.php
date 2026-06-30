@@ -520,8 +520,8 @@ final class PageRendererFramework
                 continue;
             }
 
-            $type = strtolower((string)($message['type'] ?? 'success'));
-            $class = $type === 'error' ? 'error' : 'success';
+            $type = strtolower(trim((string)($message['type'] ?? 'success')));
+            $class = $this->flashClass($type);
             $messageHtml = array_key_exists('message_html', $message)
                 ? (string)($message['message_html'] ?? '')
                 : HelperFramework::escape((string)($message['message'] ?? ''));
@@ -529,6 +529,11 @@ final class PageRendererFramework
         }
 
         return $html;
+    }
+
+    private function flashClass(string $type): string
+    {
+        return in_array($type, ['success', 'warning', 'error'], true) ? $type : 'success';
     }
 
     private function renderSidebar(PageInterfaceFramework $page, array $context, string $siteContextSidebarHtml = ''): string

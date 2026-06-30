@@ -818,6 +818,10 @@ body.sidebar-collapsed .sidebar-hide-collapsed-link-initials .nav-link-short {
   color: var(--danger);
 }
 
+.flash-history-item.warning .flash-history-text {
+  color: var(--warning);
+}
+
 .flash-history-empty {
   font-size: 0.78rem;
   color: var(--muted);
@@ -921,6 +925,12 @@ body.sidebar-collapsed .sidebar-hide-collapsed-link-initials .nav-link-short {
   background: #ecfdf3;
   border-color: #b7ebc8;
   color: #166534;
+}
+
+.alert.warning {
+  background: var(--warning-soft);
+  border-color: #f5d08a;
+  color: var(--warning);
 }
 
 .alert.error {
@@ -1774,6 +1784,12 @@ label {
   background: var(--success-soft);
   border-color: #b7ebc8;
   color: var(--success);
+}
+
+.alert.warning {
+  background: var(--warning-soft);
+  border-color: #f5d08a;
+  color: var(--warning);
 }
 
 .alert.error {

@@ -472,6 +472,10 @@ final class CategorisationRuleService
     }
 
     private function truthyValue(mixed $value): bool {
+        if (is_array($value)) {
+            $value = $value !== [] ? end($value) : '';
+        }
+
         if (is_bool($value)) {
             return $value;
         }

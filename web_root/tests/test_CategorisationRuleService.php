@@ -175,4 +175,44 @@ $harness->run(\eel_accounts\Service\CategorisationRuleService::class, function (
         $harness->assertSame(['Materials', 'Travel'], $service->fetchSourceCategoryOptions($companyId));
         $harness->assertSame(['Main account', 'Savings'], $service->fetchSourceAccountOptions($companyId));
     });
+
+    $harness->check(\eel_accounts\Service\CategorisationRuleService::class, 'saves ajax checkbox rule active value', function () use ($harness, $service): void {
+        $marker = (string)random_int(100000, 999999);
+        $companyId = (int)('81' . $marker);
+        $nominalAccountId = (int)('82' . $marker);
+
+        InterfaceDB::prepareExecute(
+            'INSERT INTO companies (id, company_name, company_number, is_active)
+             VALUES (:id, :company_name, :company_number, 1)',
+            [
+                'id' => $companyId,
+                'company_name' => 'Rule Checkbox Test ' . $marker,
+                'company_number' => 'RC' . $marker,
+            ]
+        );
+        InterfaceDB::prepareExecute(
+            'INSERT INTO nominal_accounts (id, code, name, account_type, tax_treatment, is_active, sort_order)
+             VALUES (:id, :code, :name, :account_type, :tax_treatment, 1, 1)',
+            [
+                'id' => $nominalAccountId,
+                'code' => '4' . substr($marker, 0, 3),
+                'name' => 'Checkbox nominal ' . $marker,
+                'account_type' => 'expense',
+                'tax_treatment' => 'allowable',
+            ]
+        );
+
+        $result = $service->saveRule($companyId, [
+            'priority' => '100',
+            'match_type' => 'contains',
+            'match_value' => 'Checkbox payload ' . $marker,
+            'nominal_account_id' => (string)$nominalAccountId,
+            'is_active' => ['0', '1'],
+        ]);
+
+        $harness->assertSame(true, (bool)($result['success'] ?? false));
+
+        $rule = $service->fetchRule($companyId, (int)($result['rule_id'] ?? 0));
+        $harness->assertSame(1, (int)($rule['is_active'] ?? 0));
+    });
 });

@@ -207,7 +207,7 @@ final class _trial_balance_stateCard extends CardBaseFramework
                     <span class="badge ' . $this->badgeClass($status) . '">' . HelperFramework::escape($status) . '</span>
                 </div>
                 <div class="helper">' . HelperFramework::escape((string)($check['detail'] ?? '')) . '</div>
-                ' . $this->metricValue((mixed)($check['metric_value'] ?? null)) . '
+                ' . $this->metricValue($check['metric_value'] ?? null) . '
             </div>';
         }
 

@@ -216,7 +216,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
                 <input type="hidden" name="auto_scope" value="uncategorised">
                 <input type="hidden" name="global_action" value="run_auto_rules">
-                <button class="button" type="submit">Auto Apply</button>
+                <button class="button" type="submit">Run Auto Rules</button>
             </form>
             <form method="post" action="?page=transactions" data-ajax="true">
                 <input type="hidden" name="card_action" value="Transaction">
@@ -465,7 +465,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
                 <input type="hidden" name="confirm_rebuild_journal" value="0">
                 <div class="actions-row">
-                    <button class="button primary js-transaction-action" type="submit" name="global_action" value="save_transaction_category" data-dirty-enable-mode="changed" disabled' . $journalRebuildAttributes . '>' . ($isTransferRow ? 'Save' : 'Manual') . '</button>'
+                    <button class="button primary js-transaction-action" type="submit" name="global_action" value="save_transaction_category" data-dirty-enable-mode="changed" disabled' . $journalRebuildAttributes . '>' . ($isTransferRow ? 'Save' : 'Save Row') . '</button>'
                     . (!$isTransferRow
                         ? '<button class="button primary js-transaction-action" type="submit" name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form" data-dirty-enable-mode="selected" disabled>Create Automatic Rule</button>'
                         : '') . '

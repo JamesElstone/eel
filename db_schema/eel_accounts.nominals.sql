@@ -69,7 +69,10 @@ INSERT INTO `nominal_accounts` (`id`,`code`,`name`,`account_type`,`account_subty
 (39,'6200','Depreciation Expense','expense',15,'disallowable',1,620,'2026-04-09 12:48:13'),
 (40,'6210','Loss on Disposal','expense',16,'other',1,621,'2026-04-09 12:48:13'),
 (44,'2300','Trade Creditors','liability',12,'allowable',1,70,'2026-05-27 11:08:15'),
-(45,'3010','Ordinary Share Capital','equity',13,'other',1,65,'2026-06-30 00:00:00');
+(45,'3010','Ordinary Share Capital','equity',13,'other',1,65,'2026-06-30 00:00:00'),
+(46,'2150','Dividends Payable','liability',17,'other',1,56,'2026-06-30 00:00:00'),
+(47,'3000','Retained Earnings','equity',13,'other',1,66,'2026-06-30 00:00:00'),
+(48,'3100','Dividends Paid','equity',13,'other',1,71,'2026-06-30 00:00:00');
 /*!40000 ALTER TABLE `nominal_accounts` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -95,7 +98,8 @@ INSERT INTO `nominal_account_subtypes` VALUES
 (13,'capital_reserves','Capital and Reserves','equity',65,1),
 (14,'asset_disposal_gain','Asset Disposal Gain','income',420,1),
 (15,'depreciation_expense','Depreciation Expense','expense',620,1),
-(16,'asset_disposal_loss','Asset Disposal Loss','expense',621,1);
+(16,'asset_disposal_loss','Asset Disposal Loss','expense',621,1),
+(17,'dividends_payable','Dividends Payable','liability',56,1);
 /*!40000 ALTER TABLE `nominal_account_subtypes` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;

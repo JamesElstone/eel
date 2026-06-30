@@ -47,8 +47,8 @@ final class _journals_listCard extends CardBaseFramework
 
         if ($journalEntries === []) {
             return '
-                <div class="helper">`bank_csv` journals are derived from source transactions and cannot be edited directly here. Review the source transaction instead if a posting needs to change.</div>
-                <div class="helper">No journals exist yet for the selected company and accounting period.</div>
+                <div class="helper">Posted transaction journals will appear here once transactions have been categorised and posted.</div>
+                <div class="helper">To change a transaction-derived journal, review the source transaction and repost it.</div>
             ';
         }
 
@@ -91,7 +91,7 @@ final class _journals_listCard extends CardBaseFramework
         }
 
         return '
-            <div class="helper">`bank_csv` journals are derived from source transactions and cannot be edited directly here. Review the source transaction instead if a posting needs to change.</div>
+            <div class="helper">Transaction-derived journals are read-only here. Use Review Transaction to change the source posting.</div>
             <div class="table-scroll">
                 <table>
                     <thead>

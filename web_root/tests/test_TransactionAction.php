@@ -569,6 +569,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, '<button class="button" type="button" disabled title="Period locked">Run Auto Rules</button>'));
         $harness->assertSame(true, str_contains($html, '<button class="button primary" type="button" disabled title="Period locked">Post Categorised Transactions</button>'));
         $harness->assertSame(true, str_contains($html, 'type="button" disabled title="Period locked" name="global_action" value="save_transaction_category"'));
+        $harness->assertSame(true, str_contains($html, 'type="button" disabled title="Period locked" name="global_action" value="auto_create_transaction_rule"'));
         $harness->assertSame(true, str_contains($html, 'type="button" disabled title="Period locked" name="global_action" value="defer_transaction"'));
         $harness->assertSame(true, str_contains($html, '<button class="button" type="button" disabled title="Period locked">Create Asset</button>'));
         $harness->assertSame(true, str_contains($html, 'View Receipt'));

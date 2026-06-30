@@ -494,6 +494,7 @@ final class _transactions_importedCard extends CardBaseFramework
             : '';
         $lockedButtonAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit"';
         $saveButtonAttributes = $isPeriodLocked ? $lockedButtonAttributes : ' type="submit"';
+        $createRuleButtonAttributes = $isPeriodLocked ? $lockedButtonAttributes : ' type="submit"';
         $createAssetAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit" form="' . HelperFramework::escape($assetFormId) . '" formnovalidate';
 
         return '<form method="post" action="?page=assets" id="' . HelperFramework::escape($assetFormId) . '">
@@ -512,7 +513,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 <div class="actions-row">
                     <button class="button primary js-transaction-action"' . $saveButtonAttributes . ' name="global_action" value="save_transaction_category" data-dirty-enable-mode="changed" disabled' . $journalRebuildAttributes . '>' . ($isTransferRow ? 'Save' : 'Save Row') . '</button>'
                     . (!$isTransferRow
-                        ? '<button class="button primary js-transaction-action" type="submit" name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form" data-dirty-enable-mode="selected" disabled>Create Automatic Rule</button>'
+                        ? '<button class="button primary js-transaction-action"' . $createRuleButtonAttributes . ' name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form" data-dirty-enable-mode="selected" disabled>Create Automatic Rule</button>'
                         : '') . '
                     <button class="button primary"' . $lockedButtonAttributes . ' name="global_action" value="defer_transaction"' . $journalRebuildAttributes . '>Defer</button>
                     <button class="button"' . $createAssetAttributes . '>Create Asset</button>

@@ -381,6 +381,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
                     'id' => 42,
                     'txn_date' => '2026-03-15',
                     'description' => 'Test transaction',
+                    'reference' => 'INV-42',
                     'source_account' => 'Current account',
                     'source_category' => 'Materials',
                     'amount' => -12.34,
@@ -426,6 +427,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, 'name="month_key" value="2026-03-01"'));
         $harness->assertSame(true, str_contains($html, '<th>Date</th>'));
         $harness->assertSame(true, str_contains($html, 'Test transaction'));
+        $harness->assertSame(true, str_contains($html, 'Ref: INV-42<br>Matched by rule #3 (Test)'));
         $harness->assertSame(true, str_contains($html, 'Matched by rule #3 (Test)'));
         $harness->assertSame(true, str_contains($html, 'View Receipt'));
         $harness->assertSame(true, str_contains($html, 'data-autosave-submit-target=".js-transaction-autosave-submit"'));

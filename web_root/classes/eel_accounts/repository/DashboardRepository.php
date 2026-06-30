@@ -375,6 +375,7 @@ final class DashboardRepository
                        t.txn_date,
                        COALESCE(t.txn_type, '') AS txn_type,
                        t.description,
+                       COALESCE(t.reference, '') AS reference,
                        t.amount,
                        COALESCE(t.currency, '') AS currency,
                        COALESCE(t.source_account_label, '') AS source_account,

@@ -251,7 +251,7 @@ final class _transactions_importedCard extends CardBaseFramework
                     'all' => 'All',
                     'uncategorised' => 'Uncategorised only',
                     'auto' => 'Auto categorised',
-                    'manual' => 'Manual categorised',
+                    'manual' => 'Manually Categorised',
                 ],
                 $selectedTransactionFilter,
                 [
@@ -582,7 +582,7 @@ final class _transactions_importedCard extends CardBaseFramework
 
         return match ($status) {
             'auto' => 'Auto categorised',
-            'manual' => 'Manual categorised',
+            'manual' => 'Manually Categorised',
             default => 'Uncategorised',
         };
     }

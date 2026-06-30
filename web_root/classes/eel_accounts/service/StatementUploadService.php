@@ -454,6 +454,8 @@ final class StatementUploadService
             return $this->failureResult(422, $errors, $warnings);
         }
 
+        $mappingFlashMessage = $this->fieldMappingSavedFlashMessage($existingMapping, $mapping, (string)($account['account_name'] ?? ''));
+
         $this->upsertStatementImportMapping($uploadId, $sourceHeaders, $mapping, self::MAPPING_ORIGIN_MANUAL, null, true);
 
         if ($isCommittedUpload) {
@@ -468,6 +470,7 @@ final class StatementUploadService
                 'warnings' => $warnings,
                 'errors' => [],
                 'mapping' => $mapping,
+                'mapping_flash_message' => $mappingFlashMessage,
             ];
         }
 
@@ -494,6 +497,7 @@ final class StatementUploadService
             'warnings' => $warnings,
             'errors' => [],
             'mapping' => $mapping,
+            'mapping_flash_message' => $mappingFlashMessage,
         ];
     }
 
@@ -2263,6 +2267,48 @@ final class StatementUploadService
         }
 
         return $errors;
+    }
+
+    private function fieldMappingSavedFlashMessage(array $previousMapping, array $mapping, string $accountName): string {
+        $accountName = trim($accountName);
+        $accountLabel = $accountName !== '' ? $accountName : 'selected account';
+
+        foreach (array_keys(self::FIELD_DEFINITIONS) as $fieldName) {
+            $previousValue = $previousMapping[$fieldName] ?? null;
+            $currentValue = $mapping[$fieldName] ?? null;
+
+            if ($previousValue === $currentValue) {
+                continue;
+            }
+
+            return sprintf(
+                'Field mapping %s >> %s saved for account %s.',
+                $fieldName,
+                $this->fieldMappingDisplayValue($currentValue),
+                $accountLabel
+            );
+        }
+
+        return 'Field mapping saved for account ' . $accountLabel . '.';
+    }
+
+    private function fieldMappingDisplayValue(mixed $mapping): string {
+        if (!is_array($mapping)) {
+            return 'unassigned';
+        }
+
+        $header = trim((string)($mapping['header'] ?? ''));
+        if ($header !== '') {
+            return $header;
+        }
+
+        $label = trim((string)($mapping['label'] ?? ''));
+        if ($label !== '') {
+            return $label;
+        }
+
+        $defaultValue = trim((string)($mapping['default_value'] ?? ''));
+        return $defaultValue !== '' ? $defaultValue : 'unassigned';
     }
 
     public function ensureProvisionalMappingForUpload(int $companyId, int $uploadId): array {

@@ -67,7 +67,7 @@ $harness->run(_statement_field_mappingCard::class, static function (GeneratedSer
         $harness->assertTrue(str_contains($html, 'class="statement-mapping-account-switcher"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="select_field_mapping"'));
         $harness->assertTrue(str_contains($html, 'name="field_mapping_account_id"'));
-        $harness->assertTrue(str_contains($html, '<option value="" disabled></option>'));
+        $harness->assertTrue(str_contains($html, '<option value="" disabled>Select an account to see mappings..</option>'));
         $harness->assertTrue(str_contains($html, '<option value="47" selected>Main Current Account'));
         $harness->assertTrue(str_contains($html, '<option value="48">Savings Account</option>'));
         $harness->assertTrue(!str_contains($html, 'Select Field Mappings from an account first'));
@@ -99,7 +99,7 @@ $harness->run(_statement_field_mappingCard::class, static function (GeneratedSer
         ]);
 
         $harness->assertTrue(str_contains($html, 'class="statement-mapping-account-switcher"'));
-        $harness->assertTrue(str_contains($html, '<option value="" disabled selected></option>'));
+        $harness->assertTrue(str_contains($html, '<option value="" disabled selected>Select an account to see mappings..</option>'));
         $harness->assertTrue(str_contains($html, '<option value="47">Main Current Account</option>'));
         $harness->assertTrue(!str_contains($html, 'Saved account mapping source'));
         $harness->assertTrue(!str_contains($html, 'Select Field Mappings from an account first'));

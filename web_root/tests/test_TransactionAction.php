@@ -312,6 +312,56 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, 'No transaction categorisation audit events'));
     });
 
+    $harness->check('_transactions_rule_formCard', 'renders source filters as service-backed dropdowns', function () use ($harness): void {
+        $html = (new _transactions_rule_formCard())->render([
+            'company' => [
+                'id' => 1,
+                'accounting_period_id' => 2,
+            ],
+            'page' => [
+                'page_id' => 'transactions',
+                'month_key' => '2026-03-01',
+                'category_filter' => 'all',
+                'rule_form' => [
+                    'priority' => 100,
+                    'match_type' => 'contains',
+                    'match_value' => 'Test',
+                    'source_category_value' => 'Legacy Category',
+                    'source_account_value' => 'Current account',
+                    'nominal_account_id' => 7,
+                    'is_active' => true,
+                ],
+            ],
+            'services' => [
+                'nominal_accounts' => [[
+                    'id' => 7,
+                    'code' => '5000',
+                    'name' => 'Materials',
+                    'account_type' => 'expense',
+                ]],
+                'source_category_options' => [
+                    'Materials',
+                    'Travel',
+                ],
+                'source_account_options' => [
+                    'Current account',
+                    'Savings account',
+                ],
+            ],
+        ]);
+
+        $harness->assertSame(true, str_contains($html, '<select class="select" id="rule_source_category_value" name="source_category_value">'));
+        $harness->assertSame(true, str_contains($html, '<select class="select" id="rule_source_account_value" name="source_account_value">'));
+        $harness->assertSame(false, str_contains($html, '<input class="input" id="rule_source_category_value" name="source_category_value"'));
+        $harness->assertSame(false, str_contains($html, '<input class="input" id="rule_source_account_value" name="source_account_value"'));
+        $harness->assertSame(true, str_contains($html, '<option value="">Any Category</option>'));
+        $harness->assertSame(true, str_contains($html, '<option value="">Any Account</option>'));
+        $harness->assertSame(true, str_contains($html, '<option value="Materials">Materials</option>'));
+        $harness->assertSame(true, str_contains($html, '<option value="Savings account">Savings account</option>'));
+        $harness->assertSame(true, str_contains($html, '<option value="Legacy Category" selected>Legacy Category</option>'));
+        $harness->assertSame(true, str_contains($html, '<option value="Current account" selected>Current account</option>'));
+    });
+
     $harness->check('_transactions_importedCard', 'renders imported transactions with table builder columns', function () use ($harness): void {
         $html = (new _transactions_importedCard())->render([
             'company' => [

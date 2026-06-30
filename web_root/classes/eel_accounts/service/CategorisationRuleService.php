@@ -41,6 +41,14 @@ final class CategorisationRuleService
         return is_array($row) ? $row : null;
     }
 
+    public function fetchSourceCategoryOptions(int $companyId): array {
+        return $this->fetchDistinctTransactionTextOptions($companyId, 'source_category');
+    }
+
+    public function fetchSourceAccountOptions(int $companyId): array {
+        return $this->fetchDistinctTransactionTextOptions($companyId, 'source_account_label');
+    }
+
     public function buildRuleDraftFromTransaction(int $transactionId, int $nominalAccountId): ?array {
         if ($transactionId <= 0 || $nominalAccountId <= 0) {
             return null;
@@ -381,6 +389,36 @@ final class CategorisationRuleService
         $priority = (int)$stmt->fetchColumn();
 
         return $priority > 0 ? $priority + 10 : 100;
+    }
+
+    private function fetchDistinctTransactionTextOptions(int $companyId, string $column): array {
+        if ($companyId <= 0 || !in_array($column, ['source_category', 'source_account_label'], true)) {
+            return [];
+        }
+
+        $stmt = $this->executeQuery(
+            'SELECT TRIM(COALESCE(' . $column . ', \'\')) AS value
+             FROM transactions
+             WHERE company_id = :company_id
+               AND TRIM(COALESCE(' . $column . ', \'\')) <> \'\'
+             GROUP BY TRIM(COALESCE(' . $column . ', \'\'))
+             ORDER BY value ASC',
+            ['company_id' => $companyId]
+        );
+
+        $options = [];
+        foreach ($stmt->fetchAll() as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $value = trim((string)($row['value'] ?? ''));
+            if ($value !== '') {
+                $options[] = $value;
+            }
+        }
+
+        return $options;
     }
 
     private function cleanMerchantName(string $description): string {

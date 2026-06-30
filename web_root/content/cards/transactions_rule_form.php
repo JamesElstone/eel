@@ -39,6 +39,22 @@ final class _transactions_rule_formCard extends CardBaseFramework
                     'companyId' => ':company.id',
                 ],
             ],
+            [
+                'key' => 'source_category_options',
+                'service' => \eel_accounts\Service\CategorisationRuleService::class,
+                'method' => 'fetchSourceCategoryOptions',
+                'params' => [
+                    'companyId' => ':company.id',
+                ],
+            ],
+            [
+                'key' => 'source_account_options',
+                'service' => \eel_accounts\Service\CategorisationRuleService::class,
+                'method' => 'fetchSourceAccountOptions',
+                'params' => [
+                    'companyId' => ':company.id',
+                ],
+            ],
         ];
     }
 
@@ -64,6 +80,7 @@ final class _transactions_rule_formCard extends CardBaseFramework
     public function render(array $context): string
     {
         $company = (array)($context['company'] ?? []);
+        $page = (array)($context['page'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $selectedTransactionMonth = (string)($page['month_key'] ?? '');
@@ -71,11 +88,20 @@ final class _transactions_rule_formCard extends CardBaseFramework
             return '<div class="helper">A company has to be added and selected before transaction categorisation can occur.</div>';
         }
         
-        $page = (array)($context['page'] ?? []);
         $services = (array)($context['services'] ?? []);
         $editingRuleId = (int)($page['editing_rule_id'] ?? $page['edit_rule_id'] ?? 0);
         $ruleForm = (array)($page['rule_form'] ?? $services['editing_rule'] ?? $services['blank_rule_form'] ?? []);
         $nominalAccounts = (array)($services['nominal_accounts'] ?? []);
+        $sourceCategoryOptions = $this->sourceOptionsHtml(
+            (array)($services['source_category_options'] ?? []),
+            (string)($ruleForm['source_category_value'] ?? ''),
+            'Any Category'
+        );
+        $sourceAccountOptions = $this->sourceOptionsHtml(
+            (array)($services['source_account_options'] ?? []),
+            (string)($ruleForm['source_account_value'] ?? ''),
+            'Any Account'
+        );
         $selectedTransactionFilter = (string)($page['category_filter'] ?? 'all');
         $cancelFormId = 'transactions-rule-cancel-form';
 
@@ -127,11 +153,15 @@ final class _transactions_rule_formCard extends CardBaseFramework
                     </div>
                     <div class="form-row">
                         <label for="rule_source_category_value">Optional source category</label>
-                        <input class="input" id="rule_source_category_value" name="source_category_value" value="' . HelperFramework::escape((string)($ruleForm['source_category_value'] ?? '')) . '">
+                        <select class="select" id="rule_source_category_value" name="source_category_value">
+                            ' . $sourceCategoryOptions . '
+                        </select>
                     </div>
                     <div class="form-row">
                         <label for="rule_source_account_value">Optional source account</label>
-                        <input class="input" id="rule_source_account_value" name="source_account_value" value="' . HelperFramework::escape((string)($ruleForm['source_account_value'] ?? '')) . '">
+                        <select class="select" id="rule_source_account_value" name="source_account_value">
+                            ' . $sourceAccountOptions . '
+                        </select>
                     </div>
                     <div class="form-row full">
                         <label for="rule_nominal_account_id">Nominal account</label>
@@ -156,5 +186,32 @@ final class _transactions_rule_formCard extends CardBaseFramework
                 </div>
             </form>
         ';
+    }
+
+    private function sourceOptionsHtml(array $options, string $selectedValue, string $anyLabel): string
+    {
+        $selectedValue = trim($selectedValue);
+        $normalisedOptions = [];
+
+        foreach ($options as $option) {
+            $value = is_array($option)
+                ? trim((string)($option['value'] ?? $option['label'] ?? ''))
+                : trim((string)$option);
+
+            if ($value !== '') {
+                $normalisedOptions[$value] = $value;
+            }
+        }
+
+        if ($selectedValue !== '' && !isset($normalisedOptions[$selectedValue])) {
+            $normalisedOptions[$selectedValue] = $selectedValue;
+        }
+
+        $html = '<option value=""' . ($selectedValue === '' ? ' selected' : '') . '>' . HelperFramework::escape($anyLabel) . '</option>';
+        foreach ($normalisedOptions as $value) {
+            $html .= '<option value="' . HelperFramework::escape($value) . '"' . ($value === $selectedValue ? ' selected' : '') . '>' . HelperFramework::escape($value) . '</option>';
+        }
+
+        return $html;
     }
 }

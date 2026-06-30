@@ -103,6 +103,16 @@ final class BankingAction implements ActionInterfaceFramework
 
         if (!empty($result['success'])) {
             $flashMessages[] = $isUpdate ? 'Account updated successfully.' : 'Account saved successfully.';
+            foreach ((array)($result['warnings'] ?? []) as $warning) {
+                $warning = trim((string)$warning);
+                if ($warning !== '') {
+                    $flashMessages[] = [
+                        'type' => 'warning',
+                        'message' => $warning,
+                    ];
+                }
+            }
+
             if (!empty($result['nominal_created'])) {
                 $nominalCode = trim((string)($result['nominal_code'] ?? ''));
                 $flashMessages[] = $nominalCode !== ''
@@ -272,13 +282,12 @@ final class BankingAction implements ActionInterfaceFramework
 
     private function accountPayload(RequestFramework $request): array
     {
-        return [
+        $payload = [
             'account_name' => trim((string)$request->input('account_name', '')),
             'account_type' => trim((string)$request->input('account_type', \eel_accounts\Service\CompanyAccountService::TYPE_BANK)),
             'institution_name' => trim((string)$request->input('institution_name', '')),
             'account_identifier' => trim((string)$request->input('account_identifier', '')),
             'nominal_account_id' => trim((string)$request->input('nominal_account_id', '')),
-            'internal_transfer_marker' => trim((string)$request->input('internal_transfer_marker', '')),
             'contact_name' => trim((string)$request->input('contact_name', '')),
             'phone_number' => trim((string)$request->input('phone_number', '')),
             'address_line_1' => trim((string)$request->input('address_line_1', '')),
@@ -289,6 +298,12 @@ final class BankingAction implements ActionInterfaceFramework
             'address_country' => trim((string)$request->input('address_country', '')),
             'is_active' => in_array((string)$request->input('is_active', ''), ['1', 'true', 'yes', 'on'], true),
         ];
+
+        if (array_key_exists('internal_transfer_marker', $request->postValues())) {
+            $payload['internal_transfer_marker'] = trim((string)$request->input('internal_transfer_marker', ''));
+        }
+
+        return $payload;
     }
 
     private function result(bool $success, array $messages, array $errors, array $query, array $context): ActionResultFramework
@@ -296,9 +311,17 @@ final class BankingAction implements ActionInterfaceFramework
         $flash = [];
 
         foreach ($messages as $message) {
-            $message = trim((string)$message);
-            if ($message !== '') {
-                $flash[] = $message;
+            if (is_array($message)) {
+                $messageText = trim((string)($message['message'] ?? $message['message_html'] ?? ''));
+                if ($messageText !== '') {
+                    $flash[] = $message;
+                }
+                continue;
+            }
+
+            $messageText = trim((string)$message);
+            if ($messageText !== '') {
+                $flash[] = $messageText;
             }
         }
 

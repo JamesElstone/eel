@@ -515,6 +515,10 @@ final class _transactions_importedCard extends CardBaseFramework
 
     private function transactionIsTransferMode(array $transaction): bool
     {
+        if ((int)($transaction['is_internal_transfer'] ?? 0) === 1) {
+            return true;
+        }
+
         if ((int)($transaction['transfer_account_id'] ?? 0) > 0) {
             return true;
         }

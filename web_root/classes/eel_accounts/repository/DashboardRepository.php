@@ -134,7 +134,7 @@ final class DashboardRepository
         if ($uncategorisedCount > 0) {
             $data['activity'][] = [
                 'title' => 'Categorise uncategorised transactions',
-                'detail' => $uncategorisedCount . ' transaction' . ($uncategorisedCount === 1 ? '' : 's') . ' still need a nominal account.',
+                'detail' => $uncategorisedCount . ' transaction' . ($uncategorisedCount === 1 ? '' : 's') . ' still need to be categorised against a nominal account.',
             ];
         }
 

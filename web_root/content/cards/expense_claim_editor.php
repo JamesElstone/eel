@@ -22,7 +22,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
                 'service' => \eel_accounts\Service\ExpenseClaimService::class,
                 'method' => 'fetchPageData',
                 'params' => [
-                    'companyId' => ':company_id',
+                    'companyId' => ':company.id',
                     'filters' => ':expense_filters',
                 ],
             ],

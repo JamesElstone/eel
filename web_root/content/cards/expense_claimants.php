@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 final class _expense_claimantsCard extends CardBaseFramework
 {
+    private const PAGE_SIZE = 10;
+
     public function key(): string
     {
         return 'expense_claimants';
@@ -22,7 +24,7 @@ final class _expense_claimantsCard extends CardBaseFramework
                 'service' => \eel_accounts\Service\ExpenseClaimService::class,
                 'method' => 'fetchPageData',
                 'params' => [
-                    'companyId' => ':company_id',
+                    'companyId' => ':company.id',
                     'filters' => ':expense_filters',
                 ],
             ],
@@ -34,44 +36,36 @@ final class _expense_claimantsCard extends CardBaseFramework
         return 'Expense Claimants';
     }
 
+    public function handle(
+        RequestFramework $request,
+        PageServiceFramework $services,
+        array $pageContext,
+        ActionResultFramework $actionResult
+    ): array {
+        $pageContext = parent::handle($request, $services, $pageContext, $actionResult);
+
+        return $this->applyTableSortContext($request, $pageContext, $this->key());
+    }
+
     public function handleError(string $serviceKey, array $error, array $context): string
     {
         return '';
     }
 
+    public function tables(array $context): array
+    {
+        return [$this->configuredTable($context)];
+    }
+
     public function render(array $context): string
     {
-        $data = (array)($context['services']['expensesPageData'] ?? []);
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $hasCompany = $companyId > 0;
-        $claimants = (array)($data['claimants'] ?? []);
         $addDisabled = $hasCompany ? '' : ' disabled';
         $addHelper = $hasCompany
             ? 'Manage the people who can submit monthly personal expense claims for this company.'
             : 'Select or add a company before configuring expense claimants.';
-
-        $rows = '';
-        foreach ($claimants as $claimant) {
-            $claimantId = (int)($claimant['id'] ?? 0);
-            $isActive = (int)($claimant['is_active'] ?? 0) === 1;
-            $rows .= '<tr>
-                <td>' . HelperFramework::escape((string)($claimant['claimant_name'] ?? '')) . '</td>
-                <td><span class="badge ' . ($isActive ? 'success' : 'warning') . '">' . ($isActive ? 'Active' : 'Inactive') . '</span></td>
-                <td>
-                    <form method="post" action="?page=expenses" data-ajax="true" class="actions-row actions-row-nowrap">
-                        <input type="hidden" name="card_action" value="Expense">
-                        <input type="hidden" name="company_id" value="' . $companyId . '">
-                        <input type="hidden" name="claimant_id" value="' . $claimantId . '">
-                        <button class="button button-inline" type="submit" name="intent" value="' . ($isActive ? 'deactivate_claimant' : 'activate_claimant') . '">' . ($isActive ? 'Deactivate' : 'Activate') . '</button>
-                    </form>
-                </td>
-            </tr>';
-        }
-
-        if ($rows === '') {
-            $rows = '<tr><td colspan="3" class="helper">' . ($hasCompany ? 'No claimants configured yet. Add one below to enable claim creation.' : 'No company is selected.') . '</td></tr>';
-        }
 
         return '<section class="panel-soft">
             <div class="status-head">
@@ -86,14 +80,112 @@ final class _expense_claimantsCard extends CardBaseFramework
                     <label for="expense-new-claimant">New claimant</label>
                     <input class="input" id="expense-new-claimant" name="claimant_name" type="text" placeholder="Claimant\'s Name"' . $addDisabled . '>
                 </div>
-                <button class="button primary" type="submit"' . $addDisabled . '>Add claimant</button>
+                <button class="button primary" type="submit"' . $addDisabled . '>Add Claimant</button>
             </form>
-            <div class="table-scroll">
-                <table>
-                    <thead><tr><th>Claimant</th><th>Status</th><th>Action</th></tr></thead>
-                    <tbody>' . $rows . '</tbody>
-                </table>
-            </div>
+            ' . $this->configuredTable($context)->render($context, [
+                'cards[]' => (array)($context['page']['page_cards'] ?? []),
+            ]) . '
         </section>';
+    }
+
+    private function configuredTable(array $context): TableFramework
+    {
+        $hiddenFields = [
+            'page' => (string)($context['page']['page_id'] ?? 'expenses'),
+            '_pagination' => '1',
+            '_invalidate_fact' => $this->tableInvalidationFact(),
+            'cards[]' => [$this->key()],
+        ];
+        $table = $this->configureTableSorting($this->table($context), $context, $hiddenFields);
+        $pagination = HelperFramework::paginateArray($table->sortedRows(), $this->paginationPage($context), self::PAGE_SIZE);
+
+        return $table
+            ->visibleRows((array)$pagination['items'])
+            ->pagination(
+                $pagination,
+                'Expense claimants',
+                $this->paginationPageField(),
+                $hiddenFields
+            );
+    }
+
+    private function table(array $context): TableFramework
+    {
+        return TableFramework::make($this->key(), $this->rows($context))
+            ->filename('expense-claimants')
+            ->empty($this->hasCompany($context)
+                ? 'No claimants configured yet. Add one below to enable claim creation.'
+                : 'No company is selected.')
+            ->textColumn('claimant_name', 'Claimant')
+            ->column(
+                'is_active',
+                'Status',
+                html: fn(array $row): string => $this->statusHtml($row),
+                export: fn(array $row): string => $this->statusLabel($row)
+            )
+            ->column(
+                'action',
+                'Action',
+                html: fn(array $row): string => $this->actionForm($row, $context),
+                exportable: false,
+                cellClass: 'cell-fit'
+            );
+    }
+
+    private function rows(array $context): array
+    {
+        $data = (array)($context['services']['expensesPageData'] ?? []);
+
+        return array_values(array_filter(
+            (array)($data['claimants'] ?? []),
+            static fn(mixed $claimant): bool => is_array($claimant)
+        ));
+    }
+
+    private function actionForm(array $claimant, array $context): string
+    {
+        $companyId = (int)(($context['company'] ?? [])['id'] ?? 0);
+        $claimantId = (int)($claimant['id'] ?? 0);
+        $isActive = $this->isActive($claimant);
+        $intent = $isActive ? 'deactivate_claimant' : 'activate_claimant';
+        $label = $isActive ? 'Deactivate' : 'Activate';
+
+        if ($companyId <= 0 || $claimantId <= 0) {
+            return '';
+        }
+
+        return '<form method="post" action="?page=expenses" data-ajax="true" class="actions-row actions-row-nowrap">
+            <input type="hidden" name="card_action" value="Expense">
+            <input type="hidden" name="company_id" value="' . $companyId . '">
+            <input type="hidden" name="claimant_id" value="' . $claimantId . '">
+            <button class="button button-inline" type="submit" name="intent" value="' . HelperFramework::escape($intent) . '">' . HelperFramework::escape($label) . '</button>
+        </form>';
+    }
+
+    private function statusHtml(array $claimant): string
+    {
+        $isActive = $this->isActive($claimant);
+
+        return '<span class="badge ' . ($isActive ? 'success' : 'warning') . '">' . HelperFramework::escape($this->statusLabel($claimant)) . '</span>';
+    }
+
+    private function statusLabel(array $claimant): string
+    {
+        return $this->isActive($claimant) ? 'Active' : 'Inactive';
+    }
+
+    private function isActive(array $claimant): bool
+    {
+        return (int)($claimant['is_active'] ?? 0) === 1;
+    }
+
+    private function hasCompany(array $context): bool
+    {
+        return (int)(($context['company'] ?? [])['id'] ?? 0) > 0;
+    }
+
+    private function tableInvalidationFact(): string
+    {
+        return (string)($this->invalidationFacts()[0] ?? 'expense.claimants');
     }
 }

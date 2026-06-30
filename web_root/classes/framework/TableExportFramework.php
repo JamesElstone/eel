@@ -22,7 +22,7 @@ final class TableExportFramework
         }
 
         $format = strtolower(trim((string)$request->input('_table_export_prepare', '')));
-        if (!in_array($format, ['csv', 'xlsx', 'tsv'], true)) {
+        if (!in_array($format, ['csv', 'xlsx', 'tsv', 'ascii'], true)) {
             return null;
         }
 
@@ -44,6 +44,10 @@ final class TableExportFramework
 
             foreach ($card->tables($cardContext) as $table) {
                 if ($table instanceof TableFramework && $table->key() === $tableKey) {
+                    if ($this->clipboardRequested($request, $format)) {
+                        return $this->clipboardExportResponse($request, $table, $format);
+                    }
+
                     return $this->prepareExportResponse($request, $table, $format);
                 }
             }
@@ -82,7 +86,7 @@ final class TableExportFramework
 
         $format = strtolower(trim((string)($export['format'] ?? '')));
         $tableKey = trim((string)($export['table_key'] ?? ''));
-        if (!in_array($format, ['csv', 'xlsx', 'tsv'], true) || $tableKey === '') {
+        if (!in_array($format, ['csv', 'xlsx', 'tsv', 'ascii'], true) || $tableKey === '') {
             return ResponseFramework::html('The requested export was invalid.', 400);
         }
 
@@ -98,6 +102,38 @@ final class TableExportFramework
         }
 
         return $table->downloadResponse($format);
+    }
+
+    private function clipboardRequested(RequestFramework $request, string $format): bool
+    {
+        return trim((string)$request->input('_table_export_clipboard', '')) === '1'
+            && in_array($format, ['csv', 'tsv', 'ascii'], true);
+    }
+
+    private function clipboardExportResponse(RequestFramework $request, TableFramework $table, string $format): ResponseFramework
+    {
+        $sessionAuthenticationService = new SessionAuthenticationService(request: $request);
+        $sessionAuthenticationService->startSession();
+
+        return ResponseFramework::json([
+            'success' => true,
+            'clipboard_text' => $this->clipboardExportText($table, $format),
+            'clipboard_format' => $format,
+            'ajax_nonce' => $sessionAuthenticationService->consumeAjaxNonceRefresh(),
+        ]);
+    }
+
+    private function clipboardExportText(TableFramework $table, string $format): string
+    {
+        if ($format === 'tsv') {
+            return $table->exportTsv();
+        }
+
+        if ($format === 'ascii') {
+            return $table->exportAscii();
+        }
+
+        return $table->exportCsv();
     }
 
     private function prepareExportResponse(RequestFramework $request, TableFramework $table, string $format): ResponseFramework
@@ -149,7 +185,7 @@ final class TableExportFramework
 
     private function exportReplayFacts(array $values): array
     {
-        foreach (['_table_export_prepare', '_table_export_download', 'ajax_nonce', '_ajax', 'action', 'card_action'] as $key) {
+        foreach (['_table_export_prepare', '_table_export_download', '_table_export_clipboard', 'ajax_nonce', '_ajax', 'action', 'card_action'] as $key) {
             unset($values[$key]);
         }
 

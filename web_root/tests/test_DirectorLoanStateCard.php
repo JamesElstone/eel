@@ -22,7 +22,7 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
         $harness->assertSame(':company.accounting_period_id', $params['accountingPeriodId'] ?? null);
     });
 
-    $harness->check(_director_loan_stateCard::class, 'renders statement without duplicate accounting period field', static function () use ($harness, $card): void {
+    $harness->check(_director_loan_stateCard::class, 'renders statement without duplicate context fields', static function () use ($harness, $card): void {
         $html = $card->render([
             'company' => [
                 'id' => 47,
@@ -68,8 +68,10 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
             ],
         ]);
 
-        $harness->assertTrue(str_contains($html, 'Elstone Electricals Limited'));
+        $harness->assertTrue(!str_contains($html, 'Elstone Electricals Limited'));
+        $harness->assertTrue(!str_contains($html, '<label>Company</label>'));
         $harness->assertTrue(!str_contains($html, '<label>Accounting Period</label>'));
+        $harness->assertTrue(!str_contains($html, '<input class="input"'));
         $harness->assertTrue(!str_contains($html, '01/10/2025 to 30/09/2026'));
         $harness->assertTrue(!str_contains($html, '<select'));
         $harness->assertTrue(str_contains($html, '£100.00'));

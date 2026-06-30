@@ -380,7 +380,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
         }
 
         $placeholderSelected = $selectedAccountId <= 0 ? ' selected' : '';
-        $options = '<option value="" disabled' . $placeholderSelected . '></option>';
+        $options = '<option value="" disabled' . $placeholderSelected . '>Select an account to see mappings..</option>';
 
         foreach ($accounts as $account) {
             $accountId = (int)($account['id'] ?? 0);

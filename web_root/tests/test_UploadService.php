@@ -237,4 +237,23 @@ $harness->run(\eel_accounts\Service\StatementUploadService::class, static functi
         $harness->assertSame('GBP', $mapping['currency']['default_value'] ?? null);
         $harness->assertSame('£ GBP', $mapping['currency']['label'] ?? null);
     });
+
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'auto mapping recognises reference counterparty and card fields', static function () use ($harness): void {
+        $mapping = \eel_accounts\Service\StatementUploadService::autoMapHeaders([
+            'date',
+            'type',
+            'description',
+            'reference',
+            'amount',
+            'name',
+            'card',
+        ]);
+
+        $harness->assertSame('reference', $mapping['reference']['header'] ?? null);
+        $harness->assertSame(3, $mapping['reference']['index'] ?? null);
+        $harness->assertSame('name', $mapping['counterparty']['header'] ?? null);
+        $harness->assertSame(5, $mapping['counterparty']['index'] ?? null);
+        $harness->assertSame('card', $mapping['card']['header'] ?? null);
+        $harness->assertSame(6, $mapping['card']['index'] ?? null);
+    });
 });

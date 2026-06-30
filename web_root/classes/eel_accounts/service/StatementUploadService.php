@@ -33,6 +33,9 @@ final class StatementUploadService
         'processed' => ['label' => 'Processed Date', 'required' => false],
         'type' => ['label' => 'Type', 'required' => false],
         'description' => ['label' => 'Description', 'required' => true],
+        'reference' => ['label' => 'Reference', 'required' => false],
+        'counterparty' => ['label' => 'Counterparty', 'required' => false],
+        'card' => ['label' => 'Card', 'required' => false],
         'amount' => ['label' => 'Amount', 'required' => true],
         'balance' => ['label' => 'Statement Balance', 'required' => false],
         'currency' => ['label' => 'Currency', 'required' => false],
@@ -46,6 +49,9 @@ final class StatementUploadService
         'processed' => ['processed', 'processed at', 'settled', 'settled at', 'posted', 'posted at'],
         'type' => ['type', 'transaction type', 'statement type'],
         'description' => ['description', 'details', 'transaction description', 'narrative'],
+        'reference' => ['reference', 'ref', 'transaction reference', 'payment reference', 'memo'],
+        'counterparty' => ['counterparty', 'name', 'payee', 'merchant', 'vendor', 'supplier'],
+        'card' => ['card', 'card name', 'cardholder', 'card last 4'],
         'amount' => ['amount', 'transaction amount', 'value'],
         'balance' => ['balance', 'running balance', 'statement balance', 'account balance', 'current balance'],
         'currency' => ['currency', 'curr'],
@@ -440,13 +446,14 @@ final class StatementUploadService
     }
 
     public function fetchUpload(int $companyId, int $uploadId): ?array {
+        $internalTransferMarkerSelect = $this->internalTransferMarkerSelectSql('ca');
         $row = \InterfaceDB::fetchOne( 'SELECT su.*,
                     ty.period_start,
                     ty.period_end,
                     ca.account_name,
                     ca.account_type,
                     ca.institution_name,
-                    ca.internal_transfer_marker
+                    ' . $internalTransferMarkerSelect . '
              FROM statement_uploads su
              LEFT JOIN accounting_periods ty ON ty.id = su.accounting_period_id
              LEFT JOIN company_accounts ca ON ca.id = su.account_id
@@ -1119,8 +1126,9 @@ final class StatementUploadService
         try {
             \InterfaceDB::beginTransaction();
 
+            $insertVerb = \InterfaceDB::driverName() === 'sqlite' ? 'INSERT OR IGNORE' : 'INSERT IGNORE';
             $insertTransaction = \InterfaceDB::prepare(
-                'INSERT IGNORE INTO transactions (
+                $insertVerb . ' INTO transactions (
                     company_id,
                     accounting_period_id,
                     statement_upload_id,
@@ -1194,6 +1202,24 @@ final class StatementUploadService
                     is_array($parsedMapping['type'] ?? null) ? $parsedMapping['type'] : null,
                     'type'
                 );
+                $importedReference = $this->extractMappedFieldFromRawJson(
+                    (string)($row['raw_json'] ?? ''),
+                    is_array($parsedMapping['reference'] ?? null) ? $parsedMapping['reference'] : null,
+                    'reference',
+                    false
+                );
+                $importedCounterparty = $this->extractMappedFieldFromRawJson(
+                    (string)($row['raw_json'] ?? ''),
+                    is_array($parsedMapping['counterparty'] ?? null) ? $parsedMapping['counterparty'] : null,
+                    'counterparty',
+                    false
+                );
+                $importedCard = $this->extractMappedFieldFromRawJson(
+                    (string)($row['raw_json'] ?? ''),
+                    is_array($parsedMapping['card'] ?? null) ? $parsedMapping['card'] : null,
+                    'card',
+                    false
+                );
                 $isInternalTransfer = $this->matchesTransferMarker(
                     $importedTxnType,
                     isset($upload['internal_transfer_marker']) ? (string)$upload['internal_transfer_marker'] : null
@@ -1207,12 +1233,12 @@ final class StatementUploadService
                     'txn_date' => (string)$row['chosen_txn_date'],
                     'txn_type' => $importedTxnType,
                     'description' => (string)$row['normalised_description'],
-                    'reference' => null,
+                    'reference' => $importedReference,
                     'amount' => (string)$row['normalised_amount'],
                     'currency' => $row['normalised_currency'] !== null ? (string)$row['normalised_currency'] : null,
                     'balance' => $row['normalised_balance'] !== null ? (string)$row['normalised_balance'] : null,
-                    'counterparty_name' => null,
-                    'card' => null,
+                    'counterparty_name' => $importedCounterparty,
+                    'card' => $importedCard,
                     'dedupe_hash' => (string)$row['row_hash'],
                     'source_type' => self::SOURCE_TYPE,
                     'source_account_label' => $row['source_account'] !== null ? (string)$row['source_account'] : (($upload['account_name'] ?? null) !== null ? (string)$upload['account_name'] : null),
@@ -1837,15 +1863,19 @@ final class StatementUploadService
         if ($companyId <= 0) {
             return [
                 'success' => false,
-                'errors' => ['Select a company before running the transaction type backfill.'],
+                'errors' => ['Select a company before running the mapping backfill.'],
             ];
         }
 
+        $internalTransferMarkerSelect = $this->internalTransferMarkerSelectSql('ca');
         $stmt = \InterfaceDB::prepare(
             'SELECT t.id,
                     t.txn_type,
+                    t.reference,
+                    t.counterparty_name,
+                    t.card,
                     t.account_id,
-                    COALESCE(ca.internal_transfer_marker, \'\') AS internal_transfer_marker,
+                    ' . $internalTransferMarkerSelect . ',
                     sir.raw_json,
                     COALESCE(sim.mapping_json, \'\') AS mapping_json
              FROM transactions t
@@ -1853,7 +1883,12 @@ final class StatementUploadService
              LEFT JOIN company_accounts ca ON ca.id = t.account_id
              LEFT JOIN statement_import_mappings sim ON sim.upload_id = t.statement_upload_id
              WHERE t.company_id = :company_id
-               AND (t.txn_type IS NULL OR TRIM(t.txn_type) = \'\')
+               AND (
+                   t.txn_type IS NULL OR TRIM(t.txn_type) = \'\'
+                   OR t.reference IS NULL OR TRIM(t.reference) = \'\'
+                   OR t.counterparty_name IS NULL OR TRIM(t.counterparty_name) = \'\'
+                   OR t.card IS NULL OR TRIM(t.card) = \'\'
+               )
              ORDER BY t.id ASC'
         );
         $stmt->execute(['company_id' => $companyId]);
@@ -1868,13 +1903,6 @@ final class StatementUploadService
             'errors' => [],
         ];
 
-        $update = \InterfaceDB::prepare(
-            'UPDATE transactions
-             SET txn_type = :txn_type,
-                 is_internal_transfer = :is_internal_transfer
-             WHERE id = :id'
-        );
-
         $ownsTransaction = !\InterfaceDB::inTransaction();
 
         if ($ownsTransaction) {
@@ -1885,25 +1913,14 @@ final class StatementUploadService
             foreach ($rows as $row) {
                 try {
                     $mapping = $this->decodeJsonObject((string)($row['mapping_json'] ?? ''));
-                    $txnType = $this->extractMappedFieldFromRawJson(
-                        (string)($row['raw_json'] ?? ''),
-                        is_array($mapping['type'] ?? null) ? $mapping['type'] : null,
-                        'type'
-                    );
+                    $updates = $this->mappedTransactionBackfillUpdates($row, $mapping);
 
-                    if ($txnType === null) {
+                    if ($updates === []) {
                         $summary['rows_skipped']++;
                         continue;
                     }
 
-                    $update->execute([
-                        'id' => (int)$row['id'],
-                        'txn_type' => $txnType,
-                        'is_internal_transfer' => $this->matchesTransferMarker(
-                            $txnType,
-                            (string)($row['internal_transfer_marker'] ?? '')
-                        ) ? 1 : 0,
-                    ]);
+                    $this->updateTransactionMappedFields((int)$row['id'], $updates);
                     $summary['rows_updated']++;
                 } catch (\Throwable $exception) {
                     $summary['rows_failed']++;
@@ -1921,14 +1938,96 @@ final class StatementUploadService
 
             return [
                 'success' => false,
-                'errors' => ['The transaction type backfill failed: ' . $exception->getMessage()],
+                'errors' => ['The mapping backfill failed: ' . $exception->getMessage()],
             ];
         }
 
         return $summary;
     }
 
-    private function extractMappedFieldFromRawJson(string $rawJson, ?array $mappingEntry, string $fieldName): ?string {
+    private function mappedTransactionBackfillUpdates(array $row, array $mapping): array {
+        $rawJson = (string)($row['raw_json'] ?? '');
+        $updates = [];
+
+        if ($this->isBlankValue($row['txn_type'] ?? null)) {
+            $txnType = $this->extractMappedFieldFromRawJson(
+                $rawJson,
+                is_array($mapping['type'] ?? null) ? $mapping['type'] : null,
+                'type'
+            );
+
+            if ($txnType !== null) {
+                $updates['txn_type'] = $txnType;
+                $updates['is_internal_transfer'] = $this->matchesTransferMarker(
+                    $txnType,
+                    (string)($row['internal_transfer_marker'] ?? '')
+                ) ? 1 : 0;
+            }
+        }
+
+        foreach ([
+            'reference' => 'reference',
+            'counterparty_name' => 'counterparty',
+            'card' => 'card',
+        ] as $column => $fieldName) {
+            if (!$this->isBlankValue($row[$column] ?? null)) {
+                continue;
+            }
+
+            $value = $this->extractMappedFieldFromRawJson(
+                $rawJson,
+                is_array($mapping[$fieldName] ?? null) ? $mapping[$fieldName] : null,
+                $fieldName
+            );
+
+            if ($value !== null) {
+                $updates[$column] = $value;
+            }
+        }
+
+        return $updates;
+    }
+
+    private function updateTransactionMappedFields(int $transactionId, array $updates): void {
+        $allowedColumns = ['txn_type', 'is_internal_transfer', 'reference', 'counterparty_name', 'card'];
+        $set = [];
+        $params = ['id' => $transactionId];
+
+        foreach ($updates as $column => $value) {
+            if (!in_array((string)$column, $allowedColumns, true)) {
+                continue;
+            }
+
+            $set[] = $column . ' = :' . $column;
+            $params[$column] = $value;
+        }
+
+        if ($set === []) {
+            return;
+        }
+
+        \InterfaceDB::prepareExecute(
+            'UPDATE transactions
+             SET ' . implode(', ', $set) . '
+             WHERE id = :id',
+            $params
+        );
+    }
+
+    private function isBlankValue(mixed $value): bool {
+        return $value === null || trim((string)$value) === '';
+    }
+
+    private function internalTransferMarkerSelectSql(string $alias): string {
+        $alias = trim($alias);
+        $prefix = $alias !== '' ? $alias . '.' : '';
+
+        return \InterfaceDB::columnExists('company_accounts', 'internal_transfer_marker')
+            ? 'COALESCE(' . $prefix . 'internal_transfer_marker, \'\') AS internal_transfer_marker'
+            : '\'\' AS internal_transfer_marker';
+    }
+
+    private function extractMappedFieldFromRawJson(string $rawJson, ?array $mappingEntry, string $fieldName, bool $allowAliasFallback = true): ?string {
         if (is_array($mappingEntry) && array_key_exists('default_value', $mappingEntry)) {
             $value = trim((string)$mappingEntry['default_value']);
 
@@ -1949,6 +2048,10 @@ final class StatementUploadService
             if (array_key_exists($index, $values) && trim($values[$index]) !== '') {
                 return trim($values[$index]);
             }
+        }
+
+        if (!$allowAliasFallback) {
+            return null;
         }
 
         foreach (self::HEADER_ALIASES[$fieldName] ?? [] as $alias) {

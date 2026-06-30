@@ -139,7 +139,7 @@ final class _nominals_add_accountCard extends CardBaseFramework
 
     private function validNominalTaxTreatments(): array
     {
-        return ['allowable', 'disallowable', 'capital'];
+        return ['allowable', 'disallowable', 'capital', 'other'];
     }
 
     private function findRowById(array $rows, int $id): ?array

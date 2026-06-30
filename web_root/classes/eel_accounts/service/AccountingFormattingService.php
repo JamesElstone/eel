@@ -17,6 +17,7 @@ final class AccountingFormattingService
         return match (trim($taxTreatment)) {
             'disallowable' => 'Disallowable',
             'capital' => 'Capital',
+            'other' => 'Review',
             default => 'Allowable',
         };
     }

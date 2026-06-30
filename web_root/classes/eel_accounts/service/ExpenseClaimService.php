@@ -31,16 +31,26 @@ final class ExpenseClaimService
             $selectedClaim = $this->fetchClaim($companyId, (int)$filters['claim_id']);
         }
 
+        $paymentQuery = trim((string)($filters['payment_query'] ?? ''));
+
         return [
             'claimants' => $this->fetchClaimants($companyId, false),
             'active_claimant_count' => count($this->fetchClaimants($companyId, true)),
             'nominal_accounts' => $this->fetchExpenseNominals(),
+            'payment_candidates' => $selectedClaim !== null
+                ? $this->searchTransactions($companyId, [
+                    'claim_id' => (int)$selectedClaim['id'],
+                    'query' => $paymentQuery,
+                    'current_month_only' => true,
+                ])
+                : [],
             'claims' => $this->listClaims($companyId, $filters),
             'claim_heatmap_claims' => $this->listClaims($companyId),
             'selected_claim' => $selectedClaim,
             'filters' => [
                 'query' => trim((string)($filters['query'] ?? '')),
                 'status' => $this->normaliseStatusFilter((string)($filters['status'] ?? 'all')),
+                'payment_query' => $paymentQuery,
                 'heatmap_claimant_id' => max(0, (int)($filters['heatmap_claimant_id'] ?? 0)),
                 'heatmap_year' => max(0, (int)($filters['heatmap_year'] ?? 0)),
                 'heatmap_date' => trim((string)($filters['heatmap_date'] ?? '')),
@@ -602,6 +612,137 @@ final class ExpenseClaimService
             'success' => true,
             'claim' => $this->fetchClaim($companyId, $claimId),
             'claims' => $this->listClaims($companyId),
+        ];
+    }
+
+    public function previewBulkLines(int $companyId, int $claimId, string $pastedText, string $displayDateFormat = 'd/m/Y'): array {
+        $claim = $this->fetchClaim($companyId, $claimId);
+        if ($claim === null) {
+            return ['success' => false, 'errors' => ['The selected claim could not be found.']];
+        }
+
+        if ((string)$claim['status'] === 'posted') {
+            return ['success' => false, 'errors' => ['Posted claims are locked.']];
+        }
+
+        $parsed = $this->parseBulkLineText($pastedText, $displayDateFormat);
+        $parsed['claim'] = $claim;
+        $parsed['source_text'] = $pastedText;
+
+        return $parsed;
+    }
+
+    public function bulkSaveLines(int $companyId, int $claimId, array $payload): array {
+        $claim = $this->fetchClaim($companyId, $claimId);
+        if ($claim === null) {
+            return ['success' => false, 'errors' => ['The selected claim could not be found.']];
+        }
+
+        if ((string)$claim['status'] === 'posted') {
+            return ['success' => false, 'errors' => ['Posted claims are locked.']];
+        }
+
+        $pastedText = (string)($payload['pasted_lines'] ?? '');
+        $displayDateFormat = (string)($payload['date_format'] ?? 'd/m/Y');
+        $parsed = $this->parseBulkLineText($pastedText, $displayDateFormat);
+        if (empty($parsed['success'])) {
+            return $parsed;
+        }
+
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
+        }
+
+        try {
+            $lineNumber = $this->nextLineNumber($claimId);
+            foreach ((array)$parsed['rows'] as $row) {
+                \InterfaceDB::prepare(
+                    'INSERT INTO expense_claim_lines (
+                        expense_claim_id,
+                        line_number,
+                        expense_date,
+                        description,
+                        amount,
+                        nominal_account_id,
+                        receipt_reference,
+                        notes,
+                        created_at,
+                        updated_at
+                     ) VALUES (
+                        :expense_claim_id,
+                        :line_number,
+                        :expense_date,
+                        :description,
+                        :amount,
+                        NULL,
+                        NULL,
+                        NULL,
+                        CURRENT_TIMESTAMP,
+                        CURRENT_TIMESTAMP
+                     )'
+                )->execute([
+                    'expense_claim_id' => $claimId,
+                    'line_number' => $lineNumber,
+                    'expense_date' => (string)$row['expense_date'],
+                    'description' => (string)$row['description'],
+                    'amount' => round((float)$row['amount'], 2),
+                ]);
+                $lineNumber++;
+            }
+
+            $this->recalculateClaimSeries($companyId, (int)$claim['claimant_id']);
+
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+
+            return ['success' => false, 'errors' => [$exception->getMessage()]];
+        }
+
+        return [
+            'success' => true,
+            'claim' => $this->fetchClaim($companyId, $claimId),
+            'claims' => $this->listClaims($companyId),
+            'messages' => [sprintf('%d expense line%s imported.', count((array)$parsed['rows']), count((array)$parsed['rows']) === 1 ? '' : 's')],
+        ];
+    }
+
+    public function updateLineNominal(int $companyId, int $claimId, int $lineId, int $nominalAccountId): array {
+        $claim = $this->fetchClaim($companyId, $claimId);
+        if ($claim === null) {
+            return ['success' => false, 'errors' => ['The selected claim could not be found.']];
+        }
+
+        if ((string)$claim['status'] === 'posted') {
+            return ['success' => false, 'errors' => ['Posted claims are locked.']];
+        }
+
+        if ($lineId <= 0) {
+            return ['success' => false, 'errors' => ['Select a valid expense line.']];
+        }
+
+        \InterfaceDB::prepare(
+            'UPDATE expense_claim_lines
+             SET nominal_account_id = :nominal_account_id,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = :id
+               AND expense_claim_id = :expense_claim_id'
+        )->execute([
+            'nominal_account_id' => $nominalAccountId > 0 ? $nominalAccountId : null,
+            'id' => $lineId,
+            'expense_claim_id' => $claimId,
+        ]);
+
+        return [
+            'success' => true,
+            'claim' => $this->fetchClaim($companyId, $claimId),
+            'claims' => $this->listClaims($companyId),
+            'messages' => ['Line nominal saved.'],
         ];
     }
 
@@ -1306,6 +1447,140 @@ final class ExpenseClaimService
         }
 
         return $errors;
+    }
+
+    private function parseBulkLineText(string $pastedText, string $displayDateFormat = 'd/m/Y'): array {
+        $pastedText = trim(str_replace(["\u{00a0}", "\r\n", "\r"], [' ', "\n", "\n"], $pastedText));
+        if ($pastedText === '') {
+            return ['success' => false, 'errors' => ['Paste at least one expense line.'], 'rows' => [], 'total' => 0.0];
+        }
+
+        $rows = [];
+        $errors = [];
+        $lineNumber = 0;
+
+        foreach (explode("\n", $pastedText) as $rawLine) {
+            $lineNumber++;
+            $line = trim($rawLine);
+            if ($line === '') {
+                continue;
+            }
+
+            $cells = array_map(
+                static fn(string $cell): string => trim($cell),
+                explode("\t", $line)
+            );
+            $cells = array_values(array_filter($cells, static fn(string $cell): bool => $cell !== ''));
+            if ($cells === [] || $this->bulkLineIsIgnorable($cells)) {
+                continue;
+            }
+
+            if (count($cells) < 3) {
+                if ($this->bulkLineLooksLikeData($line)) {
+                    $errors[] = 'Line ' . $lineNumber . ' is not tab-delimited into date, description, and amount.';
+                }
+                continue;
+            }
+
+            $expenseDate = $this->parseBulkLineDate((string)$cells[0]);
+            $amount = $this->parseBulkLineAmount((string)$cells[count($cells) - 1]);
+            $description = trim(implode(' ', array_slice($cells, 1, -1)));
+
+            if ($expenseDate === null || $description === '' || $amount <= 0) {
+                $errors[] = 'Line ' . $lineNumber . ' could not be read as date, description, and amount.';
+                continue;
+            }
+
+            $rows[] = [
+                'expense_date' => $expenseDate->format('Y-m-d'),
+                'expense_date_display' => $expenseDate->format($this->normaliseDisplayDateFormat($displayDateFormat)),
+                'description' => $description,
+                'amount' => round($amount, 2),
+            ];
+        }
+
+        if ($rows === [] && $errors === []) {
+            $errors[] = 'No expense lines were found in the pasted text.';
+        }
+
+        return [
+            'success' => $errors === [] && $rows !== [],
+            'errors' => $errors,
+            'rows' => $rows,
+            'total' => round(array_reduce(
+                $rows,
+                static fn(float $total, array $row): float => $total + round((float)$row['amount'], 2),
+                0.0
+            ), 2),
+        ];
+    }
+
+    private function bulkLineIsIgnorable(array $cells): bool {
+        $joined = strtolower(trim(implode(' ', $cells)));
+        $normalised = preg_replace('/\s+/', ' ', $joined) ?: $joined;
+
+        if ($normalised === '' || preg_match('/^-+(\s+-+)*$/', $normalised) === 1) {
+            return true;
+        }
+
+        if (isset($cells[0]) && preg_match('/^[ABCD]$/i', trim((string)$cells[0])) === 1) {
+            return true;
+        }
+
+        foreach ([
+            'date description amount claimed',
+            'claimant',
+            'year',
+            'total amount claimed',
+            'amount claimed during month',
+            'signature',
+            'office use',
+            'balance outstanding',
+            'payments made',
+            'amount paid',
+            'date paid',
+            'fa proc',
+            'fa ref',
+        ] as $marker) {
+            if (str_contains($normalised, $marker)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function bulkLineLooksLikeData(string $line): bool {
+        return preg_match('/\d{1,4}[\/\-]\d{1,2}[\/\-]\d{1,4}/', $line) === 1
+            || str_contains($line, '£');
+    }
+
+    private function parseBulkLineDate(string $value): ?\DateTimeImmutable {
+        $value = trim($value);
+        foreach (['!Y-m-d', '!d/m/Y', '!j/n/Y', '!d-m-Y', '!j-n-Y'] as $format) {
+            $date = \DateTimeImmutable::createFromFormat($format, $value);
+            $errors = \DateTimeImmutable::getLastErrors();
+            if ($date instanceof \DateTimeImmutable && (!is_array($errors) || ((int)$errors['warning_count'] === 0 && (int)$errors['error_count'] === 0))) {
+                return $date;
+            }
+        }
+
+        return null;
+    }
+
+    private function parseBulkLineAmount(string $value): float {
+        $normalised = str_replace([',', '£', ' '], '', trim($value));
+        if ($normalised === '' || !is_numeric($normalised)) {
+            return 0.0;
+        }
+
+        return round((float)$normalised, 2);
+    }
+
+    private function normaliseDisplayDateFormat(string $format): string {
+        return in_array($format, ['Y-m-d', 'd/m/Y', 'd-m-Y', 'd/m/y', 'd-m-y'], true)
+            ? $format
+            : 'd/m/Y';
     }
 
     private function validateLineForPosting(array $line): array {

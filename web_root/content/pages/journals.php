@@ -28,21 +28,4 @@ final class _journals extends PageContextFramework
     {
         return ['journals_list'];
     }
-
-    protected function moduleContext(
-        RequestFramework $request,
-        PageServiceFramework $services,
-        ActionResultFramework $actionResult,
-        array $baseContext
-    ): array {
-        $company = (array)($baseContext['company'] ?? []);
-        $companyId = (int)($company['id'] ?? 0);
-        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
-
-        return [
-            'journal_entries' => ($companyId > 0 && $accountingPeriodId > 0)
-                ? (new \eel_accounts\Service\TransactionJournalService())->fetchJournals($companyId, $accountingPeriodId)
-                : [],
-        ];
-    }
 }

@@ -410,7 +410,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, 'Condensed View'));
         $harness->assertSame(true, str_contains($html, 'name="_table_export_prepare" value="csv"'));
         $harness->assertSame(true, str_contains($html, 'name="_table_export_prepare" value="xlsx"'));
-        $autoApplyPosition = strpos($html, 'Auto Apply');
+        $autoApplyPosition = strpos($html, 'Run Auto Rules');
         $postCategorisedPosition = strpos($html, 'Post Categorised Transactions');
         $categoryFilterPosition = strpos($html, 'Category filter');
         $condensedViewPosition = strpos($html, 'Condensed View');

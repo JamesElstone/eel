@@ -464,6 +464,10 @@ $harness->run(\eel_accounts\Service\StatementUploadService::class, function (Gen
 
             $harness->assertSame(true, $result['success'] ?? false);
             $harness->assertTrue(str_contains(implode(' ', array_map('strval', (array)($result['warnings'] ?? []))), 'Protected committed mappings were not changed'));
+            $harness->assertSame(
+                'Field mapping description >> memo saved for account ' . $fixture['account_name'] . '.',
+                (string)($result['mapping_flash_message'] ?? '')
+            );
 
             $upload = InterfaceDB::fetchOne(
                 'SELECT workflow_status, rows_committed FROM statement_uploads WHERE id = :id',
@@ -535,6 +539,10 @@ $harness->run(\eel_accounts\Service\StatementUploadService::class, function (Gen
                 'mapping_currency' => \eel_accounts\Service\StatementUploadService::CURRENCY_DEFAULT_OPTION_GBP,
             ]);
             $harness->assertSame(true, $saveResult['success'] ?? false);
+            $harness->assertSame(
+                'Field mapping reference >> reference saved for account ' . $fixture['account_name'] . '.',
+                (string)($saveResult['mapping_flash_message'] ?? '')
+            );
 
             $backfillResult = $service->backfillTransactionTypesFromStagedImportJson($companyId);
             $harness->assertSame(true, $backfillResult['success'] ?? false);
@@ -664,6 +672,7 @@ function statement_upload_create_import_fixture(string $label): array
         'company_id' => $companyId,
         'period_id' => $periodId,
         'account_id' => $accountId,
+        'account_name' => 'Fixture Account ' . $marker,
         'upload_id' => $uploadId,
     ];
 }

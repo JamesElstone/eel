@@ -202,7 +202,8 @@ final class BankingAction implements ActionInterfaceFramework
         $flashErrors = array_map('strval', (array)($result['errors'] ?? []));
 
         if (!empty($result['success'])) {
-            $flashMessages[] = 'Field mapping saved.';
+            $flashMessage = trim((string)($result['mapping_flash_message'] ?? ''));
+            $flashMessages[] = $flashMessage !== '' ? $flashMessage : 'Field mapping saved.';
         }
 
         return $this->result(

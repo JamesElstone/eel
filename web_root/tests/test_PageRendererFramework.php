@@ -410,4 +410,58 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
             "control.closest('.page-card-tabs') || document.querySelector('.page-card-tabs')"
         ));
     });
+
+    $harness->check(PageRendererFramework::class, 'frontend reveals requested cards after AJAX card replacement', function () use ($harness): void {
+        $script = file_get_contents(APP_JS . 'index.js');
+
+        if (!is_string($script)) {
+            throw new RuntimeException('Unable to read frontend script.');
+        }
+
+        $replaceCardsPosition = strpos($script, "applyAjaxPayloadFragment('cards', () => replaceCards(payload.cards));");
+        $revealCardPosition = strpos($script, "applyAjaxPayloadFragment('visible card', () => revealPageCard(payload.show_card, { source: 'ajax' }));");
+
+        $harness->assertTrue(is_int($replaceCardsPosition));
+        $harness->assertTrue(is_int($revealCardPosition));
+        $harness->assertTrue($replaceCardsPosition < $revealCardPosition);
+    });
+
+    $harness->check(PageRendererFramework::class, 'frontend reveal helper activates tabs scrolls and focuses requested cards', function () use ($harness): void {
+        $script = file_get_contents(APP_JS . 'index.js');
+
+        if (!is_string($script)) {
+            throw new RuntimeException('Unable to read frontend script.');
+        }
+
+        foreach ([
+            'function revealPageCard(cardKey, options = {})',
+            'activatePageCardTab(tab);',
+            'window.requestAnimationFrame(() => {',
+            "target.closest('.page-stack')",
+            'scrollPageStackToTarget(pageStack, target, behavior)',
+            'target.scrollIntoView({',
+            "window.matchMedia('(prefers-reduced-motion: reduce)').matches",
+            'focusRevealedCard(card);',
+            'target.focus({ preventScroll: true });',
+        ] as $expected) {
+            $harness->assertTrue(str_contains($script, $expected));
+        }
+    });
+
+    $harness->check(PageRendererFramework::class, 'frontend reveal helper reads show card from initial load query', function () use ($harness): void {
+        $script = file_get_contents(APP_JS . 'index.js');
+
+        if (!is_string($script)) {
+            throw new RuntimeException('Unable to read frontend script.');
+        }
+
+        $harness->assertTrue(str_contains(
+            $script,
+            "new URLSearchParams(window.location.search).get('show_card')"
+        ));
+        $harness->assertTrue(str_contains(
+            $script,
+            "revealPageCard(requestedCard, { source: 'initial-load' });"
+        ));
+    });
 });

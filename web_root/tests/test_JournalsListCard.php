@@ -64,6 +64,6 @@ $harness->run(_journals_listCard::class, static function (GeneratedServiceClassT
         $harness->assertTrue(str_contains($html, 'company_id=12'));
         $harness->assertTrue(str_contains($html, 'accounting_period_id=34'));
         $harness->assertTrue(str_contains($html, 'month_key=2026-02-01'));
-        $harness->assertTrue(!str_contains($html, 'No journals exist yet'));
+        $harness->assertTrue(!str_contains($html, 'Posted transaction journals will appear here'));
     });
 });

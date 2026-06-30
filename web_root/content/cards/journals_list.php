@@ -16,7 +16,17 @@ final class _journals_listCard extends CardBaseFramework
 
     public function services(): array
     {
-        return [];
+        return [
+            [
+                'key' => 'journal_entries',
+                'service' => \eel_accounts\Service\TransactionJournalService::class,
+                'method' => 'fetchJournals',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                ],
+            ],
+        ];
     }
 
     protected function additionalInvalidationFacts(): array
@@ -31,10 +41,9 @@ final class _journals_listCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $page = (array)($context['page'] ?? []);
-        $journalEntries = (array)($page['journal_entries'] ?? []);
+        $journalEntries = (array)($context['services']['journal_entries'] ?? []);
         $companyId = (int)($context['company']['id'] ?? 0);
-        $accountingPeriods = (array)($page['accounting_periods'] ?? []);
+        $accountingPeriodId = (int)($context['company']['accounting_period_id'] ?? 0);
 
         if ($journalEntries === []) {
             return '

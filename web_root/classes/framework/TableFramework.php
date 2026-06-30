@@ -530,11 +530,18 @@ final class TableFramework
             return '';
         }
 
+        $currentPage = max(1, (int)($this->pagination['page'] ?? 1));
+        $lastPage = max(1, (int)($this->pagination['total_pages'] ?? $this->pagination['page_count'] ?? $currentPage));
+        $hasPreviousPage = (bool)($this->pagination['has_previous_page'] ?? $currentPage > 1);
+        $hasNextPage = (bool)($this->pagination['has_next_page'] ?? $currentPage < $lastPage);
+
         return '<div class="card-toolbar table-footer">
             <div class="helper">' . HelperFramework::escape(HelperFramework::paginationItemsLabel($this->pagination, $this->paginationItemLabel)) . '</div>
             <div class="actions-row">'
-                . $this->renderPaginationButton('< Prev', -1)
-                . $this->renderPaginationButton('Next >', 1)
+                . $this->renderPaginationButton('|< First', 1, $hasPreviousPage)
+                . $this->renderPaginationButton('< Prev', max(1, $currentPage - 1), $hasPreviousPage)
+                . $this->renderPaginationButton('Next >', min($lastPage, $currentPage + 1), $hasNextPage)
+                . $this->renderPaginationButton('Last >|', $lastPage, $hasNextPage)
             . '</div>
         </div>';
     }
@@ -799,16 +806,11 @@ final class TableFramework
         return $html;
     }
 
-    private function renderPaginationButton(string $label, int $direction): string
+    private function renderPaginationButton(string $label, int $page, bool $enabled): string
     {
         if ($this->pagination === null) {
             return '';
         }
-
-        $enabled = $direction < 0
-            ? (bool)($this->pagination['has_previous_page'] ?? false)
-            : (bool)($this->pagination['has_next_page'] ?? false);
-        $page = max(1, (int)($this->pagination['page'] ?? 1) + $direction);
 
         return HelperFramework::paginationFormButton(
             $label,

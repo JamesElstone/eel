@@ -68,7 +68,8 @@ INSERT INTO `nominal_accounts` (`id`,`code`,`name`,`account_type`,`account_subty
 (38,'4200','Profit on Disposal','income',NULL,'other',1,420,'2026-04-09 12:48:13'),
 (39,'6200','Depreciation Expense','expense',NULL,'disallowable',1,620,'2026-04-09 12:48:13'),
 (40,'6210','Loss on Disposal','expense',NULL,'other',1,621,'2026-04-09 12:48:13'),
-(44,'2300','Trade Creditors','liability',12,'allowable',1,70,'2026-05-27 11:08:15');
+(44,'2300','Trade Creditors','liability',12,'allowable',1,70,'2026-05-27 11:08:15'),
+(45,'3010','Ordinary Share Capital','equity',13,'other',1,65,'2026-06-30 00:00:00');
 /*!40000 ALTER TABLE `nominal_accounts` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -90,7 +91,8 @@ INSERT INTO `nominal_account_subtypes` VALUES
 (9,'overhead','Overhead Expense','expense',300,1),
 (10,'expense_payable','Expense Claims Payable','liability',55,1),
 (11,'fixed_asset','Fixed Asset','asset',35,1),
-(12,'trade_creditor','Trade Creditor','liability',45,1);
+(12,'trade_creditor','Trade Creditor','liability',45,1),
+(13,'capital_reserves','Capital and Reserves','equity',65,1);
 /*!40000 ALTER TABLE `nominal_account_subtypes` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;

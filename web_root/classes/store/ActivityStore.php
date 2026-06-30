@@ -123,7 +123,7 @@ final class ActivityStore
                 'page_id' => $this->normaliseRequiredString($pageId, 255),
                 'action_name' => $this->normaliseOptionalString($actionName, 255),
                 'card_action_name' => $this->normaliseOptionalString($cardActionName, 255),
-                'message_type' => strtolower(trim($messageType)) === 'error' ? 'error' : 'success',
+                'message_type' => $this->normaliseMessageType($messageType),
                 'message_text' => $messageText,
                 'request_method' => $this->normaliseOptionalString($requestMethod, 10),
                 'device_id' => $this->normaliseOptionalString($metadata['device_id'] ?? null, 64),
@@ -163,7 +163,7 @@ final class ActivityStore
         }
 
         $type = strtolower(trim((string)($flashMessage['type'] ?? 'success')));
-        $type = $type === 'error' ? 'error' : 'success';
+        $type = $this->normaliseMessageType($type);
         $messageText = $this->plainText((string)($flashMessage['message'] ?? ''));
         $htmlText = null;
 
@@ -178,6 +178,13 @@ final class ActivityStore
             'text' => $text,
             'html_text' => $htmlText === '' ? null : $htmlText,
         ];
+    }
+
+    private function normaliseMessageType(string $type): string
+    {
+        $type = strtolower(trim($type));
+
+        return in_array($type, ['success', 'warning', 'error'], true) ? $type : 'success';
     }
 
     private function requestMetadata(RequestFramework $request): array

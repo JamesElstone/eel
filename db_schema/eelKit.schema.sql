@@ -512,7 +512,7 @@ CREATE TABLE `application_activity_flash_history` (
   `page_id` varchar(255) NOT NULL,
   `action_name` varchar(255) DEFAULT NULL,
   `card_action_name` varchar(255) DEFAULT NULL,
-  `message_type` enum('success','error') NOT NULL,
+  `message_type` enum('success','warning','error') NOT NULL,
   `message_text` longtext NOT NULL,
   `message_html_text` longtext DEFAULT NULL,
   `request_method` varchar(10) DEFAULT NULL,
@@ -626,7 +626,8 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_06_01_003_invited_account_completion.sql'),
   ('2026_06_15_001_invite_deliveries.sql'),
   ('2026_06_15_002_signup_token_rate_limits.sql'),
-  ('2026_06_15_003_signup_verification_rate_limits.sql');
+  ('2026_06_15_003_signup_verification_rate_limits.sql'),
+  ('2026_06_30_001_warning_flash_messages.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

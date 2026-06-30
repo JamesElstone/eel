@@ -148,7 +148,7 @@ final class _transactions_rule_formCard extends CardBaseFramework
                         <div class="form-grid">
                             <div class="form-row">
                                 <label for="rule_desc_type">Type</label>
-                                <select class="select" id="rule_desc_type" name="rule_desc_type">
+                                <select class="select" id="rule_desc_type" name="rule_desc_type" data-no-submit-on-change="true">
                                     ' . $this->matchTypeOptionsHtml($descMatchType, false) . '
                                 </select>
                             </div>
@@ -163,7 +163,7 @@ final class _transactions_rule_formCard extends CardBaseFramework
                         <div class="form-grid">
                             <div class="form-row">
                                 <label for="rule_ref_type">Type</label>
-                                <select class="select" id="rule_ref_type" name="rule_ref_type">
+                                <select class="select" id="rule_ref_type" name="rule_ref_type" data-no-submit-on-change="true">
                                     ' . $this->matchTypeOptionsHtml($refMatchType, true) . '
                                 </select>
                             </div>
@@ -178,13 +178,13 @@ final class _transactions_rule_formCard extends CardBaseFramework
                         <div class="form-grid">
                             <div class="form-row">
                                 <label for="rule_source_category_value">Source category</label>
-                                <select class="select" id="rule_source_category_value" name="source_category_value">
+                                <select class="select" id="rule_source_category_value" name="source_category_value" data-no-submit-on-change="true">
                                     ' . $sourceCategoryOptions . '
                                 </select>
                             </div>
                             <div class="form-row">
                                 <label for="rule_source_account_value">Source account</label>
-                                <select class="select" id="rule_source_account_value" name="source_account_value">
+                                <select class="select" id="rule_source_account_value" name="source_account_value" data-no-submit-on-change="true">
                                     ' . $sourceAccountOptions . '
                                 </select>
                             </div>
@@ -192,7 +192,7 @@ final class _transactions_rule_formCard extends CardBaseFramework
                     </fieldset>
                     <div class="form-row full">
                         <label for="rule_nominal_account_id">Nominal account</label>
-                        <select class="select" id="rule_nominal_account_id" name="nominal_account_id" required>
+                        <select class="select" id="rule_nominal_account_id" name="nominal_account_id" required data-no-submit-on-change="true">
                             <option value="">Select nominal</option>' . $nominalOptions . '
                         </select>
                     </div>

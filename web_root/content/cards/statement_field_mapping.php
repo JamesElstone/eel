@@ -216,7 +216,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
                     <input type="hidden" name="upload_id" value="' . $uploadId . '">
                     <input type="hidden" name="mapping_account_id" value="' . $bankingMappingAccountId . '">
                         ' . $accountSelectHtml . '
-                    <div class="form-grid flow">
+                    <div class="form-grid flow statement-mapping-fields">
                         ' . $mappingFieldsHtml . '
                     </div>
                     <div>

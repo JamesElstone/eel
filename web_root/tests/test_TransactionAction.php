@@ -430,7 +430,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, 'View Receipt'));
         $harness->assertSame(true, str_contains($html, 'name="global_action" value="save_transaction_category"'));
         $harness->assertSame(true, str_contains($html, 'name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form"'));
-        $harness->assertSame(true, str_contains($html, '<span class="badge success">Manual categorised</span>'));
+        $harness->assertSame(true, str_contains($html, '<span class="badge success">Manually Categorised</span>'));
     });
 
     $harness->check('_transactions_importedCard', 'treats internal transfer flagged transactions as transfer rows', function () use ($harness): void {
@@ -487,8 +487,91 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, '<option value="">Select owned account</option>'));
         $harness->assertSame(true, str_contains($html, 'Savings pot [Bank]'));
         $harness->assertSame(true, str_contains($html, '<span class="badge warning">Transfer pending</span>'));
-        $harness->assertSame(false, str_contains($html, 'Matched by rule #3'));
-        $harness->assertSame(false, str_contains($html, '<option value="">Unassigned</option>'));
+        $harness->assertSame(false, str_contains($html, '<span class="badge info">Rule #3</span>'));
+        $harness->assertSame(false, str_contains($html, 'name="nominal_account_id" form="transaction-form-42"'));
+    });
+
+    $harness->check('_transactions_importedCard', 'renders transactions read only when accounting period is locked', function () use ($harness): void {
+        $html = (new _transactions_importedCard())->render([
+            'company' => [
+                'id' => 1,
+                'accounting_period_id' => 2,
+            ],
+            'page' => [
+                'month_key' => '2026-03-01',
+                'category_filter' => 'all',
+            ],
+            'services' => [
+                'month_status' => [[
+                    'month_key' => '2026-03-01',
+                    'label' => 'Mar 2026',
+                ]],
+                'transactions_by_month' => [[
+                    'id' => 42,
+                    'account_id' => 10,
+                    'txn_date' => '2026-03-15',
+                    'description' => 'Materials purchase',
+                    'source_account' => 'Current account',
+                    'source_category' => 'Materials',
+                    'amount' => -12.34,
+                    'document_download_status' => 'downloaded',
+                    'local_document_path' => 'uploads/company/1/receipt.pdf',
+                    'nominal_account_id' => 7,
+                    'category_status' => 'manual',
+                    'has_derived_journal' => 1,
+                    'auto_rule_id' => 3,
+                    'auto_rule_match_value' => 'Materials',
+                ], [
+                    'id' => 43,
+                    'account_id' => 10,
+                    'txn_date' => '2026-03-16',
+                    'description' => 'Transfer from pot',
+                    'source_account' => 'Current account',
+                    'source_category' => 'P2P',
+                    'amount' => 10.00,
+                    'document_download_status' => 'skipped',
+                    'is_internal_transfer' => 1,
+                    'transfer_account_id' => 11,
+                    'category_status' => 'manual',
+                    'has_derived_journal' => 1,
+                ]],
+                'nominal_accounts' => [[
+                    'id' => 7,
+                    'code' => '5000',
+                    'name' => 'Materials',
+                    'account_type' => 'expense',
+                ]],
+                'company_accounts' => [[
+                    'id' => 10,
+                    'account_name' => 'Current account',
+                    'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
+                    'is_active' => 1,
+                ], [
+                    'id' => 11,
+                    'account_name' => 'Savings pot',
+                    'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
+                    'is_active' => 1,
+                ]],
+                'year_end_review' => [
+                    'is_locked' => 1,
+                ],
+            ],
+        ]);
+
+        $harness->assertSame(true, str_contains($html, '<span class="badge warning">Period locked</span>'));
+        $harness->assertSame(true, str_contains($html, 'Transactions can be reviewed but not changed.'));
+        $harness->assertSame(true, str_contains($html, 'id="transaction_month_key" name="month_key"'));
+        $harness->assertSame(true, str_contains($html, 'id="table-filter-transactions_imported-category_filter" name="category_filter"'));
+        $harness->assertSame(true, str_contains($html, '5000 - Materials'));
+        $harness->assertSame(true, str_contains($html, 'Savings pot [Bank]'));
+        $harness->assertSame(false, str_contains($html, 'name="nominal_account_id"'));
+        $harness->assertSame(false, str_contains($html, 'name="transfer_account_id"'));
+        $harness->assertSame(true, str_contains($html, '<button class="button" type="button" disabled title="Period locked">Run Auto Rules</button>'));
+        $harness->assertSame(true, str_contains($html, '<button class="button primary" type="button" disabled title="Period locked">Post Categorised Transactions</button>'));
+        $harness->assertSame(true, str_contains($html, 'type="button" disabled title="Period locked" name="global_action" value="save_transaction_category"'));
+        $harness->assertSame(true, str_contains($html, 'type="button" disabled title="Period locked" name="global_action" value="defer_transaction"'));
+        $harness->assertSame(true, str_contains($html, '<button class="button" type="button" disabled title="Period locked">Create Asset</button>'));
+        $harness->assertSame(true, str_contains($html, 'View Receipt'));
     });
 
     $harness->check('_transactions_rulesCard', 'renders categorisation rules with table builder exports', function () use ($harness): void {

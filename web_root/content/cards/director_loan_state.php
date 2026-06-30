@@ -46,12 +46,10 @@ final class _director_loan_stateCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $company = (array)($context['company'] ?? []);
         $statement = (array)($context['services']['directorLoanStatement'] ?? []);
 
         if (empty($statement['success'])) {
-            return $this->renderSelectedContext($company)
-                . $this->renderErrors((array)($statement['errors'] ?? ['Director loan statement is not available for the selected period.']));
+            return $this->renderErrors((array)($statement['errors'] ?? ['Director loan statement is not available for the selected period.']));
         }
 
         $accountingPeriod = (array)($statement['accounting_period'] ?? []);
@@ -76,7 +74,6 @@ final class _director_loan_stateCard extends CardBaseFramework
 
         return '
             <section class="settings-stack">
-                ' . $this->renderSelectedContext($company) . '
                 <div class="helper">Using ' . HelperFramework::escape(FormattingFramework::nominalLabel($nominal, ' ')) . ' as the Director Loan nominal.</div>
             </section>
             <div class="month-grid">
@@ -93,16 +90,6 @@ final class _director_loan_stateCard extends CardBaseFramework
             </div>
             ' . (!$hasMovements ? '<div class="helper">No Director Loan movements were found for this accounting period.</div>' : '') . '
         ';
-    }
-
-    private function renderSelectedContext(array $company): string
-    {
-        return '<div class="form-grid">
-            <div class="form-row">
-                <label>Company</label>
-                <input class="input" value="' . HelperFramework::escape((string)($company['name'] ?? '')) . '" readonly>
-            </div>
-        </div>';
     }
 
     private function statCard(string $label, string $value): string

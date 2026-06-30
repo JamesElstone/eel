@@ -871,19 +871,21 @@ body.sidebar-collapsed .sidebar-hide-collapsed-link-initials .nav-link-short {
 }
 
 
-.flash-messages {
-  display: grid;
+#flash-messages.flash-messages {
+  display: grid !important;
   gap: 10px;
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  width: min(420px, calc(100vw - 40px));
-  z-index: 2100;
+  position: fixed !important;
+  top: 20px !important;
+  right: 20px !important;
+  bottom: auto !important;
+  left: auto !important;
+  width: min(420px, calc(100vw - 40px)) !important;
+  z-index: 2147483000 !important;
   transition: opacity 0.45s ease, transform 0.45s ease, max-height 0.45s ease, margin 0.45s ease;
   opacity: 1;
   transform: translateY(0);
-  max-height: 1vh;
-  overflow: hidden;
+  max-height: calc(100vh - 40px) !important;
+  overflow: visible !important;
 }
 
 .flash-messages.is-dismissing {
@@ -1758,12 +1760,6 @@ label {
   flex: 0 0 auto;
 }
 
-
-.flash-messages {
-  display: grid;
-  gap: 12px;
-  margin-bottom: 18px;
-}
 
 .alert {
   padding: 14px 16px;

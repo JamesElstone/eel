@@ -58,6 +58,11 @@ $harness->check(TableFramework::class, 'renders visible rows with toolbar export
     $harness->assertTrue(str_contains($html, 'method="post" data-ajax="true"'));
     $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="csv"'));
     $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="xlsx"'));
+    $harness->assertTrue(str_contains($html, 'class="button table-condensed-toggle"'));
+    $harness->assertTrue(str_contains($html, 'data-table-condensed-default="0"'));
+    $harness->assertTrue(str_contains($html, 'aria-pressed="false"'));
+    $harness->assertSame(false, str_contains($html, 'data-table-condensed-default="1"'));
+    $harness->assertSame(false, str_contains($html, 'class="button primary table-condensed-toggle"'));
     $harness->assertTrue(strpos($html, 'name="_table_export_prepare" value="csv"') < strpos($html, '<table'));
     $harness->assertTrue(str_contains($html, 'name="demo_table_page" value="2"'));
     $harness->assertTrue(str_contains($html, 'name="_invalidate_fact" value="demo.table"'));
@@ -68,6 +73,38 @@ $harness->check(TableFramework::class, 'renders visible rows with toolbar export
     $harness->assertSame(false, str_contains($html, '>Gamma<'));
     $harness->assertSame(false, str_contains($html, 'table-sort-form'));
     $harness->assertSame(false, str_contains($html, 'table-sortable-heading'));
+});
+
+$harness->check(TableFramework::class, 'renders configured condensed default state', function () use ($harness, $rows): void {
+    $path = AppConfigurationStore::configPath();
+    $original = file_get_contents($path);
+
+    if (!is_string($original)) {
+        throw new RuntimeException('Unable to read fixture config.');
+    }
+
+    try {
+        AppConfigurationStore::set('table_condensed_default', true);
+
+        $html = TableFramework::make('demo_table', $rows)
+            ->column('name', 'Name')
+            ->render(['page' => ['page_id' => 'test']]);
+
+        $harness->assertTrue(str_contains($html, 'class="button primary table-condensed-toggle"'));
+        $harness->assertTrue(str_contains($html, 'data-table-condensed-default="1"'));
+        $harness->assertTrue(str_contains($html, 'aria-pressed="true"'));
+        $harness->assertTrue(str_contains($html, 'class="table-scroll table-condensed"'));
+
+        $wrapperlessHtml = TableFramework::make('demo_table', $rows)
+            ->classes('', '')
+            ->column('name', 'Name')
+            ->render(['page' => ['page_id' => 'test']]);
+
+        $harness->assertTrue(str_contains($wrapperlessHtml, '<table class="table-condensed">'));
+    } finally {
+        file_put_contents($path, $original, LOCK_EX);
+        AppConfigurationStore::config(true);
+    }
 });
 
 $harness->check(TableFramework::class, 'renders sortable headings and sorts full row sets', function () use ($harness): void {

@@ -115,6 +115,7 @@ final class _transactions_importedCard extends CardBaseFramework
             }
             $monthOptions .= '<option value="' . HelperFramework::escape((string)($month['month_key'] ?? '')) . '"' . ((string)($month['month_key'] ?? '') === $selectedTransactionMonth ? ' selected' : '') . '>' . HelperFramework::escape((string)($month['label'] ?? '')) . '</option>';
         }
+        $monthNavigation = $this->monthNavigation($monthStatus, $selectedTransactionMonth);
 
         $tableHtml = $this->configuredTransactionsTable(
             $transactionsByMonth,
@@ -136,6 +137,7 @@ final class _transactions_importedCard extends CardBaseFramework
         return '
             <div class="card-toolbar transactions-imported-controls">
                 <div class="transactions-imported-primary-controls">
+                    ' . $this->monthNavigationButtonHtml('<', (string)($monthNavigation['previous'] ?? ''), $companyId, $accountingPeriodId, $selectedTransactionFilter, 'previous') . '
                     <form class="toolbar" method="post" action="?page=transactions" data-ajax="true">
                         <input type="hidden" name="card_action" value="Transaction">
                         <input type="hidden" name="global_action" value="select_transaction_month">
@@ -148,6 +150,7 @@ final class _transactions_importedCard extends CardBaseFramework
                             <select class="select" id="transaction_month_key" name="month_key">' . $monthOptions . '</select>
                         </div>
                     </form>
+                    ' . $this->monthNavigationButtonHtml('>', (string)($monthNavigation['next'] ?? ''), $companyId, $accountingPeriodId, $selectedTransactionFilter, 'next') . '
                     ' . $this->bulkToolbarActionsHtml($companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $isPeriodLocked) . '
                 </div>
                 ' . $this->lockedPeriodNoticeHtml($isPeriodLocked) . '
@@ -251,6 +254,59 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
                 <input type="hidden" name="global_action" value="post_categorised_transactions">
                 <button class="button primary"' . $postButtonAttributes . '>Post Categorised Transactions</button>
+            </form>';
+    }
+
+    private function monthNavigation(array $monthStatus, string $selectedTransactionMonth): array
+    {
+        $monthKeys = [];
+        foreach ($monthStatus as $month) {
+            if (!is_array($month)) {
+                continue;
+            }
+
+            $monthKey = trim((string)($month['month_key'] ?? ''));
+            if ($monthKey !== '') {
+                $monthKeys[] = $monthKey;
+            }
+        }
+
+        $currentIndex = array_search($selectedTransactionMonth, $monthKeys, true);
+        if ($currentIndex === false) {
+            return [
+                'previous' => '',
+                'next' => '',
+            ];
+        }
+
+        return [
+            'previous' => $monthKeys[$currentIndex - 1] ?? '',
+            'next' => $monthKeys[$currentIndex + 1] ?? '',
+        ];
+    }
+
+    private function monthNavigationButtonHtml(
+        string $label,
+        string $monthKey,
+        int $companyId,
+        int $accountingPeriodId,
+        string $selectedTransactionFilter,
+        string $direction
+    ): string {
+        $buttonText = HelperFramework::escape($label);
+        $buttonAttributes = $monthKey !== ''
+            ? ' type="submit"'
+            : ' type="button" disabled';
+
+        return '<form class="toolbar" method="post" action="?page=transactions" data-ajax="true" data-month-navigation="' . HelperFramework::escape($direction) . '">
+                <input type="hidden" name="card_action" value="Transaction">
+                <input type="hidden" name="global_action" value="select_transaction_month">
+                <input type="hidden" name="selection_source" value="transactions_imported_filters">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                <input type="hidden" name="month_key" value="' . HelperFramework::escape($monthKey) . '">
+                <button class="button"' . $buttonAttributes . '>' . $buttonText . '</button>
             </form>';
     }
 

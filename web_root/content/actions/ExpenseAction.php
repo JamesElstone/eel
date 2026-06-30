@@ -37,10 +37,37 @@ final class ExpenseAction implements ActionInterfaceFramework
                     'receipt_reference' => (string)$request->input('receipt_reference', ''),
                     'notes' => (string)$request->input('notes', ''),
                 ]),
+                'preview_bulk_lines' => $service->previewBulkLines(
+                    $companyId,
+                    (int)$request->input('claim_id', 0),
+                    (string)$request->input('pasted_lines', ''),
+                    (string)$request->input('date_format', 'd/m/Y')
+                ),
+                'bulk_save_lines' => $service->bulkSaveLines($companyId, (int)$request->input('claim_id', 0), [
+                    'pasted_lines' => (string)$request->input('pasted_lines', ''),
+                    'date_format' => (string)$request->input('date_format', 'd/m/Y'),
+                ]),
+                'update_line_nominal' => $service->updateLineNominal(
+                    $companyId,
+                    (int)$request->input('claim_id', 0),
+                    (int)$request->input('line_id', 0),
+                    (int)$request->input('nominal_account_id', 0)
+                ),
                 'delete_line' => $service->deleteLine(
                     $companyId,
                     (int)$request->input('claim_id', 0),
                     (int)$request->input('line_id', 0)
+                ),
+                'link_payment' => $service->linkPayment($companyId, (int)$request->input('claim_id', 0), [
+                    'transaction_id' => (int)$request->input('transaction_id', 0),
+                    'linked_amount' => (string)$request->input('linked_amount', ''),
+                    'director_loan_nominal_id' => (int)$request->input('director_loan_nominal_id', 0),
+                    'default_bank_nominal_id' => (int)$request->input('default_bank_nominal_id', 0),
+                ]),
+                'unlink_payment' => $service->unlinkPayment(
+                    $companyId,
+                    (int)$request->input('claim_id', 0),
+                    (int)$request->input('payment_link_id', 0)
                 ),
                 'select_claim', 'filter_claims' => ['success' => true],
                 default => ['success' => false, 'errors' => ['Unknown expense action.']],
@@ -51,12 +78,19 @@ final class ExpenseAction implements ActionInterfaceFramework
 
         $filters = $this->filtersFromRequest($request, $result);
 
+        $resultContext = ['expense_filters' => $filters];
+        if ($intent === 'preview_bulk_lines') {
+            $resultContext['expense_bulk_preview'] = array_merge($result, [
+                'claim_id' => max(0, (int)$request->input('claim_id', 0)),
+            ]);
+        }
+
         return new ActionResultFramework(
             !empty($result['success']),
             ['expense.claimants', 'expenses.state', 'expense.claim.editor'],
             $this->flashMessages($intent, $result),
             $filters,
-            ['expense_filters' => $filters]
+            $resultContext
         );
     }
 
@@ -67,6 +101,7 @@ final class ExpenseAction implements ActionInterfaceFramework
             'status' => trim((string)$request->input('status', $request->input('expense_status', 'all'))),
             'claim_id' => max(0, (int)$request->input('claim_id', 0)),
             'claim_reference_code' => trim((string)$request->input('claim_reference_code', '')),
+            'payment_query' => trim((string)$request->input('payment_query', '')),
             'heatmap_claimant_id' => max(0, (int)$request->input('expense_heatmap_claimant_id', 0)),
             'heatmap_year' => max(0, (int)$request->input('expense_heatmap_year', 0)),
             'heatmap_date' => trim((string)$request->input('expense_heatmap_date', '')),
@@ -103,7 +138,12 @@ final class ExpenseAction implements ActionInterfaceFramework
                 'deactivate_claimant' => 'Claimant deactivated.',
                 'create_claim' => 'Expense claim opened.',
                 'save_line' => 'Expense line saved.',
+                'preview_bulk_lines' => '',
+                'bulk_save_lines' => 'Expense lines imported.',
+                'update_line_nominal' => 'Line nominal saved.',
                 'delete_line' => 'Expense line deleted.',
+                'link_payment' => 'Repayment linked.',
+                'unlink_payment' => 'Repayment unlinked.',
                 default => '',
             };
         }

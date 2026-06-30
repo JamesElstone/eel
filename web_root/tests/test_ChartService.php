@@ -150,6 +150,68 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARAT
             $harness->assertTrue(!str_contains($html, 'calendar-heatmap-empty'));
         });
 
+        $harness->check(ChartService::class, 'renders calendar heatmap date range selector', static function () use ($harness, $service): void {
+            $html = $service->calendarHeatmap([
+                ['date' => '2026-04-01', 'value' => 2],
+                ['date' => '2026-05-01', 'value' => 1],
+            ], [
+                'title' => 'Period calendar heatmap',
+                'id' => 'expense-claim-calendar',
+                'start_date' => '2026-04-01',
+                'end_date' => '2027-03-31',
+                'selected_date' => '2026-05-01',
+                'input_name' => 'expense_heatmap_date',
+                'range_control' => [
+                    'type' => 'date',
+                    'name' => 'expense_heatmap_period_start',
+                    'id_suffix' => 'period-start',
+                    'label' => 'Period <selector>',
+                    'options' => [
+                        ['value' => '2025-04-01', 'label' => '2025/26'],
+                        ['value' => '2026-04-01', 'label' => '2026/27 & current'],
+                        ['value' => 'not-a-date', 'label' => '<script>alert(1)</script>'],
+                        ['value' => '2026-02-31', 'label' => 'Invalid rollover'],
+                    ],
+                    'selected_value' => '2026-04-01',
+                ],
+            ]);
+
+            $harness->assertTrue(str_contains($html, 'class="select calendar-heatmap-range-select"'));
+            $harness->assertTrue(str_contains($html, 'id="expense-claim-calendar-period-start"'));
+            $harness->assertTrue(str_contains($html, 'name="expense_heatmap_period_start"'));
+            $harness->assertTrue(str_contains($html, '<label class="sr-only" for="expense-claim-calendar-period-start">Period &lt;selector&gt;</label>'));
+            $harness->assertTrue(str_contains($html, '<option value="2025-04-01">2025/26</option>'));
+            $harness->assertTrue(str_contains($html, '<option value="2026-04-01" selected>2026/27 &amp; current</option>'));
+            $harness->assertTrue(str_contains($html, 'value="2026-05-01"'));
+            $harness->assertTrue(str_contains($html, 'is-selected'));
+            $harness->assertTrue(!str_contains($html, 'calendar-heatmap-year-select'));
+            $harness->assertTrue(!str_contains($html, 'not-a-date'));
+            $harness->assertTrue(!str_contains($html, '2026-02-31'));
+            $harness->assertTrue(!str_contains(strtolower($html), '<script'));
+            $harness->assertTrue(preg_match('/\son[a-z]+\s*=/i', $html) !== 1);
+        });
+
+        $harness->check(ChartService::class, 'omits calendar heatmap date selector when all date options are invalid', static function () use ($harness, $service): void {
+            $html = $service->calendarHeatmap([], [
+                'title' => 'Invalid period calendar heatmap',
+                'start_date' => '2026-04-01',
+                'end_date' => '2026-04-30',
+                'range_control' => [
+                    'type' => 'date',
+                    'options' => [
+                        ['value' => ''],
+                        ['value' => '2026-04-31', 'label' => 'Invalid date'],
+                        ['value' => 'not-a-date', 'label' => 'Invalid text'],
+                    ],
+                ],
+            ]);
+
+            $harness->assertTrue(str_contains($html, '<h3>Invalid period calendar heatmap</h3>'));
+            $harness->assertTrue(!str_contains($html, 'calendar-heatmap-range-select'));
+            $harness->assertTrue(!str_contains($html, 'calendar-heatmap-year-select'));
+            $harness->assertTrue(!str_contains($html, '<select'));
+        });
+
         $harness->check(ChartService::class, 'renders month heatmap HTML', static function () use ($harness, $service): void {
             $html = $service->monthHeatmap([
                 'id' => 'statement-coverage',

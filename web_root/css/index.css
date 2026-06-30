@@ -2008,6 +2008,13 @@ table.table-condensed .select {
   padding-bottom: 6px;
 }
 
+.calendar-heatmap-range-select {
+  width: auto;
+  min-width: 92px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
 .calendar-heatmap-months {
   display: grid;
   grid-auto-flow: column;

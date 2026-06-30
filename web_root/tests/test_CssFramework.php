@@ -43,3 +43,11 @@ $harness->check('CssFramework', 'styles warning alerts as advisory messages', fu
     $harness->assertTrue(str_contains($css, 'background: var(--warning-soft);'));
     $harness->assertTrue(str_contains($css, 'color: var(--warning);'));
 });
+
+$harness->check('CssFramework', 'defines target card reveal scroll offset', function () use ($harness): void {
+    $css = (string)file_get_contents(APP_CSS . 'index.css');
+
+    $harness->assertTrue(str_contains($css, '--page-card-reveal-offset: 96px;'));
+    $harness->assertTrue(str_contains($css, ".page-stack-card,\n.card {"));
+    $harness->assertTrue(str_contains($css, 'scroll-margin-top: var(--page-card-reveal-offset, 96px);'));
+});

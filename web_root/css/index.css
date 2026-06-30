@@ -29,6 +29,7 @@
   --toolbar: #d7e2f0;
   --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
   --radius: 18px;
+  --page-card-reveal-offset: 96px;
 }
 
 @font-face {
@@ -3297,6 +3298,11 @@ label {
 
 .page-stack > * {
   flex: 0 0 auto;
+}
+
+.page-stack-card,
+.card {
+  scroll-margin-top: var(--page-card-reveal-offset, 96px);
 }
 
 .page-stack.page-stack-banking {

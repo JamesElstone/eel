@@ -41,6 +41,7 @@ final class TestCardsHarness
         }
 
         $this->assertRoleAssignmentCardOwnsDashboardContext();
+        $this->assertTrialBalanceStateUsesSelectedCompanyContext();
     }
 
     private function assertRoleAssignmentCardOwnsDashboardContext(): void
@@ -88,6 +89,25 @@ final class TestCardsHarness
         $this->assertTrue(str_contains($html, 'name="action" value="roles-select-role"'));
 
         test_output_line('Cards: role_assignment owns dashboard service context.');
+    }
+
+    private function assertTrialBalanceStateUsesSelectedCompanyContext(): void
+    {
+        $card = new _trial_balance_stateCard();
+
+        foreach ($card->services() as $definition) {
+            $params = (array)($definition['params'] ?? []);
+
+            if (array_key_exists('companyId', $params)) {
+                $this->assertSame(':company.id', $params['companyId']);
+            }
+
+            if (array_key_exists('accountingPeriodId', $params)) {
+                $this->assertSame(':company.accounting_period_id', $params['accountingPeriodId']);
+            }
+        }
+
+        test_output_line('Cards: trial_balance_state uses selected company context for services.');
     }
 
     /**

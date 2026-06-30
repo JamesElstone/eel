@@ -22,8 +22,8 @@ final class _trial_balance_stateCard extends CardBaseFramework
                 'service' => \eel_accounts\Service\TrialBalanceService::class,
                 'method' => 'fetchTrialBalance',
                 'params' => [
-                    'companyId' => ':company_id',
-                    'accountingPeriodId' => ':accounting_period_id',
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                     'includeZero' => ':trial_balance_include_zero',
                     'includeUnposted' => ':trial_balance_include_unposted',
                     'filters' => ':trial_balance_filters',
@@ -34,8 +34,8 @@ final class _trial_balance_stateCard extends CardBaseFramework
                 'service' => \eel_accounts\Service\TrialBalanceValidationService::class,
                 'method' => 'fetchValidation',
                 'params' => [
-                    'companyId' => ':company_id',
-                    'accountingPeriodId' => ':accounting_period_id',
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
             [
@@ -43,8 +43,8 @@ final class _trial_balance_stateCard extends CardBaseFramework
                 'service' => \eel_accounts\Service\TrialBalanceComparisonService::class,
                 'method' => 'fetchComparison',
                 'params' => [
-                    'companyId' => ':company_id',
-                    'accountingPeriodId' => ':accounting_period_id',
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
         ];

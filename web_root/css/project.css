@@ -1790,6 +1790,10 @@
   max-width: min(360px, 42vw);
 }
 
+.statement-mapping-fields.form-grid > .form-row:last-child {
+  padding-bottom: 18px;
+}
+
 @media (max-width: 900px) {
 .settings-layout,
   .nominals-layout,

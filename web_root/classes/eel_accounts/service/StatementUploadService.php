@@ -2282,9 +2282,9 @@ final class StatementUploadService
             }
 
             return sprintf(
-                'Field mapping %s >> %s saved for account %s.',
-                $fieldName,
+                'Mapped CSV column “%s” to field “%s” for %s.',
                 $this->fieldMappingDisplayValue($currentValue),
+                (string)(self::FIELD_DEFINITIONS[$fieldName]['label'] ?? $fieldName),
                 $accountLabel
             );
         }

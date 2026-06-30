@@ -54,7 +54,7 @@ INSERT INTO `nominal_accounts` (`id`,`code`,`name`,`account_type`,`account_subty
 (24,'6004','Road Tax (DVLA)','expense',9,'allowable',1,304,'2026-04-07 20:02:04'),
 (25,'6003','Vehicle Repairs & Maintenance','expense',9,'allowable',1,303,'2026-04-07 20:04:32'),
 (26,'6005','MOT & Servicing','expense',9,'allowable',1,305,'2026-04-07 20:05:35'),
-(27,'2110','Expense Claims Payable','liability',NULL,'allowable',1,55,'2026-04-08 13:38:02'),
+(27,'2110','Expense Claims Payable','liability',10,'allowable',1,55,'2026-04-08 13:38:02'),
 (28,'6006','Road Tolls & Parking','expense',9,'allowable',1,306,'2026-04-08 23:12:35'),
 (29,'6100','Staff Subsistence','expense',9,'allowable',1,400,'2026-04-08 23:34:22'),
 (30,'6110','Staff Welfare','expense',9,'allowable',1,410,'2026-04-08 23:35:12'),

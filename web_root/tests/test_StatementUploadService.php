@@ -465,7 +465,7 @@ $harness->run(\eel_accounts\Service\StatementUploadService::class, function (Gen
             $harness->assertSame(true, $result['success'] ?? false);
             $harness->assertTrue(str_contains(implode(' ', array_map('strval', (array)($result['warnings'] ?? []))), 'Protected committed mappings were not changed'));
             $harness->assertSame(
-                'Field mapping description >> memo saved for account ' . $fixture['account_name'] . '.',
+                'Mapped CSV column “memo” to field “Description” for ' . $fixture['account_name'] . '.',
                 (string)($result['mapping_flash_message'] ?? '')
             );
 
@@ -540,7 +540,7 @@ $harness->run(\eel_accounts\Service\StatementUploadService::class, function (Gen
             ]);
             $harness->assertSame(true, $saveResult['success'] ?? false);
             $harness->assertSame(
-                'Field mapping reference >> reference saved for account ' . $fixture['account_name'] . '.',
+                'Mapped CSV column “reference” to field “Reference” for ' . $fixture['account_name'] . '.',
                 (string)($saveResult['mapping_flash_message'] ?? '')
             );
 

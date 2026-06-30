@@ -431,8 +431,12 @@ final class TableFramework
     public function renderTable(): string
     {
         $columns = $this->resolvedColumns();
-        $classAttribute = $this->tableClass !== ''
-            ? ' class="' . HelperFramework::escape($this->tableClass) . '"'
+        $tableClasses = array_values(array_filter([
+            $this->tableClass,
+            $this->tableCondensedDefaultEnabled() && $this->wrapperClass === '' ? 'table-condensed' : '',
+        ]));
+        $classAttribute = $tableClasses !== []
+            ? ' class="' . HelperFramework::escape(implode(' ', $tableClasses)) . '"'
             : '';
         $headerHtml = '';
 
@@ -465,7 +469,9 @@ final class TableFramework
             return $table;
         }
 
-        return '<div class="' . HelperFramework::escape($this->wrapperClass) . '">' . $table . '</div>';
+        $wrapperClasses = trim($this->wrapperClass . ($this->tableCondensedDefaultEnabled() ? ' table-condensed' : ''));
+
+        return '<div class="' . HelperFramework::escape($wrapperClasses) . '">' . $table . '</div>';
     }
 
     private function renderHeaderCell(TableColumnFramework $column): string
@@ -642,9 +648,19 @@ final class TableFramework
             return '';
         }
 
-        return '<button class="button table-condensed-toggle" type="button" data-table-key="'
+        $condensedDefaultEnabled = $this->tableCondensedDefaultEnabled();
+        $buttonClass = $condensedDefaultEnabled ? 'button primary table-condensed-toggle' : 'button table-condensed-toggle';
+
+        return '<button class="' . $buttonClass . '" type="button" data-table-key="'
             . HelperFramework::escape($this->key)
-            . '" aria-pressed="false">Condensed View</button>';
+            . '" data-table-condensed-default="' . ($condensedDefaultEnabled ? '1' : '0') . '" aria-pressed="'
+            . ($condensedDefaultEnabled ? 'true' : 'false')
+            . '">Condensed View</button>';
+    }
+
+    private function tableCondensedDefaultEnabled(): bool
+    {
+        return $this->exportsEnabled && (bool)AppConfigurationStore::get('table_condensed_default', false);
     }
 
     private function renderExportButton(array $context, string $format, string $label, array $hiddenFields): string

@@ -123,7 +123,7 @@ final class _nominals_add_accountCard extends CardBaseFramework
                     </label>
                 </div>
                 <div>
-                    <button class="button primary" type="submit">' . HelperFramework::escape($editingNominal !== null ? 'Save Account' : 'Add Account') . '</button>'
+                    <button class="button primary" type="submit">' . HelperFramework::escape($editingNominal !== null ? 'Save Account' : 'Add Nominal') . '</button>'
                     . ($editingNominal !== null
                         ? '<button class="button" type="submit" form="' . $cancelFormId . '" formnovalidate>Cancel</button>'
                         : '') . '

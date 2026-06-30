@@ -71,8 +71,13 @@ $harness->check(TableFramework::class, 'renders visible rows with toolbar export
     $harness->assertTrue(str_contains($html, 'name="demo_table_page" value="2"'));
     $harness->assertTrue(str_contains($html, 'name="_invalidate_fact" value="demo.table"'));
     $harness->assertTrue(str_contains($html, 'name="cards[]" value="demo_table"'));
+    $harness->assertTrue(str_contains($html, '|&lt; First'));
     $harness->assertTrue(str_contains($html, '&lt; Prev'));
     $harness->assertTrue(str_contains($html, 'Next &gt;'));
+    $harness->assertTrue(str_contains($html, 'Last &gt;|'));
+    $harness->assertTrue(strpos($html, '|&lt; First') < strpos($html, '&lt; Prev'));
+    $harness->assertTrue(strpos($html, '&lt; Prev') < strpos($html, 'Next &gt;'));
+    $harness->assertTrue(strpos($html, 'Next &gt;') < strpos($html, 'Last &gt;|'));
     $harness->assertTrue(str_contains($html, '<span class="badge info">ready</span>'));
     $harness->assertSame(false, str_contains($html, '>Gamma<'));
     $harness->assertSame(false, str_contains($html, 'table-sort-form'));

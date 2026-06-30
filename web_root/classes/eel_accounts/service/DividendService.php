@@ -27,38 +27,53 @@ final class DividendService
         }
 
         $required = [
-            self::RETAINED_EARNINGS_CODE => [
+            [
+                'code' => self::RETAINED_EARNINGS_CODE,
                 'name' => 'Retained Earnings',
                 'account_type' => 'equity',
-                'sort_order' => 70,
+                'subtype_code' => 'capital_reserves',
+                'tax_treatment' => 'other',
+                'sort_order' => 66,
             ],
-            self::DIVIDENDS_PAID_CODE => [
+            [
+                'code' => self::DIVIDENDS_PAID_CODE,
                 'name' => 'Dividends Paid',
                 'account_type' => 'equity',
+                'subtype_code' => 'capital_reserves',
+                'tax_treatment' => 'other',
                 'sort_order' => 71,
             ],
-            self::DIVIDENDS_PAYABLE_CODE => [
+            [
+                'code' => self::DIVIDENDS_PAYABLE_CODE,
                 'name' => 'Dividends Payable',
                 'account_type' => 'liability',
+                'subtype_code' => 'dividends_payable',
+                'tax_treatment' => 'other',
                 'sort_order' => 56,
             ],
         ];
 
         try {
-            foreach ($required as $code => $definition) {
+            foreach ($required as $definition) {
+                $code = (string)$definition['code'];
                 $existing = $this->findNominalByCode($code);
                 if ($existing !== null) {
                     continue;
                 }
+                $subtypeId = $this->findSubtypeIdForCode(
+                    (string)($definition['subtype_code'] ?? ''),
+                    (string)$definition['account_type']
+                );
 
                 \InterfaceDB::prepareExecute(
                     'INSERT INTO nominal_accounts (code, name, account_type, account_subtype_id, tax_treatment, is_active, sort_order)
-                     VALUES (?, ?, ?, NULL, ?, 1, ?)',
+                     VALUES (?, ?, ?, ?, ?, 1, ?)',
                     [
                         $code,
                         $definition['name'],
                         $definition['account_type'],
-                        'allowable',
+                        $subtypeId > 0 ? $subtypeId : null,
+                        $definition['tax_treatment'],
                         $definition['sort_order'],
                     ]
                 );
@@ -406,6 +421,25 @@ final class DividendService
         );
 
         return is_array($row) ? $row : null;
+    }
+
+    private function findSubtypeIdForCode(string $code, string $accountType): int
+    {
+        if ($code === '' || $accountType === '') {
+            return 0;
+        }
+
+        return (int)(\InterfaceDB::fetchColumn(
+            'SELECT id
+             FROM nominal_account_subtypes
+             WHERE code = :code
+               AND parent_account_type = :account_type
+             LIMIT 1',
+            [
+                'code' => $code,
+                'account_type' => $accountType,
+            ]
+        ) ?: 0);
     }
 
     private function profitForPeriod(int $companyId, int $accountingPeriodId, string $periodStart, string $asAtDate): float

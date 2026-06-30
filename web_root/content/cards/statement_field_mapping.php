@@ -199,7 +199,10 @@ final class _statement_field_mappingCard extends CardBaseFramework
             : '';
         $sampleHtml = $this->renderSourceSample($sourceSample);
         $mappingDisabled = $mode === 'upload' && ($uploadId <= 0 || $accountId <= 0);
-        $mappingFieldsHtml = $this->renderMappingFields($mappingView, $sourceHeaders, $mode, $mappingDisabled);
+        $committedMappingProtectedFields = $mode === 'account' && (int)($upload['rows_committed'] ?? 0) > 0
+            ? \eel_accounts\Service\StatementUploadService::committedMappingProtectedFields()
+            : [];
+        $mappingFieldsHtml = $this->renderMappingFields($mappingView, $sourceHeaders, $mode, $mappingDisabled, $committedMappingProtectedFields);
         $accountSelectHtml = $mode === 'upload' ? $this->renderAccountSelector($activeCompanyAccounts, $accountId, $mode) : '';
         $buttonsHtml = $this->renderButtons($mode, $hasConfirmedMapping, $uploadId, $companyId, $accountingPeriodId, $accountId);
 
@@ -397,15 +400,31 @@ final class _statement_field_mappingCard extends CardBaseFramework
         </form>';
     }
 
-    private function renderMappingFields(array $mappingView, array $sourceHeaders, string $mode, bool $disabled = false): string
+    private function renderMappingFields(array $mappingView, array $sourceHeaders, string $mode, bool $disabled = false, array $protectedFields = []): string
     {
         $html = '';
         $idPrefix = $mode === 'upload' ? 'upload_mapping' : 'account_mapping';
-        $disabledAttributes = $disabled ? ' disabled data-statement-mapping-requires-account' : ' data-statement-mapping-requires-account';
+        $protectedFields = array_fill_keys(array_map('strval', $protectedFields), true);
 
         foreach (\eel_accounts\Service\StatementUploadService::fieldDefinitions() as $fieldName => $definition) {
             $selectedHeader = $this->selectedMappingValue($fieldName, $mappingView[$fieldName] ?? null);
             $options = '<option value="">Not mapped</option>';
+            $fieldDisabled = $disabled || isset($protectedFields[$fieldName]);
+            $disabledAttributes = '';
+
+            if ($fieldDisabled) {
+                $disabledAttributes .= ' disabled';
+            }
+
+            if ($disabled) {
+                $disabledAttributes .= ' data-statement-mapping-requires-account';
+            }
+
+            if (isset($protectedFields[$fieldName])) {
+                $disabledAttributes .= ' data-statement-mapping-protected-field';
+            } elseif (!$disabled) {
+                $disabledAttributes .= ' data-statement-mapping-requires-account';
+            }
 
             if ($fieldName === 'currency') {
                 $gbpValue = \eel_accounts\Service\StatementUploadService::CURRENCY_DEFAULT_OPTION_GBP;

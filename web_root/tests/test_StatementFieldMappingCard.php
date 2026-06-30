@@ -107,6 +107,66 @@ $harness->run(_statement_field_mappingCard::class, static function (GeneratedSer
         $harness->assertTrue(!str_contains($html, 'Save Mapping'));
     });
 
+    $harness->check(_statement_field_mappingCard::class, 'disables protected fields for committed account mappings', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'page' => [
+                'page_id' => 'source_accounts',
+            ],
+            'company' => [
+                'id' => 42,
+                'accounting_period_id' => 61,
+            ],
+            'field_mapping' => [
+                'account_id' => 47,
+            ],
+            'uploads' => [],
+            'services' => [
+                'activeCompanyAccounts' => [
+                    [
+                        'id' => 47,
+                        'account_name' => 'Main Current Account',
+                        'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
+                    ],
+                ],
+                'account_mapping_preview' => [
+                    'upload' => [
+                        'id' => 123,
+                        'account_id' => 47,
+                        'account_name' => 'Main Current Account',
+                        'original_filename' => 'committed-statement.csv',
+                        'source_headers_json' => json_encode(['Date', 'Posted', 'Description', 'Reference', 'Amount', 'Balance', 'Currency'], JSON_THROW_ON_ERROR),
+                        'rows_committed' => 1,
+                    ],
+                    'mapping' => [
+                        'mapping_json' => json_encode([
+                            'created' => ['header' => 'Date', 'index' => 0],
+                            'processed' => ['header' => 'Posted', 'index' => 1],
+                            'description' => ['header' => 'Description', 'index' => 2],
+                            'reference' => null,
+                            'amount' => ['header' => 'Amount', 'index' => 4],
+                            'balance' => ['header' => 'Balance', 'index' => 5],
+                            'currency' => ['header' => 'Currency', 'index' => 6],
+                        ], JSON_THROW_ON_ERROR),
+                    ],
+                    'source_sample' => [
+                        'headers' => ['Date', 'Posted', 'Description', 'Reference', 'Amount', 'Balance', 'Currency'],
+                        'rows' => [
+                            ['2026-01-01', '2026-01-02', 'Opening balance', 'REF', '10.00', '10.00', 'GBP'],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, 'id="account_mapping_created" name="mapping_created" disabled data-statement-mapping-protected-field'));
+        $harness->assertTrue(str_contains($html, 'id="account_mapping_processed" name="mapping_processed" disabled data-statement-mapping-protected-field'));
+        $harness->assertTrue(str_contains($html, 'id="account_mapping_amount" name="mapping_amount" disabled data-statement-mapping-protected-field'));
+        $harness->assertTrue(str_contains($html, 'id="account_mapping_balance" name="mapping_balance" disabled data-statement-mapping-protected-field'));
+        $harness->assertTrue(str_contains($html, 'id="account_mapping_currency" name="mapping_currency" disabled data-statement-mapping-protected-field'));
+        $harness->assertTrue(str_contains($html, 'id="account_mapping_reference" name="mapping_reference" data-statement-mapping-requires-account'));
+        $harness->assertTrue(!str_contains($html, 'id="account_mapping_reference" name="mapping_reference" disabled'));
+    });
+
     $harness->check(_statement_field_mappingCard::class, 'uses upload mode on uploads page without selected upload', static function () use ($harness, $card): void {
         $html = $card->render([
             'page' => [

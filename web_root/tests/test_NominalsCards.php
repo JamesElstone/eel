@@ -153,6 +153,7 @@ $harness->run(_nominals_add_accountCard::class, function (GeneratedServiceClassT
         $harness->assertTrue(str_contains($html, 'value="save_nominal_account"'));
         $harness->assertTrue(str_contains($html, 'value="5000"'));
         $harness->assertTrue(str_contains($html, 'Direct costs [expense]'));
+        $harness->assertTrue(str_contains($html, '<option value="other">Review</option>'));
         $harness->assertTrue(str_contains($html, 'name="card_action" value="Nominals"'));
     });
 });

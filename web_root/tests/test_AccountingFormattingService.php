@@ -16,6 +16,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame('Allowable', \eel_accounts\Service\AccountingFormattingService::nominalTaxTreatmentLabel(''));
             $harness->assertSame('Disallowable', \eel_accounts\Service\AccountingFormattingService::nominalTaxTreatmentLabel('disallowable'));
             $harness->assertSame('Capital', \eel_accounts\Service\AccountingFormattingService::nominalTaxTreatmentLabel('capital'));
+            $harness->assertSame('Review', \eel_accounts\Service\AccountingFormattingService::nominalTaxTreatmentLabel('other'));
+            $harness->assertSame('Allowable', \eel_accounts\Service\AccountingFormattingService::nominalTaxTreatmentLabel('something_else'));
         });
 
         $harness->check(\eel_accounts\Service\AccountingFormattingService::class, 'uses default display date format without company context', static function () use ($harness): void {

@@ -593,6 +593,15 @@ final class TransactionAction implements ActionInterfaceFramework
     {
         $keys = [
             'priority',
+            'rule_priority',
+            'rule_desc_type',
+            'rule_desc_value',
+            'rule_ref_type',
+            'rule_ref_value',
+            'desc_match_type',
+            'desc_match_value',
+            'ref_match_type',
+            'ref_match_value',
             'match_type',
             'match_value',
             'source_category_value',

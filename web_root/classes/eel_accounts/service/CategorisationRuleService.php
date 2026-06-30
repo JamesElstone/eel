@@ -55,9 +55,10 @@ final class CategorisationRuleService
         }
 
         $stmt = $this->executeQuery(
-            'SELECT id,
+             'SELECT id,
                     company_id,
                     description,
+                    reference,
                     source_category,
                     source_account_label,
                     is_auto_excluded
@@ -77,8 +78,10 @@ final class CategorisationRuleService
             'company_id' => (int)$transaction['company_id'],
             'priority' => $this->nextPriority((int)$transaction['company_id']),
             'match_field' => 'description',
-            'match_type' => 'contains',
-            'match_value' => $this->cleanMerchantName((string)($transaction['description'] ?? '')),
+            'desc_match_type' => 'contains',
+            'desc_match_value' => $this->cleanMerchantName((string)($transaction['description'] ?? '')),
+            'ref_match_type' => 'none',
+            'ref_match_value' => trim((string)($transaction['reference'] ?? '')),
             'source_category_value' => '',
             'source_account_value' => '',
             'nominal_account_id' => $nominalAccountId,
@@ -130,8 +133,10 @@ final class CategorisationRuleService
                 'is_active' => $normalised['is_active'] ? 1 : 0,
                 'priority' => $normalised['priority'],
                 'match_field' => $normalised['match_field'],
-                'match_type' => $normalised['match_type'],
-                'match_value' => $normalised['match_value'],
+                'desc_match_type' => $normalised['desc_match_type'],
+                'desc_match_value' => $normalised['desc_match_value'],
+                'ref_match_type' => $normalised['ref_match_type'],
+                'ref_match_value' => $this->nullableString($normalised['ref_match_value']),
                 'source_category_value' => $this->nullableString($normalised['source_category_value']),
                 'source_account_value' => $this->nullableString($normalised['source_account_value']),
                 'nominal_account_id' => $normalised['nominal_account_id'],
@@ -153,8 +158,10 @@ final class CategorisationRuleService
             'is_active' => $normalised['is_active'] ? 1 : 0,
             'priority' => $normalised['priority'],
             'match_field' => $normalised['match_field'],
-            'match_type' => $normalised['match_type'],
-            'match_value' => $normalised['match_value'],
+            'desc_match_type' => $normalised['desc_match_type'],
+            'desc_match_value' => $normalised['desc_match_value'],
+            'ref_match_type' => $normalised['ref_match_type'],
+            'ref_match_value' => $this->nullableString($normalised['ref_match_value']),
             'source_category_value' => $this->nullableString($normalised['source_category_value']),
             'source_account_value' => $this->nullableString($normalised['source_account_value']),
             'nominal_account_id' => $normalised['nominal_account_id'],
@@ -208,8 +215,10 @@ final class CategorisationRuleService
             'company_id' => $companyId,
             'priority' => $companyId > 0 ? $this->nextPriority($companyId) : 100,
             'match_field' => 'description',
-            'match_type' => 'contains',
-            'match_value' => '',
+            'desc_match_type' => 'contains',
+            'desc_match_value' => '',
+            'ref_match_type' => 'none',
+            'ref_match_value' => '',
             'source_category_value' => '',
             'source_account_value' => '',
             'nominal_account_id' => '',
@@ -289,8 +298,10 @@ final class CategorisationRuleService
 
             $saveResult = $this->saveRule($companyId, [
                 'priority' => $row['priority'] ?? 100,
-                'match_type' => $row['match_type'] ?? 'contains',
-                'match_value' => $row['match_value'] ?? '',
+                'desc_match_type' => $row['desc_match_type'] ?? $row['match_type'] ?? 'contains',
+                'desc_match_value' => $row['desc_match_value'] ?? $row['match_value'] ?? '',
+                'ref_match_type' => $row['ref_match_type'] ?? 'none',
+                'ref_match_value' => $row['ref_match_value'] ?? '',
                 'source_category_value' => $row['source_category_value'] ?? '',
                 'source_account_value' => $row['source_account_value'] ?? '',
                 'nominal_account_id' => $resolvedNominalAccountId,
@@ -317,14 +328,20 @@ final class CategorisationRuleService
     }
 
     private function normaliseRuleInput(array $input): array {
-        $priority = trim((string)($input['priority'] ?? '100'));
+        $priority = trim((string)($input['priority'] ?? $input['rule_priority'] ?? '100'));
         $nominalAccountId = trim((string)($input['nominal_account_id'] ?? ''));
+        $descMatchType = $input['desc_match_type'] ?? $input['rule_desc_type'] ?? $input['match_type'] ?? 'contains';
+        $descMatchValue = $input['desc_match_value'] ?? $input['rule_desc_value'] ?? $input['match_value'] ?? '';
+        $refMatchType = $input['ref_match_type'] ?? $input['rule_ref_type'] ?? 'none';
+        $refMatchValue = $input['ref_match_value'] ?? $input['rule_ref_value'] ?? '';
 
         return [
             'priority' => preg_match('/^-?[0-9]+$/', $priority) === 1 ? (int)$priority : 100,
             'match_field' => 'description',
-            'match_type' => $this->normaliseMatchType((string)($input['match_type'] ?? 'contains')),
-            'match_value' => trim((string)($input['match_value'] ?? '')),
+            'desc_match_type' => $this->normaliseMatchType((string)$descMatchType),
+            'desc_match_value' => trim((string)$descMatchValue),
+            'ref_match_type' => $this->normaliseReferenceMatchType((string)$refMatchType),
+            'ref_match_value' => trim((string)$refMatchValue),
             'source_category_value' => trim((string)($input['source_category_value'] ?? '')),
             'source_account_value' => trim((string)($input['source_account_value'] ?? '')),
             'nominal_account_id' => preg_match('/^[1-9][0-9]*$/', $nominalAccountId) === 1 ? (int)$nominalAccountId : 0,
@@ -347,8 +364,12 @@ final class CategorisationRuleService
             $errors[] = 'Rule priority must be a positive whole number.';
         }
 
-        if ($input['match_value'] === '') {
+        if ($input['desc_match_value'] === '') {
             $errors[] = 'Description match text is required.';
+        }
+
+        if ($input['ref_match_type'] !== 'none' && $input['ref_match_value'] === '') {
+            $errors[] = 'Reference match text is required when reference matching is enabled.';
         }
 
         if ($input['nominal_account_id'] <= 0) {
@@ -366,8 +387,11 @@ final class CategorisationRuleService
             'created_at' => $createdAt,
             'priority' => $normalised['priority'],
             'match_field' => $normalised['match_field'],
-            'match_type' => $normalised['match_type'],
-            'match_value' => $normalised['match_value'],
+            'desc_match_type' => $normalised['desc_match_type'],
+            'desc_match_value' => $normalised['desc_match_value'],
+            'ref_match_type' => $normalised['ref_match_type'],
+            'ref_match_value_match' => $normalised['ref_match_value'],
+            'ref_match_value_null' => $normalised['ref_match_value'],
             'nominal_account_id' => $normalised['nominal_account_id'],
             'is_active' => $normalised['is_active'] ? 1 : 0,
             'source_category_value_match' => $normalised['source_category_value'],
@@ -471,6 +495,14 @@ final class CategorisationRuleService
             : 'contains';
     }
 
+    private function normaliseReferenceMatchType(string $matchType): string {
+        $matchType = trim($matchType);
+
+        return in_array($matchType, ['none', 'contains', 'equals', 'starts_with'], true)
+            ? $matchType
+            : 'none';
+    }
+
     private function truthyValue(mixed $value): bool {
         if (is_array($value)) {
             $value = $value !== [] ? end($value) : '';
@@ -495,8 +527,12 @@ final class CategorisationRuleService
         return [
             'priority' => (int)($rule['priority'] ?? 100),
             'match_field' => 'description',
-            'match_type' => (string)($rule['match_type'] ?? 'contains'),
-            'match_value' => (string)($rule['match_value'] ?? ''),
+            'desc_match_type' => (string)($rule['desc_match_type'] ?? $rule['match_type'] ?? 'contains'),
+            'desc_match_value' => (string)($rule['desc_match_value'] ?? $rule['match_value'] ?? ''),
+            'ref_match_type' => (string)($rule['ref_match_type'] ?? 'none'),
+            'ref_match_value' => (string)($rule['ref_match_value'] ?? ''),
+            'match_type' => (string)($rule['desc_match_type'] ?? $rule['match_type'] ?? 'contains'),
+            'match_value' => (string)($rule['desc_match_value'] ?? $rule['match_value'] ?? ''),
             'source_category_value' => (string)($rule['source_category_value'] ?? ''),
             'source_account_value' => (string)($rule['source_account_value'] ?? ''),
             'nominal_account_id' => (int)($rule['nominal_account_id'] ?? 0),
@@ -590,8 +626,12 @@ final class CategorisationRuleService
                     cr.is_active,
                     cr.priority,
                     cr.match_field,
-                    cr.match_type,
-                    cr.match_value,
+                    cr.desc_match_type,
+                    cr.desc_match_value,
+                    cr.desc_match_type AS match_type,
+                    cr.desc_match_value AS match_value,
+                    cr.ref_match_type,
+                    cr.ref_match_value,
                     cr.source_category_value,
                     cr.source_account_value,
                     cr.nominal_account_id,
@@ -611,8 +651,12 @@ final class CategorisationRuleService
                     cr.is_active,
                     cr.priority,
                     cr.match_field,
-                    cr.match_type,
-                    cr.match_value,
+                    cr.desc_match_type,
+                    cr.desc_match_value,
+                    cr.desc_match_type AS match_type,
+                    cr.desc_match_value AS match_value,
+                    cr.ref_match_type,
+                    cr.ref_match_value,
                     cr.source_category_value,
                     cr.source_account_value,
                     cr.nominal_account_id,
@@ -630,8 +674,10 @@ final class CategorisationRuleService
                  SET is_active = :is_active,
                      priority = :priority,
                      match_field = :match_field,
-                     match_type = :match_type,
-                     match_value = :match_value,
+                     desc_match_type = :desc_match_type,
+                     desc_match_value = :desc_match_value,
+                     ref_match_type = :ref_match_type,
+                     ref_match_value = :ref_match_value,
                      source_category_value = :source_category_value,
                      source_account_value = :source_account_value,
                      nominal_account_id = :nominal_account_id,
@@ -646,8 +692,10 @@ final class CategorisationRuleService
             is_active,
             priority,
             match_field,
-            match_type,
-            match_value,
+            desc_match_type,
+            desc_match_value,
+            ref_match_type,
+            ref_match_value,
             source_category_value,
             source_account_value,
             nominal_account_id,
@@ -658,8 +706,10 @@ final class CategorisationRuleService
             :is_active,
             :priority,
             :match_field,
-            :match_type,
-            :match_value,
+            :desc_match_type,
+            :desc_match_value,
+            :ref_match_type,
+            :ref_match_value,
             :source_category_value,
             :source_account_value,
             :nominal_account_id,
@@ -690,8 +740,13 @@ final class CategorisationRuleService
                AND cr.created_at = :created_at
                AND cr.priority = :priority
                AND cr.match_field = :match_field
-               AND cr.match_type = :match_type
-               AND cr.match_value = :match_value
+               AND cr.desc_match_type = :desc_match_type
+               AND cr.desc_match_value = :desc_match_value
+               AND cr.ref_match_type = :ref_match_type
+               AND (
+                    (cr.ref_match_value = :ref_match_value_match)
+                    OR (cr.ref_match_value IS NULL AND :ref_match_value_null = \'\')
+               )
                AND cr.nominal_account_id = :nominal_account_id
                AND cr.is_active = :is_active
                AND (

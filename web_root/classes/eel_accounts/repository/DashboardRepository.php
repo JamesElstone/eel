@@ -393,7 +393,7 @@ final class DashboardRepository
                        COALESCE(na.name, '') AS assigned_nominal,
                        t.category_status,
                        COALESCE(t.auto_rule_id, 0) AS auto_rule_id,
-                       COALESCE(cr.match_value, '') AS auto_rule_match_value,
+                       COALESCE(cr.desc_match_value, '') AS auto_rule_match_value,
                        COALESCE(t.is_auto_excluded, 0) AS is_auto_excluded,
                        EXISTS(
                            SELECT 1

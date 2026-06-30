@@ -537,6 +537,7 @@ final class _transactions_importedCard extends CardBaseFramework
         }
 
         return $nominalInputHtml
+            . '<input type="hidden" name="transaction_reference" value="' . HelperFramework::escape((string)($transaction['reference'] ?? '')) . '">'
             . '<button class="button primary" type="submit" name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form">Create Automatic Rule</button>';
     }
 

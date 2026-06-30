@@ -169,6 +169,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
                 statement_upload_id,
                 txn_date,
                 description,
+                reference,
                 amount,
                 source_account_label,
                 source_category,
@@ -180,6 +181,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
                 :statement_upload_id,
                 :txn_date,
                 :description,
+                :reference,
                 :amount,
                 :source_account_label,
                 :source_category,
@@ -192,6 +194,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
                 'statement_upload_id' => $uploadId,
                 'txn_date' => '2026-03-15',
                 'description' => 'CARD PAYMENT ACME ELECTRICAL 1234',
+                'reference' => 'INV-ACME-' . $marker,
                 'amount' => '-42.50',
                 'source_account_label' => 'Main account',
                 'source_category' => 'Materials',
@@ -228,7 +231,9 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(0, (int)($result->context()['editing_rule_id'] ?? -1));
         $harness->assertSame($transactionId, (int)($draft['transaction_id'] ?? 0));
         $harness->assertSame($nominalAccountId, (int)($draft['nominal_account_id'] ?? 0));
-        $harness->assertSame('contains', (string)($draft['match_type'] ?? ''));
+        $harness->assertSame('contains', (string)($draft['desc_match_type'] ?? ''));
+        $harness->assertSame('none', (string)($draft['ref_match_type'] ?? ''));
+        $harness->assertSame('INV-ACME-' . $marker, (string)($draft['ref_match_value'] ?? ''));
         $harness->assertSame($beforeRules, InterfaceDB::countWhere('categorisation_rules', ['company_id' => $companyId]));
 
         $missingNominalRequest = new RequestFramework(
@@ -282,15 +287,17 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
                 'categorisation_rules' => [[
                     'id' => 3,
                     'priority' => 100,
-                    'match_type' => 'contains',
-                    'match_value' => 'Test',
+                    'desc_match_type' => 'contains',
+                    'desc_match_value' => 'Test',
                     'nominal_name' => 'Sales',
                     'is_active' => 1,
                 ]],
                 'blank_rule_form' => [
                     'priority' => 100,
-                    'match_type' => 'contains',
-                    'match_value' => '',
+                    'desc_match_type' => 'contains',
+                    'desc_match_value' => '',
+                    'ref_match_type' => 'none',
+                    'ref_match_value' => '',
                     'nominal_account_id' => '',
                     'is_active' => true,
                 ],
@@ -324,8 +331,10 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
                 'category_filter' => 'all',
                 'rule_form' => [
                     'priority' => 100,
-                    'match_type' => 'contains',
-                    'match_value' => 'Test',
+                    'desc_match_type' => 'contains',
+                    'desc_match_value' => 'Test',
+                    'ref_match_type' => 'starts_with',
+                    'ref_match_value' => 'INV-',
                     'source_category_value' => 'Legacy Category',
                     'source_account_value' => 'Current account',
                     'nominal_account_id' => 7,
@@ -350,6 +359,17 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
             ],
         ]);
 
+        $harness->assertSame(true, str_contains($html, '<fieldset class="form-row full settings-fieldset">'));
+        $harness->assertSame(true, str_contains($html, '<legend>Description Matching</legend>'));
+        $harness->assertSame(true, str_contains($html, '<legend>Reference Matching</legend>'));
+        $harness->assertSame(true, str_contains($html, '<legend>Optional</legend>'));
+        $harness->assertSame(true, str_contains($html, 'id="rule_priority" name="rule_priority"'));
+        $harness->assertSame(true, str_contains($html, 'id="rule_desc_type" name="rule_desc_type"'));
+        $harness->assertSame(true, str_contains($html, 'id="rule_desc_value" name="rule_desc_value"'));
+        $harness->assertSame(true, str_contains($html, 'id="rule_ref_type" name="rule_ref_type"'));
+        $harness->assertSame(true, str_contains($html, 'id="rule_ref_value" name="rule_ref_value"'));
+        $harness->assertSame(true, str_contains($html, '<option value="none">None</option>'));
+        $harness->assertSame(true, str_contains($html, '<option value="starts_with" selected>Starts with</option>'));
         $harness->assertSame(true, str_contains($html, '<select class="select" id="rule_source_category_value" name="source_category_value">'));
         $harness->assertSame(true, str_contains($html, '<select class="select" id="rule_source_account_value" name="source_account_value">'));
         $harness->assertSame(false, str_contains($html, '<input class="input" id="rule_source_category_value" name="source_category_value"'));
@@ -433,6 +453,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, 'data-autosave-submit-target=".js-transaction-autosave-submit"'));
         $harness->assertSame(true, str_contains($html, '<button class="js-transaction-autosave-submit" type="submit" name="global_action" value="save_transaction_category" hidden>Autosave</button>'));
         $harness->assertSame(false, str_contains($html, 'Save Row'));
+        $harness->assertSame(true, str_contains($html, 'name="transaction_reference" value="INV-42"'));
         $harness->assertSame(true, str_contains($html, 'name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form"'));
         $harness->assertSame(true, str_contains($html, '<span class="badge success">Manually Categorised</span>'));
     });
@@ -598,8 +619,10 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
                 'categorisation_rules' => [[
                     'id' => 3,
                     'priority' => 100,
-                    'match_type' => 'contains',
-                    'match_value' => 'Test',
+                    'desc_match_type' => 'contains',
+                    'desc_match_value' => 'Test',
+                    'ref_match_type' => 'starts_with',
+                    'ref_match_value' => 'INV-',
                     'nominal_code' => '4000',
                     'nominal_name' => 'Sales',
                     'is_active' => 1,
@@ -614,7 +637,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, '<th>Priority</th>'));
         $harness->assertSame(true, str_contains($html, '<th>Match</th>'));
         $harness->assertSame(true, str_contains($html, '<th>Nominal</th>'));
-        $harness->assertSame(true, str_contains($html, 'Contains &quot;Test&quot;'));
+        $harness->assertSame(true, str_contains($html, 'Description Contains &quot;Test&quot; | reference Starts with &quot;INV-&quot;'));
         $harness->assertSame(true, str_contains($html, '4000 - Sales'));
         $harness->assertSame(true, str_contains($html, '<span class="badge success">Active</span>'));
         $harness->assertSame(true, str_contains($html, 'name="global_action" value="export_categorisation_rules"'));
@@ -638,8 +661,8 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
             $rules[] = [
                 'id' => $i,
                 'priority' => $i,
-                'match_type' => 'contains',
-                'match_value' => 'Rule ' . $i,
+                'desc_match_type' => 'contains',
+                'desc_match_value' => 'Rule ' . $i,
                 'nominal_code' => '4000',
                 'nominal_name' => 'Sales',
                 'is_active' => 1,

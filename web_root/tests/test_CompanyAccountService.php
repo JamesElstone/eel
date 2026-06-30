@@ -187,7 +187,7 @@ function withCompanyAccountTransferMarkerFixture(bool $withPostedJournal, callab
         );
 
         \InterfaceDB::prepareExecute(
-            'INSERT INTO categorisation_rules (company_id, priority, match_field, match_type, match_value, nominal_account_id, is_active)
+            'INSERT INTO categorisation_rules (company_id, priority, match_field, desc_match_type, desc_match_value, nominal_account_id, is_active)
              VALUES (:company_id, 100, :match_field, :match_type, :match_value, :nominal_account_id, 1)',
             [
                 'company_id' => $companyId,

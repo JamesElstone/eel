@@ -104,6 +104,10 @@ final class _transactions_rule_formCard extends CardBaseFramework
         );
         $selectedTransactionFilter = (string)($page['category_filter'] ?? 'all');
         $cancelFormId = 'transactions-rule-cancel-form';
+        $descMatchType = (string)($ruleForm['desc_match_type'] ?? $ruleForm['match_type'] ?? 'contains');
+        $descMatchValue = (string)($ruleForm['desc_match_value'] ?? $ruleForm['match_value'] ?? '');
+        $refMatchType = (string)($ruleForm['ref_match_type'] ?? 'none');
+        $refMatchValue = (string)($ruleForm['ref_match_value'] ?? '');
 
         $nominalOptions = '';
         foreach ($nominalAccounts as $nominal) {
@@ -137,32 +141,55 @@ final class _transactions_rule_formCard extends CardBaseFramework
                 <div class="form-grid">
                     <div class="form-row">
                         <label for="rule_priority">Priority</label>
-                        <input class="input" id="rule_priority" name="priority" value="' . HelperFramework::escape((string)($ruleForm['priority'] ?? '100')) . '">
+                        <input class="input" id="rule_priority" name="rule_priority" value="' . HelperFramework::escape((string)($ruleForm['priority'] ?? '100')) . '" type="number" min="1" step="1" inputmode="numeric">
                     </div>
-                    <div class="form-row">
-                        <label for="rule_match_type">Match type</label>
-                        <select class="select" id="rule_match_type" name="match_type">
-                            <option value="contains"' . ((string)($ruleForm['match_type'] ?? '') === 'contains' ? ' selected' : '') . '>Contains</option>
-                            <option value="equals"' . ((string)($ruleForm['match_type'] ?? '') === 'equals' ? ' selected' : '') . '>Equals</option>
-                            <option value="starts_with"' . ((string)($ruleForm['match_type'] ?? '') === 'starts_with' ? ' selected' : '') . '>Starts with</option>
-                        </select>
-                    </div>
-                    <div class="form-row full">
-                        <label for="rule_match_value">Description match</label>
-                        <input class="input" id="rule_match_value" name="match_value" value="' . HelperFramework::escape((string)($ruleForm['match_value'] ?? '')) . '" required>
-                    </div>
-                    <div class="form-row">
-                        <label for="rule_source_category_value">Optional source category</label>
-                        <select class="select" id="rule_source_category_value" name="source_category_value">
-                            ' . $sourceCategoryOptions . '
-                        </select>
-                    </div>
-                    <div class="form-row">
-                        <label for="rule_source_account_value">Optional source account</label>
-                        <select class="select" id="rule_source_account_value" name="source_account_value">
-                            ' . $sourceAccountOptions . '
-                        </select>
-                    </div>
+                    <fieldset class="form-row full settings-fieldset">
+                        <legend>Description Matching</legend>
+                        <div class="form-grid">
+                            <div class="form-row">
+                                <label for="rule_desc_type">Type</label>
+                                <select class="select" id="rule_desc_type" name="rule_desc_type">
+                                    ' . $this->matchTypeOptionsHtml($descMatchType, false) . '
+                                </select>
+                            </div>
+                            <div class="form-row">
+                                <label for="rule_desc_value">String</label>
+                                <input class="input" id="rule_desc_value" name="rule_desc_value" value="' . HelperFramework::escape($descMatchValue) . '" required>
+                            </div>
+                        </div>
+                    </fieldset>
+                    <fieldset class="form-row full settings-fieldset">
+                        <legend>Reference Matching</legend>
+                        <div class="form-grid">
+                            <div class="form-row">
+                                <label for="rule_ref_type">Type</label>
+                                <select class="select" id="rule_ref_type" name="rule_ref_type">
+                                    ' . $this->matchTypeOptionsHtml($refMatchType, true) . '
+                                </select>
+                            </div>
+                            <div class="form-row">
+                                <label for="rule_ref_value">String</label>
+                                <input class="input" id="rule_ref_value" name="rule_ref_value" value="' . HelperFramework::escape($refMatchValue) . '">
+                            </div>
+                        </div>
+                    </fieldset>
+                    <fieldset class="form-row full settings-fieldset">
+                        <legend>Optional</legend>
+                        <div class="form-grid">
+                            <div class="form-row">
+                                <label for="rule_source_category_value">Source category</label>
+                                <select class="select" id="rule_source_category_value" name="source_category_value">
+                                    ' . $sourceCategoryOptions . '
+                                </select>
+                            </div>
+                            <div class="form-row">
+                                <label for="rule_source_account_value">Source account</label>
+                                <select class="select" id="rule_source_account_value" name="source_account_value">
+                                    ' . $sourceAccountOptions . '
+                                </select>
+                            </div>
+                        </div>
+                    </fieldset>
                     <div class="form-row full">
                         <label for="rule_nominal_account_id">Nominal account</label>
                         <select class="select" id="rule_nominal_account_id" name="nominal_account_id" required>
@@ -210,6 +237,23 @@ final class _transactions_rule_formCard extends CardBaseFramework
         $html = '<option value=""' . ($selectedValue === '' ? ' selected' : '') . '>' . HelperFramework::escape($anyLabel) . '</option>';
         foreach ($normalisedOptions as $value) {
             $html .= '<option value="' . HelperFramework::escape($value) . '"' . ($value === $selectedValue ? ' selected' : '') . '>' . HelperFramework::escape($value) . '</option>';
+        }
+
+        return $html;
+    }
+
+    private function matchTypeOptionsHtml(string $selectedValue, bool $includeNone): string
+    {
+        $options = $includeNone ? ['none' => 'None'] : [];
+        $options += [
+            'contains' => 'Contains',
+            'equals' => 'Equals',
+            'starts_with' => 'Starts with',
+        ];
+
+        $html = '';
+        foreach ($options as $value => $label) {
+            $html .= '<option value="' . HelperFramework::escape($value) . '"' . ($value === $selectedValue ? ' selected' : '') . '>' . HelperFramework::escape($label) . '</option>';
         }
 
         return $html;

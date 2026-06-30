@@ -297,8 +297,10 @@ final class TransactionCategorisationService
                     company_id,
                     priority,
                     match_field,
-                    match_type,
-                    match_value,
+                    desc_match_type,
+                    desc_match_value,
+                    ref_match_type,
+                    ref_match_value,
                     source_category_value,
                     source_account_value,
                     nominal_account_id,
@@ -744,7 +746,7 @@ final class TransactionCategorisationService
     }
 
     private function ruleMatches(array $rule, array $transactionPayload): bool {
-        $matchValue = trim((string)($rule['match_value'] ?? ''));
+        $matchValue = trim((string)($rule['desc_match_value'] ?? $rule['match_value'] ?? ''));
 
         if ($matchValue === '') {
             return false;
@@ -752,7 +754,16 @@ final class TransactionCategorisationService
 
         $candidate = $this->ruleCandidateText((string)($rule['match_field'] ?? 'description'), $transactionPayload);
 
-        if (!$this->textMatches($candidate, $matchValue, (string)($rule['match_type'] ?? 'contains'))) {
+        if (!$this->textMatches($candidate, $matchValue, (string)($rule['desc_match_type'] ?? $rule['match_type'] ?? 'contains'))) {
+            return false;
+        }
+
+        $refMatchType = (string)($rule['ref_match_type'] ?? 'none');
+        if ($refMatchType !== 'none' && !$this->textMatches(
+            $this->stringValue($transactionPayload['reference'] ?? null),
+            trim((string)($rule['ref_match_value'] ?? '')),
+            $refMatchType
+        )) {
             return false;
         }
 
@@ -761,7 +772,7 @@ final class TransactionCategorisationService
         if ($sourceCategoryRule !== '' && !$this->textMatches(
             $this->stringValue($transactionPayload['source_category'] ?? null),
             $sourceCategoryRule,
-            (string)($rule['match_type'] ?? 'contains')
+            (string)($rule['desc_match_type'] ?? $rule['match_type'] ?? 'contains')
         )) {
             return false;
         }
@@ -771,7 +782,7 @@ final class TransactionCategorisationService
         if ($sourceAccountRule !== '' && !$this->textMatches(
             $this->stringValue($transactionPayload['source_account_label'] ?? null),
             $sourceAccountRule,
-            (string)($rule['match_type'] ?? 'contains')
+            (string)($rule['desc_match_type'] ?? $rule['match_type'] ?? 'contains')
         )) {
             return false;
         }

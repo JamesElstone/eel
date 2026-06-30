@@ -225,8 +225,14 @@ final class _transactions_rulesCard extends CardBaseFramework
 
     private function categorisationRuleSummary(array $rule): string
     {
-        $matchType = str_replace('_', ' ', (string)($rule['match_type'] ?? 'contains'));
-        $parts = [ucfirst($matchType) . ' "' . trim((string)($rule['match_value'] ?? '')) . '"'];
+        $descMatchType = str_replace('_', ' ', (string)($rule['desc_match_type'] ?? $rule['match_type'] ?? 'contains'));
+        $parts = ['Description ' . ucfirst($descMatchType) . ' "' . trim((string)($rule['desc_match_value'] ?? $rule['match_value'] ?? '')) . '"'];
+
+        $refMatchType = (string)($rule['ref_match_type'] ?? 'none');
+        $refMatchValue = trim((string)($rule['ref_match_value'] ?? ''));
+        if ($refMatchType !== 'none' && $refMatchValue !== '') {
+            $parts[] = 'reference ' . ucfirst(str_replace('_', ' ', $refMatchType)) . ' "' . $refMatchValue . '"';
+        }
 
         $sourceCategory = trim((string)($rule['source_category_value'] ?? ''));
         if ($sourceCategory !== '') {

@@ -67,7 +67,7 @@ $harness->run(\eel_accounts\Repository\CompanyRepository::class, function (Gener
         $otherCompanyId = companyRepositoryInsertCompany('Other Referencer Limited');
 
         InterfaceDB::prepareExecute(
-            'INSERT INTO categorisation_rules (company_id, match_value, nominal_account_id)
+            'INSERT INTO categorisation_rules (company_id, desc_match_value, nominal_account_id)
              VALUES (:company_id, :match_value, :nominal_id)',
             [
                 'company_id' => $otherCompanyId,

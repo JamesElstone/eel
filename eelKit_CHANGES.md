@@ -1,5 +1,22 @@
 # eelKit Changes
 
+## Warning flash messages
+
+Feature name: `warning_flash_messages`.
+
+eelKit now supports first-class warning flash messages for successful actions that need to report advisory or partial-success outcomes:
+
+```php
+return new ActionResultFramework(true, $changedFacts, [[
+    'type' => 'warning',
+    'message' => 'Account saved, but transactions have been posted so the transfer marker was not changed.',
+]], $query, $context);
+```
+
+Warnings render as `.alert.warning`, are styled separately from both success and error messages, and do not mark the action result as failed. Existing string flashes still render and log as success. Existing `type => error` flashes are unchanged, and unknown flash types continue to fall back to success for compatibility.
+
+Flash activity history now preserves `warning` in `application_activity_flash_history.message_type`. Existing installs should run the eelKit migration tool so the activity table enum allows `success`, `warning`, and `error`.
+
 ## Generic framework review updates
 
 Feature name: `accepted_upstream_framework_review_updates`.

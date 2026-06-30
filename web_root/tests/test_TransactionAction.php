@@ -444,8 +444,14 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
             ],
             'services' => [
                 'month_status' => [[
+                    'month_key' => '2026-02-01',
+                    'label' => 'Feb 2026',
+                ], [
                     'month_key' => '2026-03-01',
                     'label' => 'Mar 2026',
+                ], [
+                    'month_key' => '2026-04-01',
+                    'label' => 'Apr 2026',
                 ]],
                 'transactions_by_month' => [[
                     'id' => 42,
@@ -476,6 +482,14 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, '<div class="table-scroll"><table>'));
         $harness->assertSame(true, str_contains($html, 'card-toolbar transactions-imported-controls'));
         $harness->assertSame(true, str_contains($html, 'id="transaction_month_key" name="month_key"'));
+        $previousMonthButtonPosition = strpos($html, 'data-month-navigation="previous"');
+        $nextMonthButtonPosition = strpos($html, 'data-month-navigation="next"');
+        $harness->assertSame(true, $previousMonthButtonPosition !== false);
+        $harness->assertSame(true, $nextMonthButtonPosition !== false);
+        $harness->assertSame(true, strpos($html, 'name="month_key" value="2026-02-01"', (int)$previousMonthButtonPosition) !== false);
+        $harness->assertSame(true, strpos($html, '<button class="button" type="submit">&lt;</button>', (int)$previousMonthButtonPosition) !== false);
+        $harness->assertSame(true, strpos($html, 'name="month_key" value="2026-04-01"', (int)$nextMonthButtonPosition) !== false);
+        $harness->assertSame(true, strpos($html, '<button class="button" type="submit">&gt;</button>', (int)$nextMonthButtonPosition) !== false);
         $harness->assertSame(true, str_contains($html, 'id="table-filter-transactions_imported-category_filter" name="category_filter"'));
         $harness->assertSame(true, str_contains($html, '<option value="not_posted" selected>Not yet Posted</option>'));
         $harness->assertSame(false, str_contains($html, 'id="transaction_category_filter"'));
@@ -508,6 +522,51 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, 'name="transaction_reference" value="INV-42"'));
         $harness->assertSame(true, str_contains($html, 'name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form"'));
         $harness->assertSame(true, str_contains($html, '<span class="badge success">Manually Categorised</span>'));
+    });
+
+    $harness->check('_transactions_importedCard', 'disables month navigation buttons at first and last entries', function () use ($harness): void {
+        $renderForMonth = static function (string $monthKey): string {
+            return (new _transactions_importedCard())->render([
+                'company' => [
+                    'id' => 1,
+                    'accounting_period_id' => 2,
+                ],
+                'page' => [
+                    'month_key' => $monthKey,
+                ],
+                'services' => [
+                    'month_status' => [[
+                        'month_key' => '2026-02-01',
+                        'label' => 'Feb 2026',
+                    ], [
+                        'month_key' => '2026-03-01',
+                        'label' => 'Mar 2026',
+                    ], [
+                        'month_key' => '2026-04-01',
+                        'label' => 'Apr 2026',
+                    ]],
+                    'transactions_by_month' => [],
+                    'nominal_accounts' => [],
+                    'company_accounts' => [],
+                ],
+            ]);
+        };
+
+        $firstMonthHtml = $renderForMonth('2026-02-01');
+        $firstPreviousPosition = strpos($firstMonthHtml, 'data-month-navigation="previous"');
+        $firstNextPosition = strpos($firstMonthHtml, 'data-month-navigation="next"');
+        $harness->assertSame(true, $firstPreviousPosition !== false);
+        $harness->assertSame(true, $firstNextPosition !== false);
+        $harness->assertSame(true, strpos($firstMonthHtml, '<button class="button" type="button" disabled>&lt;</button>', (int)$firstPreviousPosition) !== false);
+        $harness->assertSame(true, strpos($firstMonthHtml, '<button class="button" type="submit">&gt;</button>', (int)$firstNextPosition) !== false);
+
+        $lastMonthHtml = $renderForMonth('2026-04-01');
+        $lastPreviousPosition = strpos($lastMonthHtml, 'data-month-navigation="previous"');
+        $lastNextPosition = strpos($lastMonthHtml, 'data-month-navigation="next"');
+        $harness->assertSame(true, $lastPreviousPosition !== false);
+        $harness->assertSame(true, $lastNextPosition !== false);
+        $harness->assertSame(true, strpos($lastMonthHtml, '<button class="button" type="submit">&lt;</button>', (int)$lastPreviousPosition) !== false);
+        $harness->assertSame(true, strpos($lastMonthHtml, '<button class="button" type="button" disabled>&gt;</button>', (int)$lastNextPosition) !== false);
     });
 
     $harness->check('_transactions_importedCard', 'treats internal transfer flagged transactions as transfer rows', function () use ($harness): void {

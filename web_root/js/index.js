@@ -2609,7 +2609,9 @@
                 return;
             }
 
-            const type = message.classList.contains('error') ? 'error' : 'success';
+            const type = message.classList.contains('error')
+                ? 'error'
+                : (message.classList.contains('warning') ? 'warning' : 'success');
             const text = (message.innerText || message.textContent || '')
                 .trim()
                 .replace(/\s*\n\s*/g, ' - ');

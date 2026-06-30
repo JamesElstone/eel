@@ -85,6 +85,8 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
     $topbarEnabled->setAccessible(true);
     $renderDeveloperOptionsStatus = new ReflectionMethod(PageRendererFramework::class, 'renderDeveloperOptionsStatus');
     $renderDeveloperOptionsStatus->setAccessible(true);
+    $renderFlashMessages = new ReflectionMethod(PageRendererFramework::class, 'renderFlashMessages');
+    $renderFlashMessages->setAccessible(true);
 
     $harness->check(PageRendererFramework::class, 'normalises legacy cards to one stack layout without tabs', function () use ($harness, $instance, $resolveCardLayout, $shouldRenderTabs): void {
         $layout = $resolveCardLayout->invoke($instance, new PageRendererLegacyLayoutTestPage(), [
@@ -354,6 +356,30 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
             file_put_contents($path, $original, LOCK_EX);
             AppConfigurationStore::config(true);
         }
+    });
+
+    $harness->check(PageRendererFramework::class, 'renders warning flashes as warning alerts', function () use ($harness, $instance, $renderFlashMessages): void {
+        $html = $renderFlashMessages->invoke($instance, [[
+            'type' => 'warning',
+            'message' => 'Saved with caveats.',
+        ]]);
+
+        $harness->assertSame('<div class="alert warning">Saved with caveats.</div>', $html);
+    });
+
+    $harness->check(PageRendererFramework::class, 'falls back unknown flash types to success alerts', function () use ($harness, $instance, $renderFlashMessages): void {
+        $html = $renderFlashMessages->invoke($instance, [
+            'Plain string.',
+            [
+                'type' => 'notice',
+                'message' => 'Unknown type.',
+            ],
+        ]);
+
+        $harness->assertSame(
+            '<div class="alert success">Plain string.</div><div class="alert success">Unknown type.</div>',
+            $html
+        );
     });
 
     $harness->check(PageRendererFramework::class, 'frontend rebinds page card tabs after AJAX card replacement', function () use ($harness): void {

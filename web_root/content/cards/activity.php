@@ -32,7 +32,7 @@ final class _activityCard extends CardBaseFramework
 
     public function helper(array $context): string
     {
-        return 'Recent success and error flash messages recorded from framework action results.';
+        return 'Recent success, warning, and error flash messages recorded from framework action results.';
     }
 
     public function handle(
@@ -111,7 +111,11 @@ final class _activityCard extends CardBaseFramework
             ->badgeColumn(
                 'message_type',
                 'Type',
-                badgeClassFormatter: static fn(array $row): string => (string)($row['message_type'] ?? '') === 'error' ? 'danger' : 'success'
+                badgeClassFormatter: static fn(array $row): string => match ((string)($row['message_type'] ?? '')) {
+                    'error' => 'danger',
+                    'warning' => 'warning',
+                    default => 'success',
+                }
             )
             ->primarySecondaryColumn(
                 'message_text',

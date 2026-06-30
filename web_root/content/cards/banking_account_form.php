@@ -85,6 +85,8 @@ final class _banking_account_formCard extends CardBaseFramework
         $LookupCompanyAccountId = (int)($LookupCompanyAccount['id'] ?? $context['edit_account_id'] ?? $page['edit_account_id'] ?? 0);
         $bankingMappingAccountId = (int)($page['mapping_account_id'] ?? 0);
         $bankingAccountForm = $this->buildFormState($LookupCompanyAccount, (array)($context['banking_account_form'] ?? $page['banking_account_form'] ?? []));
+        $transferMarkerLocked = $LookupCompanyAccount !== null && (int)($LookupCompanyAccount['has_posted_source_journals'] ?? 0) === 1;
+        $transferMarkerAttributes = $transferMarkerLocked ? ' disabled title="Transactions posted, unable to change"' : '';
 
         $optionsHtml = '';
         foreach (\eel_accounts\Service\CompanyAccountService::accountTypes() as $accountType => $accountTypeLabel) {
@@ -120,7 +122,7 @@ final class _banking_account_formCard extends CardBaseFramework
                         </div>
                         <div class="mini-field">
                             <label for="internal_transfer_marker">Internal transfer marker</label>
-                            <input class="input" id="internal_transfer_marker" name="internal_transfer_marker" value="' . HelperFramework::escape((string)$bankingAccountForm['internal_transfer_marker']) . '" maxlength="6" size="6" placeholder="P2P">
+                            <input class="input" id="internal_transfer_marker" name="internal_transfer_marker" value="' . HelperFramework::escape((string)$bankingAccountForm['internal_transfer_marker']) . '" maxlength="6" size="6" placeholder="P2P"' . $transferMarkerAttributes . '>
                         </div>
                     </div>
                     <div class="form-row">

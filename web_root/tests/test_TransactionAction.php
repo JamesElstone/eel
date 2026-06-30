@@ -383,6 +383,64 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, '<span class="badge success">Manual categorised</span>'));
     });
 
+    $harness->check('_transactions_importedCard', 'treats internal transfer flagged transactions as transfer rows', function () use ($harness): void {
+        $html = (new _transactions_importedCard())->render([
+            'company' => [
+                'id' => 1,
+                'accounting_period_id' => 2,
+            ],
+            'page' => [
+                'month_key' => '2026-03-01',
+                'category_filter' => 'all',
+            ],
+            'services' => [
+                'month_status' => [[
+                    'month_key' => '2026-03-01',
+                    'label' => 'Mar 2026',
+                ]],
+                'transactions_by_month' => [[
+                    'id' => 42,
+                    'account_id' => 10,
+                    'txn_date' => '2026-03-15',
+                    'description' => 'Transfer from pot',
+                    'source_account' => 'Current account',
+                    'source_category' => 'P2P',
+                    'amount' => 10.00,
+                    'document_download_status' => 'skipped',
+                    'nominal_account_id' => 7,
+                    'is_internal_transfer' => 1,
+                    'category_status' => 'uncategorised',
+                    'has_derived_journal' => 0,
+                    'auto_rule_id' => 3,
+                ]],
+                'nominal_accounts' => [[
+                    'id' => 7,
+                    'code' => '5000',
+                    'name' => 'Materials',
+                    'account_type' => 'expense',
+                ]],
+                'company_accounts' => [[
+                    'id' => 10,
+                    'account_name' => 'Current account',
+                    'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
+                    'is_active' => 1,
+                ], [
+                    'id' => 11,
+                    'account_name' => 'Savings pot',
+                    'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
+                    'is_active' => 1,
+                ]],
+            ],
+        ]);
+
+        $harness->assertSame(true, str_contains($html, 'Transfer from:'));
+        $harness->assertSame(true, str_contains($html, '<option value="">Select owned account</option>'));
+        $harness->assertSame(true, str_contains($html, 'Savings pot [Bank]'));
+        $harness->assertSame(true, str_contains($html, '<span class="badge warning">Transfer pending</span>'));
+        $harness->assertSame(false, str_contains($html, 'Matched by rule #3'));
+        $harness->assertSame(false, str_contains($html, '<option value="">Unassigned</option>'));
+    });
+
     $harness->check('_transactions_rulesCard', 'renders categorisation rules with table builder exports', function () use ($harness): void {
         $html = (new _transactions_rulesCard())->render([
             'company' => [

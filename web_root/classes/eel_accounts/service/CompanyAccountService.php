@@ -76,6 +76,15 @@ final class CompanyAccountService
                     COALESCE(na.code, \'\') AS nominal_code,
                     COALESCE(na.name, \'\') AS nominal_name,
                     ca.internal_transfer_marker,
+                    (
+                        SELECT COUNT(*)
+                        FROM transactions t
+                        INNER JOIN journals j ON j.company_id = t.company_id
+                            AND j.source_type = \'bank_csv\'
+                            AND j.source_ref = ' . $this->transactionSourceRefExpression('t') . '
+                            AND COALESCE(j.is_posted, 0) = 1
+                        WHERE t.account_id = ca.id
+                    ) AS posted_source_journal_count,
                     ca.contact_name,
                     ca.phone_number,
                     ca.address_line_1,
@@ -96,7 +105,13 @@ final class CompanyAccountService
             'id' => $accountId,
         ]);
 
-        return is_array($row) ? $row : null;
+        if (!is_array($row)) {
+            return null;
+        }
+
+        $row['has_posted_source_journals'] = (int)($row['posted_source_journal_count'] ?? 0) > 0 ? 1 : 0;
+
+        return $row;
     }
 
     public function createAccount(int $companyId, array $post): array {
@@ -262,6 +277,12 @@ final class CompanyAccountService
             $input['nominal_account_id'] = $existingNominalId > 0 ? $existingNominalId : null;
         }
 
+        if (!array_key_exists('internal_transfer_marker', $post) && $existingAccount !== null) {
+            $input['internal_transfer_marker'] = $existingAccount['internal_transfer_marker'] !== null
+                ? (string)$existingAccount['internal_transfer_marker']
+                : null;
+        }
+
         $errors = array_merge($errors, $this->validateInput($companyId, $input, $accountId));
 
         if ($errors !== []) {
@@ -276,6 +297,18 @@ final class CompanyAccountService
 
         if ($ownsTransaction) {
             \InterfaceDB::beginTransaction();
+        }
+
+        $warnings = [];
+        $markerChanged = $existingAccount !== null
+            && $this->normalisedMarkerValue($existingAccount['internal_transfer_marker'] ?? null) !== $this->normalisedMarkerValue($input['internal_transfer_marker'] ?? null);
+        $markerLocked = $markerChanged && $this->hasPostedSourceJournals($companyId, $accountId);
+
+        if ($markerLocked && $existingAccount !== null) {
+            $input['internal_transfer_marker'] = $existingAccount['internal_transfer_marker'] !== null
+                ? (string)$existingAccount['internal_transfer_marker']
+                : null;
+            $warnings[] = 'Transactions have been posted for this account, so the internal transfer marker was not changed.';
         }
 
         try {
@@ -334,6 +367,10 @@ final class CompanyAccountService
                 'id' => $accountId,
             ]);
 
+            if ($markerChanged && !$markerLocked) {
+                $this->reassessInternalTransferFlags($companyId, $accountId, $input['internal_transfer_marker'] ?? null);
+            }
+
             if ($ownsTransaction) {
                 \InterfaceDB::commit();
             }
@@ -352,6 +389,7 @@ final class CompanyAccountService
         return [
             'success' => true,
             'errors' => [],
+            'warnings' => $warnings,
             'account_id' => $accountId,
             'nominal_account_id' => (int)$nominalResult['nominal_account_id'],
             'nominal_code' => (string)($nominalResult['nominal_code'] ?? ''),
@@ -498,6 +536,83 @@ final class CompanyAccountService
         $usage['transactions'] = \InterfaceDB::countWhere('transactions', 'account_id', $accountId);
 
         return $usage;
+    }
+
+    private function hasPostedSourceJournals(int $companyId, int $accountId): bool
+    {
+        if ($companyId <= 0 || $accountId <= 0) {
+            return false;
+        }
+
+        $sourceRefExpression = $this->transactionSourceRefExpression('t');
+
+        return (int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*)
+             FROM transactions t
+             INNER JOIN journals j ON j.company_id = t.company_id
+                 AND j.source_type = :source_type
+                 AND j.source_ref = ' . $sourceRefExpression . '
+                 AND COALESCE(j.is_posted, 0) = 1
+             WHERE t.company_id = :company_id
+               AND t.account_id = :account_id',
+            [
+                'source_type' => 'bank_csv',
+                'company_id' => $companyId,
+                'account_id' => $accountId,
+            ]
+        ) > 0;
+    }
+
+    private function reassessInternalTransferFlags(int $companyId, int $accountId, ?string $marker): int
+    {
+        $marker = $this->normalisedMarkerValue($marker);
+        $matchForFlag = $marker !== '' ? 'LOWER(TRIM(COALESCE(txn_type, \'\'))) = LOWER(:marker_flag)' : '0 = 1';
+        $matchForNominal = $marker !== '' ? 'LOWER(TRIM(COALESCE(txn_type, \'\'))) = LOWER(:marker_nominal)' : '0 = 1';
+        $matchForRule = $marker !== '' ? 'LOWER(TRIM(COALESCE(txn_type, \'\'))) = LOWER(:marker_rule)' : '0 = 1';
+        $matchForStatus = $marker !== '' ? 'LOWER(TRIM(COALESCE(txn_type, \'\'))) = LOWER(:marker_status)' : '0 = 1';
+
+        $stmt = \InterfaceDB::prepare(
+            'UPDATE transactions
+             SET is_internal_transfer = CASE WHEN ' . $matchForFlag . ' THEN 1 ELSE 0 END,
+                 nominal_account_id = CASE WHEN ' . $matchForNominal . ' THEN NULL ELSE nominal_account_id END,
+                 auto_rule_id = CASE WHEN ' . $matchForRule . ' THEN NULL ELSE auto_rule_id END,
+                 category_status = CASE
+                     WHEN ' . $matchForStatus . ' AND COALESCE(transfer_account_id, 0) <= 0 THEN \'uncategorised\'
+                     ELSE category_status
+                 END
+             WHERE company_id = :company_id
+               AND account_id = :account_id'
+        );
+        $params = [
+            'company_id' => $companyId,
+            'account_id' => $accountId,
+        ];
+        if ($marker !== '') {
+            $params['marker_flag'] = $marker;
+            $params['marker_nominal'] = $marker;
+            $params['marker_rule'] = $marker;
+            $params['marker_status'] = $marker;
+        }
+
+        $stmt->execute($params);
+
+        return $stmt->rowCount();
+    }
+
+    private function normalisedMarkerValue(mixed $marker): string
+    {
+        return trim((string)($marker ?? ''));
+    }
+
+    private function transactionSourceRefExpression(string $transactionAlias): string
+    {
+        $transactionAlias = preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $transactionAlias) === 1 ? $transactionAlias : 't';
+
+        if (\InterfaceDB::driverName() === 'sqlite') {
+            return "'transaction:' || " . $transactionAlias . '.id';
+        }
+
+        return "CONCAT('transaction:', " . $transactionAlias . '.id)';
     }
 }
 

@@ -69,7 +69,7 @@ final class TransactionAction implements ActionInterfaceFramework
         $monthKey = $monthKey !== '' ? $monthKey : $dashboardRepository->defaultTransactionMonth($monthStatus);
         $categoryFilter = $dashboardRepository->normaliseTransactionCategoryFilter((string)(
             $context['category_filter']
-            ?? $request->input('category_filter', $request->query('category_filter', 'all'))
+            ?? $request->input('category_filter', $request->query('category_filter', 'not_posted'))
         ));
         $editingRuleId = max(0, (int)($context['editing_rule_id'] ?? 0));
         if ($editingRuleId <= 0 && isset($context['editing_rule_id'])) {
@@ -487,7 +487,7 @@ final class TransactionAction implements ActionInterfaceFramework
 
         return [
             'month_key' => $dashboardRepository->normaliseTransactionMonthFilter((string)$request->input('month_key', '')),
-            'category_filter' => $dashboardRepository->normaliseTransactionCategoryFilter((string)$request->input('category_filter', 'all')),
+            'category_filter' => $dashboardRepository->normaliseTransactionCategoryFilter((string)$request->input('category_filter', 'not_posted')),
             'editing_rule_id' => $this->positiveInt($request->input('rule_id', 0)),
         ];
     }

@@ -105,7 +105,7 @@ final class _transactions_importedCard extends CardBaseFramework
         $activeTransferCompanyAccounts = $this->activeTransferCompanyAccounts($services);
         $isPeriodLocked = $this->isPeriodLocked($services);
         $selectedTransactionMonth = (string)($page['month_key'] ?? '');
-        $selectedTransactionFilter = (string)($page['category_filter'] ?? 'all');
+        $selectedTransactionFilter = (string)($page['category_filter'] ?? 'not_posted');
         $selectedMonthSummary = $this->buildSelectedMonthSummary($transactionsByMonth);
 
         $monthOptions = '';
@@ -176,7 +176,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 (int)($company['id'] ?? 0),
                 (int)($company['accounting_period_id'] ?? 0),
                 (string)($page['month_key'] ?? ''),
-                (string)($page['category_filter'] ?? 'all'),
+                (string)($page['category_filter'] ?? 'not_posted'),
                 (array)($services['nominal_accounts'] ?? []),
                 $this->activeTransferCompanyAccounts($services),
                 $isPeriodLocked
@@ -275,6 +275,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 'Category filter',
                 [
                     'all' => 'All',
+                    'not_posted' => 'Not yet Posted',
                     'uncategorised' => 'Uncategorised only',
                     'auto' => 'Auto categorised',
                     'manual' => 'Manually Categorised',

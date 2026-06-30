@@ -17,6 +17,7 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
         $harness->assertSame('2026-03-01', $repository->normaliseTransactionMonthFilter('2026-03-01'));
         $harness->assertSame('', $repository->normaliseTransactionMonthFilter('2026-03-15'));
         $harness->assertSame('manual', $repository->normaliseTransactionCategoryFilter('manual'));
+        $harness->assertSame('not_posted', $repository->normaliseTransactionCategoryFilter('not_posted'));
         $harness->assertSame('all', $repository->normaliseTransactionCategoryFilter('unexpected'));
     });
 

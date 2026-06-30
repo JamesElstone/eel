@@ -185,6 +185,60 @@
         });
     }
 
+    function formForControl(control) {
+        const formId = String(control.getAttribute('form') || '').trim();
+        if (formId !== '') {
+            const form = document.getElementById(formId);
+            return form instanceof HTMLFormElement ? form : null;
+        }
+
+        return control.closest('form');
+    }
+
+    function initialiseTransactionCategorisationAutosave(root = document) {
+        const controls = root.querySelectorAll ? root.querySelectorAll('[data-autosave-submit-target]') : [];
+
+        controls.forEach((control) => {
+            if (
+                !(
+                    control instanceof HTMLInputElement
+                    || control instanceof HTMLSelectElement
+                    || control instanceof HTMLTextAreaElement
+                )
+            ) {
+                return;
+            }
+
+            if (control.dataset.autosaveBound === '1') {
+                return;
+            }
+
+            control.dataset.autosaveBound = '1';
+            control.addEventListener('change', () => {
+                if (control.dataset.autosaveRequireValue === '1' && String(control.value || '').trim() === '') {
+                    return;
+                }
+
+                const form = formForControl(control);
+                if (!(form instanceof HTMLFormElement)) {
+                    return;
+                }
+
+                const submitSelector = String(control.dataset.autosaveSubmitTarget || '').trim();
+                if (submitSelector === '') {
+                    return;
+                }
+
+                const submitter = form.querySelector(submitSelector);
+                if (!(submitter instanceof HTMLButtonElement) || submitter.disabled) {
+                    return;
+                }
+
+                form.requestSubmit(submitter);
+            });
+        });
+    }
+
     document.addEventListener('click', (event) => {
         const accountingPeriodSummaryButton = event.target instanceof Element
             ? event.target.closest('[data-accounting-period-summary-button="true"]')
@@ -208,6 +262,7 @@
     initialiseUploadProcessingIndicators(document);
     initialiseVatRegistrationForms(document);
     initialiseStatementMappingForms(document);
+    initialiseTransactionCategorisationAutosave(document);
 
     const observer = new MutationObserver((mutations) => {
         mutations.forEach((mutation) => {
@@ -216,6 +271,7 @@
                     initialiseUploadProcessingIndicators(node);
                     initialiseVatRegistrationForms(node);
                     initialiseStatementMappingForms(node);
+                    initialiseTransactionCategorisationAutosave(node);
                 }
             });
         });

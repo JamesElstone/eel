@@ -448,7 +448,7 @@ final class _transactions_importedCard extends CardBaseFramework
             }
 
             return '<div class="helper">' . HelperFramework::escape($transferDirectionLabel) . '</div>
-                <select class="select js-transaction-transfer" name="transfer_account_id" form="' . HelperFramework::escape($transactionFormId) . '" data-initial-value="' . HelperFramework::escape($selectedTransferAccountId) . '" data-dirty-action-target=".js-transaction-action" data-dirty-require-value="1">' . $transferOptions . '</select>';
+                <select class="select js-transaction-transfer" name="transfer_account_id" form="' . HelperFramework::escape($transactionFormId) . '" data-initial-value="' . HelperFramework::escape($selectedTransferAccountId) . '" data-autosave-submit-target=".js-transaction-autosave-submit" data-autosave-require-value="1">' . $transferOptions . '</select>';
         }
 
         $selectedNominalAccountId = (string)($transaction['nominal_account_id'] ?? '');
@@ -460,7 +460,7 @@ final class _transactions_importedCard extends CardBaseFramework
             $nominalOptions .= '<option value="' . (int)($nominal['id'] ?? 0) . '"' . ((string)($nominal['id'] ?? '') === $selectedNominalAccountId ? ' selected' : '') . '>' . HelperFramework::escape(FormattingFramework::nominalLabel($nominal)) . '</option>';
         }
 
-        return '<select class="select js-transaction-nominal" name="nominal_account_id" form="' . HelperFramework::escape($transactionFormId) . '" data-initial-value="' . HelperFramework::escape($selectedNominalAccountId) . '" data-dirty-action-target=".js-transaction-action" data-dirty-require-value="1">' . $nominalOptions . '</select>';
+        return '<select class="select js-transaction-nominal" name="nominal_account_id" form="' . HelperFramework::escape($transactionFormId) . '" data-initial-value="' . HelperFramework::escape($selectedNominalAccountId) . '" data-autosave-submit-target=".js-transaction-autosave-submit" data-autosave-require-value="1" data-dirty-action-target=".js-transaction-rule-action" data-dirty-require-value="1">' . $nominalOptions . '</select>';
     }
 
     private function flagsHtml(array $transaction): string
@@ -493,9 +493,11 @@ final class _transactions_importedCard extends CardBaseFramework
             ? ' data-chicken-check="true" data-chicken-title="Confirm journal rebuild" data-chicken-message="This will rebuild the journal entry for this transaction.<br><br>Continue?" data-chicken-confirm-text="Continue" data-chicken-button-class="button primary" data-submit-field="confirm_rebuild_journal" data-submit-value="1"'
             : '';
         $lockedButtonAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit"';
-        $saveButtonAttributes = $isPeriodLocked ? $lockedButtonAttributes : ' type="submit"';
-        $createRuleButtonAttributes = $isPeriodLocked ? $lockedButtonAttributes : ' type="submit"';
+        $autosaveSubmitHtml = $isPeriodLocked
+            ? ''
+            : '<button class="js-transaction-autosave-submit" type="submit" name="global_action" value="save_transaction_category" hidden' . $journalRebuildAttributes . '>Autosave</button>';
         $createAssetAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit" form="' . HelperFramework::escape($assetFormId) . '" formnovalidate';
+        $createRuleHtml = $isTransferRow ? '' : $this->createRuleButtonHtml($transaction);
 
         return '<form method="post" action="?page=assets" id="' . HelperFramework::escape($assetFormId) . '">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -510,15 +512,25 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
                 <input type="hidden" name="confirm_rebuild_journal" value="0">
+                ' . $autosaveSubmitHtml . '
                 <div class="actions-row">
-                    <button class="button primary js-transaction-action"' . $saveButtonAttributes . ' name="global_action" value="save_transaction_category" data-dirty-enable-mode="changed" disabled' . $journalRebuildAttributes . '>' . ($isTransferRow ? 'Save' : 'Save Row') . '</button>'
-                    . (!$isTransferRow
-                        ? '<button class="button primary js-transaction-action"' . $createRuleButtonAttributes . ' name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form" data-dirty-enable-mode="selected" disabled>Create Automatic Rule</button>'
-                        : '') . '
+                    ' . $createRuleHtml . '
                     <button class="button primary"' . $lockedButtonAttributes . ' name="global_action" value="defer_transaction"' . $journalRebuildAttributes . '>Defer</button>
                     <button class="button"' . $createAssetAttributes . '>Create Asset</button>
                 </div>
             </form>';
+    }
+
+    private function createRuleButtonHtml(array $transaction): string
+    {
+        $nominalAccountId = (int)($transaction['nominal_account_id'] ?? 0);
+        $nominalInputHtml = '';
+        if ($nominalAccountId > 0) {
+            $nominalInputHtml = '<input type="hidden" name="nominal_account_id" value="' . $nominalAccountId . '">';
+        }
+
+        return $nominalInputHtml
+            . '<button class="button primary" type="submit" name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form">Create Automatic Rule</button>';
     }
 
     private function readonlyCategorisationHtml(array $transaction, array $nominalAccounts, array $activeTransferCompanyAccounts): string

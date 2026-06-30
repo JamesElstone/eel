@@ -53,6 +53,50 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame('manual', (string)($result->query()['category_filter'] ?? ''));
     });
 
+    $harness->check('TransactionAction', 'defaults missing category filter to not posted', function () use ($harness, $instance): void {
+        $request = new RequestFramework(
+            [],
+            [
+                'card_action' => 'Transaction',
+                'global_action' => 'select_transaction_month',
+                'month_key' => '2026-03-01',
+            ],
+            ['REQUEST_METHOD' => 'POST'],
+            [],
+            [],
+            null
+        );
+
+        $result = $instance->handle($request, createTestPageServiceFramework());
+
+        $harness->assertSame(true, $result->isSuccess());
+        $harness->assertSame('2026-03-01', (string)($result->context()['month_key'] ?? ''));
+        $harness->assertSame('not_posted', (string)($result->context()['category_filter'] ?? ''));
+        $harness->assertSame('not_posted', (string)($result->query()['category_filter'] ?? ''));
+    });
+
+    $harness->check('TransactionAction', 'preserves explicit all category filter', function () use ($harness, $instance): void {
+        $request = new RequestFramework(
+            [],
+            [
+                'card_action' => 'Transaction',
+                'global_action' => 'select_transaction_month',
+                'month_key' => '2026-03-01',
+                'category_filter' => 'all',
+            ],
+            ['REQUEST_METHOD' => 'POST'],
+            [],
+            [],
+            null
+        );
+
+        $result = $instance->handle($request, createTestPageServiceFramework());
+
+        $harness->assertSame(true, $result->isSuccess());
+        $harness->assertSame('all', (string)($result->context()['category_filter'] ?? ''));
+        $harness->assertSame('all', (string)($result->query()['category_filter'] ?? ''));
+    });
+
     $harness->check('TransactionAction', 'imported transaction filters only invalidate the imported card', function () use ($harness, $instance): void {
         $request = new RequestFramework(
             [],
@@ -397,7 +441,6 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
             ],
             'page' => [
                 'month_key' => '2026-03-01',
-                'category_filter' => 'all',
             ],
             'services' => [
                 'month_status' => [[
@@ -434,6 +477,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, 'card-toolbar transactions-imported-controls'));
         $harness->assertSame(true, str_contains($html, 'id="transaction_month_key" name="month_key"'));
         $harness->assertSame(true, str_contains($html, 'id="table-filter-transactions_imported-category_filter" name="category_filter"'));
+        $harness->assertSame(true, str_contains($html, '<option value="not_posted" selected>Not yet Posted</option>'));
         $harness->assertSame(false, str_contains($html, 'id="transaction_category_filter"'));
         $harness->assertSame(true, str_contains($html, 'Condensed View'));
         $harness->assertSame(true, str_contains($html, 'name="_table_export_prepare" value="csv"'));

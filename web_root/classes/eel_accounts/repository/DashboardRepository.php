@@ -299,7 +299,7 @@ final class DashboardRepository
     {
         $filter = trim((string)$filter);
 
-        return in_array($filter, ['all', 'uncategorised', 'auto', 'manual'], true) ? $filter : 'all';
+        return in_array($filter, ['all', 'not_posted', 'uncategorised', 'auto', 'manual'], true) ? $filter : 'all';
     }
 
     public function defaultTransactionMonth(array $monthStatus): string
@@ -365,7 +365,14 @@ final class DashboardRepository
             $params['month_end'] = $monthEnd->format('Y-m-d');
         }
 
-        if ($categoryFilter !== 'all') {
+        if ($categoryFilter === 'not_posted') {
+            $where[] = "NOT EXISTS(
+                SELECT 1
+                FROM journals j
+                WHERE j.source_type = 'bank_csv'
+                  AND j.source_ref = CONCAT('transaction:', t.id)
+            )";
+        } elseif ($categoryFilter !== 'all') {
             $where[] = 't.category_status = :category_status';
             $params['category_status'] = $categoryFilter;
         }

@@ -53,6 +53,15 @@ final class _transactions_importedCard extends CardBaseFramework
                     'activeOnly' => true,
                 ],
             ],
+            [
+                'key' => 'year_end_review',
+                'service' => \eel_accounts\Service\YearEndLockService::class,
+                'method' => 'fetchReview',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                ],
+            ],
         ];
     }
 
@@ -94,6 +103,7 @@ final class _transactions_importedCard extends CardBaseFramework
         $monthStatus = (array)($services['month_status'] ?? []);
         $nominalAccounts = (array)($services['nominal_accounts'] ?? []);
         $activeTransferCompanyAccounts = $this->activeTransferCompanyAccounts($services);
+        $isPeriodLocked = $this->isPeriodLocked($services);
         $selectedTransactionMonth = (string)($page['month_key'] ?? '');
         $selectedTransactionFilter = (string)($page['category_filter'] ?? 'all');
         $selectedMonthSummary = $this->buildSelectedMonthSummary($transactionsByMonth);
@@ -114,6 +124,7 @@ final class _transactions_importedCard extends CardBaseFramework
             $selectedTransactionFilter,
             $nominalAccounts,
             $activeTransferCompanyAccounts,
+            $isPeriodLocked,
             $context
         )->render(
             $context,
@@ -137,8 +148,9 @@ final class _transactions_importedCard extends CardBaseFramework
                             <select class="select" id="transaction_month_key" name="month_key">' . $monthOptions . '</select>
                         </div>
                     </form>
-                    ' . $this->bulkToolbarActionsHtml($companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter) . '
+                    ' . $this->bulkToolbarActionsHtml($companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $isPeriodLocked) . '
                 </div>
+                ' . $this->lockedPeriodNoticeHtml($isPeriodLocked) . '
                 <div class="pill-row transactions-imported-summary">
                     <span class="pill">' . (int)$selectedMonthSummary['total'] . ' in month</span>
                     <span class="pill">' . (int)$selectedMonthSummary['uncategorised'] . ' uncategorised</span>
@@ -156,6 +168,7 @@ final class _transactions_importedCard extends CardBaseFramework
         $company = (array)($context['company'] ?? []);
         $page = (array)($context['page'] ?? []);
         $services = (array)($context['services'] ?? []);
+        $isPeriodLocked = $this->isPeriodLocked($services);
 
         return [
             $this->transactionsTable(
@@ -165,7 +178,8 @@ final class _transactions_importedCard extends CardBaseFramework
                 (string)($page['month_key'] ?? ''),
                 (string)($page['category_filter'] ?? 'all'),
                 (array)($services['nominal_accounts'] ?? []),
-                $this->activeTransferCompanyAccounts($services)
+                $this->activeTransferCompanyAccounts($services),
+                $isPeriodLocked
             ),
         ];
     }
@@ -178,6 +192,7 @@ final class _transactions_importedCard extends CardBaseFramework
         string $selectedTransactionFilter,
         array $nominalAccounts,
         array $activeTransferCompanyAccounts,
+        bool $isPeriodLocked,
         array $context
     ): TableFramework {
         $rows = array_values(array_filter($transactions, static fn(mixed $row): bool => is_array($row)));
@@ -190,7 +205,8 @@ final class _transactions_importedCard extends CardBaseFramework
             $selectedTransactionMonth,
             $selectedTransactionFilter,
             $nominalAccounts,
-            $activeTransferCompanyAccounts
+            $activeTransferCompanyAccounts,
+            $isPeriodLocked
         )
             ->visibleRows((array)$pagination['items'])
             ->pagination(
@@ -206,8 +222,17 @@ final class _transactions_importedCard extends CardBaseFramework
             );
     }
 
-    private function bulkToolbarActionsHtml(int $companyId, int $accountingPeriodId, string $selectedTransactionMonth, string $selectedTransactionFilter): string
+    private function bulkToolbarActionsHtml(
+        int $companyId,
+        int $accountingPeriodId,
+        string $selectedTransactionMonth,
+        string $selectedTransactionFilter,
+        bool $isPeriodLocked
+    ): string
     {
+        $autoButtonAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit"';
+        $postButtonAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit"';
+
         return '<form method="post" action="?page=transactions" data-ajax="true">
                 <input type="hidden" name="card_action" value="Transaction">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -216,7 +241,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
                 <input type="hidden" name="auto_scope" value="uncategorised">
                 <input type="hidden" name="global_action" value="run_auto_rules">
-                <button class="button" type="submit">Run Auto Rules</button>
+                <button class="button"' . $autoButtonAttributes . '>Run Auto Rules</button>
             </form>
             <form method="post" action="?page=transactions" data-ajax="true">
                 <input type="hidden" name="card_action" value="Transaction">
@@ -225,7 +250,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
                 <input type="hidden" name="global_action" value="post_categorised_transactions">
-                <button class="button primary" type="submit">Post Categorised Transactions</button>
+                <button class="button primary"' . $postButtonAttributes . '>Post Categorised Transactions</button>
             </form>';
     }
 
@@ -236,7 +261,8 @@ final class _transactions_importedCard extends CardBaseFramework
         string $selectedTransactionMonth,
         string $selectedTransactionFilter,
         array $nominalAccounts,
-        array $activeTransferCompanyAccounts
+        array $activeTransferCompanyAccounts,
+        bool $isPeriodLocked = false
     ): TableFramework {
         $rows = array_values(array_filter($transactions, static fn(mixed $row): bool => is_array($row)));
 
@@ -298,7 +324,7 @@ final class _transactions_importedCard extends CardBaseFramework
             ->column(
                 'categorisation',
                 'Categorisation',
-                html: fn(array $row): string => $this->categorisationHtml($row, $nominalAccounts, $activeTransferCompanyAccounts)
+                html: fn(array $row): string => $this->categorisationHtml($row, $nominalAccounts, $activeTransferCompanyAccounts, $isPeriodLocked)
             )
             ->column(
                 'status',
@@ -322,7 +348,7 @@ final class _transactions_importedCard extends CardBaseFramework
             ->column(
                 'actions',
                 'Actions',
-                html: fn(array $row): string => $this->actionsHtml($row, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter),
+                html: fn(array $row): string => $this->actionsHtml($row, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $isPeriodLocked),
                 exportable: false
             );
     }
@@ -394,10 +420,19 @@ final class _transactions_importedCard extends CardBaseFramework
         return $documentHtml . '</div>';
     }
 
-    private function categorisationHtml(array $transaction, array $nominalAccounts, array $activeTransferCompanyAccounts): string
+    private function categorisationHtml(
+        array $transaction,
+        array $nominalAccounts,
+        array $activeTransferCompanyAccounts,
+        bool $isPeriodLocked
+    ): string
     {
         $transactionFormId = 'transaction-form-' . (int)($transaction['id'] ?? 0);
         $isTransferRow = $this->transactionIsTransferMode($transaction);
+
+        if ($isPeriodLocked) {
+            return $this->readonlyCategorisationHtml($transaction, $nominalAccounts, $activeTransferCompanyAccounts);
+        }
 
         if ($isTransferRow) {
             $selectedTransferAccountId = (string)($transaction['transfer_account_id'] ?? '');
@@ -441,15 +476,25 @@ final class _transactions_importedCard extends CardBaseFramework
         return $flagsHtml . '</div>';
     }
 
-    private function actionsHtml(array $transaction, int $companyId, int $accountingPeriodId, string $selectedTransactionMonth, string $selectedTransactionFilter): string
+    private function actionsHtml(
+        array $transaction,
+        int $companyId,
+        int $accountingPeriodId,
+        string $selectedTransactionMonth,
+        string $selectedTransactionFilter,
+        bool $isPeriodLocked
+    ): string
     {
         $transactionId = (int)($transaction['id'] ?? 0);
         $transactionFormId = 'transaction-form-' . $transactionId;
         $assetFormId = 'transaction-asset-form-' . $transactionId;
         $isTransferRow = $this->transactionIsTransferMode($transaction);
-        $journalRebuildAttributes = (int)($transaction['has_derived_journal'] ?? 0) === 1
+        $journalRebuildAttributes = !$isPeriodLocked && (int)($transaction['has_derived_journal'] ?? 0) === 1
             ? ' data-chicken-check="true" data-chicken-title="Confirm journal rebuild" data-chicken-message="This will rebuild the journal entry for this transaction.<br><br>Continue?" data-chicken-confirm-text="Continue" data-chicken-button-class="button primary" data-submit-field="confirm_rebuild_journal" data-submit-value="1"'
             : '';
+        $lockedButtonAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit"';
+        $saveButtonAttributes = $isPeriodLocked ? $lockedButtonAttributes : ' type="submit"';
+        $createAssetAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit" form="' . HelperFramework::escape($assetFormId) . '" formnovalidate';
 
         return '<form method="post" action="?page=assets" id="' . HelperFramework::escape($assetFormId) . '">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -465,14 +510,73 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
                 <input type="hidden" name="confirm_rebuild_journal" value="0">
                 <div class="actions-row">
-                    <button class="button primary js-transaction-action" type="submit" name="global_action" value="save_transaction_category" data-dirty-enable-mode="changed" disabled' . $journalRebuildAttributes . '>' . ($isTransferRow ? 'Save' : 'Save Row') . '</button>'
+                    <button class="button primary js-transaction-action"' . $saveButtonAttributes . ' name="global_action" value="save_transaction_category" data-dirty-enable-mode="changed" disabled' . $journalRebuildAttributes . '>' . ($isTransferRow ? 'Save' : 'Save Row') . '</button>'
                     . (!$isTransferRow
                         ? '<button class="button primary js-transaction-action" type="submit" name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form" data-dirty-enable-mode="selected" disabled>Create Automatic Rule</button>'
                         : '') . '
-                    <button class="button primary" type="submit" name="global_action" value="defer_transaction"' . $journalRebuildAttributes . '>Defer</button>
-                    <button class="button" type="submit" form="' . HelperFramework::escape($assetFormId) . '" formnovalidate>Create Asset</button>
+                    <button class="button primary"' . $lockedButtonAttributes . ' name="global_action" value="defer_transaction"' . $journalRebuildAttributes . '>Defer</button>
+                    <button class="button"' . $createAssetAttributes . '>Create Asset</button>
                 </div>
             </form>';
+    }
+
+    private function readonlyCategorisationHtml(array $transaction, array $nominalAccounts, array $activeTransferCompanyAccounts): string
+    {
+        if ($this->transactionIsTransferMode($transaction)) {
+            $transferDirectionLabel = (float)($transaction['amount'] ?? 0) < 0 ? 'Transfer to:' : 'Transfer from:';
+
+            return '<div class="helper">' . HelperFramework::escape($transferDirectionLabel) . '</div>
+                <div>' . HelperFramework::escape($this->transferAccountLabel($transaction, $activeTransferCompanyAccounts)) . '</div>';
+        }
+
+        return '<div>' . HelperFramework::escape($this->nominalAccountLabel($transaction, $nominalAccounts)) . '</div>';
+    }
+
+    private function nominalAccountLabel(array $transaction, array $nominalAccounts): string
+    {
+        $nominalAccountId = (int)($transaction['nominal_account_id'] ?? 0);
+        foreach ($nominalAccounts as $nominal) {
+            if (is_array($nominal) && (int)($nominal['id'] ?? 0) === $nominalAccountId) {
+                return FormattingFramework::nominalLabel($nominal);
+            }
+        }
+
+        $assignedNominal = trim((string)($transaction['assigned_nominal'] ?? ''));
+        return $assignedNominal !== '' ? $assignedNominal : 'Unassigned';
+    }
+
+    private function transferAccountLabel(array $transaction, array $activeTransferCompanyAccounts): string
+    {
+        $transferAccountId = (int)($transaction['transfer_account_id'] ?? 0);
+        foreach ($activeTransferCompanyAccounts as $account) {
+            if (!is_array($account) || (int)($account['id'] ?? 0) !== $transferAccountId) {
+                continue;
+            }
+
+            $accountType = (string)($account['account_type'] ?? '');
+            $accountTypeLabel = \eel_accounts\Service\CompanyAccountService::accountTypes()[$accountType] ?? ucfirst($accountType);
+
+            return (string)($account['account_name'] ?? '') . ' [' . $accountTypeLabel . ']';
+        }
+
+        $transferAccountName = trim((string)($transaction['transfer_account_name'] ?? ''));
+        return $transferAccountName !== '' ? $transferAccountName : 'Unassigned';
+    }
+
+    private function isPeriodLocked(array $services): bool
+    {
+        $review = (array)($services['year_end_review'] ?? []);
+
+        return !empty($review['is_locked']);
+    }
+
+    private function lockedPeriodNoticeHtml(bool $isPeriodLocked): string
+    {
+        if (!$isPeriodLocked) {
+            return '';
+        }
+
+        return '<div class="helper"><span class="badge warning">Period locked</span> Transactions can be reviewed but not changed.</div>';
     }
 
     private function buildSelectedMonthSummary(array $transactionsByMonth): array

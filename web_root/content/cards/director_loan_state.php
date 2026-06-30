@@ -22,8 +22,8 @@ final class _director_loan_stateCard extends CardBaseFramework
                 'service' => \eel_accounts\Service\DirectorLoanService::class,
                 'method' => 'fetchStatement',
                 'params' => [
-                    'companyId' => ':company_id',
-                    'accountingPeriodId' => ':accounting_period_id',
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
         ];
@@ -50,7 +50,7 @@ final class _director_loan_stateCard extends CardBaseFramework
         $statement = (array)($context['services']['directorLoanStatement'] ?? []);
 
         if (empty($statement['success'])) {
-            return $this->renderSelectedContext($company, [])
+            return $this->renderSelectedContext($company)
                 . $this->renderErrors((array)($statement['errors'] ?? ['Director loan statement is not available for the selected period.']));
         }
 
@@ -76,7 +76,7 @@ final class _director_loan_stateCard extends CardBaseFramework
 
         return '
             <section class="settings-stack">
-                ' . $this->renderSelectedContext($company, $accountingPeriod) . '
+                ' . $this->renderSelectedContext($company) . '
                 <div class="helper">Using ' . HelperFramework::escape(FormattingFramework::nominalLabel($nominal, ' ')) . ' as the Director Loan nominal.</div>
             </section>
             <div class="month-grid">
@@ -95,16 +95,12 @@ final class _director_loan_stateCard extends CardBaseFramework
         ';
     }
 
-    private function renderSelectedContext(array $company, array $accountingPeriod): string
+    private function renderSelectedContext(array $company): string
     {
         return '<div class="form-grid">
             <div class="form-row">
                 <label>Company</label>
                 <input class="input" value="' . HelperFramework::escape((string)($company['name'] ?? '')) . '" readonly>
-            </div>
-            <div class="form-row">
-                <label>Accounting Period</label>
-                <input class="input" value="' . HelperFramework::escape((string)($accountingPeriod['label'] ?? '')) . '" readonly>
             </div>
         </div>';
     }
@@ -116,7 +112,9 @@ final class _director_loan_stateCard extends CardBaseFramework
 
     private function money(array $statement, mixed $value): string
     {
-        return (string)($statement['currency_symbol'] ?? '') . FormattingFramework::money($value);
+        $symbol = (string)($statement['default_currency_symbol'] ?? '£');
+
+        return $symbol . FormattingFramework::money($value);
     }
 
     private function renderErrors(array $errors): string

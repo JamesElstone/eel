@@ -66,6 +66,7 @@ $harness->check(ApplicationSettingsAction::class, 'explains application setting 
         'app_footer' => '',
         'brand-mark' => 'E',
         'developer_options' => true,
+        'table_condensed_default' => false,
         'navigation' => [
             'default_order' => [
                 'dashboard' => 10,
@@ -95,6 +96,22 @@ $harness->check(ApplicationSettingsAction::class, 'explains application setting 
     $harness->assertSame(
         'Developer options are now off. Collapsed sidebar link initials are now hidden.',
         $method->invoke($action, $previousConfig, $settings, false)
+    );
+
+    $settings = $previousConfig;
+    $settings['table_condensed_default'] = true;
+    $harness->assertSame(
+        'Tables now start in condensed view.',
+        $method->invoke($action, $previousConfig, $settings, false)
+    );
+
+    $previousSettings = $previousConfig;
+    $previousSettings['table_condensed_default'] = true;
+    $settings = $previousSettings;
+    $settings['table_condensed_default'] = false;
+    $harness->assertSame(
+        'Tables now start in regular view.',
+        $method->invoke($action, $previousSettings, $settings, false)
     );
 
     $settings['developer_options'] = true;

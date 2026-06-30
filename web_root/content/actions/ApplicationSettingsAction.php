@@ -61,6 +61,7 @@ final class ApplicationSettingsAction implements ActionInterfaceFramework
                 ? (new ExternalIpLookupOutbound())->lookupPublicIp()
                 : trim((string)$request->input('antifraud_vendor_public_ip', ''));
             $developerOptions = $this->checkboxValue($request, 'developer_options');
+            $tableCondensedDefault = $this->checkboxValue($request, 'table_condensed_default');
             $navigationOrder = $this->navigationOrderFromRequest($request);
             $settings = [
                 'app_name' => $appName,
@@ -68,6 +69,7 @@ final class ApplicationSettingsAction implements ActionInterfaceFramework
                 'app_footer' => trim((string)$request->input('app_footer', '')),
                 'brand-mark' => $brandMark,
                 'developer_options' => $developerOptions,
+                'table_condensed_default' => $tableCondensedDefault,
                 'navigation' => array_replace($this->configArray($previousConfig, 'navigation'), [
                     'default_order' => $navigationOrder,
                     'topbar_disabled_pages' => $this->topbarDisabledPagesFromRequest($request, array_keys($navigationOrder)),
@@ -168,6 +170,12 @@ final class ApplicationSettingsAction implements ActionInterfaceFramework
             $changes[] = !empty($settings['developer_options'])
                 ? 'Developer options are now on.'
                 : 'Developer options are now off.';
+        }
+
+        if ((bool)($previousConfig['table_condensed_default'] ?? false) !== (bool)($settings['table_condensed_default'] ?? false)) {
+            $changes[] = !empty($settings['table_condensed_default'])
+                ? 'Tables now start in condensed view.'
+                : 'Tables now start in regular view.';
         }
 
         $previousNavigation = $this->configArray($previousConfig, 'navigation');

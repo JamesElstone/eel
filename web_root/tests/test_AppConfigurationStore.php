@@ -16,6 +16,7 @@ $harness->check(AppConfigurationStore::class, 'loads configuration from the test
     $harness->assertSame('Test strapline', AppConfigurationStore::get('app_strapline'));
     $harness->assertSame('', AppConfigurationStore::get('app_footer'));
     $harness->assertSame([], AppConfigurationStore::get('navigation.topbar_disabled_pages'));
+    $harness->assertSame(false, AppConfigurationStore::get('table_condensed_default'));
     $harness->assertSame(true, AppConfigurationStore::get('user_defaults.new_user_otp_required'));
     $harness->assertSame('Test strapline', AppConfigurationStore::appStrapline());
 });
@@ -25,6 +26,7 @@ $harness->check(AppConfigurationStore::class, 'centralises the default applicati
     $defaults = $method->invoke(null);
 
     $harness->assertSame('A simple useful and secure PHP framework', $defaults['app_strapline'] ?? null);
+    $harness->assertSame(false, $defaults['table_condensed_default'] ?? null);
     $harness->assertSame(true, $defaults['user_defaults']['new_user_otp_required'] ?? null);
 });
 
@@ -107,6 +109,7 @@ $harness->check(AppConfigurationStore::class, 'updates editable application sett
             'app_footer' => 'Updated footer',
             'brand-mark' => 'US',
             'developer_options' => false,
+            'table_condensed_default' => true,
             'navigation' => [
                 'default_order' => [
                     'dashboard' => 10,
@@ -139,6 +142,7 @@ $harness->check(AppConfigurationStore::class, 'updates editable application sett
         $harness->assertSame('Updated footer', $updated['app_footer'] ?? null);
         $harness->assertSame('US', $updated['brand-mark'] ?? null);
         $harness->assertSame(false, $updated['developer_options'] ?? null);
+        $harness->assertSame(true, $updated['table_condensed_default'] ?? null);
         $harness->assertSame(920, $updated['navigation']['default_order']['settings'] ?? null);
         $harness->assertSame('developer_page', $updated['navigation']['developer_only_pages'][0] ?? null);
         $harness->assertSame('settings', $updated['navigation']['topbar_disabled_pages'][0] ?? null);

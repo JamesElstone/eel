@@ -1034,6 +1034,11 @@
             .join('');
     }
 
+    function showClientFlash(message, type = 'success') {
+        const className = type === 'error' ? 'error' : 'success';
+        replaceFlash(`<div class="alert ${className}">${escapeHtml(message)}</div>`);
+    }
+
     async function sendXhr(url, options = {}) {
         const headers = await afBuildHeaders(url, options.headers);
 
@@ -1199,6 +1204,73 @@
         document.body.appendChild(link);
         link.click();
         link.remove();
+    }
+
+    function copyableTableExportFormat(format) {
+        return ['csv', 'tsv', 'ascii'].includes(String(format || '').trim().toLowerCase());
+    }
+
+    function tableExportFormatForForm(form) {
+        if (!(form instanceof HTMLFormElement)) {
+            return '';
+        }
+
+        const field = form.querySelector('input[name="_table_export_prepare"]');
+
+        return field instanceof HTMLInputElement
+            ? String(field.value || '').trim().toLowerCase()
+            : '';
+    }
+
+    function rememberTableExportClipboardIntent(event) {
+        const button = event.target instanceof Element
+            ? event.target.closest('button')
+            : null;
+
+        if (!(button instanceof HTMLButtonElement) || !(button.form instanceof HTMLFormElement)) {
+            return;
+        }
+
+        const format = tableExportFormatForForm(button.form);
+        if (event.ctrlKey && copyableTableExportFormat(format)) {
+            button.dataset.tableExportClipboard = '1';
+            return;
+        }
+
+        delete button.dataset.tableExportClipboard;
+    }
+
+    function tableExportClipboardRequested(submitter) {
+        if (!(submitter instanceof HTMLButtonElement) || !(submitter.form instanceof HTMLFormElement)) {
+            return false;
+        }
+
+        return submitter.dataset.tableExportClipboard === '1'
+            && copyableTableExportFormat(tableExportFormatForForm(submitter.form));
+    }
+
+    function clearTableExportClipboardIntent(submitter) {
+        if (submitter instanceof HTMLButtonElement) {
+            delete submitter.dataset.tableExportClipboard;
+        }
+    }
+
+    async function copyTableExportToClipboard(payload) {
+        const text = typeof payload?.clipboard_text === 'string' ? payload.clipboard_text : '';
+        const format = String(payload?.clipboard_format || 'table').trim().toUpperCase() || 'TABLE';
+
+        if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
+            showClientFlash('Clipboard copy is not available in this browser context.', 'error');
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(text);
+            showClientFlash(`${format} copied to clipboard.`);
+        } catch (error) {
+            showClientFlash('Unable to copy table export to the clipboard.', 'error');
+            console.error(error);
+        }
     }
 
     function appendCurrentPageCardKeys(formData, form = null) {
@@ -2964,6 +3036,12 @@
         appendRequestedVisibleCard(formData, event.submitter);
         appendSiteContextSelectionsToFormData(formData, form);
 
+        if (tableExportClipboardRequested(event.submitter)) {
+            formData.set('_table_export_clipboard', '1');
+        } else {
+            formData.delete('_table_export_clipboard');
+        }
+
         const method = (form.method || 'POST').toUpperCase();
 
         const requestUrl = method === 'GET'
@@ -2999,6 +3077,11 @@
                 return;
             }
 
+            if (payload && typeof payload.clipboard_text === 'string') {
+                await copyTableExportToClipboard(payload);
+                return;
+            }
+
             if (payload && typeof payload.download_url === 'string' && payload.download_url.trim() !== '') {
                 triggerFileDownload(payload.download_url);
                 return;
@@ -3027,11 +3110,14 @@
 
             console.error(error);
         } finally {
+            clearTableExportClipboardIntent(event.submitter);
             restoreProcessingState();
         }
     });
 
     document.addEventListener('click', async (event) => {
+        rememberTableExportClipboardIntent(event);
+
         const cardSizeToggle = event.target instanceof Element ? event.target.closest('[data-card-size-toggle]') : null;
         if (cardSizeToggle instanceof HTMLButtonElement) {
             event.preventDefault();

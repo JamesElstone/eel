@@ -43,28 +43,11 @@ final class _asset_taxCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $page = (array)($context['page'] ?? []);
-        $company = (array)($context['company'] ?? []);
         $assetsPageData = (array)($context['services']['assetPageData'] ?? []);
-        $companyId = (int)($company['id'] ?? 0);
-        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
-        $pageId = trim((string)($page['page_id'] ?? ''));
         $assetTaxView = is_array($assetsPageData['tax_view'] ?? null) ? $assetsPageData['tax_view'] : null;
-        $assetAccountingPeriods = is_array($assetsPageData['accounting_periods'] ?? null) ? $assetsPageData['accounting_periods'] : [];
 
-        return '
-           <form class="toolbar" method="post" data-ajax="true" data-accounting-period-selector="true">
-                <input type="hidden" name="action" value="set-page-context">
-                <input type="hidden" name="_ajax" value="1">
-                <input type="hidden" name="page" value="' . HelperFramework::escape($pageId) . '">
-                <input type="hidden" name="company_id" value="' . HelperFramework::escape((string)$companyId) . '">
-                <div class="mini-field">
-                    <label for="asset_accounting_period_id">Accounting Period</label>
-                    <select class="select" id="asset_accounting_period_id" name="accounting_period_id">' . $this->accountingPeriodOptions($assetAccountingPeriods, $accountingPeriodId) . '</select>
-                </div>
-            </form>
-            ' . ($assetTaxView !== null
-                ? '<div class="list">
+        return $assetTaxView !== null
+            ? '<div class="list">
                     <div class="list-item"><strong>Accounting Profit</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['accounting_profit'] ?? 0))) . '</span></div>
                     <div class="list-item"><strong>+ Depreciation</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['depreciation_add_back'] ?? 0))) . '</span></div>
                     <div class="list-item"><strong>- Capital Allowances</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['capital_allowances'] ?? 0))) . '</span></div>
@@ -74,20 +57,7 @@ final class _asset_taxCard extends CardBaseFramework
                     <div class="list-item"><strong>Losses C/F</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['losses_carried_forward'] ?? 0))) . '</span></div>
                     <div class="list-item"><strong>Taxable Profit</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['taxable_profit'] ?? 0))) . '</span></div>
                 </div>'
-                : '<div class="helper">Select a company and accounting period to view tax adjustments.</div>') . '
-        ';
-    }
-
-    private function accountingPeriodOptions(array $assetAccountingPeriods, int $accountingPeriodId): string
-    {
-        $html = '';
-        foreach ($assetAccountingPeriods as $accountingPeriod) {
-            $optionAccountingPeriodId = (int)($accountingPeriod['id'] ?? 0);
-            $selected = $optionAccountingPeriodId === $accountingPeriodId ? ' selected' : '';
-            $html .= '<option value="' . HelperFramework::escape((string)$optionAccountingPeriodId) . '"' . $selected . '>' . HelperFramework::escape((string)($accountingPeriod['label'] ?? '')) . '</option>';
-        }
-
-        return $html;
+            : '<div class="helper">Select an accounting period in the page context to view tax adjustments.</div>';
     }
 
 }

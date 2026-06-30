@@ -40,6 +40,7 @@ $harness->run(_journals_listCard::class, static function (GeneratedServiceClassT
                         'description' => 'Materials purchase',
                         'source_type' => 'bank_csv',
                         'source_ref' => 'transaction:55',
+                        'is_posted' => 1,
                         'total_debit' => 123.45,
                         'lines' => [
                             [
@@ -64,8 +65,13 @@ $harness->run(_journals_listCard::class, static function (GeneratedServiceClassT
 
         $harness->assertTrue(str_contains($html, 'Materials purchase'));
         $harness->assertTrue(str_contains($html, '5000 - Purchases'));
-        $harness->assertTrue(str_contains($html, '<th>Destination Nominal</th>'));
-        $harness->assertTrue(str_contains($html, '<th>Posted</th>'));
+        $harness->assertTrue(str_contains($html, '<th>Code</th>'));
+        $harness->assertTrue(str_contains($html, '<th>Label</th>'));
+        $harness->assertTrue(str_contains($html, '<th>CR</th>'));
+        $harness->assertTrue(str_contains($html, '<th>DR</th>'));
+        $harness->assertTrue(str_contains($html, '<th>Status</th>'));
+        $harness->assertTrue(str_contains($html, '<td>1200</td>'));
+        $harness->assertTrue(str_contains($html, '<td>Bank</td>'));
         $harness->assertTrue(str_contains($html, 'Transaction #55'));
         $harness->assertTrue(str_contains($html, 'company_id=12'));
         $harness->assertTrue(str_contains($html, 'accounting_period_id=34'));
@@ -113,8 +119,9 @@ $harness->run(_journals_listCard::class, static function (GeneratedServiceClassT
         ]);
         $harness->assertTrue(count($tables) === 1);
         $export = $tables[0]->exportCsv();
-        $harness->assertTrue(str_contains($export, 'Destination Nominal'));
-        $harness->assertTrue(str_contains($export, '5000 - Purchases'));
+        $harness->assertTrue(str_contains($export, 'Date,Description,Source,Status,Total,Code,Label,CR,DR'));
+        $harness->assertTrue(str_contains($export, '5000,Purchases,,"123.45"'));
+        $harness->assertTrue(str_contains($export, '1200,Bank,"123.45",'));
         $harness->assertTrue(str_contains($export, 'Posted'));
         $harness->assertTrue(!str_contains($export, 'Review Transaction'));
     });

@@ -29,6 +29,8 @@ $harness->run(_journals_listCard::class, static function (GeneratedServiceClassT
                 'accounting_period_id' => 34,
             ],
             'page' => [
+                'page_id' => 'journals',
+                'page_cards' => ['journals_list'],
                 'journal_entries' => [],
             ],
             'services' => [
@@ -49,6 +51,8 @@ $harness->run(_journals_listCard::class, static function (GeneratedServiceClassT
                             [
                                 'nominal_code' => '1200',
                                 'nominal_name' => 'Bank',
+                                'company_account_id' => 7,
+                                'company_account_name' => 'Current Account',
                                 'debit' => 0,
                                 'credit' => 123.45,
                             ],
@@ -60,10 +64,100 @@ $harness->run(_journals_listCard::class, static function (GeneratedServiceClassT
 
         $harness->assertTrue(str_contains($html, 'Materials purchase'));
         $harness->assertTrue(str_contains($html, '5000 - Purchases'));
+        $harness->assertTrue(str_contains($html, '<th>Destination Nominal</th>'));
+        $harness->assertTrue(str_contains($html, '<th>Posted</th>'));
         $harness->assertTrue(str_contains($html, 'Transaction #55'));
         $harness->assertTrue(str_contains($html, 'company_id=12'));
         $harness->assertTrue(str_contains($html, 'accounting_period_id=34'));
         $harness->assertTrue(str_contains($html, 'month_key=2026-02-01'));
         $harness->assertTrue(!str_contains($html, 'Posted transaction journals will appear here'));
+
+        $tables = $card->tables([
+            'company' => [
+                'id' => 12,
+                'accounting_period_id' => 34,
+            ],
+            'page' => [
+                'page_id' => 'journals',
+                'page_cards' => ['journals_list'],
+            ],
+            'services' => [
+                'journal_entries' => [
+                    [
+                        'journal_date' => '2026-02-14',
+                        'description' => 'Materials purchase',
+                        'source_type' => 'bank_csv',
+                        'source_ref' => 'transaction:55',
+                        'is_posted' => 1,
+                        'total_debit' => 123.45,
+                        'lines' => [
+                            [
+                                'nominal_code' => '5000',
+                                'nominal_name' => 'Purchases',
+                                'company_account_id' => null,
+                                'debit' => 123.45,
+                                'credit' => 0,
+                            ],
+                            [
+                                'nominal_code' => '1200',
+                                'nominal_name' => 'Bank',
+                                'company_account_id' => 7,
+                                'company_account_name' => 'Current Account',
+                                'debit' => 0,
+                                'credit' => 123.45,
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+        $harness->assertTrue(count($tables) === 1);
+        $export = $tables[0]->exportCsv();
+        $harness->assertTrue(str_contains($export, 'Destination Nominal'));
+        $harness->assertTrue(str_contains($export, '5000 - Purchases'));
+        $harness->assertTrue(str_contains($export, 'Posted'));
+        $harness->assertTrue(!str_contains($export, 'Review Transaction'));
+    });
+
+    $harness->check(_journals_listCard::class, 'paginates journals at thirty rows', static function () use ($harness, $card): void {
+        $journals = [];
+        for ($index = 1; $index <= 31; $index++) {
+            $journals[] = [
+                'journal_date' => '2026-02-' . str_pad((string)(($index % 9) + 1), 2, '0', STR_PAD_LEFT),
+                'description' => 'Journal ' . $index,
+                'source_type' => 'bank_csv',
+                'source_ref' => 'transaction:' . $index,
+                'is_posted' => 1,
+                'total_debit' => 10 + $index,
+                'lines' => [
+                    [
+                        'nominal_code' => '5000',
+                        'nominal_name' => 'Purchases',
+                        'company_account_id' => null,
+                        'debit' => 10 + $index,
+                        'credit' => 0,
+                    ],
+                ],
+            ];
+        }
+
+        $html = $card->render([
+            'company' => [
+                'id' => 12,
+                'accounting_period_id' => 34,
+            ],
+            'page' => [
+                'page_id' => 'journals',
+                'page_cards' => ['journals_list'],
+                'journals_list_page' => 1,
+            ],
+            'services' => [
+                'journal_entries' => $journals,
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, 'Journal 30'));
+        $harness->assertTrue(!str_contains($html, 'Journal 31'));
+        $harness->assertTrue(str_contains($html, 'Next &gt;'));
     });
 });

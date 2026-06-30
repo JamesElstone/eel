@@ -460,7 +460,7 @@ final class _transactions_importedCard extends CardBaseFramework
             $nominalOptions .= '<option value="' . (int)($nominal['id'] ?? 0) . '"' . ((string)($nominal['id'] ?? '') === $selectedNominalAccountId ? ' selected' : '') . '>' . HelperFramework::escape(FormattingFramework::nominalLabel($nominal)) . '</option>';
         }
 
-        return '<select class="select js-transaction-nominal" name="nominal_account_id" form="' . HelperFramework::escape($transactionFormId) . '" data-initial-value="' . HelperFramework::escape($selectedNominalAccountId) . '" data-autosave-submit-target=".js-transaction-autosave-submit" data-autosave-require-value="1" data-dirty-action-target=".js-transaction-rule-action" data-dirty-require-value="1">' . $nominalOptions . '</select>';
+        return '<select class="select js-transaction-nominal" name="nominal_account_id" form="' . HelperFramework::escape($transactionFormId) . '" data-initial-value="' . HelperFramework::escape($selectedNominalAccountId) . '" data-autosave-submit-target=".js-transaction-autosave-submit" data-autosave-require-value="1">' . $nominalOptions . '</select>';
     }
 
     private function flagsHtml(array $transaction): string

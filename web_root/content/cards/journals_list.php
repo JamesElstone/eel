@@ -67,19 +67,18 @@ final class _journals_listCard extends CardBaseFramework
     public function tables(array $context): array
     {
         return [
-            $this->configureTableSorting($this->table($context), $context, $this->tableHiddenFields($context)),
+            $this->table($context),
         ];
     }
 
     private function configuredTable(array $context): TableFramework
     {
         $hiddenFields = $this->tableHiddenFields($context);
-        $table = $this->configureTableSorting($this->table($context), $context, $hiddenFields);
-        $rows = $table->sortedRows();
-        $pagination = HelperFramework::paginateArray($rows, $this->paginationPage($context), self::PAGE_SIZE);
+        $journals = $this->journalRows($context);
+        $pagination = HelperFramework::paginateArray($journals, $this->paginationPage($context), self::PAGE_SIZE);
 
-        return $table
-            ->visibleRows((array)$pagination['items'])
+        return $this->table($context)
+            ->visibleRows($this->journalLineRows((array)$pagination['items']))
             ->pagination(
                 $pagination,
                 'Journals',
@@ -93,57 +92,68 @@ final class _journals_listCard extends CardBaseFramework
         $companyId = (int)($context['company']['id'] ?? 0);
         $accountingPeriodId = (int)($context['company']['accounting_period_id'] ?? 0);
 
-        return TableFramework::make($this->key(), $this->journalRows($context))
+        return TableFramework::make($this->key(), $this->journalLineRows($this->journalRows($context)))
             ->filename('journals-list')
             ->exportLimit(1000)
             ->empty('Posted transaction journals will appear here once transactions have been categorised and posted.')
             ->column(
                 'journal_date',
                 'Date',
-                html: static fn(array $row): string => HelperFramework::escape((string)($row['journal_date'] ?? '')),
+                html: fn(array $row): string => $this->journalCell($row, (string)($row['journal_date'] ?? '')),
+                export: fn(array $row): string => $this->journalExportValue($row, (string)($row['journal_date'] ?? '')),
                 exportType: 'date'
             )
-            ->textColumn('description', 'Description')
             ->column(
-                'destination_nominal',
-                'Destination Nominal',
-                html: fn(array $row): string => $this->destinationNominalHtml($row),
-                export: fn(array $row): string => $this->destinationNominalLabel($row),
-                sort: fn(array $row): string => $this->destinationNominalLabel($row)
+                'description',
+                'Description',
+                html: fn(array $row): string => $this->journalCell($row, (string)($row['description'] ?? '')),
+                export: fn(array $row): string => $this->journalExportValue($row, (string)($row['description'] ?? ''))
             )
             ->column(
                 'source_type',
                 'Source',
-                html: fn(array $row): string => $this->sourceHtml($row),
-                export: fn(array $row): string => $this->sourceExport($row)
+                html: fn(array $row): string => $this->sourceCellHtml($row, $companyId, $accountingPeriodId),
+                export: fn(array $row): string => $this->journalExportValue($row, $this->sourceExport($row))
             )
             ->column(
-                'lines',
-                'Lines',
-                html: fn(array $row): string => $this->linesHtml($row),
-                export: fn(array $row): string => $this->linesExport($row),
-                sort: false
+                'is_posted',
+                'Status',
+                html: fn(array $row): string => $this->statusCellHtml($row),
+                export: fn(array $row): string => $this->journalExportValue($row, $this->statusLabel($row))
             )
             ->column(
                 'total_debit',
                 'Total',
-                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::money((float)($row['total_debit'] ?? 0))),
-                export: static fn(array $row): string => FormattingFramework::money((float)($row['total_debit'] ?? 0)),
+                html: fn(array $row): string => $this->journalCell($row, FormattingFramework::money((float)($row['total_debit'] ?? 0))),
+                export: fn(array $row): string => $this->journalExportValue($row, FormattingFramework::money((float)($row['total_debit'] ?? 0))),
                 cellClass: 'numeric',
                 exportType: 'number'
             )
-            ->badgeColumn(
-                'is_posted',
-                'Posted',
-                badgeClassFormatter: static fn(array $row): string => (int)($row['is_posted'] ?? 0) === 1 ? 'success' : 'warning',
-                labelFormatter: static fn(string $value, array $row): string => (int)($row['is_posted'] ?? 0) === 1 ? 'Posted' : 'Draft'
+            ->textColumn('line_nominal_code', 'Code')
+            ->textColumn('line_nominal_label', 'Label')
+            ->column(
+                'credit',
+                'CR',
+                html: static fn(array $row): string => (float)($row['credit'] ?? 0) > 0
+                    ? HelperFramework::escape(FormattingFramework::money((float)($row['credit'] ?? 0)))
+                    : '',
+                export: static fn(array $row): string => (float)($row['credit'] ?? 0) > 0
+                    ? FormattingFramework::money((float)($row['credit'] ?? 0))
+                    : '',
+                cellClass: 'numeric',
+                exportType: 'number'
             )
             ->column(
-                'actions',
-                '',
-                html: fn(array $row): string => $this->actionHtml($row, $companyId, $accountingPeriodId),
-                exportable: false,
-                sort: false
+                'debit',
+                'DR',
+                html: static fn(array $row): string => (float)($row['debit'] ?? 0) > 0
+                    ? HelperFramework::escape(FormattingFramework::money((float)($row['debit'] ?? 0)))
+                    : '',
+                export: static fn(array $row): string => (float)($row['debit'] ?? 0) > 0
+                    ? FormattingFramework::money((float)($row['debit'] ?? 0))
+                    : '',
+                cellClass: 'numeric',
+                exportType: 'number'
             );
     }
 
@@ -165,65 +175,54 @@ final class _journals_listCard extends CardBaseFramework
         ));
     }
 
-    private function destinationNominalHtml(array $journal): string
+    private function journalLineRows(array $journals): array
     {
-        $label = $this->destinationNominalLabel($journal);
-        if ($label === '') {
-            return '<span class="helper">No destination nominal</span>';
+        $rows = [];
+        foreach ($journals as $journal) {
+            if (!is_array($journal)) {
+                continue;
+            }
+
+            $lines = array_values(array_filter(
+                (array)($journal['lines'] ?? []),
+                static fn(mixed $line): bool => is_array($line)
+            ));
+            if ($lines === []) {
+                $lines = [[]];
+            }
+
+            foreach ($lines as $index => $line) {
+                $rows[] = array_merge($journal, [
+                    'journal_row_start' => $index === 0,
+                    'line_nominal_code' => trim((string)($line['nominal_code'] ?? '')),
+                    'line_nominal_label' => trim((string)($line['nominal_name'] ?? '')),
+                    'line_company_account_name' => trim((string)($line['company_account_name'] ?? '')),
+                    'debit' => (float)($line['debit'] ?? 0),
+                    'credit' => (float)($line['credit'] ?? 0),
+                ]);
+            }
         }
 
-        $helper = $this->destinationNominalHelper($journal);
-
-        return HelperFramework::escape($label)
-            . ($helper !== '' ? '<div class="helper">' . HelperFramework::escape($helper) . '</div>' : '');
+        return $rows;
     }
 
-    private function destinationNominalLabel(array $journal): string
+    private function journalCell(array $row, string $value): string
     {
-        $destinationLines = $this->destinationLines($journal);
-        if ($destinationLines === []) {
+        return !empty($row['journal_row_start']) ? HelperFramework::escape($value) : '';
+    }
+
+    private function journalExportValue(array $row, string $value): string
+    {
+        return !empty($row['journal_row_start']) ? $value : '';
+    }
+
+    private function sourceCellHtml(array $journal, int $companyId, int $accountingPeriodId): string
+    {
+        if (empty($journal['journal_row_start'])) {
             return '';
         }
 
-        return implode(', ', array_values(array_unique(array_map(
-            fn(array $line): string => $this->nominalLabel($line),
-            $destinationLines
-        ))));
-    }
-
-    private function destinationNominalHelper(array $journal): string
-    {
-        $destinationLines = $this->destinationLines($journal);
-        $companyAccounts = array_values(array_filter(array_map(
-            static fn(array $line): string => trim((string)($line['company_account_name'] ?? '')),
-            $destinationLines
-        )));
-
-        return implode(', ', array_values(array_unique($companyAccounts)));
-    }
-
-    private function destinationLines(array $journal): array
-    {
-        $lines = array_values(array_filter(
-            (array)($journal['lines'] ?? []),
-            static fn(mixed $line): bool => is_array($line)
-        ));
-
-        $nominalLines = array_values(array_filter(
-            $lines,
-            static fn(array $line): bool => (int)($line['company_account_id'] ?? 0) <= 0
-        ));
-
-        if ($nominalLines !== []) {
-            return $nominalLines;
-        }
-
-        $debitLines = array_values(array_filter(
-            $lines,
-            static fn(array $line): bool => (float)($line['debit'] ?? 0) > 0
-        ));
-
-        return $debitLines !== [] ? $debitLines : $lines;
+        return $this->sourceHtml($journal) . '<div class="helper">' . $this->actionHtml($journal, $companyId, $accountingPeriodId) . '</div>';
     }
 
     private function sourceHtml(array $journal): string
@@ -238,6 +237,22 @@ final class _journals_listCard extends CardBaseFramework
             . ($sourceTransactionId > 0
                 ? '<div class="helper">Transaction #' . $sourceTransactionId . '</div>'
                 : ($sourceRef !== '' ? '<div class="helper">' . HelperFramework::escape($sourceRef) . '</div>' : ''));
+    }
+
+    private function statusCellHtml(array $row): string
+    {
+        if (empty($row['journal_row_start'])) {
+            return '';
+        }
+
+        return '<span class="badge ' . HelperFramework::escape((int)($row['is_posted'] ?? 0) === 1 ? 'success' : 'warning') . '">'
+            . HelperFramework::escape($this->statusLabel($row))
+            . '</span>';
+    }
+
+    private function statusLabel(array $row): string
+    {
+        return (int)($row['is_posted'] ?? 0) === 1 ? 'Posted' : 'Draft';
     }
 
     private function sourceExport(array $journal): string
@@ -259,51 +274,6 @@ final class _journals_listCard extends CardBaseFramework
             'bank_csv' => 'Bank CSV',
             default => HelperFramework::labelFromKey($sourceType, '_', $sourceType),
         };
-    }
-
-    private function linesHtml(array $journal): string
-    {
-        $linesHtml = '';
-        foreach ((array)($journal['lines'] ?? []) as $line) {
-            if (!is_array($line)) {
-                continue;
-            }
-
-            $linesHtml .= '<span class="helper">' . HelperFramework::escape($this->lineLabel($line)) . '</span>';
-        }
-
-        return '<div class="document-stack">' . $linesHtml . '</div>';
-    }
-
-    private function linesExport(array $journal): string
-    {
-        $labels = [];
-        foreach ((array)($journal['lines'] ?? []) as $line) {
-            if (is_array($line)) {
-                $labels[] = $this->lineLabel($line);
-            }
-        }
-
-        return implode(' | ', $labels);
-    }
-
-    private function lineLabel(array $line): string
-    {
-        return $this->nominalLabel($line) . ': Dr '
-            . FormattingFramework::money((float)($line['debit'] ?? 0)) . ' / Cr '
-            . FormattingFramework::money((float)($line['credit'] ?? 0));
-    }
-
-    private function nominalLabel(array $line): string
-    {
-        $code = trim((string)($line['nominal_code'] ?? ''));
-        $name = trim((string)($line['nominal_name'] ?? ''));
-
-        if ($code !== '' && $name !== '') {
-            return $code . ' - ' . $name;
-        }
-
-        return $code !== '' ? $code : $name;
     }
 
     private function actionHtml(array $journal, int $companyId, int $accountingPeriodId): string

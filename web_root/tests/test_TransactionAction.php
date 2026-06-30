@@ -428,7 +428,9 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, 'Test transaction'));
         $harness->assertSame(true, str_contains($html, 'Matched by rule #3 (Test)'));
         $harness->assertSame(true, str_contains($html, 'View Receipt'));
-        $harness->assertSame(true, str_contains($html, 'name="global_action" value="save_transaction_category"'));
+        $harness->assertSame(true, str_contains($html, 'data-autosave-submit-target=".js-transaction-autosave-submit"'));
+        $harness->assertSame(true, str_contains($html, '<button class="js-transaction-autosave-submit" type="submit" name="global_action" value="save_transaction_category" hidden>Autosave</button>'));
+        $harness->assertSame(false, str_contains($html, 'Save Row'));
         $harness->assertSame(true, str_contains($html, 'name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form"'));
         $harness->assertSame(true, str_contains($html, '<span class="badge success">Manually Categorised</span>'));
     });
@@ -485,6 +487,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
 
         $harness->assertSame(true, str_contains($html, 'Transfer from:'));
         $harness->assertSame(true, str_contains($html, '<option value="">Select owned account</option>'));
+        $harness->assertSame(true, str_contains($html, 'data-autosave-submit-target=".js-transaction-autosave-submit"'));
         $harness->assertSame(true, str_contains($html, 'Savings pot [Bank]'));
         $harness->assertSame(true, str_contains($html, '<span class="badge warning">Transfer pending</span>'));
         $harness->assertSame(false, str_contains($html, '<span class="badge info">Rule #3</span>'));
@@ -564,12 +567,15 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, 'id="table-filter-transactions_imported-category_filter" name="category_filter"'));
         $harness->assertSame(true, str_contains($html, '5000 - Materials'));
         $harness->assertSame(true, str_contains($html, 'Savings pot [Bank]'));
-        $harness->assertSame(false, str_contains($html, 'name="nominal_account_id"'));
-        $harness->assertSame(false, str_contains($html, 'name="transfer_account_id"'));
+        $harness->assertSame(false, str_contains($html, '<select class="select js-transaction-nominal" name="nominal_account_id"'));
+        $harness->assertSame(false, str_contains($html, '<select class="select js-transaction-transfer" name="transfer_account_id"'));
+        $harness->assertSame(false, str_contains($html, 'data-autosave-submit-target=".js-transaction-autosave-submit"'));
+        $harness->assertSame(false, str_contains($html, 'class="js-transaction-autosave-submit"'));
+        $harness->assertSame(true, str_contains($html, '<input type="hidden" name="nominal_account_id" value="7">'));
         $harness->assertSame(true, str_contains($html, '<button class="button" type="button" disabled title="Period locked">Run Auto Rules</button>'));
         $harness->assertSame(true, str_contains($html, '<button class="button primary" type="button" disabled title="Period locked">Post Categorised Transactions</button>'));
-        $harness->assertSame(true, str_contains($html, 'type="button" disabled title="Period locked" name="global_action" value="save_transaction_category"'));
-        $harness->assertSame(true, str_contains($html, 'type="button" disabled title="Period locked" name="global_action" value="auto_create_transaction_rule"'));
+        $harness->assertSame(false, str_contains($html, 'name="global_action" value="save_transaction_category"'));
+        $harness->assertSame(true, str_contains($html, '<button class="button primary" type="submit" name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form">Create Automatic Rule</button>'));
         $harness->assertSame(true, str_contains($html, 'type="button" disabled title="Period locked" name="global_action" value="defer_transaction"'));
         $harness->assertSame(true, str_contains($html, '<button class="button" type="button" disabled title="Period locked">Create Asset</button>'));
         $harness->assertSame(true, str_contains($html, 'View Receipt'));

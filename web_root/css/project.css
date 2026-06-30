@@ -1794,6 +1794,14 @@
   padding-bottom: 18px;
 }
 
+.statement-mapping-fields .select:disabled {
+  background: var(--panel-soft);
+  color: var(--muted);
+  cursor: not-allowed;
+  border-color: var(--line);
+  opacity: 1;
+}
+
 @media (max-width: 900px) {
 .settings-layout,
   .nominals-layout,

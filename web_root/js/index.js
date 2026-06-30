@@ -958,15 +958,20 @@
 
     function tableCondensedEnabled(toggle) {
         const key = tableCondensedStorageKey(toggle);
-        if (key === '' || !afStorageAvailable('localStorage')) {
-            return false;
+        const defaultEnabled = String(toggle?.dataset?.tableCondensedDefault || '') === '1';
+
+        if (key !== '' && afStorageAvailable('localStorage')) {
+            try {
+                const stored = window.localStorage.getItem(key);
+                if (stored === '1' || stored === '0') {
+                    return stored === '1';
+                }
+            } catch (error) {
+                return defaultEnabled;
+            }
         }
 
-        try {
-            return window.localStorage.getItem(key) === '1';
-        } catch (error) {
-            return false;
-        }
+        return defaultEnabled;
     }
 
     function setTableCondensed(toggle, condensed, persist = true) {

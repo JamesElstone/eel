@@ -43,6 +43,7 @@ final class _application_settingsCard extends CardBaseFramework
         $cookieSameSite = (string)($config['session']['cookie_samesite'] ?? 'Strict');
         $hideCollapsedLinkInitials = !empty($config['navigation']['hide_collapsed_link_initials']);
         $newUserOtpRequired = $this->otpRequiredDisplayValue($config['user_defaults']['new_user_otp_required'] ?? true);
+        $tableCondensedDefault = !empty($config['table_condensed_default']);
 
         return '
             <form method="post" action="?page=settings" data-ajax="true" class="form-grid application-settings-form">
@@ -81,6 +82,13 @@ final class _application_settingsCard extends CardBaseFramework
                         <input id="settings-developer-options" name="developer_options" type="checkbox" value="1" data-submit-on-change="true"' . (!empty($config['developer_options']) ? ' checked' : '') . '>
                         <span class="checkbox-copy">
                             <span>Show developer-only tools, cards, and diagnostics where enabled.</span>
+                        </span>
+                    </label>
+                    <label class="checkbox-item" for="settings-table-condensed-default">
+                        <input type="hidden" name="table_condensed_default" value="0">
+                        <input id="settings-table-condensed-default" name="table_condensed_default" type="checkbox" value="1" data-submit-on-change="true"' . ($tableCondensedDefault ? ' checked' : '') . '>
+                        <span class="checkbox-copy">
+                            <span>Start table builder tables in condensed view by default.</span>
                         </span>
                     </label>
                 </fieldset>

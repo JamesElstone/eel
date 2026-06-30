@@ -96,6 +96,7 @@ final class AppConfigurationStore
             'app_footer',
             'brand-mark',
             'developer_options',
+            'table_condensed_default',
             'navigation',
             'antifraud',
             'session',
@@ -252,6 +253,7 @@ final class AppConfigurationStore
             'app_strapline' => self::DEFAULT_APP_STRAPLINE,
             'app_footer' => '',
             'developer_options' => true,
+            'table_condensed_default' => false,
             'db' => [
                 'dsn' => '',
                 'user' => '',

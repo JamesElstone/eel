@@ -32,6 +32,8 @@ In downstream projects, treat these paths as upstream eelKit framework code unle
 
 Downstream projects may add and alter their own SQL files under `db_schema/`. This includes downstream migration files and downstream master schema files alongside `db_schema/eelKit.schema.sql`, such as `db_schema/{project_name}.schema.sql`. Treat those downstream-named SQL files as downstream application code, not eelKit framework code.
 
+`web_root/js/index.js` is owned by eelKit. If a downstream project needs a change in that file, submit a feature request or eelKit proposal instead of altering the file directly.
+
 ## Downstream project classes
 
 Downstream projects that add their own PHP classes should put them in the downstream project's own namespace and matching directory under `web_root/classes/{project_name}/`.

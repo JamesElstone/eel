@@ -29,6 +29,7 @@
   --toolbar: #d7e2f0;
   --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
   --radius: 18px;
+  --page-card-reveal-offset: 96px;
 }
 
 @font-face {
@@ -1770,6 +1771,39 @@ label {
   flex: 0 0 auto;
 }
 
+.page-stack-card,
+.card {
+  scroll-margin-top: var(--page-card-reveal-offset, 96px);
+}
+
+.page-stack.page-stack-banking {
+  display: grid;
+  align-content: start;
+  grid-auto-rows: max-content;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.page-stack.page-stack-banking > [data-card-key="banking_field_mappings"],
+.page-stack.page-stack-banking > [data-card-key="banking_reconciliation"] {
+  grid-column: 1 / -1;
+}
+
+.page-stack.page-stack-uploads {
+  display: grid;
+  align-content: start;
+  grid-auto-rows: max-content;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.page-stack.page-stack-uploads > .page-stack-card {
+  grid-column: 1 / -1;
+}
+
+.page-stack.page-stack-uploads > .page-stack-card.card-stack {
+  grid-column: auto;
+}
 
 .alert {
   padding: 14px 16px;

@@ -2400,7 +2400,61 @@
         });
     }
 
-    function showPageCardTabForCard(cardKey) {
+    function prefersReducedMotion() {
+        return window.matchMedia
+            && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    }
+
+    function scrollPageStackToTarget(pageStack, target, behavior) {
+        if (!(pageStack instanceof HTMLElement) || !(target instanceof HTMLElement)) {
+            return false;
+        }
+
+        const canScroll = pageStack.scrollHeight > pageStack.clientHeight + 1;
+        if (!canScroll) {
+            return false;
+        }
+
+        const stackRect = pageStack.getBoundingClientRect();
+        const targetRect = target.getBoundingClientRect();
+        const marginTop = Number.parseFloat(window.getComputedStyle(target).scrollMarginTop || '0');
+        const nextScrollTop = pageStack.scrollTop + targetRect.top - stackRect.top - (Number.isFinite(marginTop) ? marginTop : 0);
+
+        pageStack.scrollTo({
+            top: Math.max(0, nextScrollTop),
+            behavior,
+        });
+
+        return true;
+    }
+
+    function focusRevealedCard(card) {
+        if (!(card instanceof HTMLElement)) {
+            return;
+        }
+
+        const preferred = card.querySelector('[data-card-reveal-focus]');
+        const title = card.querySelector('.card-title');
+        const target = preferred instanceof HTMLElement
+            ? preferred
+            : (title instanceof HTMLElement ? title : card);
+
+        if (!(target instanceof HTMLElement)) {
+            return;
+        }
+
+        if (!target.hasAttribute('tabindex')) {
+            target.setAttribute('tabindex', '-1');
+        }
+
+        try {
+            target.focus({ preventScroll: true });
+        } catch (error) {
+            target.focus();
+        }
+    }
+
+    function revealPageCard(cardKey, options = {}) {
         const key = String(cardKey || '').trim();
         if (key === '') {
             return;
@@ -2415,6 +2469,22 @@
         if (tab instanceof HTMLButtonElement) {
             activatePageCardTab(tab);
         }
+
+        window.requestAnimationFrame(() => {
+            const target = card.closest('.page-stack-card') || card;
+            const behavior = prefersReducedMotion() ? 'auto' : 'smooth';
+            const pageStack = target instanceof HTMLElement ? target.closest('.page-stack') : null;
+
+            if (!scrollPageStackToTarget(pageStack, target, behavior) && target instanceof HTMLElement) {
+                target.scrollIntoView({
+                    block: 'start',
+                    inline: 'nearest',
+                    behavior,
+                });
+            }
+
+            focusRevealedCard(card);
+        });
     }
 
     function activatePageCardTabByLabel(control) {
@@ -3096,7 +3166,7 @@
             applyAjaxPayloadFragment('developer options status', () => replaceDeveloperOptionsStatus(payload.developer_options_status_html));
             applyAjaxPayloadFragment('cards', () => replaceCards(payload.cards));
             applyAjaxPayloadFragment('flash', () => replaceFlash(payload.flash_html));
-            applyAjaxPayloadFragment('visible card', () => showPageCardTabForCard(payload.show_card));
+            applyAjaxPayloadFragment('visible card', () => revealPageCard(payload.show_card, { source: 'ajax' }));
 
         } catch (error) {
             restoreAjaxNonce(ajaxNonce);
@@ -3240,6 +3310,11 @@
     loadAjaxNonceBootstrap();
     afGetDeviceId();
     initialiseLoginCountdown();
+
+    const requestedCard = new URLSearchParams(window.location.search).get('show_card');
+    if (requestedCard) {
+        revealPageCard(requestedCard, { source: 'initial-load' });
+    }
 
     if (document.readyState === 'complete') {
         renderPageLoadTime();

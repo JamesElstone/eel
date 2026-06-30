@@ -141,7 +141,7 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
                     ],
                     [
                         'title' => 'Categorise uncategorised transactions',
-                        'detail' => '3 transactions still need a nominal account.',
+                        'detail' => '3 transactions still need to be categorised against a nominal account.',
                     ],
                 ],
             ],
@@ -152,6 +152,21 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
         $harness->assertSame(true, str_contains($html, 'status-square bad'));
         $harness->assertSame(true, str_contains($html, 'Categorise uncategorised transactions'));
         $harness->assertSame(true, str_contains($html, 'status-square warn'));
+    });
+
+    $harness->check('_dashboard_action_queueCard', 'describes the selected accounting period in helper text', function () use ($harness): void {
+        $card = new _dashboard_action_queueCard();
+
+        $helper = $card->helper([
+            'accounting_period' => [
+                'label' => '01/10/2025 to 30/09/2026',
+            ],
+        ]);
+
+        $harness->assertSame(
+            'This is a to-do list for the tax year 01/10/2025 to 30/09/2026. Check back here to see what to do next.',
+            $helper
+        );
     });
 
     $harness->check('_dashboard_action_queueCard', 'renders empty action queue with ok indicator', function () use ($harness): void {

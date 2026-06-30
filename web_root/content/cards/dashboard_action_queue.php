@@ -35,7 +35,17 @@ final class _dashboard_action_queueCard extends CardBaseFramework
     }
 
     public function helper(array $context): string {
-        return 'This is a to-do list for this application. Check back here to see what to do next.';
+        $accountingPeriod = trim((string)(
+            $context['accounting_period']['label']
+            ?? $context['company']['accounting_period_label']
+            ?? ''
+        ));
+
+        if ($accountingPeriod === '') {
+            $accountingPeriod = 'the selected accounting period';
+        }
+
+        return 'This is a to-do list for the tax year ' . $accountingPeriod . '. Check back here to see what to do next.';
     }
 
     public function title():string {

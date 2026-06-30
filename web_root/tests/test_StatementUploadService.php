@@ -255,7 +255,7 @@ $harness->run(\eel_accounts\Service\StatementUploadService::class, function (Gen
     });
 
     $harness->check(\eel_accounts\Service\StatementUploadService::class, 'commit writes mapped reference counterparty and card fields', function () use ($harness, $service): void {
-        statement_upload_require_tables($harness, ['companies', 'accounting_periods', 'statement_uploads', 'statement_import_mappings', 'statement_import_rows', 'transactions']);
+        statement_upload_require_tables($harness, ['companies', 'company_accounts', 'accounting_periods', 'statement_uploads', 'statement_import_mappings', 'statement_import_rows', 'transactions']);
 
         $companyId = 0;
 
@@ -309,7 +309,7 @@ $harness->run(\eel_accounts\Service\StatementUploadService::class, function (Gen
     });
 
     $harness->check(\eel_accounts\Service\StatementUploadService::class, 'mapping backfill fills legacy raw json values without overwriting existing fields', function () use ($harness, $service): void {
-        statement_upload_require_tables($harness, ['companies', 'accounting_periods', 'statement_uploads', 'statement_import_mappings', 'statement_import_rows', 'transactions']);
+        statement_upload_require_tables($harness, ['companies', 'company_accounts', 'accounting_periods', 'statement_uploads', 'statement_import_mappings', 'statement_import_rows', 'transactions']);
 
         $companyId = 0;
 
@@ -383,6 +383,171 @@ $harness->run(\eel_accounts\Service\StatementUploadService::class, function (Gen
             statement_upload_delete_company($companyId);
         }
     });
+
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'upload save rejects committed mapping changes without correction flag', function () use ($harness, $service): void {
+        statement_upload_require_tables($harness, ['companies', 'company_accounts', 'accounting_periods', 'statement_uploads', 'statement_import_mappings']);
+
+        $companyId = 0;
+
+        try {
+            $fixture = statement_upload_create_import_fixture('committed-mapping-reject');
+            $companyId = $fixture['company_id'];
+            $uploadId = $fixture['upload_id'];
+            $accountId = $fixture['account_id'];
+            $headers = ['date', 'description', 'reference', 'amount', 'balance', 'currency'];
+
+            statement_upload_mark_committed($uploadId);
+            statement_upload_insert_mapping($uploadId, $headers, [
+                'created' => ['header' => 'date', 'index' => 0],
+                'description' => ['header' => 'description', 'index' => 1],
+                'amount' => ['header' => 'amount', 'index' => 3],
+                'balance' => ['header' => 'balance', 'index' => 4],
+                'currency' => ['header' => 'currency', 'index' => 5],
+            ]);
+
+            $result = $service->saveFieldMapping([
+                'company_id' => $companyId,
+                'upload_id' => $uploadId,
+                'account_id' => $accountId,
+                'mapping_created' => 'date',
+                'mapping_description' => 'description',
+                'mapping_reference' => 'reference',
+                'mapping_amount' => 'amount',
+                'mapping_balance' => 'balance',
+                'mapping_currency' => 'currency',
+            ]);
+
+            $harness->assertSame(false, $result['success'] ?? true);
+            $harness->assertSame(409, (int)($result['http_status'] ?? 0));
+            $harness->assertTrue(str_contains((string)($result['errors'][0] ?? ''), 'already been committed'));
+        } finally {
+            statement_upload_delete_company($companyId);
+        }
+    });
+
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'committed correction saves editable mappings and preserves protected mappings', function () use ($harness, $service): void {
+        statement_upload_require_tables($harness, ['companies', 'company_accounts', 'accounting_periods', 'statement_uploads', 'statement_import_mappings']);
+
+        $companyId = 0;
+
+        try {
+            $fixture = statement_upload_create_import_fixture('committed-mapping-correction');
+            $companyId = $fixture['company_id'];
+            $uploadId = $fixture['upload_id'];
+            $accountId = $fixture['account_id'];
+            $headers = ['date', 'posted', 'description', 'reference', 'amount', 'balance', 'currency', 'memo'];
+
+            statement_upload_mark_committed($uploadId);
+            statement_upload_insert_mapping($uploadId, $headers, [
+                'created' => ['header' => 'date', 'index' => 0],
+                'processed' => ['header' => 'posted', 'index' => 1],
+                'description' => ['header' => 'description', 'index' => 2],
+                'reference' => null,
+                'amount' => ['header' => 'amount', 'index' => 4],
+                'balance' => ['header' => 'balance', 'index' => 5],
+                'currency' => ['header' => 'currency', 'index' => 6],
+            ]);
+
+            $result = $service->saveFieldMapping([
+                'company_id' => $companyId,
+                'upload_id' => $uploadId,
+                'account_id' => $accountId,
+                'allow_committed_mapping_update' => true,
+                'mapping_created' => 'posted',
+                'mapping_processed' => 'date',
+                'mapping_description' => 'memo',
+                'mapping_reference' => 'reference',
+                'mapping_amount' => 'memo',
+                'mapping_balance' => 'memo',
+                'mapping_currency' => 'memo',
+            ]);
+
+            $harness->assertSame(true, $result['success'] ?? false);
+            $harness->assertTrue(str_contains(implode(' ', array_map('strval', (array)($result['warnings'] ?? []))), 'Protected committed mappings were not changed'));
+
+            $upload = InterfaceDB::fetchOne(
+                'SELECT workflow_status, rows_committed FROM statement_uploads WHERE id = :id',
+                ['id' => $uploadId]
+            );
+            $harness->assertSame('committed', (string)($upload['workflow_status'] ?? ''));
+            $harness->assertSame(1, (int)($upload['rows_committed'] ?? 0));
+
+            $mappingRow = $service->fetchUploadMapping($uploadId);
+            $mapping = json_decode((string)($mappingRow['mapping_json'] ?? '{}'), true, 512, JSON_THROW_ON_ERROR);
+
+            $harness->assertSame('date', (string)($mapping['created']['header'] ?? ''));
+            $harness->assertSame('posted', (string)($mapping['processed']['header'] ?? ''));
+            $harness->assertSame('amount', (string)($mapping['amount']['header'] ?? ''));
+            $harness->assertSame('balance', (string)($mapping['balance']['header'] ?? ''));
+            $harness->assertSame('currency', (string)($mapping['currency']['header'] ?? ''));
+            $harness->assertSame('memo', (string)($mapping['description']['header'] ?? ''));
+            $harness->assertSame('reference', (string)($mapping['reference']['header'] ?? ''));
+        } finally {
+            statement_upload_delete_company($companyId);
+        }
+    });
+
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'backfill uses corrected committed reference mapping', function () use ($harness, $service): void {
+        statement_upload_require_tables($harness, ['companies', 'company_accounts', 'accounting_periods', 'statement_uploads', 'statement_import_mappings', 'statement_import_rows', 'transactions']);
+
+        $companyId = 0;
+
+        try {
+            $fixture = statement_upload_create_import_fixture('committed-reference-backfill');
+            $companyId = $fixture['company_id'];
+            $periodId = $fixture['period_id'];
+            $uploadId = $fixture['upload_id'];
+            $accountId = $fixture['account_id'];
+            $headers = ['date', 'type', 'description', 'reference', 'amount', 'balance'];
+
+            statement_upload_mark_committed($uploadId);
+            statement_upload_insert_mapping($uploadId, $headers, [
+                'created' => ['header' => 'date', 'index' => 0],
+                'description' => ['header' => 'description', 'index' => 2],
+                'reference' => null,
+                'amount' => ['header' => 'amount', 'index' => 4],
+                'balance' => ['header' => 'balance', 'index' => 5],
+                'currency' => ['default_value' => 'GBP', 'label' => '£ GBP'],
+            ]);
+
+            $transactionId = statement_upload_insert_transaction($companyId, $periodId, $uploadId, 'EXAMPLE IT SERVICE', '-100.00', [
+                'reference' => null,
+            ]);
+            statement_upload_insert_import_row(
+                $uploadId,
+                $periodId,
+                $companyId,
+                $headers,
+                ['30/10/2022', 'FP', 'EXAMPLE IT SERVICE', 'TOOL HIRE', '-100.00', '197.55'],
+                $transactionId
+            );
+
+            $saveResult = $service->saveFieldMapping([
+                'company_id' => $companyId,
+                'upload_id' => $uploadId,
+                'account_id' => $accountId,
+                'allow_committed_mapping_update' => true,
+                'mapping_created' => 'date',
+                'mapping_description' => 'description',
+                'mapping_reference' => 'reference',
+                'mapping_amount' => 'amount',
+                'mapping_balance' => 'balance',
+                'mapping_currency' => \eel_accounts\Service\StatementUploadService::CURRENCY_DEFAULT_OPTION_GBP,
+            ]);
+            $harness->assertSame(true, $saveResult['success'] ?? false);
+
+            $backfillResult = $service->backfillTransactionTypesFromStagedImportJson($companyId);
+            $harness->assertSame(true, $backfillResult['success'] ?? false);
+
+            $transaction = InterfaceDB::fetchOne(
+                'SELECT reference FROM transactions WHERE id = :id',
+                ['id' => $transactionId]
+            );
+            $harness->assertSame('TOOL HIRE', (string)($transaction['reference'] ?? ''));
+        } finally {
+            statement_upload_delete_company($companyId);
+        }
+    });
 });
 
 function statement_upload_test_row(int $rowNumber, string $amount, string $balance): array
@@ -434,9 +599,24 @@ function statement_upload_create_import_fixture(string $label): array
     );
 
     InterfaceDB::prepareExecute(
+        'INSERT INTO company_accounts (company_id, account_name, account_type, is_active) VALUES (:company_id, :account_name, :account_type, :is_active)',
+        [
+            'company_id' => $companyId,
+            'account_name' => 'Fixture Account ' . $marker,
+            'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
+            'is_active' => 1,
+        ]
+    );
+    $accountId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM company_accounts WHERE company_id = :company_id ORDER BY id DESC LIMIT 1',
+        ['company_id' => $companyId]
+    );
+
+    InterfaceDB::prepareExecute(
         'INSERT INTO statement_uploads (
             company_id,
             accounting_period_id,
+            account_id,
             source_type,
             workflow_status,
             statement_month,
@@ -449,6 +629,7 @@ function statement_upload_create_import_fixture(string $label): array
         ) VALUES (
             :company_id,
             :accounting_period_id,
+            :account_id,
             :source_type,
             :workflow_status,
             :statement_month,
@@ -462,6 +643,7 @@ function statement_upload_create_import_fixture(string $label): array
         [
             'company_id' => $companyId,
             'accounting_period_id' => $periodId,
+            'account_id' => $accountId,
             'source_type' => \eel_accounts\Service\StatementUploadService::SOURCE_TYPE,
             'workflow_status' => 'staged',
             'statement_month' => '2022-10-01',
@@ -481,8 +663,26 @@ function statement_upload_create_import_fixture(string $label): array
     return [
         'company_id' => $companyId,
         'period_id' => $periodId,
+        'account_id' => $accountId,
         'upload_id' => $uploadId,
     ];
+}
+
+function statement_upload_mark_committed(int $uploadId): void
+{
+    InterfaceDB::prepareExecute(
+        'UPDATE statement_uploads
+         SET workflow_status = :workflow_status,
+             rows_committed = :rows_committed,
+             committed_at = :committed_at
+         WHERE id = :id',
+        [
+            'workflow_status' => 'committed',
+            'rows_committed' => 1,
+            'committed_at' => '2026-01-01 00:00:00',
+            'id' => $uploadId,
+        ]
+    );
 }
 
 function statement_upload_insert_mapping(int $uploadId, array $headers, array $mapping): void

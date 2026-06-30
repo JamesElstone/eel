@@ -59,6 +59,8 @@ final class StatementUploadService
         'document' => ['document', 'document url', 'receipt', 'receipt url', 'attachment', 'attachment url'],
     ];
 
+    private const COMMITTED_MAPPING_PROTECTED_FIELDS = ['created', 'processed', 'amount', 'balance', 'currency'];
+
     private string $uploadBaseDirectory;
     private ?\eel_accounts\Service\TransactionCategorisationService $categorisationService;
     private ?\eel_accounts\Service\ReceiptDownloadService $receiptDownloadService;
@@ -358,6 +360,7 @@ final class StatementUploadService
         $companyId = $this->requirePositiveInteger($post['company_id'] ?? null, 'company_id', $errors);
         $uploadId = $this->requirePositiveInteger($post['upload_id'] ?? null, 'upload_id', $errors);
         $accountId = $this->requirePositiveInteger($post['account_id'] ?? null, 'account_id', $errors);
+        $allowCommittedMappingUpdate = !empty($post['allow_committed_mapping_update']);
 
         if ($errors !== []) {
             return $this->failureResult(400, $errors, $warnings);
@@ -369,7 +372,9 @@ final class StatementUploadService
             return $this->failureResult(404, ['The selected staged upload could not be found.'], $warnings);
         }
 
-        if ((int)($upload['rows_committed'] ?? 0) > 0) {
+        $isCommittedUpload = (int)($upload['rows_committed'] ?? 0) > 0;
+
+        if ($isCommittedUpload && !$allowCommittedMappingUpdate) {
             return $this->failureResult(409, ['This upload has already been committed and its field mapping can no longer be changed.'], $warnings);
         }
 
@@ -377,6 +382,19 @@ final class StatementUploadService
 
         if ($account === null) {
             return $this->failureResult(404, ['The selected upload account could not be found for this company.'], $warnings);
+        }
+
+        if ($isCommittedUpload && (int)($upload['account_id'] ?? 0) !== (int)$accountId) {
+            return $this->failureResult(409, ['The selected account mapping no longer matches this committed upload.'], $warnings);
+        }
+
+        $existingMappingRow = $this->fetchUploadMapping($uploadId);
+        $existingMapping = $existingMappingRow !== null
+            ? $this->decodeJsonObject((string)($existingMappingRow['mapping_json'] ?? ''))
+            : [];
+
+        if ($isCommittedUpload && $existingMapping === []) {
+            return $this->failureResult(409, ['This committed upload does not have a saved field mapping to correct.'], $warnings);
         }
 
         $sourceHeaders = $this->decodeJsonArray((string)($upload['source_headers_json'] ?? ''));
@@ -411,6 +429,25 @@ final class StatementUploadService
             ];
         }
 
+        if ($isCommittedUpload) {
+            $protectedLabels = [];
+
+            foreach (self::COMMITTED_MAPPING_PROTECTED_FIELDS as $protectedField) {
+                $existingValue = $existingMapping[$protectedField] ?? null;
+                $submittedValue = $mapping[$protectedField] ?? null;
+
+                if ($submittedValue !== null && $submittedValue !== $existingValue) {
+                    $protectedLabels[] = (string)(self::FIELD_DEFINITIONS[$protectedField]['label'] ?? $protectedField);
+                }
+
+                $mapping[$protectedField] = $existingValue;
+            }
+
+            if ($protectedLabels !== []) {
+                $warnings[] = 'Protected committed mappings were not changed: ' . implode(', ', $protectedLabels) . '.';
+            }
+        }
+
         $errors = array_merge($errors, $this->validateRequiredFieldMapping($mapping));
 
         if ($errors !== []) {
@@ -418,6 +455,21 @@ final class StatementUploadService
         }
 
         $this->upsertStatementImportMapping($uploadId, $sourceHeaders, $mapping, self::MAPPING_ORIGIN_MANUAL, null, true);
+
+        if ($isCommittedUpload) {
+            return [
+                'http_status' => 200,
+                'success' => true,
+                'already_uploaded' => false,
+                'statement_upload_id' => $uploadId,
+                'rows_parsed' => (int)($upload['rows_parsed'] ?? 0),
+                'rows_inserted' => (int)($upload['rows_inserted'] ?? 0),
+                'rows_duplicate' => (int)($upload['rows_duplicate'] ?? 0),
+                'warnings' => $warnings,
+                'errors' => [],
+                'mapping' => $mapping,
+            ];
+        }
 
         $stmt = \InterfaceDB::prepare(
             'UPDATE statement_uploads
@@ -643,6 +695,10 @@ final class StatementUploadService
 
     public static function fieldDefinitions(): array {
         return self::FIELD_DEFINITIONS;
+    }
+
+    public static function committedMappingProtectedFields(): array {
+        return self::COMMITTED_MAPPING_PROTECTED_FIELDS;
     }
 
     public static function autoMapHeaders(array $sourceHeaders): array {

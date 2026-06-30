@@ -190,6 +190,7 @@ final class BankingAction implements ActionInterfaceFramework
             'accounting_period_id' => $accountingPeriodId,
             'upload_id' => max(0, (int)$request->input('upload_id', 0)),
             'account_id' => max(0, (int)$request->input('account_id', $request->input('mapping_account_id', 0))),
+            'allow_committed_mapping_update' => true,
         ];
 
         foreach (array_keys(\eel_accounts\Service\StatementUploadService::fieldDefinitions()) as $fieldName) {

@@ -202,13 +202,12 @@ final class _statement_field_mappingCard extends CardBaseFramework
         $mappingFieldsHtml = $this->renderMappingFields($mappingView, $sourceHeaders, $mode, $mappingDisabled);
         $accountSelectHtml = $mode === 'upload' ? $this->renderAccountSelector($activeCompanyAccounts, $accountId, $mode) : '';
         $buttonsHtml = $this->renderButtons($mode, $hasConfirmedMapping, $uploadId, $companyId, $accountingPeriodId, $accountId);
-        $saveDisabled = $mappingDisabled ? ' disabled' : '';
 
         return '
             <div class="stack">
                 ' . $summaryHtml . '
                 ' . $sampleHtml . '
-                <form method="post" action="' . HelperFramework::escape($action) . '" data-ajax="true" data-enable-submit-on-change="true">
+                <form method="post" action="' . HelperFramework::escape($action) . '" data-ajax="true">
                     <input type="hidden" name="card_action" value="' . HelperFramework::escape($cardAction) . '">
                     <input type="hidden" name="intent" value="save_account_mapping">
                     <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -218,9 +217,6 @@ final class _statement_field_mappingCard extends CardBaseFramework
                         ' . $accountSelectHtml . '
                     <div class="form-grid flow statement-mapping-fields">
                         ' . $mappingFieldsHtml . '
-                    </div>
-                    <div>
-                        <button class="button primary" type="submit"' . $saveDisabled . ' data-statement-mapping-requires-account data-change-submit-button>Save Mapping</button>
                     </div>
                 </form>
                 ' . $buttonsHtml . '
@@ -430,7 +426,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
                     . HelperFramework::escape((string)($definition['label'] ?? $fieldName))
                     . (!empty($definition['required']) ? ' *' : '')
                     . '</label>
-                <select class="select" id="' . HelperFramework::escape($idPrefix . '_' . $fieldName) . '" name="mapping_' . HelperFramework::escape($fieldName) . '" data-no-submit-on-change="true"' . $disabledAttributes . '>'
+                <select class="select" id="' . HelperFramework::escape($idPrefix . '_' . $fieldName) . '" name="mapping_' . HelperFramework::escape($fieldName) . '"' . $disabledAttributes . '>'
                     . $options
                     . '</select>
             </div>';

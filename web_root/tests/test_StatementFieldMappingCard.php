@@ -134,7 +134,7 @@ $harness->run(_statement_field_mappingCard::class, static function (GeneratedSer
         $harness->assertTrue(str_contains($html, 'data-statement-mapping-account-selector'));
         $harness->assertTrue(str_contains($html, '<option value="" disabled selected></option>'));
         $harness->assertTrue(str_contains($html, 'data-statement-mapping-requires-account'));
-        $harness->assertTrue(str_contains($html, 'Save Mapping'));
+        $harness->assertTrue(!str_contains($html, 'Save Mapping'));
         $harness->assertTrue(!str_contains($html, 'Select Field Mappings from an account first'));
     });
 
@@ -185,8 +185,9 @@ $harness->run(_statement_field_mappingCard::class, static function (GeneratedSer
         $harness->assertTrue(str_contains($html, 'Field mappings apply to: <strong>No account selected</strong>'));
         $harness->assertTrue(str_contains($html, '<option value="" disabled selected></option>'));
         $harness->assertTrue(str_contains($html, 'data-statement-mapping-account-selector'));
-        $harness->assertTrue(str_contains($html, 'name="mapping_description" data-no-submit-on-change="true" disabled data-statement-mapping-requires-account'));
-        $harness->assertTrue(str_contains($html, 'type="submit" disabled data-statement-mapping-requires-account'));
+        $harness->assertTrue(str_contains($html, 'name="mapping_description" disabled data-statement-mapping-requires-account'));
+        $harness->assertTrue(!str_contains($html, 'data-change-submit-button'));
+        $harness->assertTrue(!str_contains($html, 'Save Mapping'));
         $harness->assertTrue(!str_contains($html, 'Select Field Mappings from an account first'));
     });
 
@@ -240,7 +241,8 @@ $harness->run(_statement_field_mappingCard::class, static function (GeneratedSer
         $harness->assertTrue(str_contains($html, '<option value="47" selected>Main Current Account'));
         $harness->assertTrue(str_contains($html, 'name="account_id" required'));
         $harness->assertTrue(!str_contains($html, 'class="statement-mapping-account-switcher"'));
-        $harness->assertTrue(!str_contains($html, 'name="mapping_description" data-no-submit-on-change="true" disabled data-statement-mapping-requires-account'));
+        $harness->assertTrue(!str_contains($html, 'name="mapping_description" disabled data-statement-mapping-requires-account'));
+        $harness->assertTrue(!str_contains($html, 'data-no-submit-on-change="true" data-statement-mapping-requires-account'));
         $harness->assertTrue(str_contains($html, 'Review mapping'));
         $harness->assertTrue(!str_contains($html, 'Select an upload from Review'));
     });

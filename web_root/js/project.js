@@ -172,6 +172,8 @@
                         control.disabled = !enabled;
                     }
                 });
+
+                return enabled;
             };
 
             sync();
@@ -181,7 +183,11 @@
             }
 
             selector.dataset.statementMappingBound = '1';
-            selector.addEventListener('change', sync);
+            selector.addEventListener('change', () => {
+                if (sync()) {
+                    form.requestSubmit();
+                }
+            });
         });
     }
 

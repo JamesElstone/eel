@@ -50,6 +50,19 @@ $harness->run(_expenses_stateCard::class, function (GeneratedServiceClassTestHar
                 <label for="expense-claimant">Claimant</label>
                 <select class="select" id="expense-claimant" name="claimant_id"><option value="">Choose Claimant...</option><option value="4">Bob</option><option value="3" selected>James Elstone</option></select>
             </form>'));
+        $harness->assertTrue(str_contains($html, '<form method="post" data-ajax="true" class="toolbar">
+                <input type="hidden" name="page" value="expenses">
+                <input type="hidden" name="card_action" value="Expense">
+                <input type="hidden" name="company_id" value="7">
+                <input type="hidden" name="intent" value="filter_claims">
+                <input type="hidden" name="expense_query" value="">
+                <input type="hidden" name="expense_heatmap_claimant_id" value="3">
+                <input type="hidden" name="expense_heatmap_date" value="2026-05-01">
+                <div class="form-row table-filter-row">
+                    <label for="table-filter-expenses_state-expense_status">Show</label>
+                    <select class="selector-input" id="table-filter-expenses_state-expense_status" name="expense_status"><option value="all" selected>All</option><option value="draft">Draft</option><option value="posted">Posted</option></select>
+                </div>
+            </form>'));
         $harness->assertSame(false, str_contains($html, '<div class="mini-field">
                     <label for="expense-claimant">Claimant</label>'));
         $harness->assertSame(false, str_contains($html, '<h3 class="card-title">Create Expense claim</h3>'));
@@ -83,8 +96,8 @@ $harness->run(_expenses_stateCard::class, function (GeneratedServiceClassTestHar
         $harness->assertTrue($searchPosition !== false);
         $harness->assertTrue($condensedPosition !== false);
         $harness->assertTrue($exportPosition !== false);
-        $harness->assertTrue($statusFilterPosition < $claimantPosition);
-        $harness->assertTrue($claimantPosition < $searchPosition);
+        $harness->assertTrue($claimantPosition < $statusFilterPosition);
+        $harness->assertTrue($statusFilterPosition < $searchPosition);
         $harness->assertTrue($searchPosition < $exportPosition);
         $harness->assertTrue($searchPosition < $condensedPosition);
         $harness->assertTrue($condensedPosition < $exportPosition);

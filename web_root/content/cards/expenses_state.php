@@ -116,13 +116,6 @@ final class _expenses_stateCard extends CardBaseFramework
         $pagination = HelperFramework::paginateArray($table->sortedRows(), $this->paginationPage($context), self::PAGE_SIZE);
 
         return $table
-            ->filterSelect(
-                'expense_status',
-                'Show',
-                $this->statusFilterOptions(),
-                (string)($filters['status'] ?? 'all'),
-                $this->claimsTableFilterHiddenFields($context, $filters, $companyId)
-            )
             ->toolbarActions($this->claimsTableToolbarHtml($context, $claimants, $filters, $companyId, $heatmapClaimantId))
             ->visibleRows((array)$pagination['items'])
             ->pagination(
@@ -221,19 +214,14 @@ final class _expenses_stateCard extends CardBaseFramework
         ];
     }
 
-    private function claimsTableFilterHiddenFields(array $context, array $filters, int $companyId): array
-    {
-        $hiddenFields = $this->claimsTableHiddenFields($context, $filters, $companyId);
-        unset($hiddenFields['_pagination'], $hiddenFields['expense_status']);
-        $hiddenFields['card_action'] = 'Expense';
-        $hiddenFields['intent'] = 'filter_claims';
-
-        return $hiddenFields;
-    }
-
     private function claimsTableToolbarHtml(array $context, array $claimants, array $filters, int $companyId, int $selectedClaimantId): string
     {
-        return $this->claimantFilterToolbarForm($context, $claimants, $filters, $companyId, $selectedClaimantId)
+        return '</div>
+            <div class="actions-row">'
+            . $this->claimantFilterToolbarForm($context, $claimants, $filters, $companyId, $selectedClaimantId)
+            . '</div>
+            <div class="actions-row">'
+            . $this->statusFilterToolbarForm($context, $filters, $companyId, $selectedClaimantId)
             . '</div>
             <div class="actions-row">
                 <div class="mini-field">
@@ -242,6 +230,30 @@ final class _expenses_stateCard extends CardBaseFramework
                 <button class="button primary" type="submit" form="expense-search-form">Search</button>
             </div>
             <div class="actions-row">';
+    }
+
+    private function statusFilterToolbarForm(array $context, array $filters, int $companyId, int $selectedClaimantId): string
+    {
+        $options = '';
+        $selectedStatus = (string)($filters['status'] ?? 'all');
+        foreach ($this->statusFilterOptions() as $value => $label) {
+            $value = (string)$value;
+            $options .= '<option value="' . HelperFramework::escape($value) . '"' . ($value === $selectedStatus ? ' selected' : '') . '>' . HelperFramework::escape((string)$label) . '</option>';
+        }
+
+        return '<form method="post" data-ajax="true" class="toolbar">
+                <input type="hidden" name="page" value="' . HelperFramework::escape((string)($context['page']['page_id'] ?? 'expenses')) . '">
+                <input type="hidden" name="card_action" value="Expense">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="intent" value="filter_claims">
+                <input type="hidden" name="expense_query" value="' . HelperFramework::escape((string)($filters['query'] ?? '')) . '">
+                <input type="hidden" name="expense_heatmap_claimant_id" value="' . $selectedClaimantId . '">
+                <input type="hidden" name="expense_heatmap_date" value="' . HelperFramework::escape((string)($filters['heatmap_date'] ?? '')) . '">
+                <div class="form-row table-filter-row">
+                    <label for="table-filter-expenses_state-expense_status">Show</label>
+                    <select class="selector-input" id="table-filter-expenses_state-expense_status" name="expense_status">' . $options . '</select>
+                </div>
+            </form>';
     }
 
     private function claimantFilterToolbarForm(array $context, array $claimants, array $filters, int $companyId, int $selectedClaimantId): string

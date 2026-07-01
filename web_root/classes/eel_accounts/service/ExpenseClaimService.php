@@ -737,51 +737,68 @@ final class ExpenseClaimService
             return $parsed;
         }
 
+        $existingLineKeys = $this->bulkLineDedupeKeys((array)($claim['lines'] ?? []));
+        $rowsToImport = [];
+        $duplicateCount = 0;
+
+        foreach ((array)$parsed['rows'] as $row) {
+            $dedupeKey = $this->bulkLineDedupeKey($row);
+            if (isset($existingLineKeys[$dedupeKey])) {
+                $duplicateCount++;
+                continue;
+            }
+
+            $existingLineKeys[$dedupeKey] = true;
+            $rowsToImport[] = $row;
+        }
+
         $ownsTransaction = !\InterfaceDB::inTransaction();
-        if ($ownsTransaction) {
+        if ($rowsToImport !== [] && $ownsTransaction) {
             \InterfaceDB::beginTransaction();
         }
 
         try {
-            $lineNumber = $this->nextLineNumber($claimId);
-            foreach ((array)$parsed['rows'] as $row) {
-                \InterfaceDB::prepare(
-                    'INSERT INTO expense_claim_lines (
-                        expense_claim_id,
-                        line_number,
-                        expense_date,
-                        description,
-                        amount,
-                        nominal_account_id,
-                        receipt_reference,
-                        notes,
-                        created_at,
-                        updated_at
-                     ) VALUES (
-                        :expense_claim_id,
-                        :line_number,
-                        :expense_date,
-                        :description,
-                        :amount,
-                        NULL,
-                        NULL,
-                        NULL,
-                        CURRENT_TIMESTAMP,
-                        CURRENT_TIMESTAMP
-                     )'
-                )->execute([
-                    'expense_claim_id' => $claimId,
-                    'line_number' => $lineNumber,
-                    'expense_date' => (string)$row['expense_date'],
-                    'description' => (string)$row['description'],
-                    'amount' => round((float)$row['amount'], 2),
-                ]);
-                $lineNumber++;
+            if ($rowsToImport !== []) {
+                $lineNumber = $this->nextLineNumber($claimId);
+                foreach ($rowsToImport as $row) {
+                    \InterfaceDB::prepare(
+                        'INSERT INTO expense_claim_lines (
+                            expense_claim_id,
+                            line_number,
+                            expense_date,
+                            description,
+                            amount,
+                            nominal_account_id,
+                            receipt_reference,
+                            notes,
+                            created_at,
+                            updated_at
+                         ) VALUES (
+                            :expense_claim_id,
+                            :line_number,
+                            :expense_date,
+                            :description,
+                            :amount,
+                            NULL,
+                            NULL,
+                            NULL,
+                            CURRENT_TIMESTAMP,
+                            CURRENT_TIMESTAMP
+                         )'
+                    )->execute([
+                        'expense_claim_id' => $claimId,
+                        'line_number' => $lineNumber,
+                        'expense_date' => (string)$row['expense_date'],
+                        'description' => trim((string)$row['description']),
+                        'amount' => round((float)$row['amount'], 2),
+                    ]);
+                    $lineNumber++;
+                }
+
+                $this->recalculateClaimSeries($companyId, (int)$claim['claimant_id']);
             }
 
-            $this->recalculateClaimSeries($companyId, (int)$claim['claimant_id']);
-
-            if ($ownsTransaction) {
+            if ($rowsToImport !== [] && $ownsTransaction) {
                 \InterfaceDB::commit();
             }
         } catch (\Throwable $exception) {
@@ -796,7 +813,7 @@ final class ExpenseClaimService
             'success' => true,
             'claim' => $this->fetchClaim($companyId, $claimId),
             'claims' => $this->listClaims($companyId),
-            'messages' => [sprintf('%d expense line%s imported.', count((array)$parsed['rows']), count((array)$parsed['rows']) === 1 ? '' : 's')],
+            'messages' => [$this->bulkImportMessage(count($rowsToImport), $duplicateCount)],
         ];
     }
 
@@ -1766,6 +1783,46 @@ final class ExpenseClaimService
                 0.0
             ), 2),
         ];
+    }
+
+    private function bulkLineDedupeKeys(array $lines): array {
+        $keys = [];
+
+        foreach ($lines as $line) {
+            if (is_array($line)) {
+                $keys[$this->bulkLineDedupeKey($line)] = true;
+            }
+        }
+
+        return $keys;
+    }
+
+    private function bulkLineDedupeKey(array $line): string {
+        return implode("\t", [
+            (string)($line['expense_date'] ?? ''),
+            trim((string)($line['description'] ?? '')),
+            number_format(round((float)($line['amount'] ?? 0), 2), 2, '.', ''),
+        ]);
+    }
+
+    private function bulkImportMessage(int $importedCount, int $duplicateCount): string {
+        $message = sprintf(
+            '%d expense line%s imported.',
+            $importedCount,
+            $importedCount === 1 ? '' : 's'
+        );
+
+        if ($duplicateCount > 0) {
+            $message = sprintf(
+                '%d expense line%s imported; %d duplicate line%s skipped.',
+                $importedCount,
+                $importedCount === 1 ? '' : 's',
+                $duplicateCount,
+                $duplicateCount === 1 ? '' : 's'
+            );
+        }
+
+        return $message;
     }
 
     private function bulkLineIsIgnorable(array $cells): bool {

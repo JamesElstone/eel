@@ -23,7 +23,8 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $harness->assertTrue(str_contains($html, 'Submit Claim'));
         $harness->assertTrue(str_contains($html, 'Claim Lines can be pasted below'));
         $harness->assertTrue(str_contains($html, '&quot;DATE&quot;, &quot;DESCRIPTION&quot;, &quot;AMOUNT CLAIMED&quot;'));
-        $harness->assertTrue(str_contains($html, 'name="intent" value="preview_bulk_lines"'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="bulk_save_lines"'));
+        $harness->assertSame(false, str_contains($html, 'name="intent" value="preview_bulk_lines"'));
     });
 
     $harness->check(_expense_claim_editorCard::class, 'uses exportable builder tables with 20 row pagination', function () use ($harness, $instance): void {
@@ -39,7 +40,7 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         }
 
         $tables = $instance->tables($context);
-        $harness->assertSame(4, count($tables));
+        $harness->assertSame(3, count($tables));
         foreach ($tables as $table) {
             $harness->assertTrue($table instanceof TableFramework);
         }
@@ -93,15 +94,15 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $harness->assertTrue(str_contains($html, 'Save Asset Details'));
     });
 
-    $harness->check(_expense_claim_editorCard::class, 'renders bulk preview and import action with display date', function () use ($harness, $instance): void {
+    $harness->check(_expense_claim_editorCard::class, 'renders direct bulk import without preview panel', function () use ($harness, $instance): void {
         $context = expenseClaimEditorCardContext();
         $context['expense_bulk_preview'] = [
             'claim_id' => 42,
-            'source_text' => "5/10/2022\tElectricFix, Wall Chaser\t£94.99",
+            'source_text' => "5/10/2022\tPreview Only Drill\t£94.99",
             'rows' => [[
                 'expense_date' => '2022-10-05',
                 'expense_date_display' => '05-10-2022',
-                'description' => 'ElectricFix, Wall Chaser',
+                'description' => 'Preview Only Drill',
                 'amount' => 94.99,
             ]],
             'total' => 94.99,
@@ -109,10 +110,11 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
 
         $html = $instance->render($context);
 
-        $harness->assertTrue(str_contains($html, '05-10-2022'));
-        $harness->assertTrue(str_contains($html, 'Preview total'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="bulk_save_lines"'));
-        $harness->assertTrue(str_contains($html, 'Import previewed lines'));
+        $harness->assertTrue(str_contains($html, 'Import Lines'));
+        $harness->assertSame(false, str_contains($html, 'Preview Only Drill'));
+        $harness->assertSame(false, str_contains($html, 'Preview total'));
+        $harness->assertSame(false, str_contains($html, 'Import previewed lines'));
     });
 
     $harness->check(_expense_claim_editorCard::class, 'renders repayment link and unlink forms', function () use ($harness, $instance): void {

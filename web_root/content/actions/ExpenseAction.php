@@ -36,12 +36,6 @@ final class ExpenseAction implements ActionInterfaceFramework
                     'receipt_reference' => (string)$request->input('receipt_reference', ''),
                     'notes' => (string)$request->input('notes', ''),
                 ]),
-                'preview_bulk_lines' => $service->previewBulkLines(
-                    $companyId,
-                    (int)$request->input('claim_id', 0),
-                    (string)$request->input('pasted_lines', ''),
-                    (string)$request->input('date_format', 'd/m/Y')
-                ),
                 'bulk_save_lines' => $service->bulkSaveLines($companyId, (int)$request->input('claim_id', 0), [
                     'pasted_lines' => (string)$request->input('pasted_lines', ''),
                     'date_format' => (string)$request->input('date_format', 'd/m/Y'),
@@ -102,11 +96,6 @@ final class ExpenseAction implements ActionInterfaceFramework
         $filters = $this->filtersFromRequest($request, $result);
 
         $resultContext = ['expense_filters' => $filters];
-        if ($intent === 'preview_bulk_lines') {
-            $resultContext['expense_bulk_preview'] = array_merge($result, [
-                'claim_id' => max(0, (int)$request->input('claim_id', 0)),
-            ]);
-        }
 
         return new ActionResultFramework(
             !empty($result['success']),
@@ -167,7 +156,6 @@ final class ExpenseAction implements ActionInterfaceFramework
                 'deactivate_claimant' => 'Claimant deactivated.',
                 'create_claim' => 'Expense claim opened.',
                 'save_line' => 'Expense line saved.',
-                'preview_bulk_lines' => '',
                 'bulk_save_lines' => 'Expense lines imported.',
                 'update_line_nominal' => 'Line charge saved.',
                 'update_line_type' => 'Line type saved.',

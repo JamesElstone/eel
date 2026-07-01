@@ -10,7 +10,6 @@ declare(strict_types=1);
 final class _expense_claim_editorCard extends CardBaseFramework
 {
     private const PAGE_SIZE = 20;
-    private const TABLE_PREVIEW = 'expense_claim_editor_preview';
     private const TABLE_LINES = 'expense_claim_editor_lines';
     private const TABLE_PAYMENTS = 'expense_claim_editor_payments';
     private const TABLE_PAYMENT_CANDIDATES = 'expense_claim_editor_payment_candidates';
@@ -48,7 +47,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
     ): array {
         $pageContext = parent::handle($request, $services, $pageContext, $actionResult);
 
-        foreach ([self::TABLE_PREVIEW, self::TABLE_LINES, self::TABLE_PAYMENTS, self::TABLE_PAYMENT_CANDIDATES] as $scope) {
+        foreach ([self::TABLE_LINES, self::TABLE_PAYMENTS, self::TABLE_PAYMENT_CANDIDATES] as $scope) {
             $pageContext = $this->applyPaginationContext($request, $pageContext, $scope);
         }
 
@@ -65,10 +64,8 @@ final class _expense_claim_editorCard extends CardBaseFramework
         $claimId = (int)($claim['id'] ?? 0);
         $isPosted = !empty($claim['is_posted']);
         $dateFormat = (string)($companySettings['date_format'] ?? 'd/m/Y');
-        $bulkPreview = $claimId > 0 ? $this->bulkPreviewFromContext($context, $claimId, $dateFormat) : [];
 
         return [
-            $this->previewTable((array)($bulkPreview['rows'] ?? []), $dateFormat),
             $this->linesTable((array)($claim['lines'] ?? []), (array)($data['nominal_accounts'] ?? []), (array)($data['asset_categories'] ?? []), $claimId, $isPosted, $companyId, $dateFormat, $companySettings),
             $this->paymentsTable((array)($claim['payment_links'] ?? []), $claimId, $isPosted, $companyId, $dateFormat),
             $this->paymentCandidatesTable((array)($data['payment_candidates'] ?? []), $companySettings, $claimId, $companyId, $dateFormat),
@@ -99,7 +96,6 @@ final class _expense_claim_editorCard extends CardBaseFramework
         $claimId = (int)($claim['id'] ?? 0);
         $isPosted = !empty($claim['is_posted']);
         $dateFormat = (string)($companySettings['date_format'] ?? 'd/m/Y');
-        $bulkPreview = $this->bulkPreviewFromContext($context, $claimId, $dateFormat);
         $claimReference = (string)($claim['claim_reference_code'] ?? '');
         $claimantName = (string)($claim['claimant_name'] ?? '');
         $claimMonthLabel = $this->monthLabel((int)($claim['claim_month'] ?? 0), (int)($claim['claim_year'] ?? 0));
@@ -114,7 +110,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
                 <div class="summary-card"><div class="summary-label">Carried Forward (D=A+B-C)</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($claim['control_totals']['D'] ?? 0)) . '</div></div>
             </div>
             ' . ($isPosted ? '' : $this->renderSubmitClaimPanel($claim, $companySettings, $companyId)) . '
-            ' . ($isPosted ? '' : $this->renderBulkPastePanel($claimId, $companyId, $dateFormat, $bulkPreview, $context)) . '
+            ' . ($isPosted ? '' : $this->renderBulkPastePanel($claimId, $companyId, $dateFormat)) . '
             ' . ($isPosted ? '<div class="helper">Posted claims are locked.</div>' : $this->renderLineForm($claim, $nominals, $claimId, $companySettings, $companyId)) . '
             ' . $this->renderTablePanel(
                 'Expense Lines',
@@ -188,91 +184,25 @@ final class _expense_claim_editorCard extends CardBaseFramework
         </div>';
     }
 
-    private function renderBulkPastePanel(int $claimId, int $companyId, string $dateFormat, array $preview, array $context): string
+    private function renderBulkPastePanel(int $claimId, int $companyId, string $dateFormat): string
     {
-        $sourceText = (string)($preview['source_text'] ?? '');
-        $rows = (array)($preview['rows'] ?? []);
-        $previewPanel = '';
-
-        if ($rows !== []) {
-            $previewPanel = '<div class="panel-soft">
-                <div class="status-head"><h4 class="card-title">Import Lines</h4></div>
-                <div class="summary-grid">
-                <div class="summary-card"><div class="summary-label">Preview rows</div><div class="summary-value">' . count($rows) . '</div></div>
-                <div class="summary-card"><div class="summary-label">Preview total</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($preview['total'] ?? 0)) . '</div></div>
-            </div>
-            ' . $this->configuredPreviewTable($rows, $dateFormat, $sourceText, $claimId, $context)->render($context, $this->tableExportFields([
-                'claim_id' => $claimId,
-                'date_format' => $dateFormat,
-                'pasted_lines' => $sourceText,
-            ])) . '
+        return '<div class="panel-soft">
             <form method="post" action="?page=expenses" data-ajax="true">
                 <input type="hidden" name="card_action" value="Expense">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="intent" value="bulk_save_lines">
                 <input type="hidden" name="claim_id" value="' . $claimId . '">
                 <input type="hidden" name="date_format" value="' . HelperFramework::escape($dateFormat) . '">
-                <textarea name="pasted_lines" hidden>' . HelperFramework::escape($sourceText) . '</textarea>
-                <div class="actions-row"><button class="button primary" type="submit">Import previewed lines</button></div>
-            </form>
-        </div>';
-        }
-
-        return '<div class="panel-soft">
-            <form method="post" action="?page=expenses" data-ajax="true">
-                <input type="hidden" name="card_action" value="Expense">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="intent" value="preview_bulk_lines">
-                <input type="hidden" name="claim_id" value="' . $claimId . '">
-                <input type="hidden" name="date_format" value="' . HelperFramework::escape($dateFormat) . '">
                 <div class="form-row">
                     <div class="status-head"><h4 class="card-title"><label for="expense-bulk-paste-' . $claimId . '">Claim Lines can be pasted below</label></h4></div>
                     <div class="helper">The expected tab-delimited format (which can be copied from a spreadsheet) is: &quot;DATE&quot;, &quot;DESCRIPTION&quot;, &quot;AMOUNT CLAIMED&quot;</div>
                     <div class="expense-bulk-paste-controls">
-                        <textarea class="input" id="expense-bulk-paste-' . $claimId . '" name="pasted_lines" rows="2">' . HelperFramework::escape($sourceText) . '</textarea>
+                        <textarea class="input" id="expense-bulk-paste-' . $claimId . '" name="pasted_lines" rows="2"></textarea>
                         <button class="button primary" type="submit">Import Lines</button>
                     </div>
                 </div>
             </form>
-        </div>
-        ' . $previewPanel;
-    }
-
-    private function configuredPreviewTable(array $rows, string $dateFormat, string $sourceText, int $claimId, array $context): TableFramework
-    {
-        $table = $this->previewTable($rows, $dateFormat);
-        $pagination = HelperFramework::paginateArray($table->sortedRows(), $this->paginationPage($context, self::TABLE_PREVIEW), self::PAGE_SIZE);
-
-        return $table
-            ->visibleRows((array)$pagination['items'])
-            ->pagination(
-                $pagination,
-                'Import Lines',
-                $this->paginationPageField(self::TABLE_PREVIEW),
-                $this->tablePaginationFields([
-                    'claim_id' => $claimId,
-                    'date_format' => $dateFormat,
-                    'pasted_lines' => $sourceText,
-                ])
-            );
-    }
-
-    private function previewTable(array $rows, string $dateFormat): TableFramework
-    {
-        return TableFramework::make(self::TABLE_PREVIEW, $this->previewRows($rows, $dateFormat))
-            ->filename('expense-claim-preview-lines')
-            ->exportLimit(1000)
-            ->empty('No preview lines are available.')
-            ->column('expense_date_display', 'Date')
-            ->column('description', 'Description')
-            ->column(
-                'amount',
-                'Amount',
-                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::money($row['amount'] ?? 0)),
-                export: static fn(array $row): string => number_format((float)($row['amount'] ?? 0), 2, '.', ''),
-                cellClass: 'numeric',
-                exportType: 'number'
-            );
+        </div>';
     }
 
     private function configuredLinesTable(array $lines, array $nominals, array $assetCategories, int $claimId, bool $isPosted, int $companyId, string $dateFormat, array $companySettings, array $context): TableFramework
@@ -709,37 +639,6 @@ final class _expense_claim_editorCard extends CardBaseFramework
         return in_array($format, ['Y-m-d', 'd/m/Y', 'd-m-Y', 'd/m/y', 'd-m-y'], true)
             ? $format
             : 'd/m/Y';
-    }
-
-    private function bulkPreviewFromContext(array $context, int $claimId, string $dateFormat): array
-    {
-        if (is_array($context['expense_bulk_preview'] ?? null) && (int)($context['expense_bulk_preview']['claim_id'] ?? 0) === $claimId) {
-            return (array)$context['expense_bulk_preview'];
-        }
-
-        $input = (array)($context['expense_bulk_preview_input'] ?? []);
-        $sourceText = trim((string)($input['pasted_lines'] ?? ''));
-        if ($sourceText === '') {
-            return [];
-        }
-
-        $preview = (new \eel_accounts\Service\ExpenseClaimService())->previewBulkLines(
-            (int)(($context['company'] ?? [])['id'] ?? 0),
-            $claimId,
-            $sourceText,
-            (string)($input['date_format'] ?? $dateFormat)
-        );
-        $preview['claim_id'] = $claimId;
-
-        return $preview;
-    }
-
-    private function previewRows(array $rows, string $dateFormat): array
-    {
-        return array_map(function (array $row) use ($dateFormat): array {
-            $row['expense_date_display'] = (string)($row['expense_date_display'] ?? $this->displayDate((string)($row['expense_date'] ?? ''), $dateFormat));
-            return $row;
-        }, array_values(array_filter($rows, static fn(mixed $row): bool => is_array($row))));
     }
 
     private function lineRows(array $lines, string $dateFormat): array

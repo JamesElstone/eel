@@ -51,6 +51,66 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
         $harness->assertSame(94.99, (float)($result['total'] ?? 0));
     });
 
+    $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'bulk import skips duplicate claim lines and imports new rows', function () use ($harness, $instance): void {
+        expenseClaimServiceWithFixture(static function (array $fixture) use ($harness, $instance): void {
+            $source = "DATE\tDESCRIPTION\tAMOUNT CLAIMED\n"
+                . "5/5/2026\tMaterials\t£10.00\n"
+                . "6/5/2026\tFuel\t£20.00";
+
+            $first = $instance->bulkSaveLines((int)$fixture['company_id'], (int)$fixture['claim_id'], [
+                'pasted_lines' => $source,
+                'date_format' => 'd/m/Y',
+            ]);
+            $harness->assertSame(true, (bool)($first['success'] ?? false));
+            $harness->assertSame('2 expense lines imported.', (string)(($first['messages'] ?? [])[0] ?? ''));
+            $harness->assertSame(2, (int)\InterfaceDB::fetchColumn(
+                'SELECT COUNT(*) FROM expense_claim_lines WHERE expense_claim_id = :claim_id',
+                ['claim_id' => (int)$fixture['claim_id']]
+            ));
+
+            $second = $instance->bulkSaveLines((int)$fixture['company_id'], (int)$fixture['claim_id'], [
+                'pasted_lines' => $source,
+                'date_format' => 'd/m/Y',
+            ]);
+            $harness->assertSame(true, (bool)($second['success'] ?? false));
+            $harness->assertSame('0 expense lines imported; 2 duplicate lines skipped.', (string)(($second['messages'] ?? [])[0] ?? ''));
+            $harness->assertSame(2, (int)\InterfaceDB::fetchColumn(
+                'SELECT COUNT(*) FROM expense_claim_lines WHERE expense_claim_id = :claim_id',
+                ['claim_id' => (int)$fixture['claim_id']]
+            ));
+
+            $mixed = $source . "\n7/5/2026\tParking\t£3.50";
+            $third = $instance->bulkSaveLines((int)$fixture['company_id'], (int)$fixture['claim_id'], [
+                'pasted_lines' => $mixed,
+                'date_format' => 'd/m/Y',
+            ]);
+            $harness->assertSame(true, (bool)($third['success'] ?? false));
+            $harness->assertSame('1 expense line imported; 2 duplicate lines skipped.', (string)(($third['messages'] ?? [])[0] ?? ''));
+            $harness->assertSame(3, (int)\InterfaceDB::fetchColumn(
+                'SELECT COUNT(*) FROM expense_claim_lines WHERE expense_claim_id = :claim_id',
+                ['claim_id' => (int)$fixture['claim_id']]
+            ));
+
+            $rounded = $instance->bulkSaveLines((int)$fixture['company_id'], (int)$fixture['claim_id'], [
+                'pasted_lines' => "8/5/2026\t  Rounded duplicate  \t£12.345",
+                'date_format' => 'd/m/Y',
+            ]);
+            $harness->assertSame(true, (bool)($rounded['success'] ?? false));
+            $harness->assertSame('1 expense line imported.', (string)(($rounded['messages'] ?? [])[0] ?? ''));
+
+            $roundedDuplicate = $instance->bulkSaveLines((int)$fixture['company_id'], (int)$fixture['claim_id'], [
+                'pasted_lines' => "8/5/2026\tRounded duplicate\t£12.35",
+                'date_format' => 'd/m/Y',
+            ]);
+            $harness->assertSame(true, (bool)($roundedDuplicate['success'] ?? false));
+            $harness->assertSame('0 expense lines imported; 1 duplicate line skipped.', (string)(($roundedDuplicate['messages'] ?? [])[0] ?? ''));
+            $harness->assertSame(4, (int)\InterfaceDB::fetchColumn(
+                'SELECT COUNT(*) FROM expense_claim_lines WHERE expense_claim_id = :claim_id',
+                ['claim_id' => (int)$fixture['claim_id']]
+            ));
+        });
+    });
+
     $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'links repayment for the full transaction amount using default expense nominal', function () use ($harness, $instance): void {
         expenseClaimServiceWithFixture(static function (array $fixture) use ($harness, $instance): void {
             $transactionId = expenseClaimServiceInsertTransaction($fixture, -123.45, 'repayment-full');

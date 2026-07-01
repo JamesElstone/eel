@@ -38,6 +38,10 @@ $harness->run(_expenses_stateCard::class, function (GeneratedServiceClassTestHar
         $harness->assertSame(false, str_contains($html, 'calendar-heatmap-year-select'));
         $harness->assertTrue(str_contains($html, 'name="expense_heatmap_date"'));
         $harness->assertTrue(str_contains($html, 'value="2026-05-01"'));
+        $harness->assertTrue(str_contains($html, 'title="1 claim line on 5 May 2026: EXP-2605-001"'));
+        $harness->assertTrue(str_contains($html, 'title="2 claim lines on 17 May 2026: EXP-2605-002, EXP-2605-003"'));
+        $harness->assertTrue(str_contains($html, 'data-show-card="expense_claim_editor" type="submit" name="expense_heatmap_date" value="2026-05-05"'));
+        $harness->assertSame(false, str_contains($html, '14 claims on 1 May 2026'));
         $harness->assertSame(false, str_contains($html, 'Create or open a monthly expense claim for an active claimant.'));
         $harness->assertSame(false, str_contains($html, 'id="expense-create-claimant"'));
         $harness->assertTrue(str_contains($html, '<form method="get" action="?page=expenses" data-ajax="true" class="toolbar">
@@ -182,7 +186,7 @@ function expensesStateCardContext(array $filterOverrides = []): array
                     ],
                 ],
                 'claims' => expensesStateCardClaims(),
-                'claim_heatmap_claims' => expensesStateCardClaims(),
+                'claim_heatmap_lines' => expensesStateCardClaimLines(),
                 'filters' => $filters,
             ],
         ],
@@ -213,4 +217,38 @@ function expensesStateCardClaims(): array
     }
 
     return $claims;
+}
+
+function expensesStateCardClaimLines(): array
+{
+    return [
+        [
+            'id' => 1001,
+            'expense_claim_id' => 41,
+            'claimant_id' => 3,
+            'expense_date' => '2026-05-05',
+            'claim_reference_code' => 'EXP-2605-001',
+        ],
+        [
+            'id' => 1002,
+            'expense_claim_id' => 42,
+            'claimant_id' => 3,
+            'expense_date' => '2026-05-17',
+            'claim_reference_code' => 'EXP-2605-002',
+        ],
+        [
+            'id' => 1003,
+            'expense_claim_id' => 43,
+            'claimant_id' => 3,
+            'expense_date' => '2026-05-17',
+            'claim_reference_code' => 'EXP-2605-003',
+        ],
+        [
+            'id' => 1004,
+            'expense_claim_id' => 44,
+            'claimant_id' => 4,
+            'expense_date' => '2026-05-20',
+            'claim_reference_code' => 'EXP-2605-004',
+        ],
+    ];
 }

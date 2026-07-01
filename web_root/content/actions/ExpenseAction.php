@@ -21,6 +21,7 @@ final class ExpenseAction implements ActionInterfaceFramework
                 'add_claimant' => $service->createClaimant($companyId, (string)$request->input('claimant_name', '')),
                 'activate_claimant' => $service->setClaimantActive($companyId, (int)$request->input('claimant_id', 0), true),
                 'deactivate_claimant' => $service->setClaimantActive($companyId, (int)$request->input('claimant_id', 0), false),
+                'delete_claimant' => $service->deleteClaimant($companyId, (int)$request->input('claimant_id', 0)),
                 'create_claim' => $service->createClaim($companyId, [
                     'claimant_id' => (int)$request->input('claimant_id', 0),
                     'claim_year' => (int)$request->input('claim_year', 0),
@@ -127,6 +128,16 @@ final class ExpenseAction implements ActionInterfaceFramework
             $filters['heatmap_date'] = '';
         }
 
+        if (isset($result['deleted_claimant_id'])) {
+            $deletedClaimantId = max(0, (int)$result['deleted_claimant_id']);
+            $filters['claim_id'] = 0;
+            $filters['claim_reference_code'] = '';
+            $filters['heatmap_date'] = '';
+            if ((int)($filters['heatmap_claimant_id'] ?? 0) === $deletedClaimantId) {
+                $filters['heatmap_claimant_id'] = 0;
+            }
+        }
+
         return array_filter(
             $filters,
             static fn(mixed $value): bool => $value !== null && $value !== '' && $value !== 0
@@ -148,6 +159,7 @@ final class ExpenseAction implements ActionInterfaceFramework
                 'add_claimant' => 'Claimant saved.',
                 'activate_claimant' => 'Claimant activated.',
                 'deactivate_claimant' => 'Claimant deactivated.',
+                'delete_claimant' => 'Claimant deleted.',
                 'create_claim' => 'Expense claim opened.',
                 'save_line' => 'Expense line saved.',
                 'preview_bulk_lines' => '',

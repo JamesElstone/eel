@@ -11,6 +11,7 @@ final class _expense_claimantsCard extends CardBaseFramework
 {
     private const PAGE_SIZE = 10;
     private const STATUS_FILTER_FIELD = 'expense_claimants_status';
+    private const SEARCH_FIELD = 'expense_claimants_query';
 
     public function key(): string
     {
@@ -48,6 +49,10 @@ final class _expense_claimantsCard extends CardBaseFramework
             self::STATUS_FILTER_FIELD,
             (string)(($pageContext[$this->key()] ?? [])['status_filter'] ?? 'all')
         ));
+        $pageContext[$this->key()]['query'] = trim((string)$request->input(
+            self::SEARCH_FIELD,
+            (string)(($pageContext[$this->key()] ?? [])['query'] ?? '')
+        ));
 
         return $this->applyTableSortContext($request, $pageContext, $this->key());
     }
@@ -64,26 +69,32 @@ final class _expense_claimantsCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        return $this->configuredTable($context)->render($context, [
+        $table = $this->configuredTable($context);
+
+        return $this->withoutEmptyActionRows($table->render($context, [
                 'cards[]' => (array)($context['page']['page_cards'] ?? []),
                 self::STATUS_FILTER_FIELD => $this->selectedStatusFilter($context),
-            ]);
+                self::SEARCH_FIELD => $this->selectedSearchQuery($context),
+            ]));
     }
 
     private function configuredTable(array $context): TableFramework
     {
         $statusFilter = $this->selectedStatusFilter($context);
+        $searchQuery = $this->selectedSearchQuery($context);
         $hiddenFields = [
             'page' => (string)($context['page']['page_id'] ?? 'expenses'),
             '_pagination' => '1',
             '_invalidate_fact' => $this->tableInvalidationFact(),
             'cards[]' => [$this->key()],
             self::STATUS_FILTER_FIELD => $statusFilter,
+            self::SEARCH_FIELD => $searchQuery,
         ];
         $table = $this->configureTableSorting($this->table($context), $context, $hiddenFields);
         $pagination = HelperFramework::paginateArray($table->sortedRows(), $this->paginationPage($context), self::PAGE_SIZE);
 
         return $table
+            ->toolbarActions($this->searchToolbarHtml($context, $statusFilter, $searchQuery))
             ->visibleRows((array)$pagination['items'])
             ->pagination(
                 $pagination,
@@ -101,6 +112,7 @@ final class _expense_claimantsCard extends CardBaseFramework
                     '_pagination' => '1',
                     '_invalidate_fact' => $this->tableInvalidationFact(),
                     'cards[]' => [$this->key()],
+                    self::SEARCH_FIELD => $searchQuery,
                 ]
             );
     }
@@ -132,19 +144,85 @@ final class _expense_claimantsCard extends CardBaseFramework
     {
         $data = (array)($context['services']['expensesPageData'] ?? []);
         $statusFilter = $this->selectedStatusFilter($context);
+        $searchQuery = $this->selectedSearchQuery($context);
         $claimants = array_values(array_filter(
             (array)($data['claimants'] ?? []),
             static fn(mixed $claimant): bool => is_array($claimant)
         ));
 
-        if ($statusFilter === 'all') {
+        if ($statusFilter !== 'all') {
+            $claimants = array_values(array_filter(
+                $claimants,
+                fn(array $claimant): bool => $this->isActive($claimant) === ($statusFilter === 'active')
+            ));
+        }
+
+        if ($searchQuery === '') {
             return $claimants;
         }
 
-        return array_values(array_filter(
-            $claimants,
-            fn(array $claimant): bool => $this->isActive($claimant) === ($statusFilter === 'active')
-        ));
+        return array_values(array_filter($claimants, static function (array $claimant) use ($searchQuery): bool {
+            return stripos((string)($claimant['claimant_name'] ?? ''), $searchQuery) !== false;
+        }));
+    }
+
+    private function searchToolbarHtml(array $context, string $statusFilter, string $searchQuery): string
+    {
+        $fields = [
+            'page' => (string)($context['page']['page_id'] ?? 'expenses'),
+            '_pagination' => '1',
+            '_invalidate_fact' => $this->tableInvalidationFact(),
+            'cards[]' => [$this->key()],
+            self::STATUS_FILTER_FIELD => $statusFilter,
+        ];
+        $companyId = (int)(($context['company'] ?? [])['id'] ?? 0);
+        $clearForm = '';
+
+        if ($companyId > 0) {
+            $fields['company_id'] = $companyId;
+        }
+
+        if ($searchQuery !== '') {
+            $clearForm = '<form method="post" action="?page=expenses" data-ajax="true" class="toolbar">
+                ' . $this->hiddenInputs($fields + [self::SEARCH_FIELD => '']) . '
+                <button class="button" type="submit">Clear</button>
+            </form>';
+        }
+
+        return '</div>
+            <div class="actions-row">
+                <form method="post" action="?page=expenses" data-ajax="true" class="toolbar">
+                    ' . $this->hiddenInputs($fields) . '
+                    <label for="expense-claimants-query">Search claimants</label>
+                    <input class="input" id="expense-claimants-query" name="' . self::SEARCH_FIELD . '" type="search" value="' . HelperFramework::escape($searchQuery) . '" placeholder="Search claimants">
+                    <button class="button primary" type="submit">Search</button>
+                </form>
+                ' . $clearForm . '
+            </div>
+            <div class="actions-row">';
+    }
+
+    private function hiddenInputs(array $fields): string
+    {
+        $html = '';
+
+        foreach ($fields as $name => $value) {
+            if (is_array($value)) {
+                foreach ($value as $item) {
+                    $html .= '<input type="hidden" name="' . HelperFramework::escape((string)$name) . '" value="' . HelperFramework::escape((string)$item) . '">';
+                }
+                continue;
+            }
+
+            $html .= '<input type="hidden" name="' . HelperFramework::escape((string)$name) . '" value="' . HelperFramework::escape((string)$value) . '">';
+        }
+
+        return $html;
+    }
+
+    private function withoutEmptyActionRows(string $html): string
+    {
+        return preg_replace('/<div class="actions-row">\s*<\/div>\s*/', '', $html) ?? $html;
     }
 
     private function actionForm(array $claimant, array $context): string
@@ -154,6 +232,9 @@ final class _expense_claimantsCard extends CardBaseFramework
         $isActive = $this->isActive($claimant);
         $intent = $isActive ? 'deactivate_claimant' : 'activate_claimant';
         $label = $isActive ? 'Deactivate' : 'Activate';
+        $deleteButton = (int)($claimant['claim_count'] ?? 0) === 0
+            ? '<button class="button button-inline danger" type="submit" name="intent" value="delete_claimant" data-chicken-check="true" data-chicken-message="Delete this claimant?<br><br>This cannot be undone." data-chicken-confirm-text="Delete">Delete</button>'
+            : '';
 
         if ($companyId <= 0 || $claimantId <= 0) {
             return '';
@@ -164,6 +245,7 @@ final class _expense_claimantsCard extends CardBaseFramework
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="claimant_id" value="' . $claimantId . '">
             <button class="button button-inline" type="submit" name="intent" value="' . HelperFramework::escape($intent) . '">' . HelperFramework::escape($label) . '</button>
+            ' . $deleteButton . '
         </form>';
     }
 
@@ -192,6 +274,11 @@ final class _expense_claimantsCard extends CardBaseFramework
     private function selectedStatusFilter(array $context): string
     {
         return $this->normaliseStatusFilter((string)(($context[$this->key()] ?? [])['status_filter'] ?? 'all'));
+    }
+
+    private function selectedSearchQuery(array $context): string
+    {
+        return trim((string)(($context[$this->key()] ?? [])['query'] ?? ''));
     }
 
     private function normaliseStatusFilter(string $status): string

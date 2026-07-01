@@ -197,6 +197,45 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
             ));
         });
     });
+
+    $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'deletes only claimants without claims', function () use ($harness, $instance): void {
+        expenseClaimServiceWithFixture(static function (array $fixture) use ($harness, $instance): void {
+            $unusedClaimantId = (int)$fixture['claimant_id'] + 900;
+            \InterfaceDB::prepareExecute(
+                'INSERT INTO expense_claimants (id, company_id, claimant_name, is_active)
+                 VALUES (:id, :company_id, :claimant_name, 1)',
+                [
+                    'id' => $unusedClaimantId,
+                    'company_id' => (int)$fixture['company_id'],
+                    'claimant_name' => 'Unused Claimant ' . (string)$fixture['marker'],
+                ]
+            );
+
+            $claimantsById = [];
+            foreach ($instance->fetchClaimants((int)$fixture['company_id'], false) as $claimant) {
+                $claimantsById[(int)($claimant['id'] ?? 0)] = $claimant;
+            }
+
+            $harness->assertSame(1, (int)($claimantsById[(int)$fixture['claimant_id']]['claim_count'] ?? -1));
+            $harness->assertSame(0, (int)($claimantsById[$unusedClaimantId]['claim_count'] ?? -1));
+
+            $rejected = $instance->deleteClaimant((int)$fixture['company_id'], (int)$fixture['claimant_id']);
+            $harness->assertSame(false, (bool)($rejected['success'] ?? true));
+            $harness->assertSame('Claimants with existing claims cannot be deleted.', (string)(($rejected['errors'] ?? [])[0] ?? ''));
+            $harness->assertSame(1, (int)\InterfaceDB::fetchColumn(
+                'SELECT COUNT(*) FROM expense_claimants WHERE id = :id',
+                ['id' => (int)$fixture['claimant_id']]
+            ));
+
+            $deleted = $instance->deleteClaimant((int)$fixture['company_id'], $unusedClaimantId);
+            $harness->assertSame(true, (bool)($deleted['success'] ?? false));
+            $harness->assertSame(0, (int)\InterfaceDB::fetchColumn(
+                'SELECT COUNT(*) FROM expense_claimants WHERE id = :id',
+                ['id' => $unusedClaimantId]
+            ));
+            $harness->assertSame('Claimant deleted.', (string)(($deleted['messages'] ?? [])[0] ?? ''));
+        });
+    });
 });
 
 function expenseClaimServiceParseBulkLines(\eel_accounts\Service\ExpenseClaimService $service, string $source, string $dateFormat): array

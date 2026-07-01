@@ -69,7 +69,16 @@ final class ExpenseClaimService
             return [];
         }
 
-        $sql = 'SELECT id, company_id, claimant_name, is_active, created_at, updated_at
+        $sql = 'SELECT id,
+                       company_id,
+                       claimant_name,
+                       is_active,
+                       created_at,
+                       updated_at,
+                       (SELECT COUNT(*)
+                          FROM expense_claims
+                         WHERE expense_claims.company_id = expense_claimants.company_id
+                           AND expense_claims.claimant_id = expense_claimants.id) AS claim_count
                 FROM expense_claimants
                 WHERE company_id = :company_id';
 
@@ -79,7 +88,7 @@ final class ExpenseClaimService
 
         $sql .= ' ORDER BY claimant_name ASC, id ASC';
 
-        return \InterfaceDB::fetchAll( $sql, ['company_id' => $companyId]);
+        return array_map([$this, 'formatClaimant'], \InterfaceDB::fetchAll( $sql, ['company_id' => $companyId]));
     }
 
     public function createClaimant(int $companyId, string $claimantName): array {
@@ -183,6 +192,62 @@ final class ExpenseClaimService
             'claimants' => $this->fetchClaimants($companyId, false),
             'active_claimant_count' => count($this->fetchClaimants($companyId, true)),
             'messages' => [$isActive ? 'Claimant activated.' : 'Claimant deactivated.'],
+        ];
+    }
+
+    public function deleteClaimant(int $companyId, int $claimantId): array {
+        if ($companyId <= 0 || $claimantId <= 0) {
+            return [
+                'success' => false,
+                'errors' => ['Select a valid claimant first.'],
+            ];
+        }
+
+        $claimant = $this->fetchClaimantById($companyId, $claimantId);
+        if ($claimant === null) {
+            return [
+                'success' => false,
+                'errors' => ['The selected claimant could not be found.'],
+            ];
+        }
+
+        if ((int)($claimant['claim_count'] ?? 0) > 0) {
+            return [
+                'success' => false,
+                'errors' => ['Claimants with existing claims cannot be deleted.'],
+            ];
+        }
+
+        $statement = \InterfaceDB::prepareExecute(
+            'DELETE FROM expense_claimants
+             WHERE company_id = :company_id
+               AND id = :id
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM expense_claims
+                   WHERE expense_claims.company_id = expense_claimants.company_id
+                     AND expense_claims.claimant_id = expense_claimants.id
+                   LIMIT 1
+               )',
+            [
+                'company_id' => $companyId,
+                'id' => $claimantId,
+            ]
+        );
+
+        if ($statement->rowCount() < 1) {
+            return [
+                'success' => false,
+                'errors' => ['Claimants with existing claims cannot be deleted.'],
+            ];
+        }
+
+        return [
+            'success' => true,
+            'claimants' => $this->fetchClaimants($companyId, false),
+            'active_claimant_count' => count($this->fetchClaimants($companyId, true)),
+            'deleted_claimant_id' => $claimantId,
+            'messages' => ['Claimant deleted.'],
         ];
     }
 
@@ -1364,7 +1429,16 @@ final class ExpenseClaimService
     }
 
     private function fetchClaimantById(int $companyId, int $claimantId): ?array {
-        $row = \InterfaceDB::fetchOne( 'SELECT id, company_id, claimant_name, is_active, created_at, updated_at
+        $row = \InterfaceDB::fetchOne( 'SELECT id,
+                    company_id,
+                    claimant_name,
+                    is_active,
+                    created_at,
+                    updated_at,
+                    (SELECT COUNT(*)
+                       FROM expense_claims
+                      WHERE expense_claims.company_id = expense_claimants.company_id
+                        AND expense_claims.claimant_id = expense_claimants.id) AS claim_count
              FROM expense_claimants
              WHERE company_id = :company_id
                AND id = :id
@@ -1372,11 +1446,20 @@ final class ExpenseClaimService
             'company_id' => $companyId,
             'id' => $claimantId,
         ]);
-        return is_array($row) ? $row : null;
+        return is_array($row) ? $this->formatClaimant($row) : null;
     }
 
     private function findClaimantByName(int $companyId, string $claimantName): ?array {
-        $row = \InterfaceDB::fetchOne( 'SELECT id, company_id, claimant_name, is_active, created_at, updated_at
+        $row = \InterfaceDB::fetchOne( 'SELECT id,
+                    company_id,
+                    claimant_name,
+                    is_active,
+                    created_at,
+                    updated_at,
+                    (SELECT COUNT(*)
+                       FROM expense_claims
+                      WHERE expense_claims.company_id = expense_claimants.company_id
+                        AND expense_claims.claimant_id = expense_claimants.id) AS claim_count
              FROM expense_claimants
              WHERE company_id = :company_id
                AND claimant_name = :claimant_name
@@ -1384,7 +1467,17 @@ final class ExpenseClaimService
             'company_id' => $companyId,
             'claimant_name' => $claimantName,
         ]);
-        return is_array($row) ? $row : null;
+        return is_array($row) ? $this->formatClaimant($row) : null;
+    }
+
+    private function formatClaimant(array $row): array
+    {
+        $row['id'] = (int)($row['id'] ?? 0);
+        $row['company_id'] = (int)($row['company_id'] ?? 0);
+        $row['is_active'] = (int)($row['is_active'] ?? 0);
+        $row['claim_count'] = (int)($row['claim_count'] ?? 0);
+
+        return $row;
     }
 
     private function findClaimByUniqueMonth(int $companyId, int $claimantId, int $claimYear, int $claimMonth): ?array {

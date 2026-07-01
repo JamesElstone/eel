@@ -245,7 +245,117 @@
         });
     }
 
+    const cardMaximizedStoragePrefix = 'eel_accounts:card_maximized:';
+
+    function cardMaximizedPageKey() {
+        const params = new URLSearchParams(window.location.search);
+        return params.get('page') || 'default';
+    }
+
+    function cardMaximizedStorageKey(card) {
+        if (!(card instanceof HTMLElement)) {
+            return '';
+        }
+
+        const cardKey = String(card.dataset.cardKey || '').trim();
+        return cardKey === '' ? '' : `${cardMaximizedStoragePrefix}${cardMaximizedPageKey()}:${cardKey}`;
+    }
+
+    function readStoredCardMaximizedState(card) {
+        const storageKey = cardMaximizedStorageKey(card);
+        if (storageKey === '') {
+            return false;
+        }
+
+        try {
+            return window.localStorage.getItem(storageKey) === '1';
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function persistCardMaximizedState(card) {
+        const storageKey = cardMaximizedStorageKey(card);
+        if (storageKey === '') {
+            return;
+        }
+
+        try {
+            window.localStorage.setItem(storageKey, card.classList.contains('card-maximized') ? '1' : '0');
+        } catch (error) {
+            // Ignore storage failures; the card still behaves normally for this page view.
+        }
+    }
+
+    function persistVisibleCardMaximizedStates() {
+        document.querySelectorAll('.card[data-card-key]').forEach((card) => {
+            if (card instanceof HTMLElement) {
+                persistCardMaximizedState(card);
+            }
+        });
+    }
+
+    function syncCardMaximizedToggle(card, maximized) {
+        const toggle = card.querySelector('[data-card-size-toggle]');
+        if (!(toggle instanceof HTMLButtonElement)) {
+            return;
+        }
+
+        toggle.setAttribute('aria-pressed', maximized ? 'true' : 'false');
+        toggle.setAttribute('aria-label', maximized ? 'Minimize card' : 'Maximize card');
+    }
+
+    function syncCardMaximizedBodyState() {
+        if (!(document.body instanceof HTMLElement)) {
+            return;
+        }
+
+        document.body.classList.toggle('card-maximized-active', Boolean(document.querySelector('.card.card-maximized')));
+    }
+
+    function applyStoredCardMaximizedState(card) {
+        if (!(card instanceof HTMLElement) || !readStoredCardMaximizedState(card)) {
+            return;
+        }
+
+        document.querySelectorAll('.card.card-maximized').forEach((maximizedCard) => {
+            if (maximizedCard instanceof HTMLElement && maximizedCard !== card) {
+                maximizedCard.classList.remove('card-maximized');
+                syncCardMaximizedToggle(maximizedCard, false);
+                persistCardMaximizedState(maximizedCard);
+            }
+        });
+
+        card.classList.add('card-maximized');
+        syncCardMaximizedToggle(card, true);
+        syncCardMaximizedBodyState();
+    }
+
+    function restoreStoredCardMaximizedStates(root = document) {
+        const cards = [];
+
+        if (root instanceof HTMLElement && root.matches('.card[data-card-key]')) {
+            cards.push(root);
+        }
+
+        if (root && typeof root.querySelectorAll === 'function') {
+            root.querySelectorAll('.card[data-card-key]').forEach((card) => {
+                if (card instanceof HTMLElement) {
+                    cards.push(card);
+                }
+            });
+        }
+
+        cards.forEach(applyStoredCardMaximizedState);
+        syncCardMaximizedBodyState();
+    }
+
     document.addEventListener('click', (event) => {
+        const cardSizeToggle = event.target instanceof Element ? event.target.closest('[data-card-size-toggle]') : null;
+        if (cardSizeToggle instanceof HTMLButtonElement) {
+            window.setTimeout(persistVisibleCardMaximizedStates, 0);
+        }
+
         const accountingPeriodSummaryButton = event.target instanceof Element
             ? event.target.closest('[data-accounting-period-summary-button="true"]')
             : null;
@@ -265,10 +375,17 @@
         }
     });
 
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            window.setTimeout(persistVisibleCardMaximizedStates, 0);
+        }
+    });
+
     initialiseUploadProcessingIndicators(document);
     initialiseVatRegistrationForms(document);
     initialiseStatementMappingForms(document);
     initialiseTransactionCategorisationAutosave(document);
+    restoreStoredCardMaximizedStates(document);
 
     const observer = new MutationObserver((mutations) => {
         mutations.forEach((mutation) => {
@@ -278,6 +395,7 @@
                     initialiseVatRegistrationForms(node);
                     initialiseStatementMappingForms(node);
                     initialiseTransactionCategorisationAutosave(node);
+                    restoreStoredCardMaximizedStates(node);
                 }
             });
         });

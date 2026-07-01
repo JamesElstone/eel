@@ -2038,6 +2038,37 @@
   width: 100%;
 }
 
+.transaction-search-table-footer {
+  position: relative;
+}
+
+.transaction-search-amount-total {
+  color: var(--ink);
+  font-size: 0.92rem;
+  left: 50%;
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.transaction-search-amount-total span {
+  color: var(--muted);
+}
+
+@media (max-width: 760px) {
+  .transaction-search-table-footer {
+    justify-content: center;
+  }
+
+  .transaction-search-amount-total {
+    order: 2;
+    position: static;
+    text-align: center;
+    transform: none;
+    width: 100%;
+  }
+}
+
 .submission-log {
     background: #0f172a;
     color: #e5e7eb;

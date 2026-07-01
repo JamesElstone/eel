@@ -30,6 +30,7 @@ final class _transactions extends PageContextFramework
             'transactions_monthly_status',
             'transaction_category_audit_log',
             'transactions_imported',
+            'transaction_search',
             'transactions_rules',
             'transactions_rule_form',
             'nominals_add_account',
@@ -50,6 +51,12 @@ final class _transactions extends PageContextFramework
                 'tab' => 'Categorise',
                 'cards' => [
                     'transactions_imported',
+                ],
+            ],
+            [
+                'tab' => 'Search',
+                'cards' => [
+                    'transaction_search',
                 ],
             ],
             [

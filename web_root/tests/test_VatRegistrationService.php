@@ -22,4 +22,24 @@ $harness->run(\eel_accounts\Service\VatRegistrationService::class, function (Gen
         $service = new \eel_accounts\Service\VatRegistrationService();
         $harness->assertSame('GB123456789', $service->normaliseVatNumber(' gb 123 456 789 '));
     });
+
+    $harness->check(\eel_accounts\Service\VatRegistrationService::class, 'requires exact company name match for HMRC VAT validation', function () use ($harness, $service): void {
+        $matchingWarnings = $service->compareHmrcAndCompaniesHouse(
+            ['company_name' => 'VAT Fixture Limited'],
+            \eel_accounts\Service\VatValidationResultService::valid('hmrc', 'VAT Fixture Limited')
+        );
+        $mismatchWarnings = $service->compareHmrcAndCompaniesHouse(
+            ['company_name' => 'VAT Fixture Limited'],
+            \eel_accounts\Service\VatValidationResultService::valid('hmrc', 'VAT Fixture')
+        );
+        $missingNameWarnings = $service->compareHmrcAndCompaniesHouse(
+            ['company_name' => 'VAT Fixture Limited'],
+            \eel_accounts\Service\VatValidationResultService::valid('hmrc', '')
+        );
+
+        $harness->assertCount(0, $matchingWarnings);
+        $harness->assertCount(1, $mismatchWarnings);
+        $harness->assertCount(1, $missingNameWarnings);
+        $harness->assertSame(true, str_contains($mismatchWarnings[0], 'exactly match'));
+    });
 });

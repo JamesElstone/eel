@@ -76,6 +76,13 @@
         return checked instanceof HTMLInputElement ? checked.value : '0';
     }
 
+    function vatValidationHash(countryValue, numberValue) {
+        const country = String(countryValue || '').trim().toUpperCase();
+        const number = String(numberValue || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+        return `${country}:${number}`;
+    }
+
     function initialiseVatRegistrationForms(root = document) {
         const forms = root.querySelectorAll ? root.querySelectorAll('[data-vat-registration-form]') : [];
 
@@ -101,11 +108,19 @@
             const initialNumber = number instanceof HTMLInputElement
                 ? String(number.dataset.vatInitialValue || '')
                 : '';
+            const validationStatus = saveButton instanceof HTMLButtonElement
+                ? String(saveButton.dataset.vatValidationStatus || '')
+                : '';
+            const validatedHash = saveButton instanceof HTMLButtonElement
+                ? String(saveButton.dataset.vatValidatedHash || '')
+                : '';
 
             const sync = () => {
                 const registered = checkedVatRegisteredValue(form) === '1';
                 const countryValue = country instanceof HTMLSelectElement ? String(country.value || '') : '';
                 const numberValue = number instanceof HTMLInputElement ? String(number.value || '').trim() : '';
+                const hasMatchedVatValidation = validationStatus === 'valid'
+                    && vatValidationHash(countryValue, numberValue) === validatedHash;
 
                 if (panel instanceof HTMLElement) {
                     panel.classList.toggle('is-hidden', !registered);
@@ -116,9 +131,11 @@
                 }
 
                 if (saveButton instanceof HTMLButtonElement) {
-                    saveButton.disabled = checkedVatRegisteredValue(form) === initialRegistered
-                        && countryValue === initialCountry
-                        && numberValue === initialNumber;
+                    saveButton.disabled = registered
+                        ? !hasMatchedVatValidation
+                        : checkedVatRegisteredValue(form) === initialRegistered
+                            && countryValue === initialCountry
+                            && numberValue === initialNumber;
                 }
             };
 

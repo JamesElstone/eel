@@ -25,6 +25,10 @@ final class YearEndAction implements ActionInterfaceFramework
         }
 
         try {
+            if ($this->requiresVatRegistrationGuard($intent) && $this->companyIsVatRegistered($companyId)) {
+                return $this->result(false, ['Year-end processing is blocked while this company is marked as VAT registered.']);
+            }
+
             if ($this->requiresSingleDirectorCheck($intent)) {
                 $eligibility = $this->directorEligibilityService()->assertSingleActiveDirector($companyId);
                 if (empty($eligibility['success'])) {
@@ -108,6 +112,24 @@ final class YearEndAction implements ActionInterfaceFramework
             'create_adjustment',
             'post_director_loan_offset',
         ], true);
+    }
+
+    private function requiresVatRegistrationGuard(string $intent): bool
+    {
+        return in_array($intent, [
+            'recalculate',
+            'lock_period',
+            'save_opening_balance',
+            'create_adjustment',
+            'post_director_loan_offset',
+        ], true);
+    }
+
+    private function companyIsVatRegistered(int $companyId): bool
+    {
+        $details = (new \eel_accounts\Repository\CompanyRepository())->fetchCompanyDetails($companyId);
+
+        return !empty($details['is_vat_registered']);
     }
 
     private function directorEligibilityService(): \eel_accounts\Service\CompanyDirectorEligibilityService

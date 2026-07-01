@@ -34,6 +34,9 @@ final class _vat_registrationCard extends CardBaseFramework
         $hasValidSelectedCompany = (int)($context['company']['id'] ?? 0) > 0;
         $settings = (array)($context['company']['settings'] ?? []);
         $companyId = (int)($context['company']['id'] ?? 0);
+        $vatService = new \eel_accounts\Service\VatRegistrationService();
+        $validationStatus = trim((string)($settings['vat_validation_status'] ?? ''));
+        $validatedHash = \eel_accounts\Service\VatRegistrationViewDataService::validationHash($vatService, $settings);
 
         if (!$hasValidSelectedCompany) {
             return '<div class="helper">Select or add a company first, and the VAT registration controls will appear here.</div>';
@@ -101,7 +104,7 @@ final class _vat_registrationCard extends CardBaseFramework
                 </div>
             </div>
             <div>
-                <button class="button primary" id="save_vat_button" type="submit" name="intent" value="save_vat" disabled data-vat-save-button>Save VAT Configuration</button>
+                <button class="button primary" id="save_vat_button" type="submit" name="intent" value="save_vat" disabled data-vat-save-button data-vat-validation-status="' . HelperFramework::escape($validationStatus) . '" data-vat-validated-hash="' . HelperFramework::escape($validatedHash) . '">Save VAT Configuration</button>
             </div>
             </form>
         ';

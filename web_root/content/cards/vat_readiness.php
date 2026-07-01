@@ -48,8 +48,8 @@ final class _vat_readinessCard extends CardBaseFramework
 
         $items[] = [
             'title' => 'Registration status',
-            'ok' => $isVatRegistered,
-            'detail' => $isVatRegistered ? 'The company is marked as VAT registered.' : 'The company is currently marked as not VAT registered.',
+            'ok' => true,
+            'detail' => $isVatRegistered ? 'The company is marked as VAT registered.' : 'The company is not VAT registered, so VAT accounting is not required.',
         ];
         $items[] = [
             'title' => 'VAT number captured',

@@ -112,6 +112,30 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
         });
     });
 
+    $harness->check('YearEndAction', 'guarded year-end intents are blocked when company is VAT registered', static function () use ($harness): void {
+        yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness): void {
+            $instance = yearEndActionTestInstanceWithDirectorCount(1);
+            InterfaceDB::prepareExecute(
+                'UPDATE companies SET is_vat_registered = 1 WHERE id = :company_id',
+                ['company_id' => (int)$fixture['company_id']]
+            );
+
+            $result = $instance->handle(
+                yearEndActionDirectorLoanTestRequest((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'recalculate'),
+                createTestPageServiceFramework()
+            );
+
+            $harness->assertSame(false, $result->isSuccess());
+            $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'VAT registered'));
+            if (InterfaceDB::tableExists('year_end_reviews')) {
+                $harness->assertSame(0, InterfaceDB::countWhere('year_end_reviews', [
+                    'company_id' => (int)$fixture['company_id'],
+                    'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                ]));
+            }
+        });
+    });
+
     $harness->check('YearEndAction', 'save_notes is not blocked by director-count guard', static function () use ($harness): void {
         yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness): void {
             $instance = yearEndActionTestInstanceWithDirectorCount(2);

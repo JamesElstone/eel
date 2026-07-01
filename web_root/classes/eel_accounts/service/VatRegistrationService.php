@@ -106,8 +106,8 @@ final class VatRegistrationService
         $storedCompanyName = $this->normaliseForComparison((string)($settings['company_name'] ?? ''));
         $returnedName = $this->normaliseForComparison((string)($result->name ?? ''));
 
-        if ($storedCompanyName !== '' && $returnedName !== '' && !$this->stringsMatchLoosely($storedCompanyName, $returnedName)) {
-            $warnings[] = 'The HMRC business name does not match the Companies House company name on file.';
+        if ($storedCompanyName !== '' && $storedCompanyName !== $returnedName) {
+            $warnings[] = 'The HMRC business name must exactly match the Companies House company name on file.';
         }
 
         $storedAddress = $this->normaliseForComparison(implode(' ', \eel_accounts\Service\CompaniesHouseService::storedAddressLines($settings)));

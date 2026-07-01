@@ -169,7 +169,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
                 <input type="hidden" name="claim_id" value="' . $claimId . '">
                 <input type="hidden" name="date_format" value="' . HelperFramework::escape($dateFormat) . '">
                 <div class="form-row">
-                    <h4 class="card-title"><label for="expense-bulk-paste-' . $claimId . '">Claims can be pasted below</label></h4>
+                    <div class="status-head"><h4 class="card-title"><label for="expense-bulk-paste-' . $claimId . '">Claim Lines can be pasted below</label></h4></div>
                     <div class="helper">The expected tab-delimited format (which can be copied from a spreadsheet) is: &quot;DATE&quot;, &quot;DESCRIPTION&quot;, &quot;AMOUNT CLAIMED&quot;</div>
                     <div class="expense-bulk-paste-controls">
                         <textarea class="input" id="expense-bulk-paste-' . $claimId . '" name="pasted_lines" rows="2">' . HelperFramework::escape($sourceText) . '</textarea>

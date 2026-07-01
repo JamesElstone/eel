@@ -136,6 +136,67 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
             $harness->assertSame('Expense claim payable', (string)($creditLine['line_description'] ?? ''));
         });
     });
+
+    $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'deletes only draft claims without repayment links', function () use ($harness, $instance): void {
+        expenseClaimServiceWithFixture(static function (array $fixture) use ($harness, $instance): void {
+            \InterfaceDB::prepareExecute(
+                'INSERT INTO expense_claim_lines (expense_claim_id, line_number, expense_date, description, amount, nominal_account_id)
+                 VALUES (:expense_claim_id, 1, :expense_date, :description, :amount, :nominal_account_id)',
+                [
+                    'expense_claim_id' => (int)$fixture['claim_id'],
+                    'expense_date' => '2026-05-05',
+                    'description' => 'Materials',
+                    'amount' => 94.99,
+                    'nominal_account_id' => (int)$fixture['line_nominal_id'],
+                ]
+            );
+
+            $deleted = $instance->deleteClaim((int)$fixture['company_id'], (int)$fixture['claim_id']);
+            $harness->assertSame(true, (bool)($deleted['success'] ?? false));
+            $harness->assertSame(0, (int)\InterfaceDB::fetchColumn(
+                'SELECT COUNT(*) FROM expense_claims WHERE id = :id',
+                ['id' => (int)$fixture['claim_id']]
+            ));
+            $harness->assertSame(0, (int)\InterfaceDB::fetchColumn(
+                'SELECT COUNT(*) FROM expense_claim_lines WHERE expense_claim_id = :claim_id',
+                ['claim_id' => (int)$fixture['claim_id']]
+            ));
+
+            $linkedClaimId = expenseClaimServiceInsertClaim($fixture, 2026, 6, '2026-06-01', '2026-06-30');
+            $transactionId = expenseClaimServiceInsertTransaction($fixture, -50.00, 'delete-linked-claim');
+            \InterfaceDB::prepareExecute(
+                'INSERT INTO expense_claim_payment_links (expense_claim_id, transaction_id, linked_amount)
+                 VALUES (:expense_claim_id, :transaction_id, :linked_amount)',
+                [
+                    'expense_claim_id' => $linkedClaimId,
+                    'transaction_id' => $transactionId,
+                    'linked_amount' => 50.00,
+                ]
+            );
+
+            $linkedRejected = $instance->deleteClaim((int)$fixture['company_id'], $linkedClaimId);
+            $harness->assertSame(false, (bool)($linkedRejected['success'] ?? true));
+            $harness->assertSame('Remove repayment links before deleting this claim.', (string)(($linkedRejected['errors'] ?? [])[0] ?? ''));
+            $harness->assertSame(1, (int)\InterfaceDB::fetchColumn(
+                'SELECT COUNT(*) FROM expense_claims WHERE id = :id',
+                ['id' => $linkedClaimId]
+            ));
+
+            $postedClaimId = expenseClaimServiceInsertClaim($fixture, 2026, 7, '2026-07-01', '2026-07-31');
+            \InterfaceDB::prepareExecute(
+                'UPDATE expense_claims SET status = :status WHERE id = :id',
+                ['status' => 'posted', 'id' => $postedClaimId]
+            );
+
+            $postedRejected = $instance->deleteClaim((int)$fixture['company_id'], $postedClaimId);
+            $harness->assertSame(false, (bool)($postedRejected['success'] ?? true));
+            $harness->assertSame('Posted claims are locked.', (string)(($postedRejected['errors'] ?? [])[0] ?? ''));
+            $harness->assertSame(1, (int)\InterfaceDB::fetchColumn(
+                'SELECT COUNT(*) FROM expense_claims WHERE id = :id',
+                ['id' => $postedClaimId]
+            ));
+        });
+    });
 });
 
 function expenseClaimServiceParseBulkLines(\eel_accounts\Service\ExpenseClaimService $service, string $source, string $dateFormat): array

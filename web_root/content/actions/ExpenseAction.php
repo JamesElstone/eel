@@ -58,6 +58,10 @@ final class ExpenseAction implements ActionInterfaceFramework
                     (int)$request->input('claim_id', 0),
                     (int)$request->input('line_id', 0)
                 ),
+                'delete_claim' => $service->deleteClaim(
+                    $companyId,
+                    (int)$request->input('claim_id', 0)
+                ),
                 'link_payment' => $service->linkPayment($companyId, (int)$request->input('claim_id', 0), [
                     'transaction_id' => (int)$request->input('transaction_id', 0),
                     'default_expense_nominal_id' => (int)$request->input('default_expense_nominal_id', 0),
@@ -117,6 +121,12 @@ final class ExpenseAction implements ActionInterfaceFramework
             $filters['heatmap_date'] = '';
         }
 
+        if (isset($result['deleted_claim_id'])) {
+            $filters['claim_id'] = 0;
+            $filters['claim_reference_code'] = '';
+            $filters['heatmap_date'] = '';
+        }
+
         return array_filter(
             $filters,
             static fn(mixed $value): bool => $value !== null && $value !== '' && $value !== 0
@@ -144,6 +154,7 @@ final class ExpenseAction implements ActionInterfaceFramework
                 'bulk_save_lines' => 'Expense lines imported.',
                 'update_line_nominal' => 'Line nominal saved.',
                 'delete_line' => 'Expense line deleted.',
+                'delete_claim' => 'Expense claim deleted.',
                 'link_payment' => 'Repayment linked.',
                 'unlink_payment' => 'Repayment unlinked.',
                 'post_claim' => 'Expense claim posted.',

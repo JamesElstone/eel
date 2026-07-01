@@ -54,20 +54,20 @@ final class _expenses_stateCard extends CardBaseFramework
         $claimants = (array)($data['claimants'] ?? []);
         $accountingPeriods = (array)($data['accounting_periods'] ?? []);
         $claims = (array)($data['claims'] ?? []);
-        $claimHeatmapClaims = (array)($data['claim_heatmap_claims'] ?? $claims);
+        $claimHeatmapLines = (array)($data['claim_heatmap_lines'] ?? $data['claim_heatmap_claims'] ?? []);
         $filters = (array)($data['filters'] ?? []);
 
         return '
             <div id="expenses-app">
                 <div class="settings-stack">
-                    ' . $this->renderClaimsPanel($context, $claimHeatmapClaims, $claimants, $accountingPeriods, $filters, $companyId, (int)($company['accounting_period_id'] ?? 0)) . '
+                    ' . $this->renderClaimsPanel($context, $claimHeatmapLines, $claimants, $accountingPeriods, $filters, $companyId, (int)($company['accounting_period_id'] ?? 0)) . '
                 </div>
             </div>';
     }
 
     private function renderClaimsPanel(
         array $context,
-        array $claimHeatmapClaims,
+        array $claimHeatmapLines,
         array $claimants,
         array $accountingPeriods,
         array $filters,
@@ -91,7 +91,7 @@ final class _expenses_stateCard extends CardBaseFramework
         return '<div class="expense-claims-stack">
         <section class="panel-soft">
             ' . $this->withoutEmptyActionRows($claimsTable->renderToolbar($context, $claimsTableHiddenFields)) . '
-            ' . $this->renderClaimHeatmap($heatmapFormId, $claimHeatmapClaims, $claimants, $accountingPeriods, $heatmapClaimantId, $heatmapPeriod, $heatmapDate, $query, $status, $companyId) . '
+            ' . $this->renderClaimHeatmap($heatmapFormId, $claimHeatmapLines, $claimants, $accountingPeriods, $heatmapClaimantId, $heatmapPeriod, $heatmapDate, $query, $status, $companyId) . '
             ' . $claimsTable->renderTable() . '
             ' . $claimsTable->renderFooter() . '
         </section>
@@ -306,7 +306,7 @@ final class _expenses_stateCard extends CardBaseFramework
 
     private function renderClaimHeatmap(
         string $formId,
-        array $claims,
+        array $claimLines,
         array $claimants,
         array $accountingPeriods,
         int $selectedClaimantId,
@@ -322,9 +322,9 @@ final class _expenses_stateCard extends CardBaseFramework
         if ($hasClaimants && $selectedPeriod === null) {
             $chartHtml = '<div class="helper">Select an accounting period to see claim activity.</div>';
         } elseif ($hasClaimants) {
-            $chartHtml = (new ChartService())->calendarHeatmap(
+            $chartHtml = $this->withClaimEditorTarget((new ChartService())->calendarHeatmap(
                 $selectedClaimantId > 0
-                    ? $this->claimHeatmapDays($claims, $selectedClaimantId, (string)$selectedPeriod['start'], (string)$selectedPeriod['end'])
+                    ? $this->claimHeatmapDays($claimLines, $selectedClaimantId, (string)$selectedPeriod['start'], (string)$selectedPeriod['end'])
                     : [],
                 [
                     'title' => 'Claim calendar',
@@ -333,11 +333,11 @@ final class _expenses_stateCard extends CardBaseFramework
                     'end_date' => (string)$selectedPeriod['end'],
                     'selected_date' => $selectedDate,
                     'range_control' => ['type' => 'date', 'options' => []],
-                    'value_label' => 'claims',
+                    'value_label' => 'claim lines',
                     'input_name' => 'expense_heatmap_date',
                     'ajax_target' => 'expenses-app',
                 ]
-            );
+            ));
         }
 
         return '<div class="expense-claim-heatmap">
@@ -354,16 +354,16 @@ final class _expenses_stateCard extends CardBaseFramework
         </div>';
     }
 
-    private function claimHeatmapDays(array $claims, int $selectedClaimantId, string $periodStart, string $periodEnd): array
+    private function claimHeatmapDays(array $claimLines, int $selectedClaimantId, string $periodStart, string $periodEnd): array
     {
         $days = [];
 
-        foreach ($claims as $claim) {
-            if ((int)($claim['claimant_id'] ?? 0) !== $selectedClaimantId) {
+        foreach ($claimLines as $claimLine) {
+            if ((int)($claimLine['claimant_id'] ?? 0) !== $selectedClaimantId) {
                 continue;
             }
 
-            $date = $this->claimHeatmapDate($claim);
+            $date = $this->claimHeatmapDate($claimLine);
             if ($date === '') {
                 continue;
             }
@@ -381,7 +381,7 @@ final class _expenses_stateCard extends CardBaseFramework
             }
 
             $days[$date]['value']++;
-            $reference = trim((string)($claim['claim_reference_code'] ?? ''));
+            $reference = trim((string)($claimLine['claim_reference_code'] ?? ''));
             if ($reference !== '') {
                 $days[$date]['references'][] = $reference;
             }
@@ -391,11 +391,20 @@ final class _expenses_stateCard extends CardBaseFramework
             $count = (int)$day['value'];
             $references = array_values(array_unique((array)$day['references']));
             $suffix = $references !== [] ? ': ' . implode(', ', $references) : '';
-            $days[$date]['title'] = $count . ' ' . ($count === 1 ? 'claim' : 'claims') . ' on ' . (new DateTimeImmutable($date))->format('j F Y') . $suffix;
+            $days[$date]['title'] = $count . ' ' . ($count === 1 ? 'claim line' : 'claim lines') . ' on ' . (new DateTimeImmutable($date))->format('j F Y') . $suffix;
             unset($days[$date]['references']);
         }
 
         return array_values($days);
+    }
+
+    private function withClaimEditorTarget(string $chartHtml): string
+    {
+        return preg_replace(
+            '/<button class="(calendar-heatmap-day calendar-heatmap-day-level-[1-4][^"]*)"/',
+            '<button class="$1" data-show-card="expense_claim_editor"',
+            $chartHtml
+        ) ?? $chartHtml;
     }
 
     private function selectedHeatmapClaimantId(array $claimants, int $requestedClaimantId): int
@@ -498,6 +507,15 @@ final class _expenses_stateCard extends CardBaseFramework
 
     private function claimHeatmapDate(array $claim): string
     {
+        $date = trim((string)($claim['expense_date'] ?? ''));
+        if ($date !== '') {
+            $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+            $errors = DateTimeImmutable::getLastErrors();
+            if ($parsed instanceof DateTimeImmutable && (!is_array($errors) || ($errors['warning_count'] === 0 && $errors['error_count'] === 0))) {
+                return $parsed->format('Y-m-d');
+            }
+        }
+
         $date = trim((string)($claim['period_start'] ?? ''));
         if ($date !== '') {
             $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $date);

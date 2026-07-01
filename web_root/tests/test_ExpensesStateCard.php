@@ -16,6 +16,19 @@ $harness->run(_expenses_stateCard::class, function (GeneratedServiceClassTestHar
         $harness->skip('Expenses state card did not instantiate.');
     }
 
+    $harness->check(_expenses_stateCard::class, 'renders empty claim heatmap until claimant is selected', function () use ($harness, $instance): void {
+        $html = $instance->render(expensesStateCardContext([
+            'heatmap_claimant_id' => 0,
+            'heatmap_date' => '',
+        ]));
+
+        $harness->assertTrue(str_contains($html, '<select class="select" id="expense-claimant" name="claimant_id"><option value="" selected>Choose Claimant...</option><option value="4">Bob</option><option value="3">Alex Example</option></select>'));
+        $harness->assertTrue(str_contains($html, 'class="calendar-heatmap"'));
+        $harness->assertTrue(str_contains($html, 'calendar-heatmap-day-level-0'));
+        $harness->assertSame(false, str_contains($html, 'EXP-2605-001'));
+        $harness->assertSame(false, str_contains($html, '<button class="button" type="submit">Apply</button>'));
+    });
+
     $harness->check(_expenses_stateCard::class, 'renders claim heatmap from page accounting period without period selector', function () use ($harness, $instance): void {
         $html = $instance->render(expensesStateCardContext());
 
@@ -25,8 +38,48 @@ $harness->run(_expenses_stateCard::class, function (GeneratedServiceClassTestHar
         $harness->assertSame(false, str_contains($html, 'calendar-heatmap-year-select'));
         $harness->assertTrue(str_contains($html, 'name="expense_heatmap_date"'));
         $harness->assertTrue(str_contains($html, 'value="2026-05-01"'));
-        $harness->assertTrue(str_contains($html, 'id="expense-create-claimant"'));
+        $harness->assertSame(false, str_contains($html, 'Create or open a monthly expense claim for an active claimant.'));
+        $harness->assertSame(false, str_contains($html, 'id="expense-create-claimant"'));
+        $harness->assertTrue(str_contains($html, '<form method="get" action="?page=expenses" data-ajax="true" class="toolbar">
+                <input type="hidden" name="page" value="expenses">
+                <input type="hidden" name="card_action" value="Expense">
+                <input type="hidden" name="company_id" value="7">
+                <input type="hidden" name="intent" value="filter_claims">
+                <input type="hidden" name="expense_query" value="">
+                <input type="hidden" name="expense_status" value="all">
+                <div class="mini-field">
+                    <label for="expense-claimant">Claimant</label>
+                    <select class="select" id="expense-claimant" name="claimant_id"><option value="">Choose Claimant...</option><option value="4">Bob</option><option value="3" selected>Alex Example</option></select>
+                </div>
+            </form>'));
+        $harness->assertSame(false, str_contains($html, '<h3 class="card-title">Create Expense claim</h3>'));
         $harness->assertSame(false, str_contains($html, 'id="expense-heatmap-claimant"'));
+        $harness->assertTrue(str_contains($html, 'class="expense-claims-stack"'));
+        $harness->assertSame(1, substr_count($html, '<section class="panel-soft">'));
+        $harness->assertSame(false, str_contains($html, 'class="expense-claim-heatmap-controls create-expense-claim"'));
+        $harness->assertSame(false, str_contains($html, '<button class="button" type="submit">Apply</button>'));
+        $harness->assertTrue(strpos($html, 'class="calendar-heatmap"') < strpos($html, 'id="expense-claimant"'));
+        $harness->assertTrue(strpos($html, '<div class="card-toolbar">') < strpos($html, 'id="expense-claimant"'));
+        $harness->assertSame(0, substr_count($html, 'class="card-toolbar expenses-toolbar"'));
+        $harness->assertSame(0, substr_count($html, 'class="toolbar expenses-toolbar"'));
+        $harness->assertSame(false, str_contains($html, 'id="expense-search-status"'));
+        $harness->assertTrue(str_contains($html, '<label for="table-filter-expenses_state-expense_status">Show</label>'));
+        $harness->assertTrue(str_contains($html, 'id="table-filter-expenses_state-expense_status" name="expense_status"'));
+        $harness->assertTrue(str_contains($html, '<option value="all" selected>All</option>'));
+        $harness->assertTrue(str_contains($html, '<div class="actions-row">
+                <div class="mini-field">
+                    <input class="input" id="expense-search-query" name="expense_query" form="expense-search-form" type="search" value="" placeholder="EXP-...">
+                </div>
+                <button class="button" type="submit" form="expense-search-form">Search</button>
+            </div>'));
+        $statusFilterPosition = strpos($html, 'id="table-filter-expenses_state-expense_status"');
+        $searchPosition = strpos($html, 'id="expense-search-query"');
+        $exportPosition = strpos($html, 'name="_table_export_prepare" value="csv"');
+        $harness->assertTrue($statusFilterPosition !== false);
+        $harness->assertTrue($searchPosition !== false);
+        $harness->assertTrue($exportPosition !== false);
+        $harness->assertTrue($statusFilterPosition < $searchPosition);
+        $harness->assertTrue($searchPosition < $exportPosition);
     });
 
     $harness->check(_expenses_stateCard::class, 'renders exportable paginated claims table with thirteen rows', function () use ($harness, $instance): void {
@@ -49,8 +102,15 @@ $harness->run(_expenses_stateCard::class, function (GeneratedServiceClassTestHar
     });
 });
 
-function expensesStateCardContext(): array
+function expensesStateCardContext(array $filterOverrides = []): array
 {
+    $filters = array_merge([
+        'heatmap_claimant_id' => 3,
+        'heatmap_date' => '2026-05-01',
+        'status' => 'all',
+        'query' => '',
+    ], $filterOverrides);
+
     return [
         'company' => [
             'id' => 7,
@@ -62,6 +122,11 @@ function expensesStateCardContext(): array
         'services' => [
             'expensesPageData' => [
                 'claimants' => [
+                    [
+                        'id' => 4,
+                        'claimant_name' => 'Bob',
+                        'is_active' => 1,
+                    ],
                     [
                         'id' => 3,
                         'claimant_name' => 'Alex Example',
@@ -85,12 +150,7 @@ function expensesStateCardContext(): array
                 ],
                 'claims' => expensesStateCardClaims(),
                 'claim_heatmap_claims' => expensesStateCardClaims(),
-                'filters' => [
-                    'heatmap_claimant_id' => 3,
-                    'heatmap_date' => '2026-05-01',
-                    'status' => 'all',
-                    'query' => '',
-                ],
+                'filters' => $filters,
             ],
         ],
     ];

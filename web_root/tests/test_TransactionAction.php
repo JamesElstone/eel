@@ -877,6 +877,68 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, '<span class="badge success">Manually Categorised</span>'));
     });
 
+    $harness->check('_transactions_importedCard', 'renders dividend declaration shortcut for payable transactions', function () use ($harness): void {
+        $html = (new _transactions_importedCard())->render([
+            'company' => [
+                'id' => 1,
+                'accounting_period_id' => 2,
+            ],
+            'page' => [
+                'month_key' => '2022-11-01',
+                'category_filter' => 'all',
+            ],
+            'services' => [
+                'month_status' => [[
+                    'month_key' => '2022-11-01',
+                    'label' => 'Nov 2022',
+                ]],
+                'transactions_by_month' => [[
+                    'id' => 6171,
+                    'txn_date' => '2022-11-02',
+                    'description' => 'ALEX EXAMPLE',
+                    'source_account' => 'Example Bank - Current Account',
+                    'source_category' => 'DIVIDEND',
+                    'amount' => -129.00,
+                    'document_download_status' => 'skipped',
+                    'nominal_account_id' => 54,
+                    'nominal_code' => '2150',
+                    'category_status' => 'manual',
+                    'has_derived_journal' => 1,
+                    'has_dividend_declaration' => 0,
+                ], [
+                    'id' => 6172,
+                    'txn_date' => '2022-11-03',
+                    'description' => 'Existing dividend',
+                    'source_account' => 'Example Bank - Current Account',
+                    'source_category' => 'DIVIDEND',
+                    'amount' => -50.00,
+                    'document_download_status' => 'skipped',
+                    'nominal_account_id' => 54,
+                    'nominal_code' => '2150',
+                    'category_status' => 'manual',
+                    'has_derived_journal' => 1,
+                    'has_dividend_declaration' => 1,
+                ]],
+                'nominal_accounts' => [[
+                    'id' => 54,
+                    'code' => '2150',
+                    'name' => 'Dividends Payable',
+                    'account_type' => 'liability',
+                ]],
+                'company_accounts' => [],
+            ],
+        ]);
+
+        $harness->assertSame(true, str_contains($html, 'id="transaction-dividend-form-6171" data-ajax="true"'));
+        $harness->assertSame(true, str_contains($html, '<input type="hidden" name="card_action" value="Dividend">'));
+        $harness->assertSame(true, str_contains($html, '<input type="hidden" name="intent" value="declare_dividend_from_transaction">'));
+        $harness->assertSame(true, str_contains($html, '<input type="hidden" name="transaction_id" value="6171">'));
+        $harness->assertSame(true, str_contains($html, 'form="transaction-dividend-form-6171" formnovalidate'));
+        $harness->assertSame(true, str_contains($html, 'data-chicken-title="Create dividend declaration"'));
+        $harness->assertSame(true, str_contains($html, 'The transaction will remain categorised to Dividends Payable.'));
+        $harness->assertSame(true, str_contains($html, '<span class="badge success">Dividend created</span>'));
+    });
+
     $harness->check('_transactions_importedCard', 'preserves selected filters in imported transactions pagination', function () use ($harness): void {
         $transactions = [];
         for ($i = 1; $i <= 21; $i++) {

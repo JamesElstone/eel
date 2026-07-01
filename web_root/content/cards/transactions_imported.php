@@ -563,6 +563,7 @@ final class _transactions_importedCard extends CardBaseFramework
         $transactionId = (int)($transaction['id'] ?? 0);
         $transactionFormId = 'transaction-form-' . $transactionId;
         $assetFormId = 'transaction-asset-form-' . $transactionId;
+        $dividendFormId = 'transaction-dividend-form-' . $transactionId;
         $isTransferRow = $this->transactionIsTransferMode($transaction);
         $journalRebuildAttributes = !$isPeriodLocked && (int)($transaction['has_derived_journal'] ?? 0) === 1
             ? ' data-chicken-check="true" data-chicken-title="Confirm journal rebuild" data-chicken-message="This will rebuild the journal entry for this transaction.<br><br>Continue?" data-chicken-confirm-text="Continue" data-chicken-button-class="button primary" data-submit-field="confirm_rebuild_journal" data-submit-value="1"'
@@ -574,11 +575,21 @@ final class _transactions_importedCard extends CardBaseFramework
         $createAssetAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit" form="' . HelperFramework::escape($assetFormId) . '" formnovalidate';
         $createRuleHtml = $isTransferRow ? '' : $this->createRuleButtonHtml($transaction, $isPeriodLocked);
         $directorLoanButtonHtml = $this->directorLoanButtonHtml($transaction, $settings, $isPeriodLocked, $journalRebuildAttributes);
+        $dividendButtonHtml = $this->dividendButtonHtml($transaction, $dividendFormId, $isPeriodLocked);
 
         return '<form method="post" action="?page=assets" id="' . HelperFramework::escape($assetFormId) . '">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="transaction_id" value="' . $transactionId . '">
+            </form>
+            <form method="post" action="?page=transactions" id="' . HelperFramework::escape($dividendFormId) . '" data-ajax="true">
+                <input type="hidden" name="card_action" value="Dividend">
+                <input type="hidden" name="intent" value="declare_dividend_from_transaction">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <input type="hidden" name="transaction_id" value="' . $transactionId . '">
+                <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
+                <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
             </form>
             <form method="post" action="?page=transactions" id="' . HelperFramework::escape($transactionFormId) . '" data-ajax="true">
                 <input type="hidden" name="card_action" value="Transaction">
@@ -592,10 +603,58 @@ final class _transactions_importedCard extends CardBaseFramework
                 <div class="actions-row">
                     ' . $createRuleHtml . '
                     ' . $directorLoanButtonHtml . '
+                    ' . $dividendButtonHtml . '
                     <button class="button primary"' . $lockedButtonAttributes . ' name="global_action" value="defer_transaction"' . $journalRebuildAttributes . '>Defer</button>
                     <button class="button"' . $createAssetAttributes . '>Create Asset</button>
                 </div>
             </form>';
+    }
+
+    private function dividendButtonHtml(array $transaction, string $dividendFormId, bool $isPeriodLocked): string
+    {
+        if ($this->transactionIsTransferMode($transaction)) {
+            return '';
+        }
+
+        if ((int)($transaction['has_dividend_declaration'] ?? 0) === 1) {
+            return '<span class="badge success">Dividend created</span>';
+        }
+
+        $disabledReason = $this->dividendButtonDisabledReason($transaction, $isPeriodLocked);
+        if ($disabledReason !== '') {
+            return '<button class="button" type="button" disabled title="' . HelperFramework::escape($disabledReason) . '">Create Dividend</button>';
+        }
+
+        $amount = FormattingFramework::money(abs((float)($transaction['amount'] ?? 0)));
+        $date = $this->displayDate((string)($transaction['txn_date'] ?? ''));
+        $message = 'Create a dividend declaration journal for ' . HelperFramework::escape($amount)
+            . ' dated ' . HelperFramework::escape($date)
+            . '.<br><br>The transaction will remain categorised to Dividends Payable.';
+
+        return '<button class="button" type="submit" form="' . HelperFramework::escape($dividendFormId) . '" formnovalidate
+                data-chicken-check="true"
+                data-chicken-title="Create dividend declaration"
+                data-chicken-message="' . $message . '"
+                data-chicken-confirm-text="Create Dividend"
+                data-chicken-button-class="button primary">Create Dividend</button>';
+    }
+
+    private function dividendButtonDisabledReason(array $transaction, bool $isPeriodLocked): string
+    {
+        if ($isPeriodLocked) {
+            return 'Period locked';
+        }
+        if (round((float)($transaction['amount'] ?? 0), 2) >= 0) {
+            return 'Dividend declarations can only be created from outgoing payments';
+        }
+        if ((string)($transaction['nominal_code'] ?? '') !== '2150') {
+            return 'Categorise the transaction to Dividends Payable first';
+        }
+        if (!in_array((string)($transaction['category_status'] ?? ''), ['auto', 'manual'], true)) {
+            return 'Categorise the transaction before creating a dividend declaration';
+        }
+
+        return '';
     }
 
     private function directorLoanButtonHtml(array $transaction, array $settings, bool $isPeriodLocked, string $journalRebuildAttributes): string

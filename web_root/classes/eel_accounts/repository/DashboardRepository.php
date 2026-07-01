@@ -397,6 +397,7 @@ final class DashboardRepository
                        COALESCE(ca.internal_transfer_marker, '') AS internal_transfer_marker,
                        COALESCE(ca.account_name, '') AS owned_account_name,
                        COALESCE(ta.account_name, '') AS transfer_account_name,
+                       COALESCE(na.code, '') AS nominal_code,
                        COALESCE(na.name, '') AS assigned_nominal,
                        t.category_status,
                        COALESCE(t.auto_rule_id, 0) AS auto_rule_id,
@@ -407,7 +408,14 @@ final class DashboardRepository
                            FROM journals j
                            WHERE j.source_type = 'bank_csv'
                              AND j.source_ref = CONCAT('transaction:', t.id)
-                       ) AS has_derived_journal
+                       ) AS has_derived_journal,
+                       EXISTS(
+                           SELECT 1
+                           FROM journals dividend_j
+                           WHERE dividend_j.company_id = t.company_id
+                             AND dividend_j.source_type = 'manual'
+                             AND dividend_j.source_ref = CONCAT('dividend:transaction:', t.id)
+                       ) AS has_dividend_declaration
                 FROM transactions t
                 LEFT JOIN company_accounts ca ON ca.id = t.account_id
                 LEFT JOIN company_accounts ta ON ta.id = t.transfer_account_id
@@ -504,7 +512,14 @@ final class DashboardRepository
                            FROM journals j
                            WHERE j.source_type = 'bank_csv'
                              AND j.source_ref = CONCAT('transaction:', t.id)
-                       ) AS has_derived_journal
+                       ) AS has_derived_journal,
+                       EXISTS(
+                           SELECT 1
+                           FROM journals dividend_j
+                           WHERE dividend_j.company_id = t.company_id
+                             AND dividend_j.source_type = 'manual'
+                             AND dividend_j.source_ref = CONCAT('dividend:transaction:', t.id)
+                       ) AS has_dividend_declaration
                 FROM transactions t
                 LEFT JOIN company_accounts ca ON ca.id = t.account_id
                 LEFT JOIN company_accounts ta ON ta.id = t.transfer_account_id

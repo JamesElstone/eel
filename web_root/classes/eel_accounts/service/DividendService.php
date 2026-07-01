@@ -275,6 +275,137 @@ final class DividendService
         }
     }
 
+    public function declareDividendFromTransaction(int $transactionId, int $companyId, int $accountingPeriodId): array
+    {
+        if ($transactionId <= 0 || $companyId <= 0 || $accountingPeriodId <= 0) {
+            return ['success' => false, 'errors' => ['Select a valid dividend payment transaction.']];
+        }
+
+        $transaction = $this->fetchDividendPaymentTransaction($transactionId);
+        if ($transaction === null) {
+            return ['success' => false, 'errors' => ['The selected transaction could not be found.']];
+        }
+
+        if ((int)($transaction['company_id'] ?? 0) !== $companyId || (int)($transaction['accounting_period_id'] ?? 0) !== $accountingPeriodId) {
+            return ['success' => false, 'errors' => ['The selected transaction does not belong to the selected company and accounting period.']];
+        }
+        if ((int)($transaction['is_internal_transfer'] ?? 0) === 1) {
+            return ['success' => false, 'errors' => ['Internal transfer rows cannot create dividend declarations.']];
+        }
+        if (!in_array((string)($transaction['category_status'] ?? ''), ['auto', 'manual'], true)) {
+            return ['success' => false, 'errors' => ['Categorise the transaction to Dividends Payable before creating a dividend declaration.']];
+        }
+        if ((string)($transaction['nominal_code'] ?? '') !== self::DIVIDENDS_PAYABLE_CODE) {
+            return ['success' => false, 'errors' => ['Only transactions categorised to Dividends Payable can create dividend declarations.']];
+        }
+
+        $amount = round(abs((float)($transaction['amount'] ?? 0)), 2);
+        if ((float)($transaction['amount'] ?? 0) >= 0 || $amount <= 0) {
+            return ['success' => false, 'errors' => ['Only outgoing dividend payment transactions can create dividend declarations.']];
+        }
+
+        $declarationDate = (string)($transaction['txn_date'] ?? '');
+        $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null) {
+            return ['success' => false, 'errors' => ['The selected accounting period could not be found.']];
+        }
+        if (!$this->dateInsidePeriod($declarationDate, (string)$accountingPeriod['period_start'], (string)$accountingPeriod['period_end'])) {
+            return ['success' => false, 'errors' => ['The transaction date must fall inside the selected accounting period.']];
+        }
+
+        try {
+            (new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'create dividend declarations in this period');
+        } catch (\Throwable $exception) {
+            return ['success' => false, 'errors' => [$exception->getMessage()]];
+        }
+
+        $nominalResult = $this->ensureDividendNominals($companyId);
+        if (empty($nominalResult['available'])) {
+            return [
+                'success' => false,
+                'errors' => (array)($nominalResult['errors'] ?? ['Dividend nominal accounts could not be prepared.']),
+            ];
+        }
+
+        $nominals = (array)($nominalResult['accounts'] ?? []);
+        $dividendsPaidNominalId = (int)($nominals['dividends_paid']['id'] ?? 0);
+        $dividendsPayableNominalId = (int)($nominals['dividends_payable']['id'] ?? 0);
+        if ($dividendsPaidNominalId <= 0 || $dividendsPayableNominalId <= 0) {
+            return ['success' => false, 'errors' => ['Dividend nominal accounts are missing.']];
+        }
+
+        $sourceRef = $this->transactionDividendSourceRef($transactionId);
+        $existingJournalId = $this->findJournalId($companyId, $sourceRef);
+        if ($existingJournalId > 0) {
+            return [
+                'success' => true,
+                'already_exists' => true,
+                'journal_id' => $existingJournalId,
+                'source_ref' => $sourceRef,
+            ];
+        }
+
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
+        }
+
+        try {
+            $description = trim((string)($transaction['description'] ?? ''));
+            $journalDescription = trim('Dividend declared from transaction ' . $transactionId . ($description !== '' ? ': ' . $description : ''));
+            if (strlen($journalDescription) > 255) {
+                $journalDescription = substr($journalDescription, 0, 252) . '...';
+            }
+
+            \InterfaceDB::prepareExecute(
+                'INSERT INTO journals (
+                    company_id,
+                    accounting_period_id,
+                    source_type,
+                    source_ref,
+                    journal_date,
+                    description,
+                    is_posted,
+                    created_at,
+                    updated_at
+                 ) VALUES (?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)',
+                [
+                    $companyId,
+                    $accountingPeriodId,
+                    'manual',
+                    $sourceRef,
+                    $declarationDate,
+                    $journalDescription,
+                ]
+            );
+
+            $journalId = $this->findJournalId($companyId, $sourceRef);
+            if ($journalId <= 0) {
+                throw new \RuntimeException('The dividend declaration journal could not be reloaded after insert.');
+            }
+
+            $this->insertJournalLine($journalId, $dividendsPaidNominalId, $amount, 0.0, 'Dividend declared from imported transaction');
+            $this->insertJournalLine($journalId, $dividendsPayableNominalId, 0.0, $amount, 'Dividend payable created from imported transaction');
+
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
+
+            return [
+                'success' => true,
+                'already_exists' => false,
+                'journal_id' => $journalId,
+                'source_ref' => $sourceRef,
+            ];
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+
+            return ['success' => false, 'errors' => [$exception->getMessage()]];
+        }
+    }
+
     public function listDividends(int $companyId, int $accountingPeriodId): array
     {
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
@@ -421,6 +552,29 @@ final class DividendService
              WHERE code = :code
              LIMIT 1',
             ['code' => $code]
+        );
+
+        return is_array($row) ? $row : null;
+    }
+
+    private function fetchDividendPaymentTransaction(int $transactionId): ?array
+    {
+        $row = \InterfaceDB::fetchOne(
+            'SELECT t.id,
+                    t.company_id,
+                    t.accounting_period_id,
+                    t.txn_date,
+                    t.description,
+                    t.amount,
+                    t.nominal_account_id,
+                    t.is_internal_transfer,
+                    t.category_status,
+                    COALESCE(na.code, \'\') AS nominal_code
+             FROM transactions t
+             LEFT JOIN nominal_accounts na ON na.id = t.nominal_account_id
+             WHERE t.id = :transaction_id
+             LIMIT 1',
+            ['transaction_id' => $transactionId]
         );
 
         return is_array($row) ? $row : null;
@@ -611,6 +765,11 @@ final class DividendService
         }
 
         return 'dividend:' . $companyId . ':' . $accountingPeriodId . ':' . $date . ':' . $suffix;
+    }
+
+    private function transactionDividendSourceRef(int $transactionId): string
+    {
+        return 'dividend:transaction:' . $transactionId;
     }
 
     private function effectiveAsAtDate(?string $asAtDate, string $periodStart, string $periodEnd): string

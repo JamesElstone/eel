@@ -237,6 +237,9 @@ final class ExpenseClaimService
                     ec.updated_at,
                     c.claimant_name,
                     (SELECT COUNT(*)
+                       FROM expense_claim_lines ecl
+                      WHERE ecl.expense_claim_id = ec.id) AS line_count,
+                    (SELECT COUNT(*)
                        FROM expense_claim_payment_links epl
                       WHERE epl.expense_claim_id = ec.id) AS payment_link_count
              FROM expense_claims ec
@@ -404,6 +407,8 @@ final class ExpenseClaimService
 
         $claim['lines'] = $this->fetchClaimLines($claimId);
         $claim['payment_links'] = $this->fetchPaymentLinks($claimId);
+        $claim['line_count'] = count((array)$claim['lines']);
+        $claim['payment_link_count'] = count((array)$claim['payment_links']);
         $claim['control_totals'] = [
             'A' => (float)$claim['brought_forward_amount'],
             'B' => (float)$claim['claimed_amount'],
@@ -412,7 +417,7 @@ final class ExpenseClaimService
         ];
         $claim['claim_period'] = sprintf('%04d-%02d', (int)$claim['claim_year'], (int)$claim['claim_month']);
         $claim['is_posted'] = (string)$claim['status'] === 'posted';
-        $claim['status_label'] = ucfirst((string)$claim['status']);
+        $claim['status_label'] = $this->claimStatusLabel($claim);
 
         return $claim;
     }
@@ -2185,9 +2190,23 @@ final class ExpenseClaimService
             'C' => round((float)$claim['payments_amount'], 2),
             'D' => round((float)$claim['carried_forward_amount'], 2),
             'status' => (string)$claim['status'],
+            'status_label' => $this->claimStatusLabel($claim),
+            'line_count' => (int)($claim['line_count'] ?? 0),
             'payment_link_count' => (int)($claim['payment_link_count'] ?? 0),
             'last_updated' => (string)$claim['updated_at'],
         ];
+    }
+
+    private function claimStatusLabel(array $claim): string {
+        if (
+            (string)($claim['status'] ?? '') === 'draft'
+            && (int)($claim['line_count'] ?? count((array)($claim['lines'] ?? []))) === 0
+            && (int)($claim['payment_link_count'] ?? count((array)($claim['payment_links'] ?? []))) > 0
+        ) {
+            return 'Repayment Only';
+        }
+
+        return ucfirst((string)($claim['status'] ?? ''));
     }
 
     private function isValidDate(string $value): bool {

@@ -122,6 +122,16 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
             ]);
 
             $harness->assertSame(true, (bool)($result['success'] ?? false));
+            $harness->assertSame('Repayment Only', (string)(($result['claim'] ?? [])['status_label'] ?? ''));
+            $harness->assertSame(0, (int)(($result['claim'] ?? [])['line_count'] ?? -1));
+            $harness->assertSame(1, (int)(($result['claim'] ?? [])['payment_link_count'] ?? 0));
+            $summary = array_values(array_filter(
+                (array)($result['claims'] ?? []),
+                static fn(array $claim): bool => (int)($claim['id'] ?? 0) === (int)$fixture['claim_id']
+            ))[0] ?? [];
+            $harness->assertSame('Repayment Only', (string)($summary['status_label'] ?? ''));
+            $harness->assertSame(0, (int)($summary['line_count'] ?? -1));
+            $harness->assertSame(1, (int)($summary['payment_link_count'] ?? 0));
             $harness->assertSame(123.45, (float)\InterfaceDB::fetchColumn(
                 'SELECT linked_amount FROM expense_claim_payment_links WHERE expense_claim_id = :claim_id AND transaction_id = :transaction_id',
                 ['claim_id' => (int)$fixture['claim_id'], 'transaction_id' => $transactionId]

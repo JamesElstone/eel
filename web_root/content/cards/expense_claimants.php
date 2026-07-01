@@ -64,14 +64,25 @@ final class _expense_claimantsCard extends CardBaseFramework
         $hasCompany = $companyId > 0;
         $addDisabled = $hasCompany ? '' : ' disabled';
         $addHelper = $hasCompany
-            ? 'Manage the people who can submit monthly personal expense claims for this company.'
+            ? ''
             : 'Select or add a company before configuring expense claimants.';
+        $addHelperHtml = $addHelper === ''
+            ? ''
+            : '<div class="helper">' . HelperFramework::escape($addHelper) . '</div>';
 
         return '<section class="panel-soft">
             <div class="status-head">
                 <h3 class="card-title">Claimants</h3>
             </div>
-            <div class="helper">' . HelperFramework::escape($addHelper) . '</div>
+            ' . $addHelperHtml . '
+            ' . $this->configuredTable($context)->render($context, [
+                'cards[]' => (array)($context['page']['page_cards'] ?? []),
+            ]) . '
+        </section>
+        <section class="panel-soft">
+            <div class="status-head">
+                <h3 class="card-title">New Claimants</h3>
+            </div>
             <form class="expense-claimant-add-form" method="post" action="?page=expenses" data-ajax="true">
                 <input type="hidden" name="card_action" value="Expense">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -82,9 +93,6 @@ final class _expense_claimantsCard extends CardBaseFramework
                 </div>
                 <button class="button primary" type="submit"' . $addDisabled . '>Add Claimant</button>
             </form>
-            ' . $this->configuredTable($context)->render($context, [
-                'cards[]' => (array)($context['page']['page_cards'] ?? []),
-            ]) . '
         </section>';
     }
 

@@ -961,10 +961,6 @@ final class ExpenseClaimService
         }
         (new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, (int)($claim['accounting_period_id'] ?? 0), 'link expense repayments in this period');
 
-        if ((string)$claim['status'] === 'posted') {
-            return ['success' => false, 'errors' => ['Posted claims are locked.']];
-        }
-
         $transactionId = isset($payload['transaction_id']) ? (int)$payload['transaction_id'] : 0;
         $defaultExpenseNominalId = isset($payload['default_expense_nominal_id']) ? (int)$payload['default_expense_nominal_id'] : 0;
         $defaultBankNominalId = isset($payload['default_bank_nominal_id']) ? (int)$payload['default_bank_nominal_id'] : 0;

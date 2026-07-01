@@ -66,7 +66,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
         $dateFormat = (string)($companySettings['date_format'] ?? 'd/m/Y');
 
         return [
-            $this->linesTable((array)($claim['lines'] ?? []), (array)($data['nominal_accounts'] ?? []), (array)($data['asset_categories'] ?? []), $claimId, $isPosted, $companyId, $dateFormat, $companySettings),
+            $this->linesTable((array)($claim['lines'] ?? []), (array)($data['nominal_accounts'] ?? []), (array)($data['asset_categories'] ?? []), $claimId, $isPosted, $companyId, $dateFormat, $companySettings, $context),
             $this->paymentsTable((array)($claim['payment_links'] ?? []), $claimId, $isPosted, $companyId, $dateFormat),
             $this->paymentCandidatesTable((array)($data['payment_candidates'] ?? []), $companySettings, $claimId, $companyId, $dateFormat),
         ];
@@ -112,7 +112,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
                 <div class="summary-card"><div class="summary-label">Carried Forward (D=A+B-C)</div><div class="summary-value">' . HelperFramework::escape($defaultCurrencySymbol . FormattingFramework::money($displayTotals['D'])) . '</div></div>
             </div>
             ' . ($isPosted ? '' : $this->renderBulkPastePanel($claimId, $companyId, $dateFormat)) . '
-            ' . ($isPosted ? '<div class="helper">Posted claims are locked.</div>' : $this->renderLineForm($claim, $nominals, $claimId, $companySettings, $companyId)) . '
+            ' . ($isPosted ? '<div class="helper">Posted claim lines are locked. Repayments can still be linked from bank transactions.</div>' : $this->renderLineForm($claim, $nominals, $claimId, $companySettings, $companyId)) . '
             ' . $this->renderExpenseLinesPanel(
                 (array)($claim['lines'] ?? []),
                 $nominals,
@@ -260,7 +260,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
 
     private function configuredLinesTable(array $lines, array $nominals, array $assetCategories, int $claimId, bool $isPosted, int $companyId, string $dateFormat, array $companySettings, array $context): TableFramework
     {
-        $table = $this->linesTable($lines, $nominals, $assetCategories, $claimId, $isPosted, $companyId, $dateFormat, $companySettings);
+        $table = $this->linesTable($lines, $nominals, $assetCategories, $claimId, $isPosted, $companyId, $dateFormat, $companySettings, $context);
         $pagination = HelperFramework::paginateArray($table->sortedRows(), $this->paginationPage($context, self::TABLE_LINES), self::PAGE_SIZE);
 
         return $table
@@ -273,7 +273,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
             );
     }
 
-    private function linesTable(array $lines, array $nominals, array $assetCategories, int $claimId, bool $isPosted, int $companyId, string $dateFormat, array $companySettings): TableFramework
+    private function linesTable(array $lines, array $nominals, array $assetCategories, int $claimId, bool $isPosted, int $companyId, string $dateFormat, array $companySettings, array $context): TableFramework
     {
         $defaultCurrencySymbol = $this->defaultCurrencySymbol($companySettings);
 
@@ -288,14 +288,14 @@ final class _expense_claim_editorCard extends CardBaseFramework
                 'Type',
                 html: fn(array $row): string => $isPosted
                     ? HelperFramework::escape(ucfirst((string)($row['line_type'] ?? 'expense')))
-                    : $this->lineTypeForm($claimId, (int)($row['id'] ?? 0), (string)($row['line_type'] ?? 'expense'), $companyId),
+                    : $this->lineTypeForm($claimId, (int)($row['id'] ?? 0), (string)($row['line_type'] ?? 'expense'), $companyId, $context),
                 export: static fn(array $row): string => ucfirst((string)($row['line_type'] ?? 'expense')),
                 cellClass: 'cell-fit'
             )
             ->column(
                 'charge_to',
                 'Charge To',
-                html: fn(array $row): string => $this->lineChargeToHtml($row, $nominals, $assetCategories, $claimId, $isPosted, $companyId),
+                html: fn(array $row): string => $this->lineChargeToHtml($row, $nominals, $assetCategories, $claimId, $isPosted, $companyId, $context),
                 export: static fn(array $row): string => (string)($row['line_type'] ?? 'expense') === 'asset'
                     ? (string)($row['asset_category_label'] ?? '')
                     : (string)($row['nominal_label'] ?? '')
@@ -311,13 +311,13 @@ final class _expense_claim_editorCard extends CardBaseFramework
             ->column(
                 'actions',
                 '',
-                html: fn(array $row): string => $isPosted ? '' : $this->deleteLineForm($claimId, (int)($row['id'] ?? 0), $companyId),
+                html: fn(array $row): string => $isPosted ? '' : $this->deleteLineForm($claimId, (int)($row['id'] ?? 0), $companyId, $context),
                 exportable: false,
                 cellClass: 'cell-fit'
             );
     }
 
-    private function lineTypeForm(int $claimId, int $lineId, string $selectedType, int $companyId): string
+    private function lineTypeForm(int $claimId, int $lineId, string $selectedType, int $companyId, array $context): string
     {
         $formId = 'expense-line-type-form-' . $lineId;
         $selectedType = $selectedType === 'asset' ? 'asset' : 'expense';
@@ -328,25 +328,26 @@ final class _expense_claim_editorCard extends CardBaseFramework
                 <input type="hidden" name="intent" value="update_line_type">
                 <input type="hidden" name="claim_id" value="' . $claimId . '">
                 <input type="hidden" name="line_id" value="' . $lineId . '">
+                ' . $this->linesTablePageHiddenInput($context) . '
                 <button class="segmented-option' . ($selectedType === 'expense' ? ' is-active' : '') . '" type="submit" name="line_type" value="expense">Expense</button>
                 <button class="segmented-option' . ($selectedType === 'asset' ? ' is-active' : '') . '" type="submit" name="line_type" value="asset">Asset</button>
             </form>';
     }
 
-    private function lineChargeToHtml(array $row, array $nominals, array $assetCategories, int $claimId, bool $isPosted, int $companyId): string
+    private function lineChargeToHtml(array $row, array $nominals, array $assetCategories, int $claimId, bool $isPosted, int $companyId, array $context): string
     {
         if ((string)($row['line_type'] ?? 'expense') === 'asset') {
             return $isPosted
                 ? $this->postedAssetChargeToHtml($row, $companyId)
-                : $this->lineAssetDetailsForm($row, $assetCategories, $claimId, $companyId);
+                : $this->lineAssetDetailsForm($row, $assetCategories, $claimId, $companyId, $context);
         }
 
         return $isPosted
             ? HelperFramework::escape((string)($row['nominal_label'] ?? ''))
-            : $this->lineNominalForm($nominals, $claimId, (int)($row['id'] ?? 0), (int)($row['nominal_account_id'] ?? 0), $companyId);
+            : $this->lineNominalForm($nominals, $claimId, (int)($row['id'] ?? 0), (int)($row['nominal_account_id'] ?? 0), $companyId, $context);
     }
 
-    private function lineNominalForm(array $nominals, int $claimId, int $lineId, int $selectedNominalId, int $companyId): string
+    private function lineNominalForm(array $nominals, int $claimId, int $lineId, int $selectedNominalId, int $companyId, array $context): string
     {
         $formId = 'expense-line-nominal-form-' . $lineId;
 
@@ -356,12 +357,13 @@ final class _expense_claim_editorCard extends CardBaseFramework
                 <input type="hidden" name="intent" value="update_line_nominal">
                 <input type="hidden" name="claim_id" value="' . $claimId . '">
                 <input type="hidden" name="line_id" value="' . $lineId . '">
+                ' . $this->linesTablePageHiddenInput($context) . '
                 <button class="js-expense-line-nominal-submit" type="submit" hidden>Autosave</button>
             </form>
             <select class="select" name="nominal_account_id" form="' . $formId . '" data-autosave-submit-target=".js-expense-line-nominal-submit">' . $this->nominalOptions($nominals, $selectedNominalId, 'Unassigned') . '</select>';
     }
 
-    private function lineAssetDetailsForm(array $row, array $assetCategories, int $claimId, int $companyId): string
+    private function lineAssetDetailsForm(array $row, array $assetCategories, int $claimId, int $companyId, array $context): string
     {
         $lineId = (int)($row['id'] ?? 0);
         $formId = 'expense-line-asset-form-' . $lineId;
@@ -375,6 +377,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
                 <input type="hidden" name="intent" value="save_line_asset_details">
                 <input type="hidden" name="claim_id" value="' . $claimId . '">
                 <input type="hidden" name="line_id" value="' . $lineId . '">
+                ' . $this->linesTablePageHiddenInput($context) . '
                 <button class="js-expense-line-asset-submit" type="submit" hidden>Autosave</button>
                 <div class="form-flex-flow">
                     <div class="form-row">
@@ -409,7 +412,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
         return HelperFramework::escape($label) . $assetLink;
     }
 
-    private function deleteLineForm(int $claimId, int $lineId, int $companyId): string
+    private function deleteLineForm(int $claimId, int $lineId, int $companyId, array $context): string
     {
         return '<form method="post" action="?page=expenses" data-ajax="true">
             <input type="hidden" name="card_action" value="Expense">
@@ -417,8 +420,14 @@ final class _expense_claim_editorCard extends CardBaseFramework
             <input type="hidden" name="intent" value="delete_line">
             <input type="hidden" name="claim_id" value="' . $claimId . '">
             <input type="hidden" name="line_id" value="' . $lineId . '">
+            ' . $this->linesTablePageHiddenInput($context) . '
             <button class="button button-inline danger" type="submit">Remove</button>
         </form>';
+    }
+
+    private function linesTablePageHiddenInput(array $context): string
+    {
+        return '<input type="hidden" name="' . HelperFramework::escape($this->paginationPageField(self::TABLE_LINES)) . '" value="' . $this->paginationPage($context, self::TABLE_LINES) . '">';
     }
 
     private function renderLineForm(array $claim, array $nominals, int $claimId, array $companySettings, int $companyId): string
@@ -464,13 +473,9 @@ final class _expense_claim_editorCard extends CardBaseFramework
         $paymentQuery = (string)($filters['payment_query'] ?? '');
         $paymentsPanel = $this->renderTablePanel(
             'Repayments',
-            $this->configuredPaymentsTable($payments, $claimId, $isPosted, $companyId, $dateFormat, $context)->render($context, $this->tableExportFields(['claim_id' => $claimId])),
+            $this->withoutEmptyActionRows($this->configuredPaymentsTable($payments, $claimId, $isPosted, $companyId, $dateFormat, $context)->render($context, $this->tableExportFields(['claim_id' => $claimId]))),
             'Link repayments from bank transactions in the month they were paid. The selected claim determines the claimant.'
         );
-
-        if ($isPosted) {
-            return $paymentsPanel;
-        }
 
         return $paymentsPanel . '
             <div class="panel-soft">

@@ -166,6 +166,66 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
         });
     });
 
+    $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'links repayment to posted claim without changing original claim journal', function () use ($harness, $instance): void {
+        expenseClaimServiceWithFixture(static function (array $fixture) use ($harness, $instance): void {
+            expenseClaimServiceInsertLine($fixture, (int)$fixture['claim_id'], 1, '2026-05-05', 'Materials', 94.99);
+
+            $posted = $instance->postClaim((int)$fixture['company_id'], (int)$fixture['claim_id'], [
+                'default_expense_nominal_id' => (int)$fixture['expense_nominal_id'],
+            ]);
+
+            $harness->assertSame(true, (bool)($posted['success'] ?? false));
+            $postedJournalId = (int)\InterfaceDB::fetchColumn(
+                'SELECT posted_journal_id FROM expense_claims WHERE id = :id',
+                ['id' => (int)$fixture['claim_id']]
+            );
+            $harness->assertTrue($postedJournalId > 0);
+
+            $transactionId = expenseClaimServiceInsertTransaction($fixture, -94.99, 'posted-claim-repayment');
+            $linked = $instance->linkPayment((int)$fixture['company_id'], (int)$fixture['claim_id'], [
+                'transaction_id' => $transactionId,
+                'default_expense_nominal_id' => (int)$fixture['expense_nominal_id'],
+                'default_bank_nominal_id' => (int)$fixture['bank_nominal_id'],
+            ]);
+
+            $harness->assertSame(true, (bool)($linked['success'] ?? false));
+            $harness->assertSame(true, (bool)(($linked['claim'] ?? [])['is_posted'] ?? false));
+            $harness->assertSame(1, (int)(($linked['claim'] ?? [])['payment_link_count'] ?? 0));
+            $harness->assertSame([0.00, 94.99, 94.99, 0.00], expenseClaimServiceClaimTotals((int)$fixture['claim_id']));
+            $harness->assertSame(94.99, (float)\InterfaceDB::fetchColumn(
+                'SELECT linked_amount FROM expense_claim_payment_links WHERE expense_claim_id = :claim_id AND transaction_id = :transaction_id',
+                ['claim_id' => (int)$fixture['claim_id'], 'transaction_id' => $transactionId]
+            ));
+
+            $harness->assertSame($postedJournalId, (int)\InterfaceDB::fetchColumn(
+                'SELECT posted_journal_id FROM expense_claims WHERE id = :id',
+                ['id' => (int)$fixture['claim_id']]
+            ));
+            $journalTotals = \InterfaceDB::fetchOne(
+                'SELECT COUNT(*) AS line_count,
+                        COALESCE(SUM(debit), 0) AS debit_total,
+                        COALESCE(SUM(credit), 0) AS credit_total
+                 FROM journal_lines
+                 WHERE journal_id = :journal_id',
+                ['journal_id' => $postedJournalId]
+            );
+            $harness->assertSame(2, (int)($journalTotals['line_count'] ?? 0));
+            $harness->assertSame(94.99, (float)($journalTotals['debit_total'] ?? 0));
+            $harness->assertSame(94.99, (float)($journalTotals['credit_total'] ?? 0));
+
+            $unlinkRejected = $instance->unlinkPayment(
+                (int)$fixture['company_id'],
+                (int)$fixture['claim_id'],
+                (int)\InterfaceDB::fetchColumn(
+                    'SELECT id FROM expense_claim_payment_links WHERE expense_claim_id = :claim_id AND transaction_id = :transaction_id',
+                    ['claim_id' => (int)$fixture['claim_id'], 'transaction_id' => $transactionId]
+                )
+            );
+            $harness->assertSame(false, (bool)($unlinkRejected['success'] ?? true));
+            $harness->assertSame('Posted claims are locked.', (string)(($unlinkRejected['errors'] ?? [])[0] ?? ''));
+        });
+    });
+
     $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'recalculates claimant series in date order including payments and posted later claims', function () use ($harness, $instance): void {
         expenseClaimServiceWithFixture(static function (array $fixture) use ($harness, $instance): void {
             $mayClaimId = (int)$fixture['claim_id'];

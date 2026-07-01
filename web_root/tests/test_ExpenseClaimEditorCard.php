@@ -11,6 +11,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 $harness = new GeneratedServiceClassTestHarness();
 
+AppConfigurationStore::config(true);
+
 $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassTestHarness $harness, object $instance): void {
     if (!$instance instanceof _expense_claim_editorCard) {
         $harness->skip('Expense claim editor card did not instantiate.');
@@ -53,7 +55,8 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $harness->assertTrue($submitPosition < $builtInActionRowPosition);
         $harness->assertTrue($builtInActionRowPosition < $condensedPosition);
         $harness->assertTrue($condensedPosition < $tablePosition);
-        $harness->assertSame(false, str_contains($html, '<div class="actions-row"></div>'));
+        $expenseLinesToolbarHtml = substr($html, (int)$toolbarPosition, (int)$tablePosition - (int)$toolbarPosition);
+        $harness->assertSame(0, preg_match('/<div class="actions-row">\s*<\/div>/', $expenseLinesToolbarHtml));
     });
 
     $harness->check(_expense_claim_editorCard::class, 'shows draft line total in claim summary', function () use ($harness, $instance): void {
@@ -118,8 +121,47 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $harness->assertTrue(str_contains($html, 'XLSX'));
         $harness->assertTrue(str_contains($html, 'TSV'));
         $harness->assertTrue(str_contains($html, 'ASCII'));
-        $harness->assertTrue(str_contains($html, 'Expense lines 1-20 of 25'));
+        $harness->assertTrue(str_contains($html, 'Expense Lines 1-20 of 25'));
         $harness->assertTrue(str_contains($html, 'name="expense_claim_editor_expense_claim_editor_lines"'));
+    });
+
+    $harness->check(_expense_claim_editorCard::class, 'preserves expense lines page in row ajax forms', function () use ($harness, $instance): void {
+        $context = expenseClaimEditorCardContext();
+        $context['page']['expense_claim_editor_expense_claim_editor_lines'] = 2;
+
+        for ($i = 2; $i <= 25; $i++) {
+            $line = [
+                'id' => 10 + $i,
+                'expense_date' => '2022-10-' . str_pad((string)min($i, 28), 2, '0', STR_PAD_LEFT),
+                'description' => 'Line ' . $i,
+                'line_type' => 'expense',
+                'nominal_account_id' => null,
+                'amount' => (float)$i,
+            ];
+
+            if ($i === 21) {
+                $line['line_type'] = 'asset';
+                $line['asset_category'] = 'tools_equipment';
+                $line['asset_category_label'] = 'Tools & Equipment';
+                $line['asset_useful_life_years'] = 3;
+                $line['asset_depreciation_method'] = 'straight_line';
+                $line['asset_residual_value'] = 0.0;
+            }
+
+            $context['services']['expensesPageData']['selected_claim']['lines'][] = $line;
+        }
+
+        $html = $instance->render($context);
+        $hiddenPage = '<input type="hidden" name="expense_claim_editor_expense_claim_editor_lines" value="2">';
+
+        $harness->assertTrue(str_contains($html, 'Expense Lines 21-25 of 25'));
+        $harness->assertTrue(str_contains($html, 'id="expense-line-asset-form-31"'));
+        $harness->assertTrue(str_contains($html, 'id="expense-line-nominal-form-32"'));
+        $harness->assertTrue(str_contains($html, $hiddenPage));
+        $harness->assertSame(1, preg_match('/id="expense-line-type-form-31"[\s\S]*?name="expense_claim_editor_expense_claim_editor_lines" value="2"[\s\S]*?<\/form>/', $html));
+        $harness->assertSame(1, preg_match('/id="expense-line-asset-form-31"[\s\S]*?name="expense_claim_editor_expense_claim_editor_lines" value="2"[\s\S]*?<\/form>/', $html));
+        $harness->assertSame(1, preg_match('/id="expense-line-nominal-form-32"[\s\S]*?name="expense_claim_editor_expense_claim_editor_lines" value="2"[\s\S]*?<\/form>/', $html));
+        $harness->assertSame(1, preg_match('/name="intent" value="delete_line"[\s\S]*?name="line_id" value="32"[\s\S]*?name="expense_claim_editor_expense_claim_editor_lines" value="2"[\s\S]*?>Remove<\/button>/', $html));
     });
 
     $harness->check(_expense_claim_editorCard::class, 'hides receipt reference from editor UI', function () use ($harness, $instance): void {
@@ -215,11 +257,32 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $harness->assertTrue(strpos($html, '<div class="card-toolbar">') < strpos($html, 'id="expense-payment-query"'));
         $harness->assertSame(false, str_contains($html, '<div class="mini-field">
                 <label for="expense-payment-query">Search repayments</label>'));
-        $harness->assertSame(0, preg_match('/<div class="actions-row">\s*<\/div>/', $html));
+        $repaymentsPosition = strpos($html, '<h4 class="card-title">Repayments</h4>');
+        $candidateRepaymentsPosition = strpos($html, '<h4 class="card-title">Candidate Repayments</h4>');
+        $repaymentsHtml = substr($html, (int)$repaymentsPosition, (int)$candidateRepaymentsPosition - (int)$repaymentsPosition);
+        $harness->assertSame(0, preg_match('/<div class="actions-row">\s*<\/div>/', $repaymentsHtml));
         $harness->assertTrue(str_contains($html, 'name="default_expense_nominal_id" value="5000"'));
         $harness->assertSame(false, str_contains($html, 'name="director_loan_nominal_id"'));
         $harness->assertSame(false, str_contains($html, 'name="linked_amount" inputmode="decimal"'));
         $harness->assertTrue(str_contains($html, 'The selected claim determines the claimant.'));
+    });
+
+    $harness->check(_expense_claim_editorCard::class, 'renders repayment linking for posted claims while keeping claim lines locked', function () use ($harness, $instance): void {
+        $context = expenseClaimEditorCardContext();
+        $context['services']['expensesPageData']['selected_claim']['status_label'] = 'Posted';
+        $context['services']['expensesPageData']['selected_claim']['is_posted'] = true;
+
+        $html = $instance->render($context);
+
+        $harness->assertTrue(str_contains($html, 'Posted claim lines are locked. Repayments can still be linked from bank transactions.'));
+        $harness->assertTrue(str_contains($html, '<h4 class="card-title">Candidate Repayments</h4>'));
+        $harness->assertTrue(str_contains($html, 'name="payment_query"'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="link_payment"'));
+        $harness->assertSame(false, str_contains($html, 'name="intent" value="unlink_payment"'));
+        $harness->assertSame(false, str_contains($html, 'name="intent" value="bulk_save_lines"'));
+        $harness->assertSame(false, str_contains($html, 'Claim Lines can be pasted below'));
+        $harness->assertSame(false, str_contains($html, '>Submit Claim</button>'));
+        $harness->assertSame(false, str_contains($html, '>Add Line</button>'));
     });
 });
 

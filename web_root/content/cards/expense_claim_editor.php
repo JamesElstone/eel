@@ -92,46 +92,55 @@ final class _expense_claim_editorCard extends CardBaseFramework
         $filters = (array)($data['filters'] ?? []);
 
         if ($claim === []) {
-            return '<section class="panel-soft">
-                <div class="status-head"><h3 class="card-title">Claim Editor</h3></div>
-                <div class="helper">Create or open a claim to start capturing lines and repayments.</div>
-            </section>';
+            return '<div class="helper">Create or open a claim to start capturing lines and repayments.</div>';
         }
 
         $claimId = (int)($claim['id'] ?? 0);
         $isPosted = !empty($claim['is_posted']);
         $dateFormat = (string)($companySettings['date_format'] ?? 'd/m/Y');
         $bulkPreview = $this->bulkPreviewFromContext($context, $claimId, $dateFormat);
+        $claimReference = (string)($claim['claim_reference_code'] ?? '');
+        $claimantName = (string)($claim['claimant_name'] ?? '');
+        $claimMonthLabel = $this->monthLabel((int)($claim['claim_month'] ?? 0), (int)($claim['claim_year'] ?? 0));
 
-        return '<section class="panel-soft">
-            <div class="status-head">
-                <div>
-                    <h3 class="card-title">Claim Editor</h3>
-                    <div class="helper">' . HelperFramework::escape((string)($claim['claim_reference_code'] ?? '')) . ' · ' . HelperFramework::escape((string)($claim['claimant_name'] ?? '')) . ' · ' . HelperFramework::escape($this->monthLabel((int)($claim['claim_month'] ?? 0), (int)($claim['claim_year'] ?? 0))) . '</div>
-                </div>
-                <span class="badge ' . ($isPosted ? 'success' : 'warning') . '">' . HelperFramework::escape((string)($claim['status_label'] ?? 'Draft')) . '</span>
-            </div>
-            <div class="summary-grid four">
-                <div class="summary-card"><div class="summary-label">A brought forward</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($claim['control_totals']['A'] ?? 0)) . '</div></div>
-                <div class="summary-card"><div class="summary-label">B claimed</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($claim['control_totals']['B'] ?? 0)) . '</div></div>
-                <div class="summary-card"><div class="summary-label">C paid</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($claim['control_totals']['C'] ?? 0)) . '</div></div>
-                <div class="summary-card"><div class="summary-label">D carried forward</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($claim['control_totals']['D'] ?? 0)) . '</div></div>
+        return '<div class="summary-grid expense-claim-summary-grid">
+                <div class="summary-card"><div class="summary-label">Claim Reference</div><div class="summary-value">' . HelperFramework::escape($claimReference) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Claimant</div><div class="summary-value">' . HelperFramework::escape($claimantName) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Claim Month</div><div class="summary-value">' . HelperFramework::escape($claimMonthLabel) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Brought Forwards (A)</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($claim['control_totals']['A'] ?? 0)) . '</div></div>
+                <div class="summary-card"><div class="summary-label">In this claim (B)</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($claim['control_totals']['B'] ?? 0)) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Paid in this period (C)</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($claim['control_totals']['C'] ?? 0)) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Carried Forward (D=A+B-C)</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($claim['control_totals']['D'] ?? 0)) . '</div></div>
             </div>
             ' . ($isPosted ? '' : $this->renderBulkPastePanel($claimId, $companyId, $dateFormat, $bulkPreview, $context)) . '
-            ' . $this->configuredLinesTable((array)($claim['lines'] ?? []), $nominals, $claimId, $isPosted, $companyId, $dateFormat, $context)->render($context, $this->tableExportFields(['claim_id' => $claimId])) . '
             ' . ($isPosted ? '<div class="helper">Posted claims are locked.</div>' : $this->renderLineForm($claim, $nominals, $claimId, $companySettings, $companyId)) . '
+            ' . $this->renderTablePanel(
+                'Expense Lines',
+                $this->configuredLinesTable((array)($claim['lines'] ?? []), $nominals, $claimId, $isPosted, $companyId, $dateFormat, $context)->render($context, $this->tableExportFields(['claim_id' => $claimId]))
+            ) . '
             ' . $this->renderPaymentsPanel((array)($claim['payment_links'] ?? []), $paymentCandidates, $companySettings, $filters, $claimId, $isPosted, $companyId, $dateFormat, $context) . '
-        </section>';
+        ';
+    }
+
+    private function renderTablePanel(string $title, string $tableHtml, string $helper = ''): string
+    {
+        return '<div class="panel-soft">
+            <div class="status-head"><h4 class="card-title">' . HelperFramework::escape($title) . '</h4></div>
+            ' . ($helper === '' ? '' : '<div class="helper">' . HelperFramework::escape($helper) . '</div>') . '
+            ' . $tableHtml . '
+        </div>';
     }
 
     private function renderBulkPastePanel(int $claimId, int $companyId, string $dateFormat, array $preview, array $context): string
     {
         $sourceText = (string)($preview['source_text'] ?? '');
         $rows = (array)($preview['rows'] ?? []);
-        $previewHtml = '';
+        $previewPanel = '';
 
         if ($rows !== []) {
-            $previewHtml = '<div class="summary-grid">
+            $previewPanel = '<div class="panel-soft">
+                <div class="status-head"><h4 class="card-title">Import Lines</h4></div>
+                <div class="summary-grid">
                 <div class="summary-card"><div class="summary-label">Preview rows</div><div class="summary-value">' . count($rows) . '</div></div>
                 <div class="summary-card"><div class="summary-label">Preview total</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($preview['total'] ?? 0)) . '</div></div>
             </div>
@@ -148,12 +157,11 @@ final class _expense_claim_editorCard extends CardBaseFramework
                 <input type="hidden" name="date_format" value="' . HelperFramework::escape($dateFormat) . '">
                 <textarea name="pasted_lines" hidden>' . HelperFramework::escape($sourceText) . '</textarea>
                 <div class="actions-row"><button class="button primary" type="submit">Import previewed lines</button></div>
-            </form>';
+            </form>
+        </div>';
         }
 
         return '<div class="panel-soft">
-            <div class="status-head"><h4 class="card-title">Paste claim lines</h4></div>
-            <div class="helper">Paste tab-delimited rows in this column order: DATE, DESCRIPTION, AMOUNT CLAIMED.</div>
             <form method="post" action="?page=expenses" data-ajax="true">
                 <input type="hidden" name="card_action" value="Expense">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -161,13 +169,16 @@ final class _expense_claim_editorCard extends CardBaseFramework
                 <input type="hidden" name="claim_id" value="' . $claimId . '">
                 <input type="hidden" name="date_format" value="' . HelperFramework::escape($dateFormat) . '">
                 <div class="form-row">
-                    <label for="expense-bulk-paste-' . $claimId . '">Claim lines</label>
-                    <textarea class="input" id="expense-bulk-paste-' . $claimId . '" name="pasted_lines" rows="7">' . HelperFramework::escape($sourceText) . '</textarea>
+                    <h4 class="card-title"><label for="expense-bulk-paste-' . $claimId . '">Claims can be pasted below</label></h4>
+                    <div class="helper">The expected tab-delimited format (which can be copied from a spreadsheet) is: &quot;DATE&quot;, &quot;DESCRIPTION&quot;, &quot;AMOUNT CLAIMED&quot;</div>
+                    <div class="expense-bulk-paste-controls">
+                        <textarea class="input" id="expense-bulk-paste-' . $claimId . '" name="pasted_lines" rows="2">' . HelperFramework::escape($sourceText) . '</textarea>
+                        <button class="button primary" type="submit">Import Lines</button>
+                    </div>
                 </div>
-                <div class="actions-row"><button class="button" type="submit">Preview lines</button></div>
             </form>
-            ' . $previewHtml . '
-        </div>';
+        </div>
+        ' . $previewPanel;
     }
 
     private function configuredPreviewTable(array $rows, string $dateFormat, string $sourceText, int $claimId, array $context): TableFramework
@@ -179,7 +190,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
             ->visibleRows((array)$pagination['items'])
             ->pagination(
                 $pagination,
-                'Preview lines',
+                'Import Lines',
                 $this->paginationPageField(self::TABLE_PREVIEW),
                 $this->tablePaginationFields([
                     'claim_id' => $claimId,
@@ -216,7 +227,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
             ->visibleRows((array)$pagination['items'])
             ->pagination(
                 $pagination,
-                'Expense lines',
+                'Expense Lines',
                 $this->paginationPageField(self::TABLE_LINES),
                 $this->tablePaginationFields(['claim_id' => $claimId])
             );
@@ -294,43 +305,56 @@ final class _expense_claim_editorCard extends CardBaseFramework
                 <input type="hidden" name="claim_id" value="' . $claimId . '">
                 <input type="hidden" name="default_expense_nominal_id" value="' . $defaultExpenseNominalId . '">
             </form>
-            <div class="form-grid">
-                <div class="form-row">
-                    <label for="expense-line-date">Date</label>
-                    <input class="input" id="expense-line-date" name="expense_date" form="' . $formId . '" type="date" value="' . HelperFramework::escape((string)($claim['period_end'] ?? '')) . '">
-                </div>
-                <div class="form-row">
-                    <label for="expense-line-description">Description</label>
-                    <input class="input" id="expense-line-description" name="description" form="' . $formId . '" type="text">
-                </div>
-                <div class="form-row">
-                    <label for="expense-line-amount">Amount</label>
-                    <input class="input" id="expense-line-amount" name="amount" form="' . $formId . '" inputmode="decimal">
-                </div>
-                <div class="form-row">
-                    <label for="expense-line-nominal">Nominal</label>
-                    <select class="select" id="expense-line-nominal" name="nominal_account_id" form="' . $formId . '">' . $this->nominalOptions($nominals, $defaultExpenseNominalId) . '</select>
-                </div>
-                <div class="form-row">
-                    <label for="expense-line-notes">Notes</label>
-                    <input class="input" id="expense-line-notes" name="notes" form="' . $formId . '" type="text">
+            <div class="panel-soft">
+                <div class="status-head"><h4 class="card-title">Add New Expense Line</h4></div>
+                <div class="form-grid expense-line-form-grid">
+                    <div class="form-row">
+                        <label for="expense-line-date">Date</label>
+                        <input class="input" id="expense-line-date" name="expense_date" form="' . $formId . '" type="date" value="' . HelperFramework::escape((string)($claim['period_end'] ?? '')) . '">
+                    </div>
+                    <div class="form-row">
+                        <label for="expense-line-description">Description</label>
+                        <input class="input" id="expense-line-description" name="description" form="' . $formId . '" type="text">
+                    </div>
+                    <div class="form-row">
+                        <label for="expense-line-amount">Amount</label>
+                        <input class="input" id="expense-line-amount" name="amount" form="' . $formId . '" inputmode="decimal">
+                    </div>
+                    <div class="form-row">
+                        <label for="expense-line-nominal">Nominal</label>
+                        <select class="select" id="expense-line-nominal" name="nominal_account_id" form="' . $formId . '">' . $this->nominalOptions($nominals, $defaultExpenseNominalId) . '</select>
+                    </div>
+                    <div class="form-row">
+                        <label for="expense-line-notes">Notes</label>
+                        <input class="input" id="expense-line-notes" name="notes" form="' . $formId . '" type="text">
+                    </div>
+                    <div class="form-row expense-line-form-actions">
+                        <button class="button primary" type="submit" form="' . $formId . '">Add Line</button>
+                    </div>
                 </div>
             </div>
-            <div class="actions-row">
-                <button class="button primary" type="submit" form="' . $formId . '">Add line</button>
-            </div>';
+            ';
     }
 
     private function renderPaymentsPanel(array $payments, array $paymentCandidates, array $companySettings, array $filters, int $claimId, bool $isPosted, int $companyId, string $dateFormat, array $context): string
     {
         $paymentQuery = (string)($filters['payment_query'] ?? '');
+        $paymentsPanel = $this->renderTablePanel(
+            'Repayments',
+            $this->configuredPaymentsTable($payments, $claimId, $isPosted, $companyId, $dateFormat, $context)->render($context, $this->tableExportFields(['claim_id' => $claimId])),
+            'Link repayments from bank transactions in the month they were paid. The selected claim determines the claimant.'
+        );
 
-        return '<div class="panel-soft">
-            <div class="status-head"><h4 class="card-title">Repayments</h4></div>
-            <div class="helper">Link repayments from bank transactions in the month they were paid. The selected claim determines the claimant.</div>
-            ' . $this->configuredPaymentsTable($payments, $claimId, $isPosted, $companyId, $dateFormat, $context)->render($context, $this->tableExportFields(['claim_id' => $claimId])) . '
-            ' . ($isPosted ? '' : $this->renderPaymentCandidateSearch($paymentQuery, $claimId, $companyId) . $this->configuredPaymentCandidatesTable($paymentCandidates, $companySettings, $claimId, $companyId, $dateFormat, $context)->render($context, $this->tableExportFields(['claim_id' => $claimId, 'payment_query' => $paymentQuery]))) . '
-        </div>';
+        if ($isPosted) {
+            return $paymentsPanel;
+        }
+
+        return $paymentsPanel . '
+            <div class="panel-soft">
+                <div class="status-head"><h4 class="card-title">Candidate Repayments</h4></div>
+                ' . $this->renderPaymentCandidateSearch($paymentQuery, $claimId, $companyId) . '
+                ' . $this->configuredPaymentCandidatesTable($paymentCandidates, $companySettings, $claimId, $companyId, $dateFormat, $context)->render($context, $this->tableExportFields(['claim_id' => $claimId, 'payment_query' => $paymentQuery])) . '
+            </div>';
     }
 
     private function configuredPaymentsTable(array $payments, int $claimId, bool $isPosted, int $companyId, string $dateFormat, array $context): TableFramework
@@ -410,7 +434,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
             ->visibleRows((array)$pagination['items'])
             ->pagination(
                 $pagination,
-                'Candidate repayments',
+                'Candidate Repayments',
                 $this->paginationPageField(self::TABLE_PAYMENT_CANDIDATES),
                 $this->tablePaginationFields(['claim_id' => $claimId])
             );
@@ -464,8 +488,8 @@ final class _expense_claim_editorCard extends CardBaseFramework
             <input type="hidden" name="transaction_id" value="' . (int)($candidate['id'] ?? 0) . '">
             <input type="hidden" name="director_loan_nominal_id" value="' . (int)($companySettings['director_loan_nominal_id'] ?? 0) . '">
             <input type="hidden" name="default_bank_nominal_id" value="' . (int)($companySettings['default_bank_nominal_id'] ?? 0) . '">
-            <div class="actions-row">
-                <input class="input" name="linked_amount" inputmode="decimal" value="' . HelperFramework::escape(number_format($suggestedAmount, 2, '.', '')) . '"' . ($canLink ? '' : ' disabled') . '>
+            <div class="actions-row expense-payment-link-actions">
+                <input class="input expense-payment-link-input" name="linked_amount" inputmode="decimal" value="' . HelperFramework::escape(number_format($suggestedAmount, 2, '.', '')) . '"' . ($canLink ? '' : ' disabled') . '>
                 <button class="button button-inline primary" type="submit"' . ($canLink ? '' : ' disabled') . '>' . ($currentLinkAmount > 0 ? 'Update' : 'Link') . '</button>
             </div>
         </form>';

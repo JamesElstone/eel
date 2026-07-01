@@ -10,6 +10,7 @@ declare(strict_types=1);
 final class _expense_claimantsCard extends CardBaseFramework
 {
     private const PAGE_SIZE = 10;
+    private const STATUS_FILTER_FIELD = 'expense_claimants_status';
 
     public function key(): string
     {
@@ -33,7 +34,7 @@ final class _expense_claimantsCard extends CardBaseFramework
 
     public function title(): string
     {
-        return 'Expense Claimants';
+        return 'Existing Claimants';
     }
 
     public function handle(
@@ -43,6 +44,10 @@ final class _expense_claimantsCard extends CardBaseFramework
         ActionResultFramework $actionResult
     ): array {
         $pageContext = parent::handle($request, $services, $pageContext, $actionResult);
+        $pageContext[$this->key()]['status_filter'] = $this->normaliseStatusFilter((string)$request->input(
+            self::STATUS_FILTER_FIELD,
+            (string)(($pageContext[$this->key()] ?? [])['status_filter'] ?? 'all')
+        ));
 
         return $this->applyTableSortContext($request, $pageContext, $this->key());
     }
@@ -59,50 +64,21 @@ final class _expense_claimantsCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $company = (array)($context['company'] ?? []);
-        $companyId = (int)($company['id'] ?? 0);
-        $hasCompany = $companyId > 0;
-        $addDisabled = $hasCompany ? '' : ' disabled';
-        $addHelper = $hasCompany
-            ? ''
-            : 'Select or add a company before configuring expense claimants.';
-        $addHelperHtml = $addHelper === ''
-            ? ''
-            : '<div class="helper">' . HelperFramework::escape($addHelper) . '</div>';
-
-        return '<section class="panel-soft">
-            <div class="status-head">
-                <h3 class="card-title">Claimants</h3>
-            </div>
-            ' . $addHelperHtml . '
-            ' . $this->configuredTable($context)->render($context, [
+        return $this->configuredTable($context)->render($context, [
                 'cards[]' => (array)($context['page']['page_cards'] ?? []),
-            ]) . '
-        </section>
-        <section class="panel-soft">
-            <div class="status-head">
-                <h3 class="card-title">New Claimants</h3>
-            </div>
-            <form class="expense-claimant-add-form" method="post" action="?page=expenses" data-ajax="true">
-                <input type="hidden" name="card_action" value="Expense">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="intent" value="add_claimant">
-                <div class="mini-field">
-                    <label for="expense-new-claimant">New claimant</label>
-                    <input class="input" id="expense-new-claimant" name="claimant_name" type="text" placeholder="Claimant\'s Name"' . $addDisabled . '>
-                </div>
-                <button class="button primary" type="submit"' . $addDisabled . '>Add Claimant</button>
-            </form>
-        </section>';
+                self::STATUS_FILTER_FIELD => $this->selectedStatusFilter($context),
+            ]);
     }
 
     private function configuredTable(array $context): TableFramework
     {
+        $statusFilter = $this->selectedStatusFilter($context);
         $hiddenFields = [
             'page' => (string)($context['page']['page_id'] ?? 'expenses'),
             '_pagination' => '1',
             '_invalidate_fact' => $this->tableInvalidationFact(),
             'cards[]' => [$this->key()],
+            self::STATUS_FILTER_FIELD => $statusFilter,
         ];
         $table = $this->configureTableSorting($this->table($context), $context, $hiddenFields);
         $pagination = HelperFramework::paginateArray($table->sortedRows(), $this->paginationPage($context), self::PAGE_SIZE);
@@ -111,9 +87,21 @@ final class _expense_claimantsCard extends CardBaseFramework
             ->visibleRows((array)$pagination['items'])
             ->pagination(
                 $pagination,
-                'Expense claimants',
+                'Expense Claimants',
                 $this->paginationPageField(),
                 $hiddenFields
+            )
+            ->filterSelect(
+                self::STATUS_FILTER_FIELD,
+                'Show',
+                $this->statusFilterOptions(),
+                $statusFilter,
+                [
+                    'page' => (string)($context['page']['page_id'] ?? 'expenses'),
+                    '_pagination' => '1',
+                    '_invalidate_fact' => $this->tableInvalidationFact(),
+                    'cards[]' => [$this->key()],
+                ]
             );
     }
 
@@ -143,10 +131,19 @@ final class _expense_claimantsCard extends CardBaseFramework
     private function rows(array $context): array
     {
         $data = (array)($context['services']['expensesPageData'] ?? []);
-
-        return array_values(array_filter(
+        $statusFilter = $this->selectedStatusFilter($context);
+        $claimants = array_values(array_filter(
             (array)($data['claimants'] ?? []),
             static fn(mixed $claimant): bool => is_array($claimant)
+        ));
+
+        if ($statusFilter === 'all') {
+            return $claimants;
+        }
+
+        return array_values(array_filter(
+            $claimants,
+            fn(array $claimant): bool => $this->isActive($claimant) === ($statusFilter === 'active')
         ));
     }
 
@@ -190,6 +187,27 @@ final class _expense_claimantsCard extends CardBaseFramework
     private function hasCompany(array $context): bool
     {
         return (int)(($context['company'] ?? [])['id'] ?? 0) > 0;
+    }
+
+    private function selectedStatusFilter(array $context): string
+    {
+        return $this->normaliseStatusFilter((string)(($context[$this->key()] ?? [])['status_filter'] ?? 'all'));
+    }
+
+    private function normaliseStatusFilter(string $status): string
+    {
+        $status = strtolower(trim($status));
+
+        return array_key_exists($status, $this->statusFilterOptions()) ? $status : 'all';
+    }
+
+    private function statusFilterOptions(): array
+    {
+        return [
+            'all' => 'All',
+            'active' => 'Active',
+            'inactive' => 'Inactive',
+        ];
     }
 
     private function tableInvalidationFact(): string

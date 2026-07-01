@@ -60,7 +60,7 @@ final class _companies_stored_detailCard extends CardBaseFramework
             ? 'Not stored yet'
             : (string)(int)$activeDirectorCount;
         $officersLastChecked = (string)($serviceResponse['companies_house_officers_last_checked_at'] ?? '');
-        $officersJson = $this->prettyJson((string)($serviceResponse['companies_house_officers_json'] ?? ''));
+        $directorNames = $this->directorNames((string)($serviceResponse['companies_house_officers_json'] ?? ''));
 
         return '
             <div class="form-grid">
@@ -106,7 +106,7 @@ final class _companies_stored_detailCard extends CardBaseFramework
                         <tr><td scope="row">Registered office in dispute</th><td>' . HelperFramework::escape($this->companiesHouseFlagLabel($serviceResponse['registered_office_is_in_dispute'] ?? null)) . '</td></tr>
                         <tr><td scope="row">Undeliverable registered office</th><td>' . HelperFramework::escape($this->companiesHouseFlagLabel($serviceResponse['undeliverable_registered_office_address'] ?? null)) . '</td></tr>
                         <tr><td scope="row">Has super secure PSCs</th><td>' . HelperFramework::escape($this->companiesHouseFlagLabel($serviceResponse['has_super_secure_pscs'] ?? null)) . '</td></tr>
-                        <tr><td scope="row">Officers API response</td><td><textarea class="input" rows="10" readonly>' . HelperFramework::escape($officersJson !== '' ? $officersJson : 'Not stored yet') . '</textarea></td></tr>
+                        <tr><td scope="row">Director names</td><td>' . HelperFramework::escape($directorNames !== '' ? $directorNames : 'Not stored yet') . '</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -142,7 +142,7 @@ final class _companies_stored_detailCard extends CardBaseFramework
         return (int)$value === 1 ? 'Yes' : 'No';
     }
 
-    private function prettyJson(string $json): string
+    private function directorNames(string $json): string
     {
         $json = trim($json);
         if ($json === '') {
@@ -151,10 +151,28 @@ final class _companies_stored_detailCard extends CardBaseFramework
 
         $decoded = json_decode($json, true);
         if (!is_array($decoded)) {
-            return $json;
+            return '';
         }
 
-        $pretty = json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-        return $pretty === false ? $json : $pretty;
+        $names = [];
+        foreach ((array)($decoded['items'] ?? []) as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            if (
+                strtolower(trim((string)($item['officer_role'] ?? ''))) !== 'director'
+                || trim((string)($item['resigned_on'] ?? '')) !== ''
+            ) {
+                continue;
+            }
+
+            $name = trim((string)($item['name'] ?? ''));
+            if ($name !== '') {
+                $names[] = $name;
+            }
+        }
+
+        return implode(', ', array_values(array_unique($names)));
     }
 }

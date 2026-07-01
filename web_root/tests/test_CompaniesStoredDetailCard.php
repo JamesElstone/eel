@@ -26,16 +26,20 @@ $harness->run(_companies_stored_detailCard::class, static function (GeneratedSer
                     'active_director_count' => 1,
                     'items' => [
                         ['officer_role' => 'director', 'name' => 'Example Director'],
+                        ['officer_role' => 'director', 'name' => 'Former Director', 'resigned_on' => '2025-01-01'],
+                        ['officer_role' => 'secretary', 'name' => 'Example Secretary'],
                     ],
                 ], JSON_UNESCAPED_SLASHES),
             ],
         ],
     ]);
 
-    $harness->check(_companies_stored_detailCard::class, 'renders stored director count and officers payload', static function () use ($harness, $html): void {
+    $harness->check(_companies_stored_detailCard::class, 'renders stored director count and active director names', static function () use ($harness, $html): void {
         $harness->assertTrue(str_contains($html, 'Active directors'));
         $harness->assertTrue(str_contains($html, 'value="1" readonly'));
-        $harness->assertTrue(str_contains($html, 'Officers API response'));
+        $harness->assertTrue(str_contains($html, 'Director names'));
         $harness->assertTrue(str_contains($html, 'Example Director'));
+        $harness->assertSame(false, str_contains($html, 'Former Director'));
+        $harness->assertSame(false, str_contains($html, 'Example Secretary'));
     });
 });

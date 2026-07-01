@@ -74,7 +74,6 @@ final class _expenses_stateCard extends CardBaseFramework
         int $companyId,
         int $companyAccountingPeriodId
     ): string {
-        $searchFormId = 'expense-search-form';
         $query = (string)($filters['query'] ?? '');
         $status = (string)($filters['status'] ?? 'all');
         $heatmapClaimantId = $this->selectedHeatmapClaimantId($claimants, (int)($filters['heatmap_claimant_id'] ?? 0));
@@ -86,15 +85,6 @@ final class _expenses_stateCard extends CardBaseFramework
 
         return '<div class="expense-claims-stack">
         <section class="panel-soft">
-            <form id="' . $searchFormId . '" method="get" action="?page=expenses" data-ajax="true">
-                <input type="hidden" name="page" value="expenses">
-                <input type="hidden" name="card_action" value="Expense">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="intent" value="filter_claims">
-                <input type="hidden" name="expense_status" value="' . HelperFramework::escape($status) . '">
-                <input type="hidden" name="expense_heatmap_claimant_id" value="' . $heatmapClaimantId . '">
-                <input type="hidden" name="expense_heatmap_date" value="' . HelperFramework::escape($heatmapDate) . '">
-            </form>
             ' . $this->renderClaimHeatmap($heatmapFormId, $claimHeatmapClaims, $claimants, $accountingPeriods, $heatmapClaimantId, $heatmapPeriod, $heatmapDate, $query, $status, $companyId) . '
             ' . $this->configuredClaimsTable($context)->render($context, array_merge(
                 $this->claimsTableHiddenFields($context, $filters, $companyId),
@@ -224,12 +214,26 @@ final class _expenses_stateCard extends CardBaseFramework
             . $this->statusFilterToolbarForm($context, $filters, $companyId, $selectedClaimantId)
             . '</div>
             <div class="actions-row">
-                <div class="mini-field">
-                    <input class="input" id="expense-search-query" name="expense_query" form="expense-search-form" type="search" value="' . HelperFramework::escape((string)($filters['query'] ?? '')) . '" placeholder="EXP-...">
-                </div>
-                <button class="button primary" type="submit" form="expense-search-form">Search</button>
+                ' . $this->claimsTableSearchToolbarForm($context, $filters, $companyId, $selectedClaimantId) . '
             </div>
             <div class="actions-row">';
+    }
+
+    private function claimsTableSearchToolbarForm(array $context, array $filters, int $companyId, int $selectedClaimantId): string
+    {
+        return '<form id="expense-search-form" method="get" action="?page=expenses" data-ajax="true" class="toolbar">
+                <input type="hidden" name="page" value="' . HelperFramework::escape((string)($context['page']['page_id'] ?? 'expenses')) . '">
+                <input type="hidden" name="card_action" value="Expense">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="intent" value="filter_claims">
+                <input type="hidden" name="expense_status" value="' . HelperFramework::escape((string)($filters['status'] ?? 'all')) . '">
+                <input type="hidden" name="expense_heatmap_claimant_id" value="' . $selectedClaimantId . '">
+                <input type="hidden" name="expense_heatmap_date" value="' . HelperFramework::escape((string)($filters['heatmap_date'] ?? '')) . '">
+                <div class="mini-field">
+                    <input class="input" id="expense-search-query" name="expense_query" type="search" value="' . HelperFramework::escape((string)($filters['query'] ?? '')) . '" placeholder="EXP-...">
+                </div>
+                <button class="button primary" type="submit">Search</button>
+            </form>';
     }
 
     private function statusFilterToolbarForm(array $context, array $filters, int $companyId, int $selectedClaimantId): string

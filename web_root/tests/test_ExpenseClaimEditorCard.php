@@ -35,18 +35,25 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $expenseLinesPosition = strpos($html, '<h4 class="card-title">Expense Lines</h4>');
         $toolbarPosition = strpos($html, '<div class="card-toolbar">', (int)$expenseLinesPosition);
         $actionRowPosition = strpos($html, '<div class="actions-row">', (int)$toolbarPosition);
+        $builtInActionRowPosition = strpos($html, '<div class="actions-row">', (int)$actionRowPosition + 1);
         $submitPosition = strpos($html, '>Submit Claim</button>', (int)$actionRowPosition);
+        $condensedPosition = strpos($html, '>Condensed View</button>', (int)$builtInActionRowPosition);
         $tablePosition = strpos($html, '<table', (int)$toolbarPosition);
 
         $harness->assertTrue($expenseLinesPosition !== false);
         $harness->assertTrue($toolbarPosition !== false);
         $harness->assertTrue($actionRowPosition !== false);
+        $harness->assertTrue($builtInActionRowPosition !== false);
         $harness->assertTrue($submitPosition !== false);
+        $harness->assertTrue($condensedPosition !== false);
         $harness->assertTrue($tablePosition !== false);
         $harness->assertTrue($expenseLinesPosition < $toolbarPosition);
         $harness->assertTrue($toolbarPosition < $actionRowPosition);
         $harness->assertTrue($actionRowPosition < $submitPosition);
-        $harness->assertTrue($submitPosition < $tablePosition);
+        $harness->assertTrue($submitPosition < $builtInActionRowPosition);
+        $harness->assertTrue($builtInActionRowPosition < $condensedPosition);
+        $harness->assertTrue($condensedPosition < $tablePosition);
+        $harness->assertSame(false, str_contains($html, '<div class="actions-row"></div>'));
     });
 
     $harness->check(_expense_claim_editorCard::class, 'uses exportable builder tables with 20 row pagination', function () use ($harness, $instance): void {

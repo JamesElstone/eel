@@ -111,20 +111,17 @@ final class _expense_claim_editorCard extends CardBaseFramework
             </div>
             ' . ($isPosted ? '' : $this->renderBulkPastePanel($claimId, $companyId, $dateFormat)) . '
             ' . ($isPosted ? '<div class="helper">Posted claims are locked.</div>' : $this->renderLineForm($claim, $nominals, $claimId, $companySettings, $companyId)) . '
-            ' . $this->renderTablePanel(
-                'Expense Lines',
-                $this->configuredLinesTable(
-                    (array)($claim['lines'] ?? []),
-                    $nominals,
-                    $assetCategories,
-                    $claimId,
-                    $isPosted,
-                    $companyId,
-                    $dateFormat,
-                    $companySettings,
-                    $context,
-                    $isPosted ? '' : $this->submitClaimToolbarAction($claim, $companySettings, $companyId)
-                )->render($context, $this->tableExportFields(['claim_id' => $claimId]))
+            ' . $this->renderExpenseLinesPanel(
+                (array)($claim['lines'] ?? []),
+                $nominals,
+                $assetCategories,
+                $claimId,
+                $isPosted,
+                $companyId,
+                $dateFormat,
+                $companySettings,
+                $context,
+                $isPosted ? '' : $this->submitClaimToolbarAction($claim, $companySettings, $companyId)
             ) . '
             ' . $this->renderPaymentsPanel((array)($claim['payment_links'] ?? []), $paymentCandidates, $companySettings, $filters, $claimId, $isPosted, $companyId, $dateFormat, $context) . '
         ';
@@ -207,14 +204,38 @@ final class _expense_claim_editorCard extends CardBaseFramework
         </div>';
     }
 
-    private function configuredLinesTable(array $lines, array $nominals, array $assetCategories, int $claimId, bool $isPosted, int $companyId, string $dateFormat, array $companySettings, array $context, string $toolbarActionsHtml = ''): TableFramework
+    private function renderExpenseLinesPanel(array $lines, array $nominals, array $assetCategories, int $claimId, bool $isPosted, int $companyId, string $dateFormat, array $companySettings, array $context, string $primaryToolbarActionHtml): string
+    {
+        $table = $this->configuredLinesTable($lines, $nominals, $assetCategories, $claimId, $isPosted, $companyId, $dateFormat, $companySettings, $context);
+        $exportFields = $this->tableExportFields(['claim_id' => $claimId]);
+
+        return $this->renderTablePanel(
+            'Expense Lines',
+            $this->expenseLinesToolbarHtml($table, $context, $exportFields, $primaryToolbarActionHtml)
+            . $table->renderTable()
+            . $table->renderFooter()
+        );
+    }
+
+    private function expenseLinesToolbarHtml(TableFramework $table, array $context, array $exportFields, string $primaryToolbarActionHtml): string
+    {
+        $builtInToolbar = $this->withoutEmptyActionRows($table->renderToolbar($context, $exportFields));
+        if ($primaryToolbarActionHtml === '') {
+            return $builtInToolbar;
+        }
+
+        $builtInRowsHtml = '';
+        if (preg_match('/^<div class="card-toolbar">(.*)<\/div>$/s', $builtInToolbar, $matches) === 1) {
+            $builtInRowsHtml = (string)$matches[1];
+        }
+
+        return '<div class="card-toolbar"><div class="actions-row">' . $primaryToolbarActionHtml . '</div>' . $builtInRowsHtml . '</div>';
+    }
+
+    private function configuredLinesTable(array $lines, array $nominals, array $assetCategories, int $claimId, bool $isPosted, int $companyId, string $dateFormat, array $companySettings, array $context): TableFramework
     {
         $table = $this->linesTable($lines, $nominals, $assetCategories, $claimId, $isPosted, $companyId, $dateFormat, $companySettings);
         $pagination = HelperFramework::paginateArray($table->sortedRows(), $this->paginationPage($context, self::TABLE_LINES), self::PAGE_SIZE);
-
-        if ($toolbarActionsHtml !== '') {
-            $table = $table->toolbarActions($toolbarActionsHtml);
-        }
 
         return $table
             ->visibleRows((array)$pagination['items'])

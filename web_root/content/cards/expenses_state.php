@@ -171,7 +171,7 @@ final class _expenses_stateCard extends CardBaseFramework
             ->column(
                 'action',
                 '',
-                html: fn(array $row): string => $this->claimOpenForm($row, $context),
+                html: fn(array $row): string => $this->claimActionsHtml($row, $context),
                 exportable: false,
                 cellClass: 'cell-fit'
             );
@@ -283,7 +283,7 @@ final class _expenses_stateCard extends CardBaseFramework
             </form>';
     }
 
-    private function claimOpenForm(array $claim, array $context): string
+    private function claimActionsHtml(array $claim, array $context): string
     {
         $companyId = (int)(($context['company'] ?? [])['id'] ?? 0);
         $claimId = (int)($claim['id'] ?? 0);
@@ -293,6 +293,14 @@ final class _expenses_stateCard extends CardBaseFramework
             return '';
         }
 
+        return '<div class="actions-row">'
+            . $this->claimOpenForm($claimId, $companyId, $filters)
+            . $this->claimDeleteForm($claim, $claimId, $companyId, $filters)
+            . '</div>';
+    }
+
+    private function claimOpenForm(int $claimId, int $companyId, array $filters): string
+    {
         return '<form method="post" action="?page=expenses" data-ajax="true">
             <input type="hidden" name="card_action" value="Expense">
             <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -300,7 +308,28 @@ final class _expenses_stateCard extends CardBaseFramework
             <input type="hidden" name="claim_id" value="' . $claimId . '">
             <input type="hidden" name="expense_status" value="' . HelperFramework::escape((string)($filters['status'] ?? 'all')) . '">
             <input type="hidden" name="expense_query" value="' . HelperFramework::escape((string)($filters['query'] ?? '')) . '">
+            <input type="hidden" name="expense_heatmap_claimant_id" value="' . (int)($filters['heatmap_claimant_id'] ?? 0) . '">
+            <input type="hidden" name="expense_heatmap_date" value="' . HelperFramework::escape((string)($filters['heatmap_date'] ?? '')) . '">
             <button class="button button-inline" type="submit" data-show-card="expense_claim_editor">Open</button>
+        </form>';
+    }
+
+    private function claimDeleteForm(array $claim, int $claimId, int $companyId, array $filters): string
+    {
+        if ((string)($claim['status'] ?? '') !== 'draft' || (int)($claim['payment_link_count'] ?? 0) > 0) {
+            return '';
+        }
+
+        return '<form method="post" action="?page=expenses" data-ajax="true">
+            <input type="hidden" name="card_action" value="Expense">
+            <input type="hidden" name="company_id" value="' . $companyId . '">
+            <input type="hidden" name="intent" value="delete_claim">
+            <input type="hidden" name="claim_id" value="' . $claimId . '">
+            <input type="hidden" name="expense_status" value="' . HelperFramework::escape((string)($filters['status'] ?? 'all')) . '">
+            <input type="hidden" name="expense_query" value="' . HelperFramework::escape((string)($filters['query'] ?? '')) . '">
+            <input type="hidden" name="expense_heatmap_claimant_id" value="' . (int)($filters['heatmap_claimant_id'] ?? 0) . '">
+            <input type="hidden" name="expense_heatmap_date" value="' . HelperFramework::escape((string)($filters['heatmap_date'] ?? '')) . '">
+            <button class="button button-inline danger" type="submit">Delete</button>
         </form>';
     }
 

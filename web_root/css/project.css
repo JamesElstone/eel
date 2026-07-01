@@ -28,10 +28,21 @@
 
 .expenses-toolbar {
   align-items: flex-end;
+  flex-wrap: nowrap;
   justify-content: flex-start;
 }
 
+.expenses-toolbar label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.expenses-toolbar .input {
+  min-width: 0;
+}
+
 .expenses-toolbar .button {
+  flex: 0 0 auto;
   margin-bottom: 0;
 }
 

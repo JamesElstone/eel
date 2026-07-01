@@ -60,9 +60,11 @@ final class ExpenseAction implements ActionInterfaceFramework
                 ),
                 'link_payment' => $service->linkPayment($companyId, (int)$request->input('claim_id', 0), [
                     'transaction_id' => (int)$request->input('transaction_id', 0),
-                    'linked_amount' => (string)$request->input('linked_amount', ''),
-                    'director_loan_nominal_id' => (int)$request->input('director_loan_nominal_id', 0),
+                    'default_expense_nominal_id' => (int)$request->input('default_expense_nominal_id', 0),
                     'default_bank_nominal_id' => (int)$request->input('default_bank_nominal_id', 0),
+                ]),
+                'post_claim' => $service->postClaim($companyId, (int)$request->input('claim_id', 0), [
+                    'default_expense_nominal_id' => (int)$request->input('default_expense_nominal_id', 0),
                 ]),
                 'unlink_payment' => $service->unlinkPayment(
                     $companyId,
@@ -144,6 +146,7 @@ final class ExpenseAction implements ActionInterfaceFramework
                 'delete_line' => 'Expense line deleted.',
                 'link_payment' => 'Repayment linked.',
                 'unlink_payment' => 'Repayment unlinked.',
+                'post_claim' => 'Expense claim posted.',
                 default => '',
             };
         }

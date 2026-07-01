@@ -126,13 +126,6 @@
   flex-wrap: nowrap;
 }
 
-.expense-payment-link-input {
-  flex: 0 0 fit-content;
-  width: fit-content;
-  min-width: 8ch;
-  max-width: 10ch;
-}
-
 .expense-claimant-add-form {
   display: flex;
   align-items: flex-end;

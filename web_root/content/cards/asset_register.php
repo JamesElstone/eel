@@ -153,8 +153,8 @@ final class _asset_registerCard extends CardBaseFramework
                 <input type="hidden" name="asset_id" value="' . $assetId . '">
                 <div class="asset-disposal-controls">
                     <input class="input" type="date" name="disposal_search_date" value="' . HelperFramework::escape($searchDate) . '">
-                    <button class="button button-inline" type="submit" name="intent" value="search_asset_disposal_receipts">Search Receipts</button>
-                    <button class="button button-inline" type="submit" name="intent" value="dispose_asset_nil">Dispose of at Nil Value</button>
+                    <button class="button button-inline primary" type="submit" name="intent" value="search_asset_disposal_receipts">Search Receipts</button>
+                    <button class="button button-inline primary" type="submit" name="intent" value="dispose_asset_nil">Dispose of at Nil Value</button>
                 </div>
             </form>
             ' . $candidateHtml . '

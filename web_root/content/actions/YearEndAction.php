@@ -35,6 +35,10 @@ final class YearEndAction implements ActionInterfaceFramework
                     $accountingPeriodId,
                     $this->adjustmentPayload($request)
                 ),
+                'post_director_loan_offset' => (new \eel_accounts\Service\DirectorLoanReconciliationService())->postOffset(
+                    $companyId,
+                    $accountingPeriodId
+                ),
                 default => ['success' => false, 'errors' => ['Unknown year-end action.']],
             };
         } catch (Throwable $exception) {
@@ -78,6 +82,7 @@ final class YearEndAction implements ActionInterfaceFramework
             'save_notes' => 'Year-end notes saved.',
             'save_opening_balance' => 'Opening balance journal saved.',
             'create_adjustment' => 'Year-end adjustment posted.',
+            'post_director_loan_offset' => 'Director loan offset journal posted.',
             default => 'Year-end readiness updated.',
         };
     }

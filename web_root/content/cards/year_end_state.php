@@ -55,6 +55,15 @@ final class _year_end_stateCard extends CardBaseFramework
                 ],
             ],
             [
+                'key' => 'directorLoanOffset',
+                'service' => \eel_accounts\Service\DirectorLoanReconciliationService::class,
+                'method' => 'fetchContext',
+                'params' => [
+                    'companyId' => ':company_id',
+                    'accountingPeriodId' => ':accounting_period_id',
+                ],
+            ],
+            [
                 'key' => 'yearEndCompaniesHouseComparison',
                 'service' => \eel_accounts\Service\YearEndCompaniesHouseComparisonService::class,
                 'method' => 'fetchComparison',
@@ -87,6 +96,7 @@ final class _year_end_stateCard extends CardBaseFramework
         $taxReadiness = (array)($context['services']['yearEndTaxReadiness'] ?? []);
         $openingBalances = (array)($context['services']['yearEndOpeningBalances'] ?? []);
         $adjustments = (array)($context['services']['yearEndAdjustments'] ?? []);
+        $directorLoanOffset = (array)($context['services']['directorLoanOffset'] ?? []);
         $comparison = (array)($context['services']['yearEndCompaniesHouseComparison'] ?? []);
         if ($checklist === []) {
             return '<div class="helper">Year-end checklist is not available for the selected accounting period.</div>';
@@ -97,6 +107,7 @@ final class _year_end_stateCard extends CardBaseFramework
             . $this->renderCheckSections($checklist)
             . $this->renderOpeningBalances($context, $openingBalances)
             . $this->renderAdjustments($context, $adjustments)
+            . $this->renderDirectorLoanOffset($context, $directorLoanOffset)
             . $this->renderTaxReadiness($taxReadiness)
             . $this->renderCompaniesHouseComparison($comparison);
     }
@@ -375,6 +386,77 @@ final class _year_end_stateCard extends CardBaseFramework
         }
 
         return '<div><h4 class="card-title">Posted adjustments</h4><div class="table-scroll"><table><thead><tr><th>Date</th><th>Description</th><th>Type</th><th>Lines</th></tr></thead><tbody>' . $rows . '</tbody></table></div></div>';
+    }
+
+    private function renderDirectorLoanOffset(array $context, array $offset): string
+    {
+        $company = (array)($context['company'] ?? []);
+        $companyId = (int)($company['id'] ?? 0);
+        $accountingPeriod = (array)($offset['accounting_period'] ?? []);
+        $accountingPeriodId = (int)($accountingPeriod['id'] ?? ($company['accounting_period_id'] ?? 0));
+
+        if (empty($offset['available'])) {
+            return '<section class="settings-stack" id="director-loan-offset"><h3 class="card-title">Director loan offset</h3>' . $this->renderErrors((array)($offset['errors'] ?? ['Director loan offset review is not available.'])) . '</section>';
+        }
+
+        $assetNominal = (array)($offset['asset_nominal'] ?? []);
+        $liabilityNominal = (array)($offset['liability_nominal'] ?? []);
+        $warningsHtml = '';
+        foreach ((array)($offset['warnings'] ?? []) as $warning) {
+            $warningsHtml .= '<div class="helper">' . HelperFramework::escape((string)$warning) . '</div>';
+        }
+
+        $status = (string)($offset['offset_status'] ?? '');
+        $postButton = '';
+        if (!empty($offset['can_post'])) {
+            $postButton = '<form method="post" data-ajax="true">
+                <input type="hidden" name="card_action" value="YearEnd">
+                <input type="hidden" name="intent" value="post_director_loan_offset">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <button class="button primary" type="submit">Post Offset Journal</button>
+            </form>';
+        }
+
+        return '<section class="settings-stack" id="director-loan-offset">
+            <div class="status-head">
+                <h3 class="card-title">Director loan offset</h3>
+                <span class="badge ' . HelperFramework::escape($this->badgeClass($this->offsetBadgeStatus($status))) . '">' . HelperFramework::escape((string)($offset['offset_status_label'] ?? HelperFramework::labelFromKey($status, '_'))) . '</span>
+            </div>
+            <div class="month-grid">
+                ' . $this->summaryCard(FormattingFramework::nominalLabel($assetNominal), FormattingFramework::money($offset['asset_receivable'] ?? 0)) . '
+                ' . $this->summaryCard(FormattingFramework::nominalLabel($liabilityNominal), FormattingFramework::money($offset['liability_payable'] ?? 0)) . '
+                ' . $this->summaryCard('Proposed offset', FormattingFramework::money($offset['offset_amount'] ?? 0)) . '
+                ' . $this->summaryCard('Net position', FormattingFramework::money($offset['net_position'] ?? 0) . ' ' . (string)($offset['net_position_label'] ?? '')) . '
+            </div>
+            <div class="table-scroll">
+                <table>
+                    <thead><tr><th>Journal line</th><th>Debit</th><th>Credit</th></tr></thead>
+                    <tbody>
+                        <tr><td>' . HelperFramework::escape(FormattingFramework::nominalLabel($liabilityNominal)) . '</td><td>' . HelperFramework::escape(FormattingFramework::money($offset['offset_amount'] ?? 0)) . '</td><td>0.00</td></tr>
+                        <tr><td>' . HelperFramework::escape(FormattingFramework::nominalLabel($assetNominal)) . '</td><td>0.00</td><td>' . HelperFramework::escape(FormattingFramework::money($offset['offset_amount'] ?? 0)) . '</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="helper">Existing posted offset: ' . HelperFramework::escape(FormattingFramework::money($offset['posted_offset_amount'] ?? 0)) . '</div>
+            ' . $warningsHtml . '
+            ' . (empty($offset['can_post']) ? '<div class="helper">' . HelperFramework::escape((string)($offset['post_blocked_reason'] ?? '')) . '</div>' : '') . '
+            <div class="actions-row">' . $postButton . '</div>
+        </section>';
+    }
+
+    private function summaryCard(string $label, string $value): string
+    {
+        return '<div class="stat-card"><div class="eyebrow">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+    }
+
+    private function offsetBadgeStatus(string $status): string
+    {
+        return match ($status) {
+            'current', 'not_required' => 'pass',
+            'missing', 'stale' => 'warning',
+            default => 'info',
+        };
     }
 
     private function nominalOptions(array $nominals, int $selectedNominalId): string

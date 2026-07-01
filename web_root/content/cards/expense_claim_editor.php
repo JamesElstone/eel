@@ -109,12 +109,22 @@ final class _expense_claim_editorCard extends CardBaseFramework
                 <div class="summary-card"><div class="summary-label">Paid in this period (C)</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($claim['control_totals']['C'] ?? 0)) . '</div></div>
                 <div class="summary-card"><div class="summary-label">Carried Forward (D=A+B-C)</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($claim['control_totals']['D'] ?? 0)) . '</div></div>
             </div>
-            ' . ($isPosted ? '' : $this->renderSubmitClaimPanel($claim, $companySettings, $companyId)) . '
             ' . ($isPosted ? '' : $this->renderBulkPastePanel($claimId, $companyId, $dateFormat)) . '
             ' . ($isPosted ? '<div class="helper">Posted claims are locked.</div>' : $this->renderLineForm($claim, $nominals, $claimId, $companySettings, $companyId)) . '
             ' . $this->renderTablePanel(
                 'Expense Lines',
-                $this->configuredLinesTable((array)($claim['lines'] ?? []), $nominals, $assetCategories, $claimId, $isPosted, $companyId, $dateFormat, $companySettings, $context)->render($context, $this->tableExportFields(['claim_id' => $claimId]))
+                $this->configuredLinesTable(
+                    (array)($claim['lines'] ?? []),
+                    $nominals,
+                    $assetCategories,
+                    $claimId,
+                    $isPosted,
+                    $companyId,
+                    $dateFormat,
+                    $companySettings,
+                    $context,
+                    $isPosted ? '' : $this->submitClaimToolbarAction($claim, $companySettings, $companyId)
+                )->render($context, $this->tableExportFields(['claim_id' => $claimId]))
             ) . '
             ' . $this->renderPaymentsPanel((array)($claim['payment_links'] ?? []), $paymentCandidates, $companySettings, $filters, $claimId, $isPosted, $companyId, $dateFormat, $context) . '
         ';
@@ -129,15 +139,28 @@ final class _expense_claim_editorCard extends CardBaseFramework
         </div>';
     }
 
-    private function renderSubmitClaimPanel(array $claim, array $companySettings, int $companyId): string
+    private function submitClaimToolbarAction(array $claim, array $companySettings, int $companyId): string
     {
         $claimId = (int)($claim['id'] ?? 0);
-        $lines = (array)($claim['lines'] ?? []);
         $defaultExpenseNominalId = (int)($companySettings['default_expense_nominal_id'] ?? 0);
-        $assetCount = count(array_filter($lines, static fn(array $line): bool => (string)($line['line_type'] ?? 'expense') === 'asset'));
+        $errors = $this->submitClaimErrors($claim, $companySettings);
+
+        return '<form method="post" action="?page=expenses" data-ajax="true">
+                <input type="hidden" name="card_action" value="Expense">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="intent" value="post_claim">
+                <input type="hidden" name="claim_id" value="' . $claimId . '">
+                <input type="hidden" name="default_expense_nominal_id" value="' . $defaultExpenseNominalId . '">
+                <button class="button primary" type="submit"' . ($errors === [] ? '' : ' disabled') . '>Submit Claim</button>
+            </form>';
+    }
+
+    private function submitClaimErrors(array $claim, array $companySettings): array
+    {
+        $lines = (array)($claim['lines'] ?? []);
         $errors = [];
 
-        if ($defaultExpenseNominalId <= 0) {
+        if ((int)($companySettings['default_expense_nominal_id'] ?? 0) <= 0) {
             $errors[] = 'Choose an Expense claims payable nominal in company nominal defaults.';
         }
         if ($lines === []) {
@@ -160,28 +183,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
             }
         }
 
-        $summary = '<div class="summary-grid">
-            <div class="summary-card"><div class="summary-label">Lines</div><div class="summary-value">' . count($lines) . '</div></div>
-            <div class="summary-card"><div class="summary-label">Assets to create</div><div class="summary-value">' . $assetCount . '</div></div>
-            <div class="summary-card"><div class="summary-label">Claim total</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($claim['control_totals']['B'] ?? 0)) . '</div></div>
-        </div>';
-        $errorHtml = $errors === []
-            ? '<div class="helper">Ready to submit. Submitting posts the claim and locks its lines.</div>'
-            : '<div class="helper">' . HelperFramework::escape(implode(' ', $errors)) . '</div>';
-
-        return '<div class="panel-soft">
-            <div class="status-head"><h4 class="card-title">Submit Claim</h4></div>
-            ' . $summary . '
-            ' . $errorHtml . '
-            <form method="post" action="?page=expenses" data-ajax="true">
-                <input type="hidden" name="card_action" value="Expense">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="intent" value="post_claim">
-                <input type="hidden" name="claim_id" value="' . $claimId . '">
-                <input type="hidden" name="default_expense_nominal_id" value="' . $defaultExpenseNominalId . '">
-                <div class="actions-row"><button class="button primary" type="submit"' . ($errors === [] ? '' : ' disabled') . '>Submit Claim</button></div>
-            </form>
-        </div>';
+        return $errors;
     }
 
     private function renderBulkPastePanel(int $claimId, int $companyId, string $dateFormat): string
@@ -205,10 +207,14 @@ final class _expense_claim_editorCard extends CardBaseFramework
         </div>';
     }
 
-    private function configuredLinesTable(array $lines, array $nominals, array $assetCategories, int $claimId, bool $isPosted, int $companyId, string $dateFormat, array $companySettings, array $context): TableFramework
+    private function configuredLinesTable(array $lines, array $nominals, array $assetCategories, int $claimId, bool $isPosted, int $companyId, string $dateFormat, array $companySettings, array $context, string $toolbarActionsHtml = ''): TableFramework
     {
         $table = $this->linesTable($lines, $nominals, $assetCategories, $claimId, $isPosted, $companyId, $dateFormat, $companySettings);
         $pagination = HelperFramework::paginateArray($table->sortedRows(), $this->paginationPage($context, self::TABLE_LINES), self::PAGE_SIZE);
+
+        if ($toolbarActionsHtml !== '') {
+            $table = $table->toolbarActions($toolbarActionsHtml);
+        }
 
         return $table
             ->visibleRows((array)$pagination['items'])

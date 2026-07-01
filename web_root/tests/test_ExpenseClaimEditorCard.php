@@ -16,15 +16,37 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $harness->skip('Expense claim editor card did not instantiate.');
     }
 
-    $harness->check(_expense_claim_editorCard::class, 'renders claim summary, submit panel, and paste helper', function () use ($harness, $instance): void {
+    $harness->check(_expense_claim_editorCard::class, 'renders claim summary, submit toolbar action, and paste helper', function () use ($harness, $instance): void {
         $html = $instance->render(expenseClaimEditorCardContext());
 
         $harness->assertTrue(str_contains($html, 'Claim Reference'));
         $harness->assertTrue(str_contains($html, 'Submit Claim'));
+        $harness->assertTrue(str_contains($html, '<button class="button primary" type="submit" disabled>Submit Claim</button>'));
+        $harness->assertSame(false, str_contains($html, '<h4 class="card-title">Submit Claim</h4>'));
         $harness->assertTrue(str_contains($html, 'Claim Lines can be pasted below'));
         $harness->assertTrue(str_contains($html, '&quot;DATE&quot;, &quot;DESCRIPTION&quot;, &quot;AMOUNT CLAIMED&quot;'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="bulk_save_lines"'));
         $harness->assertSame(false, str_contains($html, 'name="intent" value="preview_bulk_lines"'));
+    });
+
+    $harness->check(_expense_claim_editorCard::class, 'places submit claim in expense lines toolbar action row', function () use ($harness, $instance): void {
+        $html = $instance->render(expenseClaimEditorCardContext());
+
+        $expenseLinesPosition = strpos($html, '<h4 class="card-title">Expense Lines</h4>');
+        $toolbarPosition = strpos($html, '<div class="card-toolbar">', (int)$expenseLinesPosition);
+        $actionRowPosition = strpos($html, '<div class="actions-row">', (int)$toolbarPosition);
+        $submitPosition = strpos($html, '>Submit Claim</button>', (int)$actionRowPosition);
+        $tablePosition = strpos($html, '<table', (int)$toolbarPosition);
+
+        $harness->assertTrue($expenseLinesPosition !== false);
+        $harness->assertTrue($toolbarPosition !== false);
+        $harness->assertTrue($actionRowPosition !== false);
+        $harness->assertTrue($submitPosition !== false);
+        $harness->assertTrue($tablePosition !== false);
+        $harness->assertTrue($expenseLinesPosition < $toolbarPosition);
+        $harness->assertTrue($toolbarPosition < $actionRowPosition);
+        $harness->assertTrue($actionRowPosition < $submitPosition);
+        $harness->assertTrue($submitPosition < $tablePosition);
     });
 
     $harness->check(_expense_claim_editorCard::class, 'uses exportable builder tables with 20 row pagination', function () use ($harness, $instance): void {

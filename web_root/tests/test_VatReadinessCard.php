@@ -27,4 +27,21 @@ $harness->run(_vat_readinessCard::class, static function (GeneratedServiceClassT
         $harness->assertSame(4, substr_count($html, '<span class="status-indicator"><span class="status-square ok"></span>Ready</span>'));
         $harness->assertSame(false, str_contains($html, 'Needs attention'));
     });
+
+    $harness->check(_vat_readinessCard::class, 'explains invalid VAT validation status', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'page' => [
+                'settings' => [
+                    'is_vat_registered' => true,
+                    'vat_country_code' => 'GB',
+                    'vat_number' => '123456789',
+                    'vat_validation_status' => 'invalid',
+                    'vat_validation_source' => 'hmrc',
+                ],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, 'HMRC returned this VAT number as invalid.'));
+        $harness->assertTrue(str_contains($html, 'run Check VAT Number again.'));
+    });
 });

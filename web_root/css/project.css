@@ -679,6 +679,10 @@
   font-weight: 800;
 }
 
+.director-loan-control-helper {
+  margin: 14px 0 12px;
+}
+
 .chart-demo-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

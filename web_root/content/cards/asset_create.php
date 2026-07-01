@@ -75,7 +75,7 @@ final class _asset_createCard extends CardBaseFramework
                         <input class="input" id="asset_description" type="text" name="description" value="' . HelperFramework::escape((string)($prefillTransaction['description'] ?? '')) . '" required>
                     </div>
                     <div class="field">
-                        <label for="asset_category">Category</label>
+                        <label for="asset_category">Asset category</label>
                         <select class="select" id="asset_category" name="category">' . $this->assetCategoryOptions($assetCategories) . '</select>
                     </div>
                     <div class="field">
@@ -87,11 +87,11 @@ final class _asset_createCard extends CardBaseFramework
                         <input class="input" id="asset_cost" type="number" step="0.01" name="cost" value="' . HelperFramework::escape((string)($prefillTransaction['cost'] ?? '')) . '" required>
                     </div>
                     <div class="field">
-                        <label for="asset_life">Useful Life (Years)</label>
+                        <label for="asset_life">Useful life</label>
                         <input class="input" id="asset_life" type="number" min="1" name="useful_life_years" value="3" required>
                     </div>
                     <div class="field">
-                        <label for="asset_method">Depreciation Method</label>
+                        <label for="asset_method" title="None: no depreciation is posted. Straight Line: spreads cost less EOL Value evenly over the useful life. Reducing Balance: depreciates by the same rate each period, using the asset&apos;s remaining value after previous depreciation.">Depreciation</label>
                         <select class="select" id="asset_method" name="depreciation_method">
                             <option value="straight_line">Straight line</option>
                             <option value="reducing_balance">Reducing balance</option>
@@ -99,7 +99,7 @@ final class _asset_createCard extends CardBaseFramework
                         </select>
                     </div>
                     <div class="field">
-                        <label for="asset_residual">Residual Value</label>
+                        <label for="asset_residual" title="End of Life Value, also known as the Residual Value, is the value the item has after the useful life period has expired.">EOL Value</label>
                         <input class="input" id="asset_residual" type="number" step="0.01" min="0" name="residual_value" value="0.00">
                     </div>'
                     . ($prefillTransaction === null

@@ -44,6 +44,8 @@ final class _vat_readinessCard extends CardBaseFramework
         $countryCode = trim((string)($settings['vat_country_code'] ?? ''));
         $vatNumber = trim((string)($settings['vat_number'] ?? ''));
         $validationStatus = trim((string)($settings['vat_validation_status'] ?? 'unverified'));
+        $validationSource = trim((string)($settings['vat_validation_source'] ?? ''));
+        $lastError = trim((string)($settings['vat_last_error'] ?? ''));
         $warnings = trim((string)($settings['pending_vat_mismatch_warnings'] ?? ''));
 
         $items[] = [
@@ -61,7 +63,7 @@ final class _vat_readinessCard extends CardBaseFramework
             'ok' => !$isVatRegistered || $service->companyCanUseVatAccounting($settings),
             'detail' => !$isVatRegistered
                 ? 'Validation is not required while VAT registration is turned off.'
-                : ($validationStatus !== '' ? 'Current VAT validation status: ' . str_replace('_', ' ', $validationStatus) . '.' : 'VAT details have not been validated yet.'),
+                : $this->validationStatusDetail($validationStatus, $validationSource, $lastError),
         ];
         $items[] = [
             'title' => 'Mismatch review',
@@ -79,5 +81,22 @@ final class _vat_readinessCard extends CardBaseFramework
         }
 
         return $html;
+    }
+
+    private function validationStatusDetail(string $status, string $source, string $lastError): string
+    {
+        $sourceLabel = $source !== '' ? strtoupper($source) : 'The VAT validation service';
+
+        return match ($status) {
+            'valid' => $sourceLabel . ' confirmed the VAT number and returned matching company details.',
+            'invalid' => $sourceLabel . ' returned this VAT number as invalid. Check the country/prefix and VAT number, then run Check VAT Number again.',
+            'error' => $lastError !== ''
+                ? 'VAT validation could not be completed: ' . $lastError
+                : 'VAT validation could not be completed. Check the VAT details and try again.',
+            'mismatch_pending' => 'The VAT number is valid, but the returned company details do not exactly match this company. Review the mismatch before using VAT accounting.',
+            'mismatch_override' => 'The VAT mismatch has been accepted, so VAT accounting can be used for this company.',
+            'unverified', '' => 'VAT details have not been checked yet. Use Check VAT Number before saving the configuration.',
+            default => 'Current VAT validation status: ' . str_replace('_', ' ', $status) . '.',
+        };
     }
 }

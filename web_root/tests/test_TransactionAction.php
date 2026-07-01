@@ -309,6 +309,354 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame($beforeRules, InterfaceDB::countWhere('categorisation_rules', ['company_id' => $companyId]));
     });
 
+    $createDirectorLoanFixture = static function (float $amount, array $settings = [], array $transactionOverrides = [], bool $locked = false): array {
+        $marker = (string)random_int(100000, 999999);
+        $companyId = (int)('81' . $marker);
+        $accountingPeriodId = (int)('82' . $marker);
+        $bankNominalId = (int)('80' . $marker);
+        $assetNominalId = (int)('83' . $marker);
+        $liabilityNominalId = (int)('84' . $marker);
+        $legacyNominalId = (int)('85' . $marker);
+        $uploadId = (int)('86' . $marker);
+        $transactionId = (int)('87' . $marker);
+        $bankAccountId = (int)('89' . $marker);
+
+        InterfaceDB::prepareExecute(
+            'INSERT INTO companies (id, company_name, company_number, is_active)
+             VALUES (:id, :company_name, :company_number, 1)',
+            [
+                'id' => $companyId,
+                'company_name' => 'Director Loan Shortcut ' . $marker,
+                'company_number' => 'DL' . $marker,
+            ]
+        );
+        InterfaceDB::prepareExecute(
+            'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end)
+             VALUES (:id, :company_id, :label, :period_start, :period_end)',
+            [
+                'id' => $accountingPeriodId,
+                'company_id' => $companyId,
+                'label' => 'FY ' . $marker,
+                'period_start' => '2026-01-01',
+                'period_end' => '2026-12-31',
+            ]
+        );
+
+        foreach ([
+            [$bankNominalId, 'B' . $marker, 'Bank ' . $marker, 'asset'],
+            [$assetNominalId, 'A' . $marker, 'Director Loan Asset ' . $marker, 'asset'],
+            [$liabilityNominalId, 'L' . $marker, 'Director Loan Liability ' . $marker, 'liability'],
+            [$legacyNominalId, 'G' . $marker, 'Legacy Director Loan ' . $marker, 'liability'],
+        ] as $nominal) {
+            InterfaceDB::prepareExecute(
+                'INSERT INTO nominal_accounts (id, code, name, account_type, tax_treatment, is_active, sort_order)
+                 VALUES (:id, :code, :name, :account_type, :tax_treatment, 1, 100)',
+                [
+                    'id' => $nominal[0],
+                    'code' => $nominal[1],
+                    'name' => $nominal[2],
+                    'account_type' => $nominal[3],
+                    'tax_treatment' => 'none',
+                ]
+            );
+        }
+        InterfaceDB::prepareExecute(
+            'INSERT INTO company_accounts (id, company_id, account_name, account_type, nominal_account_id, is_active)
+             VALUES (:id, :company_id, :account_name, :account_type, :nominal_account_id, 1)',
+            [
+                'id' => $bankAccountId,
+                'company_id' => $companyId,
+                'account_name' => 'Shortcut Bank ' . $marker,
+                'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
+                'nominal_account_id' => $bankNominalId,
+            ]
+        );
+
+        $settingsStore = new \eel_accounts\Store\CompanySettingsStore($companyId);
+        foreach ($settings as $setting => $value) {
+            $resolvedValue = match ($value) {
+                'asset' => $assetNominalId,
+                'liability' => $liabilityNominalId,
+                'legacy' => $legacyNominalId,
+                default => $value,
+            };
+            $settingsStore->set((string)$setting, $resolvedValue, 'int');
+        }
+        $settingsStore->flush();
+
+        InterfaceDB::prepareExecute(
+            'INSERT INTO statement_uploads (
+                id,
+                company_id,
+                accounting_period_id,
+                statement_month,
+                original_filename,
+                stored_filename,
+                file_sha256
+             ) VALUES (
+                :id,
+                :company_id,
+                :accounting_period_id,
+                :statement_month,
+                :original_filename,
+                :stored_filename,
+                :file_sha256
+             )',
+            [
+                'id' => $uploadId,
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'statement_month' => '2026-03-01',
+                'original_filename' => 'director-loan-' . $marker . '.csv',
+                'stored_filename' => 'director-loan-' . $marker . '.csv',
+                'file_sha256' => hash('sha256', 'director-loan-upload-' . $marker),
+            ]
+        );
+        InterfaceDB::prepareExecute(
+            'INSERT INTO transactions (
+                id,
+                company_id,
+                accounting_period_id,
+                statement_upload_id,
+                account_id,
+                txn_date,
+                description,
+                reference,
+                amount,
+                source_account_label,
+                source_category,
+                dedupe_hash
+             ) VALUES (
+                :id,
+                :company_id,
+                :accounting_period_id,
+                :statement_upload_id,
+                :account_id,
+                :txn_date,
+                :description,
+                :reference,
+                :amount,
+                :source_account_label,
+                :source_category,
+                :dedupe_hash
+             )',
+            [
+                'id' => $transactionId,
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'statement_upload_id' => $uploadId,
+                'account_id' => (int)($transactionOverrides['account_id'] ?? $bankAccountId),
+                'txn_date' => (string)($transactionOverrides['txn_date'] ?? '2026-03-15'),
+                'description' => (string)($transactionOverrides['description'] ?? 'DIRECTOR LOAN TEST ' . $marker),
+                'reference' => (string)($transactionOverrides['reference'] ?? 'DL-' . $marker),
+                'amount' => number_format($amount, 2, '.', ''),
+                'source_account_label' => (string)($transactionOverrides['source_account_label'] ?? 'Main account'),
+                'source_category' => (string)($transactionOverrides['source_category'] ?? 'Uncategorised'),
+                'dedupe_hash' => hash('sha256', 'director-loan-transaction-' . $marker),
+            ]
+        );
+
+        if ($locked && InterfaceDB::tableExists('year_end_reviews')) {
+            InterfaceDB::prepareExecute(
+                'INSERT INTO year_end_reviews (company_id, accounting_period_id, status, is_locked, locked_at, locked_by)
+                 VALUES (:company_id, :accounting_period_id, :status, 1, CURRENT_TIMESTAMP, :locked_by)',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'status' => 'locked',
+                    'locked_by' => 'test',
+                ]
+            );
+        }
+
+        return [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'transaction_id' => $transactionId,
+            'bank_nominal_id' => $bankNominalId,
+            'bank_account_id' => $bankAccountId,
+            'asset_nominal_id' => $assetNominalId,
+            'liability_nominal_id' => $liabilityNominalId,
+            'legacy_nominal_id' => $legacyNominalId,
+        ];
+    };
+
+    $markDirectorLoan = static function (array $fixture, array $extraPost = []) use ($instance): ActionResultFramework {
+        $request = new RequestFramework(
+            [],
+            array_merge([
+                'card_action' => 'Transaction',
+                'global_action' => 'mark_director_loan',
+                'company_id' => (string)$fixture['company_id'],
+                'accounting_period_id' => (string)$fixture['accounting_period_id'],
+                'transaction_id' => (string)$fixture['transaction_id'],
+                'month_key' => '2026-03-01',
+                'category_filter' => 'uncategorised',
+            ], $extraPost),
+            ['REQUEST_METHOD' => 'POST'],
+            [],
+            [],
+            null
+        );
+
+        return $instance->handle($request, createTestPageServiceFramework());
+    };
+
+    $transactionNominalId = static function (int $transactionId): int {
+        return (int)InterfaceDB::fetchColumn(
+            'SELECT nominal_account_id FROM transactions WHERE id = :id',
+            ['id' => $transactionId]
+        );
+    };
+
+    $transactionCategoryStatus = static function (int $transactionId): string {
+        return (string)InterfaceDB::fetchColumn(
+            'SELECT category_status FROM transactions WHERE id = :id',
+            ['id' => $transactionId]
+        );
+    };
+
+    $insertDerivedJournal = static function (array $fixture): int {
+        InterfaceDB::prepareExecute(
+            'INSERT INTO journals (company_id, accounting_period_id, source_type, source_ref, journal_date, description, is_posted)
+             VALUES (:company_id, :accounting_period_id, :source_type, :source_ref, :journal_date, :description, 1)',
+            [
+                'company_id' => $fixture['company_id'],
+                'accounting_period_id' => $fixture['accounting_period_id'],
+                'source_type' => 'bank_csv',
+                'source_ref' => 'transaction:' . $fixture['transaction_id'],
+                'journal_date' => '2026-03-15',
+                'description' => 'Existing derived journal',
+            ]
+        );
+
+        return (int)InterfaceDB::fetchColumn(
+            'SELECT id FROM journals WHERE company_id = :company_id AND source_type = :source_type AND source_ref = :source_ref',
+            [
+                'company_id' => $fixture['company_id'],
+                'source_type' => 'bank_csv',
+                'source_ref' => 'transaction:' . $fixture['transaction_id'],
+            ]
+        );
+    };
+
+    $harness->check('TransactionAction', 'mark_director_loan uses the asset nominal for money leaving the bank', function () use ($harness, $createDirectorLoanFixture, $markDirectorLoan, $transactionNominalId, $transactionCategoryStatus): void {
+        $fixture = $createDirectorLoanFixture(-250.00, [
+            'director_loan_asset_nominal_id' => 'asset',
+            'director_loan_liability_nominal_id' => 'liability',
+        ]);
+
+        $result = $markDirectorLoan($fixture);
+
+        $harness->assertSame(true, $result->isSuccess());
+        $harness->assertSame($fixture['asset_nominal_id'], $transactionNominalId((int)$fixture['transaction_id']));
+        $harness->assertSame('manual', $transactionCategoryStatus((int)$fixture['transaction_id']));
+    });
+
+    $harness->check('TransactionAction', 'mark_director_loan uses the liability nominal for money entering the bank', function () use ($harness, $createDirectorLoanFixture, $markDirectorLoan, $transactionNominalId): void {
+        $fixture = $createDirectorLoanFixture(250.00, [
+            'director_loan_asset_nominal_id' => 'asset',
+            'director_loan_liability_nominal_id' => 'liability',
+        ]);
+
+        $result = $markDirectorLoan($fixture);
+
+        $harness->assertSame(true, $result->isSuccess());
+        $harness->assertSame($fixture['liability_nominal_id'], $transactionNominalId((int)$fixture['transaction_id']));
+    });
+
+    $harness->check('TransactionAction', 'mark_director_loan falls back to the legacy liability setting for money entering the bank', function () use ($harness, $createDirectorLoanFixture, $markDirectorLoan, $transactionNominalId): void {
+        $fixture = $createDirectorLoanFixture(125.00, [
+            'director_loan_nominal_id' => 'legacy',
+        ]);
+
+        $result = $markDirectorLoan($fixture);
+
+        $harness->assertSame(true, $result->isSuccess());
+        $harness->assertSame($fixture['legacy_nominal_id'], $transactionNominalId((int)$fixture['transaction_id']));
+    });
+
+    $harness->check('TransactionAction', 'mark_director_loan rejects missing configured nominals without changing the transaction', function () use ($harness, $createDirectorLoanFixture, $markDirectorLoan, $transactionNominalId): void {
+        $fixture = $createDirectorLoanFixture(-75.00, []);
+
+        $result = $markDirectorLoan($fixture);
+
+        $harness->assertSame(false, $result->isSuccess());
+        $harness->assertSame(0, $transactionNominalId((int)$fixture['transaction_id']));
+    });
+
+    $harness->check('TransactionAction', 'mark_director_loan rejects transfer rows', function () use ($harness, $createDirectorLoanFixture, $markDirectorLoan, $transactionNominalId): void {
+        $fixture = $createDirectorLoanFixture(100.00, [
+            'director_loan_liability_nominal_id' => 'liability',
+        ], [
+            'source_category' => 'Internal transfer',
+        ]);
+
+        $result = $markDirectorLoan($fixture);
+
+        $harness->assertSame(false, $result->isSuccess());
+        $harness->assertSame(0, $transactionNominalId((int)$fixture['transaction_id']));
+    });
+
+    $harness->check('TransactionAction', 'mark_director_loan rejects zero amount transactions', function () use ($harness, $createDirectorLoanFixture, $markDirectorLoan, $transactionNominalId): void {
+        $fixture = $createDirectorLoanFixture(0.00, [
+            'director_loan_asset_nominal_id' => 'asset',
+            'director_loan_liability_nominal_id' => 'liability',
+        ]);
+
+        $result = $markDirectorLoan($fixture);
+
+        $harness->assertSame(false, $result->isSuccess());
+        $harness->assertSame(0, $transactionNominalId((int)$fixture['transaction_id']));
+    });
+
+    $harness->check('TransactionAction', 'mark_director_loan is blocked for locked accounting periods', function () use ($harness, $createDirectorLoanFixture, $markDirectorLoan, $transactionNominalId): void {
+        $fixture = $createDirectorLoanFixture(-60.00, [
+            'director_loan_asset_nominal_id' => 'asset',
+        ], [], true);
+
+        $result = $markDirectorLoan($fixture);
+
+        $harness->assertSame(false, $result->isSuccess());
+        $harness->assertSame(0, $transactionNominalId((int)$fixture['transaction_id']));
+    });
+
+    $harness->check('TransactionAction', 'mark_director_loan requires confirmation before changing a derived journal transaction', function () use ($harness, $createDirectorLoanFixture, $markDirectorLoan, $transactionNominalId, $insertDerivedJournal): void {
+        $fixture = $createDirectorLoanFixture(-90.00, [
+            'director_loan_asset_nominal_id' => 'asset',
+        ]);
+        $insertDerivedJournal($fixture);
+
+        $result = $markDirectorLoan($fixture);
+
+        $harness->assertSame(false, $result->isSuccess());
+        $harness->assertSame(0, $transactionNominalId((int)$fixture['transaction_id']));
+    });
+
+    $harness->check('TransactionAction', 'mark_director_loan rebuilds a derived journal after confirmation', function () use ($harness, $createDirectorLoanFixture, $markDirectorLoan, $transactionNominalId, $insertDerivedJournal): void {
+        $fixture = $createDirectorLoanFixture(-95.00, [
+            'director_loan_asset_nominal_id' => 'asset',
+        ]);
+        $oldJournalId = $insertDerivedJournal($fixture);
+
+        $result = $markDirectorLoan($fixture, ['confirm_rebuild_journal' => '1']);
+        $newJournalId = (int)InterfaceDB::fetchColumn(
+            'SELECT id FROM journals WHERE company_id = :company_id AND source_type = :source_type AND source_ref = :source_ref',
+            [
+                'company_id' => $fixture['company_id'],
+                'source_type' => 'bank_csv',
+                'source_ref' => 'transaction:' . $fixture['transaction_id'],
+            ]
+        );
+        $lineCount = InterfaceDB::countWhere('journal_lines', ['journal_id' => $newJournalId]);
+
+        $harness->assertSame(true, $result->isSuccess());
+        $harness->assertSame($fixture['asset_nominal_id'], $transactionNominalId((int)$fixture['transaction_id']));
+        $harness->assertSame(true, $newJournalId > 0);
+        $harness->assertSame(false, $newJournalId === $oldJournalId);
+        $harness->assertSame(2, $lineCount);
+    });
+
     $harness->check('TransactionAction cards', 'transaction cards render Transaction card action forms', function () use ($harness): void {
         $context = [
             'company' => [
@@ -375,6 +723,10 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
             'company' => [
                 'id' => 1,
                 'accounting_period_id' => 2,
+                'settings' => [
+                    'director_loan_asset_nominal_id' => 1200,
+                    'director_loan_liability_nominal_id' => 2100,
+                ],
             ],
             'page' => [
                 'page_id' => 'transactions',
@@ -521,6 +873,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(false, str_contains($html, '<input type="hidden" name="nominal_account_id"'));
         $harness->assertSame(true, str_contains($html, 'name="transaction_reference" value="INV-42"'));
         $harness->assertSame(true, str_contains($html, 'name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form"'));
+        $harness->assertSame(true, str_contains($html, 'name="global_action" value="mark_director_loan"'));
         $harness->assertSame(true, str_contains($html, '<span class="badge success">Manually Categorised</span>'));
     });
 
@@ -547,6 +900,10 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
             'company' => [
                 'id' => 1,
                 'accounting_period_id' => 2,
+                'settings' => [
+                    'director_loan_asset_nominal_id' => 1200,
+                    'director_loan_liability_nominal_id' => 2100,
+                ],
             ],
             'page' => [
                 'page_id' => 'transactions',
@@ -687,6 +1044,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, '<span class="badge warning">Transfer pending</span>'));
         $harness->assertSame(false, str_contains($html, '<span class="badge info">Rule #3</span>'));
         $harness->assertSame(false, str_contains($html, 'name="nominal_account_id" form="transaction-form-42"'));
+        $harness->assertSame(false, str_contains($html, 'value="mark_director_loan"'));
     });
 
     $harness->check('_transactions_importedCard', 'renders transactions read only when accounting period is locked', function () use ($harness): void {
@@ -694,6 +1052,10 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
             'company' => [
                 'id' => 1,
                 'accounting_period_id' => 2,
+                'settings' => [
+                    'director_loan_asset_nominal_id' => 1200,
+                    'director_loan_liability_nominal_id' => 2100,
+                ],
             ],
             'page' => [
                 'month_key' => '2026-03-01',
@@ -771,9 +1133,48 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, '<button class="button primary" type="button" disabled title="Period locked">Post Categorised Transactions</button>'));
         $harness->assertSame(false, str_contains($html, 'name="global_action" value="save_transaction_category"'));
         $harness->assertSame(true, str_contains($html, '<button class="button primary" type="submit" name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form">Create Rule</button>'));
+        $harness->assertSame(true, str_contains($html, '<button class="button" type="button" disabled title="Period locked">Director Loan</button>'));
         $harness->assertSame(true, str_contains($html, 'type="button" disabled title="Period locked" name="global_action" value="defer_transaction"'));
         $harness->assertSame(true, str_contains($html, '<button class="button" type="button" disabled title="Period locked">Create Asset</button>'));
         $harness->assertSame(true, str_contains($html, 'View Receipt'));
+    });
+
+    $harness->check('_transactions_importedCard', 'disables Director Loan shortcut when the required nominal is missing', function () use ($harness): void {
+        $html = (new _transactions_importedCard())->render([
+            'company' => [
+                'id' => 1,
+                'accounting_period_id' => 2,
+                'settings' => [
+                    'director_loan_liability_nominal_id' => 2100,
+                ],
+            ],
+            'page' => [
+                'month_key' => '2026-03-01',
+                'category_filter' => 'all',
+            ],
+            'services' => [
+                'month_status' => [[
+                    'month_key' => '2026-03-01',
+                    'label' => 'Mar 2026',
+                ]],
+                'transactions_by_month' => [[
+                    'id' => 42,
+                    'txn_date' => '2026-03-15',
+                    'description' => 'Director loan payment',
+                    'source_account' => 'Current account',
+                    'source_category' => 'Manual',
+                    'amount' => -10.00,
+                    'document_download_status' => 'skipped',
+                    'category_status' => 'uncategorised',
+                    'has_derived_journal' => 0,
+                ]],
+                'nominal_accounts' => [],
+                'company_accounts' => [],
+            ],
+        ]);
+
+        $harness->assertSame(true, str_contains($html, '<button class="button" type="button" disabled title="Set Director Loan Asset nominal in Company Nominals">Director Loan</button>'));
+        $harness->assertSame(false, str_contains($html, 'value="mark_director_loan"'));
     });
 
     $harness->check('_transactions_rulesCard', 'renders categorisation rules with table builder exports', function () use ($harness): void {

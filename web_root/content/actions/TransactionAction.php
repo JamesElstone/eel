@@ -15,6 +15,7 @@ final class TransactionAction implements ActionInterfaceFramework
     private const TRANSACTION_ACTIONS = [
         'save_transaction_category',
         'defer_transaction',
+        'mark_director_loan',
     ];
 
     public function handle(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
@@ -29,7 +30,8 @@ final class TransactionAction implements ActionInterfaceFramework
             'edit_categorisation_rule',
             'cancel_categorisation_rule' => $this->selectionResult($request, $intent),
             'save_transaction_category',
-            'defer_transaction' => $this->saveTransactionCategory($request, $services, $intent),
+            'defer_transaction',
+            'mark_director_loan' => $this->saveTransactionCategory($request, $services, $intent),
             'auto_create_transaction_rule' => $this->draftCategorisationRule($request, $services),
             'run_auto_rules' => $this->runAutoRules($request, $services),
             'post_categorised_transactions' => $this->postCategorisedTransactions($request, $services),
@@ -129,8 +131,16 @@ final class TransactionAction implements ActionInterfaceFramework
         $transferAccountId = $this->nullablePositiveInt($request->post('transfer_account_id', null));
         $confirmedJournalRebuild = $this->checkboxValue($request, 'confirm_rebuild_journal');
         $existingTransaction = $transactionCategorisationService->fetchTransaction($transactionId);
-        $targetNominalAccountId = $globalAction === 'defer_transaction' ? null : $nominalAccountId;
-        $targetTransferAccountId = $globalAction === 'defer_transaction' ? null : $transferAccountId;
+        $isDirectorLoanAction = $globalAction === 'mark_director_loan';
+        $directorLoanResolution = $isDirectorLoanAction && is_array($existingTransaction)
+            ? $this->directorLoanNominalResolution($companyId, $existingTransaction)
+            : ['nominal_account_id' => null, 'error' => ''];
+        $targetNominalAccountId = match ($globalAction) {
+            'defer_transaction' => null,
+            'mark_director_loan' => $directorLoanResolution['nominal_account_id'],
+            default => $nominalAccountId,
+        };
+        $targetTransferAccountId = $globalAction === 'defer_transaction' || $isDirectorLoanAction ? null : $transferAccountId;
         $targetAutoExcluded = $globalAction === 'defer_transaction';
         $isTransferTransaction = is_array($existingTransaction) && $this->transactionIsTransferMode($existingTransaction);
         $errors = [];
@@ -141,14 +151,20 @@ final class TransactionAction implements ActionInterfaceFramework
 
         if ($transactionId <= 0 || $existingTransaction === null) {
             $errors[] = 'Select a valid transaction before saving categorisation changes.';
+        } elseif ($isDirectorLoanAction && $isTransferTransaction) {
+            $errors[] = 'Transfer rows cannot be marked as director loans.';
+        } elseif ($isDirectorLoanAction && trim((string)($directorLoanResolution['error'] ?? '')) !== '') {
+            $errors[] = (string)$directorLoanResolution['error'];
         } elseif (
             $globalAction !== 'defer_transaction'
+            && !$isDirectorLoanAction
             && !$isTransferTransaction
             && ($targetNominalAccountId === null || $targetNominalAccountId <= 0)
         ) {
             $errors[] = 'Choose a nominal account before saving Manual or Auto categorisation.';
         } elseif (
             $globalAction !== 'defer_transaction'
+            && !$isDirectorLoanAction
             && $isTransferTransaction
             && ($targetTransferAccountId === null || $targetTransferAccountId <= 0)
         ) {
@@ -205,6 +221,7 @@ final class TransactionAction implements ActionInterfaceFramework
                         'save_transaction_category' => $isTransferTransaction
                             ? 'Transfer account saved.'
                             : 'Manual categorisation saved.',
+                        'mark_director_loan' => 'Director loan categorisation saved.',
                         default => 'Manual categorisation saved.',
                     };
                 } else {
@@ -549,6 +566,48 @@ final class TransactionAction implements ActionInterfaceFramework
         $value = trim((string)($settings['default_bank_nominal_id'] ?? ''));
 
         return ctype_digit($value) ? (int)$value : 0;
+    }
+
+    private function directorLoanNominalResolution(int $companyId, array $transaction): array
+    {
+        if ($companyId <= 0) {
+            return [
+                'nominal_account_id' => null,
+                'error' => 'Select a company before marking director loan transactions.',
+            ];
+        }
+
+        $amount = round((float)($transaction['amount'] ?? 0), 2);
+        if (abs($amount) < 0.005) {
+            return [
+                'nominal_account_id' => null,
+                'error' => 'Director loan shortcut requires a non-zero transaction amount.',
+            ];
+        }
+
+        $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
+        if ($amount < 0) {
+            $nominalId = self::positiveInt($settings['director_loan_asset_nominal_id'] ?? '');
+
+            return $nominalId > 0
+                ? ['nominal_account_id' => $nominalId, 'error' => '']
+                : [
+                    'nominal_account_id' => null,
+                    'error' => 'Set the Director Loan Asset nominal before marking an outgoing transaction as a director loan.',
+                ];
+        }
+
+        $nominalId = self::positiveInt($settings['director_loan_liability_nominal_id'] ?? '');
+        if ($nominalId <= 0) {
+            $nominalId = self::positiveInt($settings['director_loan_nominal_id'] ?? '');
+        }
+
+        return $nominalId > 0
+            ? ['nominal_account_id' => $nominalId, 'error' => '']
+            : [
+                'nominal_account_id' => null,
+                'error' => 'Set the Director Loan Liability nominal before marking an incoming transaction as a director loan.',
+            ];
     }
 
     private function transactionIsTransferMode(array $transaction): bool

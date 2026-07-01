@@ -104,6 +104,7 @@ final class _transactions_importedCard extends CardBaseFramework
         $nominalAccounts = (array)($services['nominal_accounts'] ?? []);
         $activeTransferCompanyAccounts = $this->activeTransferCompanyAccounts($services);
         $isPeriodLocked = $this->isPeriodLocked($services);
+        $settings = (array)($company['settings'] ?? []);
         $selectedTransactionMonth = (string)($page['month_key'] ?? '');
         $selectedTransactionFilter = (string)($page['category_filter'] ?? 'not_posted');
         $selectedMonthSummary = $this->buildSelectedMonthSummary($transactionsByMonth);
@@ -125,6 +126,7 @@ final class _transactions_importedCard extends CardBaseFramework
             $selectedTransactionFilter,
             $nominalAccounts,
             $activeTransferCompanyAccounts,
+            $settings,
             $isPeriodLocked,
             $context
         )->render(
@@ -182,6 +184,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 (string)($page['category_filter'] ?? 'not_posted'),
                 (array)($services['nominal_accounts'] ?? []),
                 $this->activeTransferCompanyAccounts($services),
+                (array)($company['settings'] ?? []),
                 $isPeriodLocked
             ),
         ];
@@ -195,6 +198,7 @@ final class _transactions_importedCard extends CardBaseFramework
         string $selectedTransactionFilter,
         array $nominalAccounts,
         array $activeTransferCompanyAccounts,
+        array $settings,
         bool $isPeriodLocked,
         array $context
     ): TableFramework {
@@ -209,6 +213,7 @@ final class _transactions_importedCard extends CardBaseFramework
             $selectedTransactionFilter,
             $nominalAccounts,
             $activeTransferCompanyAccounts,
+            $settings,
             $isPeriodLocked
         )
             ->visibleRows((array)$pagination['items'])
@@ -322,6 +327,7 @@ final class _transactions_importedCard extends CardBaseFramework
         string $selectedTransactionFilter,
         array $nominalAccounts,
         array $activeTransferCompanyAccounts,
+        array $settings,
         bool $isPeriodLocked = false
     ): TableFramework {
         $rows = array_values(array_filter($transactions, static fn(mixed $row): bool => is_array($row)));
@@ -409,7 +415,7 @@ final class _transactions_importedCard extends CardBaseFramework
             ->column(
                 'actions',
                 'Actions',
-                html: fn(array $row): string => $this->actionsHtml($row, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $isPeriodLocked),
+                html: fn(array $row): string => $this->actionsHtml($row, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $settings, $isPeriodLocked),
                 exportable: false
             );
     }
@@ -550,6 +556,7 @@ final class _transactions_importedCard extends CardBaseFramework
         int $accountingPeriodId,
         string $selectedTransactionMonth,
         string $selectedTransactionFilter,
+        array $settings,
         bool $isPeriodLocked
     ): string
     {
@@ -566,6 +573,7 @@ final class _transactions_importedCard extends CardBaseFramework
             : '<button class="js-transaction-autosave-submit" type="submit" name="global_action" value="save_transaction_category" hidden' . $journalRebuildAttributes . '>Autosave</button>';
         $createAssetAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit" form="' . HelperFramework::escape($assetFormId) . '" formnovalidate';
         $createRuleHtml = $isTransferRow ? '' : $this->createRuleButtonHtml($transaction, $isPeriodLocked);
+        $directorLoanButtonHtml = $this->directorLoanButtonHtml($transaction, $settings, $isPeriodLocked, $journalRebuildAttributes);
 
         return '<form method="post" action="?page=assets" id="' . HelperFramework::escape($assetFormId) . '">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -583,10 +591,60 @@ final class _transactions_importedCard extends CardBaseFramework
                 ' . $autosaveSubmitHtml . '
                 <div class="actions-row">
                     ' . $createRuleHtml . '
+                    ' . $directorLoanButtonHtml . '
                     <button class="button primary"' . $lockedButtonAttributes . ' name="global_action" value="defer_transaction"' . $journalRebuildAttributes . '>Defer</button>
                     <button class="button"' . $createAssetAttributes . '>Create Asset</button>
                 </div>
             </form>';
+    }
+
+    private function directorLoanButtonHtml(array $transaction, array $settings, bool $isPeriodLocked, string $journalRebuildAttributes): string
+    {
+        if ($this->transactionIsTransferMode($transaction)) {
+            return '';
+        }
+
+        $amount = round((float)($transaction['amount'] ?? 0), 2);
+        $disabledReason = '';
+        if ($isPeriodLocked) {
+            $disabledReason = 'Period locked';
+        } elseif (abs($amount) < 0.005) {
+            $disabledReason = 'Director loan shortcut requires a non-zero amount';
+        } elseif ($this->directorLoanNominalId($settings, $amount) <= 0) {
+            $disabledReason = $amount < 0
+                ? 'Set Director Loan Asset nominal in Company Nominals'
+                : 'Set Director Loan Liability nominal in Company Nominals';
+        }
+
+        if ($disabledReason !== '') {
+            return '<button class="button" type="button" disabled title="' . HelperFramework::escape($disabledReason) . '">Director Loan</button>';
+        }
+
+        return '<button class="button" type="submit" name="global_action" value="mark_director_loan"' . $journalRebuildAttributes . '>Director Loan</button>';
+    }
+
+    private function directorLoanNominalId(array $settings, float $amount): int
+    {
+        if ($amount < 0) {
+            return $this->positiveSettingId($settings['director_loan_asset_nominal_id'] ?? '');
+        }
+
+        $liabilityNominalId = $this->positiveSettingId($settings['director_loan_liability_nominal_id'] ?? '');
+
+        return $liabilityNominalId > 0
+            ? $liabilityNominalId
+            : $this->positiveSettingId($settings['director_loan_nominal_id'] ?? '');
+    }
+
+    private function positiveSettingId(mixed $value): int
+    {
+        if (!is_scalar($value) && $value !== null) {
+            return 0;
+        }
+
+        $value = trim((string)$value);
+
+        return ctype_digit($value) ? (int)$value : 0;
     }
 
     private function createRuleButtonHtml(array $transaction, bool $includeNominalInput): string

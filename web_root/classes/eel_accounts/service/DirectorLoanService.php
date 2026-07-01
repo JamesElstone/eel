@@ -59,26 +59,65 @@ final class DirectorLoanService
         }
 
         $settings = $this->fetchCompanySettings($companyId);
-        $directorLoanNominalId = (int)($settings['director_loan_liability_nominal_id'] ?? 0);
-        if ($directorLoanNominalId <= 0) {
-            $directorLoanNominalId = (int)($settings['director_loan_nominal_id'] ?? 0);
+        $assetNominal = $this->directorLoanNominal($settings, 'asset');
+        $liabilityNominal = $this->directorLoanNominal($settings, 'liability');
+        $errors = [];
+        if ($assetNominal === null) {
+            $errors[] = 'Director Loan Asset nominal could not be resolved from Company Settings, subtype director_loan_asset, or code 1200.';
         }
-        if ($directorLoanNominalId <= 0) {
-            return $this->errorResult('No Director Loan Liability nominal has been configured in Company Settings.', 'director_loan_nominal_missing', 422);
+        if ($liabilityNominal === null) {
+            $errors[] = 'Director Loan Liability nominal could not be resolved from Company Settings, legacy Director Loan setting, subtype director_loan_liability, or code 2100.';
+        }
+        if ($errors !== []) {
+            return [
+                'success' => false,
+                'errors' => $errors,
+                'error_code' => 'director_loan_nominal_missing',
+                'status' => 422,
+                'accounting_period' => [
+                    'id' => (int)$accountingPeriod['id'],
+                    'label' => (string)$accountingPeriod['label'],
+                    'period_start' => (string)$accountingPeriod['period_start'],
+                    'period_end' => (string)$accountingPeriod['period_end'],
+                ],
+                'asset_nominal' => $assetNominal,
+                'liability_nominal' => $liabilityNominal,
+            ];
         }
 
-        $nominal = $this->fetchNominalAccount($directorLoanNominalId);
-        if ($nominal === null || (array_key_exists('is_active', $nominal) && (int)$nominal['is_active'] !== 1)) {
-            return $this->errorResult('The configured Director Loan Liability nominal could not be found or is inactive.', 'director_loan_nominal_invalid', 422);
-        }
-
-        $openingBalance = $this->fetchOpeningBalance($companyId, $directorLoanNominalId, (string)$accountingPeriod['period_start']);
-        $movementRows = $this->fetchMovementRows(
-            $companyId,
-            $directorLoanNominalId,
-            (string)$accountingPeriod['period_start'],
-            (string)$accountingPeriod['period_end']
+        $assetNominal = (array)$assetNominal;
+        $liabilityNominal = (array)$liabilityNominal;
+        $assetOpeningReceivable = round(-1 * $this->fetchOpeningBalance($companyId, (int)$assetNominal['id'], (string)$accountingPeriod['period_start']), 2);
+        $liabilityOpeningPayable = round($this->fetchOpeningBalance($companyId, (int)$liabilityNominal['id'], (string)$accountingPeriod['period_start']), 2);
+        $movementRows = array_merge(
+            $this->fetchMovementRows(
+                $companyId,
+                (int)$assetNominal['id'],
+                (string)$accountingPeriod['period_start'],
+                (string)$accountingPeriod['period_end'],
+                'asset',
+                $assetNominal
+            ),
+            $this->fetchMovementRows(
+                $companyId,
+                (int)$liabilityNominal['id'],
+                (string)$accountingPeriod['period_start'],
+                (string)$accountingPeriod['period_end'],
+                'liability',
+                $liabilityNominal
+            )
         );
+        usort($movementRows, static function (array $left, array $right): int {
+            return [
+                (string)($left['journal_date'] ?? ''),
+                (int)($left['journal_id'] ?? 0),
+                (int)($left['journal_line_id'] ?? 0),
+            ] <=> [
+                (string)($right['journal_date'] ?? ''),
+                (int)($right['journal_id'] ?? 0),
+                (int)($right['journal_line_id'] ?? 0),
+            ];
+        });
 
         $statementRows = [[
             'row_type' => 'opening_balance',
@@ -88,16 +127,24 @@ final class DirectorLoanService
             'description' => 'Balance brought forward',
             'source_type' => null,
             'signed_amount' => null,
-            'running_balance' => round($openingBalance, 2),
+            'running_balance' => round($liabilityOpeningPayable - $assetOpeningReceivable, 2),
+            'account_label' => 'Combined',
         ]];
 
-        $runningBalance = $openingBalance;
+        $runningBalance = round($liabilityOpeningPayable - $assetOpeningReceivable, 2);
         $movementInPeriod = 0.0;
+        $assetMovementReceivable = 0.0;
+        $liabilityMovementPayable = 0.0;
 
         foreach ($movementRows as $row) {
             $signedAmount = round((float)$row['signed_amount'], 2);
             $movementInPeriod += $signedAmount;
             $runningBalance += $signedAmount;
+            if ((string)($row['nominal_role'] ?? '') === 'asset') {
+                $assetMovementReceivable += (float)($row['normal_amount'] ?? 0);
+            } elseif ((string)($row['nominal_role'] ?? '') === 'liability') {
+                $liabilityMovementPayable += (float)($row['normal_amount'] ?? 0);
+            }
 
             $statementRows[] = [
                 'row_type' => 'movement',
@@ -108,14 +155,19 @@ final class DirectorLoanService
                 'source_type' => (string)$row['source_type'],
                 'signed_amount' => $signedAmount,
                 'running_balance' => round($runningBalance, 2),
-                'nominal_account_id' => (int)$directorLoanNominalId,
-                'nominal_code' => (string)($nominal['code'] ?? ''),
-                'nominal_name' => (string)($nominal['name'] ?? ''),
+                'normal_amount' => round((float)($row['normal_amount'] ?? 0), 2),
+                'nominal_role' => (string)($row['nominal_role'] ?? ''),
+                'nominal_account_id' => (int)($row['nominal_account_id'] ?? 0),
+                'nominal_code' => (string)($row['nominal_code'] ?? ''),
+                'nominal_name' => (string)($row['nominal_name'] ?? ''),
+                'account_label' => (string)($row['account_label'] ?? ''),
             ];
         }
 
         $movementInPeriod = round($movementInPeriod, 2);
-        $closingBalance = round($openingBalance + $movementInPeriod, 2);
+        $assetReceivable = round($assetOpeningReceivable + $assetMovementReceivable, 2);
+        $liabilityPayable = round($liabilityOpeningPayable + $liabilityMovementPayable, 2);
+        $closingBalance = round($liabilityPayable - $assetReceivable, 2);
         $currencySymbol = html_entity_decode((string)($settings['default_currency_symbol'] ?? '&#163;'), \ENT_QUOTES | \ENT_HTML5, 'UTF-8');
 
         return [
@@ -127,12 +179,22 @@ final class DirectorLoanService
                 'period_end' => (string)$accountingPeriod['period_end'],
             ],
             'director_loan_nominal' => [
-                'id' => (int)($nominal['id'] ?? 0),
-                'code' => (string)($nominal['code'] ?? ''),
-                'name' => (string)($nominal['name'] ?? ''),
-                'account_type' => (string)($nominal['account_type'] ?? ''),
+                'id' => (int)($liabilityNominal['id'] ?? 0),
+                'code' => (string)($liabilityNominal['code'] ?? ''),
+                'name' => (string)($liabilityNominal['name'] ?? ''),
+                'account_type' => (string)($liabilityNominal['account_type'] ?? ''),
             ],
-            'opening_balance' => round($openingBalance, 2),
+            'asset_nominal' => $assetNominal,
+            'liability_nominal' => $liabilityNominal,
+            'asset_opening_receivable' => $assetOpeningReceivable,
+            'liability_opening_payable' => $liabilityOpeningPayable,
+            'asset_movement_receivable' => round($assetMovementReceivable, 2),
+            'liability_movement_payable' => round($liabilityMovementPayable, 2),
+            'asset_receivable' => $assetReceivable,
+            'liability_payable' => $liabilityPayable,
+            'net_position' => $closingBalance,
+            'net_position_label' => $this->balanceDirectionLabel($closingBalance),
+            'opening_balance' => round($liabilityOpeningPayable - $assetOpeningReceivable, 2),
             'movement_in_period' => $movementInPeriod,
             'closing_balance' => $closingBalance,
             'balance_direction' => $this->balanceDirection($closingBalance),
@@ -194,7 +256,14 @@ final class DirectorLoanService
         return round((float)$stmt->fetchColumn(), 2);
     }
 
-    private function fetchMovementRows(int $companyId, int $nominalAccountId, string $periodStart, string $periodEnd): array {
+    private function fetchMovementRows(
+        int $companyId,
+        int $nominalAccountId,
+        string $periodStart,
+        string $periodEnd,
+        string $nominalRole,
+        array $nominal
+    ): array {
         $stmt = \InterfaceDB::prepareExecute(
             'SELECT j.id AS journal_id,
                     j.journal_date,
@@ -231,10 +300,44 @@ final class DirectorLoanService
                 ),
                 'source_type' => (string)($row['source_type'] ?? ''),
                 'signed_amount' => ((float)($row['credit'] ?? 0)) - ((float)($row['debit'] ?? 0)),
+                'normal_amount' => $nominalRole === 'asset'
+                    ? ((float)($row['debit'] ?? 0)) - ((float)($row['credit'] ?? 0))
+                    : ((float)($row['credit'] ?? 0)) - ((float)($row['debit'] ?? 0)),
+                'nominal_role' => $nominalRole,
+                'nominal_account_id' => (int)($nominal['id'] ?? $nominalAccountId),
+                'nominal_code' => (string)($nominal['code'] ?? ''),
+                'nominal_name' => (string)($nominal['name'] ?? ''),
+                'account_label' => \FormattingFramework::nominalLabel($nominal),
             ];
         }
 
         return $rows;
+    }
+
+    private function directorLoanNominal(array $settings, string $role): ?array
+    {
+        if ($role === 'asset') {
+            $configuredId = $this->positiveInt($settings['director_loan_asset_nominal_id'] ?? 0);
+            $configured = $configuredId > 0 ? $this->fetchNominalAccount($configuredId, 'asset') : null;
+            if ($configured !== null) {
+                return $configured;
+            }
+
+            return $this->fetchNominalBySubtype('director_loan_asset', 'asset')
+                ?? $this->fetchNominalByCode('1200', 'asset');
+        }
+
+        $configuredId = $this->positiveInt($settings['director_loan_liability_nominal_id'] ?? 0);
+        if ($configuredId <= 0) {
+            $configuredId = $this->positiveInt($settings['director_loan_nominal_id'] ?? 0);
+        }
+        $configured = $configuredId > 0 ? $this->fetchNominalAccount($configuredId, 'liability') : null;
+        if ($configured !== null) {
+            return $configured;
+        }
+
+        return $this->fetchNominalBySubtype('director_loan_liability', 'liability')
+            ?? $this->fetchNominalByCode('2100', 'liability');
     }
 
     private function buildStatementDescription(string $journalDescription, string $lineDescription): string {
@@ -271,19 +374,84 @@ final class DirectorLoanService
         return is_array($accountingPeriod) ? $accountingPeriod : null;
     }
 
-    private function fetchNominalAccount(int $nominalAccountId): ?array {
+    private function fetchNominalAccount(int $nominalAccountId, ?string $accountType = null): ?array {
         if ($nominalAccountId <= 0) {
             return null;
         }
 
         $stmt = \InterfaceDB::prepareExecute(
-            'SELECT id, code, name, account_type, is_active
-             FROM nominal_accounts
-             WHERE id = :id
+            'SELECT na.id,
+                    na.code,
+                    na.name,
+                    na.account_type,
+                    na.is_active,
+                    COALESCE(nas.code, \'\') AS subtype_code
+             FROM nominal_accounts na
+             LEFT JOIN nominal_account_subtypes nas ON nas.id = na.account_subtype_id
+             WHERE na.id = :id
+               AND (:account_type = \'\' OR na.account_type = :account_type_match)
              LIMIT 1',
-            ['id' => $nominalAccountId]
+            [
+                'id' => $nominalAccountId,
+                'account_type' => (string)($accountType ?? ''),
+                'account_type_match' => (string)($accountType ?? ''),
+            ]
         );
         $nominal = $stmt->fetch();
+
+        return is_array($nominal) && (int)($nominal['is_active'] ?? 0) === 1 ? $nominal : null;
+    }
+
+    private function fetchNominalBySubtype(string $subtypeCode, string $accountType): ?array
+    {
+        if (!$this->tableExists('nominal_account_subtypes')) {
+            return null;
+        }
+
+        $nominal = \InterfaceDB::fetchOne(
+            'SELECT na.id,
+                    na.code,
+                    na.name,
+                    na.account_type,
+                    na.is_active,
+                    COALESCE(nas.code, \'\') AS subtype_code
+             FROM nominal_accounts na
+             INNER JOIN nominal_account_subtypes nas ON nas.id = na.account_subtype_id
+             WHERE nas.code = :subtype_code
+               AND na.account_type = :account_type
+               AND COALESCE(na.is_active, 0) = 1
+               AND COALESCE(nas.is_active, 0) = 1
+             ORDER BY na.sort_order ASC, na.code ASC, na.id ASC
+             LIMIT 1',
+            [
+                'subtype_code' => $subtypeCode,
+                'account_type' => $accountType,
+            ]
+        );
+
+        return is_array($nominal) ? $nominal : null;
+    }
+
+    private function fetchNominalByCode(string $code, string $accountType): ?array
+    {
+        $nominal = \InterfaceDB::fetchOne(
+            'SELECT na.id,
+                    na.code,
+                    na.name,
+                    na.account_type,
+                    na.is_active,
+                    COALESCE(nas.code, \'\') AS subtype_code
+             FROM nominal_accounts na
+             LEFT JOIN nominal_account_subtypes nas ON nas.id = na.account_subtype_id
+             WHERE na.code = :code
+               AND na.account_type = :account_type
+               AND COALESCE(na.is_active, 0) = 1
+             LIMIT 1',
+            [
+                'code' => $code,
+                'account_type' => $accountType,
+            ]
+        );
 
         return is_array($nominal) ? $nominal : null;
     }
@@ -317,6 +485,20 @@ final class DirectorLoanService
         }
 
         return $settings;
+    }
+
+    private function positiveInt(mixed $value): int
+    {
+        if (is_int($value)) {
+            return max(0, $value);
+        }
+
+        $value = trim((string)$value);
+        if ($value === '' || !ctype_digit($value)) {
+            return 0;
+        }
+
+        return max(0, (int)$value);
     }
 
     private function validateCompany(int $companyId): ?array {
@@ -354,7 +536,7 @@ final class DirectorLoanService
         return match ($this->balanceDirection($balance)) {
             'company_owes_director' => 'Company owes director',
             'director_owes_company' => 'Director owes company',
-            default => 'Balance settled',
+            default => 'Settled',
         };
     }
 

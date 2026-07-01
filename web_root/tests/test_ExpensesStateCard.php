@@ -71,8 +71,10 @@ $harness->run(_expenses_stateCard::class, function (GeneratedServiceClassTestHar
         $harness->assertSame(1, substr_count($html, '<section class="panel-soft">'));
         $harness->assertSame(false, str_contains($html, 'class="expense-claim-heatmap-controls create-expense-claim"'));
         $harness->assertSame(false, str_contains($html, '<button class="button" type="submit">Apply</button>'));
-        $harness->assertTrue(strpos($html, 'class="calendar-heatmap"') < strpos($html, 'id="expense-claimant"'));
+        $harness->assertTrue(strpos($html, 'id="expense-claimant"') < strpos($html, 'class="calendar-heatmap"'));
         $harness->assertTrue(strpos($html, '<div class="card-toolbar">') < strpos($html, 'id="expense-claimant"'));
+        $harness->assertTrue(strpos($html, '<div class="card-toolbar">') < strpos($html, 'class="expense-claim-heatmap"'));
+        $harness->assertTrue(strpos($html, 'class="expense-claim-heatmap"') < strpos($html, '<table'));
         $harness->assertSame(0, substr_count($html, 'class="card-toolbar expenses-toolbar"'));
         $harness->assertSame(0, substr_count($html, 'class="toolbar expenses-toolbar"'));
         $harness->assertSame(false, str_contains($html, 'id="expense-search-status"'));

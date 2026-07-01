@@ -11,9 +11,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(_asset_createCard::class, static function (GeneratedServiceClassTestHarness $harness, _asset_createCard $card): void {
-    $harness->check(_asset_createCard::class, 'declares asset service with selected company context', static function () use ($harness, $card): void {
+    $harness->check(_asset_createCard::class, 'declares services for asset data and nominal options', static function () use ($harness, $card): void {
         $services = $card->services();
         $assetPageDataService = (array)($services[0] ?? []);
+        $nominalAccountsService = (array)($services[1] ?? []);
         $params = (array)($assetPageDataService['params'] ?? []);
 
         $harness->assertSame('assetPageData', $assetPageDataService['key'] ?? null);
@@ -23,12 +24,70 @@ $harness->run(_asset_createCard::class, static function (GeneratedServiceClassTe
         $harness->assertSame(':company.accounting_period_id', $params['accountingPeriodId'] ?? null);
         $harness->assertSame(':company.settings.default_bank_nominal_id', $params['defaultBankNominalId'] ?? null);
         $harness->assertSame(':prefill_transaction_id', $params['prefillTransactionId'] ?? null);
+
+        $harness->assertSame('nominal_accounts', $nominalAccountsService['key'] ?? null);
+        $harness->assertSame(\eel_accounts\Repository\NominalAccountRepository::class, $nominalAccountsService['service'] ?? null);
+        $harness->assertSame('fetchNominalAccounts', $nominalAccountsService['method'] ?? null);
     });
 
-    $harness->check(_asset_createCard::class, 'renders visible asset service errors', static function () use ($harness, $card): void {
-        $message = $card->handleError('assetPageData', ['message' => 'Page context value not found: company.id'], []);
+    $harness->check(_asset_createCard::class, 'renders category and credit nominal options', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => [
+                'id' => 7,
+                'accounting_period_id' => 22,
+            ],
+            'services' => [
+                'assetPageData' => [
+                    'default_bank_nominal_id' => 42,
+                ],
+                'nominal_accounts' => [[
+                    'id' => 42,
+                    'code' => '1000',
+                    'name' => 'Bank',
+                    'account_type' => 'asset',
+                    'subtype_code' => 'bank',
+                ], [
+                    'id' => 43,
+                    'code' => '2300',
+                    'name' => 'Trade Creditors',
+                    'account_type' => 'liability',
+                    'subtype_code' => 'trade_creditor',
+                ], [
+                    'id' => 44,
+                    'code' => '3000',
+                    'name' => 'Capital Introduced',
+                    'account_type' => 'equity',
+                    'subtype_code' => '',
+                ], [
+                    'id' => 45,
+                    'code' => '4000',
+                    'name' => 'Sales',
+                    'account_type' => 'income',
+                    'subtype_code' => '',
+                ], [
+                    'id' => 46,
+                    'code' => '5000',
+                    'name' => 'Materials',
+                    'account_type' => 'cost_of_sales',
+                    'subtype_code' => '',
+                ], [
+                    'id' => 47,
+                    'code' => '7000',
+                    'name' => 'General Expenses',
+                    'account_type' => 'expense',
+                    'subtype_code' => '',
+                ]],
+            ],
+        ]);
 
-        $harness->assertTrue(str_contains($message, 'Asset data could not be loaded'));
-        $harness->assertTrue(str_contains($message, 'company.id'));
+        $harness->assertTrue(str_contains($html, 'class="asset-create-form"'));
+        $harness->assertTrue(str_contains($html, 'class="asset-create-controls"'));
+        $harness->assertTrue(str_contains($html, '<option value="tools_equipment">Tools &amp; Equipment</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="42" selected>'));
+        $harness->assertTrue(str_contains($html, '<option value="43">'));
+        $harness->assertTrue(str_contains($html, '<option value="44">'));
+        $harness->assertSame(false, str_contains($html, '<option value="45">'));
+        $harness->assertSame(false, str_contains($html, '<option value="46">'));
+        $harness->assertSame(false, str_contains($html, '<option value="47">'));
     });
 });

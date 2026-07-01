@@ -12,6 +12,8 @@ namespace eel_accounts\Service;
 
 final class AssetService
 {
+    private const MANUAL_ASSET_OFFSET_ACCOUNT_TYPES = ['asset', 'liability', 'equity'];
+
     private \eel_accounts\Service\TransactionCategorisationService $categorisationService;
     private \eel_accounts\Service\TransactionJournalService $transactionJournalService;
     private ?bool $schemaReady = null;
@@ -220,6 +222,9 @@ final class AssetService
 
         if ($offsetNominalId <= 0) {
             return ['success' => false, 'errors' => ['Choose an offset nominal before posting a manual asset.']];
+        }
+        if (!$this->isManualAssetOffsetNominal($offsetNominalId)) {
+            return ['success' => false, 'errors' => ['Choose a balance sheet nominal before posting a manual asset.']];
         }
         (new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'post manual assets in this period');
 
@@ -970,6 +975,20 @@ final class AssetService
              WHERE code = :code
              LIMIT 1', ['code' => $code]);
         return $value !== false ? (int)$value : 0;
+    }
+
+    private function isManualAssetOffsetNominal(int $nominalAccountId): bool
+    {
+        $accountType = \InterfaceDB::fetchColumn(
+            'SELECT account_type
+             FROM nominal_accounts
+             WHERE id = :id
+               AND is_active = 1
+             LIMIT 1',
+            ['id' => $nominalAccountId]
+        );
+
+        return in_array((string)$accountType, self::MANUAL_ASSET_OFFSET_ACCOUNT_TYPES, true);
     }
 
     private function insertJournal(array $journal): int {

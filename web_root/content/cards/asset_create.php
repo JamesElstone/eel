@@ -28,6 +28,11 @@ final class _asset_createCard extends CardBaseFramework
                     'prefillTransactionId' => ':prefill_transaction_id',
                 ],
             ],
+            [
+                'key' => 'nominal_accounts',
+                'service' => \eel_accounts\Repository\NominalAccountRepository::class,
+                'method' => 'fetchNominalAccounts',
+            ],
         ];
     }
 
@@ -49,19 +54,22 @@ final class _asset_createCard extends CardBaseFramework
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $accountingPeriods = (array)($page['accounting_periods'] ?? []);
-        $nominalAccounts = (array)($page['nominal_accounts'] ?? []);
+        $services = (array)($context['services'] ?? []);
+        $nominalAccounts = (array)($services['nominal_accounts'] ?? $page['nominal_accounts'] ?? []);
         $prefillTransaction = is_array($assetsPageData['prefill_transaction'] ?? null) ? $assetsPageData['prefill_transaction'] : null;
-        $assetCategories = is_array($assetsPageData['asset_categories'] ?? null) ? $assetsPageData['asset_categories'] : [];
+        $assetCategories = is_array($assetsPageData['asset_categories'] ?? null)
+            ? $assetsPageData['asset_categories']
+            : \eel_accounts\Service\AssetService::assetCategoryOptions();
 
         return '
-            <form method="post" action="?page=assets" data-ajax="true">
+            <form class="asset-create-form" method="post" action="?page=assets" data-ajax="true">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
                 . ($prefillTransaction !== null
                     ? '<input type="hidden" name="transaction_id" value="' . (int)($prefillTransaction['transaction_id'] ?? 0) . '">'
                     : '') . '
                 <input type="hidden" name="global_action" value="' . HelperFramework::escape($prefillTransaction !== null ? 'create_asset_from_transaction' : 'create_manual_asset') . '">
-                <div class="form-grid">
+                <div class="asset-create-controls">
                     <div class="field">
                         <label for="asset_description">Description</label>
                         <input class="input" id="asset_description" type="text" name="description" value="' . HelperFramework::escape((string)($prefillTransaction['description'] ?? '')) . '" required>
@@ -100,8 +108,6 @@ final class _asset_createCard extends CardBaseFramework
                         <select class="select" id="asset_offset_nominal_id" name="offset_nominal_id">' . $this->nominalOptions($nominalAccounts, (int)($assetsPageData['default_bank_nominal_id'] ?? 0)) . '</select>
                     </div>'
                         : '') . '
-                </div>
-                <div>
                     <button class="button primary" type="submit">' . HelperFramework::escape($prefillTransaction !== null ? 'Create Asset' : 'Post Asset') . '</button>
                 </div>
             </form>
@@ -122,11 +128,20 @@ final class _asset_createCard extends CardBaseFramework
     {
         $html = '';
         foreach ($nominalAccounts as $nominal) {
+            if (!$this->isCreditNominalCandidate((array)$nominal)) {
+                continue;
+            }
+
             $nominalId = (int)($nominal['id'] ?? 0);
             $selected = $nominalId === $selectedId ? ' selected' : '';
             $html .= '<option value="' . $nominalId . '"' . $selected . '>' . HelperFramework::escape(FormattingFramework::nominalLabel((array)$nominal, ' ')) . '</option>';
         }
 
         return $html;
+    }
+
+    private function isCreditNominalCandidate(array $nominal): bool
+    {
+        return in_array((string)($nominal['account_type'] ?? ''), ['asset', 'liability', 'equity'], true);
     }
 }

@@ -61,5 +61,41 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
             $harness->assertSame(0.0, $amount);
         });
+
+        $harness->check(\eel_accounts\Service\AssetService::class, 'manual asset offset nominal must be a balance sheet account', static function () use ($harness, $service): void {
+            if (!InterfaceDB::tableExists('nominal_accounts')) {
+                $harness->skip('Nominal accounts table is not available on the default InterfaceDB connection.');
+            }
+
+            $balanceSheetNominalId = assetServiceTestInsertNominal('AST', 'Asset Offset Candidate', 'asset');
+            $expenseNominalId = assetServiceTestInsertNominal('EXP', 'Expense Offset Candidate', 'expense');
+
+            $method = new ReflectionMethod(\eel_accounts\Service\AssetService::class, 'isManualAssetOffsetNominal');
+            $method->setAccessible(true);
+
+            $harness->assertSame(true, $method->invoke($service, $balanceSheetNominalId));
+            $harness->assertSame(false, $method->invoke($service, $expenseNominalId));
+        });
     }
 );
+
+function assetServiceTestInsertNominal(string $prefix, string $name, string $accountType): int
+{
+    $code = $prefix . strtoupper(substr(str_replace('.', '', uniqid('', true)), -5));
+    InterfaceDB::prepareExecute(
+        'INSERT INTO nominal_accounts (code, name, account_type, tax_treatment, is_active, sort_order)
+         VALUES (:code, :name, :account_type, :tax_treatment, 1, :sort_order)',
+        [
+            'code' => $code,
+            'name' => $name . ' ' . $code,
+            'account_type' => $accountType,
+            'tax_treatment' => 'other',
+            'sort_order' => 9900,
+        ]
+    );
+
+    return (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM nominal_accounts WHERE code = :code LIMIT 1',
+        ['code' => $code]
+    );
+}

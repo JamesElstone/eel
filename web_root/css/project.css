@@ -2084,6 +2084,47 @@
   white-space: nowrap;
 }
 
+.asset-create-form {
+  margin: 0;
+}
+
+.asset-create-controls {
+  align-items: flex-end;
+  display: flex;
+  flex-flow: row wrap;
+  gap: 10px;
+}
+
+.asset-create-controls > .field {
+  display: grid;
+  flex: 0 1 fit-content;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.asset-create-controls .input,
+.asset-create-controls .select {
+  max-width: 100%;
+  width: fit-content;
+}
+
+.asset-create-controls #asset_description {
+  min-width: min(260px, 100%);
+}
+
+.asset-create-controls #asset_cost,
+.asset-create-controls #asset_life,
+.asset-create-controls #asset_residual {
+  max-width: 9rem;
+}
+
+.asset-create-controls .button {
+  flex: 0 0 auto;
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
 .transaction-search-amount-total span {
   color: var(--muted);
 }

@@ -44,4 +44,16 @@ $harness->run(\eel_accounts\Service\CompanySettingsService::class, static functi
 
         $harness->assertSame(14, (int)($suggestions['default_expense_nominal_id']['id'] ?? 0));
     });
+
+    $harness->check(\eel_accounts\Service\CompanySettingsService::class, 'prefers director loan liability over director loan asset', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod(\eel_accounts\Service\CompanySettingsService::class, 'buildNominalDefaultSuggestions');
+        $method->setAccessible(true);
+
+        $suggestions = $method->invoke($service, [
+            ['id' => 3, 'code' => '1200', 'name' => 'Director Loan Asset', 'account_type' => 'asset', 'subtype_code' => 'director_loan_asset'],
+            ['id' => 5, 'code' => '2100', 'name' => 'Director Loan Liability', 'account_type' => 'liability', 'subtype_code' => 'director_loan_liability'],
+        ]);
+
+        $harness->assertSame(5, (int)($suggestions['director_loan_nominal_id']['id'] ?? 0));
+    });
 });

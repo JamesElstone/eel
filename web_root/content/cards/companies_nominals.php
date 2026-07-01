@@ -257,7 +257,7 @@ final class _companies_nominalsCard extends CardBaseFramework
                 }))
                 : null,
             'director_loan_nominal_id' => !$this->hasAssignedNominal($settings, 'director_loan_nominal_id')
-                ? $this->firstMatchingNominal($normalised, static fn(array $row): bool => $row['id'] > 0 && ($row['subtype_code'] === 'director_loan_liability' || str_contains(strtolower($row['name']), 'director loan')))
+                ? $this->directorLoanNominalSuggestion($normalised)
                 : null,
             'vat_nominal_id' => !$this->hasAssignedNominal($settings, 'vat_nominal_id')
                 ? $this->firstMatchingNominal($normalised, static fn(array $row): bool => $row['id'] > 0 && ($row['subtype_code'] === 'vat_control' || str_contains(strtolower($row['name']), 'vat') || str_contains(strtolower($row['code']), 'vat')))
@@ -274,6 +274,29 @@ final class _companies_nominalsCard extends CardBaseFramework
     private function hasAssignedNominal(array $settings, string $key): bool
     {
         return (int)($settings[$key] ?? 0) > 0;
+    }
+
+    private function directorLoanNominalSuggestion(array $nominals): ?array
+    {
+        return $this->firstMatchingNominal(
+            $nominals,
+            static fn(array $row): bool => $row['id'] > 0
+                && $row['subtype_code'] === 'director_loan_liability'
+        ) ?? $this->firstMatchingNominal(
+            $nominals,
+            static fn(array $row): bool => $row['id'] > 0
+                && $row['account_type'] === 'liability'
+                && $row['code'] === '2100'
+        ) ?? $this->firstMatchingNominal(
+            $nominals,
+            static fn(array $row): bool => $row['id'] > 0
+                && $row['account_type'] === 'liability'
+                && str_contains(strtolower($row['name']), 'director loan')
+        ) ?? $this->firstMatchingNominal(
+            $nominals,
+            static fn(array $row): bool => $row['id'] > 0
+                && str_contains(strtolower($row['name']), 'director loan')
+        );
     }
 
     private function firstMatchingNominal(array $nominals, callable $predicate): ?array

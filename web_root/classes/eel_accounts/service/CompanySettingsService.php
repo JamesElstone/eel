@@ -333,11 +333,7 @@ final class CompanySettingsService
                     && !str_contains($name, 'vat')
                     && !str_contains($name, 'tax');
             }),
-            'director_loan_nominal_id' => $this->firstMatchingNominal($normalised, static function (array $row): bool {
-                return $row['id'] > 0
-                    && ($row['subtype_code'] === 'director_loan_liability'
-                        || str_contains(strtolower($row['name']), 'director loan'));
-            }),
+            'director_loan_nominal_id' => $this->directorLoanNominalSuggestion($normalised),
             'vat_nominal_id' => $this->firstMatchingNominal($normalised, static function (array $row): bool {
                 return $row['id'] > 0
                     && ($row['subtype_code'] === 'vat_control'
@@ -364,6 +360,29 @@ final class CompanySettingsService
         }
 
         return null;
+    }
+
+    private function directorLoanNominalSuggestion(array $nominals): ?array
+    {
+        return $this->firstMatchingNominal(
+            $nominals,
+            static fn(array $row): bool => $row['id'] > 0
+                && $row['subtype_code'] === 'director_loan_liability'
+        ) ?? $this->firstMatchingNominal(
+            $nominals,
+            static fn(array $row): bool => $row['id'] > 0
+                && $row['account_type'] === 'liability'
+                && $row['code'] === '2100'
+        ) ?? $this->firstMatchingNominal(
+            $nominals,
+            static fn(array $row): bool => $row['id'] > 0
+                && $row['account_type'] === 'liability'
+                && str_contains(strtolower($row['name']), 'director loan')
+        ) ?? $this->firstMatchingNominal(
+            $nominals,
+            static fn(array $row): bool => $row['id'] > 0
+                && str_contains(strtolower($row['name']), 'director loan')
+        );
     }
 
     private function hasAssignedNominal(array $settings, string $key): bool

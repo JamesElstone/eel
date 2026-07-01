@@ -22,7 +22,9 @@ $harness->run(_companies_nominalsCard::class, static function (GeneratedServiceC
         ],
         'services' => [
             'company_nominals' => [
-                ['id' => 10, 'code' => '1200', 'name' => 'Bank', 'account_type' => 'asset', 'subtype_code' => 'bank'],
+                ['id' => 10, 'code' => '1000', 'name' => 'Bank', 'account_type' => 'asset', 'subtype_code' => 'bank'],
+                ['id' => 12, 'code' => '1200', 'name' => 'Director Loan Asset', 'account_type' => 'asset', 'subtype_code' => 'director_loan_asset'],
+                ['id' => 13, 'code' => '2100', 'name' => 'Director Loan Liability', 'account_type' => 'liability', 'subtype_code' => 'director_loan_liability'],
                 ['id' => 14, 'code' => '2110', 'name' => 'Expense Claims Payable', 'account_type' => 'liability', 'subtype_code' => 'expense_payable'],
                 ['id' => 15, 'code' => '2300', 'name' => 'Trade Creditors', 'account_type' => 'liability', 'subtype_code' => 'trade_creditor'],
                 ['id' => 16, 'code' => '1300', 'name' => 'Tools and Equipment', 'account_type' => 'asset', 'subtype_code' => ''],
@@ -44,6 +46,11 @@ $harness->run(_companies_nominalsCard::class, static function (GeneratedServiceC
     $harness->check(_companies_nominalsCard::class, 'suggests expense claims payable as the default expense nominal', static function () use ($harness, $html): void {
         $harness->assertTrue(str_contains($html, '<strong>Expense claims payable nominal</strong><span>2110 Expense Claims Payable</span>'));
         $harness->assertFalse(str_contains($html, '<strong>Expense claims payable nominal</strong><span>5000 Materials</span>'));
+    });
+
+    $harness->check(_companies_nominalsCard::class, 'suggests director loan liability before director loan asset', static function () use ($harness, $html): void {
+        $harness->assertTrue(str_contains($html, '<strong>Director loan nominal</strong><span>2100 Director Loan Liability</span>'));
+        $harness->assertFalse(str_contains($html, '<strong>Director loan nominal</strong><span>1200 Director Loan Asset</span>'));
     });
 
     $harness->check(_companies_nominalsCard::class, 'renders shared asset nominal mappings', static function () use ($harness, $html): void {

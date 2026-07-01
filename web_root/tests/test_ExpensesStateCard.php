@@ -47,11 +47,11 @@ $harness->run(_expenses_stateCard::class, function (GeneratedServiceClassTestHar
                 <input type="hidden" name="intent" value="filter_claims">
                 <input type="hidden" name="expense_query" value="">
                 <input type="hidden" name="expense_status" value="all">
-                <div class="mini-field">
-                    <label for="expense-claimant">Claimant</label>
-                    <select class="select" id="expense-claimant" name="claimant_id"><option value="">Choose Claimant...</option><option value="4">Bob</option><option value="3" selected>Alex Example</option></select>
-                </div>
+                <label for="expense-claimant">Claimant</label>
+                <select class="select" id="expense-claimant" name="claimant_id"><option value="">Choose Claimant...</option><option value="4">Bob</option><option value="3" selected>Alex Example</option></select>
             </form>'));
+        $harness->assertSame(false, str_contains($html, '<div class="mini-field">
+                    <label for="expense-claimant">Claimant</label>'));
         $harness->assertSame(false, str_contains($html, '<h3 class="card-title">Create Expense claim</h3>'));
         $harness->assertSame(false, str_contains($html, 'id="expense-heatmap-claimant"'));
         $harness->assertTrue(str_contains($html, 'class="expense-claims-stack"'));
@@ -70,16 +70,24 @@ $harness->run(_expenses_stateCard::class, function (GeneratedServiceClassTestHar
                 <div class="mini-field">
                     <input class="input" id="expense-search-query" name="expense_query" form="expense-search-form" type="search" value="" placeholder="EXP-...">
                 </div>
-                <button class="button" type="submit" form="expense-search-form">Search</button>
+                <button class="button primary" type="submit" form="expense-search-form">Search</button>
             </div>'));
+        $harness->assertTrue(str_contains($html, '<div class="actions-row"><button class="button'));
         $statusFilterPosition = strpos($html, 'id="table-filter-expenses_state-expense_status"');
+        $claimantPosition = strpos($html, 'id="expense-claimant"');
         $searchPosition = strpos($html, 'id="expense-search-query"');
+        $condensedPosition = strpos($html, 'table-condensed-toggle');
         $exportPosition = strpos($html, 'name="_table_export_prepare" value="csv"');
         $harness->assertTrue($statusFilterPosition !== false);
+        $harness->assertTrue($claimantPosition !== false);
         $harness->assertTrue($searchPosition !== false);
+        $harness->assertTrue($condensedPosition !== false);
         $harness->assertTrue($exportPosition !== false);
-        $harness->assertTrue($statusFilterPosition < $searchPosition);
+        $harness->assertTrue($statusFilterPosition < $claimantPosition);
+        $harness->assertTrue($claimantPosition < $searchPosition);
         $harness->assertTrue($searchPosition < $exportPosition);
+        $harness->assertTrue($searchPosition < $condensedPosition);
+        $harness->assertTrue($condensedPosition < $exportPosition);
     });
 
     $harness->check(_expenses_stateCard::class, 'renders exportable paginated claims table with thirteen rows', function () use ($harness, $instance): void {

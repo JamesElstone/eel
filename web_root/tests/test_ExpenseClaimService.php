@@ -533,6 +533,54 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
         });
     });
 
+    $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'lists claims only for selected accounting period', function () use ($harness, $instance): void {
+        expenseClaimServiceWithFixture(static function (array $fixture) use ($harness, $instance): void {
+            $previousPeriodId = (int)$fixture['period_id'] + 1;
+            \InterfaceDB::prepareExecute(
+                'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end)
+                 VALUES (:id, :company_id, :label, :period_start, :period_end)',
+                [
+                    'id' => $previousPeriodId,
+                    'company_id' => (int)$fixture['company_id'],
+                    'label' => 'Previous Fixture ' . (string)$fixture['marker'],
+                    'period_start' => '2025-04-01',
+                    'period_end' => '2026-03-31',
+                ]
+            );
+
+            expenseClaimServiceInsertClaimWithId(
+                array_merge($fixture, ['period_id' => $previousPeriodId]),
+                (int)$fixture['claimant_id'] + 3,
+                (int)$fixture['claimant_id'],
+                2026,
+                3,
+                '2026-03-01',
+                '2026-03-31'
+            );
+
+            $currentClaims = $instance->listClaims((int)$fixture['company_id'], [
+                'heatmap_claimant_id' => (int)$fixture['claimant_id'],
+                'accounting_period_id' => (int)$fixture['period_id'],
+            ]);
+            $previousClaims = $instance->listClaims((int)$fixture['company_id'], [
+                'heatmap_claimant_id' => (int)$fixture['claimant_id'],
+                'accounting_period_id' => $previousPeriodId,
+            ]);
+            $fallbackClaims = $instance->listClaims((int)$fixture['company_id'], [
+                'heatmap_claimant_id' => (int)$fixture['claimant_id'],
+                'accounting_period_start' => '2025-04-01',
+                'accounting_period_end' => '2026-03-31',
+            ]);
+
+            $harness->assertSame(1, count($currentClaims));
+            $harness->assertSame(1, count($previousClaims));
+            $harness->assertSame(1, count($fallbackClaims));
+            $harness->assertSame('EXP-' . (string)$fixture['marker'] . '-' . (string)$fixture['claimant_id'] . '-202605', (string)($currentClaims[0]['claim_reference_code'] ?? ''));
+            $harness->assertSame('EXP-' . (string)$fixture['marker'] . '-' . (string)$fixture['claimant_id'] . '-202603', (string)($previousClaims[0]['claim_reference_code'] ?? ''));
+            $harness->assertSame((string)($previousClaims[0]['claim_reference_code'] ?? ''), (string)($fallbackClaims[0]['claim_reference_code'] ?? ''));
+        });
+    });
+
     $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'deletes only draft claims without repayment links', function () use ($harness, $instance): void {
         expenseClaimServiceWithFixture(static function (array $fixture) use ($harness, $instance): void {
             \InterfaceDB::prepareExecute(

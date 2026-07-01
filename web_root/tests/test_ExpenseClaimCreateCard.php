@@ -41,14 +41,19 @@ $harness->run(_expense_claim_createCard::class, function (GeneratedServiceClassT
         $harness->assertSame(false, str_contains($html, 'Create Expense Claim is disabled because there are no active claimants.'));
     });
 
-    $harness->check(_expense_claim_createCard::class, 'bounds year options by incorporation date and current year', function () use ($harness, $instance): void {
-        $html = $instance->render(expenseClaimCreateCardContext(true));
-        $currentYear = (int)date('Y');
+    $harness->check(_expense_claim_createCard::class, 'bounds year options by selected accounting period', function () use ($harness, $instance): void {
+        $html = $instance->render(expenseClaimCreateCardContext(true, [
+            'id' => 101,
+            'label' => '2024/25',
+            'period_start' => '2024-04-01',
+            'period_end' => '2025-03-31',
+        ]));
 
-        $harness->assertTrue(str_contains($html, '<option value="2020">2020</option>'));
-        $harness->assertTrue(str_contains($html, '<option value="' . $currentYear . '" selected>' . $currentYear . '</option>'));
-        $harness->assertSame(false, str_contains($html, '<option value="2019">2019</option>'));
-        $harness->assertSame(false, str_contains($html, '<option value="' . ($currentYear + 1) . '"'));
+        $harness->assertTrue(str_contains($html, '<option value="2024" selected>2024</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="2025">2025</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="4" selected>April</option>'));
+        $harness->assertSame(false, str_contains($html, '<option value="2023"'));
+        $harness->assertSame(false, str_contains($html, '<option value="2026"'));
     });
 
     $harness->check(_expense_claim_createCard::class, 'disables create claim controls without active claimants', function () use ($harness, $instance): void {
@@ -61,15 +66,26 @@ $harness->run(_expense_claim_createCard::class, function (GeneratedServiceClassT
     });
 });
 
-function expenseClaimCreateCardContext(bool $hasActiveClaimant): array
+function expenseClaimCreateCardContext(bool $hasActiveClaimant, array $accountingPeriod = []): array
 {
+    if ($accountingPeriod === []) {
+        $accountingPeriod = [
+            'id' => 102,
+            'label' => '2026/27',
+            'period_start' => '2026-04-01',
+            'period_end' => '2027-03-31',
+        ];
+    }
+
     return [
         'company' => [
             'id' => 7,
+            'accounting_period_id' => (int)($accountingPeriod['id'] ?? 0),
             'settings' => [
                 'incorporation_date' => '2020-01-01',
             ],
         ],
+        'accounting_period' => $accountingPeriod,
         'expense_page_settings' => [
             'incorporation_date' => '2020-01-01',
         ],

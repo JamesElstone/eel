@@ -81,6 +81,7 @@ final class _expenses extends PageContextFramework
             $expenseFilters,
             static fn(mixed $value): bool => $value !== null && $value !== '' && $value !== 0
         );
+        $expenseFilters = array_merge($expenseFilters, $this->selectedAccountingPeriodFilters($baseContext));
 
         return [
             'expense_filters' => $expenseFilters,
@@ -99,6 +100,27 @@ final class _expenses extends PageContextFramework
         ];
     }
 
+    private function selectedAccountingPeriodFilters(array $context): array
+    {
+        $company = (array)($context['company'] ?? []);
+        $accountingPeriod = (array)($context['accounting_period'] ?? []);
+        $accountingPeriodId = max(0, (int)($accountingPeriod['id'] ?? $company['accounting_period_id'] ?? 0));
+        $filters = [];
+
+        if ($accountingPeriodId > 0) {
+            $filters['accounting_period_id'] = $accountingPeriodId;
+        }
+
+        $periodStart = trim((string)($accountingPeriod['period_start'] ?? ''));
+        $periodEnd = trim((string)($accountingPeriod['period_end'] ?? ''));
+        if ($this->isValidDate($periodStart) && $this->isValidDate($periodEnd)) {
+            $filters['accounting_period_start'] = $periodStart;
+            $filters['accounting_period_end'] = $periodEnd;
+        }
+
+        return $filters;
+    }
+
     private function normaliseHeatmapPeriodStart(string $date): string
     {
         $date = trim($date);
@@ -113,6 +135,16 @@ final class _expenses extends PageContextFramework
         }
 
         return $parsed->format('Y-m-d');
+    }
+
+    private function isValidDate(string $date): bool
+    {
+        $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+        $errors = DateTimeImmutable::getLastErrors();
+
+        return $parsed instanceof DateTimeImmutable
+            && $parsed->format('Y-m-d') === $date
+            && (!is_array($errors) || ((int)($errors['warning_count'] ?? 0) === 0 && (int)($errors['error_count'] ?? 0) === 0));
     }
 
     private function settingId(array $settings, string $key): int

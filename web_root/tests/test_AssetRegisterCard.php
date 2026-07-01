@@ -31,4 +31,29 @@ $harness->run(_asset_registerCard::class, static function (GeneratedServiceClass
         $harness->assertTrue(str_contains($message, 'Asset data could not be loaded'));
         $harness->assertTrue(str_contains($message, 'company.id'));
     });
+
+    $harness->check(_asset_registerCard::class, 'renders disposal controls on one compact row', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => [
+                'id' => 7,
+                'accounting_period_id' => 22,
+            ],
+            'services' => [
+                'assetPageData' => [
+                    'assets' => [[
+                        'id' => 44,
+                        'asset_code' => 'FA-7-1',
+                        'description' => 'Test asset',
+                        'cost' => 100,
+                        'nbv' => 80,
+                        'status' => 'active',
+                    ]],
+                ],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, 'class="asset-disposal-form"'));
+        $harness->assertTrue(str_contains($html, 'class="asset-disposal-controls"'));
+        $harness->assertTrue(str_contains($html, 'class="button button-inline" type="submit">Dispose</button>'));
+    });
 });

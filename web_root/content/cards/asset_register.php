@@ -63,15 +63,15 @@ final class _asset_registerCard extends CardBaseFramework
                 <td>' . HelperFramework::escape(FormattingFramework::money((float)($asset['nbv'] ?? 0))) . '</td>
                 <td><span class="badge ' . HelperFramework::escape($status === 'disposed' ? 'warning' : 'success') . '">' . HelperFramework::escape($status) . '</span></td>
                 <td>' . ($status !== 'disposed'
-                    ? '<form method="post" action="?page=assets" data-ajax="true">
+                    ? '<form class="asset-disposal-form" method="post" action="?page=assets" data-ajax="true">
                         <input type="hidden" name="company_id" value="' . $companyId . '">
                         <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                         <input type="hidden" name="asset_id" value="' . (int)($asset['id'] ?? 0) . '">
                         <input type="hidden" name="global_action" value="dispose_asset">
-                        <div>
+                        <div class="asset-disposal-controls">
                             <input class="input" type="date" name="disposal_date" value="' . HelperFramework::escape(date('Y-m-d')) . '">
                             <input class="input" type="number" step="0.01" name="disposal_proceeds" placeholder="Proceeds">
-                            <button class="button" type="submit">Dispose</button>
+                            <button class="button button-inline" type="submit">Dispose</button>
                         </div>
                     </form>'
                     : '<span class="helper">Disposed on ' . HelperFramework::escape($this->displayDate((string)($asset['disposal_date'] ?? ''))) . '</span>') . '</td>

@@ -180,6 +180,39 @@
   margin-bottom: 0;
 }
 
+.asset-disposal-form {
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.asset-disposal-controls {
+  display: flex;
+  flex-flow: row nowrap;
+  align-items: center;
+  gap: 8px;
+  min-width: max-content;
+  width: fit-content;
+}
+
+.asset-disposal-controls .input {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.asset-disposal-controls [name="disposal_date"] {
+  width: 13ch;
+}
+
+.asset-disposal-controls [name="disposal_proceeds"] {
+  width: 11ch;
+}
+
+.asset-disposal-controls .button {
+  flex: 0 0 auto;
+  margin-bottom: 0;
+  white-space: nowrap;
+}
 .expense-claimant-add-form .mini-field {
   flex: 1 1 260px;
   max-width: 360px;

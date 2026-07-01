@@ -28,6 +28,7 @@ To use this system, the company must meet the following criteria:
 
 - Be registered with Companies House and have a valid company registration number
 - Be active on Companies House (not dissolved or dormant)
+- Have no more than 1 director
 - Qualify as a micro-entity and prepare accounts under FRS 105, the Financial Reporting Standard applicable to the Micro-entities Regime. This generally means meeting at least two of the following limits:
   - Turnover of not more than GBP 1,000,000
   - Balance sheet total of not more than GBP 500,000

@@ -74,11 +74,24 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         ];
 
         $html = $instance->render($context);
-        $inClaimPosition = strpos($html, '<div class="summary-label">In this claim (B)</div><div class="summary-value">114.99</div>');
-        $carriedForwardPosition = strpos($html, '<div class="summary-label">Carried Forward (D=A+B-C)</div><div class="summary-value">119.99</div>');
+        $inClaimPosition = strpos($html, '<div class="summary-label">In this claim (B)</div><div class="summary-value">$114.99</div>');
+        $carriedForwardPosition = strpos($html, '<div class="summary-label">Carried Forward (D=A+B-C)</div><div class="summary-value">$119.99</div>');
 
         $harness->assertTrue($inClaimPosition !== false);
         $harness->assertTrue($carriedForwardPosition !== false);
+    });
+
+    $harness->check(_expense_claim_editorCard::class, 'prefixes claim summary totals with default currency symbol', function () use ($harness, $instance): void {
+        $context = expenseClaimEditorCardContext();
+        $context['company']['settings']['default_currency_symbol'] = '&#8364;';
+        $context['expense_page_settings']['default_currency_symbol'] = '&#8364;';
+
+        $html = $instance->render($context);
+
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">Brought Forwards (A)</div><div class="summary-value">€0.00</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">In this claim (B)</div><div class="summary-value">€94.99</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">Paid in this period (C)</div><div class="summary-value">€75.00</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">Carried Forward (D=A+B-C)</div><div class="summary-value">€19.99</div>'));
     });
 
     $harness->check(_expense_claim_editorCard::class, 'uses exportable builder tables with 20 row pagination', function () use ($harness, $instance): void {
@@ -128,6 +141,8 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $harness->assertTrue(str_contains($html, 'data-autosave-submit-target=".js-expense-line-nominal-submit"'));
         $harness->assertTrue(str_contains($html, '<option value="">Unassigned</option>'));
         $harness->assertTrue(str_contains($html, '<label for="expense-line-amount">Amount ($)</label>'));
+        $harness->assertSame(false, str_contains($html, 'for="expense-line-notes"'));
+        $harness->assertSame(false, str_contains($html, 'name="notes"'));
         $harness->assertTrue(str_contains($html, '$94.99'));
     });
 
@@ -143,9 +158,29 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $html = $instance->render($context);
 
         $harness->assertTrue(str_contains($html, 'name="intent" value="save_line_asset_details"'));
+        $harness->assertTrue(str_contains($html, '<button class="js-expense-line-asset-submit" type="submit" hidden>Autosave</button>'));
         $harness->assertTrue(str_contains($html, 'Asset category'));
         $harness->assertTrue(str_contains($html, 'Tools &amp; Equipment'));
-        $harness->assertTrue(str_contains($html, 'Save Asset Details'));
+        $harness->assertSame(false, str_contains($html, 'Asset description'));
+        $harness->assertSame(false, str_contains($html, 'name="asset_description"'));
+        $harness->assertTrue(str_contains($html, '<select class="select" id="expense-line-asset-life-11" name="asset_useful_life_years" data-autosave-submit-target=".js-expense-line-asset-submit">'));
+        $harness->assertTrue(str_contains($html, 'name="asset_category" data-autosave-submit-target=".js-expense-line-asset-submit"'));
+        $harness->assertTrue(str_contains($html, 'title="None: no depreciation is posted. Straight Line: spreads cost less EOL Value evenly over the useful life. Reducing Balance: depreciates by the same rate each period, using the asset&apos;s remaining value after previous depreciation."'));
+        $harness->assertTrue(str_contains($html, 'name="asset_depreciation_method" data-autosave-submit-target=".js-expense-line-asset-submit"'));
+        $harness->assertTrue(str_contains($html, 'EOL Value'));
+        $harness->assertTrue(str_contains($html, 'title="End of Life Value, also known as the Residual Value, is the value the item has after the useful life period has expired."'));
+        $harness->assertSame(false, str_contains($html, '>Residual</label>'));
+        $harness->assertTrue(str_contains($html, 'name="asset_residual_value" inputmode="decimal" value="0.00" data-autosave-submit-target=".js-expense-line-asset-submit"'));
+        $harness->assertTrue(str_contains($html, '<option value="1">1 Year</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="2">2 Years</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="3" selected>3 Years</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="5">5 Years</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="10">10 Years</option>'));
+        $harness->assertSame(false, str_contains($html, 'Save Asset Details'));
+
+        $context['services']['expensesPageData']['selected_claim']['lines'][0]['asset_useful_life_years'] = 4;
+        $fallbackHtml = $instance->render($context);
+        $harness->assertTrue(str_contains($fallbackHtml, '<option value="3" selected>3 Years</option>'));
     });
 
     $harness->check(_expense_claim_editorCard::class, 'renders direct bulk import without preview panel', function () use ($harness, $instance): void {

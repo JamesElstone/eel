@@ -759,6 +759,10 @@ final class AssetService
 
     private function calculateDepreciationAmount(array $asset, string $periodStart, string $periodEnd): float {
         $method = (string)($asset['depreciation_method'] ?? 'straight_line');
+        if ($method === 'none') {
+            return 0.0;
+        }
+
         $cost = round((float)($asset['cost'] ?? 0), 2);
         $residual = round((float)($asset['residual_value'] ?? 0), 2);
         $lifeYears = max(1, (int)($asset['useful_life_years'] ?? 1));

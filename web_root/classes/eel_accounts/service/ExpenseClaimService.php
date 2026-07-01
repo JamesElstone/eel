@@ -1380,32 +1380,7 @@ final class ExpenseClaimService
             return;
         }
 
-        $broughtForward = $this->previousCarryForward(
-            (int)$claimRow['company_id'],
-            (int)$claimRow['claimant_id'],
-            $claimId,
-            (string)$claimRow['period_start']
-        );
-
-        $claimed = $this->sumClaimLines($claimId);
-        $payments = $this->sumPayments($claimId);
-        $carriedForward = round($broughtForward + $claimed - $payments, 2);
-
-        \InterfaceDB::prepare(
-            'UPDATE expense_claims
-             SET brought_forward_amount = :brought_forward_amount,
-                 claimed_amount = :claimed_amount,
-                 payments_amount = :payments_amount,
-                 carried_forward_amount = :carried_forward_amount,
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE id = :id'
-        )->execute([
-            'brought_forward_amount' => $broughtForward,
-            'claimed_amount' => $claimed,
-            'payments_amount' => $payments,
-            'carried_forward_amount' => $carriedForward,
-            'id' => $claimId,
-        ]);
+        $this->recalculateClaimSeries((int)$claimRow['company_id'], (int)$claimRow['claimant_id']);
     }
 
     public function recalculateClaimSeries(int $companyId, int $claimantId): void {
@@ -1413,20 +1388,42 @@ final class ExpenseClaimService
             return;
         }
 
-        $claimIds = array_map('intval', \InterfaceDB::fetchAll( 'SELECT id
+        $claims = \InterfaceDB::fetchAll( 'SELECT id,
+                    brought_forward_amount,
+                    claimed_amount,
+                    payments_amount,
+                    carried_forward_amount
              FROM expense_claims
              WHERE company_id = :company_id
                AND claimant_id = :claimant_id
              ORDER BY period_start ASC, id ASC', [
             'company_id' => $companyId,
             'claimant_id' => $claimantId,
-        ]));
+        ]);
+        if ($claims === []) {
+            return;
+        }
+
+        $claimIds = array_values(array_map(static fn(array $claim): int => (int)$claim['id'], $claims));
+        $lineTotals = $this->fetchClaimLineTotals($claimIds);
+        $paymentTotals = $this->fetchClaimPaymentTotals($claimIds);
         $broughtForward = 0.0;
 
-        foreach ($claimIds as $seriesClaimId) {
-            $claimed = $this->sumClaimLines($seriesClaimId);
-            $payments = $this->sumPayments($seriesClaimId);
+        foreach ($claims as $claim) {
+            $seriesClaimId = (int)$claim['id'];
+            $claimed = (float)($lineTotals[$seriesClaimId] ?? 0.0);
+            $payments = (float)($paymentTotals[$seriesClaimId] ?? 0.0);
             $carriedForward = round($broughtForward + $claimed - $payments, 2);
+
+            if (
+                round((float)$claim['brought_forward_amount'], 2) === $broughtForward
+                && round((float)$claim['claimed_amount'], 2) === $claimed
+                && round((float)$claim['payments_amount'], 2) === $payments
+                && round((float)$claim['carried_forward_amount'], 2) === $carriedForward
+            ) {
+                $broughtForward = $carriedForward;
+                continue;
+            }
 
             \InterfaceDB::prepare(
                 'UPDATE expense_claims
@@ -1446,6 +1443,76 @@ final class ExpenseClaimService
 
             $broughtForward = $carriedForward;
         }
+    }
+
+    public function recalculateCompanyClaimSeries(int $companyId): void {
+        if ($companyId <= 0) {
+            return;
+        }
+
+        $claimants = \InterfaceDB::fetchAll(
+            'SELECT DISTINCT claimant_id
+             FROM expense_claims
+             WHERE company_id = :company_id
+             ORDER BY claimant_id ASC',
+            ['company_id' => $companyId]
+        );
+
+        foreach ($claimants as $claimant) {
+            $this->recalculateClaimSeries($companyId, (int)($claimant['claimant_id'] ?? 0));
+        }
+    }
+
+    /**
+     * @param list<int> $claimIds
+     * @return array<int, float>
+     */
+    private function fetchClaimLineTotals(array $claimIds): array {
+        return $this->fetchClaimTotalsByTable($claimIds, 'expense_claim_lines', 'amount');
+    }
+
+    /**
+     * @param list<int> $claimIds
+     * @return array<int, float>
+     */
+    private function fetchClaimPaymentTotals(array $claimIds): array {
+        return $this->fetchClaimTotalsByTable($claimIds, 'expense_claim_payment_links', 'linked_amount');
+    }
+
+    /**
+     * @param list<int> $claimIds
+     * @return array<int, float>
+     */
+    private function fetchClaimTotalsByTable(array $claimIds, string $table, string $amountColumn): array {
+        $claimIds = array_values(array_filter(array_map('intval', $claimIds), static fn(int $claimId): bool => $claimId > 0));
+        if ($claimIds === []) {
+            return [];
+        }
+
+        if (!in_array($table, ['expense_claim_lines', 'expense_claim_payment_links'], true)) {
+            return [];
+        }
+        if (!in_array($amountColumn, ['amount', 'linked_amount'], true)) {
+            return [];
+        }
+
+        $totals = [];
+        foreach (array_chunk($claimIds, 500) as $chunk) {
+            $placeholders = implode(', ', array_fill(0, count($chunk), '?'));
+            $rows = \InterfaceDB::fetchAll(
+                'SELECT expense_claim_id, COALESCE(SUM(' . $amountColumn . '), 0) AS total
+                 FROM ' . $table . '
+                 WHERE expense_claim_id IN (' . $placeholders . ')
+                 GROUP BY expense_claim_id',
+                $chunk
+            );
+
+            foreach ($rows as $row) {
+                $totals[(int)$row['expense_claim_id']] = round((float)$row['total'], 2);
+            }
+        }
+
+        return $totals;
     }
 
     private function fetchClaimLines(int $claimId): array {
@@ -1589,31 +1656,9 @@ final class ExpenseClaimService
         return is_array($row) ? $row : null;
     }
 
-    private function previousCarryForward(int $companyId, int $claimantId, int $claimId, string $periodStart): float {
-        return round((float)\InterfaceDB::fetchColumn( 'SELECT carried_forward_amount
-             FROM expense_claims
-             WHERE company_id = :company_id
-               AND claimant_id = :claimant_id
-               AND id <> :id
-               AND period_start < :period_start
-             ORDER BY period_start DESC, id DESC
-             LIMIT 1', [
-            'company_id' => $companyId,
-            'claimant_id' => $claimantId,
-            'id' => $claimId,
-            'period_start' => $periodStart,
-        ]), 2);
-    }
-
     private function sumClaimLines(int $claimId): float {
         return round((float)\InterfaceDB::fetchColumn( 'SELECT COALESCE(SUM(amount), 0)
              FROM expense_claim_lines
-             WHERE expense_claim_id = :expense_claim_id', ['expense_claim_id' => $claimId]), 2);
-    }
-
-    private function sumPayments(int $claimId): float {
-        return round((float)\InterfaceDB::fetchColumn( 'SELECT COALESCE(SUM(linked_amount), 0)
-             FROM expense_claim_payment_links
              WHERE expense_claim_id = :expense_claim_id', ['expense_claim_id' => $claimId]), 2);
     }
 
@@ -1902,7 +1947,7 @@ final class ExpenseClaimService
     private function normaliseLineAssetPayload(array $line, array $payload, int $accountingPeriodId, int $companyId): array {
         $assetService = new \eel_accounts\Service\AssetService();
         $normalised = $assetService->normaliseAssetValues($companyId, [
-            'description' => trim((string)($payload['asset_description'] ?? $payload['description'] ?? $line['asset_description'] ?? $line['description'] ?? '')),
+            'description' => trim((string)($line['description'] ?? '')),
             'category' => trim((string)($payload['asset_category'] ?? $payload['category'] ?? $line['asset_category'] ?? 'tools_equipment')),
             'purchase_date' => (string)($line['expense_date'] ?? ''),
             'cost' => (float)($line['amount'] ?? 0),
@@ -1922,7 +1967,7 @@ final class ExpenseClaimService
 
     private function normaliseAssetValuesForPosting(\eel_accounts\Service\AssetService $assetService, int $companyId, int $accountingPeriodId, array $line): array {
         return $assetService->normaliseAssetValues($companyId, [
-            'description' => trim((string)($line['asset_description'] ?? '')) !== '' ? (string)$line['asset_description'] : (string)($line['description'] ?? ''),
+            'description' => trim((string)($line['description'] ?? '')),
             'category' => (string)($line['asset_category'] ?? 'tools_equipment'),
             'purchase_date' => (string)($line['expense_date'] ?? ''),
             'cost' => (float)($line['amount'] ?? 0),

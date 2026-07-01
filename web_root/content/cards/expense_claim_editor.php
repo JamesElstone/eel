@@ -100,15 +100,16 @@ final class _expense_claim_editorCard extends CardBaseFramework
         $claimantName = (string)($claim['claimant_name'] ?? '');
         $claimMonthLabel = $this->monthLabel((int)($claim['claim_month'] ?? 0), (int)($claim['claim_year'] ?? 0));
         $displayTotals = $this->displayControlTotals($claim);
+        $defaultCurrencySymbol = $this->defaultCurrencySymbol($companySettings);
 
         return '<div class="summary-grid expense-claim-summary-grid">
                 <div class="summary-card"><div class="summary-label">Claim Reference</div><div class="summary-value">' . HelperFramework::escape($claimReference) . '</div></div>
                 <div class="summary-card"><div class="summary-label">Claimant</div><div class="summary-value">' . HelperFramework::escape($claimantName) . '</div></div>
                 <div class="summary-card"><div class="summary-label">Claim Month</div><div class="summary-value">' . HelperFramework::escape($claimMonthLabel) . '</div></div>
-                <div class="summary-card"><div class="summary-label">Brought Forwards (A)</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($displayTotals['A'])) . '</div></div>
-                <div class="summary-card"><div class="summary-label">In this claim (B)</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($displayTotals['B'])) . '</div></div>
-                <div class="summary-card"><div class="summary-label">Paid in this period (C)</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($displayTotals['C'])) . '</div></div>
-                <div class="summary-card"><div class="summary-label">Carried Forward (D=A+B-C)</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($displayTotals['D'])) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Brought Forwards (A)</div><div class="summary-value">' . HelperFramework::escape($defaultCurrencySymbol . FormattingFramework::money($displayTotals['A'])) . '</div></div>
+                <div class="summary-card"><div class="summary-label">In this claim (B)</div><div class="summary-value">' . HelperFramework::escape($defaultCurrencySymbol . FormattingFramework::money($displayTotals['B'])) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Paid in this period (C)</div><div class="summary-value">' . HelperFramework::escape($defaultCurrencySymbol . FormattingFramework::money($displayTotals['C'])) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Carried Forward (D=A+B-C)</div><div class="summary-value">' . HelperFramework::escape($defaultCurrencySymbol . FormattingFramework::money($displayTotals['D'])) . '</div></div>
             </div>
             ' . ($isPosted ? '' : $this->renderBulkPastePanel($claimId, $companyId, $dateFormat)) . '
             ' . ($isPosted ? '<div class="helper">Posted claims are locked.</div>' : $this->renderLineForm($claim, $nominals, $claimId, $companySettings, $companyId)) . '
@@ -364,7 +365,6 @@ final class _expense_claim_editorCard extends CardBaseFramework
     {
         $lineId = (int)($row['id'] ?? 0);
         $formId = 'expense-line-asset-form-' . $lineId;
-        $description = trim((string)($row['asset_description'] ?? '')) !== '' ? (string)$row['asset_description'] : (string)($row['description'] ?? '');
         $lifeYears = max(1, (int)($row['asset_useful_life_years'] ?? 3));
         $method = (string)($row['asset_depreciation_method'] ?? 'straight_line');
         $residual = number_format((float)($row['asset_residual_value'] ?? 0), 2, '.', '');
@@ -375,29 +375,23 @@ final class _expense_claim_editorCard extends CardBaseFramework
                 <input type="hidden" name="intent" value="save_line_asset_details">
                 <input type="hidden" name="claim_id" value="' . $claimId . '">
                 <input type="hidden" name="line_id" value="' . $lineId . '">
+                <button class="js-expense-line-asset-submit" type="submit" hidden>Autosave</button>
                 <div class="form-flex-flow">
                     <div class="form-row">
                         <label for="expense-line-asset-category-' . $lineId . '">Asset category</label>
-                        <select class="select" id="expense-line-asset-category-' . $lineId . '" name="asset_category">' . $this->assetCategoryOptions($assetCategories, (string)($row['asset_category'] ?? 'tools_equipment')) . '</select>
-                    </div>
-                    <div class="form-row">
-                        <label for="expense-line-asset-description-' . $lineId . '">Asset description</label>
-                        <input class="input" id="expense-line-asset-description-' . $lineId . '" name="asset_description" value="' . HelperFramework::escape($description) . '">
+                        <select class="select" id="expense-line-asset-category-' . $lineId . '" name="asset_category" data-autosave-submit-target=".js-expense-line-asset-submit">' . $this->assetCategoryOptions($assetCategories, (string)($row['asset_category'] ?? 'tools_equipment')) . '</select>
                     </div>
                     <div class="form-row">
                         <label for="expense-line-asset-life-' . $lineId . '">Useful life</label>
-                        <input class="input" id="expense-line-asset-life-' . $lineId . '" name="asset_useful_life_years" type="number" min="1" value="' . $lifeYears . '">
+                        <select class="select" id="expense-line-asset-life-' . $lineId . '" name="asset_useful_life_years" data-autosave-submit-target=".js-expense-line-asset-submit">' . $this->assetUsefulLifeOptions($lifeYears) . '</select>
                     </div>
                     <div class="form-row">
-                        <label for="expense-line-asset-method-' . $lineId . '">Depreciation</label>
-                        <select class="select" id="expense-line-asset-method-' . $lineId . '" name="asset_depreciation_method">' . $this->depreciationMethodOptions($method) . '</select>
+                        <label for="expense-line-asset-method-' . $lineId . '" title="None: no depreciation is posted. Straight Line: spreads cost less EOL Value evenly over the useful life. Reducing Balance: depreciates by the same rate each period, using the asset&apos;s remaining value after previous depreciation.">Depreciation</label>
+                        <select class="select" id="expense-line-asset-method-' . $lineId . '" name="asset_depreciation_method" data-autosave-submit-target=".js-expense-line-asset-submit">' . $this->depreciationMethodOptions($method) . '</select>
                     </div>
                     <div class="form-row">
-                        <label for="expense-line-asset-residual-' . $lineId . '">Residual</label>
-                        <input class="input" id="expense-line-asset-residual-' . $lineId . '" name="asset_residual_value" inputmode="decimal" value="' . HelperFramework::escape($residual) . '">
-                    </div>
-                    <div class="form-row">
-                        <button class="button button-inline primary" type="submit">Save Asset Details</button>
+                        <label for="expense-line-asset-residual-' . $lineId . '" title="End of Life Value, also known as the Residual Value, is the value the item has after the useful life period has expired.">EOL Value</label>
+                        <input class="input" id="expense-line-asset-residual-' . $lineId . '" name="asset_residual_value" inputmode="decimal" value="' . HelperFramework::escape($residual) . '" data-autosave-submit-target=".js-expense-line-asset-submit">
                     </div>
                 </div>
             </form>';
@@ -456,10 +450,6 @@ final class _expense_claim_editorCard extends CardBaseFramework
                     <div class="form-row">
                         <label for="expense-line-nominal">Charge To</label>
                         <select class="select" id="expense-line-nominal" name="nominal_account_id" form="' . $formId . '">' . $this->nominalOptions($nominals, 0) . '</select>
-                    </div>
-                    <div class="form-row">
-                        <label for="expense-line-notes">Notes</label>
-                        <input class="input" id="expense-line-notes" name="notes" form="' . $formId . '" type="text">
                     </div>
                     <div class="form-row expense-line-form-actions">
                         <button class="button primary" type="submit" form="' . $formId . '">Add Line</button>
@@ -656,6 +646,25 @@ final class _expense_claim_editorCard extends CardBaseFramework
         foreach ($assetCategories as $value => $label) {
             $value = (string)$value;
             $html .= '<option value="' . HelperFramework::escape($value) . '"' . ($value === $selectedCategory ? ' selected' : '') . '>' . HelperFramework::escape((string)$label) . '</option>';
+        }
+
+        return $html;
+    }
+
+    private function assetUsefulLifeOptions(int $selectedYears): string
+    {
+        $options = [
+            1 => '1 Year',
+            2 => '2 Years',
+            3 => '3 Years',
+            5 => '5 Years',
+            10 => '10 Years',
+        ];
+        $selectedYears = array_key_exists($selectedYears, $options) ? $selectedYears : 3;
+
+        $html = '';
+        foreach ($options as $value => $label) {
+            $html .= '<option value="' . $value . '"' . ($value === $selectedYears ? ' selected' : '') . '>' . HelperFramework::escape($label) . '</option>';
         }
 
         return $html;

@@ -103,10 +103,6 @@
   width: 40ch;
 }
 
-#expense-line-notes {
-  width: 24ch;
-}
-
 #expense-line-amount {
   width: 10ch;
 }
@@ -121,6 +117,37 @@
 .expense-line-form-actions .button {
   margin-bottom: 0;
   white-space: nowrap;
+}
+
+.expense-line-asset-form {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.expense-line-asset-form .form-flex-flow {
+  align-items: flex-end;
+  flex-flow: row nowrap;
+  min-width: max-content;
+}
+
+.expense-line-asset-form .form-row {
+  flex: 0 0 fit-content;
+  padding-bottom: 0;
+}
+
+.expense-line-asset-form .input,
+.expense-line-asset-form .select {
+  max-width: 100%;
+  width: fit-content;
+}
+
+.expense-line-asset-form [name="asset_useful_life_years"] {
+  width: auto;
+  min-width: max-content;
+}
+
+.expense-line-asset-form [name="asset_residual_value"] {
+  width: 10ch;
 }
 
 .expense-bulk-paste-controls {

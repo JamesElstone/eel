@@ -416,6 +416,7 @@ CREATE TABLE `expense_claims` (
   UNIQUE KEY `uniq_expense_claims_company_reference` (`company_id`,`claim_reference_code`),
   UNIQUE KEY `uniq_expense_claims_company_claimant_month` (`company_id`,`claimant_id`,`claim_year`,`claim_month`),
   KEY `idx_expense_claims_company_period` (`company_id`,`claim_year`,`claim_month`),
+  KEY `idx_expense_claims_company_claimant_period` (`company_id`,`claimant_id`,`period_start`,`id`),
   KEY `idx_expense_claims_accounting_period` (`accounting_period_id`),
   KEY `idx_expense_claims_claimant` (`claimant_id`),
   KEY `idx_expense_claims_posted_journal` (`posted_journal_id`),
@@ -1820,7 +1821,8 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_06_30_007_preserve_regex_auto_rule_matches.sql'),
   ('2026_07_01_001_expense_add_claimant_card_permission.sql'),
   ('2026_07_01_002_expense_claim_create_card_permission.sql'),
-  ('2026_07_01_003_expense_claim_line_assets.sql');
+  ('2026_07_01_003_expense_claim_line_assets.sql'),
+  ('2026_07_01_004_expense_claim_series_index.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

@@ -58,7 +58,6 @@ final class ExpenseAction implements ActionInterfaceFramework
                     (int)$request->input('line_id', 0),
                     [
                         'asset_category' => (string)$request->input('asset_category', ''),
-                        'asset_description' => (string)$request->input('asset_description', ''),
                         'asset_useful_life_years' => (int)$request->input('asset_useful_life_years', 0),
                         'asset_depreciation_method' => (string)$request->input('asset_depreciation_method', ''),
                         'asset_residual_value' => (string)$request->input('asset_residual_value', ''),

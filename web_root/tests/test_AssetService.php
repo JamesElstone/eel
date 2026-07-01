@@ -40,5 +40,20 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertTrue(str_contains($columnType, "'" . $sourceType . "'"));
             }
         });
+
+        $harness->check(\eel_accounts\Service\AssetService::class, 'none depreciation method posts no depreciation', static function () use ($harness, $service): void {
+            $method = new ReflectionMethod(\eel_accounts\Service\AssetService::class, 'calculateDepreciationAmount');
+            $method->setAccessible(true);
+
+            $amount = $method->invoke($service, [
+                'id' => 0,
+                'depreciation_method' => 'none',
+                'cost' => 1200,
+                'residual_value' => 100,
+                'useful_life_years' => 4,
+            ], '2026-01-01', '2026-12-31');
+
+            $harness->assertSame(0.0, $amount);
+        });
     }
 );

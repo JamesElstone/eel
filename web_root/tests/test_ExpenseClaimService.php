@@ -166,6 +166,155 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
         });
     });
 
+    $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'recalculates claimant series in date order including payments and posted later claims', function () use ($harness, $instance): void {
+        expenseClaimServiceWithFixture(static function (array $fixture) use ($harness, $instance): void {
+            $mayClaimId = (int)$fixture['claim_id'];
+            $juneClaimId = expenseClaimServiceInsertClaim($fixture, 2026, 6, '2026-06-01', '2026-06-30');
+            $julyClaimId = expenseClaimServiceInsertClaim($fixture, 2026, 7, '2026-07-01', '2026-07-31');
+            $paymentTransactionId = expenseClaimServiceInsertTransaction($fixture, -25.00, 'series-payment');
+
+            expenseClaimServiceInsertLine($fixture, $mayClaimId, 1, '2026-05-05', 'May materials', 100.00);
+            expenseClaimServiceInsertLine($fixture, $juneClaimId, 1, '2026-06-05', 'June materials', 50.00);
+            expenseClaimServiceInsertLine($fixture, $julyClaimId, 1, '2026-07-05', 'July materials', 75.00);
+            \InterfaceDB::prepareExecute(
+                'INSERT INTO expense_claim_payment_links (expense_claim_id, transaction_id, linked_amount)
+                 VALUES (:expense_claim_id, :transaction_id, :linked_amount)',
+                [
+                    'expense_claim_id' => $juneClaimId,
+                    'transaction_id' => $paymentTransactionId,
+                    'linked_amount' => 25.00,
+                ]
+            );
+            \InterfaceDB::prepareExecute(
+                'UPDATE expense_claims
+                 SET status = :status,
+                     brought_forward_amount = 999.00,
+                     claimed_amount = 999.00,
+                     payments_amount = 999.00,
+                     carried_forward_amount = 999.00
+                 WHERE id = :id',
+                ['status' => 'posted', 'id' => $julyClaimId]
+            );
+
+            $instance->recalculateClaimSeries((int)$fixture['company_id'], (int)$fixture['claimant_id']);
+
+            $harness->assertSame([0.00, 100.00, 0.00, 100.00], expenseClaimServiceClaimTotals($mayClaimId));
+            $harness->assertSame([100.00, 50.00, 25.00, 125.00], expenseClaimServiceClaimTotals($juneClaimId));
+            $harness->assertSame([125.00, 75.00, 0.00, 200.00], expenseClaimServiceClaimTotals($julyClaimId));
+        });
+    });
+
+    $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'recalculates only the requested claimant series until company repair is requested', function () use ($harness, $instance): void {
+        expenseClaimServiceWithFixture(static function (array $fixture) use ($harness, $instance): void {
+            $otherClaimantId = (int)('89' . (string)$fixture['marker']);
+            $otherClaimId = (int)('90' . (string)$fixture['marker']);
+            \InterfaceDB::prepareExecute(
+                'INSERT INTO expense_claimants (id, company_id, claimant_name, is_active)
+                 VALUES (:id, :company_id, :claimant_name, 1)',
+                [
+                    'id' => $otherClaimantId,
+                    'company_id' => (int)$fixture['company_id'],
+                    'claimant_name' => 'Other Claimant ' . (string)$fixture['marker'],
+                ]
+            );
+            expenseClaimServiceInsertClaimWithId($fixture, $otherClaimId, $otherClaimantId, 2026, 5, '2026-05-01', '2026-05-31');
+
+            expenseClaimServiceInsertLine($fixture, (int)$fixture['claim_id'], 1, '2026-05-05', 'Main materials', 10.00);
+            expenseClaimServiceInsertLine($fixture, $otherClaimId, 1, '2026-05-05', 'Other materials', 20.00);
+            \InterfaceDB::prepareExecute(
+                'UPDATE expense_claims
+                 SET brought_forward_amount = 777.00,
+                     claimed_amount = 777.00,
+                     payments_amount = 777.00,
+                     carried_forward_amount = 777.00
+                 WHERE id = :id',
+                ['id' => $otherClaimId]
+            );
+
+            $instance->recalculateClaimSeries((int)$fixture['company_id'], (int)$fixture['claimant_id']);
+
+            $harness->assertSame([0.00, 10.00, 0.00, 10.00], expenseClaimServiceClaimTotals((int)$fixture['claim_id']));
+            $harness->assertSame([777.00, 777.00, 777.00, 777.00], expenseClaimServiceClaimTotals($otherClaimId));
+
+            $instance->recalculateCompanyClaimSeries((int)$fixture['company_id']);
+
+            $harness->assertSame([0.00, 20.00, 0.00, 20.00], expenseClaimServiceClaimTotals($otherClaimId));
+        });
+    });
+
+    $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'recalculates a large claimant series with grouped totals', function () use ($harness, $instance): void {
+        expenseClaimServiceWithFixture(static function (array $fixture) use ($harness, $instance): void {
+            $largeClaimantId = (int)('91' . (string)$fixture['marker']);
+            \InterfaceDB::prepareExecute(
+                'INSERT INTO expense_claimants (id, company_id, claimant_name, is_active)
+                 VALUES (:id, :company_id, :claimant_name, 1)',
+                [
+                    'id' => $largeClaimantId,
+                    'company_id' => (int)$fixture['company_id'],
+                    'claimant_name' => 'Large Claimant ' . (string)$fixture['marker'],
+                ]
+            );
+
+            $baseClaimId = $largeClaimantId * 10000;
+            $claimStmt = \InterfaceDB::prepare(
+                'INSERT INTO expense_claims (
+                    id,
+                    company_id,
+                    accounting_period_id,
+                    claimant_id,
+                    claim_year,
+                    claim_month,
+                    period_start,
+                    period_end,
+                    claim_reference_code
+                 ) VALUES (
+                    :id,
+                    :company_id,
+                    :accounting_period_id,
+                    :claimant_id,
+                    :claim_year,
+                    :claim_month,
+                    :period_start,
+                    :period_end,
+                    :claim_reference_code
+                 )'
+            );
+            $lineStmt = \InterfaceDB::prepare(
+                'INSERT INTO expense_claim_lines (expense_claim_id, line_number, expense_date, description, amount, nominal_account_id)
+                 VALUES (:expense_claim_id, 1, :expense_date, :description, :amount, :nominal_account_id)'
+            );
+
+            for ($index = 0; $index < 1000; $index++) {
+                $claimId = $baseClaimId + $index + 1;
+                $date = (new DateTimeImmutable('2020-01-01'))->modify('+' . $index . ' months');
+                $claimStmt->execute([
+                    'id' => $claimId,
+                    'company_id' => (int)$fixture['company_id'],
+                    'accounting_period_id' => (int)$fixture['period_id'],
+                    'claimant_id' => $largeClaimantId,
+                    'claim_year' => (int)$date->format('Y'),
+                    'claim_month' => (int)$date->format('n'),
+                    'period_start' => $date->format('Y-m-01'),
+                    'period_end' => $date->format('Y-m-t'),
+                    'claim_reference_code' => 'EXP-LARGE-' . (string)$fixture['marker'] . '-' . str_pad((string)($index + 1), 4, '0', STR_PAD_LEFT),
+                ]);
+                $lineStmt->execute([
+                    'expense_claim_id' => $claimId,
+                    'expense_date' => $date->format('Y-m-05'),
+                    'description' => 'Large series line ' . (string)($index + 1),
+                    'amount' => (float)($index + 1),
+                    'nominal_account_id' => (int)$fixture['line_nominal_id'],
+                ]);
+            }
+
+            $instance->recalculateClaimSeries((int)$fixture['company_id'], $largeClaimantId);
+
+            $harness->assertSame([0.00, 1.00, 0.00, 1.00], expenseClaimServiceClaimTotals($baseClaimId + 1));
+            $harness->assertSame([124750.00, 500.00, 0.00, 125250.00], expenseClaimServiceClaimTotals($baseClaimId + 500));
+            $harness->assertSame([499500.00, 1000.00, 0.00, 500500.00], expenseClaimServiceClaimTotals($baseClaimId + 1000));
+        });
+    });
+
     $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'posts claim credit using current line total', function () use ($harness, $instance): void {
         expenseClaimServiceWithFixture(static function (array $fixture) use ($harness, $instance): void {
             \InterfaceDB::prepareExecute(
@@ -246,12 +395,15 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
             $harness->assertSame(true, (bool)($typeResult['success'] ?? false));
             $assetResult = $instance->saveLineAssetDetails((int)$fixture['company_id'], (int)$fixture['claim_id'], $assetLineId, [
                 'asset_category' => 'tools_equipment',
-                'asset_description' => 'Cordless drill',
                 'asset_useful_life_years' => 3,
                 'asset_depreciation_method' => 'straight_line',
                 'asset_residual_value' => '0.00',
             ]);
             $harness->assertSame(true, (bool)($assetResult['success'] ?? false));
+            $harness->assertSame('Cordless drill', (string)\InterfaceDB::fetchColumn(
+                'SELECT description FROM expense_claim_line_assets WHERE expense_claim_line_id = :line_id',
+                ['line_id' => $assetLineId]
+            ));
 
             $result = $instance->postClaim((int)$fixture['company_id'], (int)$fixture['claim_id'], [
                 'default_expense_nominal_id' => (int)$fixture['expense_nominal_id'],
@@ -271,7 +423,7 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
                 ['journal_id' => $journalId, 'nominal_account_id' => (int)$fixture['asset_cost_nominal_id']]
             ));
             $asset = \InterfaceDB::fetchOne(
-                'SELECT id, linked_journal_id, linked_expense_claim_line_id, category, cost
+                'SELECT id, linked_journal_id, linked_expense_claim_line_id, category, description, cost
                  FROM asset_register
                  WHERE linked_expense_claim_line_id = :line_id
                  LIMIT 1',
@@ -280,6 +432,7 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
             $harness->assertSame($journalId, (int)($asset['linked_journal_id'] ?? 0));
             $harness->assertSame($assetLineId, (int)($asset['linked_expense_claim_line_id'] ?? 0));
             $harness->assertSame('tools_equipment', (string)($asset['category'] ?? ''));
+            $harness->assertSame('Cordless drill', (string)($asset['description'] ?? ''));
             $harness->assertSame(180.00, (float)($asset['cost'] ?? 0));
             $harness->assertSame((int)($asset['id'] ?? 0), (int)\InterfaceDB::fetchColumn(
                 'SELECT generated_asset_id FROM expense_claim_line_assets WHERE expense_claim_line_id = :line_id',
@@ -587,6 +740,13 @@ function expenseClaimServiceEnsureNominalByCode(string $code, string $name, stri
 function expenseClaimServiceInsertClaim(array $fixture, int $year, int $month, string $periodStart, string $periodEnd): int
 {
     $claimId = (int)((int)$fixture['claimant_id'] + $month);
+    expenseClaimServiceInsertClaimWithId($fixture, $claimId, (int)$fixture['claimant_id'], $year, $month, $periodStart, $periodEnd);
+
+    return $claimId;
+}
+
+function expenseClaimServiceInsertClaimWithId(array $fixture, int $claimId, int $claimantId, int $year, int $month, string $periodStart, string $periodEnd): void
+{
     \InterfaceDB::prepareExecute(
         'INSERT INTO expense_claims (
             id,
@@ -613,16 +773,51 @@ function expenseClaimServiceInsertClaim(array $fixture, int $year, int $month, s
             'id' => $claimId,
             'company_id' => (int)$fixture['company_id'],
             'accounting_period_id' => (int)$fixture['period_id'],
-            'claimant_id' => (int)$fixture['claimant_id'],
+            'claimant_id' => $claimantId,
             'claim_year' => $year,
             'claim_month' => $month,
             'period_start' => $periodStart,
             'period_end' => $periodEnd,
-            'claim_reference_code' => 'EXP-' . (string)$fixture['marker'] . '-' . str_pad((string)$month, 2, '0', STR_PAD_LEFT),
+            'claim_reference_code' => 'EXP-' . (string)$fixture['marker'] . '-' . (string)$claimantId . '-' . sprintf('%04d%02d', $year, $month),
         ]
     );
+}
 
-    return $claimId;
+function expenseClaimServiceInsertLine(array $fixture, int $claimId, int $lineNumber, string $expenseDate, string $description, float $amount): void
+{
+    \InterfaceDB::prepareExecute(
+        'INSERT INTO expense_claim_lines (expense_claim_id, line_number, expense_date, description, amount, nominal_account_id)
+         VALUES (:expense_claim_id, :line_number, :expense_date, :description, :amount, :nominal_account_id)',
+        [
+            'expense_claim_id' => $claimId,
+            'line_number' => $lineNumber,
+            'expense_date' => $expenseDate,
+            'description' => $description,
+            'amount' => $amount,
+            'nominal_account_id' => (int)$fixture['line_nominal_id'],
+        ]
+    );
+}
+
+function expenseClaimServiceClaimTotals(int $claimId): array
+{
+    $row = \InterfaceDB::fetchOne(
+        'SELECT brought_forward_amount,
+                claimed_amount,
+                payments_amount,
+                carried_forward_amount
+         FROM expense_claims
+         WHERE id = :id
+         LIMIT 1',
+        ['id' => $claimId]
+    );
+
+    return [
+        round((float)($row['brought_forward_amount'] ?? 0), 2),
+        round((float)($row['claimed_amount'] ?? 0), 2),
+        round((float)($row['payments_amount'] ?? 0), 2),
+        round((float)($row['carried_forward_amount'] ?? 0), 2),
+    ];
 }
 
 function expenseClaimServiceInsertTransaction(array $fixture, float $amount, string $suffix): int

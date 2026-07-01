@@ -103,7 +103,7 @@ final class ExpenseAction implements ActionInterfaceFramework
             'claim_reference_code' => trim((string)$request->input('claim_reference_code', '')),
             'payment_query' => trim((string)$request->input('payment_query', '')),
             'heatmap_claimant_id' => max(0, (int)$request->input('expense_heatmap_claimant_id', 0)),
-            'heatmap_year' => max(0, (int)$request->input('expense_heatmap_year', 0)),
+            'heatmap_period_start' => $this->normaliseHeatmapPeriodStart((string)$request->input('expense_heatmap_period_start', '')),
             'heatmap_date' => trim((string)$request->input('expense_heatmap_date', '')),
         ];
 
@@ -111,7 +111,6 @@ final class ExpenseAction implements ActionInterfaceFramework
             $filters['claim_id'] = max(0, (int)($result['claim']['id'] ?? 0));
             $filters['claim_reference_code'] = '';
             $filters['heatmap_claimant_id'] = max(0, (int)($result['claim']['claimant_id'] ?? $filters['heatmap_claimant_id']));
-            $filters['heatmap_year'] = max(0, (int)($result['claim']['claim_year'] ?? $filters['heatmap_year']));
             $filters['heatmap_date'] = '';
         }
 
@@ -152,5 +151,21 @@ final class ExpenseAction implements ActionInterfaceFramework
             static fn(mixed $message): array => ['type' => 'success', 'message' => (string)$message],
             $messages
         ), static fn(array $message): bool => trim((string)$message['message']) !== ''));
+    }
+
+    private function normaliseHeatmapPeriodStart(string $date): string
+    {
+        $date = trim($date);
+        if ($date === '') {
+            return '';
+        }
+
+        $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+        $errors = DateTimeImmutable::getLastErrors();
+        if (!$parsed instanceof DateTimeImmutable || (is_array($errors) && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))) {
+            return '';
+        }
+
+        return $parsed->format('Y-m-d');
     }
 }

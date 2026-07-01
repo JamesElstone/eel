@@ -26,6 +26,10 @@
   min-width: 0;
 }
 
+.form-row {
+  padding-bottom: 0;
+}
+
 .expenses-toolbar {
   align-items: flex-end;
   flex-wrap: nowrap;
@@ -145,8 +149,8 @@
   align-items: flex-end;
   gap: 12px;
   flex-wrap: wrap;
-  margin-top: 16px;
-  margin-bottom: 16px;
+  margin-top: 0;
+  margin-bottom: 0;
 }
 
 .expense-claimant-add-form .mini-field {

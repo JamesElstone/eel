@@ -299,6 +299,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
     {
         $formId = 'expense-line-form-' . $claimId;
         $defaultExpenseNominalId = (int)($companySettings['default_expense_nominal_id'] ?? 0);
+        $amountLabel = 'Amount (' . $this->defaultCurrencySymbol($companySettings) . ')';
 
         return '<form id="' . $formId . '" method="post" action="?page=expenses" data-ajax="true">
                 <input type="hidden" name="card_action" value="Expense">
@@ -319,7 +320,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
                         <input class="input" id="expense-line-description" name="description" form="' . $formId . '" type="text">
                     </div>
                     <div class="form-row">
-                        <label for="expense-line-amount">Amount</label>
+                        <label for="expense-line-amount">' . HelperFramework::escape($amountLabel) . '</label>
                         <input class="input" id="expense-line-amount" name="amount" form="' . $formId . '" inputmode="decimal">
                     </div>
                     <div class="form-row">

@@ -67,6 +67,7 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $harness->assertTrue(str_contains($html, 'name="intent" value="update_line_nominal"'));
         $harness->assertTrue(str_contains($html, 'data-autosave-submit-target=".js-expense-line-nominal-submit"'));
         $harness->assertTrue(str_contains($html, '<option value="">Unassigned</option>'));
+        $harness->assertTrue(str_contains($html, '<label for="expense-line-amount">Amount ($)</label>'));
         $harness->assertTrue(str_contains($html, '$94.99'));
     });
 

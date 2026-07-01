@@ -59,7 +59,9 @@ final class AssetService
         return $this->fetchAssetByCode((int)($values['company_id'] ?? 0), $assetCode);
     }
 
-    public function fetchPageData(int $companyId, int $accountingPeriodId, int $defaultBankNominalId = 0, int $prefillTransactionId = 0): array {
+    public function fetchPageData(int $companyId, int $accountingPeriodId, int|string $defaultBankNominalId = 0, int $prefillTransactionId = 0): array {
+        $defaultBankNominalId = max(0, (int)$defaultBankNominalId);
+
         if (!$this->hasRequiredSchema()) {
             return [
                 'assets' => [],

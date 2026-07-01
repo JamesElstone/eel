@@ -20,6 +20,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(true, $pageData['schema_ready'] ?? false);
         });
 
+        $harness->check(\eel_accounts\Service\AssetService::class, 'normalises blank default bank nominal from settings context', static function () use ($harness, $service): void {
+            $pageData = $service->fetchPageData(0, 0, '');
+
+            $harness->assertSame(0, $pageData['default_bank_nominal_id'] ?? null);
+        });
+
         $harness->check(\eel_accounts\Service\AssetService::class, 'journal source enum supports asset postings', static function () use ($harness): void {
             if (InterfaceDB::driverName() === 'sqlite') {
                 $schemaPath = PROJECT_ROOT . 'db_schema' . DIRECTORY_SEPARATOR . 'eel_accounts.schema.sql';

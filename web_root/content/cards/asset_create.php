@@ -22,9 +22,9 @@ final class _asset_createCard extends CardBaseFramework
                 'service' => \eel_accounts\Service\AssetService::class,
                 'method' => 'fetchPageData',
                 'params' => [
-                    'companyId' => ':company_id',
-                    'accountingPeriodId' => ':accounting_period_id',
-                    'defaultBankNominalId' => ':default_bank_nominal_id',
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                    'defaultBankNominalId' => ':company.settings.default_bank_nominal_id',
                     'prefillTransactionId' => ':prefill_transaction_id',
                 ],
             ],
@@ -38,7 +38,7 @@ final class _asset_createCard extends CardBaseFramework
 
     public function handleError(string $serviceKey, array $error, array $context): string
     {
-        return '';
+        return 'Asset data could not be loaded: ' . (string)($error['message'] ?? 'service error');
     }
 
     public function render(array $context): string

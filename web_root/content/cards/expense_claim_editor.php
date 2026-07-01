@@ -99,15 +99,16 @@ final class _expense_claim_editorCard extends CardBaseFramework
         $claimReference = (string)($claim['claim_reference_code'] ?? '');
         $claimantName = (string)($claim['claimant_name'] ?? '');
         $claimMonthLabel = $this->monthLabel((int)($claim['claim_month'] ?? 0), (int)($claim['claim_year'] ?? 0));
+        $displayTotals = $this->displayControlTotals($claim);
 
         return '<div class="summary-grid expense-claim-summary-grid">
                 <div class="summary-card"><div class="summary-label">Claim Reference</div><div class="summary-value">' . HelperFramework::escape($claimReference) . '</div></div>
                 <div class="summary-card"><div class="summary-label">Claimant</div><div class="summary-value">' . HelperFramework::escape($claimantName) . '</div></div>
                 <div class="summary-card"><div class="summary-label">Claim Month</div><div class="summary-value">' . HelperFramework::escape($claimMonthLabel) . '</div></div>
-                <div class="summary-card"><div class="summary-label">Brought Forwards (A)</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($claim['control_totals']['A'] ?? 0)) . '</div></div>
-                <div class="summary-card"><div class="summary-label">In this claim (B)</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($claim['control_totals']['B'] ?? 0)) . '</div></div>
-                <div class="summary-card"><div class="summary-label">Paid in this period (C)</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($claim['control_totals']['C'] ?? 0)) . '</div></div>
-                <div class="summary-card"><div class="summary-label">Carried Forward (D=A+B-C)</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($claim['control_totals']['D'] ?? 0)) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Brought Forwards (A)</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($displayTotals['A'])) . '</div></div>
+                <div class="summary-card"><div class="summary-label">In this claim (B)</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($displayTotals['B'])) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Paid in this period (C)</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($displayTotals['C'])) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Carried Forward (D=A+B-C)</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($displayTotals['D'])) . '</div></div>
             </div>
             ' . ($isPosted ? '' : $this->renderBulkPastePanel($claimId, $companyId, $dateFormat)) . '
             ' . ($isPosted ? '<div class="helper">Posted claims are locked.</div>' : $this->renderLineForm($claim, $nominals, $claimId, $companySettings, $companyId)) . '
@@ -134,6 +135,30 @@ final class _expense_claim_editorCard extends CardBaseFramework
             ' . ($helper === '' ? '' : '<div class="helper">' . HelperFramework::escape($helper) . '</div>') . '
             ' . $tableHtml . '
         </div>';
+    }
+
+    private function displayControlTotals(array $claim): array
+    {
+        $controlTotals = (array)($claim['control_totals'] ?? []);
+        $broughtForward = round((float)($controlTotals['A'] ?? 0), 2);
+        $inThisClaim = $this->claimLinesTotal((array)($claim['lines'] ?? []));
+        $paid = round((float)($controlTotals['C'] ?? 0), 2);
+
+        return [
+            'A' => $broughtForward,
+            'B' => $inThisClaim,
+            'C' => $paid,
+            'D' => round($broughtForward + $inThisClaim - $paid, 2),
+        ];
+    }
+
+    private function claimLinesTotal(array $lines): float
+    {
+        return round(array_reduce(
+            $lines,
+            static fn(float $total, mixed $line): float => $total + (is_array($line) ? round((float)($line['amount'] ?? 0), 2) : 0.0),
+            0.0
+        ), 2);
     }
 
     private function submitClaimToolbarAction(array $claim, array $companySettings, int $companyId): string

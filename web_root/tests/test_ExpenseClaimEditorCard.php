@@ -56,6 +56,31 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $harness->assertSame(false, str_contains($html, '<div class="actions-row"></div>'));
     });
 
+    $harness->check(_expense_claim_editorCard::class, 'shows draft line total in claim summary', function () use ($harness, $instance): void {
+        $context = expenseClaimEditorCardContext();
+        $context['services']['expensesPageData']['selected_claim']['control_totals'] = [
+            'A' => 10.00,
+            'B' => 0.00,
+            'C' => 5.00,
+            'D' => 5.00,
+        ];
+        $context['services']['expensesPageData']['selected_claim']['lines'][] = [
+            'id' => 12,
+            'expense_date' => '2022-10-06',
+            'description' => 'Fuel',
+            'line_type' => 'expense',
+            'nominal_account_id' => null,
+            'amount' => 20.00,
+        ];
+
+        $html = $instance->render($context);
+        $inClaimPosition = strpos($html, '<div class="summary-label">In this claim (B)</div><div class="summary-value">114.99</div>');
+        $carriedForwardPosition = strpos($html, '<div class="summary-label">Carried Forward (D=A+B-C)</div><div class="summary-value">119.99</div>');
+
+        $harness->assertTrue($inClaimPosition !== false);
+        $harness->assertTrue($carriedForwardPosition !== false);
+    });
+
     $harness->check(_expense_claim_editorCard::class, 'uses exportable builder tables with 20 row pagination', function () use ($harness, $instance): void {
         $context = expenseClaimEditorCardContext();
         for ($i = 2; $i <= 25; $i++) {

@@ -95,7 +95,10 @@
   width: fit-content;
 }
 
-#expense-line-description,
+#expense-line-description {
+  width: 40ch;
+}
+
 #expense-line-notes {
   width: 24ch;
 }

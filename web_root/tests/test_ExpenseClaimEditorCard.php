@@ -97,6 +97,10 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $harness->assertTrue(str_contains($html, 'name="intent" value="link_payment"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="unlink_payment"'));
         $harness->assertTrue(str_contains($html, 'name="payment_query"'));
+        $harness->assertTrue(strpos($html, '<div class="card-toolbar">') < strpos($html, 'id="expense-payment-query"'));
+        $harness->assertSame(false, str_contains($html, '<div class="mini-field">
+                <label for="expense-payment-query">Search repayments</label>'));
+        $harness->assertSame(0, preg_match('/<div class="actions-row">\s*<\/div>/', $html));
         $harness->assertTrue(str_contains($html, 'name="default_expense_nominal_id" value="5000"'));
         $harness->assertSame(false, str_contains($html, 'name="director_loan_nominal_id"'));
         $harness->assertSame(false, str_contains($html, 'name="linked_amount" inputmode="decimal"'));

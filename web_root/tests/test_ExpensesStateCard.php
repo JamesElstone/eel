@@ -79,12 +79,21 @@ $harness->run(_expenses_stateCard::class, function (GeneratedServiceClassTestHar
         $harness->assertTrue(str_contains($html, '<label for="table-filter-expenses_state-expense_status">Show</label>'));
         $harness->assertTrue(str_contains($html, 'id="table-filter-expenses_state-expense_status" name="expense_status"'));
         $harness->assertTrue(str_contains($html, '<option value="all" selected>All</option>'));
-        $harness->assertTrue(str_contains($html, '<div class="actions-row">
+        $harness->assertTrue(str_contains($html, '<form id="expense-search-form" method="get" action="?page=expenses" data-ajax="true" class="toolbar">
+                <input type="hidden" name="page" value="expenses">
+                <input type="hidden" name="card_action" value="Expense">
+                <input type="hidden" name="company_id" value="7">
+                <input type="hidden" name="intent" value="filter_claims">
+                <input type="hidden" name="expense_status" value="all">
+                <input type="hidden" name="expense_heatmap_claimant_id" value="3">
+                <input type="hidden" name="expense_heatmap_date" value="2026-05-01">
                 <div class="mini-field">
-                    <input class="input" id="expense-search-query" name="expense_query" form="expense-search-form" type="search" value="" placeholder="EXP-...">
+                    <input class="input" id="expense-search-query" name="expense_query" type="search" value="" placeholder="EXP-...">
                 </div>
-                <button class="button primary" type="submit" form="expense-search-form">Search</button>
-            </div>'));
+                <button class="button primary" type="submit">Search</button>
+            </form>'));
+        $harness->assertSame(false, str_contains($html, 'name="expense_query" form="expense-search-form"'));
+        $harness->assertSame(false, str_contains($html, 'type="submit" form="expense-search-form"'));
         $harness->assertTrue(str_contains($html, '<div class="actions-row"><button class="button'));
         $statusFilterPosition = strpos($html, 'id="table-filter-expenses_state-expense_status"');
         $claimantPosition = strpos($html, 'id="expense-claimant"');

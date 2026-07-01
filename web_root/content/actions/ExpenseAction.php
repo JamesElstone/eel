@@ -25,7 +25,6 @@ final class ExpenseAction implements ActionInterfaceFramework
                     'claimant_id' => (int)$request->input('claimant_id', 0),
                     'claim_year' => (int)$request->input('claim_year', 0),
                     'claim_month' => (int)$request->input('claim_month', 0),
-                    'incorporation_date' => (string)$request->input('incorporation_date', ''),
                 ]),
                 'save_line' => $service->saveLine($companyId, (int)$request->input('claim_id', 0), [
                     'id' => (int)$request->input('line_id', 0),

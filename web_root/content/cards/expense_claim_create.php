@@ -62,7 +62,6 @@ final class _expense_claim_createCard extends CardBaseFramework
             <input type="hidden" name="card_action" value="Expense">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="intent" value="create_claim">
-            <input type="hidden" name="incorporation_date" value="' . HelperFramework::escape((string)($companySettings['incorporation_date'] ?? '')) . '">
         </form>
         ' . ($createDisabled ? '<div class="helper">Create Expense Claim is disabled because there are no active claimants.</div>' : '') . '
         <div class="create-expense-claim">
@@ -72,7 +71,7 @@ final class _expense_claim_createCard extends CardBaseFramework
                 </div>
                 <div class="mini-field">
                     <label for="expense-create-year">Year</label>
-                    <select class="select" id="expense-create-year" name="claim_year" form="' . $createFormId . '"' . ($createDisabled ? ' disabled' : '') . '>' . $this->yearOptions($currentYear) . '</select>
+                    <select class="select" id="expense-create-year" name="claim_year" form="' . $createFormId . '"' . ($createDisabled ? ' disabled' : '') . '>' . $this->yearOptions($currentYear, (string)($companySettings['incorporation_date'] ?? '')) . '</select>
                 </div>
                 <div class="mini-field">
                     <label for="expense-create-month">Month</label>
@@ -103,15 +102,26 @@ final class _expense_claim_createCard extends CardBaseFramework
         return '<option value="">' . HelperFramework::escape($emptyLabel) . '</option>' . $options;
     }
 
-    private function yearOptions(int $selectedYear): string
+    private function yearOptions(int $selectedYear, string $incorporationDate): string
     {
         $html = '';
-        for ($year = $selectedYear - 4; $year <= $selectedYear + 5; $year++) {
+        $firstYear = $this->firstClaimYear($selectedYear, $incorporationDate);
+        for ($year = $firstYear; $year <= $selectedYear; $year++) {
             $selected = $year === $selectedYear ? ' selected' : '';
             $html .= '<option value="' . $year . '"' . $selected . '>' . $year . '</option>';
         }
 
         return $html;
+    }
+
+    private function firstClaimYear(int $currentYear, string $incorporationDate): int
+    {
+        if (!$this->validDate($incorporationDate)) {
+            return $currentYear - 4;
+        }
+
+        $incorporatedAt = new DateTimeImmutable($incorporationDate);
+        return min((int)$incorporatedAt->format('Y'), $currentYear);
     }
 
     private function monthOptions(int $selectedMonth): string
@@ -143,5 +153,15 @@ final class _expense_claim_createCard extends CardBaseFramework
         ];
 
         return (string)($names[$month] ?? '');
+    }
+
+    private function validDate(string $value): bool
+    {
+        $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+        $errors = DateTimeImmutable::getLastErrors();
+
+        return $date instanceof DateTimeImmutable
+            && $date->format('Y-m-d') === $value
+            && (!is_array($errors) || ($errors['warning_count'] === 0 && $errors['error_count'] === 0));
     }
 }

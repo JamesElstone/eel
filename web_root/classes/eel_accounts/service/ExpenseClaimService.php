@@ -288,9 +288,9 @@ final class ExpenseClaimService
             return ['success' => false, 'errors' => ['Choose a valid claim month.']];
         }
 
-        $incorporationDate = trim((string)($payload['incorporation_date'] ?? ''));
-        if ($incorporationDate !== '' && !$this->periodIsOnOrAfterIncorporation($period['year'], $period['month'], $incorporationDate)) {
-            return ['success' => false, 'errors' => ['Claim month cannot be earlier than the company incorporation date.']];
+        $claimPeriodValidation = $this->validateClaimPeriodSelection($companyId, $period['year'], $period['month']);
+        if ($claimPeriodValidation['errors'] !== []) {
+            return ['success' => false, 'errors' => $claimPeriodValidation['errors']];
         }
 
         $existing = $this->findClaimByUniqueMonth($companyId, $claimantId, $period['year'], $period['month']);
@@ -308,19 +308,11 @@ final class ExpenseClaimService
             return ['success' => false, 'errors' => ['The selected claimant could not be found.']];
         }
 
-        $derivedPeriod = $this->deriveMonthlyPeriod($period['year'], $period['month']);
-        $resolvedAccountingPeriodId = $this->resolveAccountingPeriodIdForDate($companyId, $derivedPeriod['period_end']);
-        if ($resolvedAccountingPeriodId > 0) {
-            (new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $resolvedAccountingPeriodId, 'create expense claims in this period');
-        }
+        $derivedPeriod = $claimPeriodValidation['period'];
+        $accountingPeriodId = (int)$claimPeriodValidation['accounting_period_id'];
+        (new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'create expense claims in this period');
         if ((int)($claimant['is_active'] ?? 0) !== 1) {
             return ['success' => false, 'errors' => ['Only active claimants can be used for new claims.']];
-        }
-
-        $accountingPeriodId = $this->deriveAccountingPeriodId($companyId, $derivedPeriod['period_start'], $derivedPeriod['period_end']);
-
-        if ($accountingPeriodId <= 0) {
-            return ['success' => false, 'errors' => ['No accounting period overlaps the selected claim month.']];
         }
 
         $referenceCode = $this->generateUniqueReferenceCode($companyId, $period['year'], $period['month']);
@@ -495,9 +487,9 @@ final class ExpenseClaimService
             return ['success' => false, 'errors' => ['Choose a valid claim month.']];
         }
 
-        $incorporationDate = trim((string)($payload['incorporation_date'] ?? ''));
-        if ($incorporationDate !== '' && !$this->periodIsOnOrAfterIncorporation($nextPeriod['year'], $nextPeriod['month'], $incorporationDate)) {
-            return ['success' => false, 'errors' => ['Claim month cannot be earlier than the company incorporation date.']];
+        $claimPeriodValidation = $this->validateClaimPeriodSelection($companyId, $nextPeriod['year'], $nextPeriod['month']);
+        if ($claimPeriodValidation['errors'] !== []) {
+            return ['success' => false, 'errors' => $claimPeriodValidation['errors']];
         }
 
         $nextClaimant = $this->fetchClaimantById($companyId, $nextClaimantId);
@@ -513,12 +505,8 @@ final class ExpenseClaimService
             return ['success' => false, 'errors' => ['That claimant already has a claim for the selected month.']];
         }
 
-        $derivedPeriod = $this->deriveMonthlyPeriod($nextPeriod['year'], $nextPeriod['month']);
-        $accountingPeriodId = $this->deriveAccountingPeriodId($companyId, $derivedPeriod['period_start'], $derivedPeriod['period_end']);
-
-        if ($accountingPeriodId <= 0) {
-            return ['success' => false, 'errors' => ['No accounting period overlaps the selected claim month.']];
-        }
+        $derivedPeriod = $claimPeriodValidation['period'];
+        $accountingPeriodId = (int)$claimPeriodValidation['accounting_period_id'];
 
         \InterfaceDB::prepare(
             'UPDATE expense_claims
@@ -1959,44 +1947,52 @@ final class ExpenseClaimService
         ];
     }
 
-    private function deriveAccountingPeriodId(int $companyId, string $periodStart, string $periodEnd): int {
-        $stmt = \InterfaceDB::prepare(
-            'SELECT id, period_start, period_end
-             FROM accounting_periods
-             WHERE company_id = :company_id
-               AND period_end >= :period_start
-               AND period_start <= :period_end
-             ORDER BY period_start ASC, period_end ASC'
-        );
-        $stmt->execute([
-            'company_id' => $companyId,
-            'period_start' => $periodStart,
-            'period_end' => $periodEnd,
-        ]);
+    private function validateClaimPeriodSelection(int $companyId, int $claimYear, int $claimMonth): array {
+        $period = $this->deriveMonthlyPeriod($claimYear, $claimMonth);
+        $errors = [];
 
-        $bestId = 0;
-        $bestOverlapDays = -1;
-        $targetStart = new \DateTimeImmutable($periodStart);
-        $targetEnd = new \DateTimeImmutable($periodEnd);
-
-        foreach ($stmt->fetchAll() ?: [] as $row) {
-            $rowStart = new \DateTimeImmutable((string)$row['period_start']);
-            $rowEnd = new \DateTimeImmutable((string)$row['period_end']);
-            $overlapStart = $rowStart > $targetStart ? $rowStart : $targetStart;
-            $overlapEnd = $rowEnd < $targetEnd ? $rowEnd : $targetEnd;
-
-            if ($overlapEnd < $overlapStart) {
-                continue;
-            }
-
-            $days = (int)$overlapStart->diff($overlapEnd)->format('%a');
-            if ($days > $bestOverlapDays) {
-                $bestOverlapDays = $days;
-                $bestId = (int)$row['id'];
-            }
+        if ($this->claimMonthIsAfterCurrentMonth($claimYear, $claimMonth)) {
+            $errors[] = 'Claim month cannot be in the future.';
         }
 
-        return $bestId;
+        $incorporationDate = $this->fetchCompanyIncorporationDate($companyId);
+        if ($incorporationDate !== '' && !$this->periodIsOnOrAfterIncorporation($claimYear, $claimMonth, $incorporationDate)) {
+            $errors[] = 'Claim month cannot be earlier than the company incorporation date.';
+        }
+
+        $accountingPeriodId = $this->resolveAccountingPeriodIdForDate($companyId, $period['period_end']);
+        if ($accountingPeriodId <= 0) {
+            $errors[] = 'Claim month must fall inside an accounting period.';
+        }
+
+        return [
+            'errors' => $errors,
+            'period' => $period,
+            'accounting_period_id' => $accountingPeriodId,
+        ];
+    }
+
+    private function claimMonthIsAfterCurrentMonth(int $claimYear, int $claimMonth): bool {
+        $claimMonthStart = new \DateTimeImmutable(sprintf('%04d-%02d-01', $claimYear, $claimMonth));
+        $currentMonthStart = new \DateTimeImmutable('first day of this month');
+
+        return $claimMonthStart > $currentMonthStart;
+    }
+
+    private function fetchCompanyIncorporationDate(int $companyId): string {
+        if ($companyId <= 0) {
+            return '';
+        }
+
+        $value = (string)(\InterfaceDB::fetchColumn(
+            'SELECT incorporation_date
+             FROM companies
+             WHERE id = :id
+             LIMIT 1',
+            ['id' => $companyId]
+        ) ?: '');
+
+        return $this->isValidDate($value) ? $value : '';
     }
 
     private function generateUniqueReferenceCode(int $companyId, int $claimYear, int $claimMonth): string {

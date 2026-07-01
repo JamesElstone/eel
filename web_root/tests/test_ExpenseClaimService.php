@@ -217,6 +217,38 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
         });
     });
 
+    $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'rejects claim creation outside valid date bounds', function () use ($harness, $instance): void {
+        expenseClaimServiceWithFixture(static function (array $fixture) use ($harness, $instance): void {
+            $outsidePeriod = $instance->createClaim((int)$fixture['company_id'], [
+                'claimant_id' => (int)$fixture['claimant_id'],
+                'claim_year' => 2026,
+                'claim_month' => 3,
+            ]);
+
+            $harness->assertSame(false, (bool)($outsidePeriod['success'] ?? true));
+            $harness->assertTrue(in_array('Claim month must fall inside an accounting period.', (array)($outsidePeriod['errors'] ?? []), true));
+
+            \InterfaceDB::prepareExecute(
+                'UPDATE companies
+                 SET incorporation_date = :incorporation_date
+                 WHERE id = :id',
+                [
+                    'incorporation_date' => '2026-06-15',
+                    'id' => (int)$fixture['company_id'],
+                ]
+            );
+
+            $beforeFormation = $instance->createClaim((int)$fixture['company_id'], [
+                'claimant_id' => (int)$fixture['claimant_id'],
+                'claim_year' => 2026,
+                'claim_month' => 5,
+            ]);
+
+            $harness->assertSame(false, (bool)($beforeFormation['success'] ?? true));
+            $harness->assertTrue(in_array('Claim month cannot be earlier than the company incorporation date.', (array)($beforeFormation['errors'] ?? []), true));
+        });
+    });
+
     $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'deletes only draft claims without repayment links', function () use ($harness, $instance): void {
         expenseClaimServiceWithFixture(static function (array $fixture) use ($harness, $instance): void {
             \InterfaceDB::prepareExecute(

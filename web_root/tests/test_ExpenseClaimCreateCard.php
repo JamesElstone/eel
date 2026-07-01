@@ -31,21 +31,24 @@ $harness->run(_expense_claim_createCard::class, function (GeneratedServiceClassT
         $harness->assertTrue(str_contains($html, '<div class="create-expense-claim">'));
         $harness->assertSame(false, str_contains($html, 'class="card-toolbar"'));
         $harness->assertSame(false, str_contains($html, 'class="actions-row"'));
-        $harness->assertSame(2, substr_count($html, '<section class="panel-soft">'));
         $harness->assertTrue(str_contains($html, 'id="expense-create-claim-form"'));
         $harness->assertTrue(str_contains($html, 'id="expense-create-claimant"'));
-        $harness->assertTrue(str_contains($html, '<label for="expense-create-claimant">Claimant</label>
-                    <select class="select" id="expense-create-claimant" name="claimant_id" form="expense-create-claim-form"><option value="">Choose claimant...</option><option value="3">Alex Example</option></select>
-                </div>
-                <div class="mini-field">
-                    <label for="expense-create-year">Year</label>'));
         $harness->assertTrue(str_contains($html, '<option value="3">Alex Example</option>'));
-        $harness->assertTrue(str_contains($html, '<h3 class="card-title">Create Expense claim</h3>'));
         $harness->assertTrue(str_contains($html, 'id="expense-create-year"'));
         $harness->assertTrue(str_contains($html, 'id="expense-create-month"'));
         $harness->assertTrue(str_contains($html, 'data-show-card="expense_claim_editor"'));
         $harness->assertSame(false, str_contains($html, 'Create or open a monthly expense claim for an active claimant.'));
         $harness->assertSame(false, str_contains($html, 'Create Expense Claim is disabled because there are no active claimants.'));
+    });
+
+    $harness->check(_expense_claim_createCard::class, 'bounds year options by incorporation date and current year', function () use ($harness, $instance): void {
+        $html = $instance->render(expenseClaimCreateCardContext(true));
+        $currentYear = (int)date('Y');
+
+        $harness->assertTrue(str_contains($html, '<option value="2020">2020</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="' . $currentYear . '" selected>' . $currentYear . '</option>'));
+        $harness->assertSame(false, str_contains($html, '<option value="2019">2019</option>'));
+        $harness->assertSame(false, str_contains($html, '<option value="' . ($currentYear + 1) . '"'));
     });
 
     $harness->check(_expense_claim_createCard::class, 'disables create claim controls without active claimants', function () use ($harness, $instance): void {

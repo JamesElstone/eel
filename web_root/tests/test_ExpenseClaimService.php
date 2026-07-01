@@ -111,6 +111,58 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
         });
     });
 
+    $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'confirms no-lines draft claims and rejects invalid confirmation states', function () use ($harness, $instance): void {
+        expenseClaimServiceWithFixture(static function (array $fixture) use ($harness, $instance): void {
+            $confirmed = $instance->confirmNoLines((int)$fixture['company_id'], (int)$fixture['claim_id'], 'tester');
+
+            $harness->assertSame(true, (bool)($confirmed['success'] ?? false));
+            $harness->assertSame(true, (bool)(($confirmed['claim'] ?? [])['no_lines_confirmed'] ?? false));
+            $harness->assertSame('tester', (string)(($confirmed['claim'] ?? [])['no_lines_confirmed_by'] ?? ''));
+            $harness->assertSame('No-lines month confirmed.', (string)(($confirmed['messages'] ?? [])[0] ?? ''));
+
+            expenseClaimServiceInsertLine($fixture, (int)$fixture['claim_id'], 1, '2026-05-05', 'Materials', 10.00);
+            $withLinesRejected = $instance->confirmNoLines((int)$fixture['company_id'], (int)$fixture['claim_id'], 'tester');
+            $harness->assertSame(false, (bool)($withLinesRejected['success'] ?? true));
+            $harness->assertSame('This claim already has lines, so submit the claim instead.', (string)(($withLinesRejected['errors'] ?? [])[0] ?? ''));
+
+            $postedClaimId = expenseClaimServiceInsertClaim($fixture, 2026, 6, '2026-06-01', '2026-06-30');
+            \InterfaceDB::prepareExecute(
+                'UPDATE expense_claims SET status = :status WHERE id = :id',
+                ['status' => 'posted', 'id' => $postedClaimId]
+            );
+            $postedRejected = $instance->confirmNoLines((int)$fixture['company_id'], $postedClaimId, 'tester');
+            $harness->assertSame(false, (bool)($postedRejected['success'] ?? true));
+            $harness->assertSame('Posted claims are already locked.', (string)(($postedRejected['errors'] ?? [])[0] ?? ''));
+        });
+    });
+
+    $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'adding or importing lines clears no-lines confirmation', function () use ($harness, $instance): void {
+        expenseClaimServiceWithFixture(static function (array $fixture) use ($harness, $instance): void {
+            $instance->confirmNoLines((int)$fixture['company_id'], (int)$fixture['claim_id'], 'tester');
+            $saved = $instance->saveLine((int)$fixture['company_id'], (int)$fixture['claim_id'], [
+                'expense_date' => '2026-05-05',
+                'description' => 'Materials',
+                'amount' => '10.00',
+                'nominal_account_id' => (int)$fixture['line_nominal_id'],
+            ]);
+
+            $harness->assertSame(true, (bool)($saved['success'] ?? false));
+            $harness->assertSame(false, (bool)(($saved['claim'] ?? [])['no_lines_confirmed'] ?? true));
+            $harness->assertSame('', (string)(($saved['claim'] ?? [])['no_lines_confirmed_at'] ?? 'not-empty'));
+
+            $bulkClaimId = expenseClaimServiceInsertClaim($fixture, 2026, 6, '2026-06-01', '2026-06-30');
+            $instance->confirmNoLines((int)$fixture['company_id'], $bulkClaimId, 'tester');
+            $imported = $instance->bulkSaveLines((int)$fixture['company_id'], $bulkClaimId, [
+                'pasted_lines' => "5/6/2026\tFuel\t£20.00",
+                'date_format' => 'd/m/Y',
+            ]);
+
+            $harness->assertSame(true, (bool)($imported['success'] ?? false));
+            $harness->assertSame(false, (bool)(($imported['claim'] ?? [])['no_lines_confirmed'] ?? true));
+            $harness->assertSame('', (string)(($imported['claim'] ?? [])['no_lines_confirmed_at'] ?? 'not-empty'));
+        });
+    });
+
     $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'links repayment for the full transaction amount using default expense nominal', function () use ($harness, $instance): void {
         expenseClaimServiceWithFixture(static function (array $fixture) use ($harness, $instance): void {
             $transactionId = expenseClaimServiceInsertTransaction($fixture, -123.45, 'repayment-full');

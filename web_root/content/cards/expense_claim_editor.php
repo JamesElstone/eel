@@ -166,15 +166,30 @@ final class _expense_claim_editorCard extends CardBaseFramework
     {
         $claimId = (int)($claim['id'] ?? 0);
         $defaultExpenseNominalId = (int)($companySettings['default_expense_nominal_id'] ?? 0);
+        $lines = (array)($claim['lines'] ?? []);
+        $hasLines = $lines !== [];
+        $noLinesConfirmed = !empty($claim['no_lines_confirmed']);
         $errors = $this->submitClaimErrors($claim, $companySettings);
+        $intent = $hasLines ? 'post_claim' : 'confirm_no_lines';
+        $buttonText = $hasLines ? 'Submit Claim' : 'Confirm No Lines';
+        $disabled = $hasLines ? $errors !== [] : $noLinesConfirmed;
+
+        if (!$hasLines && $noLinesConfirmed) {
+            $confirmedAt = trim((string)($claim['no_lines_confirmed_at'] ?? ''));
+            return '<div class="helper">No Lines Confirmed' . ($confirmedAt !== '' ? ' on ' . HelperFramework::escape($confirmedAt) : '') . '</div>';
+        }
+
+        $chickenAttributes = $hasLines
+            ? ' data-chicken-check="true" data-chicken-title="Submit expense claim" data-chicken-message="This will post the expense claim to the journal and lock the claim lines. Continue?" data-chicken-confirm-text="Submit Claim" data-chicken-button-class="button primary"'
+            : ' data-chicken-check="true" data-chicken-title="Confirm no claim lines" data-chicken-message="This records that this month has no expense claim lines. Repayments and carried-forward balances remain visible for review. Continue?" data-chicken-confirm-text="Confirm No Lines" data-chicken-button-class="button primary"';
 
         return '<form method="post" action="?page=expenses" data-ajax="true">
                 <input type="hidden" name="card_action" value="Expense">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="intent" value="post_claim">
+                <input type="hidden" name="intent" value="' . $intent . '">
                 <input type="hidden" name="claim_id" value="' . $claimId . '">
                 <input type="hidden" name="default_expense_nominal_id" value="' . $defaultExpenseNominalId . '">
-                <button class="button primary" type="submit"' . ($errors === [] ? '' : ' disabled') . '>Submit Claim</button>
+                <button class="button primary" type="submit"' . ($disabled ? ' disabled' : $chickenAttributes) . '>' . $buttonText . '</button>
             </form>';
     }
 

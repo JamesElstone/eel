@@ -24,6 +24,7 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $harness->assertTrue(str_contains($html, 'Claim Reference'));
         $harness->assertTrue(str_contains($html, 'Submit Claim'));
         $harness->assertTrue(str_contains($html, '<button class="button primary" type="submit" disabled>Submit Claim</button>'));
+        $harness->assertSame(false, str_contains($html, 'data-chicken-title="Submit expense claim"'));
         $harness->assertSame(false, str_contains($html, '<h4 class="card-title">Submit Claim</h4>'));
         $harness->assertTrue(str_contains($html, 'Claim Lines can be pasted below'));
         $harness->assertTrue(str_contains($html, '&quot;DATE&quot;, &quot;DESCRIPTION&quot;, &quot;AMOUNT CLAIMED&quot;'));
@@ -57,6 +58,47 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $harness->assertTrue($condensedPosition < $tablePosition);
         $expenseLinesToolbarHtml = substr($html, (int)$toolbarPosition, (int)$tablePosition - (int)$toolbarPosition);
         $harness->assertSame(0, preg_match('/<div class="actions-row">\s*<\/div>/', $expenseLinesToolbarHtml));
+    });
+
+    $harness->check(_expense_claim_editorCard::class, 'renders ready submit claim button with chicken confirmation', function () use ($harness, $instance): void {
+        $context = expenseClaimEditorCardContext();
+        $context['services']['expensesPageData']['selected_claim']['lines'][0]['nominal_account_id'] = 5000;
+
+        $html = $instance->render($context);
+
+        $harness->assertTrue(str_contains($html, 'name="intent" value="post_claim"'));
+        $harness->assertTrue(str_contains($html, '>Submit Claim</button>'));
+        $harness->assertTrue(str_contains($html, 'data-chicken-check="true"'));
+        $harness->assertTrue(str_contains($html, 'data-chicken-title="Submit expense claim"'));
+        $harness->assertTrue(str_contains($html, 'data-chicken-confirm-text="Submit Claim"'));
+    });
+
+    $harness->check(_expense_claim_editorCard::class, 'renders confirm no lines button with chicken confirmation for empty draft claims', function () use ($harness, $instance): void {
+        $context = expenseClaimEditorCardContext();
+        $context['services']['expensesPageData']['selected_claim']['lines'] = [];
+
+        $html = $instance->render($context);
+
+        $harness->assertTrue(str_contains($html, 'name="intent" value="confirm_no_lines"'));
+        $harness->assertTrue(str_contains($html, '>Confirm No Lines</button>'));
+        $harness->assertTrue(str_contains($html, 'data-chicken-check="true"'));
+        $harness->assertTrue(str_contains($html, 'data-chicken-title="Confirm no claim lines"'));
+        $harness->assertTrue(str_contains($html, 'data-chicken-confirm-text="Confirm No Lines"'));
+        $harness->assertSame(false, str_contains($html, 'name="intent" value="post_claim"'));
+    });
+
+    $harness->check(_expense_claim_editorCard::class, 'renders no-lines confirmation state without active submit action', function () use ($harness, $instance): void {
+        $context = expenseClaimEditorCardContext();
+        $context['services']['expensesPageData']['selected_claim']['lines'] = [];
+        $context['services']['expensesPageData']['selected_claim']['no_lines_confirmed'] = true;
+        $context['services']['expensesPageData']['selected_claim']['no_lines_confirmed_at'] = '2026-07-01 20:00:00';
+
+        $html = $instance->render($context);
+
+        $harness->assertTrue(str_contains($html, 'No Lines Confirmed on 2026-07-01 20:00:00'));
+        $harness->assertSame(false, str_contains($html, 'name="intent" value="confirm_no_lines"'));
+        $harness->assertSame(false, str_contains($html, '>Confirm No Lines</button>'));
+        $harness->assertSame(false, str_contains($html, '>Submit Claim</button>'));
     });
 
     $harness->check(_expense_claim_editorCard::class, 'shows draft line total in claim summary', function () use ($harness, $instance): void {

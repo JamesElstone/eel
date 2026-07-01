@@ -427,6 +427,11 @@ final class ExpenseClaimService
         $claim['payment_links'] = $this->fetchPaymentLinks($claimId);
         $claim['line_count'] = count((array)$claim['lines']);
         $claim['payment_link_count'] = count((array)$claim['payment_links']);
+        $claim['no_lines_confirmed_at'] = (string)($claim['no_lines_confirmed_at'] ?? '');
+        $claim['no_lines_confirmed_by'] = (string)($claim['no_lines_confirmed_by'] ?? '');
+        $claim['no_lines_confirmed'] = (string)$claim['status'] === 'draft'
+            && (int)$claim['line_count'] === 0
+            && $claim['no_lines_confirmed_at'] !== '';
         $claim['control_totals'] = [
             'A' => (float)$claim['brought_forward_amount'],
             'B' => (float)$claim['claimed_amount'],
@@ -455,6 +460,47 @@ final class ExpenseClaimService
             'claim_reference_code' => $referenceCode,
         ]);
         return $claimId > 0 ? $this->fetchClaim($companyId, $claimId) : null;
+    }
+
+    public function confirmNoLines(int $companyId, int $claimId, string $changedBy = 'web_app'): array {
+        $claim = $this->fetchClaim($companyId, $claimId);
+        if ($claim === null) {
+            return ['success' => false, 'errors' => ['The selected claim could not be found.']];
+        }
+
+        if ((string)$claim['status'] === 'posted') {
+            return ['success' => false, 'errors' => ['Posted claims are already locked.']];
+        }
+
+        if ((int)($claim['line_count'] ?? 0) > 0) {
+            return ['success' => false, 'errors' => ['This claim already has lines, so submit the claim instead.']];
+        }
+
+        (new \eel_accounts\Service\YearEndLockService())->assertUnlocked(
+            $companyId,
+            (int)($claim['accounting_period_id'] ?? 0),
+            'confirm no expense claim lines in this period'
+        );
+
+        \InterfaceDB::prepare(
+            'UPDATE expense_claims
+             SET no_lines_confirmed_at = CURRENT_TIMESTAMP,
+                 no_lines_confirmed_by = :no_lines_confirmed_by,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = :id
+               AND company_id = :company_id'
+        )->execute([
+            'no_lines_confirmed_by' => $this->actorValue($changedBy),
+            'id' => $claimId,
+            'company_id' => $companyId,
+        ]);
+
+        return [
+            'success' => true,
+            'claim' => $this->fetchClaim($companyId, $claimId),
+            'claims' => $this->listClaims($companyId),
+            'messages' => ['No-lines month confirmed.'],
+        ];
     }
 
     private function fetchClaimForHeatmapLine(int $companyId, int $claimantId, string $expenseDate): ?array {
@@ -650,6 +696,7 @@ final class ExpenseClaimService
                 'receipt_reference' => $receiptReference !== '' ? $receiptReference : null,
                 'notes' => $notes !== '' ? $notes : null,
             ]);
+            $this->clearNoLinesConfirmation($companyId, $claimId);
         }
 
         $this->recalculateClaimSeries($companyId, (int)$claim['claimant_id']);
@@ -818,6 +865,7 @@ final class ExpenseClaimService
                     $lineNumber++;
                 }
 
+                $this->clearNoLinesConfirmation($companyId, $claimId);
                 $this->recalculateClaimSeries($companyId, (int)$claim['claimant_id']);
             }
 
@@ -2135,6 +2183,26 @@ final class ExpenseClaimService
             'company_id' => $companyId,
             'claim_reference_code' => $referenceCode,
         ]) > 0;
+    }
+
+    private function clearNoLinesConfirmation(int $companyId, int $claimId): void {
+        \InterfaceDB::prepare(
+            'UPDATE expense_claims
+             SET no_lines_confirmed_at = NULL,
+                 no_lines_confirmed_by = NULL,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = :id
+               AND company_id = :company_id
+               AND no_lines_confirmed_at IS NOT NULL'
+        )->execute([
+            'id' => $claimId,
+            'company_id' => $companyId,
+        ]);
+    }
+
+    private function actorValue(string $changedBy): string {
+        $changedBy = trim($changedBy);
+        return $changedBy !== '' ? substr($changedBy, 0, 100) : 'web_app';
     }
 
     private function fetchExistingExpenseJournal(int $companyId, string $sourceRef): ?array {

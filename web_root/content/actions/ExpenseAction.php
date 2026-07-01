@@ -40,6 +40,7 @@ final class ExpenseAction implements ActionInterfaceFramework
                     'pasted_lines' => (string)$request->input('pasted_lines', ''),
                     'date_format' => (string)$request->input('date_format', 'd/m/Y'),
                 ]),
+                'confirm_no_lines' => $service->confirmNoLines($companyId, (int)$request->input('claim_id', 0), 'web_app'),
                 'update_line_nominal' => $service->updateLineNominal(
                     $companyId,
                     (int)$request->input('claim_id', 0),
@@ -163,6 +164,7 @@ final class ExpenseAction implements ActionInterfaceFramework
                 'delete_claim' => 'Expense claim deleted.',
                 'link_payment' => 'Repayment linked.',
                 'unlink_payment' => 'Repayment unlinked.',
+                'confirm_no_lines' => 'No-lines month confirmed.',
                 'post_claim' => 'Expense claim submitted.',
                 default => '',
             };

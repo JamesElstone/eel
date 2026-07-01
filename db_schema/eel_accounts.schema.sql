@@ -412,6 +412,8 @@ CREATE TABLE `expense_claims` (
   `carried_forward_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
   `status` enum('draft','posted') NOT NULL DEFAULT 'draft',
   `posted_journal_id` bigint(20) DEFAULT NULL,
+  `no_lines_confirmed_at` datetime DEFAULT NULL,
+  `no_lines_confirmed_by` varchar(100) DEFAULT NULL,
   `notes` text DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),

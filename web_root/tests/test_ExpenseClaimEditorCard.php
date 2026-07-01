@@ -25,6 +25,34 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $harness->assertTrue(str_contains($html, 'name="intent" value="preview_bulk_lines"'));
     });
 
+    $harness->check(_expense_claim_editorCard::class, 'uses exportable builder tables with 20 row pagination', function () use ($harness, $instance): void {
+        $context = expenseClaimEditorCardContext();
+        for ($i = 2; $i <= 25; $i++) {
+            $context['services']['expensesPageData']['selected_claim']['lines'][] = [
+                'id' => 10 + $i,
+                'expense_date' => '2022-10-' . str_pad((string)min($i, 28), 2, '0', STR_PAD_LEFT),
+                'description' => 'Line ' . $i,
+                'nominal_account_id' => null,
+                'amount' => (float)$i,
+            ];
+        }
+
+        $tables = $instance->tables($context);
+        $harness->assertSame(4, count($tables));
+        foreach ($tables as $table) {
+            $harness->assertTrue($table instanceof TableFramework);
+        }
+
+        $html = $instance->render($context);
+        $harness->assertTrue(str_contains($html, '_table_export_prepare'));
+        $harness->assertTrue(str_contains($html, 'CSV'));
+        $harness->assertTrue(str_contains($html, 'XLSX'));
+        $harness->assertTrue(str_contains($html, 'TSV'));
+        $harness->assertTrue(str_contains($html, 'ASCII'));
+        $harness->assertTrue(str_contains($html, 'Expense lines 1-20 of 25'));
+        $harness->assertTrue(str_contains($html, 'name="expense_claim_editor_expense_claim_editor_lines"'));
+    });
+
     $harness->check(_expense_claim_editorCard::class, 'hides receipt reference from editor UI', function () use ($harness, $instance): void {
         $html = $instance->render(expenseClaimEditorCardContext());
 

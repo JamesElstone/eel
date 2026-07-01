@@ -1,5 +1,37 @@
 # eelKit Changes
 
+## Calendar heatmap date range selector
+
+Feature name: `calendar_heatmap_date_range_selector`.
+
+`ChartService::calendarHeatmap()` now supports a date-valued `range_control` selector for period, accounting-year, or reporting-window navigation while preserving the existing year picker by default.
+
+```php
+$html = (new ChartService())->calendarHeatmap($days, [
+    'title' => 'Claim calendar',
+    'id' => 'expense-claim-calendar',
+    'start_date' => '2026-04-01',
+    'end_date' => '2027-03-31',
+    'selected_date' => '2026-05-01',
+    'input_name' => 'expense_heatmap_date',
+    'range_control' => [
+        'type' => 'date',
+        'name' => 'expense_heatmap_period_start',
+        'id_suffix' => 'period-start',
+        'label' => 'Period',
+        'options' => [
+            ['value' => '2025-04-01', 'label' => '2025/26'],
+            ['value' => '2026-04-01', 'label' => '2026/27'],
+        ],
+        'selected_value' => '2026-04-01',
+    ],
+]);
+```
+
+Date selector option values are validated with the same strict `Y-m-d` parser used by heatmap dates. Invalid date options are omitted, labels are escaped, and `selected_value` is independent from the highlighted `selected_date`. If date mode has no valid options, eelKit omits the selector instead of falling back to a year value.
+
+Existing calls without `range_control`, or with `type => 'year'`, continue to render the year selector with the existing `year_input_name`, `years`, `calendar-heatmap-year-select` class, and generated `-year` id behaviour. Date mode renders `calendar-heatmap-range-select` and does not change day-button submission or AJAX data attributes.
+
 ## Warning flash messages
 
 Feature name: `warning_flash_messages`.

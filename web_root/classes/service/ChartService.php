@@ -476,6 +476,7 @@ final class ChartService
      * - input_name: Button name used when a day is submitted.
      * - year_input_name: Select name used for the year picker.
      * - years: Optional list of integer years to show in the year picker.
+     * - range_control: Optional selector config; type=date renders date-valued options, type=year keeps the year picker.
      * - ajax_target: Optional target id/data value for the framework AJAX handler.
      * - ajax_url: Optional formaction value applied to each day button.
      * - value_label: Label used in generated day titles, for example "records".
@@ -511,7 +512,7 @@ final class ChartService
 
         $headingHtml = '<div class="calendar-heatmap-heading">'
             . '<h3>' . HelperFramework::escape($chartTitle !== '' ? $chartTitle : 'Calendar heatmap') . '</h3>'
-            . $this->calendarHeatmapYearSelect($start, $end, $selectedDate, $yearInputName, $options, $controlId)
+            . $this->calendarHeatmapRangeControl($start, $end, $selectedDate, $yearInputName, $options, $controlId)
             . '</div>';
         $monthHtml = $this->calendarHeatmapMonthLabels($gridStart, $gridEnd, $weekCount);
         $dayHtml = '';
@@ -1303,6 +1304,82 @@ final class ChartService
         }
 
         return $html;
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     */
+    private function calendarHeatmapRangeControl(DateTimeImmutable $start, DateTimeImmutable $end, ?DateTimeImmutable $selectedDate, string $yearInputName, array $options, string $controlId): string
+    {
+        $rangeControl = $options['range_control'] ?? null;
+        if (!is_array($rangeControl) || (string)($rangeControl['type'] ?? 'year') !== 'date') {
+            return $this->calendarHeatmapYearSelect($start, $end, $selectedDate, $yearInputName, $options, $controlId);
+        }
+
+        return $this->calendarHeatmapDateSelect($rangeControl, $controlId);
+    }
+
+    /**
+     * @param array<string, mixed> $rangeControl
+     */
+    private function calendarHeatmapDateSelect(array $rangeControl, string $controlId): string
+    {
+        $options = $this->calendarHeatmapDateSelectOptions((array)($rangeControl['options'] ?? []));
+        if ($options === []) {
+            return '';
+        }
+
+        $name = trim((string)($rangeControl['name'] ?? 'heatmap_range'));
+        $name = $name !== '' ? $name : 'heatmap_range';
+        $idSuffix = $this->calendarHeatmapControlSuffix((string)($rangeControl['id_suffix'] ?? 'range'));
+        $selectId = $controlId . '-' . $idSuffix;
+        $label = trim((string)($rangeControl['label'] ?? 'Range'));
+        $label = $label !== '' ? $label : 'Range';
+        $selectedValue = $this->normaliseDateString((string)($rangeControl['selected_value'] ?? ''));
+        $html = '<label class="sr-only" for="' . HelperFramework::escape($selectId) . '">' . HelperFramework::escape($label) . '</label>'
+            . '<select class="select calendar-heatmap-range-select" id="' . HelperFramework::escape($selectId) . '" name="' . HelperFramework::escape($name) . '">';
+
+        foreach ($options as $option) {
+            $html .= '<option value="' . HelperFramework::escape($option['value']) . '"' . ($option['value'] === $selectedValue ? ' selected' : '') . '>' . HelperFramework::escape($option['label']) . '</option>';
+        }
+
+        return $html . '</select>';
+    }
+
+    /**
+     * @param array<int, mixed> $configuredOptions
+     * @return array<int, array{value: string, label: string}>
+     */
+    private function calendarHeatmapDateSelectOptions(array $configuredOptions): array
+    {
+        $options = [];
+
+        foreach ($configuredOptions as $configuredOption) {
+            if (!is_array($configuredOption)) {
+                continue;
+            }
+
+            $value = $this->normaliseDateString((string)($configuredOption['value'] ?? ''));
+            if ($value === null) {
+                continue;
+            }
+
+            $label = trim((string)($configuredOption['label'] ?? ''));
+            $options[] = [
+                'value' => $value,
+                'label' => $label !== '' ? $label : $value,
+            ];
+        }
+
+        return $options;
+    }
+
+    private function calendarHeatmapControlSuffix(string $suffix): string
+    {
+        $suffix = strtolower((string)preg_replace('/[^a-zA-Z0-9-]+/', '-', trim($suffix)));
+        $suffix = trim($suffix, '-_');
+
+        return $suffix !== '' ? $suffix : 'range';
     }
 
     /**

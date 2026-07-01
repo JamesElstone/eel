@@ -67,6 +67,7 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $harness->assertTrue(str_contains($html, 'name="intent" value="update_line_nominal"'));
         $harness->assertTrue(str_contains($html, 'data-autosave-submit-target=".js-expense-line-nominal-submit"'));
         $harness->assertTrue(str_contains($html, '<option value="">Unassigned</option>'));
+        $harness->assertTrue(str_contains($html, '$94.99'));
     });
 
     $harness->check(_expense_claim_editorCard::class, 'renders bulk preview and import action with display date', function () use ($harness, $instance): void {
@@ -118,6 +119,7 @@ function expenseClaimEditorCardContext(): array
                 'default_expense_nominal_id' => 5000,
                 'director_loan_nominal_id' => 2300,
                 'default_bank_nominal_id' => 1000,
+                'default_currency_symbol' => '&#36;',
             ],
         ],
         'expense_page_settings' => [
@@ -125,6 +127,7 @@ function expenseClaimEditorCardContext(): array
             'default_expense_nominal_id' => 5000,
             'director_loan_nominal_id' => 2300,
             'default_bank_nominal_id' => 1000,
+            'default_currency_symbol' => '&#36;',
         ],
         'services' => [
             'expensesPageData' => [

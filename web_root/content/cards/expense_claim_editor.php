@@ -69,7 +69,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
 
         return [
             $this->previewTable((array)($bulkPreview['rows'] ?? []), $dateFormat),
-            $this->linesTable((array)($claim['lines'] ?? []), (array)($data['nominal_accounts'] ?? []), $claimId, $isPosted, $companyId, $dateFormat),
+            $this->linesTable((array)($claim['lines'] ?? []), (array)($data['nominal_accounts'] ?? []), $claimId, $isPosted, $companyId, $dateFormat, $companySettings),
             $this->paymentsTable((array)($claim['payment_links'] ?? []), $claimId, $isPosted, $companyId, $dateFormat),
             $this->paymentCandidatesTable((array)($data['payment_candidates'] ?? []), $companySettings, $claimId, $companyId, $dateFormat),
         ];
@@ -116,7 +116,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
             ' . ($isPosted ? '<div class="helper">Posted claims are locked.</div>' : $this->renderLineForm($claim, $nominals, $claimId, $companySettings, $companyId)) . '
             ' . $this->renderTablePanel(
                 'Expense Lines',
-                $this->configuredLinesTable((array)($claim['lines'] ?? []), $nominals, $claimId, $isPosted, $companyId, $dateFormat, $context)->render($context, $this->tableExportFields(['claim_id' => $claimId]))
+                $this->configuredLinesTable((array)($claim['lines'] ?? []), $nominals, $claimId, $isPosted, $companyId, $dateFormat, $companySettings, $context)->render($context, $this->tableExportFields(['claim_id' => $claimId]))
             ) . '
             ' . $this->renderPaymentsPanel((array)($claim['payment_links'] ?? []), $paymentCandidates, $companySettings, $filters, $claimId, $isPosted, $companyId, $dateFormat, $context) . '
         ';
@@ -218,9 +218,9 @@ final class _expense_claim_editorCard extends CardBaseFramework
             );
     }
 
-    private function configuredLinesTable(array $lines, array $nominals, int $claimId, bool $isPosted, int $companyId, string $dateFormat, array $context): TableFramework
+    private function configuredLinesTable(array $lines, array $nominals, int $claimId, bool $isPosted, int $companyId, string $dateFormat, array $companySettings, array $context): TableFramework
     {
-        $table = $this->linesTable($lines, $nominals, $claimId, $isPosted, $companyId, $dateFormat);
+        $table = $this->linesTable($lines, $nominals, $claimId, $isPosted, $companyId, $dateFormat, $companySettings);
         $pagination = HelperFramework::paginateArray($table->sortedRows(), $this->paginationPage($context, self::TABLE_LINES), self::PAGE_SIZE);
 
         return $table
@@ -233,8 +233,10 @@ final class _expense_claim_editorCard extends CardBaseFramework
             );
     }
 
-    private function linesTable(array $lines, array $nominals, int $claimId, bool $isPosted, int $companyId, string $dateFormat): TableFramework
+    private function linesTable(array $lines, array $nominals, int $claimId, bool $isPosted, int $companyId, string $dateFormat, array $companySettings): TableFramework
     {
+        $defaultCurrencySymbol = $this->defaultCurrencySymbol($companySettings);
+
         return TableFramework::make(self::TABLE_LINES, $this->lineRows($lines, $dateFormat))
             ->filename('expense-claim-lines')
             ->exportLimit(1000)
@@ -252,7 +254,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
             ->column(
                 'amount',
                 'Amount',
-                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::money($row['amount'] ?? 0)),
+                html: static fn(array $row): string => HelperFramework::escape($defaultCurrencySymbol . FormattingFramework::money($row['amount'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['amount'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -583,6 +585,13 @@ final class _expense_claim_editorCard extends CardBaseFramework
             $candidate['txn_date_display'] = $this->displayDate((string)($candidate['txn_date'] ?? ''), $dateFormat);
             return $candidate;
         }, array_values(array_filter($paymentCandidates, static fn(mixed $candidate): bool => is_array($candidate))));
+    }
+
+    private function defaultCurrencySymbol(array $companySettings): string
+    {
+        $symbol = html_entity_decode((string)($companySettings['default_currency_symbol'] ?? '&#163;'), \ENT_QUOTES | \ENT_HTML5, 'UTF-8');
+
+        return $symbol !== '' ? $symbol : html_entity_decode('&#163;', \ENT_QUOTES | \ENT_HTML5, 'UTF-8');
     }
 
     private function tablePaginationFields(array $extra = []): array

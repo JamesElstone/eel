@@ -96,6 +96,7 @@ $harness->run(_expenses_stateCard::class, function (GeneratedServiceClassTestHar
             </form>'));
         $harness->assertSame(false, str_contains($html, 'name="expense_query" form="expense-search-form"'));
         $harness->assertSame(false, str_contains($html, 'type="submit" form="expense-search-form"'));
+        $harness->assertSame(0, preg_match('/<div class="actions-row">\s*<\/div>/', $html));
         $harness->assertTrue(str_contains($html, '<div class="actions-row"><button class="button'));
         $statusFilterPosition = strpos($html, 'id="table-filter-expenses_state-expense_status"');
         $claimantPosition = strpos($html, 'id="expense-claimant"');

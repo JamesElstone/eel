@@ -90,7 +90,7 @@ final class _expenses_stateCard extends CardBaseFramework
 
         return '<div class="expense-claims-stack">
         <section class="panel-soft">
-            ' . $claimsTable->renderToolbar($context, $claimsTableHiddenFields) . '
+            ' . $this->withoutEmptyActionRows($claimsTable->renderToolbar($context, $claimsTableHiddenFields)) . '
             ' . $this->renderClaimHeatmap($heatmapFormId, $claimHeatmapClaims, $claimants, $accountingPeriods, $heatmapClaimantId, $heatmapPeriod, $heatmapDate, $query, $status, $companyId) . '
             ' . $claimsTable->renderTable() . '
             ' . $claimsTable->renderFooter() . '
@@ -191,6 +191,11 @@ final class _expenses_stateCard extends CardBaseFramework
         }
 
         return $rows;
+    }
+
+    private function withoutEmptyActionRows(string $html): string
+    {
+        return preg_replace('/<div class="actions-row">\s*<\/div>\s*/', '', $html) ?? $html;
     }
 
     private function claimsTableHiddenFields(array $context, array $filters, int $companyId): array

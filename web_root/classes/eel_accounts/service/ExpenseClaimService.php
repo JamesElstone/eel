@@ -43,6 +43,7 @@ final class ExpenseClaimService
             'active_claimant_count' => count($this->fetchClaimants($companyId, true)),
             'accounting_periods' => (new \eel_accounts\Repository\AccountingPeriodRepository())->fetchAccountingPeriods($companyId),
             'nominal_accounts' => $this->fetchExpenseNominals(),
+            'asset_categories' => \eel_accounts\Service\AssetService::assetCategoryOptions(),
             'payment_candidates' => $selectedClaim !== null
                 ? $this->searchTransactions($companyId, [
                     'claim_id' => (int)$selectedClaim['id'],
@@ -576,9 +577,7 @@ final class ExpenseClaimService
         $amount = round((float)$payload['amount'], 2);
         $nominalAccountId = isset($payload['nominal_account_id']) && (int)$payload['nominal_account_id'] > 0
             ? (int)$payload['nominal_account_id']
-            : (isset($payload['default_expense_nominal_id']) && (int)$payload['default_expense_nominal_id'] > 0
-                ? (int)$payload['default_expense_nominal_id']
-                : null);
+            : null;
         $receiptReference = trim((string)($payload['receipt_reference'] ?? ''));
         $notes = trim((string)($payload['notes'] ?? ''));
 
@@ -827,6 +826,11 @@ final class ExpenseClaimService
             return ['success' => false, 'errors' => ['Select a valid expense line.']];
         }
 
+        $line = $this->fetchClaimLine($claimId, $lineId);
+        if ($line !== null && (string)($line['line_type'] ?? 'expense') === 'asset') {
+            return ['success' => false, 'errors' => ['Switch the line back to Expense before choosing an expense charge.']];
+        }
+
         \InterfaceDB::prepare(
             'UPDATE expense_claim_lines
              SET nominal_account_id = :nominal_account_id,
@@ -843,7 +847,100 @@ final class ExpenseClaimService
             'success' => true,
             'claim' => $this->fetchClaim($companyId, $claimId),
             'claims' => $this->listClaims($companyId),
-            'messages' => ['Line nominal saved.'],
+            'messages' => ['Line charge saved.'],
+        ];
+    }
+
+    public function updateLineType(int $companyId, int $claimId, int $lineId, string $lineType): array {
+        $claim = $this->fetchClaim($companyId, $claimId);
+        if ($claim === null) {
+            return ['success' => false, 'errors' => ['The selected claim could not be found.']];
+        }
+
+        if ((string)$claim['status'] === 'posted') {
+            return ['success' => false, 'errors' => ['Posted claims are locked.']];
+        }
+
+        $line = $this->fetchClaimLine($claimId, $lineId);
+        if ($line === null) {
+            return ['success' => false, 'errors' => ['Select a valid expense line.']];
+        }
+
+        $lineType = strtolower(trim($lineType));
+        if (!in_array($lineType, ['expense', 'asset'], true)) {
+            return ['success' => false, 'errors' => ['Choose Expense or Asset for the line type.']];
+        }
+
+        if ($lineType === 'asset') {
+            $this->upsertLineAssetDetails($line, [
+                'category' => 'tools_equipment',
+                'description' => (string)($line['description'] ?? ''),
+                'useful_life_years' => 3,
+                'depreciation_method' => 'straight_line',
+                'residual_value' => 0,
+            ]);
+            \InterfaceDB::prepare(
+                'UPDATE expense_claim_lines
+                 SET nominal_account_id = NULL,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = :id
+                   AND expense_claim_id = :expense_claim_id'
+            )->execute([
+                'id' => $lineId,
+                'expense_claim_id' => $claimId,
+            ]);
+        } else {
+            \InterfaceDB::prepare(
+                'DELETE FROM expense_claim_line_assets
+                 WHERE expense_claim_line_id = :expense_claim_line_id'
+            )->execute(['expense_claim_line_id' => $lineId]);
+        }
+
+        return [
+            'success' => true,
+            'claim' => $this->fetchClaim($companyId, $claimId),
+            'claims' => $this->listClaims($companyId),
+            'messages' => ['Line type saved.'],
+        ];
+    }
+
+    public function saveLineAssetDetails(int $companyId, int $claimId, int $lineId, array $payload): array {
+        $claim = $this->fetchClaim($companyId, $claimId);
+        if ($claim === null) {
+            return ['success' => false, 'errors' => ['The selected claim could not be found.']];
+        }
+
+        if ((string)$claim['status'] === 'posted') {
+            return ['success' => false, 'errors' => ['Posted claims are locked.']];
+        }
+
+        $line = $this->fetchClaimLine($claimId, $lineId);
+        if ($line === null) {
+            return ['success' => false, 'errors' => ['Select a valid expense line.']];
+        }
+
+        $normalised = $this->normaliseLineAssetPayload($line, $payload, (int)$claim['accounting_period_id'], $companyId);
+        if ($normalised['errors'] !== []) {
+            return ['success' => false, 'errors' => $normalised['errors']];
+        }
+
+        $this->upsertLineAssetDetails($line, $normalised['values']);
+        \InterfaceDB::prepare(
+            'UPDATE expense_claim_lines
+             SET nominal_account_id = NULL,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = :id
+               AND expense_claim_id = :expense_claim_id'
+        )->execute([
+            'id' => $lineId,
+            'expense_claim_id' => $claimId,
+        ]);
+
+        return [
+            'success' => true,
+            'claim' => $this->fetchClaim($companyId, $claimId),
+            'claims' => $this->listClaims($companyId),
+            'messages' => ['Asset details saved.'],
         ];
     }
 
@@ -867,7 +964,7 @@ final class ExpenseClaimService
         }
 
         if ($defaultExpenseNominalId <= 0) {
-            return ['success' => false, 'errors' => ['Set the default expense nominal before linking repayments.']];
+            return ['success' => false, 'errors' => ['Set the expense claims payable nominal before linking repayments.']];
         }
 
         $transaction = $this->categorisationService->fetchTransaction($transactionId);
@@ -1090,9 +1187,9 @@ final class ExpenseClaimService
             return ['success' => false, 'errors' => ['Claim reference code is missing.']];
         }
 
-        $defaultExpenseNominalId = isset($payload['default_expense_nominal_id']) ? (int)$payload['default_expense_nominal_id'] : 0;
-        if ($defaultExpenseNominalId <= 0) {
-            return ['success' => false, 'errors' => ['Set the default expense nominal before posting a claim.']];
+        $expenseClaimsPayableNominalId = isset($payload['default_expense_nominal_id']) ? (int)$payload['default_expense_nominal_id'] : 0;
+        if ($expenseClaimsPayableNominalId <= 0) {
+            return ['success' => false, 'errors' => ['Set the expense claims payable nominal before submitting a claim.']];
         }
 
         $lines = $this->fetchClaimLines($claimId);
@@ -1101,7 +1198,7 @@ final class ExpenseClaimService
         }
 
         foreach ($lines as $line) {
-            $lineErrors = $this->validateLineForPosting($line);
+            $lineErrors = $this->validateLineForPosting($companyId, (int)$claim['accounting_period_id'], $line);
             if ($lineErrors !== []) {
                 return ['success' => false, 'errors' => $lineErrors];
             }
@@ -1159,7 +1256,42 @@ final class ExpenseClaimService
                 throw new \RuntimeException('The expense journal could not be created.');
             }
 
+            $assetService = new \eel_accounts\Service\AssetService();
             foreach ($lines as $line) {
+                if ((string)($line['line_type'] ?? 'expense') === 'asset') {
+                    $normalisedAsset = $this->normaliseAssetValuesForPosting($assetService, $companyId, (int)$claim['accounting_period_id'], $line);
+                    if ($normalisedAsset['errors'] !== []) {
+                        throw new \RuntimeException(implode(' ', $normalisedAsset['errors']));
+                    }
+
+                    $values = (array)$normalisedAsset['values'];
+                    $this->insertJournalLine(
+                        (int)$journal['id'],
+                        (int)$values['nominal_account_id'],
+                        round((float)$line['amount'], 2),
+                        0.0,
+                        (string)$line['description']
+                    );
+                    $asset = $assetService->createAssetRecordFromValues($values, [
+                        'linked_journal_id' => (int)$journal['id'],
+                        'linked_transaction_id' => null,
+                        'linked_expense_claim_line_id' => (int)$line['id'],
+                    ]);
+                    if ($asset === null) {
+                        throw new \RuntimeException('The asset could not be reloaded after save.');
+                    }
+                    \InterfaceDB::prepare(
+                        'UPDATE expense_claim_line_assets
+                         SET generated_asset_id = :generated_asset_id,
+                             updated_at = CURRENT_TIMESTAMP
+                         WHERE expense_claim_line_id = :expense_claim_line_id'
+                    )->execute([
+                        'generated_asset_id' => (int)$asset['id'],
+                        'expense_claim_line_id' => (int)$line['id'],
+                    ]);
+                    continue;
+                }
+
                 $this->insertJournalLine(
                     (int)$journal['id'],
                     (int)$line['nominal_account_id'],
@@ -1171,7 +1303,7 @@ final class ExpenseClaimService
 
             $this->insertJournalLine(
                 (int)$journal['id'],
-                $defaultExpenseNominalId,
+                $expenseClaimsPayableNominalId,
                 0.0,
                 $totalClaimed,
                 'Expense claim payable'
@@ -1219,6 +1351,16 @@ final class ExpenseClaimService
         );
 
         return $stmt->fetchAll() ?: [];
+    }
+
+    private function fetchClaimLine(int $claimId, int $lineId): ?array {
+        foreach ($this->fetchClaimLines($claimId) as $line) {
+            if ((int)($line['id'] ?? 0) === $lineId) {
+                return $line;
+            }
+        }
+
+        return null;
     }
 
     public function recalculateClaim(int $claimId): void {
@@ -1296,8 +1438,15 @@ final class ExpenseClaimService
     }
 
     private function fetchClaimLines(int $claimId): array {
+        $assetCategories = \eel_accounts\Service\AssetService::assetCategoryOptions();
+
         return array_map(
-            static function (array $row): array {
+            static function (array $row) use ($assetCategories): array {
+                $assetCategory = trim((string)($row['asset_category'] ?? ''));
+                $assetCategoryLabel = $assetCategory !== ''
+                    ? (string)($assetCategories[$assetCategory] ?? $assetCategory)
+                    : '';
+
                 return [
                     'id' => (int)$row['id'],
                     'expense_claim_id' => (int)$row['expense_claim_id'],
@@ -1306,8 +1455,17 @@ final class ExpenseClaimService
                     'description' => (string)$row['description'],
                     'amount' => round((float)$row['amount'], 2),
                     'nominal_account_id' => isset($row['nominal_account_id']) ? (int)$row['nominal_account_id'] : null,
+                    'line_type' => $assetCategory !== '' ? 'asset' : 'expense',
                     'receipt_reference' => (string)($row['receipt_reference'] ?? ''),
                     'notes' => (string)($row['notes'] ?? ''),
+                    'asset_category' => $assetCategory,
+                    'asset_category_label' => $assetCategoryLabel,
+                    'asset_description' => (string)($row['asset_description'] ?? ''),
+                    'asset_useful_life_years' => isset($row['asset_useful_life_years']) ? (int)$row['asset_useful_life_years'] : 3,
+                    'asset_depreciation_method' => (string)($row['asset_depreciation_method'] ?? 'straight_line'),
+                    'asset_residual_value' => round((float)($row['asset_residual_value'] ?? 0), 2),
+                    'generated_asset_id' => isset($row['generated_asset_id']) ? (int)$row['generated_asset_id'] : null,
+                    'asset_code' => (string)($row['asset_code'] ?? ''),
                     'nominal_label' => trim((string)($row['nominal_code'] ?? '')) !== ''
                         ? (string)$row['nominal_code'] . ' - ' . (string)($row['nominal_name'] ?? '')
                         : (string)($row['nominal_name'] ?? ''),
@@ -1324,10 +1482,19 @@ final class ExpenseClaimService
                     l.notes,
                     l.created_at,
                     l.updated_at,
+                    la.category AS asset_category,
+                    la.description AS asset_description,
+                    la.useful_life_years AS asset_useful_life_years,
+                    la.depreciation_method AS asset_depreciation_method,
+                    la.residual_value AS asset_residual_value,
+                    la.generated_asset_id,
+                    ar.asset_code,
                     n.code AS nominal_code,
                     n.name AS nominal_name
              FROM expense_claim_lines l
              LEFT JOIN nominal_accounts n ON n.id = l.nominal_account_id
+             LEFT JOIN expense_claim_line_assets la ON la.expense_claim_line_id = l.id
+             LEFT JOIN asset_register ar ON ar.id = la.generated_asset_id
              WHERE l.expense_claim_id = :expense_claim_id
              ORDER BY l.line_number ASC, l.id ASC', ['expense_claim_id' => $claimId])
         );
@@ -1681,15 +1848,102 @@ final class ExpenseClaimService
             : 'd/m/Y';
     }
 
-    private function validateLineForPosting(array $line): array {
+    private function normaliseLineAssetPayload(array $line, array $payload, int $accountingPeriodId, int $companyId): array {
+        $assetService = new \eel_accounts\Service\AssetService();
+        $normalised = $assetService->normaliseAssetValues($companyId, [
+            'description' => trim((string)($payload['asset_description'] ?? $payload['description'] ?? $line['asset_description'] ?? $line['description'] ?? '')),
+            'category' => trim((string)($payload['asset_category'] ?? $payload['category'] ?? $line['asset_category'] ?? 'tools_equipment')),
+            'purchase_date' => (string)($line['expense_date'] ?? ''),
+            'cost' => (float)($line['amount'] ?? 0),
+            'useful_life_years' => (int)($payload['asset_useful_life_years'] ?? $payload['useful_life_years'] ?? $line['asset_useful_life_years'] ?? 3),
+            'depreciation_method' => trim((string)($payload['asset_depreciation_method'] ?? $payload['depreciation_method'] ?? $line['asset_depreciation_method'] ?? 'straight_line')),
+            'residual_value' => (float)($payload['asset_residual_value'] ?? $payload['residual_value'] ?? $line['asset_residual_value'] ?? 0),
+            'accounting_period_id' => $accountingPeriodId,
+        ], [
+            'description' => (string)($line['description'] ?? ''),
+            'purchase_date' => (string)($line['expense_date'] ?? ''),
+            'cost' => (float)($line['amount'] ?? 0),
+            'accounting_period_id' => $accountingPeriodId,
+        ]);
+
+        return $normalised;
+    }
+
+    private function normaliseAssetValuesForPosting(\eel_accounts\Service\AssetService $assetService, int $companyId, int $accountingPeriodId, array $line): array {
+        return $assetService->normaliseAssetValues($companyId, [
+            'description' => trim((string)($line['asset_description'] ?? '')) !== '' ? (string)$line['asset_description'] : (string)($line['description'] ?? ''),
+            'category' => (string)($line['asset_category'] ?? 'tools_equipment'),
+            'purchase_date' => (string)($line['expense_date'] ?? ''),
+            'cost' => (float)($line['amount'] ?? 0),
+            'useful_life_years' => (int)($line['asset_useful_life_years'] ?? 3),
+            'depreciation_method' => (string)($line['asset_depreciation_method'] ?? 'straight_line'),
+            'residual_value' => (float)($line['asset_residual_value'] ?? 0),
+            'accounting_period_id' => $accountingPeriodId,
+        ], [
+            'description' => (string)($line['description'] ?? ''),
+            'purchase_date' => (string)($line['expense_date'] ?? ''),
+            'cost' => (float)($line['amount'] ?? 0),
+            'accounting_period_id' => $accountingPeriodId,
+        ]);
+    }
+
+    private function upsertLineAssetDetails(array $line, array $values): void {
+        $lineId = (int)($line['id'] ?? 0);
+        if ($lineId <= 0) {
+            return;
+        }
+
+        \InterfaceDB::prepare(
+            'INSERT INTO expense_claim_line_assets (
+                expense_claim_line_id,
+                category,
+                description,
+                useful_life_years,
+                depreciation_method,
+                residual_value,
+                created_at,
+                updated_at
+             ) VALUES (
+                :expense_claim_line_id,
+                :category,
+                :description,
+                :useful_life_years,
+                :depreciation_method,
+                :residual_value,
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP
+             )
+             ON DUPLICATE KEY UPDATE
+                category = VALUES(category),
+                description = VALUES(description),
+                useful_life_years = VALUES(useful_life_years),
+                depreciation_method = VALUES(depreciation_method),
+                residual_value = VALUES(residual_value),
+                updated_at = CURRENT_TIMESTAMP'
+        )->execute([
+            'expense_claim_line_id' => $lineId,
+            'category' => (string)($values['category'] ?? 'tools_equipment'),
+            'description' => trim((string)($values['description'] ?? '')) !== '' ? trim((string)$values['description']) : null,
+            'useful_life_years' => max(1, (int)($values['useful_life_years'] ?? 3)),
+            'depreciation_method' => (string)($values['depreciation_method'] ?? 'straight_line'),
+            'residual_value' => round((float)($values['residual_value'] ?? 0), 2),
+        ]);
+    }
+
+    private function validateLineForPosting(int $companyId, int $accountingPeriodId, array $line): array {
         $errors = $this->validateLinePayload([
             'expense_date' => (string)($line['expense_date'] ?? ''),
             'description' => (string)($line['description'] ?? ''),
             'amount' => (float)($line['amount'] ?? 0),
         ]);
 
+        if ((string)($line['line_type'] ?? 'expense') === 'asset') {
+            $normalised = $this->normaliseAssetValuesForPosting(new \eel_accounts\Service\AssetService(), $companyId, $accountingPeriodId, $line);
+            return array_merge($errors, $normalised['errors']);
+        }
+
         if ((int)($line['nominal_account_id'] ?? 0) <= 0) {
-            $errors[] = 'Every expense line needs a nominal account before posting.';
+            $errors[] = 'Every expense line needs a Charge To value before submitting.';
         }
 
         return $errors;

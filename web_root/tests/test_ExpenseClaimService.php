@@ -96,7 +96,7 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
         });
     });
 
-    $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'posts claim credit to default expense nominal', function () use ($harness, $instance): void {
+    $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'posts claim credit to expense claims payable nominal', function () use ($harness, $instance): void {
         expenseClaimServiceWithFixture(static function (array $fixture) use ($harness, $instance): void {
             \InterfaceDB::prepareExecute(
                 'INSERT INTO expense_claim_lines (expense_claim_id, line_number, expense_date, description, amount, nominal_account_id)
@@ -134,6 +134,86 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
             $harness->assertSame((int)$fixture['expense_nominal_id'], (int)($creditLine['nominal_account_id'] ?? 0));
             $harness->assertSame(94.99, (float)($creditLine['credit'] ?? 0));
             $harness->assertSame('Expense claim payable', (string)($creditLine['line_description'] ?? ''));
+        });
+    });
+
+    $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'posts mixed expense and asset claim lines', function () use ($harness, $instance): void {
+        if (!\InterfaceDB::tableExists('expense_claim_line_assets')) {
+            $harness->skip('Expense claim line asset table is not available.');
+        }
+
+        expenseClaimServiceWithFixture(static function (array $fixture) use ($harness, $instance): void {
+            $expenseLineId = (int)($fixture['claim_id'] * 10 + 1);
+            $assetLineId = (int)($fixture['claim_id'] * 10 + 2);
+            foreach ([
+                [$expenseLineId, 1, 'Materials', 94.99, (int)$fixture['line_nominal_id']],
+                [$assetLineId, 2, 'Cordless drill', 180.00, null],
+            ] as $line) {
+                \InterfaceDB::prepareExecute(
+                    'INSERT INTO expense_claim_lines (id, expense_claim_id, line_number, expense_date, description, amount, nominal_account_id)
+                     VALUES (:id, :expense_claim_id, :line_number, :expense_date, :description, :amount, :nominal_account_id)',
+                    [
+                        'id' => (int)$line[0],
+                        'expense_claim_id' => (int)$fixture['claim_id'],
+                        'line_number' => (int)$line[1],
+                        'expense_date' => '2026-05-05',
+                        'description' => (string)$line[2],
+                        'amount' => (float)$line[3],
+                        'nominal_account_id' => $line[4],
+                    ]
+                );
+            }
+            \InterfaceDB::prepareExecute(
+                'UPDATE expense_claims
+                 SET claimed_amount = 274.99,
+                     carried_forward_amount = 274.99
+                 WHERE id = :id',
+                ['id' => (int)$fixture['claim_id']]
+            );
+
+            $typeResult = $instance->updateLineType((int)$fixture['company_id'], (int)$fixture['claim_id'], $assetLineId, 'asset');
+            $harness->assertSame(true, (bool)($typeResult['success'] ?? false));
+            $assetResult = $instance->saveLineAssetDetails((int)$fixture['company_id'], (int)$fixture['claim_id'], $assetLineId, [
+                'asset_category' => 'tools_equipment',
+                'asset_description' => 'Cordless drill',
+                'asset_useful_life_years' => 3,
+                'asset_depreciation_method' => 'straight_line',
+                'asset_residual_value' => '0.00',
+            ]);
+            $harness->assertSame(true, (bool)($assetResult['success'] ?? false));
+
+            $result = $instance->postClaim((int)$fixture['company_id'], (int)$fixture['claim_id'], [
+                'default_expense_nominal_id' => (int)$fixture['expense_nominal_id'],
+            ]);
+
+            $harness->assertSame(true, (bool)($result['success'] ?? false));
+            $journalId = (int)\InterfaceDB::fetchColumn(
+                'SELECT posted_journal_id FROM expense_claims WHERE id = :id',
+                ['id' => (int)$fixture['claim_id']]
+            );
+            $harness->assertSame(1, (int)\InterfaceDB::fetchColumn(
+                'SELECT COUNT(*) FROM journal_lines WHERE journal_id = :journal_id AND nominal_account_id = :nominal_account_id AND debit = 94.99',
+                ['journal_id' => $journalId, 'nominal_account_id' => (int)$fixture['line_nominal_id']]
+            ));
+            $harness->assertSame(1, (int)\InterfaceDB::fetchColumn(
+                'SELECT COUNT(*) FROM journal_lines WHERE journal_id = :journal_id AND nominal_account_id = :nominal_account_id AND debit = 180.00',
+                ['journal_id' => $journalId, 'nominal_account_id' => (int)$fixture['asset_cost_nominal_id']]
+            ));
+            $asset = \InterfaceDB::fetchOne(
+                'SELECT id, linked_journal_id, linked_expense_claim_line_id, category, cost
+                 FROM asset_register
+                 WHERE linked_expense_claim_line_id = :line_id
+                 LIMIT 1',
+                ['line_id' => $assetLineId]
+            );
+            $harness->assertSame($journalId, (int)($asset['linked_journal_id'] ?? 0));
+            $harness->assertSame($assetLineId, (int)($asset['linked_expense_claim_line_id'] ?? 0));
+            $harness->assertSame('tools_equipment', (string)($asset['category'] ?? ''));
+            $harness->assertSame(180.00, (float)($asset['cost'] ?? 0));
+            $harness->assertSame((int)($asset['id'] ?? 0), (int)\InterfaceDB::fetchColumn(
+                'SELECT generated_asset_id FROM expense_claim_line_assets WHERE expense_claim_line_id = :line_id',
+                ['line_id' => $assetLineId]
+            ));
         });
     });
 
@@ -292,6 +372,8 @@ function expenseClaimServiceWithFixture(callable $callback): void
                 ]
             );
         }
+        $assetCostNominalId = expenseClaimServiceEnsureNominalByCode('1300', 'Tools and Equipment', 'asset');
+        expenseClaimServiceEnsureNominalByCode('1330', 'Accumulated Depreciation - Tools', 'asset');
 
         \InterfaceDB::prepareExecute(
             'INSERT INTO company_accounts (id, company_id, account_name, account_type, nominal_account_id, is_active)
@@ -360,6 +442,7 @@ function expenseClaimServiceWithFixture(callable $callback): void
             'claim_id' => $claimId,
             'expense_nominal_id' => $expenseNominalId,
             'line_nominal_id' => $lineNominalId,
+            'asset_cost_nominal_id' => $assetCostNominalId,
             'bank_nominal_id' => $bankNominalId,
             'bank_account_id' => $bankAccountId,
             'upload_id' => $uploadId,
@@ -369,6 +452,33 @@ function expenseClaimServiceWithFixture(callable $callback): void
             \InterfaceDB::rollBack();
         }
     }
+}
+
+function expenseClaimServiceEnsureNominalByCode(string $code, string $name, string $accountType): int
+{
+    $existingId = (int)\InterfaceDB::fetchColumn(
+        'SELECT id FROM nominal_accounts WHERE code = :code LIMIT 1',
+        ['code' => $code]
+    );
+    if ($existingId > 0) {
+        return $existingId;
+    }
+
+    \InterfaceDB::prepareExecute(
+        'INSERT INTO nominal_accounts (code, name, account_type, tax_treatment, is_active, sort_order)
+         VALUES (:code, :name, :account_type, :tax_treatment, 1, 100)',
+        [
+            'code' => $code,
+            'name' => $name,
+            'account_type' => $accountType,
+            'tax_treatment' => 'capital',
+        ]
+    );
+
+    return (int)\InterfaceDB::fetchColumn(
+        'SELECT id FROM nominal_accounts WHERE code = :code LIMIT 1',
+        ['code' => $code]
+    );
 }
 
 function expenseClaimServiceInsertClaim(array $fixture, int $year, int $month, string $periodStart, string $periodEnd): int

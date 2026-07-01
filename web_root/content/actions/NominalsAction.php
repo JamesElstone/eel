@@ -332,7 +332,7 @@ final class NominalsAction implements ActionInterfaceFramework
         $labels = [
             'default_bank_nominal_id' => 'Default bank',
             'default_trade_nominal_id' => 'Default trade',
-            'default_expense_nominal_id' => 'Default expense',
+            'default_expense_nominal_id' => 'Expense claims payable',
             'director_loan_nominal_id' => 'Director loan',
             'vat_nominal_id' => 'VAT control',
             'uncategorised_nominal_id' => 'Fallback uncategorised',

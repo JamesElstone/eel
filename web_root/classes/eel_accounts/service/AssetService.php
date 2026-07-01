@@ -33,6 +33,32 @@ final class AssetService
         ];
     }
 
+    public static function assetNominalCodesForCategory(string $category): array {
+        return match ($category) {
+            'tools_equipment' => ['cost' => '1300', 'accum' => '1330'],
+            'plant_machinery' => ['cost' => '1310', 'accum' => '1340'],
+            default => ['cost' => '1320', 'accum' => '1350'],
+        };
+    }
+
+    public function normaliseAssetValues(int $companyId, array $payload, array $defaults = []): array
+    {
+        return $this->normaliseAssetPayload($companyId, $payload, $defaults);
+    }
+
+    public function createAssetRecordFromValues(array $values, array $links): ?array
+    {
+        $assetCode = trim((string)($links['asset_code'] ?? ''));
+        if ($assetCode === '') {
+            $assetCode = $this->generateAssetCode((int)($values['company_id'] ?? 0));
+            $links['asset_code'] = $assetCode;
+        }
+
+        $this->insertAssetRecord($values, $links);
+
+        return $this->fetchAssetByCode((int)($values['company_id'] ?? 0), $assetCode);
+    }
+
     public function fetchPageData(int $companyId, int $accountingPeriodId, int $defaultBankNominalId = 0, int $prefillTransactionId = 0): array {
         if (!$this->hasRequiredSchema()) {
             return [
@@ -836,11 +862,7 @@ final class AssetService
     }
 
     private function nominalCodesForCategory(string $category): array {
-        return match ($category) {
-            'tools_equipment' => ['cost' => '1300', 'accum' => '1330'],
-            'plant_machinery' => ['cost' => '1310', 'accum' => '1340'],
-            default => ['cost' => '1320', 'accum' => '1350'],
-        };
+        return self::assetNominalCodesForCategory($category);
     }
 
     private function insertAssetRecord(array $values, array $links): void {
@@ -860,6 +882,7 @@ final class AssetService
                 status,
                 linked_journal_id,
                 linked_transaction_id,
+                linked_expense_claim_line_id,
                 disposal_date,
                 disposal_proceeds,
                 created_at,
@@ -879,6 +902,7 @@ final class AssetService
                 :status,
                 :linked_journal_id,
                 :linked_transaction_id,
+                :linked_expense_claim_line_id,
                 NULL,
                 NULL,
                 CURRENT_TIMESTAMP,
@@ -899,7 +923,8 @@ final class AssetService
             'residual_value' => $values['residual_value'],
             'status' => $values['status'],
             'linked_journal_id' => $links['linked_journal_id'] ?: null,
-            'linked_transaction_id' => $links['linked_transaction_id'],
+            'linked_transaction_id' => $links['linked_transaction_id'] ?? null,
+            'linked_expense_claim_line_id' => $links['linked_expense_claim_line_id'] ?? null,
         ]);
     }
 

@@ -164,6 +164,7 @@ final class _expense_claimantsCard extends CardBaseFramework
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="claimant_id" value="' . $claimantId . '">
             <button class="button button-inline" type="submit" name="intent" value="' . HelperFramework::escape($intent) . '">' . HelperFramework::escape($label) . '</button>
+            <button class="button button-inline" type="submit" name="intent" value="filter_claims" data-page-card-switch-tab="Claims">Claims</button>
         </form>';
     }
 

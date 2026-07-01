@@ -53,6 +53,24 @@ final class ExpenseAction implements ActionInterfaceFramework
                     (int)$request->input('line_id', 0),
                     (int)$request->input('nominal_account_id', 0)
                 ),
+                'update_line_type' => $service->updateLineType(
+                    $companyId,
+                    (int)$request->input('claim_id', 0),
+                    (int)$request->input('line_id', 0),
+                    (string)$request->input('line_type', 'expense')
+                ),
+                'save_line_asset_details' => $service->saveLineAssetDetails(
+                    $companyId,
+                    (int)$request->input('claim_id', 0),
+                    (int)$request->input('line_id', 0),
+                    [
+                        'asset_category' => (string)$request->input('asset_category', ''),
+                        'asset_description' => (string)$request->input('asset_description', ''),
+                        'asset_useful_life_years' => (int)$request->input('asset_useful_life_years', 0),
+                        'asset_depreciation_method' => (string)$request->input('asset_depreciation_method', ''),
+                        'asset_residual_value' => (string)$request->input('asset_residual_value', ''),
+                    ]
+                ),
                 'delete_line' => $service->deleteLine(
                     $companyId,
                     (int)$request->input('claim_id', 0),
@@ -152,12 +170,14 @@ final class ExpenseAction implements ActionInterfaceFramework
                 'save_line' => 'Expense line saved.',
                 'preview_bulk_lines' => '',
                 'bulk_save_lines' => 'Expense lines imported.',
-                'update_line_nominal' => 'Line nominal saved.',
+                'update_line_nominal' => 'Line charge saved.',
+                'update_line_type' => 'Line type saved.',
+                'save_line_asset_details' => 'Asset details saved.',
                 'delete_line' => 'Expense line deleted.',
                 'delete_claim' => 'Expense claim deleted.',
                 'link_payment' => 'Repayment linked.',
                 'unlink_payment' => 'Repayment unlinked.',
-                'post_claim' => 'Expense claim posted.',
+                'post_claim' => 'Expense claim submitted.',
                 default => '',
             };
         }

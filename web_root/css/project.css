@@ -1042,6 +1042,12 @@
   box-shadow: none;
 }
 
+.segmented-option.is-active {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+}
+
 .form-row-actions {
   display: flex;
   gap: 8px;

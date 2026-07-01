@@ -16,12 +16,13 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $harness->skip('Expense claim editor card did not instantiate.');
     }
 
-    $harness->check(_expense_claim_editorCard::class, 'renders four-column control totals and paste helper', function () use ($harness, $instance): void {
+    $harness->check(_expense_claim_editorCard::class, 'renders claim summary, submit panel, and paste helper', function () use ($harness, $instance): void {
         $html = $instance->render(expenseClaimEditorCardContext());
 
-        $harness->assertTrue(str_contains($html, '<div class="summary-grid four">'));
-        $harness->assertTrue(str_contains($html, 'Paste claim lines'));
-        $harness->assertTrue(str_contains($html, 'Paste tab-delimited rows in this column order: DATE, DESCRIPTION, AMOUNT CLAIMED.'));
+        $harness->assertTrue(str_contains($html, 'Claim Reference'));
+        $harness->assertTrue(str_contains($html, 'Submit Claim'));
+        $harness->assertTrue(str_contains($html, 'Claim Lines can be pasted below'));
+        $harness->assertTrue(str_contains($html, '&quot;DATE&quot;, &quot;DESCRIPTION&quot;, &quot;AMOUNT CLAIMED&quot;'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="preview_bulk_lines"'));
     });
 
@@ -61,14 +62,35 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $harness->assertSame(false, str_contains($html, '<th>Receipt</th>'));
     });
 
-    $harness->check(_expense_claim_editorCard::class, 'renders inline nominal update controls for draft lines', function () use ($harness, $instance): void {
+    $harness->check(_expense_claim_editorCard::class, 'renders type and charge controls for draft lines', function () use ($harness, $instance): void {
         $html = $instance->render(expenseClaimEditorCardContext());
 
+        $harness->assertTrue(str_contains($html, '>Type</th>'));
+        $harness->assertTrue(str_contains($html, '>Charge To</th>'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="update_line_type"'));
+        $harness->assertTrue(str_contains($html, 'name="line_type" value="asset"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="update_line_nominal"'));
         $harness->assertTrue(str_contains($html, 'data-autosave-submit-target=".js-expense-line-nominal-submit"'));
         $harness->assertTrue(str_contains($html, '<option value="">Unassigned</option>'));
         $harness->assertTrue(str_contains($html, '<label for="expense-line-amount">Amount ($)</label>'));
         $harness->assertTrue(str_contains($html, '$94.99'));
+    });
+
+    $harness->check(_expense_claim_editorCard::class, 'renders asset charge details for asset lines', function () use ($harness, $instance): void {
+        $context = expenseClaimEditorCardContext();
+        $context['services']['expensesPageData']['selected_claim']['lines'][0]['line_type'] = 'asset';
+        $context['services']['expensesPageData']['selected_claim']['lines'][0]['asset_category'] = 'tools_equipment';
+        $context['services']['expensesPageData']['selected_claim']['lines'][0]['asset_category_label'] = 'Tools & Equipment';
+        $context['services']['expensesPageData']['selected_claim']['lines'][0]['asset_useful_life_years'] = 3;
+        $context['services']['expensesPageData']['selected_claim']['lines'][0]['asset_depreciation_method'] = 'straight_line';
+        $context['services']['expensesPageData']['selected_claim']['lines'][0]['asset_residual_value'] = 0.0;
+
+        $html = $instance->render($context);
+
+        $harness->assertTrue(str_contains($html, 'name="intent" value="save_line_asset_details"'));
+        $harness->assertTrue(str_contains($html, 'Asset category'));
+        $harness->assertTrue(str_contains($html, 'Tools &amp; Equipment'));
+        $harness->assertTrue(str_contains($html, 'Save Asset Details'));
     });
 
     $harness->check(_expense_claim_editorCard::class, 'renders bulk preview and import action with display date', function () use ($harness, $instance): void {
@@ -142,6 +164,12 @@ function expenseClaimEditorCardContext(): array
                         'name' => 'Purchases',
                     ],
                 ],
+                'asset_categories' => [
+                    'tools_equipment' => 'Tools & Equipment',
+                    'plant_machinery' => 'Plant & Machinery',
+                    'van' => 'Van',
+                    'car' => 'Car',
+                ],
                 'payment_candidates' => [
                     [
                         'id' => 91,
@@ -173,6 +201,7 @@ function expenseClaimEditorCardContext(): array
                             'id' => 11,
                             'expense_date' => '2022-10-05',
                             'description' => 'ElectricFix, Wall Chaser',
+                            'line_type' => 'expense',
                             'nominal_account_id' => null,
                             'amount' => 94.99,
                         ],

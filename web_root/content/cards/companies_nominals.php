@@ -57,6 +57,7 @@ final class _companies_nominalsCard extends CardBaseFramework
         $settings = (array)($context['company']['settings'] ?? []);
         $nominalAccounts = (array)($context['services']['company_nominals'] ?? []);
         $nominalSuggestions = $this->buildNominalDefaultSuggestions($nominalAccounts, $settings);
+        $assetMappingsHtml = $this->renderAssetNominalMappings($nominalAccounts);
 
         $suggestionsHtml = '';
         if ($nominalSuggestions !== []) {
@@ -65,7 +66,7 @@ final class _companies_nominalsCard extends CardBaseFramework
             $suggestionLabels = [
                 'default_bank_nominal_id' => 'Default bank nominal',
                 'default_trade_nominal_id' => 'Default trade nominal',
-                'default_expense_nominal_id' => 'Default expense nominal',
+                'default_expense_nominal_id' => 'Expense claims payable nominal',
                 'director_loan_nominal_id' => 'Director loan nominal',
                 'vat_nominal_id' => 'VAT control nominal',
                 'uncategorised_nominal_id' => 'Fallback uncategorised nominal',
@@ -125,7 +126,7 @@ final class _companies_nominalsCard extends CardBaseFramework
                             </select>
                         </div>
                         <div class="form-row">
-                            <label for="default_expense_nominal_id">Default Expense nominal</label>
+                            <label for="default_expense_nominal_id">Expense claims payable nominal</label>
                             <select class="select" id="default_expense_nominal_id" name="default_expense_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['default_expense_nominal_id'] ?? '')) . '">
                                 <option value="">Select nominal account</option>
                                 ' . $this->nominalOptions($nominalAccounts, (string)($settings['default_expense_nominal_id'] ?? '')) . '
@@ -164,9 +165,46 @@ final class _companies_nominalsCard extends CardBaseFramework
         return '
             <div class="nominals-layout">
                 <div>' . $mainHtml . '</div>
-                <div>' . $suggestionsHtml . '</div>
+                <div>' . $suggestionsHtml . $assetMappingsHtml . '</div>
             </div>
         ';
+    }
+
+    private function renderAssetNominalMappings(array $nominalAccounts): string
+    {
+        $nominalsByCode = [];
+        foreach ($nominalAccounts as $nominal) {
+            $code = trim((string)($nominal['code'] ?? ''));
+            if ($code !== '') {
+                $nominalsByCode[$code] = $nominal;
+            }
+        }
+
+        $items = '';
+        foreach (\eel_accounts\Service\AssetService::assetCategoryOptions() as $category => $label) {
+            $codes = \eel_accounts\Service\AssetService::assetNominalCodesForCategory((string)$category);
+            $costNominal = $nominalsByCode[(string)$codes['cost']] ?? null;
+            $accumNominal = $nominalsByCode[(string)$codes['accum']] ?? null;
+            $status = is_array($costNominal) && is_array($accumNominal) ? 'Ready' : 'Missing setup';
+            $items .= '<div class="list-item"><strong>'
+                . HelperFramework::escape((string)$label)
+                . '</strong><span>'
+                . HelperFramework::escape($status . ': cost ' . $this->mappingNominalLabel($costNominal, (string)$codes['cost']) . ', accumulated depreciation ' . $this->mappingNominalLabel($accumNominal, (string)$codes['accum']))
+                . '</span></div>';
+        }
+
+        return '<div class="panel-soft">
+            <h4 class="card-title">Asset Nominal Mappings</h4>
+            <span class="helper">Asset claim lines use these shared fixed asset mappings automatically.</span>
+            <div class="list">' . $items . '</div>
+        </div>';
+    }
+
+    private function mappingNominalLabel(mixed $nominal, string $expectedCode): string
+    {
+        return is_array($nominal)
+            ? FormattingFramework::nominalLabel($nominal, ' ')
+            : $expectedCode . ' missing';
     }
 
     private function nominalOptions(array $nominalAccounts, string $selectedId): string

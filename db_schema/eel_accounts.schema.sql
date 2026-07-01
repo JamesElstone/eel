@@ -1279,6 +1279,7 @@ CREATE TABLE `asset_register` (
   `status` varchar(32) NOT NULL DEFAULT 'active',
   `linked_journal_id` bigint(20) DEFAULT NULL,
   `linked_transaction_id` bigint(20) DEFAULT NULL,
+  `linked_expense_claim_line_id` bigint(20) DEFAULT NULL,
   `disposal_date` date DEFAULT NULL,
   `disposal_proceeds` decimal(12,2) DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
@@ -1290,14 +1291,44 @@ CREATE TABLE `asset_register` (
   KEY `idx_asset_register_accum_dep_nominal` (`accum_dep_nominal_id`),
   KEY `idx_asset_register_linked_journal` (`linked_journal_id`),
   KEY `idx_asset_register_linked_transaction` (`linked_transaction_id`),
+  KEY `idx_asset_register_expense_claim_line` (`linked_expense_claim_line_id`),
   CONSTRAINT `fk_asset_register_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_asset_register_nominal` FOREIGN KEY (`nominal_account_id`) REFERENCES `nominal_accounts` (`id`) ON UPDATE CASCADE,
   CONSTRAINT `fk_asset_register_accum_dep_nominal` FOREIGN KEY (`accum_dep_nominal_id`) REFERENCES `nominal_accounts` (`id`) ON UPDATE CASCADE,
   CONSTRAINT `fk_asset_register_linked_journal` FOREIGN KEY (`linked_journal_id`) REFERENCES `journals` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_asset_register_linked_transaction` FOREIGN KEY (`linked_transaction_id`) REFERENCES `transactions` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_asset_register_expense_claim_line` FOREIGN KEY (`linked_expense_claim_line_id`) REFERENCES `expense_claim_lines` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `chk_asset_register_cost` CHECK (`cost` > 0),
   CONSTRAINT `chk_asset_register_useful_life` CHECK (`useful_life_years` > 0),
   CONSTRAINT `chk_asset_register_residual` CHECK (`residual_value` >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `expense_claim_line_assets`
+--
+
+DROP TABLE IF EXISTS `expense_claim_line_assets`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `expense_claim_line_assets` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `expense_claim_line_id` bigint(20) NOT NULL,
+  `category` varchar(64) NOT NULL DEFAULT 'tools_equipment',
+  `description` varchar(255) DEFAULT NULL,
+  `useful_life_years` int(11) NOT NULL DEFAULT 3,
+  `depreciation_method` varchar(32) NOT NULL DEFAULT 'straight_line',
+  `residual_value` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `generated_asset_id` bigint(20) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_expense_claim_line_assets_line` (`expense_claim_line_id`),
+  KEY `idx_expense_claim_line_assets_asset` (`generated_asset_id`),
+  CONSTRAINT `fk_expense_claim_line_assets_line` FOREIGN KEY (`expense_claim_line_id`) REFERENCES `expense_claim_lines` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_expense_claim_line_assets_asset` FOREIGN KEY (`generated_asset_id`) REFERENCES `asset_register` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `chk_expense_claim_line_assets_life` CHECK (`useful_life_years` > 0),
+  CONSTRAINT `chk_expense_claim_line_assets_residual` CHECK (`residual_value` >= 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -1779,7 +1810,17 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_06_29_003_nominal_account_origin.sql'),
   ('2026_06_29_004_database_integrity_alignment.sql'),
   ('2026_06_29_005_remove_deferred_tax_ct_rule.sql'),
-  ('2026_06_30_001_ensure_expense_claim_tables.sql');
+  ('2026_06_30_001_ensure_expense_claim_tables.sql'),
+  ('2026_06_30_001_warning_flash_messages.sql'),
+  ('2026_06_30_002_ordinary_share_capital_default_nominal.sql'),
+  ('2026_06_30_003_expense_payable_nominal_subtype.sql'),
+  ('2026_06_30_004_fixed_asset_pl_nominal_subtypes.sql'),
+  ('2026_06_30_005_dividend_default_nominals.sql'),
+  ('2026_06_30_006_reference_aware_auto_rules.sql'),
+  ('2026_06_30_007_preserve_regex_auto_rule_matches.sql'),
+  ('2026_07_01_001_expense_add_claimant_card_permission.sql'),
+  ('2026_07_01_002_expense_claim_create_card_permission.sql'),
+  ('2026_07_01_003_expense_claim_line_assets.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

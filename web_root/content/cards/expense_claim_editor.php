@@ -69,7 +69,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
 
         return [
             $this->previewTable((array)($bulkPreview['rows'] ?? []), $dateFormat),
-            $this->linesTable((array)($claim['lines'] ?? []), (array)($data['nominal_accounts'] ?? []), $claimId, $isPosted, $companyId, $dateFormat, $companySettings),
+            $this->linesTable((array)($claim['lines'] ?? []), (array)($data['nominal_accounts'] ?? []), (array)($data['asset_categories'] ?? []), $claimId, $isPosted, $companyId, $dateFormat, $companySettings),
             $this->paymentsTable((array)($claim['payment_links'] ?? []), $claimId, $isPosted, $companyId, $dateFormat),
             $this->paymentCandidatesTable((array)($data['payment_candidates'] ?? []), $companySettings, $claimId, $companyId, $dateFormat),
         ];
@@ -88,6 +88,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
         $companySettings = (array)($context['expense_page_settings'] ?? $company['settings'] ?? []);
         $claim = is_array($data['selected_claim'] ?? null) ? (array)$data['selected_claim'] : [];
         $nominals = (array)($data['nominal_accounts'] ?? []);
+        $assetCategories = (array)($data['asset_categories'] ?? \eel_accounts\Service\AssetService::assetCategoryOptions());
         $paymentCandidates = (array)($data['payment_candidates'] ?? []);
         $filters = (array)($data['filters'] ?? []);
 
@@ -112,11 +113,12 @@ final class _expense_claim_editorCard extends CardBaseFramework
                 <div class="summary-card"><div class="summary-label">Paid in this period (C)</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($claim['control_totals']['C'] ?? 0)) . '</div></div>
                 <div class="summary-card"><div class="summary-label">Carried Forward (D=A+B-C)</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($claim['control_totals']['D'] ?? 0)) . '</div></div>
             </div>
+            ' . ($isPosted ? '' : $this->renderSubmitClaimPanel($claim, $companySettings, $companyId)) . '
             ' . ($isPosted ? '' : $this->renderBulkPastePanel($claimId, $companyId, $dateFormat, $bulkPreview, $context)) . '
             ' . ($isPosted ? '<div class="helper">Posted claims are locked.</div>' : $this->renderLineForm($claim, $nominals, $claimId, $companySettings, $companyId)) . '
             ' . $this->renderTablePanel(
                 'Expense Lines',
-                $this->configuredLinesTable((array)($claim['lines'] ?? []), $nominals, $claimId, $isPosted, $companyId, $dateFormat, $companySettings, $context)->render($context, $this->tableExportFields(['claim_id' => $claimId]))
+                $this->configuredLinesTable((array)($claim['lines'] ?? []), $nominals, $assetCategories, $claimId, $isPosted, $companyId, $dateFormat, $companySettings, $context)->render($context, $this->tableExportFields(['claim_id' => $claimId]))
             ) . '
             ' . $this->renderPaymentsPanel((array)($claim['payment_links'] ?? []), $paymentCandidates, $companySettings, $filters, $claimId, $isPosted, $companyId, $dateFormat, $context) . '
         ';
@@ -128,6 +130,61 @@ final class _expense_claim_editorCard extends CardBaseFramework
             <div class="status-head"><h4 class="card-title">' . HelperFramework::escape($title) . '</h4></div>
             ' . ($helper === '' ? '' : '<div class="helper">' . HelperFramework::escape($helper) . '</div>') . '
             ' . $tableHtml . '
+        </div>';
+    }
+
+    private function renderSubmitClaimPanel(array $claim, array $companySettings, int $companyId): string
+    {
+        $claimId = (int)($claim['id'] ?? 0);
+        $lines = (array)($claim['lines'] ?? []);
+        $defaultExpenseNominalId = (int)($companySettings['default_expense_nominal_id'] ?? 0);
+        $assetCount = count(array_filter($lines, static fn(array $line): bool => (string)($line['line_type'] ?? 'expense') === 'asset'));
+        $errors = [];
+
+        if ($defaultExpenseNominalId <= 0) {
+            $errors[] = 'Choose an Expense claims payable nominal in company nominal defaults.';
+        }
+        if ($lines === []) {
+            $errors[] = 'Add at least one expense line.';
+        }
+        foreach ($lines as $line) {
+            $lineNumber = (int)($line['line_number'] ?? 0);
+            if ((string)($line['line_type'] ?? 'expense') === 'asset') {
+                if (trim((string)($line['asset_category'] ?? '')) === '') {
+                    $errors[] = 'Line ' . $lineNumber . ' needs an asset category.';
+                }
+                if ((int)($line['asset_useful_life_years'] ?? 0) <= 0) {
+                    $errors[] = 'Line ' . $lineNumber . ' needs a useful life.';
+                }
+                continue;
+            }
+
+            if ((int)($line['nominal_account_id'] ?? 0) <= 0) {
+                $errors[] = 'Line ' . $lineNumber . ' needs a Charge To value.';
+            }
+        }
+
+        $summary = '<div class="summary-grid">
+            <div class="summary-card"><div class="summary-label">Lines</div><div class="summary-value">' . count($lines) . '</div></div>
+            <div class="summary-card"><div class="summary-label">Assets to create</div><div class="summary-value">' . $assetCount . '</div></div>
+            <div class="summary-card"><div class="summary-label">Claim total</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($claim['control_totals']['B'] ?? 0)) . '</div></div>
+        </div>';
+        $errorHtml = $errors === []
+            ? '<div class="helper">Ready to submit. Submitting posts the claim and locks its lines.</div>'
+            : '<div class="helper">' . HelperFramework::escape(implode(' ', $errors)) . '</div>';
+
+        return '<div class="panel-soft">
+            <div class="status-head"><h4 class="card-title">Submit Claim</h4></div>
+            ' . $summary . '
+            ' . $errorHtml . '
+            <form method="post" action="?page=expenses" data-ajax="true">
+                <input type="hidden" name="card_action" value="Expense">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="intent" value="post_claim">
+                <input type="hidden" name="claim_id" value="' . $claimId . '">
+                <input type="hidden" name="default_expense_nominal_id" value="' . $defaultExpenseNominalId . '">
+                <div class="actions-row"><button class="button primary" type="submit"' . ($errors === [] ? '' : ' disabled') . '>Submit Claim</button></div>
+            </form>
         </div>';
     }
 
@@ -218,9 +275,9 @@ final class _expense_claim_editorCard extends CardBaseFramework
             );
     }
 
-    private function configuredLinesTable(array $lines, array $nominals, int $claimId, bool $isPosted, int $companyId, string $dateFormat, array $companySettings, array $context): TableFramework
+    private function configuredLinesTable(array $lines, array $nominals, array $assetCategories, int $claimId, bool $isPosted, int $companyId, string $dateFormat, array $companySettings, array $context): TableFramework
     {
-        $table = $this->linesTable($lines, $nominals, $claimId, $isPosted, $companyId, $dateFormat, $companySettings);
+        $table = $this->linesTable($lines, $nominals, $assetCategories, $claimId, $isPosted, $companyId, $dateFormat, $companySettings);
         $pagination = HelperFramework::paginateArray($table->sortedRows(), $this->paginationPage($context, self::TABLE_LINES), self::PAGE_SIZE);
 
         return $table
@@ -233,7 +290,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
             );
     }
 
-    private function linesTable(array $lines, array $nominals, int $claimId, bool $isPosted, int $companyId, string $dateFormat, array $companySettings): TableFramework
+    private function linesTable(array $lines, array $nominals, array $assetCategories, int $claimId, bool $isPosted, int $companyId, string $dateFormat, array $companySettings): TableFramework
     {
         $defaultCurrencySymbol = $this->defaultCurrencySymbol($companySettings);
 
@@ -244,12 +301,21 @@ final class _expense_claim_editorCard extends CardBaseFramework
             ->column('expense_date_display', 'Date')
             ->column('description', 'Description')
             ->column(
-                'nominal_label',
-                'Nominal',
+                'line_type',
+                'Type',
                 html: fn(array $row): string => $isPosted
-                    ? HelperFramework::escape((string)($row['nominal_label'] ?? ''))
-                    : $this->lineNominalForm($nominals, $claimId, (int)($row['id'] ?? 0), (int)($row['nominal_account_id'] ?? 0), $companyId),
-                export: static fn(array $row): string => (string)($row['nominal_label'] ?? '')
+                    ? HelperFramework::escape(ucfirst((string)($row['line_type'] ?? 'expense')))
+                    : $this->lineTypeForm($claimId, (int)($row['id'] ?? 0), (string)($row['line_type'] ?? 'expense'), $companyId),
+                export: static fn(array $row): string => ucfirst((string)($row['line_type'] ?? 'expense')),
+                cellClass: 'cell-fit'
+            )
+            ->column(
+                'charge_to',
+                'Charge To',
+                html: fn(array $row): string => $this->lineChargeToHtml($row, $nominals, $assetCategories, $claimId, $isPosted, $companyId),
+                export: static fn(array $row): string => (string)($row['line_type'] ?? 'expense') === 'asset'
+                    ? (string)($row['asset_category_label'] ?? '')
+                    : (string)($row['nominal_label'] ?? '')
             )
             ->column(
                 'amount',
@@ -268,6 +334,35 @@ final class _expense_claim_editorCard extends CardBaseFramework
             );
     }
 
+    private function lineTypeForm(int $claimId, int $lineId, string $selectedType, int $companyId): string
+    {
+        $formId = 'expense-line-type-form-' . $lineId;
+        $selectedType = $selectedType === 'asset' ? 'asset' : 'expense';
+
+        return '<form method="post" action="?page=expenses" id="' . $formId . '" data-ajax="true" class="segmented-control">
+                <input type="hidden" name="card_action" value="Expense">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="intent" value="update_line_type">
+                <input type="hidden" name="claim_id" value="' . $claimId . '">
+                <input type="hidden" name="line_id" value="' . $lineId . '">
+                <button class="segmented-option' . ($selectedType === 'expense' ? ' is-active' : '') . '" type="submit" name="line_type" value="expense">Expense</button>
+                <button class="segmented-option' . ($selectedType === 'asset' ? ' is-active' : '') . '" type="submit" name="line_type" value="asset">Asset</button>
+            </form>';
+    }
+
+    private function lineChargeToHtml(array $row, array $nominals, array $assetCategories, int $claimId, bool $isPosted, int $companyId): string
+    {
+        if ((string)($row['line_type'] ?? 'expense') === 'asset') {
+            return $isPosted
+                ? $this->postedAssetChargeToHtml($row, $companyId)
+                : $this->lineAssetDetailsForm($row, $assetCategories, $claimId, $companyId);
+        }
+
+        return $isPosted
+            ? HelperFramework::escape((string)($row['nominal_label'] ?? ''))
+            : $this->lineNominalForm($nominals, $claimId, (int)($row['id'] ?? 0), (int)($row['nominal_account_id'] ?? 0), $companyId);
+    }
+
     private function lineNominalForm(array $nominals, int $claimId, int $lineId, int $selectedNominalId, int $companyId): string
     {
         $formId = 'expense-line-nominal-form-' . $lineId;
@@ -281,6 +376,61 @@ final class _expense_claim_editorCard extends CardBaseFramework
                 <button class="js-expense-line-nominal-submit" type="submit" hidden>Autosave</button>
             </form>
             <select class="select" name="nominal_account_id" form="' . $formId . '" data-autosave-submit-target=".js-expense-line-nominal-submit">' . $this->nominalOptions($nominals, $selectedNominalId, 'Unassigned') . '</select>';
+    }
+
+    private function lineAssetDetailsForm(array $row, array $assetCategories, int $claimId, int $companyId): string
+    {
+        $lineId = (int)($row['id'] ?? 0);
+        $formId = 'expense-line-asset-form-' . $lineId;
+        $description = trim((string)($row['asset_description'] ?? '')) !== '' ? (string)$row['asset_description'] : (string)($row['description'] ?? '');
+        $lifeYears = max(1, (int)($row['asset_useful_life_years'] ?? 3));
+        $method = (string)($row['asset_depreciation_method'] ?? 'straight_line');
+        $residual = number_format((float)($row['asset_residual_value'] ?? 0), 2, '.', '');
+
+        return '<form method="post" action="?page=expenses" id="' . $formId . '" data-ajax="true" class="expense-line-asset-form">
+                <input type="hidden" name="card_action" value="Expense">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="intent" value="save_line_asset_details">
+                <input type="hidden" name="claim_id" value="' . $claimId . '">
+                <input type="hidden" name="line_id" value="' . $lineId . '">
+                <div class="form-flex-flow">
+                    <div class="form-row">
+                        <label for="expense-line-asset-category-' . $lineId . '">Asset category</label>
+                        <select class="select" id="expense-line-asset-category-' . $lineId . '" name="asset_category">' . $this->assetCategoryOptions($assetCategories, (string)($row['asset_category'] ?? 'tools_equipment')) . '</select>
+                    </div>
+                    <div class="form-row">
+                        <label for="expense-line-asset-description-' . $lineId . '">Asset description</label>
+                        <input class="input" id="expense-line-asset-description-' . $lineId . '" name="asset_description" value="' . HelperFramework::escape($description) . '">
+                    </div>
+                    <div class="form-row">
+                        <label for="expense-line-asset-life-' . $lineId . '">Useful life</label>
+                        <input class="input" id="expense-line-asset-life-' . $lineId . '" name="asset_useful_life_years" type="number" min="1" value="' . $lifeYears . '">
+                    </div>
+                    <div class="form-row">
+                        <label for="expense-line-asset-method-' . $lineId . '">Depreciation</label>
+                        <select class="select" id="expense-line-asset-method-' . $lineId . '" name="asset_depreciation_method">' . $this->depreciationMethodOptions($method) . '</select>
+                    </div>
+                    <div class="form-row">
+                        <label for="expense-line-asset-residual-' . $lineId . '">Residual</label>
+                        <input class="input" id="expense-line-asset-residual-' . $lineId . '" name="asset_residual_value" inputmode="decimal" value="' . HelperFramework::escape($residual) . '">
+                    </div>
+                    <div class="form-row">
+                        <button class="button button-inline primary" type="submit">Save Asset Details</button>
+                    </div>
+                </div>
+            </form>';
+    }
+
+    private function postedAssetChargeToHtml(array $row, int $companyId): string
+    {
+        $label = (string)($row['asset_category_label'] ?? 'Asset');
+        $assetCode = trim((string)($row['asset_code'] ?? ''));
+        $assetId = (int)($row['generated_asset_id'] ?? 0);
+        $assetLink = $assetCode !== '' && $assetId > 0
+            ? ' <a class="text-link" href="?page=assets&amp;company_id=' . $companyId . '">Asset ' . HelperFramework::escape($assetCode) . '</a>'
+            : '';
+
+        return HelperFramework::escape($label) . $assetLink;
     }
 
     private function deleteLineForm(int $claimId, int $lineId, int $companyId): string
@@ -298,7 +448,6 @@ final class _expense_claim_editorCard extends CardBaseFramework
     private function renderLineForm(array $claim, array $nominals, int $claimId, array $companySettings, int $companyId): string
     {
         $formId = 'expense-line-form-' . $claimId;
-        $defaultExpenseNominalId = (int)($companySettings['default_expense_nominal_id'] ?? 0);
         $amountLabel = 'Amount (' . $this->defaultCurrencySymbol($companySettings) . ')';
 
         return '<form id="' . $formId . '" method="post" action="?page=expenses" data-ajax="true">
@@ -306,7 +455,6 @@ final class _expense_claim_editorCard extends CardBaseFramework
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="intent" value="save_line">
                 <input type="hidden" name="claim_id" value="' . $claimId . '">
-                <input type="hidden" name="default_expense_nominal_id" value="' . $defaultExpenseNominalId . '">
             </form>
             <div class="panel-soft">
                 <div class="status-head"><h4 class="card-title">Add New Expense Line</h4></div>
@@ -324,8 +472,8 @@ final class _expense_claim_editorCard extends CardBaseFramework
                         <input class="input" id="expense-line-amount" name="amount" form="' . $formId . '" inputmode="decimal">
                     </div>
                     <div class="form-row">
-                        <label for="expense-line-nominal">Nominal</label>
-                        <select class="select" id="expense-line-nominal" name="nominal_account_id" form="' . $formId . '">' . $this->nominalOptions($nominals, $defaultExpenseNominalId) . '</select>
+                        <label for="expense-line-nominal">Charge To</label>
+                        <select class="select" id="expense-line-nominal" name="nominal_account_id" form="' . $formId . '">' . $this->nominalOptions($nominals, 0) . '</select>
                     </div>
                     <div class="form-row">
                         <label for="expense-line-notes">Notes</label>
@@ -511,6 +659,36 @@ final class _expense_claim_editorCard extends CardBaseFramework
         foreach ($nominals as $nominal) {
             $nominalId = (int)($nominal['id'] ?? 0);
             $html .= '<option value="' . $nominalId . '"' . ($nominalId === $selectedNominalId ? ' selected' : '') . '>' . HelperFramework::escape(FormattingFramework::nominalLabel($nominal)) . '</option>';
+        }
+
+        return $html;
+    }
+
+    private function assetCategoryOptions(array $assetCategories, string $selectedCategory): string
+    {
+        if ($assetCategories === []) {
+            $assetCategories = \eel_accounts\Service\AssetService::assetCategoryOptions();
+        }
+
+        $html = '';
+        foreach ($assetCategories as $value => $label) {
+            $value = (string)$value;
+            $html .= '<option value="' . HelperFramework::escape($value) . '"' . ($value === $selectedCategory ? ' selected' : '') . '>' . HelperFramework::escape((string)$label) . '</option>';
+        }
+
+        return $html;
+    }
+
+    private function depreciationMethodOptions(string $selectedMethod): string
+    {
+        $options = [
+            'straight_line' => 'Straight line',
+            'reducing_balance' => 'Reducing balance',
+            'none' => 'None',
+        ];
+        $html = '';
+        foreach ($options as $value => $label) {
+            $html .= '<option value="' . HelperFramework::escape($value) . '"' . ($value === $selectedMethod ? ' selected' : '') . '>' . HelperFramework::escape($label) . '</option>';
         }
 
         return $html;

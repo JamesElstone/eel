@@ -43,7 +43,7 @@ $harness->run(NominalsAction::class, function (GeneratedServiceClassTestHarness 
         $harness->assertSame(true, str_contains($message, 'Default bank: 1200 - Bank'));
         $harness->assertSame(true, str_contains($message, '<br>Saved:<br>'));
         $harness->assertSame(true, str_contains($message, 'Default trade: 2300 - Trade Creditors'));
-        $harness->assertSame(true, str_contains($message, 'Default expense: 5000 - Expenses'));
+        $harness->assertSame(true, str_contains($message, 'Expense claims payable: 5000 - Expenses'));
         $harness->assertSame(true, str_contains($message, 'Director loan: 2100 - Director Loan'));
         $harness->assertSame(true, str_contains($message, 'VAT control: Unassigned'));
         $harness->assertSame(true, str_contains($message, 'Fallback uncategorised: 9999 - Uncategorised'));

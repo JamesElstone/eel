@@ -234,7 +234,10 @@ final class ExpenseClaimService
                     ec.notes,
                     ec.created_at,
                     ec.updated_at,
-                    c.claimant_name
+                    c.claimant_name,
+                    (SELECT COUNT(*)
+                       FROM expense_claim_payment_links epl
+                      WHERE epl.expense_claim_id = ec.id) AS payment_link_count
              FROM expense_claims ec
              INNER JOIN expense_claimants c ON c.id = ec.claimant_id
              WHERE ' . implode(' AND ', $conditions) . '
@@ -674,6 +677,42 @@ final class ExpenseClaimService
             'success' => true,
             'claim' => $this->fetchClaim($companyId, $claimId),
             'claims' => $this->listClaims($companyId),
+        ];
+    }
+
+    public function deleteClaim(int $companyId, int $claimId): array {
+        $claim = $this->fetchClaim($companyId, $claimId);
+        if ($claim === null) {
+            return ['success' => false, 'errors' => ['The selected claim could not be found.']];
+        }
+
+        if ((string)$claim['status'] === 'posted') {
+            return ['success' => false, 'errors' => ['Posted claims are locked.']];
+        }
+
+        if ((array)($claim['payment_links'] ?? []) !== []) {
+            return ['success' => false, 'errors' => ['Remove repayment links before deleting this claim.']];
+        }
+
+        $claimantId = (int)$claim['claimant_id'];
+        \InterfaceDB::prepare(
+            'DELETE FROM expense_claims
+             WHERE company_id = :company_id
+               AND id = :id
+               AND status = :status'
+        )->execute([
+            'company_id' => $companyId,
+            'id' => $claimId,
+            'status' => 'draft',
+        ]);
+
+        $this->recalculateClaimSeries($companyId, $claimantId);
+
+        return [
+            'success' => true,
+            'claims' => $this->listClaims($companyId, ['heatmap_claimant_id' => $claimantId]),
+            'deleted_claim_id' => $claimId,
+            'messages' => ['Expense claim deleted.'],
         ];
     }
 
@@ -1838,6 +1877,7 @@ final class ExpenseClaimService
             'C' => round((float)$claim['payments_amount'], 2),
             'D' => round((float)$claim['carried_forward_amount'], 2),
             'status' => (string)$claim['status'],
+            'payment_link_count' => (int)($claim['payment_link_count'] ?? 0),
             'last_updated' => (string)$claim['updated_at'],
         ];
     }

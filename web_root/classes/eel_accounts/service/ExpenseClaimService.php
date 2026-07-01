@@ -1214,10 +1214,11 @@ final class ExpenseClaimService
             }
         }
 
-        $totalClaimed = round((float)$claim['claimed_amount'], 2);
+        $totalClaimed = $this->sumClaimLines($claimId);
         if ($totalClaimed <= 0) {
             return ['success' => false, 'errors' => ['Claim total must be greater than zero before posting.']];
         }
+        $this->recalculateClaimSeries($companyId, (int)$claim['claimant_id']);
 
         $existingJournal = $this->fetchExistingExpenseJournal($companyId, (string)$claim['claim_reference_code']);
         if ($existingJournal !== null) {

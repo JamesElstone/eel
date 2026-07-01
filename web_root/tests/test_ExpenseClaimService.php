@@ -166,7 +166,7 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
         });
     });
 
-    $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'posts claim credit to expense claims payable nominal', function () use ($harness, $instance): void {
+    $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'posts claim credit using current line total', function () use ($harness, $instance): void {
         expenseClaimServiceWithFixture(static function (array $fixture) use ($harness, $instance): void {
             \InterfaceDB::prepareExecute(
                 'INSERT INTO expense_claim_lines (expense_claim_id, line_number, expense_date, description, amount, nominal_account_id)
@@ -179,13 +179,10 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
                     'nominal_account_id' => (int)$fixture['line_nominal_id'],
                 ]
             );
-            \InterfaceDB::prepareExecute(
-                'UPDATE expense_claims
-                 SET claimed_amount = 94.99,
-                     carried_forward_amount = 94.99
-                 WHERE id = :id',
+            $harness->assertSame(0.0, (float)\InterfaceDB::fetchColumn(
+                'SELECT claimed_amount FROM expense_claims WHERE id = :id',
                 ['id' => (int)$fixture['claim_id']]
-            );
+            ));
 
             $result = $instance->postClaim((int)$fixture['company_id'], (int)$fixture['claim_id'], [
                 'default_expense_nominal_id' => (int)$fixture['expense_nominal_id'],
@@ -204,6 +201,10 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
             $harness->assertSame((int)$fixture['expense_nominal_id'], (int)($creditLine['nominal_account_id'] ?? 0));
             $harness->assertSame(94.99, (float)($creditLine['credit'] ?? 0));
             $harness->assertSame('Expense claim payable', (string)($creditLine['line_description'] ?? ''));
+            $harness->assertSame(94.99, (float)\InterfaceDB::fetchColumn(
+                'SELECT claimed_amount FROM expense_claims WHERE id = :id',
+                ['id' => (int)$fixture['claim_id']]
+            ));
         });
     });
 

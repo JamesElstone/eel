@@ -221,6 +221,10 @@ final class _transactions_importedCard extends CardBaseFramework
                     '_pagination' => '1',
                     '_invalidate_fact' => $this->tableInvalidationFact(),
                     'cards[]' => [$this->key()],
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'month_key' => $selectedTransactionMonth,
+                    'category_filter' => $selectedTransactionFilter,
                 ]
             );
     }

@@ -524,6 +524,67 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, '<span class="badge success">Manually Categorised</span>'));
     });
 
+    $harness->check('_transactions_importedCard', 'preserves selected filters in imported transactions pagination', function () use ($harness): void {
+        $transactions = [];
+        for ($i = 1; $i <= 21; $i++) {
+            $transactions[] = [
+                'id' => $i,
+                'txn_date' => '2026-03-15',
+                'description' => 'Test transaction ' . $i,
+                'reference' => 'INV-' . $i,
+                'source_account' => 'Current account',
+                'source_category' => 'Materials',
+                'amount' => -12.34,
+                'document_download_status' => 'downloaded',
+                'local_document_path' => 'uploads/company/1/receipt.pdf',
+                'nominal_account_id' => 7,
+                'category_status' => 'manual',
+                'has_derived_journal' => 0,
+            ];
+        }
+
+        $html = (new _transactions_importedCard())->render([
+            'company' => [
+                'id' => 1,
+                'accounting_period_id' => 2,
+            ],
+            'page' => [
+                'page_id' => 'transactions',
+                'month_key' => '2026-03-01',
+                'category_filter' => 'all',
+            ],
+            'services' => [
+                'month_status' => [[
+                    'month_key' => '2026-03-01',
+                    'label' => 'Mar 2026',
+                ]],
+                'transactions_by_month' => $transactions,
+                'nominal_accounts' => [[
+                    'id' => 7,
+                    'code' => '5000',
+                    'name' => 'Materials',
+                    'account_type' => 'expense',
+                ]],
+                'company_accounts' => [],
+            ],
+        ]);
+
+        $nextPagePosition = strpos($html, 'name="transactions_imported_page" value="2"');
+        $harness->assertSame(true, $nextPagePosition !== false);
+
+        $beforeNextPage = substr($html, 0, (int)$nextPagePosition);
+        $nextFormStart = strrpos($beforeNextPage, '<form');
+        $nextFormEnd = strpos($html, '</form>', (int)$nextPagePosition);
+        $harness->assertSame(true, $nextFormStart !== false);
+        $harness->assertSame(true, $nextFormEnd !== false);
+
+        $nextFormHtml = substr($html, (int)$nextFormStart, (int)$nextFormEnd - (int)$nextFormStart);
+        $harness->assertSame(true, str_contains($nextFormHtml, 'name="month_key" value="2026-03-01"'));
+        $harness->assertSame(true, str_contains($nextFormHtml, 'name="category_filter" value="all"'));
+        $harness->assertSame(true, str_contains($nextFormHtml, 'name="company_id" value="1"'));
+        $harness->assertSame(true, str_contains($nextFormHtml, 'name="accounting_period_id" value="2"'));
+    });
+
     $harness->check('_transactions_importedCard', 'disables month navigation buttons at first and last entries', function () use ($harness): void {
         $renderForMonth = static function (string $monthKey): string {
             return (new _transactions_importedCard())->render([

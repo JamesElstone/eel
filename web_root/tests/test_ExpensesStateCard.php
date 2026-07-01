@@ -25,7 +25,9 @@ $harness->run(_expenses_stateCard::class, function (GeneratedServiceClassTestHar
         $harness->assertTrue(str_contains($html, '<select class="select" id="expense-claimant" name="claimant_id"><option value="" selected>Choose Claimant...</option><option value="4">Bob</option><option value="3">Alex Example</option></select>'));
         $harness->assertTrue(str_contains($html, 'class="calendar-heatmap"'));
         $harness->assertTrue(str_contains($html, 'calendar-heatmap-day-level-0'));
+        $harness->assertTrue(str_contains($html, 'No expense claims were found.'));
         $harness->assertSame(false, str_contains($html, 'EXP-2605-001'));
+        $harness->assertSame(false, str_contains($html, 'EXP-2605-BOB'));
         $harness->assertSame(false, str_contains($html, '<button class="button" type="submit">Apply</button>'));
     });
 
@@ -42,6 +44,8 @@ $harness->run(_expenses_stateCard::class, function (GeneratedServiceClassTestHar
         $harness->assertTrue(str_contains($html, 'title="2 claim lines on 17 May 2026: EXP-2605-002, EXP-2605-003"'));
         $harness->assertTrue(str_contains($html, 'data-show-card="expense_claim_editor" type="submit" name="expense_heatmap_date" value="2026-05-05"'));
         $harness->assertSame(false, str_contains($html, '14 claims on 1 May 2026'));
+        $harness->assertTrue(str_contains($html, 'EXP-2605-001'));
+        $harness->assertSame(false, str_contains($html, 'EXP-2605-BOB'));
         $harness->assertSame(false, str_contains($html, 'Create or open a monthly expense claim for an active claimant.'));
         $harness->assertSame(false, str_contains($html, 'id="expense-create-claimant"'));
         $harness->assertTrue(str_contains($html, '<form method="get" action="?page=expenses" data-ajax="true" class="toolbar">
@@ -185,7 +189,7 @@ function expensesStateCardContext(array $filterOverrides = []): array
                         'period_end' => '2026-03-31',
                     ],
                 ],
-                'claims' => expensesStateCardClaims(),
+                'claims' => expensesStateCardClaims($filters),
                 'claim_heatmap_lines' => expensesStateCardClaimLines(),
                 'filters' => $filters,
             ],
@@ -193,7 +197,7 @@ function expensesStateCardContext(array $filterOverrides = []): array
     ];
 }
 
-function expensesStateCardClaims(): array
+function expensesStateCardClaims(array $filters = []): array
 {
     $claims = [];
 
@@ -216,7 +220,32 @@ function expensesStateCardClaims(): array
         ];
     }
 
-    return $claims;
+    $claims[] = [
+        'id' => 80,
+        'claimant_id' => 4,
+        'claimant_name' => 'Bob',
+        'claim_year' => 2026,
+        'claim_month' => 5,
+        'period_start' => '2026-05-01',
+        'period_end' => '2026-05-31',
+        'claim_reference_code' => 'EXP-2605-BOB',
+        'A' => 0,
+        'B' => 50,
+        'C' => 0,
+        'D' => 50,
+        'status' => 'draft',
+        'last_updated' => '2026-05-20 10:00:00',
+    ];
+
+    $claimantId = max(0, (int)($filters['heatmap_claimant_id'] ?? 0));
+    if ($claimantId <= 0) {
+        return [];
+    }
+
+    return array_values(array_filter(
+        $claims,
+        static fn(array $claim): bool => (int)($claim['claimant_id'] ?? 0) === $claimantId
+    ));
 }
 
 function expensesStateCardClaimLines(): array

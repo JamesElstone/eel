@@ -195,6 +195,14 @@ final class ExpenseClaimService
         $params = ['company_id' => $companyId];
         $query = trim((string)($filters['query'] ?? ''));
         $status = $this->normaliseStatusFilter((string)($filters['status'] ?? 'all'));
+        $claimantId = max(0, (int)($filters['heatmap_claimant_id'] ?? 0));
+
+        if ($claimantId <= 0) {
+            return [];
+        }
+
+        $conditions[] = 'ec.claimant_id = :claimant_id';
+        $params['claimant_id'] = $claimantId;
 
         if ($query !== '') {
             $conditions[] = '(ec.claim_reference_code LIKE :query_reference OR ec.notes LIKE :query_notes OR c.claimant_name LIKE :query_claimant)';

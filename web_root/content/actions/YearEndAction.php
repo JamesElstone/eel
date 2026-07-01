@@ -9,6 +9,11 @@ declare(strict_types=1);
 
 final class YearEndAction implements ActionInterfaceFramework
 {
+    public function __construct(
+        private readonly ?\eel_accounts\Service\CompanyDirectorEligibilityService $directorEligibilityService = null,
+    ) {
+    }
+
     public function handle(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
         $companyId = max(0, (int)$request->input('company_id', 0));
@@ -20,6 +25,13 @@ final class YearEndAction implements ActionInterfaceFramework
         }
 
         try {
+            if ($this->requiresSingleDirectorCheck($intent)) {
+                $eligibility = $this->directorEligibilityService()->assertSingleActiveDirector($companyId);
+                if (empty($eligibility['success'])) {
+                    return $this->result(false, (array)($eligibility['errors'] ?? []));
+                }
+            }
+
             $result = match ($intent) {
                 'recalculate' => (new \eel_accounts\Service\YearEndChecklistService())->recalculateChecklist($companyId, $accountingPeriodId),
                 'lock_period' => (new \eel_accounts\Service\YearEndChecklistService())->lockPeriod($companyId, $accountingPeriodId),
@@ -85,6 +97,22 @@ final class YearEndAction implements ActionInterfaceFramework
             'post_director_loan_offset' => 'Director loan offset journal posted.',
             default => 'Year-end readiness updated.',
         };
+    }
+
+    private function requiresSingleDirectorCheck(string $intent): bool
+    {
+        return in_array($intent, [
+            'recalculate',
+            'lock_period',
+            'save_opening_balance',
+            'create_adjustment',
+            'post_director_loan_offset',
+        ], true);
+    }
+
+    private function directorEligibilityService(): \eel_accounts\Service\CompanyDirectorEligibilityService
+    {
+        return $this->directorEligibilityService ?? new \eel_accounts\Service\CompanyDirectorEligibilityService();
     }
 
     private function openingBalancePayload(RequestFramework $request): array

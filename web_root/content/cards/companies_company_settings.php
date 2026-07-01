@@ -88,6 +88,11 @@ final class _companies_company_settingsCard extends CardBaseFramework
         $associatedCompanyCount = max(0, (int)($context['company']['settings']['associated_company_count'] ?? 0));
         $defaultCurrency = (string)($context['company']['settings']['default_currency'] ?? '');
         $dateFormat = (string)($context['company']['settings']['date_format'] ?? '');
+        $companyDetail = (array)($context['services']['company_detail'] ?? []);
+        $activeDirectorCount = $companyDetail['companies_house_active_director_count'] ?? null;
+        $activeDirectorLabel = $activeDirectorCount === null || $activeDirectorCount === ''
+            ? 'Not checked yet'
+            : (string)(int)$activeDirectorCount;
 
         return '
             <form method="post" data-ajax="true">
@@ -112,7 +117,11 @@ final class _companies_company_settingsCard extends CardBaseFramework
                     </div>
                     <div class="form-row">
                         <label for="incorporation_date">Detected incorporation date</label>
-                        <input class="input" id="incorporation_date" value="' . HelperFramework::escape((string)($context['services']['company_detail']['incorporation_date'] ?? '')) . '" readonly>
+                        <input class="input" id="incorporation_date" value="' . HelperFramework::escape((string)($companyDetail['incorporation_date'] ?? '')) . '" readonly>
+                    </div>
+                    <div class="form-row">
+                        <label>Companies House active directors</label>
+                        <input class="input" value="' . HelperFramework::escape($activeDirectorLabel) . '" readonly>
                     </div>
                     <div class="form-row">
                         <label for="associated_company_count">Associated companies excluding this company</label>

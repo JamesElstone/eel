@@ -55,6 +55,12 @@ final class _companies_stored_detailCard extends CardBaseFramework
             static fn(mixed $line): string => trim((string)$line),
             (array)($serviceResponse['resolved_sic_code_lines'] ?? [])
         ), static fn(string $line): bool => $line !== ''));
+        $activeDirectorCount = $serviceResponse['companies_house_active_director_count'] ?? null;
+        $activeDirectorLabel = $activeDirectorCount === null || $activeDirectorCount === ''
+            ? 'Not stored yet'
+            : (string)(int)$activeDirectorCount;
+        $officersLastChecked = (string)($serviceResponse['companies_house_officers_last_checked_at'] ?? '');
+        $officersJson = $this->prettyJson((string)($serviceResponse['companies_house_officers_json'] ?? ''));
 
         return '
             <div class="form-grid">
@@ -78,6 +84,8 @@ final class _companies_stored_detailCard extends CardBaseFramework
                 <div class="form-row"><label>ETag</label><input class="input" value="' . HelperFramework::escape((string)((($serviceResponse['companies_house_etag'] ?? '') !== '') ? $serviceResponse['companies_house_etag'] : 'Not stored yet')) . '" readonly></div>
                 <div class="form-row"><label>Type</label><input class="input" value="' . HelperFramework::escape((string)((($serviceResponse['companies_house_type'] ?? '') !== '') ? $serviceResponse['companies_house_type'] : 'Not stored yet')) . '" readonly></div>
                 <div class="form-row"><label>Jurisdiction</label><input class="input" value="' . HelperFramework::escape((string)((($serviceResponse['companies_house_jurisdiction'] ?? '') !== '') ? $serviceResponse['companies_house_jurisdiction'] : 'Not stored yet')) . '" readonly></div>
+                <div class="form-row"><label>Active directors</label><input class="input" value="' . HelperFramework::escape($activeDirectorLabel) . '" readonly></div>
+                <div class="form-row"><label>Officers last checked</label><input class="input" value="' . HelperFramework::escape($officersLastChecked !== '' ? HelperFramework::displayDateTime($officersLastChecked) : 'Not stored yet') . '" readonly></div>
                 <div class="form-row">
                     <label>SIC codes</label>
                     <textarea class="input" rows="4" readonly>' . HelperFramework::escape($sicLines !== [] ? implode(PHP_EOL, $sicLines) : 'No SIC codes have been stored yet.') . '</textarea>
@@ -98,6 +106,7 @@ final class _companies_stored_detailCard extends CardBaseFramework
                         <tr><td scope="row">Registered office in dispute</th><td>' . HelperFramework::escape($this->companiesHouseFlagLabel($serviceResponse['registered_office_is_in_dispute'] ?? null)) . '</td></tr>
                         <tr><td scope="row">Undeliverable registered office</th><td>' . HelperFramework::escape($this->companiesHouseFlagLabel($serviceResponse['undeliverable_registered_office_address'] ?? null)) . '</td></tr>
                         <tr><td scope="row">Has super secure PSCs</th><td>' . HelperFramework::escape($this->companiesHouseFlagLabel($serviceResponse['has_super_secure_pscs'] ?? null)) . '</td></tr>
+                        <tr><td scope="row">Officers API response</td><td><textarea class="input" rows="10" readonly>' . HelperFramework::escape($officersJson !== '' ? $officersJson : 'Not stored yet') . '</textarea></td></tr>
                     </tbody>
                 </table>
             </div>
@@ -131,5 +140,21 @@ final class _companies_stored_detailCard extends CardBaseFramework
             return 'Not stored yet';
         }
         return (int)$value === 1 ? 'Yes' : 'No';
+    }
+
+    private function prettyJson(string $json): string
+    {
+        $json = trim($json);
+        if ($json === '') {
+            return '';
+        }
+
+        $decoded = json_decode($json, true);
+        if (!is_array($decoded)) {
+            return $json;
+        }
+
+        $pretty = json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        return $pretty === false ? $json : $pretty;
     }
 }

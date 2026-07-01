@@ -19,6 +19,7 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
 
     $harness->check('YearEndAction', 'posts director loan offset journal idempotently', static function () use ($harness, $instance): void {
         yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness, $instance): void {
+            $instance = yearEndActionTestInstanceWithDirectorCount(1);
             yearEndActionDirectorLoanTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 1000.00, 0.00, 'asset');
             yearEndActionDirectorLoanTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 0.00, 1500.00, 'liability');
 
@@ -66,6 +67,7 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
 
     $harness->check('YearEndAction', 'locked period blocks director loan offset posting', static function () use ($harness, $instance): void {
         yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness, $instance): void {
+            $instance = yearEndActionTestInstanceWithDirectorCount(1);
             if (!InterfaceDB::tableExists('year_end_reviews')) {
                 $harness->skip('Year-end review table is not available on the default InterfaceDB connection.');
             }
@@ -87,6 +89,39 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
 
             $harness->assertSame(false, $result->isSuccess());
             $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'locked'));
+        });
+    });
+
+    $harness->check('YearEndAction', 'guarded year-end intents are blocked when active director count is not one', static function () use ($harness): void {
+        yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness): void {
+            $instance = yearEndActionTestInstanceWithDirectorCount(2);
+
+            $result = $instance->handle(
+                yearEndActionDirectorLoanTestRequest((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'recalculate'),
+                createTestPageServiceFramework()
+            );
+
+            $harness->assertSame(false, $result->isSuccess());
+            $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'exactly 1 active director'));
+            if (InterfaceDB::tableExists('year_end_reviews')) {
+                $harness->assertSame(0, InterfaceDB::countWhere('year_end_reviews', [
+                    'company_id' => (int)$fixture['company_id'],
+                    'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                ]));
+            }
+        });
+    });
+
+    $harness->check('YearEndAction', 'save_notes is not blocked by director-count guard', static function () use ($harness): void {
+        yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness): void {
+            $instance = yearEndActionTestInstanceWithDirectorCount(2);
+
+            $result = $instance->handle(
+                yearEndActionDirectorLoanTestRequest((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'save_notes'),
+                createTestPageServiceFramework()
+            );
+
+            $harness->assertSame(false, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'exactly 1 active director'));
         });
     });
 });
@@ -176,19 +211,48 @@ function yearEndActionDirectorLoanTestInsertLineJournal(array $fixture, int $nom
     );
 }
 
-function yearEndActionDirectorLoanTestRequest(int $companyId, int $accountingPeriodId): RequestFramework
+function yearEndActionDirectorLoanTestRequest(int $companyId, int $accountingPeriodId, string $intent = 'post_director_loan_offset'): RequestFramework
 {
     return new RequestFramework(
         [],
         [
             'card_action' => 'YearEnd',
-            'intent' => 'post_director_loan_offset',
+            'intent' => $intent,
             'company_id' => (string)$companyId,
             'accounting_period_id' => (string)$accountingPeriodId,
+            'review_notes' => 'Notes from director eligibility test.',
         ],
         ['REQUEST_METHOD' => 'POST', 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest', 'HTTP_ACCEPT' => 'application/json'],
         [],
         [],
         null
     );
+}
+
+function yearEndActionTestInstanceWithDirectorCount(int $directorCount): YearEndAction
+{
+    $service = new \eel_accounts\Service\CompaniesHouseService(
+        'TEST',
+        20,
+        static function (array $request) use ($directorCount): array {
+            $items = [];
+            for ($index = 0; $index < $directorCount; $index++) {
+                $items[] = ['officer_role' => 'director', 'name' => 'Director ' . ($index + 1)];
+            }
+
+            return [
+                'status_code' => 200,
+                'headers' => [],
+                'body' => json_encode([
+                    'items' => $items,
+                    'items_per_page' => 100,
+                    'start_index' => 0,
+                    'total_results' => count($items),
+                ], JSON_UNESCAPED_SLASHES),
+                'url' => 'https://example.test' . (string)($request['path'] ?? ''),
+            ];
+        }
+    );
+
+    return new YearEndAction(new \eel_accounts\Service\CompanyDirectorEligibilityService($service));
 }

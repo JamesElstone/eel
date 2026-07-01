@@ -9,6 +9,11 @@ declare(strict_types=1);
 
 final class CompanyAction implements ActionInterfaceFramework
 {
+    public function __construct(
+        private readonly ?\eel_accounts\Service\CompanyDirectorEligibilityService $directorEligibilityService = null,
+    ) {
+    }
+
     public function handle(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
         $intent = trim((string)$request->input('intent', $request->input('global_action', '')));
@@ -124,6 +129,11 @@ final class CompanyAction implements ActionInterfaceFramework
                 $companiesHouseProfile = $profile !== [] ? $profile : null;
             }
 
+            $directorEligibility = $this->directorEligibilityService()->assertSingleActiveDirectorByNumber($companyNumber, $environment);
+            if (empty($directorEligibility['success'])) {
+                return $this->errorResult((array)($directorEligibility['errors'] ?? []));
+            }
+
             $this->ensureSicLookupDataForProfile($companiesHouseProfile);
 
             if ($incorporationDate === '' && is_array($companiesHouseProfile)) {
@@ -139,6 +149,7 @@ final class CompanyAction implements ActionInterfaceFramework
                 $companiesHouseProfile,
                 $environment
             );
+            $repository->updateCompaniesHouseDirectorCheck($companyId, $directorEligibility);
 
             $flashMessages = [[
                 'type' => 'success',
@@ -303,6 +314,7 @@ final class CompanyAction implements ActionInterfaceFramework
             }
 
             $this->ensureSicLookupDataForProfile($profile);
+            $directorEligibility = $this->directorEligibilityService()->assertSingleActiveDirectorByNumber($companyNumber, $environment);
 
             $repository->createCompany(
                 trim((string)($profile['company_name'] ?? $company['company_name'] ?? '')),
@@ -311,11 +323,23 @@ final class CompanyAction implements ActionInterfaceFramework
                 $profile,
                 $environment
             );
+            $repository->updateCompaniesHouseDirectorCheck($companyId, $directorEligibility);
 
             $flashMessages = [[
                 'type' => 'success',
                 'message' => 'Stored Companies House profile refreshed successfully.',
             ]];
+
+            if (empty($directorEligibility['success'])) {
+                foreach ((array)($directorEligibility['errors'] ?? []) as $error) {
+                    $flashMessages[] = [
+                        'type' => 'error',
+                        'message' => (string)$error,
+                    ];
+                }
+            } else {
+                $flashMessages[] = 'Companies House director information refreshed: 1 active director found.';
+            }
 
             try {
                 $ingestionResult = (new \eel_accounts\Service\CompaniesHouseAccountsIngestionService(environment: $environment))
@@ -1036,6 +1060,11 @@ final class CompanyAction implements ActionInterfaceFramework
         return \eel_accounts\Store\AccountingConfigurationStore::companiesHouseMode();
     }
 
+    private function directorEligibilityService(): \eel_accounts\Service\CompanyDirectorEligibilityService
+    {
+        return $this->directorEligibilityService ?? new \eel_accounts\Service\CompanyDirectorEligibilityService();
+    }
+
     private function ensureSicLookupDataForProfile(?array $profile): void
     {
         if (!is_array($profile) || !is_array($profile['sic_codes'] ?? null) || $profile['sic_codes'] === []) {
@@ -1043,6 +1072,19 @@ final class CompanyAction implements ActionInterfaceFramework
         }
 
         (new \eel_accounts\Service\CompaniesHouseSICService())->ensureLookupDataAvailable();
+    }
+
+    private function errorResult(array $errors): ActionResultFramework
+    {
+        $flashMessages = [];
+        foreach ($errors !== [] ? $errors : ['The requested company action could not be completed.'] as $error) {
+            $flashMessages[] = [
+                'type' => 'error',
+                'message' => (string)$error,
+            ];
+        }
+
+        return new ActionResultFramework(false, ['page.context'], $flashMessages);
     }
 
     private function checkboxValue(RequestFramework $request, string $field): bool

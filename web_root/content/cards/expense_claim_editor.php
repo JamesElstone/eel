@@ -484,8 +484,9 @@ final class _expense_claim_editorCard extends CardBaseFramework
     private function linkPaymentForm(array $candidate, array $companySettings, int $claimId, int $companyId): string
     {
         $availableAmount = round((float)($candidate['available_amount'] ?? 0), 2);
+        $allocatedElsewhere = round((float)($candidate['allocated_elsewhere'] ?? 0), 2);
         $currentLinkAmount = round((float)($candidate['current_link_amount'] ?? 0), 2);
-        $canLink = $currentLinkAmount > 0 || $availableAmount > 0;
+        $canLink = $allocatedElsewhere <= 0 && ($currentLinkAmount > 0 || $availableAmount > 0);
 
         return '<form method="post" action="?page=expenses" data-ajax="true">
             <input type="hidden" name="card_action" value="Expense">

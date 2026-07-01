@@ -1061,6 +1061,7 @@ final class ExpenseClaimService
                     'description' => (string)$row['description'],
                     'reference' => (string)($row['reference'] ?? ''),
                     'amount' => $amount,
+                    'allocated_elsewhere' => $allocatedElsewhere,
                     'available_amount' => $availableAmount,
                     'nominal_label' => trim((string)($row['nominal_code'] ?? '')) !== ''
                         ? (string)$row['nominal_code'] . ' - ' . (string)($row['nominal_name'] ?? '')

@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 final class _expenses_stateCard extends CardBaseFramework
 {
+    private const PAGE_SIZE = 13;
+
     public function key(): string
     {
         return 'expenses_state';
@@ -34,6 +36,11 @@ final class _expenses_stateCard extends CardBaseFramework
         return 'Expense Claims';
     }
 
+    public function tables(array $context): array
+    {
+        return [$this->configuredClaimsTable($context)];
+    }
+
     public function handleError(string $serviceKey, array $error, array $context): string
     {
         return '';
@@ -47,6 +54,7 @@ final class _expenses_stateCard extends CardBaseFramework
         $companySettings = (array)($context['expense_page_settings'] ?? $company['settings'] ?? []);
         $claimants = (array)($data['claimants'] ?? []);
         $activeClaimantCount = (int)($data['active_claimant_count'] ?? 0);
+        $accountingPeriods = (array)($data['accounting_periods'] ?? []);
         $claims = (array)($data['claims'] ?? []);
         $claimHeatmapClaims = (array)($data['claim_heatmap_claims'] ?? $claims);
         $filters = (array)($data['filters'] ?? []);
@@ -56,21 +64,23 @@ final class _expenses_stateCard extends CardBaseFramework
         return '
             <div id="expenses-app">
                 <div class="settings-stack">
-                    ' . $this->renderClaimsPanel($claims, $claimHeatmapClaims, $claimants, $activeClaimantCount, $filters, $currentYear, $currentMonth, $companySettings, $companyId) . '
+                    ' . $this->renderClaimsPanel($context, $claimHeatmapClaims, $claimants, $activeClaimantCount, $accountingPeriods, $filters, $currentYear, $currentMonth, $companySettings, $companyId, (int)($company['accounting_period_id'] ?? 0)) . '
                 </div>
             </div>';
     }
 
     private function renderClaimsPanel(
-        array $claims,
+        array $context,
         array $claimHeatmapClaims,
         array $claimants,
         int $activeClaimantCount,
+        array $accountingPeriods,
         array $filters,
         int $currentYear,
         int $currentMonth,
         array $companySettings,
-        int $companyId
+        int $companyId,
+        int $companyAccountingPeriodId
     ): string {
         $createDisabled = $activeClaimantCount <= 0;
         $createFormId = 'expense-create-claim-form';
@@ -78,8 +88,10 @@ final class _expenses_stateCard extends CardBaseFramework
         $query = (string)($filters['query'] ?? '');
         $status = (string)($filters['status'] ?? 'all');
         $heatmapClaimantId = $this->selectedHeatmapClaimantId($claimants, (int)($filters['heatmap_claimant_id'] ?? 0));
-        $heatmapYear = $this->selectedHeatmapYear((int)($filters['heatmap_year'] ?? 0), $currentYear);
-        $heatmapDate = $this->normaliseHeatmapDate((string)($filters['heatmap_date'] ?? ''), $heatmapYear);
+        $heatmapPeriod = $this->selectedHeatmapPeriod($accountingPeriods, $companyAccountingPeriodId);
+        $heatmapDate = $heatmapPeriod !== null
+            ? $this->normaliseHeatmapDate((string)($filters['heatmap_date'] ?? ''), (string)$heatmapPeriod['start'], (string)$heatmapPeriod['end'])
+            : '';
 
         return '<section class="panel-soft">
             <div class="status-head">
@@ -109,14 +121,13 @@ final class _expenses_stateCard extends CardBaseFramework
                 </div>
                 <button class="button primary" type="submit" form="' . $createFormId . '" data-show-card="expense_claim_editor"' . ($createDisabled ? ' disabled' : '') . '>Create Expense Claim</button>
             </div>
-            ' . $this->renderClaimHeatmap($claimHeatmapClaims, $claimants, $heatmapClaimantId, $heatmapYear, $heatmapDate, $query, $status, $companyId) . '
+            ' . $this->renderClaimHeatmap($claimHeatmapClaims, $claimants, $accountingPeriods, $heatmapClaimantId, $heatmapPeriod, $heatmapDate, $query, $status, $companyId) . '
             <form id="' . $searchFormId . '" method="get" action="?page=expenses" data-ajax="true">
                 <input type="hidden" name="page" value="expenses">
                 <input type="hidden" name="card_action" value="Expense">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="intent" value="filter_claims">
                 <input type="hidden" name="expense_heatmap_claimant_id" value="' . $heatmapClaimantId . '">
-                <input type="hidden" name="expense_heatmap_year" value="' . $heatmapYear . '">
                 <input type="hidden" name="expense_heatmap_date" value="' . HelperFramework::escape($heatmapDate) . '">
             </form>
             <div class="toolbar expenses-toolbar">
@@ -130,20 +141,147 @@ final class _expenses_stateCard extends CardBaseFramework
                 </div>
                 <button class="button" type="submit" form="' . $searchFormId . '">Search</button>
             </div>
-            <div class="table-scroll">
-                <table>
-                    <thead><tr><th>Reference</th><th>Claimant</th><th>Month</th><th>A</th><th>B</th><th>C</th><th>D</th><th>Status</th><th>Updated</th><th></th></tr></thead>
-                    <tbody>' . $this->claimRows($claims, $status, $query, $companyId) . '</tbody>
-                </table>
-            </div>
+            ' . $this->configuredClaimsTable($context)->render($context, array_merge(
+                $this->claimsTableHiddenFields($context, $filters, $companyId),
+                ['cards[]' => (array)($context['page']['page_cards'] ?? [])]
+            )) . '
         </section>';
+    }
+
+    private function configuredClaimsTable(array $context): TableFramework
+    {
+        $data = (array)($context['services']['expensesPageData'] ?? []);
+        $filters = (array)($data['filters'] ?? []);
+        $company = (array)($context['company'] ?? []);
+        $companyId = (int)($company['id'] ?? 0);
+        $table = $this->claimsTable((array)($data['claims'] ?? []), $context);
+        $pagination = HelperFramework::paginateArray($table->sortedRows(), $this->paginationPage($context), self::PAGE_SIZE);
+
+        return $table
+            ->visibleRows((array)$pagination['items'])
+            ->pagination(
+                $pagination,
+                'Expense claims',
+                $this->paginationPageField(),
+                $this->claimsTableHiddenFields($context, $filters, $companyId)
+            );
+    }
+
+    private function claimsTable(array $claims, array $context): TableFramework
+    {
+        return TableFramework::make($this->key(), $this->claimTableRows($claims))
+            ->filename('expense-claims')
+            ->exportLimit(1000)
+            ->empty('No expense claims were found.')
+            ->textColumn('claim_reference_code', 'Reference')
+            ->textColumn('claimant_name', 'Claimant')
+            ->textColumn('claim_period_label', 'Month')
+            ->column(
+                'A',
+                'A',
+                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::money($row['A'] ?? 0)),
+                export: static fn(array $row): string => number_format((float)($row['A'] ?? 0), 2, '.', ''),
+                cellClass: 'numeric',
+                exportType: 'number'
+            )
+            ->column(
+                'B',
+                'B',
+                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::money($row['B'] ?? 0)),
+                export: static fn(array $row): string => number_format((float)($row['B'] ?? 0), 2, '.', ''),
+                cellClass: 'numeric',
+                exportType: 'number'
+            )
+            ->column(
+                'C',
+                'C',
+                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::money($row['C'] ?? 0)),
+                export: static fn(array $row): string => number_format((float)($row['C'] ?? 0), 2, '.', ''),
+                cellClass: 'numeric',
+                exportType: 'number'
+            )
+            ->column(
+                'D',
+                'D',
+                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::money($row['D'] ?? 0)),
+                export: static fn(array $row): string => number_format((float)($row['D'] ?? 0), 2, '.', ''),
+                cellClass: 'numeric',
+                exportType: 'number'
+            )
+            ->column(
+                'status',
+                'Status',
+                html: fn(array $row): string => $this->claimStatusHtml($row),
+                export: fn(array $row): string => $this->claimStatusLabel($row)
+            )
+            ->textColumn('last_updated', 'Updated')
+            ->column(
+                'action',
+                '',
+                html: fn(array $row): string => $this->claimOpenForm($row, $context),
+                exportable: false,
+                cellClass: 'cell-fit'
+            );
+    }
+
+    private function claimTableRows(array $claims): array
+    {
+        $rows = [];
+
+        foreach ($claims as $claim) {
+            if (!is_array($claim)) {
+                continue;
+            }
+
+            $claim['claim_period_label'] = $this->monthLabel((int)($claim['claim_month'] ?? 0), (int)($claim['claim_year'] ?? 0));
+            $rows[] = $claim;
+        }
+
+        return $rows;
+    }
+
+    private function claimsTableHiddenFields(array $context, array $filters, int $companyId): array
+    {
+        return [
+            'page' => (string)($context['page']['page_id'] ?? 'expenses'),
+            '_pagination' => '1',
+            '_invalidate_fact' => $this->tableInvalidationFact(),
+            'cards[]' => [$this->key()],
+            'company_id' => $companyId,
+            'expense_query' => (string)($filters['query'] ?? ''),
+            'expense_status' => (string)($filters['status'] ?? 'all'),
+            'expense_heatmap_claimant_id' => (int)($filters['heatmap_claimant_id'] ?? 0),
+            'expense_heatmap_date' => (string)($filters['heatmap_date'] ?? ''),
+        ];
+    }
+
+    private function claimOpenForm(array $claim, array $context): string
+    {
+        $companyId = (int)(($context['company'] ?? [])['id'] ?? 0);
+        $claimId = (int)($claim['id'] ?? 0);
+        $filters = (array)((($context['services']['expensesPageData'] ?? [])['filters'] ?? []));
+
+        if ($companyId <= 0 || $claimId <= 0) {
+            return '';
+        }
+
+        return '<form method="post" action="?page=expenses" data-ajax="true">
+            <input type="hidden" name="card_action" value="Expense">
+            <input type="hidden" name="company_id" value="' . $companyId . '">
+            <input type="hidden" name="intent" value="select_claim">
+            <input type="hidden" name="claim_id" value="' . $claimId . '">
+            <input type="hidden" name="expense_status" value="' . HelperFramework::escape((string)($filters['status'] ?? 'all')) . '">
+            <input type="hidden" name="expense_query" value="' . HelperFramework::escape((string)($filters['query'] ?? '')) . '">
+            <button class="button button-inline" type="submit" data-show-card="expense_claim_editor">Open</button>
+        </form>';
     }
 
     private function renderClaimHeatmap(
         array $claims,
         array $claimants,
+        array $accountingPeriods,
         int $selectedClaimantId,
-        int $selectedYear,
+        ?array $selectedPeriod,
         string $selectedDate,
         string $query,
         string $status,
@@ -153,19 +291,20 @@ final class _expenses_stateCard extends CardBaseFramework
         $hasClaimants = $claimants !== [];
         $chartHtml = '<div class="helper">Add a claimant first to see claim activity.</div>';
 
-        if ($hasClaimants) {
+        if ($hasClaimants && $selectedPeriod === null) {
+            $chartHtml = '<div class="helper">Select an accounting period to see claim activity.</div>';
+        } elseif ($hasClaimants) {
             $chartHtml = (new ChartService())->calendarHeatmap(
-                $this->claimHeatmapDays($claims, $selectedClaimantId, $selectedYear),
+                $this->claimHeatmapDays($claims, $selectedClaimantId, (string)$selectedPeriod['start'], (string)$selectedPeriod['end']),
                 [
                     'title' => 'Claim calendar',
                     'id' => 'expense-claim-calendar',
-                    'start_date' => sprintf('%04d-01-01', $selectedYear),
-                    'end_date' => sprintf('%04d-12-31', $selectedYear),
+                    'start_date' => (string)$selectedPeriod['start'],
+                    'end_date' => (string)$selectedPeriod['end'],
                     'selected_date' => $selectedDate,
-                    'years' => $this->heatmapYears($claims, $selectedClaimantId, $selectedYear),
+                    'range_control' => ['type' => 'date', 'options' => []],
                     'value_label' => 'claims',
                     'input_name' => 'expense_heatmap_date',
-                    'year_input_name' => 'expense_heatmap_year',
                     'ajax_target' => 'expenses-app',
                 ]
             );
@@ -179,18 +318,13 @@ final class _expenses_stateCard extends CardBaseFramework
                 <input type="hidden" name="intent" value="filter_claims">
                 <input type="hidden" name="expense_query" value="' . HelperFramework::escape($query) . '">
                 <input type="hidden" name="expense_status" value="' . HelperFramework::escape($status) . '">
-                <div class="toolbar expenses-toolbar expense-claim-heatmap-controls">
-                    <div class="mini-field">
-                        <label for="expense-heatmap-claimant">Claim calendar claimant</label>
-                        <select class="select" id="expense-heatmap-claimant" name="expense_heatmap_claimant_id"' . (!$hasClaimants ? ' disabled' : '') . '>' . $this->claimantOptions($claimants, false, 'Add a claimant first...', $selectedClaimantId) . '</select>
-                    </div>
-                </div>
+                <input type="hidden" name="expense_heatmap_claimant_id" value="' . $selectedClaimantId . '">
                 ' . $chartHtml . '
             </form>
         </div>';
     }
 
-    private function claimHeatmapDays(array $claims, int $selectedClaimantId, int $selectedYear): array
+    private function claimHeatmapDays(array $claims, int $selectedClaimantId, string $periodStart, string $periodEnd): array
     {
         $days = [];
 
@@ -199,12 +333,12 @@ final class _expenses_stateCard extends CardBaseFramework
                 continue;
             }
 
-            if ((int)($claim['claim_year'] ?? 0) !== $selectedYear) {
+            $date = $this->claimHeatmapDate($claim);
+            if ($date === '') {
                 continue;
             }
 
-            $date = $this->claimHeatmapDate($claim);
-            if ($date === '') {
+            if ($date < $periodStart || $date > $periodEnd) {
                 continue;
             }
 
@@ -251,12 +385,61 @@ final class _expenses_stateCard extends CardBaseFramework
         return (int)($claimants[0]['id'] ?? 0);
     }
 
-    private function selectedHeatmapYear(int $requestedYear, int $currentYear): int
+    private function selectedHeatmapPeriod(array $accountingPeriods, int $companyAccountingPeriodId): ?array
     {
-        return $requestedYear >= 1900 && $requestedYear <= 2200 ? $requestedYear : $currentYear;
+        $normalisedPeriods = $this->normalisedHeatmapPeriods($accountingPeriods);
+
+        foreach ($normalisedPeriods as $period) {
+            if ($companyAccountingPeriodId > 0 && (int)$period['id'] === $companyAccountingPeriodId) {
+                return $period;
+            }
+        }
+
+        return null;
     }
 
-    private function normaliseHeatmapDate(string $date, int $selectedYear): string
+    private function normaliseHeatmapDate(string $date, string $periodStart, string $periodEnd): string
+    {
+        $date = $this->normaliseDate($date);
+        if ($date === '') {
+            return '';
+        }
+
+        return $date >= $periodStart && $date <= $periodEnd ? $date : '';
+    }
+
+    private function normalisedHeatmapPeriods(array $accountingPeriods): array
+    {
+        $periods = [];
+
+        foreach ($accountingPeriods as $period) {
+            if (!is_array($period)) {
+                continue;
+            }
+
+            $start = $this->normaliseDate((string)($period['period_start'] ?? ''));
+            $end = $this->normaliseDate((string)($period['period_end'] ?? ''));
+            if ($start === '' || $end === '') {
+                continue;
+            }
+
+            if ($end < $start) {
+                [$start, $end] = [$end, $start];
+            }
+
+            $label = trim((string)($period['label'] ?? ''));
+            $periods[] = [
+                'id' => (int)($period['id'] ?? 0),
+                'label' => $label !== '' ? $label : $start . ' to ' . $end,
+                'start' => $start,
+                'end' => $end,
+            ];
+        }
+
+        return $periods;
+    }
+
+    private function normaliseDate(string $date): string
     {
         $date = trim($date);
         if ($date === '') {
@@ -269,34 +452,7 @@ final class _expenses_stateCard extends CardBaseFramework
             return '';
         }
 
-        return (int)$parsed->format('Y') === $selectedYear ? $parsed->format('Y-m-d') : '';
-    }
-
-    private function heatmapYears(array $claims, int $selectedClaimantId, int $selectedYear): array
-    {
-        $years = [$selectedYear];
-
-        foreach ($claims as $claim) {
-            if ((int)($claim['claimant_id'] ?? 0) !== $selectedClaimantId) {
-                continue;
-            }
-
-            $year = (int)($claim['claim_year'] ?? 0);
-            if ($year >= 1900 && $year <= 2200) {
-                $years[] = $year;
-            }
-        }
-
-        for ($year = $selectedYear - 4; $year <= $selectedYear + 5; $year++) {
-            if ($year >= 1900 && $year <= 2200) {
-                $years[] = $year;
-            }
-        }
-
-        $years = array_values(array_unique($years));
-        sort($years);
-
-        return $years;
+        return $parsed->format('Y-m-d');
     }
 
     private function claimHeatmapDate(array $claim): string
@@ -374,36 +530,16 @@ final class _expenses_stateCard extends CardBaseFramework
         return $html;
     }
 
-    private function claimRows(array $claims, string $status, string $query, int $companyId): string
+    private function claimStatusHtml(array $claim): string
     {
-        $rows = '';
-        foreach ($claims as $claim) {
-            $claimId = (int)($claim['id'] ?? 0);
-            $rows .= '<tr>
-                <td>' . HelperFramework::escape((string)($claim['claim_reference_code'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape((string)($claim['claimant_name'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape($this->monthLabel((int)($claim['claim_month'] ?? 0), (int)($claim['claim_year'] ?? 0))) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::money($claim['A'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::money($claim['B'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::money($claim['C'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::money($claim['D'] ?? 0)) . '</td>
-                <td><span class="badge ' . ((string)($claim['status'] ?? '') === 'posted' ? 'success' : 'warning') . '">' . HelperFramework::escape(HelperFramework::labelFromKey((string)($claim['status'] ?? ''), '_')) . '</span></td>
-                <td>' . HelperFramework::escape((string)($claim['last_updated'] ?? '')) . '</td>
-                <td>
-                    <form method="post" action="?page=expenses" data-ajax="true">
-                        <input type="hidden" name="card_action" value="Expense">
-                        <input type="hidden" name="company_id" value="' . $companyId . '">
-                        <input type="hidden" name="intent" value="select_claim">
-                        <input type="hidden" name="claim_id" value="' . $claimId . '">
-                        <input type="hidden" name="expense_status" value="' . HelperFramework::escape($status) . '">
-                        <input type="hidden" name="expense_query" value="' . HelperFramework::escape($query) . '">
-                        <button class="button button-inline" type="submit" data-show-card="expense_claim_editor">Open</button>
-                    </form>
-                </td>
-            </tr>';
-        }
+        return '<span class="badge ' . ((string)($claim['status'] ?? '') === 'posted' ? 'success' : 'warning') . '">'
+            . HelperFramework::escape($this->claimStatusLabel($claim))
+            . '</span>';
+    }
 
-        return $rows !== '' ? $rows : '<tr><td colspan="10" class="helper">No expense claims were found.</td></tr>';
+    private function claimStatusLabel(array $claim): string
+    {
+        return HelperFramework::labelFromKey((string)($claim['status'] ?? ''), '_');
     }
 
     private function monthLabel(int $month, int $year): string
@@ -433,5 +569,10 @@ final class _expenses_stateCard extends CardBaseFramework
         ];
 
         return (string)($names[$month] ?? '');
+    }
+
+    private function tableInvalidationFact(): string
+    {
+        return (string)($this->invalidationFacts()[0] ?? 'expenses.state');
     }
 }

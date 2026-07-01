@@ -36,6 +36,7 @@ final class ExpenseClaimService
         return [
             'claimants' => $this->fetchClaimants($companyId, false),
             'active_claimant_count' => count($this->fetchClaimants($companyId, true)),
+            'accounting_periods' => (new \eel_accounts\Repository\AccountingPeriodRepository())->fetchAccountingPeriods($companyId),
             'nominal_accounts' => $this->fetchExpenseNominals(),
             'payment_candidates' => $selectedClaim !== null
                 ? $this->searchTransactions($companyId, [
@@ -52,7 +53,7 @@ final class ExpenseClaimService
                 'status' => $this->normaliseStatusFilter((string)($filters['status'] ?? 'all')),
                 'payment_query' => $paymentQuery,
                 'heatmap_claimant_id' => max(0, (int)($filters['heatmap_claimant_id'] ?? 0)),
-                'heatmap_year' => max(0, (int)($filters['heatmap_year'] ?? 0)),
+                'heatmap_period_start' => trim((string)($filters['heatmap_period_start'] ?? '')),
                 'heatmap_date' => trim((string)($filters['heatmap_date'] ?? '')),
             ],
         ];

@@ -352,9 +352,13 @@ final class _expense_claim_editorCard extends CardBaseFramework
         return $paymentsPanel . '
             <div class="panel-soft">
                 <div class="status-head"><h4 class="card-title">Candidate Repayments</h4></div>
-                ' . $this->renderPaymentCandidateSearch($paymentQuery, $claimId, $companyId) . '
-                ' . $this->configuredPaymentCandidatesTable($paymentCandidates, $companySettings, $claimId, $companyId, $dateFormat, $context)->render($context, $this->tableExportFields(['claim_id' => $claimId, 'payment_query' => $paymentQuery])) . '
+                ' . $this->withoutEmptyActionRows($this->configuredPaymentCandidatesTable($paymentCandidates, $companySettings, $paymentQuery, $claimId, $companyId, $dateFormat, $context)->render($context, $this->tableExportFields(['claim_id' => $claimId, 'payment_query' => $paymentQuery]))) . '
             </div>';
+    }
+
+    private function withoutEmptyActionRows(string $html): string
+    {
+        return preg_replace('/<div class="actions-row">\s*<\/div>\s*/', '', $html) ?? $html;
     }
 
     private function configuredPaymentsTable(array $payments, int $claimId, bool $isPosted, int $companyId, string $dateFormat, array $context): TableFramework
@@ -370,6 +374,11 @@ final class _expense_claim_editorCard extends CardBaseFramework
                 $this->paginationPageField(self::TABLE_PAYMENTS),
                 $this->tablePaginationFields(['claim_id' => $claimId])
             );
+    }
+
+    private function paymentCandidateToolbarHtml(string $paymentQuery, int $claimId, int $companyId): string
+    {
+        return $this->renderPaymentCandidateSearch($paymentQuery, $claimId, $companyId);
     }
 
     private function paymentsTable(array $payments, int $claimId, bool $isPosted, int $companyId, string $dateFormat): TableFramework
@@ -417,20 +426,19 @@ final class _expense_claim_editorCard extends CardBaseFramework
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="intent" value="filter_claims">
             <input type="hidden" name="claim_id" value="' . $claimId . '">
-            <div class="mini-field">
-                <label for="expense-payment-query">Search repayments</label>
-                <input class="input" id="expense-payment-query" name="payment_query" type="search" value="' . HelperFramework::escape($paymentQuery) . '" placeholder="Bank description or reference">
-            </div>
+            <label for="expense-payment-query">Search repayments</label>
+            <input class="input" id="expense-payment-query" name="payment_query" type="search" value="' . HelperFramework::escape($paymentQuery) . '" placeholder="Bank description or reference">
             <button class="button" type="submit">Search</button>
         </form>';
     }
 
-    private function configuredPaymentCandidatesTable(array $paymentCandidates, array $companySettings, int $claimId, int $companyId, string $dateFormat, array $context): TableFramework
+    private function configuredPaymentCandidatesTable(array $paymentCandidates, array $companySettings, string $paymentQuery, int $claimId, int $companyId, string $dateFormat, array $context): TableFramework
     {
         $table = $this->paymentCandidatesTable($paymentCandidates, $companySettings, $claimId, $companyId, $dateFormat);
         $pagination = HelperFramework::paginateArray($table->sortedRows(), $this->paginationPage($context, self::TABLE_PAYMENT_CANDIDATES), self::PAGE_SIZE);
 
         return $table
+            ->toolbarActions($this->paymentCandidateToolbarHtml($paymentQuery, $claimId, $companyId))
             ->visibleRows((array)$pagination['items'])
             ->pagination(
                 $pagination,

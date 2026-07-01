@@ -820,20 +820,15 @@ final class ExpenseClaimService
         }
 
         $transactionId = isset($payload['transaction_id']) ? (int)$payload['transaction_id'] : 0;
-        $linkedAmount = isset($payload['linked_amount']) ? round((float)$payload['linked_amount'], 2) : 0.0;
-        $directorLoanNominalId = isset($payload['director_loan_nominal_id']) ? (int)$payload['director_loan_nominal_id'] : 0;
+        $defaultExpenseNominalId = isset($payload['default_expense_nominal_id']) ? (int)$payload['default_expense_nominal_id'] : 0;
         $defaultBankNominalId = isset($payload['default_bank_nominal_id']) ? (int)$payload['default_bank_nominal_id'] : 0;
 
         if ($transactionId <= 0) {
             return ['success' => false, 'errors' => ['Select a repayment transaction.']];
         }
 
-        if ($linkedAmount <= 0) {
-            return ['success' => false, 'errors' => ['Linked repayment amount must be greater than zero.']];
-        }
-
-        if ($directorLoanNominalId <= 0) {
-            return ['success' => false, 'errors' => ['Set the director loan nominal before linking repayments.']];
+        if ($defaultExpenseNominalId <= 0) {
+            return ['success' => false, 'errors' => ['Set the default expense nominal before linking repayments.']];
         }
 
         $transaction = $this->categorisationService->fetchTransaction($transactionId);
@@ -842,13 +837,14 @@ final class ExpenseClaimService
         }
 
         $transactionAmount = round(abs((float)$transaction['amount']), 2);
-        if ($linkedAmount > $transactionAmount) {
-            return ['success' => false, 'errors' => ['Linked repayment amount cannot exceed the bank transaction amount.']];
+        if ($transactionAmount <= 0) {
+            return ['success' => false, 'errors' => ['Repayment transaction amount must be greater than zero.']];
         }
+        $linkedAmount = $transactionAmount;
 
         $allocatedElsewhere = $this->sumLinkedAmountForTransaction($transactionId, $claimId);
-        if (($allocatedElsewhere + $linkedAmount) - $transactionAmount > 0.0001) {
-            return ['success' => false, 'errors' => ['That transaction is already linked elsewhere for most of its value.']];
+        if ($allocatedElsewhere > 0.0001) {
+            return ['success' => false, 'errors' => ['That transaction is already linked to another expense claim.']];
         }
 
         $ownsTransaction = !\InterfaceDB::inTransaction();
@@ -889,7 +885,7 @@ final class ExpenseClaimService
 
             $saveResult = $this->categorisationService->saveManualCategorisation(
                 $transactionId,
-                $directorLoanNominalId,
+                $defaultExpenseNominalId,
                 null,
                 false,
                 'expense_claim_payment_link',
@@ -1054,9 +1050,9 @@ final class ExpenseClaimService
             return ['success' => false, 'errors' => ['Claim reference code is missing.']];
         }
 
-        $directorLoanNominalId = isset($payload['director_loan_nominal_id']) ? (int)$payload['director_loan_nominal_id'] : 0;
-        if ($directorLoanNominalId <= 0) {
-            return ['success' => false, 'errors' => ['Set the director loan nominal before posting a claim.']];
+        $defaultExpenseNominalId = isset($payload['default_expense_nominal_id']) ? (int)$payload['default_expense_nominal_id'] : 0;
+        if ($defaultExpenseNominalId <= 0) {
+            return ['success' => false, 'errors' => ['Set the default expense nominal before posting a claim.']];
         }
 
         $lines = $this->fetchClaimLines($claimId);
@@ -1135,10 +1131,10 @@ final class ExpenseClaimService
 
             $this->insertJournalLine(
                 (int)$journal['id'],
-                $directorLoanNominalId,
+                $defaultExpenseNominalId,
                 0.0,
                 $totalClaimed,
-                'Director loan liability'
+                'Expense claim payable'
             );
 
             \InterfaceDB::prepare(

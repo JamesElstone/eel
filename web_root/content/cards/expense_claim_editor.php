@@ -477,8 +477,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
     {
         $availableAmount = round((float)($candidate['available_amount'] ?? 0), 2);
         $currentLinkAmount = round((float)($candidate['current_link_amount'] ?? 0), 2);
-        $suggestedAmount = $currentLinkAmount > 0 ? $currentLinkAmount : $availableAmount;
-        $canLink = $suggestedAmount > 0;
+        $canLink = $currentLinkAmount > 0 || $availableAmount > 0;
 
         return '<form method="post" action="?page=expenses" data-ajax="true">
             <input type="hidden" name="card_action" value="Expense">
@@ -486,10 +485,9 @@ final class _expense_claim_editorCard extends CardBaseFramework
             <input type="hidden" name="intent" value="link_payment">
             <input type="hidden" name="claim_id" value="' . $claimId . '">
             <input type="hidden" name="transaction_id" value="' . (int)($candidate['id'] ?? 0) . '">
-            <input type="hidden" name="director_loan_nominal_id" value="' . (int)($companySettings['director_loan_nominal_id'] ?? 0) . '">
+            <input type="hidden" name="default_expense_nominal_id" value="' . (int)($companySettings['default_expense_nominal_id'] ?? 0) . '">
             <input type="hidden" name="default_bank_nominal_id" value="' . (int)($companySettings['default_bank_nominal_id'] ?? 0) . '">
             <div class="actions-row expense-payment-link-actions">
-                <input class="input expense-payment-link-input" name="linked_amount" inputmode="decimal" value="' . HelperFramework::escape(number_format($suggestedAmount, 2, '.', '')) . '"' . ($canLink ? '' : ' disabled') . '>
                 <button class="button button-inline primary" type="submit"' . ($canLink ? '' : ' disabled') . '>' . ($currentLinkAmount > 0 ? 'Update' : 'Link') . '</button>
             </div>
         </form>';

@@ -26,7 +26,33 @@ final class _expenses extends PageContextFramework
 
     public function cards(): array
     {
-        return ['expense_claimants', 'expenses_state', 'expense_claim_editor'];
+        return ['expense_claimants', 'expense_add_claimant', 'expense_claim_create', 'expenses_state', 'expense_claim_editor'];
+    }
+
+    public function cardLayout(): array
+    {
+        return [
+            [
+                'tab' => 'Claimants',
+                'cards' => [
+                    'expense_claimants',
+                    'expense_add_claimant',
+                ],
+            ],
+            [
+                'tab' => 'Claims',
+                'cards' => [
+                    'expenses_state',
+                    'expense_claim_create',
+                ],
+            ],
+            [
+                'tab' => 'Editor',
+                'cards' => [
+                    'expense_claim_editor',
+                ],
+            ],
+        ];
     }
 
     protected function moduleContext(
@@ -38,13 +64,14 @@ final class _expenses extends PageContextFramework
         $expenseFilters = (array)($actionResult->context()['expense_filters'] ?? []);
 
         if ($expenseFilters === []) {
+            $submittedHeatmapClaimantId = $request->input('claimant_id', null);
             $expenseFilters = [
                 'query' => trim((string)$request->input('query', $request->input('expense_query', ''))),
                 'status' => trim((string)$request->input('status', $request->input('expense_status', 'all'))),
                 'claim_id' => max(0, (int)$request->input('claim_id', 0)),
                 'claim_reference_code' => trim((string)$request->input('claim_reference_code', '')),
                 'payment_query' => trim((string)$request->input('payment_query', '')),
-                'heatmap_claimant_id' => max(0, (int)$request->input('expense_heatmap_claimant_id', 0)),
+                'heatmap_claimant_id' => max(0, (int)($submittedHeatmapClaimantId !== null ? $submittedHeatmapClaimantId : $request->input('expense_heatmap_claimant_id', 0))),
                 'heatmap_period_start' => $this->normaliseHeatmapPeriodStart((string)$request->input('expense_heatmap_period_start', '')),
                 'heatmap_date' => trim((string)$request->input('expense_heatmap_date', '')),
             ];

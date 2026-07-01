@@ -28,10 +28,11 @@ $harness->run(_expense_claimantsCard::class, function (GeneratedServiceClassTest
         $html = $instance->render($context);
 
         $harness->assertTrue(str_contains($html, 'Alex Example'));
-        $harness->assertTrue(str_contains($html, '>Add Claimant</button>'));
+        $harness->assertSame(false, str_contains($html, '>Add Claimant</button>'));
+        $harness->assertSame(false, str_contains($html, 'New Claimants'));
         $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="csv"'));
         $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="xlsx"'));
-        $harness->assertTrue(str_contains($html, 'Expense claimants 1-10 of 12'));
+        $harness->assertTrue(str_contains($html, 'Expense Claimants 1-10 of 12'));
         $harness->assertTrue(str_contains($html, 'Claimant 10'));
         $harness->assertSame(false, str_contains($html, 'Claimant 11'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="deactivate_claimant"'));
@@ -51,15 +52,38 @@ $harness->run(_expense_claimantsCard::class, function (GeneratedServiceClassTest
         $harness->assertSame(false, str_contains($csv, 'deactivate_claimant'));
         $harness->assertSame(false, str_contains($csv, 'activate_claimant'));
     });
+
+    $harness->check(_expense_claimantsCard::class, 'filters claimant table by active status', function () use ($harness, $instance): void {
+        $context = expenseClaimantsCardContext('inactive');
+        $html = $instance->render($context);
+
+        $harness->assertTrue(str_contains($html, 'name="expense_claimants_status"'));
+        $harness->assertTrue(str_contains($html, '<option value="all">All</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="active">Active</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="inactive" selected>Inactive</option>'));
+        $harness->assertTrue(str_contains($html, 'Inactive Claimant'));
+        $harness->assertSame(false, str_contains($html, 'Alex Example'));
+        $harness->assertTrue(str_contains($html, 'Expense Claimants 1-6 of 6'));
+
+        $table = $instance->tables($context)[0] ?? null;
+        $harness->assertTrue($table instanceof TableFramework);
+
+        $csv = $table->exportCsv();
+        $harness->assertTrue(str_contains($csv, 'Inactive Claimant,Inactive'));
+        $harness->assertSame(false, str_contains($csv, 'Alex Example,Active'));
+    });
 });
 
-function expenseClaimantsCardContext(): array
+function expenseClaimantsCardContext(string $statusFilter = 'all'): array
 {
     return [
         'page' => [
             'page_id' => 'expenses',
             'page_cards' => ['expense_claimants'],
             'expense_claimants_page' => 1,
+        ],
+        'expense_claimants' => [
+            'status_filter' => $statusFilter,
         ],
         'company' => [
             'id' => 7,

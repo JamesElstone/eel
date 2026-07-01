@@ -96,13 +96,14 @@ final class ExpenseAction implements ActionInterfaceFramework
 
     private function filtersFromRequest(RequestFramework $request, array $result): array
     {
+        $submittedHeatmapClaimantId = $request->input('claimant_id', null);
         $filters = [
             'query' => trim((string)$request->input('query', $request->input('expense_query', ''))),
             'status' => trim((string)$request->input('status', $request->input('expense_status', 'all'))),
             'claim_id' => max(0, (int)$request->input('claim_id', 0)),
             'claim_reference_code' => trim((string)$request->input('claim_reference_code', '')),
             'payment_query' => trim((string)$request->input('payment_query', '')),
-            'heatmap_claimant_id' => max(0, (int)$request->input('expense_heatmap_claimant_id', 0)),
+            'heatmap_claimant_id' => max(0, (int)($submittedHeatmapClaimantId !== null ? $submittedHeatmapClaimantId : $request->input('expense_heatmap_claimant_id', 0))),
             'heatmap_period_start' => $this->normaliseHeatmapPeriodStart((string)$request->input('expense_heatmap_period_start', '')),
             'heatmap_date' => trim((string)$request->input('expense_heatmap_date', '')),
         ];

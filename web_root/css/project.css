@@ -28,10 +28,27 @@
 
 .expenses-toolbar {
   align-items: flex-end;
+  justify-content: flex-start;
 }
 
 .expenses-toolbar .button {
   margin-bottom: 0;
+}
+
+.create-expense-claim {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: nowrap;
+  gap: 10px;
+}
+
+.create-expense-claim .button {
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
+.actions-row-right {
+  justify-content: flex-end;
 }
 
 .expense-claim-heatmap {
@@ -41,8 +58,79 @@
   margin-bottom: 14px;
 }
 
+.expense-claim-heatmap .calendar-heatmap-heading {
+  display: none;
+}
+
 .expense-claim-heatmap-controls {
   margin-bottom: 2px;
+}
+
+.expense-line-form-grid {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.expense-line-form-grid > .form-row {
+  flex: 0 1 fit-content;
+  padding-bottom: 0;
+}
+
+.expense-line-form-grid .input,
+.expense-line-form-grid .select {
+  max-width: 100%;
+  width: fit-content;
+}
+
+#expense-line-description,
+#expense-line-notes {
+  width: 24ch;
+}
+
+#expense-line-amount {
+  width: 10ch;
+}
+
+.expense-line-form-actions {
+  display: flex;
+  align-items: flex-end;
+  align-self: stretch;
+  width: fit-content;
+}
+
+.expense-line-form-actions .button {
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
+.expense-bulk-paste-controls {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.expense-bulk-paste-controls .input {
+  min-width: 0;
+}
+
+.expense-bulk-paste-controls .button {
+  flex: 0 0 fit-content;
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
+.expense-payment-link-actions {
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+.expense-payment-link-input {
+  flex: 0 0 fit-content;
+  width: fit-content;
+  min-width: 8ch;
+  max-width: 10ch;
 }
 
 .expense-claimant-add-form {
@@ -450,6 +538,26 @@
 
 .summary-grid.four {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.expense-claim-summary-grid {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.expense-claim-summary-grid .summary-card {
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.expense-claim-summary-grid .summary-label {
+  font-size: 0.72rem;
+  letter-spacing: 0;
+}
+
+.expense-claim-summary-grid .summary-value {
+  font-size: 1.02rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .summary-card {

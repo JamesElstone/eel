@@ -58,6 +58,11 @@ final class _expenses extends PageContextFramework
         return [
             'expense_filters' => $expenseFilters,
             'expense_page_settings' => $this->expensePageSettings((array)($baseContext['company']['settings'] ?? [])),
+            'expense_bulk_preview_input' => [
+                'claim_id' => max(0, (int)$request->input('claim_id', 0)),
+                'pasted_lines' => (string)$request->input('pasted_lines', ''),
+                'date_format' => (string)$request->input('date_format', (string)(($baseContext['company']['settings'] ?? [])['date_format'] ?? 'd/m/Y')),
+            ],
         ];
     }
 

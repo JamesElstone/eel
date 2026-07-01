@@ -76,6 +76,102 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(true, $method->invoke($service, $balanceSheetNominalId));
             $harness->assertSame(false, $method->invoke($service, $expenseNominalId));
         });
+
+        $harness->check(\eel_accounts\Service\AssetService::class, 'disposal receipt search uses one day before and three days after', static function () use ($harness, $service): void {
+            assetServiceTestRequireDisposalSchema($harness);
+            $fixture = assetServiceTestCreateDisposalFixture('search');
+            $insideBeforeId = assetServiceTestInsertTransaction($fixture, 1, '2026-06-30', 100.00, 'Inside before');
+            $insideAfterId = assetServiceTestInsertTransaction($fixture, 2, '2026-07-04', 110.00, 'Inside after');
+            assetServiceTestInsertTransaction($fixture, 3, '2026-06-29', 120.00, 'Too early');
+            assetServiceTestInsertTransaction($fixture, 4, '2026-07-05', 130.00, 'Too late');
+            assetServiceTestInsertTransaction($fixture, 5, '2026-07-01', -50.00, 'Outgoing');
+            assetServiceTestInsertTransaction($fixture, 6, '2026-07-01', 60.00, 'Transfer', 1);
+            $linkedTransactionId = assetServiceTestInsertTransaction($fixture, 7, '2026-07-01', 70.00, 'Already linked');
+            InterfaceDB::prepareExecute(
+                'INSERT INTO asset_disposal_transaction_links (asset_id, transaction_id, linked_amount)
+                 VALUES (:asset_id, :transaction_id, :linked_amount)',
+                [
+                    'asset_id' => $fixture['asset_id'],
+                    'transaction_id' => $linkedTransactionId,
+                    'linked_amount' => 70.00,
+                ]
+            );
+
+            $search = $service->fetchDisposalSearch($fixture['company_id'], '2026-07-01', $fixture['asset_id']);
+            $ids = array_map(static fn(array $row): int => (int)$row['id'], (array)($search['candidates'] ?? []));
+
+            $harness->assertSame('2026-06-30', (string)($search['window_start'] ?? ''));
+            $harness->assertSame('2026-07-04', (string)($search['window_end'] ?? ''));
+            $harness->assertTrue(in_array($insideBeforeId, $ids, true));
+            $harness->assertTrue(in_array($insideAfterId, $ids, true));
+            $harness->assertSame(2, count($ids));
+        });
+
+        $harness->check(\eel_accounts\Service\AssetService::class, 'linked disposal uses receipt transaction date and amount', static function () use ($harness, $service): void {
+            assetServiceTestRequireDisposalSchema($harness);
+            $fixture = assetServiceTestCreateDisposalFixture('linked');
+            $transactionId = assetServiceTestInsertTransaction($fixture, 1, '2026-07-02', 300.00, 'Asset sale receipt');
+
+            $result = $service->disposeAssetWithTransaction($fixture['company_id'], $fixture['asset_id'], $transactionId, $fixture['bank_nominal_id']);
+
+            $harness->assertSame(true, (bool)($result['success'] ?? false));
+            $asset = InterfaceDB::fetchOne(
+                'SELECT status, disposal_date, disposal_proceeds
+                 FROM asset_register
+                 WHERE id = :id',
+                ['id' => $fixture['asset_id']]
+            );
+            $harness->assertSame('disposed', (string)($asset['status'] ?? ''));
+            $harness->assertSame('2026-07-02', (string)($asset['disposal_date'] ?? ''));
+            $harness->assertSame(300.0, round((float)($asset['disposal_proceeds'] ?? 0), 2));
+
+            $linkCount = (int)InterfaceDB::fetchColumn(
+                'SELECT COUNT(*)
+                 FROM asset_disposal_transaction_links
+                 WHERE asset_id = :asset_id
+                   AND transaction_id = :transaction_id',
+                ['asset_id' => $fixture['asset_id'], 'transaction_id' => $transactionId]
+            );
+            $harness->assertSame(1, $linkCount);
+
+            $clearingNominalId = assetServiceTestNominalId('1490');
+            $bankJournalId = assetServiceTestJournalId($fixture['company_id'], 'bank_csv', 'transaction:' . $transactionId);
+            $assetJournalId = assetServiceTestJournalId($fixture['company_id'], 'asset_disposal', 'asset:' . $fixture['asset_id'] . ':disposal');
+            $harness->assertTrue($bankJournalId > 0);
+            $harness->assertTrue($assetJournalId > 0);
+            $harness->assertSame(300.0, assetServiceTestJournalLineAmount($bankJournalId, $clearingNominalId, 'credit'));
+            $harness->assertSame(300.0, assetServiceTestJournalLineAmount($assetJournalId, $clearingNominalId, 'debit'));
+            $harness->assertSame(0.0, assetServiceTestJournalLineAmount($assetJournalId, $fixture['bank_nominal_id'], 'debit'));
+        });
+
+        $harness->check(\eel_accounts\Service\AssetService::class, 'nil disposal posts without transaction link', static function () use ($harness, $service): void {
+            assetServiceTestRequireDisposalSchema($harness);
+            $fixture = assetServiceTestCreateDisposalFixture('nil');
+
+            $result = $service->disposeAssetAtNilValue($fixture['company_id'], $fixture['asset_id'], '2026-07-03');
+
+            $harness->assertSame(true, (bool)($result['success'] ?? false));
+            $asset = InterfaceDB::fetchOne(
+                'SELECT status, disposal_date, disposal_proceeds
+                 FROM asset_register
+                 WHERE id = :id',
+                ['id' => $fixture['asset_id']]
+            );
+            $harness->assertSame('disposed', (string)($asset['status'] ?? ''));
+            $harness->assertSame('2026-07-03', (string)($asset['disposal_date'] ?? ''));
+            $harness->assertSame(0.0, round((float)($asset['disposal_proceeds'] ?? 0), 2));
+            $harness->assertSame(0, (int)InterfaceDB::fetchColumn(
+                'SELECT COUNT(*)
+                 FROM asset_disposal_transaction_links
+                 WHERE asset_id = :asset_id',
+                ['asset_id' => $fixture['asset_id']]
+            ));
+
+            $assetJournalId = assetServiceTestJournalId($fixture['company_id'], 'asset_disposal', 'asset:' . $fixture['asset_id'] . ':disposal');
+            $harness->assertTrue($assetJournalId > 0);
+            $harness->assertSame(0.0, assetServiceTestJournalLineAmount($assetJournalId, assetServiceTestNominalId('1490'), 'debit'));
+            $harness->assertSame(0.0, assetServiceTestJournalLineAmount($assetJournalId, $fixture['bank_nominal_id'], 'debit'));
+        });
     }
 );
 
@@ -98,4 +194,243 @@ function assetServiceTestInsertNominal(string $prefix, string $name, string $acc
         'SELECT id FROM nominal_accounts WHERE code = :code LIMIT 1',
         ['code' => $code]
     );
+}
+
+function assetServiceTestRequireDisposalSchema(GeneratedServiceClassTestHarness $harness): void
+{
+    foreach (['asset_register', 'asset_disposal_transaction_links', 'transactions', 'journals', 'journal_lines'] as $table) {
+        if (!InterfaceDB::tableExists($table)) {
+            $harness->skip($table . ' table is not available.');
+        }
+    }
+
+    foreach (['1000', '1300', '1330', '1490', '4200', '6210'] as $code) {
+        if (assetServiceTestNominalId($code) <= 0) {
+            $harness->skip('Nominal ' . $code . ' is not available.');
+        }
+    }
+}
+
+function assetServiceTestCreateDisposalFixture(string $suffix): array
+{
+    $marker = (string)random_int(100000, 999999);
+    $companyId = (int)('81' . $marker);
+    $accountingPeriodId = (int)('82' . $marker);
+    $accountId = (int)('83' . $marker);
+    $uploadId = (int)('84' . $marker);
+    $assetId = (int)('85' . $marker);
+    $bankNominalId = assetServiceTestNominalId('1000');
+
+    InterfaceDB::prepareExecute(
+        'INSERT INTO companies (id, company_name, company_number, is_active)
+         VALUES (:id, :company_name, :company_number, 1)',
+        [
+            'id' => $companyId,
+            'company_name' => 'Asset Disposal ' . $suffix . ' ' . $marker,
+            'company_number' => 'AD' . substr($marker, 0, 6),
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end)
+         VALUES (:id, :company_id, :label, :period_start, :period_end)',
+        [
+            'id' => $accountingPeriodId,
+            'company_id' => $companyId,
+            'label' => 'FY ' . $marker,
+            'period_start' => '2026-01-01',
+            'period_end' => '2026-12-31',
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO company_accounts (id, company_id, account_name, account_type, nominal_account_id, is_active)
+         VALUES (:id, :company_id, :account_name, :account_type, :nominal_account_id, 1)',
+        [
+            'id' => $accountId,
+            'company_id' => $companyId,
+            'account_name' => 'Test Bank ' . $marker,
+            'account_type' => 'bank',
+            'nominal_account_id' => $bankNominalId,
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO statement_uploads (
+            id,
+            company_id,
+            accounting_period_id,
+            account_id,
+            statement_month,
+            original_filename,
+            stored_filename,
+            file_sha256
+         ) VALUES (
+            :id,
+            :company_id,
+            :accounting_period_id,
+            :account_id,
+            :statement_month,
+            :original_filename,
+            :stored_filename,
+            :file_sha256
+         )',
+        [
+            'id' => $uploadId,
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'account_id' => $accountId,
+            'statement_month' => '2026-07-01',
+            'original_filename' => 'asset-disposal-' . $marker . '.csv',
+            'stored_filename' => 'asset-disposal-' . $marker . '.csv',
+            'file_sha256' => hash('sha256', 'asset-disposal-upload-' . $marker),
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO asset_register (
+            id,
+            company_id,
+            asset_code,
+            description,
+            category,
+            nominal_account_id,
+            accum_dep_nominal_id,
+            purchase_date,
+            cost,
+            useful_life_years,
+            depreciation_method,
+            residual_value,
+            status
+         ) VALUES (
+            :id,
+            :company_id,
+            :asset_code,
+            :description,
+            :category,
+            :nominal_account_id,
+            :accum_dep_nominal_id,
+            :purchase_date,
+            :cost,
+            :useful_life_years,
+            :depreciation_method,
+            :residual_value,
+            :status
+         )',
+        [
+            'id' => $assetId,
+            'company_id' => $companyId,
+            'asset_code' => 'FA-T-' . $marker,
+            'description' => 'Disposal fixture asset ' . $marker,
+            'category' => 'tools_equipment',
+            'nominal_account_id' => assetServiceTestNominalId('1300'),
+            'accum_dep_nominal_id' => assetServiceTestNominalId('1330'),
+            'purchase_date' => '2026-01-10',
+            'cost' => 1000.00,
+            'useful_life_years' => 3,
+            'depreciation_method' => 'none',
+            'residual_value' => 0.00,
+            'status' => 'active',
+        ]
+    );
+
+    return [
+        'company_id' => $companyId,
+        'accounting_period_id' => $accountingPeriodId,
+        'account_id' => $accountId,
+        'upload_id' => $uploadId,
+        'asset_id' => $assetId,
+        'bank_nominal_id' => $bankNominalId,
+        'marker' => $marker,
+    ];
+}
+
+function assetServiceTestInsertTransaction(array $fixture, int $offset, string $date, float $amount, string $description, int $isInternalTransfer = 0): int
+{
+    $transactionId = (int)('86' . substr((string)$fixture['marker'], 0, 5) . $offset);
+    InterfaceDB::prepareExecute(
+        'INSERT INTO transactions (
+            id,
+            company_id,
+            accounting_period_id,
+            statement_upload_id,
+            account_id,
+            txn_date,
+            description,
+            amount,
+            currency,
+            dedupe_hash,
+            is_internal_transfer,
+            category_status
+         ) VALUES (
+            :id,
+            :company_id,
+            :accounting_period_id,
+            :statement_upload_id,
+            :account_id,
+            :txn_date,
+            :description,
+            :amount,
+            :currency,
+            :dedupe_hash,
+            :is_internal_transfer,
+            :category_status
+         )',
+        [
+            'id' => $transactionId,
+            'company_id' => $fixture['company_id'],
+            'accounting_period_id' => $fixture['accounting_period_id'],
+            'statement_upload_id' => $fixture['upload_id'],
+            'account_id' => $fixture['account_id'],
+            'txn_date' => $date,
+            'description' => $description . ' ' . $fixture['marker'] . ' ' . $offset,
+            'amount' => $amount,
+            'currency' => 'GBP',
+            'dedupe_hash' => hash('sha256', 'asset-disposal-transaction-' . $fixture['marker'] . '-' . $offset),
+            'is_internal_transfer' => $isInternalTransfer,
+            'category_status' => 'uncategorised',
+        ]
+    );
+
+    return $transactionId;
+}
+
+function assetServiceTestNominalId(string $code): int
+{
+    return (int)InterfaceDB::fetchColumn(
+        'SELECT id
+         FROM nominal_accounts
+         WHERE code = :code
+         LIMIT 1',
+        ['code' => $code]
+    );
+}
+
+function assetServiceTestJournalId(int $companyId, string $sourceType, string $sourceRef): int
+{
+    return (int)InterfaceDB::fetchColumn(
+        'SELECT id
+         FROM journals
+         WHERE company_id = :company_id
+           AND source_type = :source_type
+           AND source_ref = :source_ref
+         LIMIT 1',
+        [
+            'company_id' => $companyId,
+            'source_type' => $sourceType,
+            'source_ref' => $sourceRef,
+        ]
+    );
+}
+
+function assetServiceTestJournalLineAmount(int $journalId, int $nominalAccountId, string $side): float
+{
+    $side = $side === 'credit' ? 'credit' : 'debit';
+
+    return round((float)InterfaceDB::fetchColumn(
+        'SELECT COALESCE(SUM(' . $side . '), 0)
+         FROM journal_lines
+         WHERE journal_id = :journal_id
+           AND nominal_account_id = :nominal_account_id',
+        [
+            'journal_id' => $journalId,
+            'nominal_account_id' => $nominalAccountId,
+        ]
+    ), 2);
 }

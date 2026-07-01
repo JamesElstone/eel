@@ -1311,6 +1311,28 @@ CREATE TABLE `asset_register` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `asset_disposal_transaction_links`
+--
+
+DROP TABLE IF EXISTS `asset_disposal_transaction_links`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `asset_disposal_transaction_links` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `asset_id` bigint(20) NOT NULL,
+  `transaction_id` bigint(20) NOT NULL,
+  `linked_amount` decimal(12,2) NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_asset_disposal_transaction_links_asset` (`asset_id`),
+  UNIQUE KEY `uq_asset_disposal_transaction_links_transaction` (`transaction_id`),
+  CONSTRAINT `fk_asset_disposal_transaction_links_asset` FOREIGN KEY (`asset_id`) REFERENCES `asset_register` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_asset_disposal_transaction_links_transaction` FOREIGN KEY (`transaction_id`) REFERENCES `transactions` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `chk_asset_disposal_transaction_links_amount` CHECK (`linked_amount` > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `expense_claim_line_assets`
 --
 
@@ -1827,7 +1849,8 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_01_001_expense_add_claimant_card_permission.sql'),
   ('2026_07_01_002_expense_claim_create_card_permission.sql'),
   ('2026_07_01_003_expense_claim_line_assets.sql'),
-  ('2026_07_01_004_expense_claim_series_index.sql');
+  ('2026_07_01_004_expense_claim_series_index.sql'),
+  ('2026_07_01_005_asset_disposal_transaction_links.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

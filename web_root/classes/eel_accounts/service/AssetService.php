@@ -13,6 +13,9 @@ namespace eel_accounts\Service;
 final class AssetService
 {
     private const MANUAL_ASSET_OFFSET_ACCOUNT_TYPES = ['asset', 'liability', 'equity'];
+    private const DISPOSAL_CLEARING_NOMINAL_CODE = '1490';
+    private const DISPOSAL_SEARCH_DAYS_BEFORE = 1;
+    private const DISPOSAL_SEARCH_DAYS_AFTER = 3;
 
     private \eel_accounts\Service\TransactionCategorisationService $categorisationService;
     private \eel_accounts\Service\TransactionJournalService $transactionJournalService;
@@ -61,7 +64,14 @@ final class AssetService
         return $this->fetchAssetByCode((int)($values['company_id'] ?? 0), $assetCode);
     }
 
-    public function fetchPageData(int $companyId, int $accountingPeriodId, int|string $defaultBankNominalId = 0, int $prefillTransactionId = 0): array {
+    public function fetchPageData(
+        int $companyId,
+        int $accountingPeriodId,
+        int|string $defaultBankNominalId = 0,
+        int $prefillTransactionId = 0,
+        string $disposalSearchDate = '',
+        int $disposalSearchAssetId = 0
+    ): array {
         $defaultBankNominalId = max(0, (int)$defaultBankNominalId);
 
         if (!$this->hasRequiredSchema()) {
@@ -73,6 +83,7 @@ final class AssetService
                 'prefill_transaction' => null,
                 'default_bank_nominal_id' => $defaultBankNominalId,
                 'asset_categories' => self::assetCategoryOptions(),
+                'disposal_search' => $this->emptyDisposalSearch($disposalSearchDate, $disposalSearchAssetId),
                 'schema_ready' => false,
             ];
         }
@@ -85,6 +96,7 @@ final class AssetService
             'prefill_transaction' => $prefillTransactionId > 0 ? $this->fetchTransactionPrefill($companyId, $prefillTransactionId) : null,
             'default_bank_nominal_id' => $defaultBankNominalId,
             'asset_categories' => self::assetCategoryOptions(),
+            'disposal_search' => $this->fetchDisposalSearch($companyId, $disposalSearchDate, $disposalSearchAssetId),
             'schema_ready' => true,
         ];
     }
@@ -130,6 +142,77 @@ final class AssetService
              LEFT JOIN nominal_accounts na ON na.id = ar.nominal_account_id
              WHERE ar.company_id = :company_id
              ORDER BY ar.purchase_date DESC, ar.id DESC', ['company_id' => $companyId]);
+    }
+
+    public function fetchDisposalSearch(int $companyId, string $searchDate, int $assetId = 0): array {
+        $searchDate = trim($searchDate);
+        $search = $this->emptyDisposalSearch($searchDate, $assetId);
+
+        if ($companyId <= 0 || !$this->hasRequiredSchema()) {
+            return $search;
+        }
+        if ($searchDate === '') {
+            return $search;
+        }
+        if (!$this->isIsoDate($searchDate)) {
+            $search['errors'][] = 'Enter a valid disposal receipt search date.';
+            return $search;
+        }
+
+        $window = $this->disposalSearchWindow($searchDate);
+        $search['window_start'] = $window['start'];
+        $search['window_end'] = $window['end'];
+        $search['candidates'] = $this->fetchDisposalTransactionCandidates($companyId, $window['start'], $window['end']);
+
+        return $search;
+    }
+
+    public function fetchDisposalTransactionCandidates(int $companyId, string $windowStart, string $windowEnd): array {
+        if ($companyId <= 0 || !$this->hasRequiredSchema() || !$this->isIsoDate($windowStart) || !$this->isIsoDate($windowEnd)) {
+            return [];
+        }
+
+        return array_map(
+            static function (array $row): array {
+                return [
+                    'id' => (int)$row['id'],
+                    'txn_date' => (string)$row['txn_date'],
+                    'description' => (string)$row['description'],
+                    'reference' => (string)($row['reference'] ?? ''),
+                    'amount' => round(abs((float)$row['amount']), 2),
+                    'category_status' => (string)$row['category_status'],
+                    'nominal_label' => trim((string)($row['nominal_code'] ?? '')) !== ''
+                        ? (string)$row['nominal_code'] . ' - ' . (string)($row['nominal_name'] ?? '')
+                        : (string)($row['nominal_name'] ?? ''),
+                ];
+            },
+            \InterfaceDB::fetchAll(
+                'SELECT t.id,
+                        t.txn_date,
+                        t.description,
+                        t.reference,
+                        t.amount,
+                        t.category_status,
+                        n.code AS nominal_code,
+                        n.name AS nominal_name
+                 FROM transactions t
+                 LEFT JOIN nominal_accounts n ON n.id = t.nominal_account_id
+                 LEFT JOIN asset_disposal_transaction_links adtl ON adtl.transaction_id = t.id
+                 WHERE t.company_id = :company_id
+                   AND t.amount > 0
+                   AND t.txn_date BETWEEN :window_start AND :window_end
+                   AND COALESCE(t.is_internal_transfer, 0) = 0
+                   AND t.transfer_account_id IS NULL
+                   AND adtl.id IS NULL
+                 ORDER BY t.txn_date ASC, t.id ASC
+                 LIMIT 80',
+                [
+                    'company_id' => $companyId,
+                    'window_start' => $windowStart,
+                    'window_end' => $windowEnd,
+                ]
+            ) ?: []
+        );
     }
 
     public function createAssetFromTransaction(int $companyId, int $transactionId, array $payload, int $defaultBankNominalId): array {
@@ -386,22 +469,22 @@ final class AssetService
     }
 
     public function disposeAsset(int $companyId, int $assetId, string $disposalDate, float $proceeds, int $bankNominalId): array {
+        if (round($proceeds, 2) > 0.0) {
+            return ['success' => false, 'errors' => ['Select a receipt transaction before disposing an asset with proceeds.']];
+        }
+
+        return $this->disposeAssetAtNilValue($companyId, $assetId, $disposalDate);
+    }
+
+    public function disposeAssetAtNilValue(int $companyId, int $assetId, string $disposalDate): array {
         if (!$this->hasRequiredSchema()) {
             return ['success' => false, 'errors' => ['Run the fixed asset migration before posting disposals.']];
         }
 
         $asset = $this->fetchAsset($companyId, $assetId);
-        if ($asset === null) {
-            return ['success' => false, 'errors' => ['The selected asset could not be found.']];
-        }
-        if ((string)($asset['status'] ?? 'active') === 'disposed') {
-            return ['success' => false, 'errors' => ['This asset has already been disposed.']];
-        }
-        if (!$this->isIsoDate($disposalDate)) {
-            return ['success' => false, 'errors' => ['Enter a valid disposal date.']];
-        }
-        if ($bankNominalId <= 0) {
-            return ['success' => false, 'errors' => ['Set the default bank nominal before posting a disposal.']];
+        $validation = $this->validateDisposalAssetAndDate($asset, $disposalDate);
+        if ($validation !== []) {
+            return ['success' => false, 'errors' => $validation];
         }
 
         $accountingPeriodId = $this->resolveAccountingPeriodIdForDate($companyId, $disposalDate);
@@ -410,57 +493,13 @@ final class AssetService
         }
         (new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'dispose assets in this period');
 
-        $accumulatedDepreciation = $this->sumDepreciationToDate($assetId, $disposalDate);
-        $nbv = round(max(0.0, (float)$asset['cost'] - $accumulatedDepreciation), 2);
-        $profit = round($proceeds - $nbv, 2);
-
         $ownsTransaction = !\InterfaceDB::inTransaction();
         if ($ownsTransaction) {
             \InterfaceDB::beginTransaction();
         }
 
         try {
-            $journalId = $this->insertJournal([
-                'company_id' => $companyId,
-                'accounting_period_id' => $accountingPeriodId,
-                'source_type' => 'asset_disposal',
-                'source_ref' => 'asset:' . $assetId . ':disposal',
-                'journal_date' => $disposalDate,
-                'description' => 'Asset disposal ' . (string)$asset['asset_code'],
-            ]);
-
-            if ($proceeds > 0) {
-                $this->insertJournalLine($journalId, $bankNominalId, $proceeds, 0.0, 'Disposal proceeds');
-            }
-            if ($accumulatedDepreciation > 0) {
-                $this->insertJournalLine($journalId, (int)$asset['accum_dep_nominal_id'], $accumulatedDepreciation, 0.0, 'Remove accumulated depreciation');
-            }
-            if ($profit < 0) {
-                $this->insertJournalLine($journalId, $this->findNominalIdByCode('6210'), abs($profit), 0.0, 'Loss on disposal');
-            }
-
-            $this->insertJournalLine($journalId, (int)$asset['nominal_account_id'], 0.0, (float)$asset['cost'], 'Derecognise asset cost');
-
-            if ($profit > 0) {
-                $this->insertJournalLine($journalId, $this->findNominalIdByCode('4200'), 0.0, $profit, 'Profit on disposal');
-            }
-
-            $stmt = \InterfaceDB::prepare(
-                'UPDATE asset_register
-                 SET status = :status,
-                     disposal_date = :disposal_date,
-                     disposal_proceeds = :disposal_proceeds,
-                     updated_at = CURRENT_TIMESTAMP
-                 WHERE id = :id
-                   AND company_id = :company_id'
-            );
-            $stmt->execute([
-                'status' => 'disposed',
-                'disposal_date' => $disposalDate,
-                'disposal_proceeds' => round($proceeds, 2),
-                'id' => $assetId,
-                'company_id' => $companyId,
-            ]);
+            $summary = $this->postAssetDisposalJournalAndStatus($companyId, $asset, $accountingPeriodId, $disposalDate, 0.0, null);
 
             if ($ownsTransaction) {
                 \InterfaceDB::commit();
@@ -475,18 +514,91 @@ final class AssetService
 
         $this->refreshDerivedTaxData($companyId);
 
-        return [
-            'success' => true,
-            'messages' => [
-                sprintf(
-                    'Asset disposed. Net book value %s, proceeds %s, %s %s.',
-                    number_format($nbv, 2, '.', ''),
-                    number_format($proceeds, 2, '.', ''),
-                    $profit >= 0 ? 'profit' : 'loss',
-                    number_format(abs($profit), 2, '.', '')
-                ),
-            ],
-        ];
+        return $this->disposalSuccessResponse($summary);
+    }
+
+    public function disposeAssetWithTransaction(int $companyId, int $assetId, int $transactionId, int $defaultBankNominalId): array {
+        if (!$this->hasRequiredSchema()) {
+            return ['success' => false, 'errors' => ['Run the fixed asset migration before posting disposals.']];
+        }
+        if ($defaultBankNominalId <= 0) {
+            return ['success' => false, 'errors' => ['Set the default bank nominal before posting a disposal receipt.']];
+        }
+
+        $asset = $this->fetchAsset($companyId, $assetId);
+        $transaction = $this->categorisationService->fetchTransaction($transactionId);
+        $transactionValidation = $this->validateDisposalTransaction($companyId, $transaction);
+        if ($asset === null) {
+            return ['success' => false, 'errors' => ['The selected asset could not be found.']];
+        }
+        if ($transactionValidation !== []) {
+            return ['success' => false, 'errors' => $transactionValidation];
+        }
+
+        $disposalDate = (string)$transaction['txn_date'];
+        $validation = $this->validateDisposalAssetAndDate($asset, $disposalDate);
+        if ($validation !== []) {
+            return ['success' => false, 'errors' => $validation];
+        }
+
+        $accountingPeriodId = $this->resolveAccountingPeriodIdForDate($companyId, $disposalDate);
+        if ($accountingPeriodId <= 0) {
+            return ['success' => false, 'errors' => ['No accounting period exists for the receipt transaction date.']];
+        }
+
+        $clearingNominalId = $this->findNominalIdByCode(self::DISPOSAL_CLEARING_NOMINAL_CODE);
+        if ($clearingNominalId <= 0) {
+            return ['success' => false, 'errors' => ['The asset disposal clearing nominal is missing. Run the asset disposal migration.']];
+        }
+
+        (new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'dispose assets in this period');
+
+        $proceeds = round(abs((float)$transaction['amount']), 2);
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
+        }
+
+        try {
+            $saveResult = $this->categorisationService->saveManualCategorisation(
+                $transactionId,
+                $clearingNominalId,
+                null,
+                false,
+                'asset_disposal',
+                true
+            );
+            if (empty($saveResult['success'])) {
+                throw new \RuntimeException(implode(' ', array_map('strval', $saveResult['errors'] ?? ['The receipt transaction could not be categorised.'])));
+            }
+
+            $journalResult = $this->transactionJournalService->syncJournalForTransaction(
+                $transactionId,
+                $defaultBankNominalId,
+                'asset_disposal',
+                true
+            );
+            if (empty($journalResult['success'])) {
+                throw new \RuntimeException(implode(' ', array_map('strval', $journalResult['errors'] ?? ['The receipt transaction journal could not be posted.'])));
+            }
+
+            $summary = $this->postAssetDisposalJournalAndStatus($companyId, $asset, $accountingPeriodId, $disposalDate, $proceeds, $clearingNominalId);
+            $this->insertDisposalTransactionLink($assetId, $transactionId, $proceeds);
+
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+
+            return ['success' => false, 'errors' => ['The asset disposal could not be posted: ' . $exception->getMessage()]];
+        }
+
+        $this->refreshDerivedTaxData($companyId);
+
+        return $this->disposalSuccessResponse($summary);
     }
 
     public function fetchTaxView(int $companyId, int $accountingPeriodId): ?array {
@@ -510,6 +622,193 @@ final class AssetService
             'losses_used' => 0.0,
             'losses_carried_forward' => 0.0,
             'taxable_profit' => 0.0,
+        ];
+    }
+
+    private function emptyDisposalSearch(string $searchDate, int $assetId): array
+    {
+        $searchDate = trim($searchDate) !== '' ? trim($searchDate) : (new \DateTimeImmutable('now'))->format('Y-m-d');
+        $window = $this->isIsoDate($searchDate)
+            ? $this->disposalSearchWindow($searchDate)
+            : ['start' => '', 'end' => ''];
+
+        return [
+            'asset_id' => max(0, $assetId),
+            'search_date' => $searchDate,
+            'window_start' => $window['start'],
+            'window_end' => $window['end'],
+            'candidates' => [],
+            'errors' => [],
+        ];
+    }
+
+    private function disposalSearchWindow(string $searchDate): array
+    {
+        $date = new \DateTimeImmutable($searchDate);
+
+        return [
+            'start' => $date->modify('-' . self::DISPOSAL_SEARCH_DAYS_BEFORE . ' day')->format('Y-m-d'),
+            'end' => $date->modify('+' . self::DISPOSAL_SEARCH_DAYS_AFTER . ' days')->format('Y-m-d'),
+        ];
+    }
+
+    private function validateDisposalAssetAndDate(?array $asset, string $disposalDate): array
+    {
+        if ($asset === null) {
+            return ['The selected asset could not be found.'];
+        }
+        if ((string)($asset['status'] ?? 'active') === 'disposed') {
+            return ['This asset has already been disposed.'];
+        }
+        if (!$this->isIsoDate($disposalDate)) {
+            return ['Enter a valid disposal date.'];
+        }
+
+        return [];
+    }
+
+    private function validateDisposalTransaction(int $companyId, ?array $transaction): array
+    {
+        if ($transaction === null || (int)($transaction['company_id'] ?? 0) !== $companyId) {
+            return ['The selected receipt transaction could not be found for this company.'];
+        }
+        if (round((float)($transaction['amount'] ?? 0), 2) <= 0.0) {
+            return ['Select an incoming receipt transaction for disposal proceeds.'];
+        }
+        if ((int)($transaction['is_internal_transfer'] ?? 0) === 1 || (int)($transaction['transfer_account_id'] ?? 0) > 0) {
+            return ['Transfer rows cannot be used as asset disposal proceeds.'];
+        }
+        if ($this->transactionHasAssetDisposalLink((int)$transaction['id'])) {
+            return ['This receipt transaction is already linked to an asset disposal.'];
+        }
+
+        return [];
+    }
+
+    private function postAssetDisposalJournalAndStatus(
+        int $companyId,
+        array $asset,
+        int $accountingPeriodId,
+        string $disposalDate,
+        float $proceeds,
+        ?int $clearingNominalId
+    ): array {
+        $assetId = (int)$asset['id'];
+        $proceeds = round(max(0.0, $proceeds), 2);
+        $accumulatedDepreciation = $this->sumDepreciationToDate($assetId, $disposalDate);
+        $nbv = round(max(0.0, (float)$asset['cost'] - $accumulatedDepreciation), 2);
+        $profit = round($proceeds - $nbv, 2);
+
+        $journalId = $this->insertJournal([
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'source_type' => 'asset_disposal',
+            'source_ref' => 'asset:' . $assetId . ':disposal',
+            'journal_date' => $disposalDate,
+            'description' => 'Asset disposal ' . (string)$asset['asset_code'],
+        ]);
+
+        if ($proceeds > 0) {
+            if ($clearingNominalId === null || $clearingNominalId <= 0) {
+                throw new \RuntimeException('The asset disposal clearing nominal is missing.');
+            }
+            $this->insertJournalLine($journalId, $clearingNominalId, $proceeds, 0.0, 'Clear disposal proceeds');
+        }
+        if ($accumulatedDepreciation > 0) {
+            $this->insertJournalLine($journalId, (int)$asset['accum_dep_nominal_id'], $accumulatedDepreciation, 0.0, 'Remove accumulated depreciation');
+        }
+        if ($profit < 0) {
+            $this->insertJournalLine($journalId, $this->findNominalIdByCode('6210'), abs($profit), 0.0, 'Loss on disposal');
+        }
+
+        $this->insertJournalLine($journalId, (int)$asset['nominal_account_id'], 0.0, (float)$asset['cost'], 'Derecognise asset cost');
+
+        if ($profit > 0) {
+            $this->insertJournalLine($journalId, $this->findNominalIdByCode('4200'), 0.0, $profit, 'Profit on disposal');
+        }
+
+        $this->markAssetDisposed($companyId, $assetId, $disposalDate, $proceeds);
+
+        return [
+            'nbv' => $nbv,
+            'proceeds' => $proceeds,
+            'profit' => $profit,
+        ];
+    }
+
+    private function markAssetDisposed(int $companyId, int $assetId, string $disposalDate, float $proceeds): void
+    {
+        $stmt = \InterfaceDB::prepare(
+            'UPDATE asset_register
+             SET status = :status,
+                 disposal_date = :disposal_date,
+                 disposal_proceeds = :disposal_proceeds,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = :id
+               AND company_id = :company_id'
+        );
+        $stmt->execute([
+            'status' => 'disposed',
+            'disposal_date' => $disposalDate,
+            'disposal_proceeds' => round($proceeds, 2),
+            'id' => $assetId,
+            'company_id' => $companyId,
+        ]);
+    }
+
+    private function insertDisposalTransactionLink(int $assetId, int $transactionId, float $amount): void
+    {
+        $stmt = \InterfaceDB::prepare(
+            'INSERT INTO asset_disposal_transaction_links (
+                asset_id,
+                transaction_id,
+                linked_amount,
+                created_at
+             ) VALUES (
+                :asset_id,
+                :transaction_id,
+                :linked_amount,
+                CURRENT_TIMESTAMP
+             )'
+        );
+        $stmt->execute([
+            'asset_id' => $assetId,
+            'transaction_id' => $transactionId,
+            'linked_amount' => round($amount, 2),
+        ]);
+    }
+
+    private function transactionHasAssetDisposalLink(int $transactionId): bool
+    {
+        if ($transactionId <= 0 || !\InterfaceDB::tableExists('asset_disposal_transaction_links')) {
+            return false;
+        }
+
+        return (int)\InterfaceDB::fetchColumn(
+            'SELECT EXISTS(
+                SELECT 1
+                FROM asset_disposal_transaction_links
+                WHERE transaction_id = :transaction_id
+            )',
+            ['transaction_id' => $transactionId]
+        ) === 1;
+    }
+
+    private function disposalSuccessResponse(array $summary): array
+    {
+        $profit = round((float)($summary['profit'] ?? 0), 2);
+
+        return [
+            'success' => true,
+            'messages' => [
+                sprintf(
+                    'Asset disposed. Net book value %s, proceeds %s, %s %s.',
+                    number_format((float)($summary['nbv'] ?? 0), 2, '.', ''),
+                    number_format((float)($summary['proceeds'] ?? 0), 2, '.', ''),
+                    $profit >= 0 ? 'profit' : 'loss',
+                    number_format(abs($profit), 2, '.', '')
+                ),
+            ],
         ];
     }
 
@@ -1124,6 +1423,7 @@ final class AssetService
         try {
             $this->schemaReady = \InterfaceDB::tableExists('asset_register')
                 && \InterfaceDB::tableExists('asset_depreciation_entries')
+                && \InterfaceDB::tableExists('asset_disposal_transaction_links')
                 && \InterfaceDB::tableExists('accounting_period_adjustments')
                 && \InterfaceDB::tableExists('tax_loss_carryforwards');
         } catch (\Throwable) {

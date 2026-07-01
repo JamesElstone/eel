@@ -30,7 +30,7 @@ $harness->run(_asset_createCard::class, static function (GeneratedServiceClassTe
         $harness->assertSame('fetchNominalAccounts', $nominalAccountsService['method'] ?? null);
     });
 
-    $harness->check(_asset_createCard::class, 'renders category and credit nominal options', static function () use ($harness, $card): void {
+    $harness->check(_asset_createCard::class, 'renders manual reason and funding nominal options', static function () use ($harness, $card): void {
         $html = $card->render([
             'company' => [
                 'id' => 7,
@@ -82,6 +82,12 @@ $harness->run(_asset_createCard::class, static function (GeneratedServiceClassTe
 
         $harness->assertTrue(str_contains($html, 'class="asset-create-form"'));
         $harness->assertTrue(str_contains($html, 'class="asset-create-controls"'));
+        $harness->assertTrue(str_contains($html, 'name="card_action" value="Asset"'));
+        $harness->assertTrue(str_contains($html, 'name="global_action" value="create_manual_asset"'));
+        $harness->assertTrue(str_contains($html, 'name="manual_addition_reason" required'));
+        $harness->assertTrue(str_contains($html, 'Supplier invoice pending payment'));
+        $harness->assertTrue(str_contains($html, 'Opening / historical asset'));
+        $harness->assertTrue(str_contains($html, 'Funding / clearing nominal'));
         $harness->assertTrue(str_contains($html, '<option value="tools_equipment">Tools &amp; Equipment</option>'));
         $harness->assertTrue(str_contains($html, '<option value="42" selected>'));
         $harness->assertTrue(str_contains($html, '<option value="43">'));
@@ -89,5 +95,38 @@ $harness->run(_asset_createCard::class, static function (GeneratedServiceClassTe
         $harness->assertSame(false, str_contains($html, '<option value="45">'));
         $harness->assertSame(false, str_contains($html, '<option value="46">'));
         $harness->assertSame(false, str_contains($html, '<option value="47">'));
+    });
+
+    $harness->check(_asset_createCard::class, 'transaction-prefilled creation omits manual-only fields', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => [
+                'id' => 7,
+                'accounting_period_id' => 22,
+            ],
+            'services' => [
+                'assetPageData' => [
+                    'default_bank_nominal_id' => 42,
+                    'prefill_transaction' => [
+                        'transaction_id' => 91,
+                        'description' => 'Imported drill purchase',
+                        'purchase_date' => '2026-06-18',
+                        'cost' => '240.00',
+                    ],
+                ],
+                'nominal_accounts' => [[
+                    'id' => 42,
+                    'code' => '1000',
+                    'name' => 'Bank',
+                    'account_type' => 'asset',
+                ]],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, 'name="card_action" value="Asset"'));
+        $harness->assertTrue(str_contains($html, 'name="global_action" value="create_asset_from_transaction"'));
+        $harness->assertTrue(str_contains($html, 'name="transaction_id" value="91"'));
+        $harness->assertSame(false, str_contains($html, 'name="manual_addition_reason"'));
+        $harness->assertSame(false, str_contains($html, 'name="offset_nominal_id"'));
+        $harness->assertSame(false, str_contains($html, 'Funding / clearing nominal'));
     });
 });

@@ -79,6 +79,7 @@ final class TestPageArchitectureHarness
         $this->assertSame(
             [
                 'asset_create',
+                'asset_reconcile_manual',
                 'asset_register',
                 'asset_tax',
             ],

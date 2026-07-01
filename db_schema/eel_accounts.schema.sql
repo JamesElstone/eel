@@ -1286,6 +1286,8 @@ CREATE TABLE `asset_register` (
   `linked_journal_id` bigint(20) DEFAULT NULL,
   `linked_transaction_id` bigint(20) DEFAULT NULL,
   `linked_expense_claim_line_id` bigint(20) DEFAULT NULL,
+  `manual_addition_reason` varchar(64) DEFAULT NULL,
+  `manual_offset_nominal_id` int(11) DEFAULT NULL,
   `disposal_date` date DEFAULT NULL,
   `disposal_proceeds` decimal(12,2) DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
@@ -1298,12 +1300,15 @@ CREATE TABLE `asset_register` (
   KEY `idx_asset_register_linked_journal` (`linked_journal_id`),
   KEY `idx_asset_register_linked_transaction` (`linked_transaction_id`),
   KEY `idx_asset_register_expense_claim_line` (`linked_expense_claim_line_id`),
+  KEY `idx_asset_register_manual_reconcile` (`company_id`,`manual_addition_reason`,`linked_transaction_id`),
+  KEY `idx_asset_register_manual_offset_nominal` (`manual_offset_nominal_id`),
   CONSTRAINT `fk_asset_register_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_asset_register_nominal` FOREIGN KEY (`nominal_account_id`) REFERENCES `nominal_accounts` (`id`) ON UPDATE CASCADE,
   CONSTRAINT `fk_asset_register_accum_dep_nominal` FOREIGN KEY (`accum_dep_nominal_id`) REFERENCES `nominal_accounts` (`id`) ON UPDATE CASCADE,
   CONSTRAINT `fk_asset_register_linked_journal` FOREIGN KEY (`linked_journal_id`) REFERENCES `journals` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_asset_register_linked_transaction` FOREIGN KEY (`linked_transaction_id`) REFERENCES `transactions` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_asset_register_expense_claim_line` FOREIGN KEY (`linked_expense_claim_line_id`) REFERENCES `expense_claim_lines` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_asset_register_manual_offset_nominal` FOREIGN KEY (`manual_offset_nominal_id`) REFERENCES `nominal_accounts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `chk_asset_register_cost` CHECK (`cost` > 0),
   CONSTRAINT `chk_asset_register_useful_life` CHECK (`useful_life_years` > 0),
   CONSTRAINT `chk_asset_register_residual` CHECK (`residual_value` >= 0)
@@ -1850,7 +1855,8 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_01_002_expense_claim_create_card_permission.sql'),
   ('2026_07_01_003_expense_claim_line_assets.sql'),
   ('2026_07_01_004_expense_claim_series_index.sql'),
-  ('2026_07_01_005_asset_disposal_transaction_links.sql');
+  ('2026_07_01_005_asset_disposal_transaction_links.sql'),
+  ('2026_07_01_007_manual_asset_reconciliation.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

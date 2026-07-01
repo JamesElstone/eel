@@ -13,6 +13,12 @@ namespace eel_accounts\Service;
 final class AssetService
 {
     private const MANUAL_ASSET_OFFSET_ACCOUNT_TYPES = ['asset', 'liability', 'equity'];
+    private const MANUAL_ASSET_REASON_SUPPLIER_PENDING = 'supplier_invoice_pending_payment';
+    private const MANUAL_ASSET_REASON_PERSONAL_PENDING = 'personal_payment_or_expense_claim_pending';
+    private const MANUAL_ASSET_REASON_DELAYED_BANK_CSV = 'delayed_bank_csv';
+    private const MANUAL_ASSET_REASON_OPENING_HISTORICAL = 'opening_or_historical_asset';
+    private const MANUAL_ASSET_RECONCILE_DAYS_BEFORE = 7;
+    private const MANUAL_ASSET_RECONCILE_DAYS_AFTER = 45;
     private const DISPOSAL_CLEARING_NOMINAL_CODE = '1490';
     private const DISPOSAL_SEARCH_DAYS_BEFORE = 1;
     private const DISPOSAL_SEARCH_DAYS_AFTER = 3;
@@ -44,6 +50,16 @@ final class AssetService
             'plant_machinery' => ['cost' => '1310', 'accum' => '1340'],
             default => ['cost' => '1320', 'accum' => '1350'],
         };
+    }
+
+    public static function manualAdditionReasonOptions(): array
+    {
+        return [
+            self::MANUAL_ASSET_REASON_SUPPLIER_PENDING => 'Supplier invoice pending payment',
+            self::MANUAL_ASSET_REASON_PERSONAL_PENDING => 'Personal payment / expense claim pending',
+            self::MANUAL_ASSET_REASON_DELAYED_BANK_CSV => 'Delayed bank CSV',
+            self::MANUAL_ASSET_REASON_OPENING_HISTORICAL => 'Opening / historical asset',
+        ];
     }
 
     public function normaliseAssetValues(int $companyId, array $payload, array $defaults = []): array
@@ -215,6 +231,152 @@ final class AssetService
         );
     }
 
+    public function fetchManualAssetReconciliationData(int $companyId): array
+    {
+        $assets = $this->fetchManualAssetsNeedingReconciliation($companyId);
+
+        foreach ($assets as $index => $asset) {
+            $assets[$index]['candidates'] = $this->fetchManualAssetReconciliationCandidates($companyId, $asset);
+        }
+
+        return [
+            'assets' => $assets,
+            'manual_addition_reasons' => self::manualAdditionReasonOptions(),
+        ];
+    }
+
+    public function fetchManualAssetsNeedingReconciliation(int $companyId): array
+    {
+        if ($companyId <= 0 || !$this->hasRequiredSchema()) {
+            return [];
+        }
+
+        $reasons = $this->manualAssetReconciliationReasons();
+        if ($reasons === []) {
+            return [];
+        }
+
+        $placeholders = implode(', ', array_map(static fn(int $index): string => ':reason_' . $index, array_keys($reasons)));
+        $params = ['company_id' => $companyId];
+        foreach (array_values($reasons) as $index => $reason) {
+            $params['reason_' . $index] = $reason;
+        }
+
+        return array_map(
+            function (array $row): array {
+                return [
+                    'id' => (int)$row['id'],
+                    'asset_code' => (string)$row['asset_code'],
+                    'description' => (string)$row['description'],
+                    'purchase_date' => (string)$row['purchase_date'],
+                    'cost' => round((float)$row['cost'], 2),
+                    'manual_addition_reason' => (string)$row['manual_addition_reason'],
+                    'manual_addition_reason_label' => $this->manualAdditionReasonLabel((string)$row['manual_addition_reason']),
+                    'manual_offset_nominal_id' => (int)$row['manual_offset_nominal_id'],
+                    'manual_offset_nominal_label' => FormattingFramework::nominalLabel([
+                        'code' => (string)($row['offset_nominal_code'] ?? ''),
+                        'name' => (string)($row['offset_nominal_name'] ?? ''),
+                    ], ' '),
+                    'linked_journal_id' => (int)($row['linked_journal_id'] ?? 0),
+                ];
+            },
+            \InterfaceDB::fetchAll(
+                'SELECT ar.id,
+                        ar.asset_code,
+                        ar.description,
+                        ar.purchase_date,
+                        ar.cost,
+                        ar.manual_addition_reason,
+                        ar.manual_offset_nominal_id,
+                        ar.linked_journal_id,
+                        mno.code AS offset_nominal_code,
+                        mno.name AS offset_nominal_name
+                 FROM asset_register ar
+                 INNER JOIN nominal_accounts mno ON mno.id = ar.manual_offset_nominal_id
+                 INNER JOIN journals j ON j.id = ar.linked_journal_id
+                 WHERE ar.company_id = :company_id
+                   AND ar.status = \'active\'
+                   AND ar.linked_transaction_id IS NULL
+                   AND ar.linked_expense_claim_line_id IS NULL
+                   AND ar.manual_offset_nominal_id IS NOT NULL
+                   AND ar.manual_addition_reason IN (' . $placeholders . ')
+                   AND j.source_type = \'asset_register\'
+                 ORDER BY ar.purchase_date DESC, ar.id DESC',
+                $params
+            ) ?: []
+        );
+    }
+
+    public function fetchManualAssetReconciliationCandidates(int $companyId, array $asset): array
+    {
+        $assetId = (int)($asset['id'] ?? 0);
+        $purchaseDate = (string)($asset['purchase_date'] ?? '');
+        $cost = round((float)($asset['cost'] ?? 0), 2);
+        if ($companyId <= 0 || $assetId <= 0 || $cost <= 0 || !$this->isIsoDate($purchaseDate) || !$this->hasRequiredSchema()) {
+            return [];
+        }
+
+        $window = $this->manualAssetReconciliationWindow($purchaseDate);
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT t.id,
+                    t.accounting_period_id,
+                    t.txn_date,
+                    t.description,
+                    t.reference,
+                    t.amount,
+                    t.category_status,
+                    t.nominal_account_id,
+                    n.code AS nominal_code,
+                    n.name AS nominal_name
+             FROM transactions t
+             LEFT JOIN nominal_accounts n ON n.id = t.nominal_account_id
+             WHERE t.company_id = :company_id
+               AND t.amount < 0
+               AND ABS(ABS(t.amount) - :cost) <= 0.01
+               AND t.txn_date BETWEEN :window_start AND :window_end
+               AND COALESCE(t.is_internal_transfer, 0) = 0
+               AND t.transfer_account_id IS NULL
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM asset_register linked_asset
+                   WHERE linked_asset.linked_transaction_id = t.id
+               )
+             ORDER BY t.txn_date ASC, t.id ASC
+             LIMIT 80',
+            [
+                'company_id' => $companyId,
+                'cost' => $cost,
+                'window_start' => $window['start'],
+                'window_end' => $window['end'],
+            ]
+        ) ?: [];
+
+        $lockService = new \eel_accounts\Service\YearEndLockService();
+        $candidates = [];
+        foreach ($rows as $row) {
+            $accountingPeriodId = (int)($row['accounting_period_id'] ?? 0);
+            if ($lockService->isLocked($companyId, $accountingPeriodId)) {
+                continue;
+            }
+
+            $candidates[] = [
+                'id' => (int)$row['id'],
+                'txn_date' => (string)$row['txn_date'],
+                'description' => (string)$row['description'],
+                'reference' => (string)($row['reference'] ?? ''),
+                'amount' => round(abs((float)$row['amount']), 2),
+                'category_status' => (string)$row['category_status'],
+                'nominal_account_id' => (int)($row['nominal_account_id'] ?? 0),
+                'nominal_label' => trim((string)($row['nominal_code'] ?? '')) !== ''
+                    ? (string)$row['nominal_code'] . ' - ' . (string)($row['nominal_name'] ?? '')
+                    : '',
+                'has_derived_journal' => $this->transactionJournalService->transactionHasDerivedJournal((int)$row['id']) ? 1 : 0,
+            ];
+        }
+
+        return $candidates;
+    }
+
     public function createAssetFromTransaction(int $companyId, int $transactionId, array $payload, int $defaultBankNominalId): array {
         if (!$this->hasRequiredSchema()) {
             return ['success' => false, 'errors' => ['Run the fixed asset migration before using the asset register.']];
@@ -303,6 +465,10 @@ final class AssetService
             return ['success' => false, 'errors' => ['Run the fixed asset migration before using the asset register.']];
         }
 
+        $manualAdditionReason = $this->normaliseManualAdditionReason((string)($payload['manual_addition_reason'] ?? ''));
+        if ($manualAdditionReason === '') {
+            return ['success' => false, 'errors' => ['Choose a manual addition reason before posting a manual asset.']];
+        }
         if ($offsetNominalId <= 0) {
             return ['success' => false, 'errors' => ['Choose an offset nominal before posting a manual asset.']];
         }
@@ -347,6 +513,8 @@ final class AssetService
                 'asset_code' => $assetCode,
                 'linked_transaction_id' => null,
                 'linked_journal_id' => $journalId,
+                'manual_addition_reason' => $manualAdditionReason,
+                'manual_offset_nominal_id' => $offsetNominalId,
             ]);
             $asset = $this->fetchAssetByCode($companyId, $assetCode);
             if ($asset === null) {
@@ -365,6 +533,120 @@ final class AssetService
 
             return ['success' => false, 'errors' => ['The manual asset could not be posted: ' . $exception->getMessage()]];
         }
+    }
+
+    public function reconcileManualAssetWithTransaction(
+        int $companyId,
+        int $assetId,
+        int $transactionId,
+        int $defaultBankNominalId,
+        bool $confirmedJournalRebuild = false
+    ): array {
+        if (!$this->hasRequiredSchema()) {
+            return ['success' => false, 'errors' => ['Run the fixed asset migration before reconciling manual assets.']];
+        }
+
+        $asset = $this->fetchAsset($companyId, $assetId);
+        if ($asset === null) {
+            return ['success' => false, 'errors' => ['The selected manual asset could not be found.']];
+        }
+
+        $manualOffsetNominalId = (int)($asset['manual_offset_nominal_id'] ?? 0);
+        if (!$this->manualAssetRequiresReconciliation((string)($asset['manual_addition_reason'] ?? ''))) {
+            return ['success' => false, 'errors' => ['This asset does not require manual reconciliation.']];
+        }
+        if ((int)($asset['linked_transaction_id'] ?? 0) > 0) {
+            return ['success' => false, 'errors' => ['This asset is already linked to an imported transaction.']];
+        }
+        if ($manualOffsetNominalId <= 0 || !$this->isManualAssetOffsetNominal($manualOffsetNominalId)) {
+            return ['success' => false, 'errors' => ['The manual asset offset nominal is missing or inactive.']];
+        }
+
+        $candidateIds = array_fill_keys(array_map(
+            static fn(array $candidate): int => (int)$candidate['id'],
+            $this->fetchManualAssetReconciliationCandidates($companyId, $asset)
+        ), true);
+        if (!isset($candidateIds[$transactionId])) {
+            return ['success' => false, 'errors' => ['Choose a matching unreconciled outgoing transaction for this manual asset.']];
+        }
+
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
+        }
+
+        try {
+            $saveResult = $this->categorisationService->saveManualCategorisation(
+                $transactionId,
+                $manualOffsetNominalId,
+                null,
+                false,
+                'manual_asset_reconciliation',
+                $confirmedJournalRebuild
+            );
+            if (!empty($saveResult['requires_confirmation'])) {
+                if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                    \InterfaceDB::rollBack();
+                }
+                return [
+                    'success' => false,
+                    'requires_confirmation' => true,
+                    'errors' => ['Confirm journal rebuild before reconciling this manual asset.'],
+                ];
+            }
+            if (!empty($saveResult['errors'])) {
+                throw new \RuntimeException(implode(' ', array_map('strval', $saveResult['errors'])));
+            }
+
+            $journalResult = $this->transactionJournalService->syncJournalForTransaction(
+                $transactionId,
+                $defaultBankNominalId,
+                'manual_asset_reconciliation',
+                $confirmedJournalRebuild
+            );
+            if (!empty($journalResult['requires_confirmation'])) {
+                if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                    \InterfaceDB::rollBack();
+                }
+                return [
+                    'success' => false,
+                    'requires_confirmation' => true,
+                    'errors' => ['Confirm journal rebuild before reconciling this manual asset.'],
+                ];
+            }
+            if (!empty($journalResult['errors'])) {
+                throw new \RuntimeException(implode(' ', array_map('strval', $journalResult['errors'])));
+            }
+
+            \InterfaceDB::prepareExecute(
+                'UPDATE asset_register
+                 SET linked_transaction_id = :linked_transaction_id,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = :id
+                   AND company_id = :company_id',
+                [
+                    'linked_transaction_id' => $transactionId,
+                    'id' => $assetId,
+                    'company_id' => $companyId,
+                ]
+            );
+
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+
+            return ['success' => false, 'errors' => ['The manual asset could not be reconciled: ' . $exception->getMessage()]];
+        }
+
+        return [
+            'success' => true,
+            'asset' => $this->fetchAsset($companyId, $assetId),
+            'messages' => ['Manual asset reconciled to the imported transaction.'],
+        ];
     }
 
     public function runDepreciation(int $companyId, int $accountingPeriodId): array {
@@ -1121,6 +1403,44 @@ final class AssetService
             $errors[] = 'Enter an asset description.';
         }
         if (!array_key_exists($category, self::assetCategoryOptions())) {
+    private function normaliseManualAdditionReason(string $reason): string
+    {
+        $reason = trim($reason);
+
+        return array_key_exists($reason, self::manualAdditionReasonOptions()) ? $reason : '';
+    }
+
+    private function manualAdditionReasonLabel(string $reason): string
+    {
+        $options = self::manualAdditionReasonOptions();
+
+        return (string)($options[$reason] ?? $reason);
+    }
+
+    private function manualAssetReconciliationReasons(): array
+    {
+        return [
+            self::MANUAL_ASSET_REASON_SUPPLIER_PENDING,
+            self::MANUAL_ASSET_REASON_PERSONAL_PENDING,
+            self::MANUAL_ASSET_REASON_DELAYED_BANK_CSV,
+        ];
+    }
+
+    private function manualAssetRequiresReconciliation(string $reason): bool
+    {
+        return in_array($reason, $this->manualAssetReconciliationReasons(), true);
+    }
+
+    private function manualAssetReconciliationWindow(string $purchaseDate): array
+    {
+        $date = new \DateTimeImmutable($purchaseDate);
+
+        return [
+            'start' => $date->modify('-' . self::MANUAL_ASSET_RECONCILE_DAYS_BEFORE . ' days')->format('Y-m-d'),
+            'end' => $date->modify('+' . self::MANUAL_ASSET_RECONCILE_DAYS_AFTER . ' days')->format('Y-m-d'),
+        ];
+    }
+
             $errors[] = 'Choose a valid asset category.';
         }
         if (!$this->isIsoDate($purchaseDate)) {
@@ -1139,6 +1459,8 @@ final class AssetService
             $errors[] = 'Residual value must be zero or less than cost.';
         }
         if ($accountingPeriodId <= 0 && $purchaseDate !== '') {
+                manual_addition_reason,
+                manual_offset_nominal_id,
             $accountingPeriodId = $this->resolveAccountingPeriodIdForDate($companyId, $purchaseDate);
         }
         if ($accountingPeriodId <= 0) {
@@ -1159,6 +1481,8 @@ final class AssetService
                 'accounting_period_id' => $accountingPeriodId,
                 'description' => $description,
                 'category' => $category,
+                :manual_addition_reason,
+                :manual_offset_nominal_id,
                 'nominal_account_id' => $nominalAccountId,
                 'accum_dep_nominal_id' => $accumDepNominalId,
                 'purchase_date' => $purchaseDate,
@@ -1181,6 +1505,8 @@ final class AssetService
                 company_id,
                 asset_code,
                 description,
+            'manual_addition_reason' => $links['manual_addition_reason'] ?? null,
+            'manual_offset_nominal_id' => $links['manual_offset_nominal_id'] ?? null,
                 category,
                 nominal_account_id,
                 accum_dep_nominal_id,
@@ -1425,7 +1751,9 @@ final class AssetService
                 && \InterfaceDB::tableExists('asset_depreciation_entries')
                 && \InterfaceDB::tableExists('asset_disposal_transaction_links')
                 && \InterfaceDB::tableExists('accounting_period_adjustments')
-                && \InterfaceDB::tableExists('tax_loss_carryforwards');
+                && \InterfaceDB::tableExists('tax_loss_carryforwards')
+                && \InterfaceDB::columnExists('asset_register', 'manual_addition_reason')
+                && \InterfaceDB::columnExists('asset_register', 'manual_offset_nominal_id');
         } catch (\Throwable) {
             $this->schemaReady = false;
         }

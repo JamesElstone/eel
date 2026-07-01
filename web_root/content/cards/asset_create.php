@@ -68,6 +68,8 @@ final class _asset_createCard extends CardBaseFramework
                 . ($prefillTransaction !== null
                     ? '<input type="hidden" name="transaction_id" value="' . (int)($prefillTransaction['transaction_id'] ?? 0) . '">'
                     : '') . '
+                <input type="hidden" name="card_action" value="Asset">
+                <input type="hidden" name="default_bank_nominal_id" value="' . (int)($assetsPageData['default_bank_nominal_id'] ?? 0) . '">
                 <input type="hidden" name="global_action" value="' . HelperFramework::escape($prefillTransaction !== null ? 'create_asset_from_transaction' : 'create_manual_asset') . '">
                 <div class="asset-create-controls">
                     <div class="field">
@@ -104,7 +106,11 @@ final class _asset_createCard extends CardBaseFramework
                     </div>'
                     . ($prefillTransaction === null
                         ? '<div class="field">
-                        <label for="asset_offset_nominal_id">Credit Nominal</label>
+                        <label for="asset_manual_addition_reason">Manual addition reason</label>
+                        <select class="select" id="asset_manual_addition_reason" name="manual_addition_reason" required>' . $this->manualAdditionReasonOptions() . '</select>
+                    </div>
+                    <div class="field">
+                        <label for="asset_offset_nominal_id">Funding / clearing nominal</label>
                         <select class="select" id="asset_offset_nominal_id" name="offset_nominal_id">' . $this->nominalOptions($nominalAccounts, (int)($assetsPageData['default_bank_nominal_id'] ?? 0)) . '</select>
                     </div>'
                         : '') . '
@@ -118,6 +124,16 @@ final class _asset_createCard extends CardBaseFramework
     {
         $html = '';
         foreach ($assetCategories as $value => $label) {
+            $html .= '<option value="' . HelperFramework::escape((string)$value) . '">' . HelperFramework::escape((string)$label) . '</option>';
+        }
+
+        return $html;
+    }
+
+    private function manualAdditionReasonOptions(): string
+    {
+        $html = '<option value="">Select reason</option>';
+        foreach (\eel_accounts\Service\AssetService::manualAdditionReasonOptions() as $value => $label) {
             $html .= '<option value="' . HelperFramework::escape((string)$value) . '">' . HelperFramework::escape((string)$label) . '</option>';
         }
 

@@ -241,6 +241,40 @@
   color: var(--danger);
 }
 
+.asset-reconcile-manual {
+  display: grid;
+  gap: 10px;
+}
+
+.asset-reconcile-manual h3 {
+  margin: 0;
+}
+
+.asset-reconcile-candidates {
+  display: grid;
+  gap: 8px;
+  min-width: min(42rem, 100%);
+}
+
+.asset-reconcile-candidate {
+  align-items: center;
+  border-top: 1px solid var(--line);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 8px 0;
+}
+
+.asset-reconcile-candidate:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.asset-reconcile-candidate .button {
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
 .expense-claimant-add-form .mini-field {
   flex: 1 1 260px;
   max-width: 360px;

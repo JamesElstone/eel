@@ -77,6 +77,181 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(false, $method->invoke($service, $expenseNominalId));
         });
 
+        $harness->check(\eel_accounts\Service\AssetService::class, 'manual asset creation stores reason and offset nominal', static function () use ($harness, $service): void {
+            assetServiceTestRequireDisposalSchema($harness);
+            $fixture = assetServiceTestCreateDisposalFixture('manual-store');
+            $offsetNominalId = assetServiceTestInsertNominal('CLR', 'Manual Asset Clearing', 'liability');
+
+            $result = $service->createManualAsset(
+                $fixture['company_id'],
+                $fixture['accounting_period_id'],
+                [
+                    'description' => 'Manual drill ' . $fixture['marker'],
+                    'category' => 'tools_equipment',
+                    'purchase_date' => '2026-07-01',
+                    'cost' => '240.00',
+                    'useful_life_years' => '3',
+                    'depreciation_method' => 'straight_line',
+                    'residual_value' => '0.00',
+                    'manual_addition_reason' => 'delayed_bank_csv',
+                ],
+                $offsetNominalId
+            );
+
+            $harness->assertSame(true, (bool)($result['success'] ?? false));
+            $asset = InterfaceDB::fetchOne(
+                'SELECT manual_addition_reason, manual_offset_nominal_id, linked_transaction_id, linked_journal_id
+                 FROM asset_register
+                 WHERE id = :id',
+                ['id' => (int)($result['asset']['id'] ?? 0)]
+            );
+            $harness->assertSame('delayed_bank_csv', (string)($asset['manual_addition_reason'] ?? ''));
+            $harness->assertSame($offsetNominalId, (int)($asset['manual_offset_nominal_id'] ?? 0));
+            $harness->assertSame(0, (int)($asset['linked_transaction_id'] ?? 0));
+            $harness->assertTrue((int)($asset['linked_journal_id'] ?? 0) > 0);
+        });
+
+        $harness->check(\eel_accounts\Service\AssetService::class, 'manual reconciliation list excludes opening assets', static function () use ($harness, $service): void {
+            assetServiceTestRequireDisposalSchema($harness);
+            $fixture = assetServiceTestCreateDisposalFixture('manual-list');
+            $offsetNominalId = assetServiceTestInsertNominal('CLR', 'Manual Asset Clearing', 'liability');
+
+            $pending = $service->createManualAsset(
+                $fixture['company_id'],
+                $fixture['accounting_period_id'],
+                [
+                    'description' => 'Pending supplier asset ' . $fixture['marker'],
+                    'category' => 'tools_equipment',
+                    'purchase_date' => '2026-07-01',
+                    'cost' => '240.00',
+                    'useful_life_years' => '3',
+                    'depreciation_method' => 'straight_line',
+                    'residual_value' => '0.00',
+                    'manual_addition_reason' => 'supplier_invoice_pending_payment',
+                ],
+                $offsetNominalId
+            );
+            $opening = $service->createManualAsset(
+                $fixture['company_id'],
+                $fixture['accounting_period_id'],
+                [
+                    'description' => 'Opening asset ' . $fixture['marker'],
+                    'category' => 'tools_equipment',
+                    'purchase_date' => '2026-07-01',
+                    'cost' => '150.00',
+                    'useful_life_years' => '3',
+                    'depreciation_method' => 'straight_line',
+                    'residual_value' => '0.00',
+                    'manual_addition_reason' => 'opening_or_historical_asset',
+                ],
+                $offsetNominalId
+            );
+
+            $harness->assertSame(true, (bool)($pending['success'] ?? false));
+            $harness->assertSame(true, (bool)($opening['success'] ?? false));
+
+            $assets = $service->fetchManualAssetsNeedingReconciliation($fixture['company_id']);
+            $ids = array_map(static fn(array $asset): int => (int)$asset['id'], $assets);
+
+            $harness->assertTrue(in_array((int)($pending['asset']['id'] ?? 0), $ids, true));
+            $harness->assertSame(false, in_array((int)($opening['asset']['id'] ?? 0), $ids, true));
+        });
+
+        $harness->check(\eel_accounts\Service\AssetService::class, 'manual reconciliation categorises transaction and links asset', static function () use ($harness, $service): void {
+            assetServiceTestRequireDisposalSchema($harness);
+            $fixture = assetServiceTestCreateDisposalFixture('manual-reconcile');
+            $offsetNominalId = assetServiceTestInsertNominal('CLR', 'Manual Asset Clearing', 'liability');
+            $transactionId = assetServiceTestInsertTransaction($fixture, 1, '2026-07-03', -240.00, 'Manual asset payment');
+            $created = $service->createManualAsset(
+                $fixture['company_id'],
+                $fixture['accounting_period_id'],
+                [
+                    'description' => 'Reconcilable asset ' . $fixture['marker'],
+                    'category' => 'tools_equipment',
+                    'purchase_date' => '2026-07-01',
+                    'cost' => '240.00',
+                    'useful_life_years' => '3',
+                    'depreciation_method' => 'straight_line',
+                    'residual_value' => '0.00',
+                    'manual_addition_reason' => 'delayed_bank_csv',
+                ],
+                $offsetNominalId
+            );
+
+            $harness->assertSame(true, (bool)($created['success'] ?? false));
+            $candidateData = $service->fetchManualAssetReconciliationData($fixture['company_id']);
+            $candidateIds = [];
+            foreach ((array)($candidateData['assets'] ?? []) as $asset) {
+                foreach ((array)($asset['candidates'] ?? []) as $candidate) {
+                    $candidateIds[] = (int)($candidate['id'] ?? 0);
+                }
+            }
+            $harness->assertTrue(in_array($transactionId, $candidateIds, true));
+
+            $result = $service->reconcileManualAssetWithTransaction(
+                $fixture['company_id'],
+                (int)($created['asset']['id'] ?? 0),
+                $transactionId,
+                $fixture['bank_nominal_id'],
+                true
+            );
+
+            $harness->assertSame(true, (bool)($result['success'] ?? false));
+            $transaction = InterfaceDB::fetchOne(
+                'SELECT nominal_account_id, category_status
+                 FROM transactions
+                 WHERE id = :id',
+                ['id' => $transactionId]
+            );
+            $asset = InterfaceDB::fetchOne(
+                'SELECT linked_transaction_id
+                 FROM asset_register
+                 WHERE id = :id',
+                ['id' => (int)($created['asset']['id'] ?? 0)]
+            );
+            $bankJournalId = assetServiceTestJournalId($fixture['company_id'], 'bank_csv', 'transaction:' . $transactionId);
+
+            $harness->assertSame($offsetNominalId, (int)($transaction['nominal_account_id'] ?? 0));
+            $harness->assertSame('manual', (string)($transaction['category_status'] ?? ''));
+            $harness->assertSame($transactionId, (int)($asset['linked_transaction_id'] ?? 0));
+            $harness->assertTrue($bankJournalId > 0);
+            $harness->assertSame(240.0, assetServiceTestJournalLineAmount($bankJournalId, $offsetNominalId, 'debit'));
+            $harness->assertSame(240.0, assetServiceTestJournalLineAmount($bankJournalId, $fixture['bank_nominal_id'], 'credit'));
+        });
+
+        $harness->check(\eel_accounts\Service\AssetService::class, 'transaction-created assets do not store manual reason', static function () use ($harness, $service): void {
+            assetServiceTestRequireDisposalSchema($harness);
+            $fixture = assetServiceTestCreateDisposalFixture('transaction-create');
+            $transactionId = assetServiceTestInsertTransaction($fixture, 1, '2026-07-03', -180.00, 'Imported asset payment');
+
+            $result = $service->createAssetFromTransaction(
+                $fixture['company_id'],
+                $transactionId,
+                [
+                    'description' => 'Imported asset ' . $fixture['marker'],
+                    'category' => 'tools_equipment',
+                    'purchase_date' => '2026-07-03',
+                    'cost' => '180.00',
+                    'useful_life_years' => '3',
+                    'depreciation_method' => 'straight_line',
+                    'residual_value' => '0.00',
+                ],
+                $fixture['bank_nominal_id']
+            );
+
+            $harness->assertSame(true, (bool)($result['success'] ?? false));
+            $asset = InterfaceDB::fetchOne(
+                'SELECT manual_addition_reason, manual_offset_nominal_id, linked_transaction_id
+                 FROM asset_register
+                 WHERE id = :id',
+                ['id' => (int)($result['asset']['id'] ?? 0)]
+            );
+
+            $harness->assertSame('', (string)($asset['manual_addition_reason'] ?? ''));
+            $harness->assertSame(0, (int)($asset['manual_offset_nominal_id'] ?? 0));
+            $harness->assertSame($transactionId, (int)($asset['linked_transaction_id'] ?? 0));
+        });
+
         $harness->check(\eel_accounts\Service\AssetService::class, 'disposal receipt search uses one day before and three days after', static function () use ($harness, $service): void {
             assetServiceTestRequireDisposalSchema($harness);
             $fixture = assetServiceTestCreateDisposalFixture('search');
@@ -201,6 +376,12 @@ function assetServiceTestRequireDisposalSchema(GeneratedServiceClassTestHarness 
     foreach (['asset_register', 'asset_disposal_transaction_links', 'transactions', 'journals', 'journal_lines'] as $table) {
         if (!InterfaceDB::tableExists($table)) {
             $harness->skip($table . ' table is not available.');
+        }
+    }
+
+    foreach (['manual_addition_reason', 'manual_offset_nominal_id'] as $column) {
+        if (!InterfaceDB::columnExists('asset_register', $column)) {
+            $harness->skip('asset_register.' . $column . ' column is not available.');
         }
     }
 

@@ -234,12 +234,14 @@ final class _expenses_stateCard extends CardBaseFramework
     private function claimsTableToolbarHtml(array $context, array $claimants, array $filters, int $companyId, int $selectedClaimantId): string
     {
         return $this->claimantFilterToolbarForm($context, $claimants, $filters, $companyId, $selectedClaimantId)
-            . '<div class="actions-row">
+            . '</div>
+            <div class="actions-row">
                 <div class="mini-field">
                     <input class="input" id="expense-search-query" name="expense_query" form="expense-search-form" type="search" value="' . HelperFramework::escape((string)($filters['query'] ?? '')) . '" placeholder="EXP-...">
                 </div>
-                <button class="button" type="submit" form="expense-search-form">Search</button>
-            </div>';
+                <button class="button primary" type="submit" form="expense-search-form">Search</button>
+            </div>
+            <div class="actions-row">';
     }
 
     private function claimantFilterToolbarForm(array $context, array $claimants, array $filters, int $companyId, int $selectedClaimantId): string
@@ -251,10 +253,8 @@ final class _expenses_stateCard extends CardBaseFramework
                 <input type="hidden" name="intent" value="filter_claims">
                 <input type="hidden" name="expense_query" value="' . HelperFramework::escape((string)($filters['query'] ?? '')) . '">
                 <input type="hidden" name="expense_status" value="' . HelperFramework::escape((string)($filters['status'] ?? 'all')) . '">
-                <div class="mini-field">
-                    <label for="expense-claimant">Claimant</label>
-                    <select class="select" id="expense-claimant" name="claimant_id">' . $this->claimantOptions($claimants, $selectedClaimantId) . '</select>
-                </div>
+                <label for="expense-claimant">Claimant</label>
+                <select class="select" id="expense-claimant" name="claimant_id">' . $this->claimantOptions($claimants, $selectedClaimantId) . '</select>
             </form>';
     }
 

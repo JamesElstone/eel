@@ -261,11 +261,17 @@ final class NominalsAction implements ActionInterfaceFramework
         try {
             $settingsStore = new \eel_accounts\Store\CompanySettingsStore($companyId);
             $settingsService = new \eel_accounts\Service\CompanySettingsService();
+            $directorLoanLiabilityNominalId = trim((string)$request->post('director_loan_liability_nominal_id', ''));
+            if ($directorLoanLiabilityNominalId === '') {
+                $directorLoanLiabilityNominalId = trim((string)$request->post('director_loan_nominal_id', ''));
+            }
             $settings = [
                 'default_bank_nominal_id' => trim((string)$request->post('default_bank_nominal_id', '')),
                 'default_trade_nominal_id' => trim((string)$request->post('default_trade_nominal_id', '')),
                 'default_expense_nominal_id' => trim((string)$request->post('default_expense_nominal_id', '')),
-                'director_loan_nominal_id' => trim((string)$request->post('director_loan_nominal_id', '')),
+                'director_loan_asset_nominal_id' => trim((string)$request->post('director_loan_asset_nominal_id', '')),
+                'director_loan_liability_nominal_id' => $directorLoanLiabilityNominalId,
+                'director_loan_nominal_id' => $directorLoanLiabilityNominalId,
                 'vat_nominal_id' => trim((string)$request->post('vat_nominal_id', '')),
                 'uncategorised_nominal_id' => trim((string)$request->post('uncategorised_nominal_id', '')),
             ];
@@ -333,7 +339,8 @@ final class NominalsAction implements ActionInterfaceFramework
             'default_bank_nominal_id' => 'Default bank',
             'default_trade_nominal_id' => 'Default trade',
             'default_expense_nominal_id' => 'Expense claims payable',
-            'director_loan_nominal_id' => 'Director loan',
+            'director_loan_asset_nominal_id' => 'Director loan asset',
+            'director_loan_liability_nominal_id' => 'Director loan liability',
             'vat_nominal_id' => 'VAT control',
             'uncategorised_nominal_id' => 'Fallback uncategorised',
         ];

@@ -187,7 +187,10 @@ final class DividendService
         $dividendsPaidNominalId = (int)($nominals['dividends_paid']['id'] ?? 0);
         $dividendsPayableNominalId = (int)($nominals['dividends_payable']['id'] ?? 0);
         $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
-        $directorLoanNominalId = (int)($settings['director_loan_nominal_id'] ?? 0);
+        $directorLoanNominalId = (int)($settings['director_loan_liability_nominal_id'] ?? 0);
+        if ($directorLoanNominalId <= 0) {
+            $directorLoanNominalId = (int)($settings['director_loan_nominal_id'] ?? 0);
+        }
         $creditNominalId = $settlementTarget === 'director_loan_liability'
             ? $directorLoanNominalId
             : $dividendsPayableNominalId;
@@ -197,7 +200,7 @@ final class DividendService
         }
         if ($creditNominalId <= 0) {
             return ['success' => false, 'errors' => [$settlementTarget === 'director_loan_liability'
-                ? 'Set the director loan nominal before declaring a dividend to director loan.'
+                ? 'Set the director loan liability nominal before declaring a dividend to director loan.'
                 : 'Dividends Payable nominal account is missing.']];
         }
 

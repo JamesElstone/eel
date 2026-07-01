@@ -59,14 +59,17 @@ final class DirectorLoanService
         }
 
         $settings = $this->fetchCompanySettings($companyId);
-        $directorLoanNominalId = (int)($settings['director_loan_nominal_id'] ?? 0);
+        $directorLoanNominalId = (int)($settings['director_loan_liability_nominal_id'] ?? 0);
         if ($directorLoanNominalId <= 0) {
-            return $this->errorResult('No Director Loan nominal has been configured in Company Settings.', 'director_loan_nominal_missing', 422);
+            $directorLoanNominalId = (int)($settings['director_loan_nominal_id'] ?? 0);
+        }
+        if ($directorLoanNominalId <= 0) {
+            return $this->errorResult('No Director Loan Liability nominal has been configured in Company Settings.', 'director_loan_nominal_missing', 422);
         }
 
         $nominal = $this->fetchNominalAccount($directorLoanNominalId);
         if ($nominal === null || (array_key_exists('is_active', $nominal) && (int)$nominal['is_active'] !== 1)) {
-            return $this->errorResult('The configured Director Loan nominal could not be found or is inactive.', 'director_loan_nominal_invalid', 422);
+            return $this->errorResult('The configured Director Loan Liability nominal could not be found or is inactive.', 'director_loan_nominal_invalid', 422);
         }
 
         $openingBalance = $this->fetchOpeningBalance($companyId, $directorLoanNominalId, (string)$accountingPeriod['period_start']);

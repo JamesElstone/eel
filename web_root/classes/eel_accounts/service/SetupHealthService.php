@@ -155,7 +155,8 @@ final class SetupHealthService
             'default_bank_nominal_id' => 'Default bank',
             'default_trade_nominal_id' => 'Default trade',
             'default_expense_nominal_id' => 'Expense claims payable',
-            'director_loan_nominal_id' => 'Director loan',
+            'director_loan_asset_nominal_id' => 'Director loan asset',
+            'director_loan_liability_nominal_id' => 'Director loan liability',
             'vat_nominal_id' => 'VAT control',
             'uncategorised_nominal_id' => 'Fallback uncategorised',
         ];

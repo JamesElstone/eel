@@ -202,7 +202,8 @@ final class IxbrlReadinessService
             'utr' => 'UTR',
             'default_currency' => 'default currency',
             'default_bank_nominal_id' => 'bank nominal',
-            'director_loan_nominal_id' => 'director loan nominal',
+            'director_loan_asset_nominal_id' => 'director loan asset nominal',
+            'director_loan_liability_nominal_id' => 'director loan liability nominal',
             'vat_nominal_id' => 'VAT nominal',
         ];
         $missing = [];

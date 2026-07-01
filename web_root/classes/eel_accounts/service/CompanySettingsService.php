@@ -80,11 +80,14 @@ final class CompanySettingsService
             $settings[$setting] = $value;
         }
 
+        $settings = $this->normaliseDirectorLoanNominalSettings($settings);
+
         return $settings;
     }
 
     public function saveToDatabase(\eel_accounts\Store\CompanySettingsStore $settingsStore, array $settings): void
     {
+        $settings = $this->normaliseDirectorLoanNominalSettings($settings);
         $companyRepository = new \eel_accounts\Repository\CompanyRepository();
         $accountingPeriodRepository = new \eel_accounts\Repository\AccountingPeriodRepository();
         \InterfaceDB::beginTransaction();
@@ -185,7 +188,10 @@ final class CompanySettingsService
         $settingsStore->set('default_bank_nominal_id', $settings['default_bank_nominal_id'] ?? '', 'int');
         $settingsStore->set('default_trade_nominal_id', $settings['default_trade_nominal_id'] ?? '', 'int');
         $settingsStore->set('default_expense_nominal_id', $settings['default_expense_nominal_id'] ?? '', 'int');
-        $settingsStore->set('director_loan_nominal_id', $settings['director_loan_nominal_id'] ?? '', 'int');
+        $directorLoanLiabilityNominalId = $this->directorLoanLiabilityNominalSetting($settings);
+        $settingsStore->set('director_loan_asset_nominal_id', $settings['director_loan_asset_nominal_id'] ?? '', 'int');
+        $settingsStore->set('director_loan_liability_nominal_id', $directorLoanLiabilityNominalId, 'int');
+        $settingsStore->set('director_loan_nominal_id', $directorLoanLiabilityNominalId, 'int');
         $settingsStore->set('vat_nominal_id', $settings['vat_nominal_id'] ?? '', 'int');
         $settingsStore->set('uncategorised_nominal_id', $settings['uncategorised_nominal_id'] ?? '', 'int');
         $settingsStore->flush();
@@ -209,7 +215,8 @@ final class CompanySettingsService
             'default_bank_nominal_id',
             'default_trade_nominal_id',
             'default_expense_nominal_id',
-            'director_loan_nominal_id',
+            'director_loan_asset_nominal_id',
+            'director_loan_liability_nominal_id',
             'vat_nominal_id',
             'uncategorised_nominal_id',
         ] as $key) {
@@ -222,6 +229,9 @@ final class CompanySettingsService
             }
 
             $settings[$key] = (string)$suggestions[$key]['id'];
+            if ($key === 'director_loan_liability_nominal_id') {
+                $settings['director_loan_nominal_id'] = (string)$suggestions[$key]['id'];
+            }
             $applied = true;
         }
 
@@ -232,6 +242,27 @@ final class CompanySettingsService
         $this->saveNominalsSection($settingsStore, $settings);
 
         return true;
+    }
+
+    private function normaliseDirectorLoanNominalSettings(array $settings): array
+    {
+        $liabilityNominalId = $this->directorLoanLiabilityNominalSetting($settings);
+        if ($liabilityNominalId !== '') {
+            $settings['director_loan_liability_nominal_id'] = $liabilityNominalId;
+            $settings['director_loan_nominal_id'] = $liabilityNominalId;
+        }
+
+        return $settings;
+    }
+
+    private function directorLoanLiabilityNominalSetting(array $settings): string
+    {
+        $liabilityNominalId = trim((string)($settings['director_loan_liability_nominal_id'] ?? ''));
+        if ($liabilityNominalId !== '') {
+            return $liabilityNominalId;
+        }
+
+        return trim((string)($settings['director_loan_nominal_id'] ?? ''));
     }
 
     public function hasCompanySettingsRow(int $companyId): bool
@@ -333,7 +364,9 @@ final class CompanySettingsService
                     && !str_contains($name, 'vat')
                     && !str_contains($name, 'tax');
             }),
-            'director_loan_nominal_id' => $this->directorLoanNominalSuggestion($normalised),
+            'director_loan_asset_nominal_id' => $this->directorLoanAssetNominalSuggestion($normalised),
+            'director_loan_liability_nominal_id' => $this->directorLoanLiabilityNominalSuggestion($normalised),
+            'director_loan_nominal_id' => $this->directorLoanLiabilityNominalSuggestion($normalised),
             'vat_nominal_id' => $this->firstMatchingNominal($normalised, static function (array $row): bool {
                 return $row['id'] > 0
                     && ($row['subtype_code'] === 'vat_control'
@@ -362,7 +395,26 @@ final class CompanySettingsService
         return null;
     }
 
-    private function directorLoanNominalSuggestion(array $nominals): ?array
+    private function directorLoanAssetNominalSuggestion(array $nominals): ?array
+    {
+        return $this->firstMatchingNominal(
+            $nominals,
+            static fn(array $row): bool => $row['id'] > 0
+                && $row['subtype_code'] === 'director_loan_asset'
+        ) ?? $this->firstMatchingNominal(
+            $nominals,
+            static fn(array $row): bool => $row['id'] > 0
+                && $row['account_type'] === 'asset'
+                && $row['code'] === '1200'
+        ) ?? $this->firstMatchingNominal(
+            $nominals,
+            static fn(array $row): bool => $row['id'] > 0
+                && $row['account_type'] === 'asset'
+                && str_contains(strtolower($row['name']), 'director loan')
+        );
+    }
+
+    private function directorLoanLiabilityNominalSuggestion(array $nominals): ?array
     {
         return $this->firstMatchingNominal(
             $nominals,

@@ -32,8 +32,8 @@ final class DirectorLoanReconciliationService
             ];
         }
 
-        $assetNominal = $this->directorLoanNominal('director_loan_asset', '1200', 'asset');
-        $liabilityNominal = $this->directorLoanNominal('director_loan_liability', '2100', 'liability');
+        $assetNominal = $this->directorLoanNominal($companyId, 'director_loan_asset_nominal_id', 'director_loan_asset', '1200', 'asset');
+        $liabilityNominal = $this->directorLoanNominal($companyId, 'director_loan_liability_nominal_id', 'director_loan_liability', '2100', 'liability');
         $errors = [];
         if ($assetNominal === null) {
             $errors[] = 'Director Loan Asset nominal 1200 is not available.';
@@ -128,8 +128,16 @@ final class DirectorLoanReconciliationService
         return $result;
     }
 
-    private function directorLoanNominal(string $subtypeCode, string $fallbackCode, string $accountType): ?array
+    private function directorLoanNominal(int $companyId, string $settingKey, string $subtypeCode, string $fallbackCode, string $accountType): ?array
     {
+        $configuredNominalId = $this->configuredDirectorLoanNominalId($companyId, $settingKey);
+        if ($configuredNominalId > 0) {
+            $configuredNominal = $this->fetchConfiguredNominal($configuredNominalId, $accountType);
+            if ($configuredNominal !== null) {
+                return $configuredNominal;
+            }
+        }
+
         $rows = \InterfaceDB::fetchAll(
             'SELECT na.id,
                     COALESCE(na.code, \'\') AS code,
@@ -154,6 +162,49 @@ final class DirectorLoanReconciliationService
         );
 
         return $this->chooseDirectorLoanNominal($rows, $subtypeCode, $fallbackCode, $accountType);
+    }
+
+    private function configuredDirectorLoanNominalId(int $companyId, string $settingKey): int
+    {
+        if ($companyId <= 0) {
+            return 0;
+        }
+
+        $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
+        $nominalId = (int)($settings[$settingKey] ?? 0);
+        if ($nominalId > 0) {
+            return $nominalId;
+        }
+
+        if ($settingKey === 'director_loan_liability_nominal_id') {
+            return (int)($settings['director_loan_nominal_id'] ?? 0);
+        }
+
+        return 0;
+    }
+
+    private function fetchConfiguredNominal(int $nominalId, string $accountType): ?array
+    {
+        $row = \InterfaceDB::fetchOne(
+            'SELECT na.id,
+                    COALESCE(na.code, \'\') AS code,
+                    COALESCE(na.name, \'\') AS name,
+                    COALESCE(na.account_type, \'\') AS account_type,
+                    COALESCE(nas.code, \'\') AS subtype_code,
+                    COALESCE(na.sort_order, 100) AS sort_order
+             FROM nominal_accounts na
+             LEFT JOIN nominal_account_subtypes nas ON nas.id = na.account_subtype_id
+             WHERE na.id = :nominal_id
+               AND COALESCE(na.is_active, 0) = 1
+               AND na.account_type = :account_type
+             LIMIT 1',
+            [
+                'nominal_id' => $nominalId,
+                'account_type' => $accountType,
+            ]
+        );
+
+        return is_array($row) ? $row : null;
     }
 
     private function chooseDirectorLoanNominal(array $nominals, string $subtypeCode, string $fallbackCode, string $accountType): ?array

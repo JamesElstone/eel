@@ -91,10 +91,15 @@ final class _expenses extends PageContextFramework
 
     private function expensePageSettings(array $settings): array
     {
+        $directorLoanNominalId = $this->settingId($settings, 'director_loan_liability_nominal_id');
+        if ($directorLoanNominalId <= 0) {
+            $directorLoanNominalId = $this->settingId($settings, 'director_loan_nominal_id');
+        }
+
         return [
             'incorporation_date' => (string)($settings['incorporation_date'] ?? ''),
             'date_format' => (string)($settings['date_format'] ?? 'd/m/Y'),
-            'director_loan_nominal_id' => $this->settingId($settings, 'director_loan_nominal_id'),
+            'director_loan_nominal_id' => $directorLoanNominalId,
             'default_bank_nominal_id' => $this->settingId($settings, 'default_bank_nominal_id'),
             'default_expense_nominal_id' => $this->settingId($settings, 'default_expense_nominal_id'),
         ];

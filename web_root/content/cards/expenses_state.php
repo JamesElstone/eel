@@ -82,14 +82,18 @@ final class _expenses_stateCard extends CardBaseFramework
             ? $this->normaliseHeatmapDate((string)($filters['heatmap_date'] ?? ''), (string)$heatmapPeriod['start'], (string)$heatmapPeriod['end'])
             : '';
         $heatmapFormId = 'expense-claim-heatmap-form';
+        $claimsTable = $this->configuredClaimsTable($context);
+        $claimsTableHiddenFields = array_merge(
+            $this->claimsTableHiddenFields($context, $filters, $companyId),
+            ['cards[]' => (array)($context['page']['page_cards'] ?? [])]
+        );
 
         return '<div class="expense-claims-stack">
         <section class="panel-soft">
+            ' . $claimsTable->renderToolbar($context, $claimsTableHiddenFields) . '
             ' . $this->renderClaimHeatmap($heatmapFormId, $claimHeatmapClaims, $claimants, $accountingPeriods, $heatmapClaimantId, $heatmapPeriod, $heatmapDate, $query, $status, $companyId) . '
-            ' . $this->configuredClaimsTable($context)->render($context, array_merge(
-                $this->claimsTableHiddenFields($context, $filters, $companyId),
-                ['cards[]' => (array)($context['page']['page_cards'] ?? [])]
-            )) . '
+            ' . $claimsTable->renderTable() . '
+            ' . $claimsTable->renderFooter() . '
         </section>
         </div>';
     }

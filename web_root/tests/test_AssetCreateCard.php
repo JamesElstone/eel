@@ -54,24 +54,54 @@ $harness->run(_asset_createCard::class, static function (GeneratedServiceClassTe
                     'subtype_code' => 'trade_creditor',
                 ], [
                     'id' => 44,
+                    'code' => '2110',
+                    'name' => 'Expense Claims Payable',
+                    'account_type' => 'liability',
+                    'subtype_code' => 'expense_payable',
+                ], [
+                    'id' => 45,
+                    'code' => '1200',
+                    'name' => 'Director Loan Asset',
+                    'account_type' => 'asset',
+                    'subtype_code' => 'director_loan_asset',
+                ], [
+                    'id' => 46,
+                    'code' => '2100',
+                    'name' => 'Director Loan Liability',
+                    'account_type' => 'liability',
+                    'subtype_code' => 'director_loan_liability',
+                ], [
+                    'id' => 47,
+                    'code' => '2000',
+                    'name' => 'VAT Control',
+                    'account_type' => 'liability',
+                    'subtype_code' => 'vat_control',
+                ], [
+                    'id' => 48,
+                    'code' => '1300',
+                    'name' => 'Tools & Equipment (FA)',
+                    'account_type' => 'asset',
+                    'subtype_code' => 'fixed_asset',
+                ], [
+                    'id' => 49,
                     'code' => '3000',
                     'name' => 'Capital Introduced',
                     'account_type' => 'equity',
                     'subtype_code' => '',
                 ], [
-                    'id' => 45,
+                    'id' => 50,
                     'code' => '4000',
                     'name' => 'Sales',
                     'account_type' => 'income',
                     'subtype_code' => '',
                 ], [
-                    'id' => 46,
+                    'id' => 51,
                     'code' => '5000',
                     'name' => 'Materials',
                     'account_type' => 'cost_of_sales',
                     'subtype_code' => '',
                 ], [
-                    'id' => 47,
+                    'id' => 52,
                     'code' => '7000',
                     'name' => 'General Expenses',
                     'account_type' => 'expense',
@@ -92,9 +122,14 @@ $harness->run(_asset_createCard::class, static function (GeneratedServiceClassTe
         $harness->assertTrue(str_contains($html, '<option value="42" selected>'));
         $harness->assertTrue(str_contains($html, '<option value="43">'));
         $harness->assertTrue(str_contains($html, '<option value="44">'));
-        $harness->assertSame(false, str_contains($html, '<option value="45">'));
-        $harness->assertSame(false, str_contains($html, '<option value="46">'));
+        $harness->assertTrue(str_contains($html, '<option value="45">'));
+        $harness->assertTrue(str_contains($html, '<option value="46">'));
         $harness->assertSame(false, str_contains($html, '<option value="47">'));
+        $harness->assertSame(false, str_contains($html, '<option value="48">'));
+        $harness->assertSame(false, str_contains($html, '<option value="49">'));
+        $harness->assertSame(false, str_contains($html, '<option value="50">'));
+        $harness->assertSame(false, str_contains($html, '<option value="51">'));
+        $harness->assertSame(false, str_contains($html, '<option value="52">'));
     });
 
     $harness->check(_asset_createCard::class, 'transaction-prefilled creation omits manual-only fields', static function () use ($harness, $card): void {

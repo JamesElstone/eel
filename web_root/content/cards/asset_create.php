@@ -144,7 +144,7 @@ final class _asset_createCard extends CardBaseFramework
     {
         $html = '';
         foreach ($nominalAccounts as $nominal) {
-            if (!$this->isCreditNominalCandidate((array)$nominal)) {
+            if (!$this->isFundingNominalCandidate((array)$nominal)) {
                 continue;
             }
 
@@ -156,8 +156,8 @@ final class _asset_createCard extends CardBaseFramework
         return $html;
     }
 
-    private function isCreditNominalCandidate(array $nominal): bool
+    private function isFundingNominalCandidate(array $nominal): bool
     {
-        return in_array((string)($nominal['account_type'] ?? ''), ['asset', 'liability', 'equity'], true);
+        return \eel_accounts\Service\AssetService::isManualAssetOffsetNominalCandidate($nominal);
     }
 }

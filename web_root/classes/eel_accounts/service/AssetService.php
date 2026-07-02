@@ -12,7 +12,13 @@ namespace eel_accounts\Service;
 
 final class AssetService
 {
-    private const MANUAL_ASSET_OFFSET_ACCOUNT_TYPES = ['asset', 'liability', 'equity'];
+    private const MANUAL_ASSET_OFFSET_SUBTYPE_CODES = [
+        'bank',
+        'director_loan_asset',
+        'director_loan_liability',
+        'expense_payable',
+        'trade_creditor',
+    ];
     private const MANUAL_ASSET_REASON_SUPPLIER_PENDING = 'supplier_invoice_pending_payment';
     private const MANUAL_ASSET_REASON_PERSONAL_PENDING = 'personal_payment_or_expense_claim_pending';
     private const MANUAL_ASSET_REASON_DELAYED_BANK_CSV = 'delayed_bank_csv';
@@ -61,6 +67,11 @@ final class AssetService
             self::MANUAL_ASSET_REASON_DELAYED_BANK_CSV => 'Delayed bank CSV',
             self::MANUAL_ASSET_REASON_OPENING_HISTORICAL => 'Opening / historical asset',
         ];
+    }
+
+    public static function isManualAssetOffsetNominalCandidate(array $nominal): bool
+    {
+        return in_array((string)($nominal['subtype_code'] ?? ''), self::MANUAL_ASSET_OFFSET_SUBTYPE_CODES, true);
     }
 
     public function normaliseAssetValues(int $companyId, array $payload, array $defaults = []): array
@@ -476,7 +487,7 @@ final class AssetService
             return ['success' => false, 'errors' => ['Choose an offset nominal before posting a manual asset.']];
         }
         if (!$this->isManualAssetOffsetNominal($offsetNominalId)) {
-            return ['success' => false, 'errors' => ['Choose a balance sheet nominal before posting a manual asset.']];
+            return ['success' => false, 'errors' => ['Choose a funding or clearing nominal before posting a manual asset.']];
         }
         (new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'post manual assets in this period');
 
@@ -1559,16 +1570,25 @@ final class AssetService
 
     private function isManualAssetOffsetNominal(int $nominalAccountId): bool
     {
-        $accountType = \InterfaceDB::fetchColumn(
-            'SELECT account_type
-             FROM nominal_accounts
-             WHERE id = :id
-               AND is_active = 1
+        $subtypeCodes = self::MANUAL_ASSET_OFFSET_SUBTYPE_CODES;
+        $placeholders = implode(', ', array_map(static fn(int $index): string => ':subtype_' . $index, array_keys($subtypeCodes)));
+        $params = ['id' => $nominalAccountId];
+        foreach ($subtypeCodes as $index => $subtypeCode) {
+            $params['subtype_' . $index] = $subtypeCode;
+        }
+
+        $value = \InterfaceDB::fetchColumn(
+            'SELECT na.id
+             FROM nominal_accounts na
+             INNER JOIN nominal_account_subtypes nas ON nas.id = na.account_subtype_id
+             WHERE na.id = :id
+               AND na.is_active = 1
+               AND nas.code IN (' . $placeholders . ')
              LIMIT 1',
-            ['id' => $nominalAccountId]
+            $params
         );
 
-        return in_array((string)$accountType, self::MANUAL_ASSET_OFFSET_ACCOUNT_TYPES, true);
+        return $value !== false;
     }
 
     private function insertJournal(array $journal): int {

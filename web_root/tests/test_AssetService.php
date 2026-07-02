@@ -105,25 +105,29 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(0.0, $amount);
         });
 
-        $harness->check(\eel_accounts\Service\AssetService::class, 'manual asset offset nominal must be a balance sheet account', static function () use ($harness, $service): void {
-            if (!InterfaceDB::tableExists('nominal_accounts')) {
-                $harness->skip('Nominal accounts table is not available on the default InterfaceDB connection.');
+        $harness->check(\eel_accounts\Service\AssetService::class, 'manual asset offset nominal must use a funding subtype', static function () use ($harness, $service): void {
+            foreach (['nominal_accounts', 'nominal_account_subtypes'] as $table) {
+                if (!InterfaceDB::tableExists($table)) {
+                    $harness->skip($table . ' table is not available on the default InterfaceDB connection.');
+                }
             }
 
-            $balanceSheetNominalId = assetServiceTestInsertNominal('AST', 'Asset Offset Candidate', 'asset');
-            $expenseNominalId = assetServiceTestInsertNominal('EXP', 'Expense Offset Candidate', 'expense');
+            $bankNominalId = assetServiceTestInsertNominal('BNK', 'Bank Offset Candidate', 'asset', 'bank');
+            $fixedAssetNominalId = assetServiceTestInsertNominal('FIX', 'Fixed Asset Offset Candidate', 'asset', 'fixed_asset');
+            $expenseNominalId = assetServiceTestInsertNominal('EXP', 'Expense Offset Candidate', 'expense', 'overhead');
 
             $method = new ReflectionMethod(\eel_accounts\Service\AssetService::class, 'isManualAssetOffsetNominal');
             $method->setAccessible(true);
 
-            $harness->assertSame(true, $method->invoke($service, $balanceSheetNominalId));
+            $harness->assertSame(true, $method->invoke($service, $bankNominalId));
+            $harness->assertSame(false, $method->invoke($service, $fixedAssetNominalId));
             $harness->assertSame(false, $method->invoke($service, $expenseNominalId));
         });
 
         $harness->check(\eel_accounts\Service\AssetService::class, 'manual asset creation stores reason and offset nominal', static function () use ($harness, $service): void {
             assetServiceTestRequireDisposalSchema($harness);
             $fixture = assetServiceTestCreateDisposalFixture('manual-store');
-            $offsetNominalId = assetServiceTestInsertNominal('CLR', 'Manual Asset Clearing', 'liability');
+            $offsetNominalId = assetServiceTestInsertNominal('CLR', 'Manual Asset Clearing', 'liability', 'trade_creditor');
 
             $result = $service->createManualAsset(
                 $fixture['company_id'],
@@ -157,7 +161,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $harness->check(\eel_accounts\Service\AssetService::class, 'manual reconciliation list excludes opening assets', static function () use ($harness, $service): void {
             assetServiceTestRequireDisposalSchema($harness);
             $fixture = assetServiceTestCreateDisposalFixture('manual-list');
-            $offsetNominalId = assetServiceTestInsertNominal('CLR', 'Manual Asset Clearing', 'liability');
+            $offsetNominalId = assetServiceTestInsertNominal('CLR', 'Manual Asset Clearing', 'liability', 'trade_creditor');
 
             $pending = $service->createManualAsset(
                 $fixture['company_id'],
@@ -203,7 +207,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $harness->check(\eel_accounts\Service\AssetService::class, 'manual reconciliation categorises transaction and links asset', static function () use ($harness, $service): void {
             assetServiceTestRequireDisposalSchema($harness);
             $fixture = assetServiceTestCreateDisposalFixture('manual-reconcile');
-            $offsetNominalId = assetServiceTestInsertNominal('CLR', 'Manual Asset Clearing', 'liability');
+            $offsetNominalId = assetServiceTestInsertNominal('CLR', 'Manual Asset Clearing', 'liability', 'trade_creditor');
             $transactionId = assetServiceTestInsertTransaction($fixture, 1, '2026-07-03', -240.00, 'Manual asset payment');
             $created = $service->createManualAsset(
                 $fixture['company_id'],
@@ -393,16 +397,22 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
     }
 );
 
-function assetServiceTestInsertNominal(string $prefix, string $name, string $accountType): int
+function assetServiceTestInsertNominal(string $prefix, string $name, string $accountType, string $subtypeCode = ''): int
 {
     $code = $prefix . strtoupper(substr(str_replace('.', '', uniqid('', true)), -5));
+    $subtypeId = null;
+    if ($subtypeCode !== '') {
+        $subtypeId = assetServiceTestSubtypeId($subtypeCode);
+    }
+
     InterfaceDB::prepareExecute(
-        'INSERT INTO nominal_accounts (code, name, account_type, tax_treatment, is_active, sort_order)
-         VALUES (:code, :name, :account_type, :tax_treatment, 1, :sort_order)',
+        'INSERT INTO nominal_accounts (code, name, account_type, account_subtype_id, tax_treatment, is_active, sort_order)
+         VALUES (:code, :name, :account_type, :account_subtype_id, :tax_treatment, 1, :sort_order)',
         [
             'code' => $code,
             'name' => $name . ' ' . $code,
             'account_type' => $accountType,
+            'account_subtype_id' => $subtypeId,
             'tax_treatment' => 'other',
             'sort_order' => 9900,
         ]
@@ -412,6 +422,19 @@ function assetServiceTestInsertNominal(string $prefix, string $name, string $acc
         'SELECT id FROM nominal_accounts WHERE code = :code LIMIT 1',
         ['code' => $code]
     );
+}
+
+function assetServiceTestSubtypeId(string $code): int
+{
+    $id = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM nominal_account_subtypes WHERE code = :code LIMIT 1',
+        ['code' => $code]
+    );
+    if ($id <= 0) {
+        throw new RuntimeException('Nominal subtype ' . $code . ' is not available.');
+    }
+
+    return $id;
 }
 
 function assetServiceTestInsertNominalWithTreatment(string $prefix, string $name, string $accountType, string $taxTreatment): int
@@ -636,7 +659,7 @@ function assetServiceTestCreateTaxViewFixture(): array
 
 function assetServiceTestRequireDisposalSchema(GeneratedServiceClassTestHarness $harness): void
 {
-    foreach (['asset_register', 'asset_disposal_transaction_links', 'transactions', 'journals', 'journal_lines'] as $table) {
+    foreach (['asset_register', 'asset_disposal_transaction_links', 'transactions', 'journals', 'journal_lines', 'nominal_account_subtypes'] as $table) {
         if (!InterfaceDB::tableExists($table)) {
             $harness->skip($table . ' table is not available.');
         }
@@ -651,6 +674,12 @@ function assetServiceTestRequireDisposalSchema(GeneratedServiceClassTestHarness 
     foreach (['1000', '1300', '1330', '1490', '4200', '6210'] as $code) {
         if (assetServiceTestNominalId($code) <= 0) {
             $harness->skip('Nominal ' . $code . ' is not available.');
+        }
+    }
+
+    foreach (['trade_creditor'] as $code) {
+        if ((int)InterfaceDB::fetchColumn('SELECT id FROM nominal_account_subtypes WHERE code = :code LIMIT 1', ['code' => $code]) <= 0) {
+            $harness->skip('Nominal subtype ' . $code . ' is not available.');
         }
     }
 }

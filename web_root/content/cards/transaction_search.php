@@ -136,7 +136,7 @@ final class _transaction_searchCard extends CardBaseFramework
         return TableFramework::make($this->key(), $this->rows($context))
             ->filename('transaction-search')
             ->exportLimit(5000)
-            ->empty($this->hasSearchCriteria($context) ? 'No transactions match this search.' : 'Enter a keyword or choose a filter to search transactions.')
+            ->empty($this->hasSearchCriteria($context) ? $this->noMatchesMessage() : 'Enter a keyword or choose a filter to search transactions.')
             ->column('id', 'ID', exportType: 'number')
             ->column(
                 'txn_date',
@@ -310,6 +310,11 @@ final class _transaction_searchCard extends CardBaseFramework
             (array)(($context['services'] ?? [])['transaction_search_results'] ?? []),
             static fn(mixed $row): bool => is_array($row)
         ));
+    }
+
+    private function noMatchesMessage(): string
+    {
+        return 'No transactions match this search [' . (new DateTimeImmutable())->format('Y-m-d H:i:s') . '].';
     }
 
     private function footerWithAmountTotal(string $footer, array $visibleRows): string

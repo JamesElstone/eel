@@ -164,6 +164,17 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         $harness->assertTrue(str_contains($html, 'name="transaction_search_amount" inputmode="decimal" value="1000.00"'));
     });
 
+    $harness->check(_transaction_searchCard::class, 'timestamps the no match empty search message', static function () use ($harness, $card, $context): void {
+        $emptyContext = $context;
+        $emptyContext['services']['transaction_search_results'] = [];
+        $html = $card->render($emptyContext);
+
+        $harness->assertSame(
+            1,
+            preg_match('/No transactions match this search \[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]\./', $html)
+        );
+    });
+
     $harness->check(_transaction_searchCard::class, 'exports the full filtered result set', static function () use ($harness, $card, $context): void {
         $tables = $card->tables($context);
         $harness->assertTrue(isset($tables[0]) && $tables[0] instanceof TableFramework);

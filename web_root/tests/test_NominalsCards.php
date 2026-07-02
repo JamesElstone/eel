@@ -212,6 +212,78 @@ $harness->run(_nominals_account_typesCard::class, function (GeneratedServiceClas
     });
 });
 
+$harness->run(_nominal_opening_balancesCard::class, function (GeneratedServiceClassTestHarness $harness, _nominal_opening_balancesCard $card): void {
+    $harness->check(_nominal_opening_balancesCard::class, 'declares opening balance service with selected company context', function () use ($harness, $card): void {
+        $services = $card->services();
+
+        $harness->assertSame('openingBalances', (string)($services[0]['key'] ?? ''));
+        $harness->assertSame(\eel_accounts\Service\OpeningBalanceService::class, (string)($services[0]['service'] ?? ''));
+        $harness->assertSame('fetchContext', (string)($services[0]['method'] ?? ''));
+        $harness->assertSame(':company.id', (string)(($services[0]['params'] ?? [])['companyId'] ?? ''));
+        $harness->assertSame(':company.accounting_period_id', (string)(($services[0]['params'] ?? [])['accountingPeriodId'] ?? ''));
+    });
+
+    $harness->check(_nominal_opening_balancesCard::class, 'renders balanced nominal opening balance editor', function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => [
+                'id' => 33,
+                'accounting_period_id' => 70,
+            ],
+            'services' => [
+                'openingBalances' => [
+                    'available' => true,
+                    'accounting_period' => [
+                        'id' => 70,
+                        'label' => '2025',
+                    ],
+                    'nominals' => [[
+                        'id' => 4,
+                        'code' => '1000',
+                        'name' => 'Current Account',
+                    ], [
+                        'id' => 8,
+                        'code' => '3000',
+                        'name' => 'Retained Earnings',
+                    ]],
+                    'suggestions' => [[
+                        'nominal_account_id' => 4,
+                        'debit' => '100.00',
+                        'credit' => '0.00',
+                        'line_description' => 'Opening bank',
+                    ], [
+                        'nominal_account_id' => 8,
+                        'debit' => '0.00',
+                        'credit' => '100.00',
+                        'line_description' => 'Opening equity',
+                    ]],
+                ],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, 'name="card_action" value="YearEnd"'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="save_opening_balance"'));
+        $harness->assertTrue(str_contains($html, 'name="show_card" value=".self"'));
+        $harness->assertTrue(str_contains($html, 'name="accounting_period_id" value="70"'));
+        $harness->assertTrue(str_contains($html, '1000 - Current Account'));
+        $harness->assertTrue(str_contains($html, '3000 - Retained Earnings'));
+        $harness->assertTrue(str_contains($html, 'Balanced'));
+        $harness->assertTrue(str_contains($html, 'Total debits must equal total credits before the opening balance journal can be saved.'));
+    });
+});
+
+$harness->run(_nominals::class, function (GeneratedServiceClassTestHarness $harness, _nominals $page): void {
+    $harness->check(_nominals::class, 'places chart and opening balances into explicit tabs', function () use ($harness, $page): void {
+        $layout = $page->cardLayout();
+
+        $harness->assertSame('Chart of Accounts', (string)($layout[0]['tab'] ?? ''));
+        $harness->assertSame(['nominals_accounts'], (array)($layout[0]['cards'] ?? []));
+        $harness->assertSame('Opening Balances', (string)($layout[4]['tab'] ?? ''));
+        $harness->assertSame(['nominal_opening_balances'], (array)($layout[4]['cards'] ?? []));
+        $harness->assertTrue(in_array('nominal_opening_balances', $page->cards(), true));
+        $harness->assertFalse(method_exists($page, 'hiddenSiteContextSelectors'));
+    });
+});
+
 $harness->run(_nominals_add_categoryCard::class, function (GeneratedServiceClassTestHarness $harness, _nominals_add_categoryCard $card): void {
     $harness->check(_nominals_add_categoryCard::class, 'hydrates editing category from portable nominals context', function () use ($harness, $card): void {
         $html = $card->render([

@@ -172,10 +172,6 @@ function yearEndStateCardDirectorLoanContext(array $offset): array
                 'available' => false,
                 'errors' => ['Tax readiness is not available.'],
             ],
-            'yearEndOpeningBalances' => [
-                'available' => false,
-                'errors' => ['Opening balances are not available.'],
-            ],
             'yearEndAdjustments' => [
                 'available' => true,
                 'accounting_period' => ['id' => 70, 'period_end' => '2025-12-31'],

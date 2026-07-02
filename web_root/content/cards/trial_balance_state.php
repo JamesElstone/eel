@@ -137,10 +137,6 @@ final class _trial_balance_stateCard extends CardBaseFramework
                     <select class="select" id="trial-balance-view-mode" name="view_mode" form="' . $formId . '">' . $this->options(['summary' => 'Summary', 'detailed' => 'Detailed'], $viewMode) . '</select>
                 </div>
                 <div class="form-row">
-                    <label for="trial-balance-search">Search nominal</label>
-                    <input class="input" id="trial-balance-search" name="search" form="' . $formId . '" value="' . HelperFramework::escape($search) . '" placeholder="Code or name">
-                </div>
-                <div class="form-row">
                     <label for="trial-balance-account-type">Account type</label>
                     <select class="select" id="trial-balance-account-type" name="account_type" form="' . $formId . '">' . $this->options($this->accountTypeOptions(), $accountType) . '</select>
                 </div>
@@ -183,6 +179,7 @@ final class _trial_balance_stateCard extends CardBaseFramework
                 ' . $this->summaryCard('Trial Balance status', '<span class="badge ' . (!empty($status['is_balanced']) ? 'success' : 'danger') . '">' . HelperFramework::escape((string)($status['label'] ?? 'Not balanced')) . '</span>', true) . '
                 ' . $this->summaryCard('Profit before tax', FormattingFramework::money($summary['profit_before_tax'] ?? 0)) . '
                 ' . $this->summaryCard('Net assets', FormattingFramework::money($summary['net_assets'] ?? 0)) . '
+                ' . $this->summaryCard('Solvency flag', $this->solvencyFlag($summary['net_assets'] ?? 0), true) . '
                 ' . $this->summaryCard('Bank balance total', FormattingFramework::money($summary['bank_balance_total'] ?? 0)) . '
                 ' . $this->summaryCard('Director loan balance', FormattingFramework::money($summary['director_loan_balance'] ?? 0)) . '
                 ' . $this->summaryCard('VAT control balance', FormattingFramework::money($summary['vat_control_balance'] ?? 0)) . '
@@ -349,6 +346,15 @@ final class _trial_balance_stateCard extends CardBaseFramework
     private function summaryCard(string $label, string $value, bool $trustedValue = false): string
     {
         return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . ($trustedValue ? $value : HelperFramework::escape($value)) . '</div></div>';
+    }
+
+    private function solvencyFlag(mixed $netAssets): string
+    {
+        $potentiallyInsolvent = (float)$netAssets < 0.0;
+        $class = $potentiallyInsolvent ? 'danger' : 'success';
+        $label = $potentiallyInsolvent ? 'Potentially Insolvent' : 'OK';
+
+        return '<span class="badge ' . $class . '">' . HelperFramework::escape($label) . '</span>';
     }
 
     private function metricValue(mixed $value): string

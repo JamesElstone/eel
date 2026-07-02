@@ -24,11 +24,6 @@ final class _nominals extends PageContextFramework
         return 'Maintain nominal accounts, subtypes, and import or export tools for the shared chart.';
     }
 
-    public function hiddenSiteContextSelectors(): array
-    {
-        return ['accounting_period_id'];
-    }
-
     public function cards(): array
     {
         return [
@@ -38,6 +33,45 @@ final class _nominals extends PageContextFramework
             'nominals_add_category',
             'nominals_account_types',
             'nominals_import_export',
+            'nominal_opening_balances',
+        ];
+    }
+
+    public function cardLayout(): array
+    {
+        return [
+            [
+                'tab' => 'Chart of Accounts',
+                'cards' => [
+                    'nominals_accounts',
+                ],
+            ],
+            [
+                'tab' => 'Add Account',
+                'cards' => [
+                    'nominals_add_account',
+                ],
+            ],
+            [
+                'tab' => 'Categories',
+                'cards' => [
+                    'nominals_categories',
+                    'nominals_add_category',
+                    'nominals_account_types',
+                ],
+            ],
+            [
+                'tab' => 'Import / Export',
+                'cards' => [
+                    'nominals_import_export',
+                ],
+            ],
+            [
+                'tab' => 'Opening Balances',
+                'cards' => [
+                    'nominal_opening_balances',
+                ],
+            ],
         ];
     }
 

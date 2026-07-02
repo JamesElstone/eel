@@ -7,16 +7,16 @@
  */
 declare(strict_types=1);
 
-final class _journals extends PageContextFramework
+final class _journal extends PageContextFramework
 {
     public function id(): string
     {
-        return 'journals';
+        return 'journal';
     }
 
     public function title(): string
     {
-        return 'Journals';
+        return 'Journal';
     }
 
     public function subtitle(): string
@@ -27,5 +27,17 @@ final class _journals extends PageContextFramework
     public function cards(): array
     {
         return ['journals_list'];
+    }
+
+    public function cardLayout(): array
+    {
+        return [
+            [
+                'tab' => 'History',
+                'cards' => [
+                    'journals_list',
+                ],
+            ],
+        ];
     }
 }

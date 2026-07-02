@@ -37,15 +37,6 @@ final class _year_end_stateCard extends CardBaseFramework
                 ],
             ],
             [
-                'key' => 'yearEndOpeningBalances',
-                'service' => \eel_accounts\Service\OpeningBalanceService::class,
-                'method' => 'fetchContext',
-                'params' => [
-                    'companyId' => ':company.id',
-                    'accountingPeriodId' => ':company.accounting_period_id',
-                ],
-            ],
-            [
                 'key' => 'yearEndAdjustments',
                 'service' => \eel_accounts\Service\YearEndAdjustmentService::class,
                 'method' => 'fetchContext',
@@ -94,7 +85,6 @@ final class _year_end_stateCard extends CardBaseFramework
     {
         $checklist = (array)($context['services']['yearEndChecklist'] ?? []);
         $taxReadiness = (array)($context['services']['yearEndTaxReadiness'] ?? []);
-        $openingBalances = (array)($context['services']['yearEndOpeningBalances'] ?? []);
         $adjustments = (array)($context['services']['yearEndAdjustments'] ?? []);
         $directorLoanOffset = (array)($context['services']['directorLoanOffset'] ?? []);
         $comparison = (array)($context['services']['yearEndCompaniesHouseComparison'] ?? []);
@@ -105,7 +95,6 @@ final class _year_end_stateCard extends CardBaseFramework
         return $this->renderControls($context, $checklist)
             . $this->renderBookkeepingSection($checklist)
             . $this->renderCheckSections($checklist)
-            . $this->renderOpeningBalances($context, $openingBalances)
             . $this->renderAdjustments($context, $adjustments)
             . $this->renderDirectorLoanOffset($context, $directorLoanOffset)
             . $this->renderTaxReadiness($taxReadiness)
@@ -267,55 +256,6 @@ final class _year_end_stateCard extends CardBaseFramework
             <div class="table-scroll"><table><thead><tr><th>Step</th><th>Amount</th></tr></thead><tbody>' . $stepsHtml . '</tbody></table></div>
             <h3 class="card-title">Loss schedule</h3>
             <div class="table-scroll"><table><thead><tr><th>Period</th><th>Loss created</th><th>Brought forward</th><th>Used</th><th>Carried forward</th></tr></thead><tbody>' . $scheduleHtml . '</tbody></table></div>
-        </section>';
-    }
-
-    private function renderOpeningBalances(array $context, array $openingBalances): string
-    {
-        if (empty($openingBalances['available'])) {
-            return '<section class="settings-stack" id="opening-balances"><h3 class="card-title">Opening Balances</h3>' . $this->renderErrors((array)($openingBalances['errors'] ?? [])) . '</section>';
-        }
-
-        $company = (array)($context['company'] ?? []);
-        $companyId = (int)($company['id'] ?? 0);
-        $accountingPeriod = (array)($openingBalances['accounting_period'] ?? []);
-        $accountingPeriodId = (int)($accountingPeriod['id'] ?? ($company['accounting_period_id'] ?? 0));
-        $existing = is_array($openingBalances['existing_journal'] ?? null) ? (array)$openingBalances['existing_journal'] : [];
-        $defaultRows = (array)($existing['lines'] ?? []);
-        if ($defaultRows === []) {
-            $defaultRows = (array)($openingBalances['suggestions'] ?? []);
-        }
-
-        $formId = 'year-end-opening-balance-form';
-        $description = $existing !== []
-            ? (string)($existing['description'] ?? '')
-            : 'Opening balances for ' . (string)($accountingPeriod['label'] ?? 'selected period');
-
-        return '<section class="settings-stack" id="opening-balances">
-            <h3 class="card-title">Opening Balances</h3>
-            <div class="helper">Post one balanced opening balance journal for this accounting period. Suggestions from the immediately prior Companies House figures can be edited before saving.</div>
-            <form id="' . $formId . '" method="post" data-ajax="true">
-                <input type="hidden" name="card_action" value="YearEnd">
-                <input type="hidden" name="intent" value="save_opening_balance">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-            </form>
-            ' . $this->lineEditorTable('opening_balance', $formId, (array)($openingBalances['nominals'] ?? []), $defaultRows, 8) . '
-            <div class="form-grid">
-                <div class="form-row">
-                    <label for="opening-balance-description">Description</label>
-                    <input class="input" id="opening-balance-description" name="opening_balance_description" form="' . $formId . '" value="' . HelperFramework::escape($description) . '">
-                </div>
-                <div class="form-row">
-                    <label for="opening-balance-notes">Notes</label>
-                    <input class="input" id="opening-balance-notes" name="opening_balance_notes" form="' . $formId . '" value="' . HelperFramework::escape((string)($existing['notes'] ?? '')) . '">
-                </div>
-            </div>
-            <div class="actions-row">
-                <label class="checkbox-item"><input type="checkbox" id="opening-balance-system-mode" name="opening_balance_system_mode" form="' . $formId . '" value="1"><div class="checkbox-copy"><strong>Mark as system-generated</strong><span>Use when the journal is seeded from prior filed figures or another controlled source.</span></div></label>
-                <label class="checkbox-item"><input type="checkbox" id="opening-balance-replace" name="opening_balance_replace" form="' . $formId . '" value="1"' . ($existing !== [] ? ' checked' : '') . '><div class="checkbox-copy"><strong>Replace existing opening balance</strong><span>Required when an active opening balance journal already exists.</span></div></label>
-            </div>
-            <div class="actions-row"><button class="button primary" type="submit" form="' . $formId . '">Save Opening Balances</button></div>
         </section>';
     }
 

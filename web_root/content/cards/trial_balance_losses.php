@@ -53,7 +53,7 @@ final class _trial_balance_lossesCard extends CardBaseFramework
         $taxComputation = (array)($summary['tax_computation'] ?? []);
 
         if (empty($taxComputation['available'])) {
-            return $this->panel('Trial Balance Losses', $this->renderErrors((array)($taxComputation['errors'] ?? ['Tax computation is not available for this period yet.'])));
+            return $this->renderErrors((array)($taxComputation['errors'] ?? ['Tax computation is not available for this period yet.']));
         }
 
         $stepsHtml = '';
@@ -62,28 +62,24 @@ final class _trial_balance_lossesCard extends CardBaseFramework
         }
 
         return '<div>
-            <div class="status-head"><h3 class="card-title">Trial Balance Losses</h3></div>
             <div class="summary-grid four">
                 ' . $this->summaryCard('Loss created', FormattingFramework::money($taxComputation['loss_created_in_period'] ?? 0)) . '
                 ' . $this->summaryCard('Brought forward', FormattingFramework::money($taxComputation['losses_brought_forward'] ?? 0)) . '
                 ' . $this->summaryCard('Utilised', FormattingFramework::money($taxComputation['losses_used'] ?? 0)) . '
                 ' . $this->summaryCard('Carried forward', FormattingFramework::money($taxComputation['losses_carried_forward'] ?? 0)) . '
             </div>
-            <h3 class="card-title">Tax computation steps</h3>
-            <div class="table-scroll">
-                <table><thead><tr><th>Step</th><th>Amount</th></tr></thead><tbody>' . $stepsHtml . '</tbody></table>
-            </div>
+            <section class="panel-soft">
+                <h3 class="card-title">Tax computation steps</h3>
+                <div class="table-scroll">
+                    <table><thead><tr><th>Step</th><th>Amount</th></tr></thead><tbody>' . $stepsHtml . '</tbody></table>
+                </div>
+            </section>
         </div>';
     }
 
     private function summaryCard(string $label, string $value): string
     {
         return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
-    }
-
-    private function panel(string $title, string $body): string
-    {
-        return '<div><div class="status-head"><h3 class="card-title">' . HelperFramework::escape($title) . '</h3></div>' . $body . '</div>';
     }
 
     private function renderErrors(array $errors): string

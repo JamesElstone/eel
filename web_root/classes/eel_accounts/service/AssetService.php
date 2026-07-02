@@ -545,8 +545,8 @@ final class AssetService
         int $defaultBankNominalId,
         bool $confirmedJournalRebuild = false
     ): array {
-        if (!$this->hasRequiredSchema()) {
-            return ['success' => false, 'errors' => ['Run the fixed asset migration before reconciling manual assets.']];
+        if (!$this->hasManualAssetSchema()) {
+            return ['success' => false, 'errors' => ['Run the manual asset reconciliation migration before reconciling manual assets.']];
         }
 
         $asset = $this->fetchAsset($companyId, $assetId);
@@ -896,10 +896,16 @@ final class AssetService
             return null;
         }
 
-        $metrics = $this->refreshDerivedTaxData($companyId);
-        return $metrics[$accountingPeriodId] ?? [
+        $this->refreshDerivedTaxData($companyId);
+        $summary = (new \eel_accounts\Service\CorporationTaxComputationService())->fetchSummary($companyId, $accountingPeriodId);
+        if (!empty($summary['available'])) {
+            return $summary;
+        }
+
+        return [
             'accounting_period' => $accountingPeriod,
             'accounting_profit' => 0.0,
+            'disallowable_add_backs' => 0.0,
             'depreciation_add_back' => 0.0,
             'capital_allowances' => 0.0,
             'taxable_before_losses' => 0.0,
@@ -1105,7 +1111,6 @@ final class AssetService
 
         $this->deleteDerivedTaxRows($companyId);
         $metrics = [];
-        $lossPool = [];
 
         foreach (array_reverse($accountingPeriods) as $accountingPeriod) {
             $accountingPeriodId = (int)$accountingPeriod['id'];
@@ -1122,88 +1127,29 @@ final class AssetService
             $accountingProfit = $this->calculateAccountingProfit($companyId, $accountingPeriodId);
             $depreciationAddBack = round(array_sum($depreciationByAsset), 2);
             $capitalAllowances = round(array_sum($allowancesByAsset), 2);
-            $taxableBeforeLosses = round($accountingProfit + $depreciationAddBack - $capitalAllowances, 2);
-            $lossesBf = round(array_sum(array_column($lossPool, 'remaining')), 2);
-            $lossesUsed = 0.0;
-
-            if ($taxableBeforeLosses > 0 && $lossesBf > 0) {
-                $remainingTaxable = $taxableBeforeLosses;
-                foreach ($lossPool as &$lossRow) {
-                    if ($remainingTaxable <= 0) {
-                        break;
-                    }
-                    $usage = min($lossRow['remaining'], $remainingTaxable);
-                    $lossRow['remaining'] = round($lossRow['remaining'] - $usage, 2);
-                    $lossRow['used'] = round($lossRow['used'] + $usage, 2);
-                    $remainingTaxable = round($remainingTaxable - $usage, 2);
-                    $lossesUsed = round($lossesUsed + $usage, 2);
-                }
-                unset($lossRow);
-            }
-
-            if ($taxableBeforeLosses < 0) {
-                $lossPool[] = [
-                    'origin_accounting_period_id' => $accountingPeriodId,
-                    'originated' => abs($taxableBeforeLosses),
-                    'used' => 0.0,
-                    'remaining' => abs($taxableBeforeLosses),
-                ];
-            }
-
-            $lossesCf = round(array_sum(array_column($lossPool, 'remaining')), 2);
             $metrics[$accountingPeriodId] = [
                 'accounting_period' => $accountingPeriod,
                 'accounting_profit' => round($accountingProfit, 2),
                 'depreciation_add_back' => $depreciationAddBack,
                 'capital_allowances' => $capitalAllowances,
-                'taxable_before_losses' => $taxableBeforeLosses,
-                'losses_brought_forward' => $lossesBf,
-                'losses_used' => $lossesUsed,
-                'losses_carried_forward' => $lossesCf,
-                'taxable_profit' => max(0.0, round($taxableBeforeLosses - $lossesUsed, 2)),
             ];
-        }
-
-        foreach ($lossPool as $lossRow) {
-            $stmt = \InterfaceDB::prepare(
-                'INSERT INTO tax_loss_carryforwards (
-                    company_id,
-                    origin_accounting_period_id,
-                    amount_originated,
-                    amount_used,
-                    amount_remaining,
-                    status,
-                    created_at,
-                    updated_at
-                 ) VALUES (
-                    :company_id,
-                    :origin_accounting_period_id,
-                    :amount_originated,
-                    :amount_used,
-                    :amount_remaining,
-                    :status,
-                    CURRENT_TIMESTAMP,
-                    CURRENT_TIMESTAMP
-                 )'
-            );
-            $stmt->execute([
-                'company_id' => $companyId,
-                'origin_accounting_period_id' => $lossRow['origin_accounting_period_id'],
-                'amount_originated' => round($lossRow['originated'], 2),
-                'amount_used' => round($lossRow['used'], 2),
-                'amount_remaining' => round($lossRow['remaining'], 2),
-                'status' => $lossRow['remaining'] > 0 ? 'open' : 'used',
-            ]);
         }
 
         return $metrics;
     }
 
     private function deleteDerivedTaxRows(int $companyId): void {
-        \InterfaceDB::prepare('DELETE FROM accounting_period_adjustments WHERE company_id = :company_id')
-            ->execute(['company_id' => $companyId]);
-        \InterfaceDB::prepare('DELETE FROM tax_loss_carryforwards WHERE company_id = :company_id')
-            ->execute(['company_id' => $companyId]);
+        \InterfaceDB::prepare(
+            'DELETE FROM accounting_period_adjustments
+             WHERE company_id = :company_id
+               AND source_asset_id IS NOT NULL
+               AND type IN (:depreciation_type, :allowance_type)'
+        )
+            ->execute([
+                'company_id' => $companyId,
+                'depreciation_type' => 'add_back_depreciation',
+                'allowance_type' => 'capital_allowances',
+            ]);
     }
 
     private function fetchDepreciationByAsset(int $companyId, int $accountingPeriodId): array {

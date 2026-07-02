@@ -27,6 +27,48 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(0, $pageData['default_bank_nominal_id'] ?? null);
         });
 
+        $harness->check(\eel_accounts\Service\AssetService::class, 'tax view uses corporation tax computation and replaces stale asset adjustments', static function () use ($harness, $service): void {
+            assetServiceTestRequireTaxViewSchema($harness);
+            $fixture = assetServiceTestCreateTaxViewFixture();
+
+            $taxView = $service->fetchTaxView($fixture['company_id'], $fixture['accounting_period_id']);
+
+            $harness->assertSame(1800.0, round((float)($taxView['accounting_profit'] ?? 0), 2));
+            $harness->assertSame(200.0, round((float)($taxView['disallowable_add_backs'] ?? 0), 2));
+            $harness->assertSame(1000.0, round((float)($taxView['capital_allowances'] ?? 0), 2));
+            $harness->assertSame(1000.0, round((float)($taxView['taxable_before_losses'] ?? 0), 2));
+            $harness->assertSame(1000.0, round((float)($taxView['taxable_profit'] ?? 0), 2));
+
+            $manualRows = (int)InterfaceDB::fetchColumn(
+                'SELECT COUNT(*)
+                 FROM accounting_period_adjustments
+                 WHERE company_id = :company_id
+                   AND type = :type
+                   AND source_asset_id IS NULL',
+                [
+                    'company_id' => $fixture['company_id'],
+                    'type' => 'manual_review_marker',
+                ]
+            );
+            $assetAllowance = round((float)InterfaceDB::fetchColumn(
+                'SELECT COALESCE(SUM(amount), 0)
+                 FROM accounting_period_adjustments
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id
+                   AND type = :type
+                   AND source_asset_id = :asset_id',
+                [
+                    'company_id' => $fixture['company_id'],
+                    'accounting_period_id' => $fixture['accounting_period_id'],
+                    'type' => 'capital_allowances',
+                    'asset_id' => $fixture['asset_id'],
+                ]
+            ), 2);
+
+            $harness->assertSame(1, $manualRows);
+            $harness->assertSame(1000.0, $assetAllowance);
+        });
+
         $harness->check(\eel_accounts\Service\AssetService::class, 'journal source enum supports asset postings', static function () use ($harness): void {
             if (InterfaceDB::driverName() === 'sqlite') {
                 $schemaPath = PROJECT_ROOT . 'db_schema' . DIRECTORY_SEPARATOR . 'eel_accounts.schema.sql';
@@ -370,6 +412,226 @@ function assetServiceTestInsertNominal(string $prefix, string $name, string $acc
         'SELECT id FROM nominal_accounts WHERE code = :code LIMIT 1',
         ['code' => $code]
     );
+}
+
+function assetServiceTestInsertNominalWithTreatment(string $prefix, string $name, string $accountType, string $taxTreatment): int
+{
+    $code = $prefix . strtoupper(substr(str_replace('.', '', uniqid('', true)), -5));
+    InterfaceDB::prepareExecute(
+        'INSERT INTO nominal_accounts (code, name, account_type, tax_treatment, is_active, sort_order)
+         VALUES (:code, :name, :account_type, :tax_treatment, 1, :sort_order)',
+        [
+            'code' => $code,
+            'name' => $name . ' ' . $code,
+            'account_type' => $accountType,
+            'tax_treatment' => $taxTreatment,
+            'sort_order' => 9900,
+        ]
+    );
+
+    return (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM nominal_accounts WHERE code = :code LIMIT 1',
+        ['code' => $code]
+    );
+}
+
+function assetServiceTestRequireTaxViewSchema(GeneratedServiceClassTestHarness $harness): void
+{
+    foreach (['companies', 'accounting_periods', 'nominal_accounts', 'journals', 'journal_lines', 'asset_register', 'asset_depreciation_entries', 'asset_disposal_transaction_links', 'accounting_period_adjustments', 'tax_loss_carryforwards'] as $table) {
+        if (!InterfaceDB::tableExists($table)) {
+            $harness->skip($table . ' table is not available.');
+        }
+    }
+}
+
+function assetServiceTestCreateTaxViewFixture(): array
+{
+    $marker = (string)random_int(100000, 999999);
+    $companyId = (int)('91' . $marker);
+    $accountingPeriodId = (int)('92' . $marker);
+    $assetId = (int)('93' . $marker);
+    $incomeNominalId = assetServiceTestInsertNominalWithTreatment('ATI', 'Asset Tax Income', 'income', 'allowable');
+    $disallowableNominalId = assetServiceTestInsertNominalWithTreatment('ATD', 'Asset Tax Disallowable', 'expense', 'disallowable');
+    $assetNominalId = assetServiceTestInsertNominalWithTreatment('ATA', 'Asset Tax Asset', 'asset', 'capital');
+    $accumNominalId = assetServiceTestInsertNominalWithTreatment('ATC', 'Asset Tax Accumulated Depreciation', 'asset', 'capital');
+
+    InterfaceDB::prepareExecute(
+        'INSERT INTO companies (id, company_name, company_number, is_active)
+         VALUES (:id, :company_name, :company_number, 1)',
+        [
+            'id' => $companyId,
+            'company_name' => 'Asset Tax Fixture ' . $marker,
+            'company_number' => 'AT' . $marker,
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end)
+         VALUES (:id, :company_id, :label, :period_start, :period_end)',
+        [
+            'id' => $accountingPeriodId,
+            'company_id' => $companyId,
+            'label' => 'Asset Tax FY ' . $marker,
+            'period_start' => '2026-01-01',
+            'period_end' => '2026-12-31',
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO journals (
+            company_id,
+            accounting_period_id,
+            source_type,
+            source_ref,
+            journal_date,
+            description,
+            is_posted
+         ) VALUES (
+            :company_id,
+            :accounting_period_id,
+            :source_type,
+            :source_ref,
+            :journal_date,
+            :description,
+            1
+         )',
+        [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'source_type' => 'manual',
+            'source_ref' => 'asset-tax-fixture-' . $marker,
+            'journal_date' => '2026-12-31',
+            'description' => 'Asset tax fixture ' . $marker,
+        ]
+    );
+    $journalId = (int)InterfaceDB::fetchColumn(
+        'SELECT id
+         FROM journals
+         WHERE company_id = :company_id
+           AND source_ref = :source_ref
+         LIMIT 1',
+        [
+            'company_id' => $companyId,
+            'source_ref' => 'asset-tax-fixture-' . $marker,
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit, line_description)
+         VALUES (:journal_id, :nominal_account_id, 0.00, 2000.00, :line_description)',
+        [
+            'journal_id' => $journalId,
+            'nominal_account_id' => $incomeNominalId,
+            'line_description' => 'Fixture income',
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit, line_description)
+         VALUES (:journal_id, :nominal_account_id, 200.00, 0.00, :line_description)',
+        [
+            'journal_id' => $journalId,
+            'nominal_account_id' => $disallowableNominalId,
+            'line_description' => 'Fixture disallowable expense',
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO asset_register (
+            id,
+            company_id,
+            asset_code,
+            description,
+            category,
+            nominal_account_id,
+            accum_dep_nominal_id,
+            purchase_date,
+            cost,
+            useful_life_years,
+            depreciation_method,
+            residual_value,
+            status
+         ) VALUES (
+            :id,
+            :company_id,
+            :asset_code,
+            :description,
+            :category,
+            :nominal_account_id,
+            :accum_dep_nominal_id,
+            :purchase_date,
+            :cost,
+            :useful_life_years,
+            :depreciation_method,
+            :residual_value,
+            :status
+         )',
+        [
+            'id' => $assetId,
+            'company_id' => $companyId,
+            'asset_code' => 'AT-FIX-' . $marker,
+            'description' => 'Asset tax fixture asset ' . $marker,
+            'category' => 'tools_equipment',
+            'nominal_account_id' => $assetNominalId,
+            'accum_dep_nominal_id' => $accumNominalId,
+            'purchase_date' => '2026-02-01',
+            'cost' => 1000.00,
+            'useful_life_years' => 3,
+            'depreciation_method' => 'none',
+            'residual_value' => 0.00,
+            'status' => 'active',
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO accounting_period_adjustments (
+            company_id,
+            accounting_period_id,
+            type,
+            direction,
+            amount,
+            source_asset_id
+         ) VALUES (
+            :company_id,
+            :accounting_period_id,
+            :type,
+            :direction,
+            :amount,
+            :source_asset_id
+         )',
+        [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'type' => 'capital_allowances',
+            'direction' => 'deduct',
+            'amount' => 999.00,
+            'source_asset_id' => $assetId,
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO accounting_period_adjustments (
+            company_id,
+            accounting_period_id,
+            type,
+            direction,
+            amount,
+            source_asset_id
+         ) VALUES (
+            :company_id,
+            :accounting_period_id,
+            :type,
+            :direction,
+            :amount,
+            NULL
+         )',
+        [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'type' => 'manual_review_marker',
+            'direction' => 'add',
+            'amount' => 123.00,
+        ]
+    );
+
+    return [
+        'company_id' => $companyId,
+        'accounting_period_id' => $accountingPeriodId,
+        'asset_id' => $assetId,
+    ];
 }
 
 function assetServiceTestRequireDisposalSchema(GeneratedServiceClassTestHarness $harness): void

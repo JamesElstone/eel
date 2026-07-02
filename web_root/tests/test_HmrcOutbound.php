@@ -39,6 +39,38 @@ $harness->run(\eel_accounts\Outbound\HmrcOutbound::class, function (GeneratedSer
         $harness->assertSame('error', $outbound->validate('GB', '')->status);
     });
 
+    $harness->check(\eel_accounts\Outbound\HmrcOutbound::class, 'extracts HMRC VAT lookup target business name', function () use ($harness): void {
+        $outbound = new \eel_accounts\Outbound\HmrcOutbound(
+            ['mode' => 'TEST', 'test_base_url' => 'https://example.test'],
+            static function (array $request): array {
+                if (($request['path'] ?? '') === '/oauth/token') {
+                    return [
+                        'status_code' => 200,
+                        'headers' => [],
+                        'body' => '{"access_token":"vat-token","expires_in":3600}',
+                    ];
+                }
+
+                return [
+                    'status_code' => 200,
+                    'headers' => [],
+                    'body' => json_encode([
+                        'target' => [
+                            'vatNumber' => '550447258',
+                            'name' => 'EXAMPLE TRADE SUPPLIER',
+                            'address' => ['line1' => '1 Trade Park'],
+                        ],
+                    ], JSON_UNESCAPED_SLASHES),
+                ];
+            }
+        );
+
+        $result = $outbound->validate('GB', '550447258');
+
+        $harness->assertSame('valid', $result->status);
+        $harness->assertSame('EXAMPLE TRADE SUPPLIER', $result->name);
+    });
+
     $harness->check(\eel_accounts\Outbound\HmrcOutbound::class, 'builds anti-fraud validator config with HMRC defaults', function () use ($harness): void {
         $config = \eel_accounts\Outbound\HmrcOutbound::antiFraudValidatorConfig('LIVE');
 

@@ -58,6 +58,7 @@ final class _asset_taxCard extends CardBaseFramework
         return $assetTaxView !== null
             ? '<div class="list">
                     <div class="list-item"><strong>Accounting Profit</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['accounting_profit'] ?? 0))) . '</span></div>
+                    <div class="list-item"><strong>+ Disallowable Expenses</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['disallowable_add_backs'] ?? 0))) . '</span></div>
                     <div class="list-item"><strong>+ Depreciation</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['depreciation_add_back'] ?? 0))) . '</span></div>
                     <div class="list-item"><strong>- Capital Allowances</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['capital_allowances'] ?? 0))) . '</span></div>
                     <div class="list-item"><strong>= Taxable Profit Before Losses</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['taxable_before_losses'] ?? 0))) . '</span></div>

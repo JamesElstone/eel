@@ -19,4 +19,26 @@ $harness->run(\eel_accounts\Service\VatRegistrationFactoryService::class, functi
             ) instanceof \eel_accounts\Service\VatRegistrationService
         );
     });
+
+    $harness->check(\eel_accounts\Service\VatRegistrationFactoryService::class, 'uses selected runtime HMRC mode for VAT validation', function () use ($harness): void {
+        $service = \eel_accounts\Service\VatRegistrationFactoryService::createFromConfig([
+            'runtime' => ['hmrc_mode' => 'LIVE'],
+            'hmrc' => [
+                'vat' => [
+                    'mode' => 'TEST',
+                    'test_base_url' => 'https://test.example',
+                    'live_base_url' => 'https://live.example',
+                ],
+            ],
+        ]);
+
+        $validatorsProperty = new ReflectionProperty($service, 'validators');
+        $validatorsProperty->setAccessible(true);
+        $validators = $validatorsProperty->getValue($service);
+        $configProperty = new ReflectionProperty($validators[0], 'config');
+        $configProperty->setAccessible(true);
+        $hmrcConfig = $configProperty->getValue($validators[0]);
+
+        $harness->assertSame('LIVE', (string)($hmrcConfig['mode'] ?? ''));
+    });
 });

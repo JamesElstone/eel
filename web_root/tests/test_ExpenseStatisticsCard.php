@@ -35,6 +35,11 @@ $harness->run(_expense_statisticsCard::class, function (GeneratedServiceClassTes
         $harness->assertTrue(str_contains($html, '<th>Claims</th><th>Items</th><th>Unassigned</th><th>Balance b/f</th><th>Claimed</th><th>Payments</th><th>Balance c/f</th>'));
         $harness->assertTrue(str_contains($html, '<td>Alice</td>'));
         $harness->assertTrue(str_contains($html, '<td class="numeric">2</td>'));
+        $claimantSection = expenseStatisticsCardSection($html, 'Claimant Balances');
+        $harness->assertSame(8, substr_count($claimantSection, '<td class="numeric">$'));
+        foreach (['$500.00', '$175.00', '$40.00', '$635.00', '$0.00', '$80.00', '$20.00', '$60.00'] as $amount) {
+            $harness->assertTrue(str_contains($claimantSection, '<td class="numeric">' . $amount . '</td>'));
+        }
         $harness->assertTrue(str_contains($html, 'Unassigned Claim Entries'));
         $harness->assertTrue(str_contains($html, '<th>Claimant</th><th>Claim ID</th><th>Month</th><th>Date unassigned</th><th>Amount</th>'));
         $harness->assertTrue(str_contains($html, 'EXP-2605-001'));

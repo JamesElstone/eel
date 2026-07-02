@@ -52,7 +52,7 @@ final class _expense_statisticsCard extends CardBaseFramework
 
         return '<div class="settings-stack expense-statistics">
             ' . $this->renderHealthPanel((array)($statistics['health_checks'] ?? []), $companySettings) . '
-            ' . $this->renderClaimantPanel((array)($statistics['claimants'] ?? [])) . '
+            ' . $this->renderClaimantPanel((array)($statistics['claimants'] ?? []), $companySettings) . '
             ' . $this->renderUnassignedEntriesPanel((array)($statistics['unassigned_entries'] ?? [])) . '
             ' . $this->renderUnconfirmedNoLineClaimsPanel((array)($statistics['unconfirmed_no_line_claims'] ?? [])) . '
             ' . $this->renderTrendPanel((array)($statistics['monthly_trend'] ?? [])) . '
@@ -60,12 +60,13 @@ final class _expense_statisticsCard extends CardBaseFramework
         </div>';
     }
 
-    private function renderClaimantPanel(array $rows): string
+    private function renderClaimantPanel(array $rows, array $companySettings): string
     {
         if ($rows === []) {
             return $this->emptyPanel('Claimant Balances', 'No expense claims were found for the selected accounting period.');
         }
 
+        $companySettingsService = new \eel_accounts\Service\CompanySettingsService();
         $body = '';
         foreach ($rows as $row) {
             $body .= '<tr>
@@ -73,10 +74,10 @@ final class _expense_statisticsCard extends CardBaseFramework
                 <td class="numeric">' . (int)($row['claim_count'] ?? 0) . '</td>
                 <td class="numeric">' . (int)($row['item_count'] ?? 0) . '</td>
                 <td class="numeric">' . (int)($row['unassigned_item_count'] ?? 0) . '</td>
-                <td class="numeric">' . HelperFramework::escape(FormattingFramework::money((float)($row['brought_forward'] ?? 0))) . '</td>
-                <td class="numeric">' . HelperFramework::escape(FormattingFramework::money((float)($row['claimed_total'] ?? 0))) . '</td>
-                <td class="numeric">' . HelperFramework::escape(FormattingFramework::money((float)($row['payments_made'] ?? 0))) . '</td>
-                <td class="numeric">' . HelperFramework::escape(FormattingFramework::money((float)($row['carried_forward'] ?? 0))) . '</td>
+                <td class="numeric">' . HelperFramework::escape($companySettingsService->money($companySettings, (float)($row['brought_forward'] ?? 0))) . '</td>
+                <td class="numeric">' . HelperFramework::escape($companySettingsService->money($companySettings, (float)($row['claimed_total'] ?? 0))) . '</td>
+                <td class="numeric">' . HelperFramework::escape($companySettingsService->money($companySettings, (float)($row['payments_made'] ?? 0))) . '</td>
+                <td class="numeric">' . HelperFramework::escape($companySettingsService->money($companySettings, (float)($row['carried_forward'] ?? 0))) . '</td>
             </tr>';
         }
 

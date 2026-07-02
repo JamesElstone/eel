@@ -49,11 +49,12 @@ final class _expense_statisticsCard extends CardBaseFramework
         $statistics = (array)($context['services']['expenseStatistics'] ?? []);
 
         return '<div class="settings-stack expense-statistics">
+            ' . $this->renderHealthPanel((array)($statistics['health_checks'] ?? [])) . '
             ' . $this->renderClaimantPanel((array)($statistics['claimants'] ?? [])) . '
+            ' . $this->renderUnassignedEntriesPanel((array)($statistics['unassigned_entries'] ?? [])) . '
             ' . $this->renderNominalPanel((array)($statistics['nominals'] ?? [])) . '
             ' . $this->renderClaimantBreakdownPanel((array)($statistics['claimant_breakdown'] ?? [])) . '
             ' . $this->renderTrendPanel((array)($statistics['monthly_trend'] ?? [])) . '
-            ' . $this->renderHealthPanel((array)($statistics['health_checks'] ?? [])) . '
         </div>';
     }
 
@@ -69,6 +70,8 @@ final class _expense_statisticsCard extends CardBaseFramework
                 <td>' . HelperFramework::escape((string)($row['claimant_name'] ?? '')) . '</td>
                 <td class="numeric">' . (int)($row['claim_count'] ?? 0) . '</td>
                 <td class="numeric">' . (int)($row['item_count'] ?? 0) . '</td>
+                <td class="numeric">' . (int)($row['unassigned_item_count'] ?? 0) . '</td>
+                <td class="numeric">' . HelperFramework::escape(FormattingFramework::money((float)($row['brought_forward'] ?? 0))) . '</td>
                 <td class="numeric">' . HelperFramework::escape(FormattingFramework::money((float)($row['claimed_total'] ?? 0))) . '</td>
                 <td class="numeric">' . HelperFramework::escape(FormattingFramework::money((float)($row['payments_made'] ?? 0))) . '</td>
                 <td class="numeric">' . HelperFramework::escape(FormattingFramework::money((float)($row['carried_forward'] ?? 0))) . '</td>
@@ -79,7 +82,39 @@ final class _expense_statisticsCard extends CardBaseFramework
             <h3 class="card-title">Claimant Balances</h3>
             <div class="table-scroll">
                 <table>
-                    <thead><tr><th>Claimant</th><th>Claims</th><th>Items</th><th>Claimed</th><th>Payments</th><th>Balance c/f</th></tr></thead>
+                    <thead><tr><th>Claimant</th><th>Claims</th><th>Items</th><th>Unassigned</th><th>Balance b/f</th><th>Claimed</th><th>Payments</th><th>Balance c/f</th></tr></thead>
+                    <tbody>' . $body . '</tbody>
+                </table>
+            </div>
+        </section>';
+    }
+
+    private function renderUnassignedEntriesPanel(array $rows): string
+    {
+        if ($rows === []) {
+            return $this->emptyPanel('Unassigned Claim Entries', 'No unassigned expense claim entries were found for the selected accounting period.');
+        }
+
+        $body = '';
+        foreach ($rows as $row) {
+            $claimReference = trim((string)($row['claim_reference_code'] ?? ''));
+            if ($claimReference === '') {
+                $claimReference = '#' . (string)(int)($row['claim_id'] ?? 0);
+            }
+
+            $body .= '<tr>
+                <td>' . HelperFramework::escape($claimReference) . '</td>
+                <td>' . HelperFramework::escape((string)($row['month'] ?? '')) . '</td>
+                <td>' . HelperFramework::escape($this->displayDate((string)($row['expense_date'] ?? ''))) . '</td>
+                <td class="numeric">' . HelperFramework::escape(FormattingFramework::money((float)($row['amount'] ?? 0))) . '</td>
+            </tr>';
+        }
+
+        return '<section class="panel-soft">
+            <h3 class="card-title">Unassigned Claim Entries</h3>
+            <div class="table-scroll">
+                <table>
+                    <thead><tr><th>Claim ID</th><th>Month</th><th>Date unassigned</th><th>Amount</th></tr></thead>
                     <tbody>' . $body . '</tbody>
                 </table>
             </div>
@@ -95,6 +130,7 @@ final class _expense_statisticsCard extends CardBaseFramework
         $tableRows = '';
         $nominalColours = $this->chartColours($rows, 'claimed_total');
         $nominalColourIndex = 0;
+        $estimatedTableHeight = 42 + (max(1, count($rows)) * 37);
 
         foreach ($rows as $row) {
             $label = $this->nominalLabel($row);
@@ -116,7 +152,7 @@ final class _expense_statisticsCard extends CardBaseFramework
 
         return '<section class="panel-soft">
             <h3 class="card-title">Claims By Nominal</h3>
-            <div class="expense-statistics-nominal-layout">
+            <div class="expense-statistics-nominal-layout" style="--expense-statistics-table-height: ' . $estimatedTableHeight . 'px;">
                 <div class="table-scroll">
                     <table>
                         <thead><tr><th class="expense-statistics-colour-column"><span class="sr-only">Colour</span></th><th>Nominal</th><th>Items</th><th>Total</th></tr></thead>
@@ -136,6 +172,9 @@ final class _expense_statisticsCard extends CardBaseFramework
             return $this->emptyPanel('Claims By Claimant', 'No claimant totals were found for the selected accounting period.');
         }
 
+        $chart = count($rows) > 1
+            ? $this->pieChart($rows, 'claimed_total', 'claimant', 'Expense total by claimant')
+            : '';
         $tableRows = '';
         foreach ($rows as $row) {
             $tableRows .= '<tr>
@@ -147,7 +186,7 @@ final class _expense_statisticsCard extends CardBaseFramework
         return '<section class="panel-soft">
             <h3 class="card-title">Claims By Claimant</h3>
             <div class="settings-stack">
-                ' . $this->pieChart($rows, 'claimed_total', 'claimant', 'Expense total by claimant') . '
+                ' . $chart . '
                 <div class="table-scroll">
                     <table>
                         <thead><tr><th>Claimant</th><th>Total</th></tr></thead>
@@ -174,7 +213,9 @@ final class _expense_statisticsCard extends CardBaseFramework
 
         return '<section class="panel-soft">
             <h3 class="card-title">Claims Over Time</h3>
-            ' . (new ChartService())->line($points, ['title' => 'Expense claims over time']) . '
+            <div class="expense-statistics-trend-chart">
+                ' . (new ChartService())->line($points, ['title' => 'Expense claims over time']) . '
+            </div>
         </section>';
     }
 
@@ -261,6 +302,16 @@ final class _expense_statisticsCard extends CardBaseFramework
         }
 
         return trim($code . ' ' . ($name !== '' ? $name : 'Unassigned'));
+    }
+
+    private function displayDate(string $value): string
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return '';
+        }
+
+        return (new DateTimeImmutable($value))->format('d/m/Y');
     }
 
     private function emptyPanel(string $title, string $message): string

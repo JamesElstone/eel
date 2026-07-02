@@ -340,6 +340,7 @@ final class ExpenseClaimService
 
         return [
             'claimants' => $this->fetchStatisticsClaimants($scope),
+            'unassigned_entries' => $this->fetchStatisticsUnassignedEntries($scope),
             'nominals' => $this->fetchStatisticsNominals($scope),
             'claimant_breakdown' => $this->fetchStatisticsClaimantBreakdown($scope),
             'monthly_trend' => $this->fetchStatisticsMonthlyTrend($scope),
@@ -353,12 +354,17 @@ final class ExpenseClaimService
     }
 
     private function fetchStatisticsClaimants(array $scope): array {
+        $firstClaimWhere = $this->expenseStatisticsScopedClaimWhere($scope, 'first_ec')
+            . ' AND first_ec.claimant_id = ec.claimant_id';
+
         return array_map(
             static fn(array $row): array => [
                 'claimant_id' => (int)$row['claimant_id'],
                 'claimant_name' => (string)$row['claimant_name'],
                 'claim_count' => (int)$row['claim_count'],
                 'item_count' => (int)$row['item_count'],
+                'unassigned_item_count' => (int)$row['unassigned_item_count'],
+                'brought_forward' => round((float)$row['brought_forward'], 2),
                 'claimed_total' => round((float)$row['claimed_total'], 2),
                 'payments_made' => round((float)$row['payments_made'], 2),
                 'carried_forward' => round((float)$row['carried_forward'], 2),
@@ -368,13 +374,30 @@ final class ExpenseClaimService
                         c.claimant_name,
                         COUNT(ec.id) AS claim_count,
                         COALESCE(SUM(lc.line_count), 0) AS item_count,
+                        COALESCE(SUM(lc.unassigned_line_count), 0) AS unassigned_item_count,
+                        COALESCE((
+                            SELECT first_ec.brought_forward_amount
+                            FROM expense_claims first_ec
+                            WHERE ' . $firstClaimWhere . '
+                            ORDER BY first_ec.claim_year ASC, first_ec.claim_month ASC, first_ec.id ASC
+                            LIMIT 1
+                        ), 0) AS brought_forward,
                         COALESCE(SUM(lc.line_total), 0) AS claimed_total,
                         COALESCE(SUM(pc.payment_total), 0) AS payments_made,
-                        COALESCE(SUM(COALESCE(lc.line_total, 0) - COALESCE(pc.payment_total, 0)), 0) AS carried_forward
+                        COALESCE((
+                            SELECT first_ec.brought_forward_amount
+                            FROM expense_claims first_ec
+                            WHERE ' . $firstClaimWhere . '
+                            ORDER BY first_ec.claim_year ASC, first_ec.claim_month ASC, first_ec.id ASC
+                            LIMIT 1
+                        ), 0) + COALESCE(SUM(COALESCE(lc.line_total, 0) - COALESCE(pc.payment_total, 0)), 0) AS carried_forward
                  FROM expense_claims ec
                  INNER JOIN expense_claimants c ON c.id = ec.claimant_id
                  LEFT JOIN (
-                    SELECT expense_claim_id, COUNT(*) AS line_count, COALESCE(SUM(amount), 0) AS line_total
+                    SELECT expense_claim_id,
+                           COUNT(*) AS line_count,
+                           COALESCE(SUM(CASE WHEN nominal_account_id IS NULL THEN 1 ELSE 0 END), 0) AS unassigned_line_count,
+                           COALESCE(SUM(amount), 0) AS line_total
                     FROM expense_claim_lines
                     GROUP BY expense_claim_id
                  ) lc ON lc.expense_claim_id = ec.id
@@ -386,6 +409,39 @@ final class ExpenseClaimService
                  WHERE ' . $scope['where'] . '
                  GROUP BY ec.claimant_id, c.claimant_name
                  ORDER BY c.claimant_name ASC, ec.claimant_id ASC',
+                $scope['params']
+            )
+        );
+    }
+
+    private function fetchStatisticsUnassignedEntries(array $scope): array {
+        return array_map(
+            function (array $row): array {
+                $monthDate = \DateTimeImmutable::createFromFormat(
+                    '!Y-n-j',
+                    (string)(int)$row['claim_year'] . '-' . (string)(int)$row['claim_month'] . '-1'
+                );
+
+                return [
+                    'claim_id' => (int)$row['claim_id'],
+                    'claim_reference_code' => (string)$row['claim_reference_code'],
+                    'month' => $monthDate !== false ? $monthDate->format('M Y') : '',
+                    'expense_date' => (string)$row['expense_date'],
+                    'amount' => round((float)$row['amount'], 2),
+                ];
+            },
+            \InterfaceDB::fetchAll(
+                'SELECT ec.id AS claim_id,
+                        ec.claim_reference_code,
+                        ec.claim_year,
+                        ec.claim_month,
+                        l.expense_date,
+                        l.amount
+                 FROM expense_claim_lines l
+                 INNER JOIN expense_claims ec ON ec.id = l.expense_claim_id
+                 WHERE ' . $scope['where'] . '
+                   AND l.nominal_account_id IS NULL
+                 ORDER BY ec.claim_year ASC, ec.claim_month ASC, ec.id ASC, l.expense_date ASC, l.line_number ASC, l.id ASC',
                 $scope['params']
             )
         );
@@ -598,33 +654,51 @@ final class ExpenseClaimService
     }
 
     private function expenseStatisticsScope(int $companyId, array $filters): array {
-        $conditions = ['ec.company_id = :company_id'];
         $params = ['company_id' => $companyId];
         $periodStart = trim((string)($filters['accounting_period_start'] ?? ''));
         $periodEnd = trim((string)($filters['accounting_period_end'] ?? ''));
         $accountingPeriodId = max(0, (int)($filters['accounting_period_id'] ?? 0));
 
         if ($accountingPeriodId > 0) {
-            $conditions[] = 'ec.accounting_period_id = :accounting_period_id';
             $params['accounting_period_id'] = $accountingPeriodId;
-        } elseif ($this->isValidDate($periodStart) && $this->isValidDate($periodEnd)) {
-            $conditions[] = 'ec.period_start >= :accounting_period_start';
-            $conditions[] = 'ec.period_end <= :accounting_period_end';
+        }
+
+        if ($accountingPeriodId <= 0 && $this->isValidDate($periodStart) && $this->isValidDate($periodEnd)) {
             $params['accounting_period_start'] = $periodStart;
             $params['accounting_period_end'] = $periodEnd;
         }
 
-        return [
-            'where' => implode(' AND ', $conditions),
+        $scope = [
             'params' => $params,
             'period_start' => $periodStart,
             'period_end' => $periodEnd,
+            'accounting_period_id' => $accountingPeriodId,
         ];
+        $scope['where'] = $this->expenseStatisticsScopedClaimWhere($scope, 'ec');
+
+        return $scope;
+    }
+
+    private function expenseStatisticsScopedClaimWhere(array $scope, string $claimAlias): string {
+        $conditions = [$claimAlias . '.company_id = :company_id'];
+        $accountingPeriodId = max(0, (int)($scope['accounting_period_id'] ?? 0));
+        $periodStart = trim((string)($scope['period_start'] ?? ''));
+        $periodEnd = trim((string)($scope['period_end'] ?? ''));
+
+        if ($accountingPeriodId > 0) {
+            $conditions[] = $claimAlias . '.accounting_period_id = :accounting_period_id';
+        } elseif ($this->isValidDate($periodStart) && $this->isValidDate($periodEnd)) {
+            $conditions[] = $claimAlias . '.period_start >= :accounting_period_start';
+            $conditions[] = $claimAlias . '.period_end <= :accounting_period_end';
+        }
+
+        return implode(' AND ', $conditions);
     }
 
     private function emptyStatistics(array $filters): array {
         return [
             'claimants' => [],
+            'unassigned_entries' => [],
             'nominals' => [],
             'claimant_breakdown' => [],
             'monthly_trend' => [],

@@ -810,9 +810,18 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
             $primary = expenseClaimServiceFindStatisticsRow($claimants, 'claimant_id', (int)$fixture['claimant_id']);
             $harness->assertSame(2, (int)($primary['claim_count'] ?? 0));
             $harness->assertSame(3, (int)($primary['item_count'] ?? 0));
+            $harness->assertSame(1, (int)($primary['unassigned_item_count'] ?? 0));
+            $harness->assertSame(500.00, (float)($primary['brought_forward'] ?? 0));
             $harness->assertSame(175.00, (float)($primary['claimed_total'] ?? 0));
             $harness->assertSame(40.00, (float)($primary['payments_made'] ?? 0));
-            $harness->assertSame(135.00, (float)($primary['carried_forward'] ?? 0));
+            $harness->assertSame(635.00, (float)($primary['carried_forward'] ?? 0));
+
+            $unassignedEntries = (array)($statistics['unassigned_entries'] ?? []);
+            $harness->assertCount(1, $unassignedEntries);
+            $harness->assertSame((int)$fixture['claim_id'], (int)(($unassignedEntries[0] ?? [])['claim_id'] ?? 0));
+            $harness->assertSame('May 2026', (string)(($unassignedEntries[0] ?? [])['month'] ?? ''));
+            $harness->assertSame('2026-05-06', (string)(($unassignedEntries[0] ?? [])['expense_date'] ?? ''));
+            $harness->assertSame(50.00, (float)(($unassignedEntries[0] ?? [])['amount'] ?? 0));
 
             $nominals = (array)($statistics['nominals'] ?? []);
             $unassigned = expenseClaimServiceFindStatisticsRow($nominals, 'name', 'Unassigned');

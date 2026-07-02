@@ -1215,11 +1215,15 @@
 .expense-statistics-nominal-chart {
   min-width: 0;
   justify-self: stretch;
+  align-self: start;
   width: 100%;
+  max-height: var(--expense-statistics-table-height, 300px);
+  overflow: hidden;
 }
 
 .expense-statistics-nominal-chart .chart {
   width: 100%;
+  max-height: var(--expense-statistics-table-height, 300px);
 }
 
 .expense-statistics-colour-column {
@@ -1241,6 +1245,10 @@
 
 .expense-statistics-colour-swatch-muted {
   fill: var(--panel-soft);
+}
+
+.expense-statistics-trend-chart .chart {
+  max-height: 400px;
 }
 
 .nominals-layout {

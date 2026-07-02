@@ -44,13 +44,13 @@ final class _trial_balance_validationCard extends CardBaseFramework
         $validation = (array)($context['services']['trialBalanceValidation'] ?? []);
 
         if (empty($validation['available'])) {
-            return $this->panel('Trial Balance Validation', $this->renderErrors((array)($validation['errors'] ?? [])));
+            return $this->renderErrors((array)($validation['errors'] ?? []));
         }
 
         $checksHtml = '';
         foreach ((array)($validation['checks'] ?? []) as $check) {
             $status = (string)($check['status'] ?? 'warning');
-            $checksHtml .= '<div>
+            $checksHtml .= '<div class="panel-soft">
                 <div class="status-head">
                     <h4 class="card-title">' . HelperFramework::escape((string)($check['title'] ?? 'Check')) . '</h4>
                     <span class="badge ' . $this->badgeClass($status) . '">' . HelperFramework::escape($status) . '</span>
@@ -60,12 +60,7 @@ final class _trial_balance_validationCard extends CardBaseFramework
             </div>';
         }
 
-        return '<div>
-            <div class="status-head">
-                <h3 class="card-title">Trial Balance Validation</h3>
-            </div>
-            <div class="settings-stack">' . $checksHtml . '</div>
-        </div>';
+        return '<div class="settings-stack">' . $checksHtml . '</div>';
     }
 
     private function metricValue(mixed $value): string
@@ -107,11 +102,6 @@ final class _trial_balance_validationCard extends CardBaseFramework
     private function isListArray(array $value): bool
     {
         return array_keys($value) === range(0, count($value) - 1);
-    }
-
-    private function panel(string $title, string $body): string
-    {
-        return '<div><div class="status-head"><h3 class="card-title">' . HelperFramework::escape($title) . '</h3></div>' . $body . '</div>';
     }
 
     private function badgeClass(string $status): string

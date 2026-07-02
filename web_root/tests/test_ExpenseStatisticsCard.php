@@ -36,6 +36,7 @@ $harness->run(_expense_statisticsCard::class, function (GeneratedServiceClassTes
         $harness->assertTrue(str_contains($html, '<td>Alice</td>'));
         $harness->assertTrue(str_contains($html, '<td class="numeric">2</td>'));
         $harness->assertTrue(str_contains($html, 'Unassigned Claim Entries'));
+        $harness->assertTrue(str_contains($html, '<th>Claimant</th><th>Claim ID</th><th>Month</th><th>Date unassigned</th><th>Amount</th>'));
         $harness->assertTrue(str_contains($html, 'EXP-2605-001'));
         $harness->assertTrue(str_contains($html, 'May 2026'));
         $harness->assertTrue(str_contains($html, '06/05/2026'));
@@ -146,6 +147,7 @@ function expenseStatisticsCardContext(): array
                     [
                         'claim_id' => 1,
                         'claim_reference_code' => 'EXP-2605-001',
+                        'claimant_name' => 'Alice',
                         'month' => 'May 2026',
                         'expense_date' => '2026-05-06',
                         'amount' => 50.00,

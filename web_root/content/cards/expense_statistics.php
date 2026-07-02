@@ -103,6 +103,7 @@ final class _expense_statisticsCard extends CardBaseFramework
             }
 
             $body .= '<tr>
+                <td>' . HelperFramework::escape((string)($row['claimant_name'] ?? '')) . '</td>
                 <td>' . HelperFramework::escape($claimReference) . '</td>
                 <td>' . HelperFramework::escape((string)($row['month'] ?? '')) . '</td>
                 <td>' . HelperFramework::escape($this->displayDate((string)($row['expense_date'] ?? ''))) . '</td>
@@ -114,7 +115,7 @@ final class _expense_statisticsCard extends CardBaseFramework
             <h3 class="card-title">Unassigned Claim Entries</h3>
             <div class="table-scroll">
                 <table>
-                    <thead><tr><th>Claim ID</th><th>Month</th><th>Date unassigned</th><th>Amount</th></tr></thead>
+                    <thead><tr><th>Claimant</th><th>Claim ID</th><th>Month</th><th>Date unassigned</th><th>Amount</th></tr></thead>
                     <tbody>' . $body . '</tbody>
                 </table>
             </div>

@@ -425,6 +425,7 @@ final class ExpenseClaimService
                 return [
                     'claim_id' => (int)$row['claim_id'],
                     'claim_reference_code' => (string)$row['claim_reference_code'],
+                    'claimant_name' => (string)$row['claimant_name'],
                     'month' => $monthDate !== false ? $monthDate->format('M Y') : '',
                     'expense_date' => (string)$row['expense_date'],
                     'amount' => round((float)$row['amount'], 2),
@@ -433,12 +434,14 @@ final class ExpenseClaimService
             \InterfaceDB::fetchAll(
                 'SELECT ec.id AS claim_id,
                         ec.claim_reference_code,
+                        c.claimant_name,
                         ec.claim_year,
                         ec.claim_month,
                         l.expense_date,
                         l.amount
                  FROM expense_claim_lines l
                  INNER JOIN expense_claims ec ON ec.id = l.expense_claim_id
+                 INNER JOIN expense_claimants c ON c.id = ec.claimant_id
                  WHERE ' . $scope['where'] . '
                    AND l.nominal_account_id IS NULL
                  ORDER BY ec.claim_year ASC, ec.claim_month ASC, ec.id ASC, l.expense_date ASC, l.line_number ASC, l.id ASC',

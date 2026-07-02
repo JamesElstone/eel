@@ -819,6 +819,7 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
             $unassignedEntries = (array)($statistics['unassigned_entries'] ?? []);
             $harness->assertCount(1, $unassignedEntries);
             $harness->assertSame((int)$fixture['claim_id'], (int)(($unassignedEntries[0] ?? [])['claim_id'] ?? 0));
+            $harness->assertSame('Fixture Claimant ' . (string)$fixture['marker'], (string)(($unassignedEntries[0] ?? [])['claimant_name'] ?? ''));
             $harness->assertSame('May 2026', (string)(($unassignedEntries[0] ?? [])['month'] ?? ''));
             $harness->assertSame('2026-05-06', (string)(($unassignedEntries[0] ?? [])['expense_date'] ?? ''));
             $harness->assertSame(50.00, (float)(($unassignedEntries[0] ?? [])['amount'] ?? 0));

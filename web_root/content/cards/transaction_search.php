@@ -224,7 +224,7 @@ final class _transaction_searchCard extends CardBaseFramework
             <input type="hidden" name="_pagination" value="1">
             <input type="hidden" name="_invalidate_fact" value="' . HelperFramework::escape($this->tableInvalidationFact()) . '">
             <input type="hidden" name="' . HelperFramework::escape($this->paginationPageField()) . '" value="1">
-            <div class="actions-row">
+            <div class="actions-row transaction-search-controls">
                 <div class="mini-field">
                     <label for="transaction_search_keyword">Keyword</label>
                     <input class="input" id="transaction_search_keyword" name="transaction_search_keyword" value="' . HelperFramework::escape($keyword) . '">

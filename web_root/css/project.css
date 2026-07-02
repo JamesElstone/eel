@@ -2141,6 +2141,10 @@
   position: relative;
 }
 
+.transaction-search-controls {
+  align-items: flex-start;
+}
+
 .transaction-search-amount-total {
   color: var(--ink);
   font-size: 0.92rem;

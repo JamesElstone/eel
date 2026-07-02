@@ -47,9 +47,12 @@ final class _expense_statisticsCard extends CardBaseFramework
     public function render(array $context): string
     {
         $statistics = (array)($context['services']['expenseStatistics'] ?? []);
+        $company = (array)($context['company'] ?? []);
+        $companySettings = (array)($context['expense_page_settings'] ?? $company['settings'] ?? []);
+        $defaultCurrencySymbol = $this->defaultCurrencySymbol($companySettings);
 
         return '<div class="settings-stack expense-statistics">
-            ' . $this->renderHealthPanel((array)($statistics['health_checks'] ?? [])) . '
+            ' . $this->renderHealthPanel((array)($statistics['health_checks'] ?? []), $defaultCurrencySymbol) . '
             ' . $this->renderClaimantPanel((array)($statistics['claimants'] ?? [])) . '
             ' . $this->renderUnassignedEntriesPanel((array)($statistics['unassigned_entries'] ?? [])) . '
             ' . $this->renderNominalPanel((array)($statistics['nominals'] ?? [])) . '
@@ -130,7 +133,6 @@ final class _expense_statisticsCard extends CardBaseFramework
         $tableRows = '';
         $nominalColours = $this->chartColours($rows, 'claimed_total');
         $nominalColourIndex = 0;
-        $estimatedTableHeight = 42 + (max(1, count($rows)) * 37);
 
         foreach ($rows as $row) {
             $label = $this->nominalLabel($row);
@@ -152,7 +154,7 @@ final class _expense_statisticsCard extends CardBaseFramework
 
         return '<section class="panel-soft">
             <h3 class="card-title">Claims By Nominal</h3>
-            <div class="expense-statistics-nominal-layout" style="--expense-statistics-table-height: ' . $estimatedTableHeight . 'px;">
+            <div class="expense-statistics-nominal-layout">
                 <div class="table-scroll">
                     <table>
                         <thead><tr><th class="expense-statistics-colour-column"><span class="sr-only">Colour</span></th><th>Nominal</th><th>Items</th><th>Total</th></tr></thead>
@@ -188,15 +190,15 @@ final class _expense_statisticsCard extends CardBaseFramework
         </section>';
     }
 
-    private function renderHealthPanel(array $health): string
+    private function renderHealthPanel(array $health, string $defaultCurrencySymbol): string
     {
         return '<section class="panel-soft">
             <h3 class="card-title">Health Checks</h3>
             <div class="grid-stats">
-                ' . $this->metric('Draft claims', (string)(int)(($health['draft'] ?? [])['claim_count'] ?? 0), FormattingFramework::money((float)(($health['draft'] ?? [])['claimed_total'] ?? 0))) . '
-                ' . $this->metric('Posted claims', (string)(int)(($health['posted'] ?? [])['claim_count'] ?? 0), FormattingFramework::money((float)(($health['posted'] ?? [])['claimed_total'] ?? 0))) . '
-                ' . $this->metric('Missing receipts', (string)(int)(($health['missing_receipts'] ?? [])['count'] ?? 0), FormattingFramework::money((float)(($health['missing_receipts'] ?? [])['value'] ?? 0))) . '
-                ' . $this->metric('Missing nominals', (string)(int)(($health['missing_nominals'] ?? [])['count'] ?? 0), FormattingFramework::money((float)(($health['missing_nominals'] ?? [])['value'] ?? 0))) . '
+                ' . $this->metric('Draft claims', (string)(int)(($health['draft'] ?? [])['claim_count'] ?? 0), $this->money($defaultCurrencySymbol, (float)(($health['draft'] ?? [])['claimed_total'] ?? 0))) . '
+                ' . $this->metric('Posted claims', (string)(int)(($health['posted'] ?? [])['claim_count'] ?? 0), $this->money($defaultCurrencySymbol, (float)(($health['posted'] ?? [])['claimed_total'] ?? 0))) . '
+                ' . $this->metric('Missing receipts', (string)(int)(($health['missing_receipts'] ?? [])['count'] ?? 0), $this->money($defaultCurrencySymbol, (float)(($health['missing_receipts'] ?? [])['value'] ?? 0))) . '
+                ' . $this->metric('Missing nominals', (string)(int)(($health['missing_nominals'] ?? [])['count'] ?? 0), $this->money($defaultCurrencySymbol, (float)(($health['missing_nominals'] ?? [])['value'] ?? 0))) . '
             </div>
         </section>';
     }
@@ -257,6 +259,11 @@ final class _expense_statisticsCard extends CardBaseFramework
         </article>';
     }
 
+    private function money(string $defaultCurrencySymbol, float|int|string|null $value): string
+    {
+        return $defaultCurrencySymbol . FormattingFramework::money($value);
+    }
+
     private function nominalLabel(array $row): string
     {
         $code = trim((string)($row['code'] ?? ''));
@@ -276,6 +283,13 @@ final class _expense_statisticsCard extends CardBaseFramework
         }
 
         return (new DateTimeImmutable($value))->format('d/m/Y');
+    }
+
+    private function defaultCurrencySymbol(array $companySettings): string
+    {
+        $symbol = html_entity_decode((string)($companySettings['default_currency_symbol'] ?? '&#163;'), \ENT_QUOTES | \ENT_HTML5, 'UTF-8');
+
+        return $symbol !== '' ? $symbol : html_entity_decode('&#163;', \ENT_QUOTES | \ENT_HTML5, 'UTF-8');
     }
 
     private function emptyPanel(string $title, string $message): string

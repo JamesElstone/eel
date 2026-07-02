@@ -1200,10 +1200,11 @@
   display: grid;
   grid-template-columns: max-content minmax(320px, 1fr);
   gap: 18px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .expense-statistics-nominal-layout > .table-scroll {
+  align-self: start;
   width: max-content;
   max-width: 100%;
 }
@@ -1213,17 +1214,24 @@
 }
 
 .expense-statistics-nominal-chart {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   min-width: 0;
   justify-self: stretch;
-  align-self: start;
+  align-self: stretch;
   width: 100%;
-  max-height: var(--expense-statistics-table-height, 300px);
+  height: 0;
+  min-height: 100%;
   overflow: hidden;
 }
 
 .expense-statistics-nominal-chart .chart {
+  flex: 1 1 auto;
   width: 100%;
-  max-height: var(--expense-statistics-table-height, 300px);
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
 }
 
 .expense-statistics-colour-column {
@@ -2148,7 +2156,15 @@
 
   .expense-statistics-nominal-chart {
       justify-self: stretch;
+      height: auto;
+      min-height: 0;
       max-width: none;
+      overflow: visible;
+    }
+
+  .expense-statistics-nominal-chart .chart {
+      height: auto;
+      max-height: none;
     }
 
   .indexed-section {

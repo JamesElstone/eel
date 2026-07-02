@@ -105,6 +105,7 @@ final class _expenses extends PageContextFramework
         return [
             'incorporation_date' => (string)($settings['incorporation_date'] ?? ''),
             'date_format' => (string)($settings['date_format'] ?? 'd/m/Y'),
+            'default_currency_symbol' => (string)($settings['default_currency_symbol'] ?? '&#163;'),
             'director_loan_nominal_id' => $directorLoanNominalId,
             'default_bank_nominal_id' => $this->settingId($settings, 'default_bank_nominal_id'),
             'default_expense_nominal_id' => $this->settingId($settings, 'default_expense_nominal_id'),

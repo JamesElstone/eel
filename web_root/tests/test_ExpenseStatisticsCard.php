@@ -49,6 +49,8 @@ $harness->run(_expense_statisticsCard::class, function (GeneratedServiceClassTes
         $harness->assertSame(1, substr_count($html, 'class="chart chart-pie"'));
         $harness->assertTrue(str_contains($html, 'chart-line'));
         $harness->assertTrue(str_contains($html, 'Missing receipts'));
+        $harness->assertTrue(str_contains($html, '<div class="stat-foot">$230.00</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="stat-foot">$25.00</div>'));
         $harness->assertTrue(!str_contains($html, 'Oldest outstanding'));
         $harness->assertTrue(!str_contains($html, 'Largest balance'));
         $harness->assertTrue(str_contains($html, 'EXP-2605-001'));
@@ -59,7 +61,8 @@ $harness->run(_expense_statisticsCard::class, function (GeneratedServiceClassTes
         $harness->assertTrue(strpos($nominalSection, '<div class="table-scroll">') < strpos($nominalSection, 'class="chart chart-pie"'));
         $harness->assertTrue(str_contains($nominalSection, '<th class="expense-statistics-colour-column"><span class="sr-only">Colour</span></th><th>Nominal</th>'));
         $harness->assertSame(5, substr_count($nominalSection, '<svg class="expense-statistics-colour-swatch" width="20" height="20" viewBox="0 0 20 20"'));
-        $harness->assertTrue(str_contains($nominalSection, 'style="--expense-statistics-table-height: 227px;"'));
+        $harness->assertTrue(!str_contains($nominalSection, 'style="'));
+        $harness->assertTrue(!str_contains($nominalSection, '--expense-statistics-table-height'));
         $harness->assertTrue(!str_contains($nominalSection, 'chart-legend-swatch'));
         $harness->assertTrue(!str_contains($nominalSection, 'chart-legend-label'));
         foreach (['#311142', '#825746', '#BAD74A', '#018240', '#A64AD7'] as $colour) {
@@ -101,6 +104,9 @@ $harness->run(_expenses::class, function (GeneratedServiceClassTestHarness $harn
 function expenseStatisticsCardContext(): array
 {
     return [
+        'expense_page_settings' => [
+            'default_currency_symbol' => '$',
+        ],
         'services' => [
             'expenseStatistics' => [
                 'claimants' => [

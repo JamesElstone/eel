@@ -36,7 +36,6 @@ final class _uploads extends PageContextFramework
             [
                 'tab' => 'Upload',
                 'cards' => [
-                    'uploads_flow',
                     'uploads_statement_coverage',
                     'uploads_bank_transactions',
                     'transactions_monthly_status',

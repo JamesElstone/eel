@@ -32,7 +32,6 @@ final class _dashboard extends PageContextFramework
     public function cards(): array
     {
         return [
-            'hero',
             'overview',
             'dashboard_action_queue',
             'dashboard_year_end_readiness',

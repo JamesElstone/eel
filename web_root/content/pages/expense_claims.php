@@ -26,7 +26,7 @@ final class _expense_claims extends PageContextFramework
 
     public function cards(): array
     {
-        return ['expense_statistics', 'expense_claimants', 'expense_add_claimant', 'expense_claim_create', 'expenses_state', 'expense_claim_editor'];
+        return ['expense_statistics', 'expense_claimants', 'expense_add_claimant', 'expense_claim_create', 'expenses_state', 'expense_claim_editor', 'expense_search'];
     }
 
     public function cardLayout(): array
@@ -56,6 +56,12 @@ final class _expense_claims extends PageContextFramework
                 'tab' => 'Editor',
                 'cards' => [
                     'expense_claim_editor',
+                ],
+            ],
+            [
+                'tab' => 'Search',
+                'cards' => [
+                    'expense_search',
                 ],
             ],
         ];
@@ -91,6 +97,7 @@ final class _expense_claims extends PageContextFramework
 
         return [
             'expense_filters' => $expenseFilters,
+            'expense_search' => [],
             'expense_page_settings' => $this->expensePageSettings((array)($baseContext['company']['settings'] ?? [])),
         ];
     }

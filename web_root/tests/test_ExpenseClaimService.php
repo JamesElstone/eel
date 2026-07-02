@@ -875,6 +875,98 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
             $harness->assertSame(135.00, (float)(($health['largest_outstanding_claimant'] ?? [])['carried_forward'] ?? 0));
         });
     });
+
+    $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'searches expense lines by selected accounting period and filters', function () use ($harness): void {
+        expenseClaimServiceWithFixture(static function (array $fixture) use ($harness): void {
+            $service = new \eel_accounts\Service\ExpenseClaimService();
+            $secondClaimantId = (int)$fixture['claimant_id'] + 70;
+            $travelNominalId = (int)$fixture['line_nominal_id'] + 70;
+            $previousPeriodId = (int)$fixture['period_id'] + 70;
+
+            \InterfaceDB::prepareExecute(
+                'INSERT INTO expense_claimants (id, company_id, claimant_name, is_active)
+                 VALUES (:id, :company_id, :claimant_name, 1)',
+                [
+                    'id' => $secondClaimantId,
+                    'company_id' => (int)$fixture['company_id'],
+                    'claimant_name' => 'Second Claimant ' . (string)$fixture['marker'],
+                ]
+            );
+            \InterfaceDB::prepareExecute(
+                'INSERT INTO nominal_accounts (id, code, name, account_type, tax_treatment, is_active, sort_order)
+                 VALUES (:id, :code, :name, :account_type, :tax_treatment, 1, 101)',
+                [
+                    'id' => $travelNominalId,
+                    'code' => 'TRV' . (string)$fixture['marker'],
+                    'name' => 'Travel',
+                    'account_type' => 'expense',
+                    'tax_treatment' => 'allowable',
+                ]
+            );
+            \InterfaceDB::prepareExecute(
+                'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end)
+                 VALUES (:id, :company_id, :label, :period_start, :period_end)',
+                [
+                    'id' => $previousPeriodId,
+                    'company_id' => (int)$fixture['company_id'],
+                    'label' => 'Previous Fixture ' . (string)$fixture['marker'],
+                    'period_start' => '2025-04-01',
+                    'period_end' => '2026-03-31',
+                ]
+            );
+
+            $mayClaimId = (int)$fixture['claim_id'];
+            $juneClaimId = expenseClaimServiceInsertClaim($fixture, 2026, 6, '2026-06-01', '2026-06-30');
+            $secondClaimId = (int)$fixture['claim_id'] + 80;
+            $previousClaimId = (int)$fixture['claim_id'] + 90;
+            expenseClaimServiceInsertClaimWithId($fixture, $secondClaimId, $secondClaimantId, 2026, 5, '2026-05-01', '2026-05-31');
+            expenseClaimServiceInsertClaimWithId($fixture, $previousClaimId, (int)$fixture['claimant_id'], 2026, 3, '2026-03-01', '2026-03-31', $previousPeriodId);
+
+            expenseClaimServiceInsertStatisticsLine($mayClaimId, 1, '2026-05-05', 'Cable clips', 12.30, (int)$fixture['line_nominal_id'], '');
+            expenseClaimServiceInsertStatisticsLine($mayClaimId, 2, '2026-05-06', 'Travel card', 99.00, $travelNominalId, '');
+            expenseClaimServiceInsertStatisticsLine($juneClaimId, 1, '2026-06-07', 'Hotel stay', 50.00, (int)$fixture['line_nominal_id'], '');
+            expenseClaimServiceInsertStatisticsLine($secondClaimId, 1, '2026-05-08', 'Second cable', 25.00, (int)$fixture['line_nominal_id'], '');
+            expenseClaimServiceInsertStatisticsLine($previousClaimId, 1, '2026-03-05', 'Old cable', 10.00, (int)$fixture['line_nominal_id'], '');
+            \InterfaceDB::prepareExecute(
+                'UPDATE expense_claim_lines SET notes = :notes WHERE expense_claim_id = :claim_id AND line_number = 1',
+                ['notes' => 'van receipt', 'claim_id' => $mayClaimId]
+            );
+            \InterfaceDB::prepareExecute(
+                'UPDATE expense_claims SET status = :status WHERE id = :id',
+                ['status' => 'posted', 'id' => $juneClaimId]
+            );
+
+            $harness->assertSame([], $service->searchExpenseLines((int)$fixture['company_id'], (int)$fixture['period_id'], []));
+
+            $keyword = $service->searchExpenseLines((int)$fixture['company_id'], (int)$fixture['period_id'], ['keyword' => 'Cable clips']);
+            $keywordRow = expenseClaimServiceFindStatisticsRow($keyword, 'description', 'Cable clips');
+            $harness->assertSame('van receipt', (string)($keywordRow['notes'] ?? ''));
+
+            $amount = $service->searchExpenseLines((int)$fixture['company_id'], (int)$fixture['period_id'], ['amount' => '12.3']);
+            $amountRow = expenseClaimServiceFindStatisticsRow($amount, 'description', 'Cable clips');
+            $harness->assertSame(12.30, (float)($amountRow['amount'] ?? 0));
+            $harness->assertSame([], $service->searchExpenseLines((int)$fixture['company_id'], (int)$fixture['period_id'], ['amount' => '-12.30']));
+
+            $claimant = $service->searchExpenseLines((int)$fixture['company_id'], (int)$fixture['period_id'], ['claimant_id' => $secondClaimantId]);
+            $harness->assertSame('Second cable', (string)(expenseClaimServiceFindStatisticsRow($claimant, 'description', 'Second cable')['description'] ?? ''));
+
+            $period = $service->searchExpenseLines((int)$fixture['company_id'], (int)$fixture['period_id'], ['claim_year' => 2026, 'claim_month' => 6]);
+            $harness->assertSame('Hotel stay', (string)(expenseClaimServiceFindStatisticsRow($period, 'description', 'Hotel stay')['description'] ?? ''));
+
+            $posted = $service->searchExpenseLines((int)$fixture['company_id'], (int)$fixture['period_id'], ['statuses' => ['posted', 'repayment_only']]);
+            $postedRow = expenseClaimServiceFindStatisticsRow($posted, 'description', 'Hotel stay');
+            $harness->assertSame('posted', (string)($postedRow['status'] ?? ''));
+
+            $nominal = $service->searchExpenseLines((int)$fixture['company_id'], (int)$fixture['period_id'], ['nominal_account_ids' => [$travelNominalId]]);
+            $harness->assertSame('Travel card', (string)(expenseClaimServiceFindStatisticsRow($nominal, 'description', 'Travel card')['description'] ?? ''));
+
+            $scoped = $service->searchExpenseLines((int)$fixture['company_id'], (int)$fixture['period_id'], ['keyword' => 'cable']);
+            $descriptions = array_map(static fn(array $row): string => (string)($row['description'] ?? ''), $scoped);
+            $harness->assertTrue(in_array('Cable clips', $descriptions, true));
+            $harness->assertTrue(in_array('Second cable', $descriptions, true));
+            $harness->assertSame(false, in_array('Old cable', $descriptions, true));
+        });
+    });
 });
 
 function expenseClaimServiceParseBulkLines(\eel_accounts\Service\ExpenseClaimService $service, string $source, string $dateFormat): array

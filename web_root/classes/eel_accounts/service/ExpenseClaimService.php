@@ -331,6 +331,136 @@ final class ExpenseClaimService
              ORDER BY ec.claim_year DESC, ec.claim_month DESC, ec.updated_at DESC, ec.id DESC', $params));
     }
 
+    public function searchExpenseLines(int $companyId, int $accountingPeriodId, array $filters = []): array {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return [];
+        }
+
+        $keyword = trim((string)($filters['keyword'] ?? ''));
+        $amount = $this->normaliseSearchAmount((string)($filters['amount'] ?? ''));
+        $claimantId = max(0, (int)($filters['claimant_id'] ?? 0));
+        $claimYear = max(0, (int)($filters['claim_year'] ?? 0));
+        $claimMonth = max(0, (int)($filters['claim_month'] ?? 0));
+        $statuses = $this->normaliseSearchStatuses($filters['statuses'] ?? []);
+        $nominalIds = $this->normaliseSearchIds($filters['nominal_account_ids'] ?? []);
+
+        if (
+            $keyword === ''
+            && $amount === ''
+            && $claimantId <= 0
+            && ($claimYear <= 0 || $claimMonth <= 0)
+            && $statuses === []
+            && $nominalIds === []
+        ) {
+            return [];
+        }
+
+        $conditions = [
+            'ec.company_id = :company_id',
+            'ec.accounting_period_id = :accounting_period_id',
+        ];
+        $params = [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+        ];
+
+        if ($keyword !== '') {
+            $conditions[] = '(ecl.description LIKE :keyword_description OR ecl.notes LIKE :keyword_notes)';
+            $params['keyword_description'] = '%' . $keyword . '%';
+            $params['keyword_notes'] = '%' . $keyword . '%';
+        }
+
+        if ($amount !== '') {
+            $amountValue = (float)$amount;
+            $conditions[] = 'ecl.amount >= :amount_min AND ecl.amount < :amount_max';
+            $params['amount_min'] = $amountValue - 0.005;
+            $params['amount_max'] = $amountValue + 0.005;
+        }
+
+        if ($claimantId > 0) {
+            $conditions[] = 'ec.claimant_id = :claimant_id';
+            $params['claimant_id'] = $claimantId;
+        }
+
+        if ($claimYear > 0 && $claimMonth >= 1 && $claimMonth <= 12) {
+            $conditions[] = 'ec.claim_year = :claim_year';
+            $conditions[] = 'ec.claim_month = :claim_month';
+            $params['claim_year'] = $claimYear;
+            $params['claim_month'] = $claimMonth;
+        }
+
+        if ($statuses !== []) {
+            $statusPlaceholders = [];
+            foreach ($statuses as $index => $status) {
+                $placeholder = 'status_' . $index;
+                $statusPlaceholders[] = ':' . $placeholder;
+                $params[$placeholder] = $status;
+            }
+            $conditions[] = 'ec.status IN (' . implode(', ', $statusPlaceholders) . ')';
+        }
+
+        if ($nominalIds !== []) {
+            $nominalPlaceholders = [];
+            foreach ($nominalIds as $index => $nominalId) {
+                $placeholder = 'nominal_id_' . $index;
+                $nominalPlaceholders[] = ':' . $placeholder;
+                $params[$placeholder] = $nominalId;
+            }
+            $conditions[] = 'ecl.nominal_account_id IN (' . implode(', ', $nominalPlaceholders) . ')';
+        }
+
+        return array_map(
+            static function (array $row): array {
+                return [
+                    'id' => (int)$row['id'],
+                    'expense_claim_id' => (int)$row['expense_claim_id'],
+                    'claim_reference_code' => (string)$row['claim_reference_code'],
+                    'claimant_id' => (int)$row['claimant_id'],
+                    'claimant_name' => (string)$row['claimant_name'],
+                    'claim_year' => (int)$row['claim_year'],
+                    'claim_month' => (int)$row['claim_month'],
+                    'claim_period' => sprintf('%04d-%02d', (int)$row['claim_year'], (int)$row['claim_month']),
+                    'expense_date' => (string)$row['expense_date'],
+                    'line_number' => (int)$row['line_number'],
+                    'description' => (string)$row['description'],
+                    'notes' => (string)($row['notes'] ?? ''),
+                    'amount' => round((float)$row['amount'], 2),
+                    'nominal_account_id' => isset($row['nominal_account_id']) ? (int)$row['nominal_account_id'] : null,
+                    'nominal_code' => (string)($row['nominal_code'] ?? ''),
+                    'nominal_name' => (string)($row['nominal_name'] ?? ''),
+                    'status' => (string)$row['status'],
+                    'updated_at' => (string)$row['updated_at'],
+                ];
+            },
+            \InterfaceDB::fetchAll(
+                'SELECT ecl.id,
+                        ecl.expense_claim_id,
+                        ecl.line_number,
+                        ecl.expense_date,
+                        ecl.description,
+                        ecl.notes,
+                        ecl.amount,
+                        ecl.nominal_account_id,
+                        ecl.updated_at,
+                        ec.claim_reference_code,
+                        ec.claimant_id,
+                        ec.claim_year,
+                        ec.claim_month,
+                        ec.status,
+                        c.claimant_name,
+                        n.code AS nominal_code,
+                        n.name AS nominal_name
+                   FROM expense_claim_lines ecl
+                   INNER JOIN expense_claims ec ON ec.id = ecl.expense_claim_id
+                   INNER JOIN expense_claimants c ON c.id = ec.claimant_id
+                   LEFT JOIN nominal_accounts n ON n.id = ecl.nominal_account_id
+                  WHERE ' . implode(' AND ', $conditions) . '
+                  ORDER BY ec.claim_year DESC, ec.claim_month DESC, ecl.expense_date DESC, ecl.line_number ASC, ecl.id DESC',
+                $params
+            )
+        );
+    }
+
     public function fetchStatistics(int $companyId, array $filters = []): array {
         if ($companyId <= 0) {
             return $this->emptyStatistics($filters);
@@ -2855,6 +2985,57 @@ final class ExpenseClaimService
     private function normaliseStatusFilter(string $status): string {
         $status = strtolower(trim($status));
         return in_array($status, ['all', 'draft', 'posted'], true) ? $status : 'all';
+    }
+
+    private function normaliseSearchAmount(string $value): string {
+        $value = trim(str_replace("\xC2\xA3", '', $value));
+
+        if ($value === '' || preg_match('/^\d+(?:\.\d{1,2})?$/', $value) !== 1) {
+            return '';
+        }
+
+        $amount = round((float)$value, 2);
+        if ($amount <= 0.0) {
+            return '';
+        }
+
+        return number_format($amount, 2, '.', '');
+    }
+
+    private function normaliseSearchStatuses(mixed $values): array {
+        if (is_string($values)) {
+            $values = preg_split('/[,\s]+/', $values) ?: [];
+        } elseif (!is_array($values)) {
+            $values = [$values];
+        }
+
+        $statuses = [];
+        foreach ($values as $value) {
+            $status = strtolower(trim((string)$value));
+            if (in_array($status, ['draft', 'posted'], true)) {
+                $statuses[$status] = $status;
+            }
+        }
+
+        return array_values($statuses);
+    }
+
+    private function normaliseSearchIds(mixed $values): array {
+        if (is_string($values)) {
+            $values = preg_split('/[,\s]+/', $values) ?: [];
+        } elseif (!is_array($values)) {
+            $values = [$values];
+        }
+
+        $ids = [];
+        foreach ($values as $value) {
+            $id = (int)$value;
+            if ($id > 0) {
+                $ids[$id] = $id;
+            }
+        }
+
+        return array_values($ids);
     }
 
     private function formatClaimSummary(array $claim): array {

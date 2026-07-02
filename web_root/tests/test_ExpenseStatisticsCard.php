@@ -99,13 +99,15 @@ $harness->run(_expense_claims::class, function (GeneratedServiceClassTestHarness
 
     $harness->check(_expense_claims::class, 'registers expense statistics on the summary tab', function () use ($harness, $instance): void {
         $harness->assertSame(
-            ['expense_statistics', 'expense_claimants', 'expense_add_claimant', 'expense_claim_create', 'expenses_state', 'expense_claim_editor'],
+            ['expense_statistics', 'expense_claimants', 'expense_add_claimant', 'expense_claim_create', 'expenses_state', 'expense_claim_editor', 'expense_search'],
             $instance->cards()
         );
 
         $layout = $instance->cardLayout();
         $harness->assertSame('Summary', (string)($layout[0]['tab'] ?? ''));
         $harness->assertSame(['expense_statistics'], (array)($layout[0]['cards'] ?? []));
+        $harness->assertSame('Search', (string)($layout[4]['tab'] ?? ''));
+        $harness->assertSame(['expense_search'], (array)($layout[4]['cards'] ?? []));
     });
 });
 

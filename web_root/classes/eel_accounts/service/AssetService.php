@@ -25,6 +25,7 @@ final class AssetService
     private const MANUAL_ASSET_REASON_OPENING_HISTORICAL = 'opening_or_historical_asset';
     private const MANUAL_ASSET_RECONCILE_DAYS_BEFORE = 7;
     private const MANUAL_ASSET_RECONCILE_DAYS_AFTER = 45;
+    private const MANUAL_ASSET_LEGAL_WARNING_VERSION = 'manual-asset-phantom-warning-2026-07-02';
     private const DISPOSAL_CLEARING_NOMINAL_CODE = '1490';
     private const DISPOSAL_SEARCH_DAYS_BEFORE = 1;
     private const DISPOSAL_SEARCH_DAYS_AFTER = 3;
@@ -474,9 +475,9 @@ final class AssetService
         }
     }
 
-    public function createManualAsset(int $companyId, int $accountingPeriodId, array $payload, int $offsetNominalId): array {
+    public function createManualAsset(int $companyId, int $accountingPeriodId, array $payload, int $offsetNominalId, array $evidenceFile = []): array {
         if (!$this->hasManualAssetSchema()) {
-            return ['success' => false, 'errors' => ['Run the manual asset reconciliation migration before posting manual assets.']];
+            return ['success' => false, 'errors' => ['Run the manual asset evidence migration before posting manual assets.']];
         }
 
         $manualAdditionReason = $this->normaliseManualAdditionReason((string)($payload['manual_addition_reason'] ?? ''));
@@ -488,6 +489,9 @@ final class AssetService
         }
         if (!$this->isManualAssetOffsetNominal($offsetNominalId)) {
             return ['success' => false, 'errors' => ['Choose a funding or clearing nominal before posting a manual asset.']];
+        }
+        if (!$this->truthy($payload['manual_asset_legal_acknowledged'] ?? '0')) {
+            return ['success' => false, 'errors' => ['Acknowledge the manual asset legal warning before posting this asset.']];
         }
         (new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'post manual assets in this period');
 
@@ -502,13 +506,19 @@ final class AssetService
             return ['success' => false, 'errors' => ['No accounting period exists for the chosen purchase date.']];
         }
 
+        $assetCode = $this->generateAssetCode($companyId);
+        $evidenceStorage = new \eel_accounts\Service\ManualAssetEvidenceStorageService();
+        $storedEvidence = $evidenceStorage->storeEvidence($companyId, $assetCode, $evidenceFile);
+        if (empty($storedEvidence['success'])) {
+            return ['success' => false, 'errors' => array_values(array_map('strval', (array)($storedEvidence['errors'] ?? ['Upload evidence that the manual asset exists.'])))];
+        }
+
         $ownsTransaction = !\InterfaceDB::inTransaction();
         if ($ownsTransaction) {
             \InterfaceDB::beginTransaction();
         }
 
         try {
-            $assetCode = $this->generateAssetCode($companyId);
             $journalId = $this->insertJournal([
                 'company_id' => $companyId,
                 'accounting_period_id' => $resolvedAccountingPeriodId,
@@ -529,6 +539,13 @@ final class AssetService
                 'linked_journal_id' => $journalId,
                 'manual_addition_reason' => $manualAdditionReason,
                 'manual_offset_nominal_id' => $offsetNominalId,
+                'manual_evidence_path' => (string)($storedEvidence['path'] ?? ''),
+                'manual_evidence_sha256' => (string)($storedEvidence['sha256'] ?? ''),
+                'manual_evidence_original_filename' => (string)($storedEvidence['original_filename'] ?? ''),
+                'manual_evidence_content_type' => (string)($storedEvidence['content_type'] ?? ''),
+                'manual_evidence_size_bytes' => (int)($storedEvidence['size_bytes'] ?? 0),
+                'manual_legal_warning_version' => self::MANUAL_ASSET_LEGAL_WARNING_VERSION,
+                'manual_legal_acknowledged_at' => date('Y-m-d H:i:s'),
             ]);
             $asset = $this->fetchAssetByCode($companyId, $assetCode);
             if ($asset === null) {
@@ -544,6 +561,7 @@ final class AssetService
             if ($ownsTransaction && \InterfaceDB::inTransaction()) {
                 \InterfaceDB::rollBack();
             }
+            $evidenceStorage->deleteStoredEvidence($storedEvidence);
 
             return ['success' => false, 'errors' => ['The manual asset could not be posted: ' . $exception->getMessage()]];
         }
@@ -1445,6 +1463,11 @@ final class AssetService
         return in_array($reason, $this->manualAssetReconciliationReasons(), true);
     }
 
+    private function truthy(mixed $value): bool
+    {
+        return in_array(strtolower(trim((string)$value)), ['1', 'true', 'yes', 'on'], true);
+    }
+
     private function manualAssetReconciliationWindow(string $purchaseDate): array
     {
         $date = new \DateTimeImmutable($purchaseDate);
@@ -1517,10 +1540,37 @@ final class AssetService
         ];
 
         if ($this->hasManualAssetSchema()) {
-            array_splice($columns, 15, 0, ['manual_addition_reason', 'manual_offset_nominal_id']);
-            array_splice($placeholders, 15, 0, [':manual_addition_reason', ':manual_offset_nominal_id']);
+            array_splice($columns, 15, 0, [
+                'manual_addition_reason',
+                'manual_offset_nominal_id',
+                'manual_evidence_path',
+                'manual_evidence_sha256',
+                'manual_evidence_original_filename',
+                'manual_evidence_content_type',
+                'manual_evidence_size_bytes',
+                'manual_legal_warning_version',
+                'manual_legal_acknowledged_at',
+            ]);
+            array_splice($placeholders, 15, 0, [
+                ':manual_addition_reason',
+                ':manual_offset_nominal_id',
+                ':manual_evidence_path',
+                ':manual_evidence_sha256',
+                ':manual_evidence_original_filename',
+                ':manual_evidence_content_type',
+                ':manual_evidence_size_bytes',
+                ':manual_legal_warning_version',
+                ':manual_legal_acknowledged_at',
+            ]);
             $params['manual_addition_reason'] = $links['manual_addition_reason'] ?? null;
             $params['manual_offset_nominal_id'] = $links['manual_offset_nominal_id'] ?? null;
+            $params['manual_evidence_path'] = $links['manual_evidence_path'] ?? null;
+            $params['manual_evidence_sha256'] = $links['manual_evidence_sha256'] ?? null;
+            $params['manual_evidence_original_filename'] = $links['manual_evidence_original_filename'] ?? null;
+            $params['manual_evidence_content_type'] = $links['manual_evidence_content_type'] ?? null;
+            $params['manual_evidence_size_bytes'] = $links['manual_evidence_size_bytes'] ?? null;
+            $params['manual_legal_warning_version'] = $links['manual_legal_warning_version'] ?? null;
+            $params['manual_legal_acknowledged_at'] = $links['manual_legal_acknowledged_at'] ?? null;
         }
 
         $stmt = \InterfaceDB::prepare(
@@ -1743,7 +1793,14 @@ final class AssetService
         try {
             $this->manualSchemaReady = $this->hasRequiredSchema()
                 && \InterfaceDB::columnExists('asset_register', 'manual_addition_reason')
-                && \InterfaceDB::columnExists('asset_register', 'manual_offset_nominal_id');
+                && \InterfaceDB::columnExists('asset_register', 'manual_offset_nominal_id')
+                && \InterfaceDB::columnExists('asset_register', 'manual_evidence_path')
+                && \InterfaceDB::columnExists('asset_register', 'manual_evidence_sha256')
+                && \InterfaceDB::columnExists('asset_register', 'manual_evidence_original_filename')
+                && \InterfaceDB::columnExists('asset_register', 'manual_evidence_content_type')
+                && \InterfaceDB::columnExists('asset_register', 'manual_evidence_size_bytes')
+                && \InterfaceDB::columnExists('asset_register', 'manual_legal_warning_version')
+                && \InterfaceDB::columnExists('asset_register', 'manual_legal_acknowledged_at');
         } catch (\Throwable) {
             $this->manualSchemaReady = false;
         }

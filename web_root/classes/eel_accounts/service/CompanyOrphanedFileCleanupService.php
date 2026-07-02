@@ -37,6 +37,7 @@ final class CompanyOrphanedFileCleanupService
             'statement_files_deleted' => 0,
             'transaction_receipts_deleted' => 0,
             'expense_receipts_deleted' => 0,
+            'manual_asset_evidence_deleted' => 0,
             'files_failed' => 0,
         ];
         $errors = [];
@@ -55,6 +56,11 @@ final class CompanyOrphanedFileCleanupService
         $counts['expense_receipts_deleted'] = $expenseReceiptResult['deleted'];
         $counts['files_failed'] += $expenseReceiptResult['failed'];
         $errors = array_merge($errors, $expenseReceiptResult['errors']);
+
+        $manualAssetEvidenceResult = $this->deleteOrphanedManualAssetEvidence($companyId);
+        $counts['manual_asset_evidence_deleted'] = $manualAssetEvidenceResult['deleted'];
+        $counts['files_failed'] += $manualAssetEvidenceResult['failed'];
+        $errors = array_merge($errors, $manualAssetEvidenceResult['errors']);
 
         error_log('[company_orphaned_file_cleanup] ' . json_encode([
             'company_id' => $companyId,
@@ -116,6 +122,23 @@ final class CompanyOrphanedFileCleanupService
             static fn(string $filename): bool => $filename !== '' && $filename !== '.' && $filename !== '..',
             $this->fetchReferencedExpenseReceiptFiles($companyId),
             'expense receipt'
+        );
+    }
+
+    private function deleteOrphanedManualAssetEvidence(int $companyId): array {
+        if ($companyId <= 0) {
+            return ['deleted' => 0, 'failed' => 0, 'errors' => []];
+        }
+
+        $directories = array_unique([
+            $this->fileCheckService->getManualAssetEvidenceDirectory($companyId),
+        ]);
+
+        return $this->deleteUnreferencedFilesInDirectories(
+            $directories,
+            static fn(string $filename): bool => $filename !== '' && $filename !== '.' && $filename !== '..',
+            $this->fetchReferencedManualAssetEvidenceFiles($companyId),
+            'manual asset evidence'
         );
     }
 
@@ -237,6 +260,20 @@ final class CompanyOrphanedFileCleanupService
              WHERE c.company_id = :company_id
                AND l.receipt_reference IS NOT NULL
                AND l.receipt_reference <> \'\'', ['company_id' => $companyId])->fetchAll(\PDO::FETCH_COLUMN)
+        );
+    }
+
+    private function fetchReferencedManualAssetEvidenceFiles(int $companyId): array {
+        if (!\InterfaceDB::tableExists('asset_register') || !\InterfaceDB::columnExists('asset_register', 'manual_evidence_path')) {
+            return [];
+        }
+
+        return $this->fetchBasenameLookup(
+            \InterfaceDB::prepareExecute( 'SELECT manual_evidence_path
+             FROM asset_register
+             WHERE company_id = :company_id
+               AND manual_evidence_path IS NOT NULL
+               AND manual_evidence_path <> \'\'', ['company_id' => $companyId])->fetchAll(\PDO::FETCH_COLUMN)
         );
     }
 

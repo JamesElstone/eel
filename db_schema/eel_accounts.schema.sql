@@ -1365,6 +1365,13 @@ CREATE TABLE `asset_register` (
   `linked_expense_claim_line_id` bigint(20) DEFAULT NULL,
   `manual_addition_reason` varchar(64) DEFAULT NULL,
   `manual_offset_nominal_id` int(11) DEFAULT NULL,
+  `manual_evidence_path` varchar(512) DEFAULT NULL,
+  `manual_evidence_sha256` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `manual_evidence_original_filename` varchar(255) DEFAULT NULL,
+  `manual_evidence_content_type` varchar(128) DEFAULT NULL,
+  `manual_evidence_size_bytes` int(11) DEFAULT NULL,
+  `manual_legal_warning_version` varchar(128) DEFAULT NULL,
+  `manual_legal_acknowledged_at` datetime DEFAULT NULL,
   `disposal_date` date DEFAULT NULL,
   `disposal_proceeds` decimal(12,2) DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
@@ -1379,6 +1386,7 @@ CREATE TABLE `asset_register` (
   KEY `idx_asset_register_expense_claim_line` (`linked_expense_claim_line_id`),
   KEY `idx_asset_register_manual_reconcile` (`company_id`,`manual_addition_reason`,`linked_transaction_id`),
   KEY `idx_asset_register_manual_offset_nominal` (`manual_offset_nominal_id`),
+  KEY `idx_asset_register_manual_evidence_sha` (`company_id`,`manual_evidence_sha256`),
   CONSTRAINT `fk_asset_register_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_asset_register_nominal` FOREIGN KEY (`nominal_account_id`) REFERENCES `nominal_accounts` (`id`) ON UPDATE CASCADE,
   CONSTRAINT `fk_asset_register_accum_dep_nominal` FOREIGN KEY (`accum_dep_nominal_id`) REFERENCES `nominal_accounts` (`id`) ON UPDATE CASCADE,
@@ -1933,7 +1941,12 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_01_003_expense_claim_line_assets.sql'),
   ('2026_07_01_004_expense_claim_series_index.sql'),
   ('2026_07_01_005_asset_disposal_transaction_links.sql'),
-  ('2026_07_01_007_manual_asset_reconciliation.sql');
+  ('2026_07_01_007_manual_asset_reconciliation.sql'),
+  ('2026_07_02_001_empty_month_confirmations.sql'),
+  ('2026_07_02_002_expense_statistics_card_permission.sql'),
+  ('2026_07_02_003_expense_asset_line_nominals.sql'),
+  ('2026_07_02_004_expense_search_card_permission.sql'),
+  ('2026_07_02_005_manual_asset_evidence.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

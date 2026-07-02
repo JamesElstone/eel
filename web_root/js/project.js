@@ -5,6 +5,95 @@
  * See LICENSE file for details.
  */
 (() => {
+    let activeManualAssetWarningButton = null;
+
+    function clearManualAssetWarning(refocus = false) {
+        document.querySelectorAll('.manual-asset-warning-backdrop').forEach((node) => node.remove());
+        document.querySelectorAll('.manual-asset-warning-window').forEach((node) => node.remove());
+
+        if (activeManualAssetWarningButton instanceof HTMLButtonElement) {
+            if (refocus && activeManualAssetWarningButton.isConnected) {
+                activeManualAssetWarningButton.focus();
+            }
+            activeManualAssetWarningButton = null;
+        }
+    }
+
+    function showManualAssetWarning(form, submitter) {
+        clearManualAssetWarning(false);
+
+        const backdrop = document.createElement('div');
+        backdrop.className = 'chicken-check-backdrop manual-asset-warning-backdrop';
+
+        const windowShell = document.createElement('div');
+        windowShell.className = 'warn chicken-check-window manual-asset-warning-window';
+        windowShell.setAttribute('role', 'alertdialog');
+
+        const title = document.createElement('div');
+        title.className = 'chicken-check-title';
+        title.textContent = String(submitter.dataset.manualAssetWarningTitle || 'Manual asset legal warning');
+
+        const message = document.createElement('div');
+        message.className = 'chicken-check-message';
+        message.textContent = String(submitter.dataset.manualAssetWarningMessage || '');
+
+        const actions = document.createElement('div');
+        actions.className = 'chicken-check-actions';
+
+        const confirm = document.createElement('button');
+        confirm.className = 'button danger';
+        confirm.type = 'button';
+        confirm.textContent = String(submitter.dataset.manualAssetWarningConfirmText || 'Acknowledge and Post');
+        confirm.addEventListener('click', () => {
+            const acknowledged = form.querySelector('[data-manual-asset-legal-acknowledged]');
+            if (acknowledged instanceof HTMLInputElement) {
+                acknowledged.value = '1';
+            }
+            clearManualAssetWarning(false);
+            form.requestSubmit(submitter);
+        });
+
+        const cancel = document.createElement('button');
+        cancel.className = 'button button-inline';
+        cancel.type = 'button';
+        cancel.textContent = 'Cancel';
+        cancel.addEventListener('click', () => clearManualAssetWarning(true));
+
+        actions.append(confirm, cancel);
+        windowShell.append(title, message, actions);
+
+        activeManualAssetWarningButton = submitter;
+        document.body.appendChild(backdrop);
+        document.body.appendChild(windowShell);
+        confirm.focus();
+    }
+
+    function initialiseManualAssetLegalWarnings(root = document) {
+        const forms = root.querySelectorAll ? root.querySelectorAll('[data-manual-asset-form="true"]') : [];
+
+        forms.forEach((form) => {
+            if (!(form instanceof HTMLFormElement) || form.dataset.manualAssetWarningBound === '1') {
+                return;
+            }
+
+            form.dataset.manualAssetWarningBound = '1';
+            form.addEventListener('submit', (event) => {
+                const submitter = event.submitter;
+                if (!(submitter instanceof HTMLButtonElement) || submitter.dataset.manualAssetLegalCheck !== 'true') {
+                    return;
+                }
+
+                const acknowledged = form.querySelector('[data-manual-asset-legal-acknowledged]');
+                if (acknowledged instanceof HTMLInputElement && acknowledged.value === '1') {
+                    return;
+                }
+
+                event.preventDefault();
+                showManualAssetWarning(form, submitter);
+            });
+        });
+    }
+
     function setUploadProcessingState(form, isProcessing) {
         if (!(form instanceof HTMLFormElement)) {
             return;
@@ -398,6 +487,7 @@
         }
     });
 
+    initialiseManualAssetLegalWarnings(document);
     initialiseUploadProcessingIndicators(document);
     initialiseVatRegistrationForms(document);
     initialiseStatementMappingForms(document);
@@ -408,6 +498,7 @@
         mutations.forEach((mutation) => {
             mutation.addedNodes.forEach((node) => {
                 if (node instanceof HTMLElement) {
+                    initialiseManualAssetLegalWarnings(node);
                     initialiseUploadProcessingIndicators(node);
                     initialiseVatRegistrationForms(node);
                     initialiseStatementMappingForms(node);

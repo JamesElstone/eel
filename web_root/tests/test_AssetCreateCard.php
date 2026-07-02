@@ -111,10 +111,16 @@ $harness->run(_asset_createCard::class, static function (GeneratedServiceClassTe
         ]);
 
         $harness->assertTrue(str_contains($html, 'class="asset-create-form"'));
+        $harness->assertTrue(str_contains($html, 'enctype="multipart/form-data"'));
         $harness->assertTrue(str_contains($html, 'class="asset-create-controls"'));
         $harness->assertTrue(str_contains($html, 'name="card_action" value="Asset"'));
         $harness->assertTrue(str_contains($html, 'name="global_action" value="create_manual_asset"'));
         $harness->assertTrue(str_contains($html, 'name="manual_addition_reason" required'));
+        $harness->assertTrue(str_contains($html, 'name="manual_asset_evidence"'));
+        $harness->assertTrue(str_contains($html, 'accept=".jpg,.jpeg,.pdf,image/jpeg,application/pdf"'));
+        $harness->assertTrue(str_contains($html, 'name="manual_asset_legal_acknowledged" value="0"'));
+        $harness->assertTrue(str_contains($html, 'data-manual-asset-legal-check="true"'));
+        $harness->assertTrue(str_contains($html, 'Manual asset legal warning'));
         $harness->assertTrue(str_contains($html, 'Supplier invoice pending payment'));
         $harness->assertTrue(str_contains($html, 'Opening / historical asset'));
         $harness->assertTrue(str_contains($html, 'Funding / clearing nominal'));
@@ -162,6 +168,8 @@ $harness->run(_asset_createCard::class, static function (GeneratedServiceClassTe
         $harness->assertTrue(str_contains($html, 'name="transaction_id" value="91"'));
         $harness->assertSame(false, str_contains($html, 'name="manual_addition_reason"'));
         $harness->assertSame(false, str_contains($html, 'name="offset_nominal_id"'));
+        $harness->assertSame(false, str_contains($html, 'name="manual_asset_evidence"'));
+        $harness->assertSame(false, str_contains($html, 'data-manual-asset-legal-check="true"'));
         $harness->assertSame(false, str_contains($html, 'Funding / clearing nominal'));
     });
 });

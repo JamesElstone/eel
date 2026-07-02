@@ -665,7 +665,8 @@ final class CompanyAction implements ActionInterfaceFramework
             $counts = is_array($result['counts'] ?? null) ? $result['counts'] : [];
             $deletedCount = (int)($counts['statement_files_deleted'] ?? 0)
                 + (int)($counts['transaction_receipts_deleted'] ?? 0)
-                + (int)($counts['expense_receipts_deleted'] ?? 0);
+                + (int)($counts['expense_receipts_deleted'] ?? 0)
+                + (int)($counts['manual_asset_evidence_deleted'] ?? 0);
 
             $flashMessages = array_map(
                 static fn(string $message): array => ['type' => 'error', 'message' => $message],
@@ -693,10 +694,11 @@ final class CompanyAction implements ActionInterfaceFramework
                 $flashMessages[] = [
                     'type' => empty($result['errors']) ? 'success' : 'error',
                     'message' => sprintf(
-                        'Statement CSVs deleted: %d. Downloaded transaction receipts deleted: %d. Expense receipt uploads deleted: %d.',
+                        'Statement CSVs deleted: %d. Downloaded transaction receipts deleted: %d. Expense receipt uploads deleted: %d. Manual asset evidence files deleted: %d.',
                         (int)($counts['statement_files_deleted'] ?? 0),
                         (int)($counts['transaction_receipts_deleted'] ?? 0),
-                        (int)($counts['expense_receipts_deleted'] ?? 0)
+                        (int)($counts['expense_receipts_deleted'] ?? 0),
+                        (int)($counts['manual_asset_evidence_deleted'] ?? 0)
                     ),
                 ];
             }

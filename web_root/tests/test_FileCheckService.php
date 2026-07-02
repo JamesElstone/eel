@@ -130,8 +130,16 @@ $harness->run('eel_accounts\Service\FileCheckService', function (GeneratedServic
                 $service->getTransactionReceiptDirectory($companyId)
             );
             $harness->assertSame(
+                $uploads['upload_base_dir'] . DIRECTORY_SEPARATOR . '12345678' . DIRECTORY_SEPARATOR . 'manual_asset_evidence' . DIRECTORY_SEPARATOR,
+                $service->getManualAssetEvidenceDirectory($companyId)
+            );
+            $harness->assertSame(
                 '12345678/statements/statement.csv',
                 $service->getStatementRelativePath($companyId, 'statement.csv')
+            );
+            $harness->assertSame(
+                '12345678/manual_asset_evidence/photo.jpg',
+                $service->getManualAssetEvidenceRelativePath($companyId, 'photo.jpg')
             );
         });
 
@@ -154,6 +162,7 @@ $harness->run('eel_accounts\Service\FileCheckService', function (GeneratedServic
             $harness->assertTrue(is_dir($uploads['upload_base_dir'] . DIRECTORY_SEPARATOR . 'ACME123' . DIRECTORY_SEPARATOR . 'statements'));
             $harness->assertTrue(is_dir($uploads['upload_base_dir'] . DIRECTORY_SEPARATOR . 'ACME123' . DIRECTORY_SEPARATOR . 'expense_receipts'));
             $harness->assertTrue(is_dir($uploads['upload_base_dir'] . DIRECTORY_SEPARATOR . 'ACME123' . DIRECTORY_SEPARATOR . 'transaction_receipts'));
+            $harness->assertTrue(is_dir($uploads['upload_base_dir'] . DIRECTORY_SEPARATOR . 'ACME123' . DIRECTORY_SEPARATOR . 'manual_asset_evidence'));
         });
 
         $harness->check('eel_accounts\Service\FileCheckService', 'ensureStatementDirectory creates the company statement directory within an existing base upload root', function () use ($harness, $service, $uploads): void {

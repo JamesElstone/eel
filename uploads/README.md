@@ -17,6 +17,7 @@ Typical stored files include:
 - uploaded bank statement CSV files;
 - uploaded expense receipt files;
 - downloaded transaction receipt/document copies.
+- uploaded manual asset evidence files.
 
 ## Directory Shape
 
@@ -40,6 +41,7 @@ uploads/
     statements/
     expense_receipts/
     transaction_receipts/
+    manual_asset_evidence/
 ```
 
 ## Safety Rules

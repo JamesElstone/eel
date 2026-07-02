@@ -60,9 +60,13 @@ final class _asset_createCard extends CardBaseFramework
         $assetCategories = is_array($assetsPageData['asset_categories'] ?? null)
             ? $assetsPageData['asset_categories']
             : \eel_accounts\Service\AssetService::assetCategoryOptions();
+        $isManualAsset = $prefillTransaction === null;
+        $formAttributes = $isManualAsset
+            ? 'method="post" enctype="multipart/form-data" action="?page=assets" data-manual-asset-form="true"'
+            : 'method="post" action="?page=assets" data-ajax="true"';
 
         return '
-            <form class="asset-create-form" method="post" action="?page=assets" data-ajax="true">
+            <form class="asset-create-form" ' . $formAttributes . '>
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
                 . ($prefillTransaction !== null
@@ -71,6 +75,7 @@ final class _asset_createCard extends CardBaseFramework
                 <input type="hidden" name="card_action" value="Asset">
                 <input type="hidden" name="default_bank_nominal_id" value="' . (int)($assetsPageData['default_bank_nominal_id'] ?? 0) . '">
                 <input type="hidden" name="global_action" value="' . HelperFramework::escape($prefillTransaction !== null ? 'create_asset_from_transaction' : 'create_manual_asset') . '">
+                ' . ($isManualAsset ? '<input type="hidden" name="manual_asset_legal_acknowledged" value="0" data-manual-asset-legal-acknowledged>' : '') . '
                 <div class="asset-create-controls">
                     <div class="field">
                         <label for="asset_description">Description</label>
@@ -112,9 +117,17 @@ final class _asset_createCard extends CardBaseFramework
                     <div class="field">
                         <label for="asset_offset_nominal_id">Funding / clearing nominal</label>
                         <select class="select" id="asset_offset_nominal_id" name="offset_nominal_id">' . $this->nominalOptions($nominalAccounts, (int)($assetsPageData['default_bank_nominal_id'] ?? 0)) . '</select>
+                    </div>
+                    <div class="field asset-evidence-field">
+                        <label for="manual_asset_evidence">Evidence file</label>
+                        <div class="upload-box upload-dropzone" data-upload-dropzone data-upload-max-files="1">
+                            <input class="input" id="manual_asset_evidence" type="file" name="manual_asset_evidence" accept=".jpg,.jpeg,.pdf,image/jpeg,application/pdf" required data-upload-input>
+                            <label data-upload-selection-summary></label>
+                            <ul class="file-list" data-upload-file-list hidden></ul>
+                        </div>
                     </div>'
                         : '') . '
-                    <button class="button primary" type="submit">' . HelperFramework::escape($prefillTransaction !== null ? 'Create Asset' : 'Post Asset') . '</button>
+                    <button class="button primary" type="submit"' . ($isManualAsset ? $this->manualAssetLegalWarningAttributes() . ' data-upload-submit' : '') . '>' . HelperFramework::escape($prefillTransaction !== null ? 'Create Asset' : 'Post Asset') . ($isManualAsset ? '<img class="upload-processing-icon is-hidden" src="svg/loader.svg" alt="" aria-hidden="true" data-upload-processing-icon>' : '') . '</button>
                 </div>
             </form>
         ';
@@ -159,5 +172,17 @@ final class _asset_createCard extends CardBaseFramework
     private function isFundingNominalCandidate(array $nominal): bool
     {
         return \eel_accounts\Service\AssetService::isManualAssetOffsetNominalCandidate($nominal);
+    }
+
+    private function manualAssetLegalWarningAttributes(): string
+    {
+        $message = 'Creating a manual fixed asset records a formal accounting entry and may affect statutory accounts and corporation tax. '
+            . 'Knowingly recording a non-existent asset, claiming capital allowances for it, or later disposing of it to hide the original entry may amount to false accounting or tax evasion. '
+            . 'Only continue if the asset exists, the evidence file supports that, and the entry is complete and accurate.';
+
+        return ' data-manual-asset-legal-check="true"'
+            . ' data-manual-asset-warning-title="Manual asset legal warning"'
+            . ' data-manual-asset-warning-message="' . HelperFramework::escape($message) . '"'
+            . ' data-manual-asset-warning-confirm-text="Acknowledge and Post"';
     }
 }

@@ -32,7 +32,8 @@ final class AssetAction implements ActionInterfaceFramework
                     $companyId,
                     (int)$request->input('accounting_period_id', 0),
                     $request->postValues(),
-                    (int)$request->input('offset_nominal_id', 0)
+                    (int)$request->input('offset_nominal_id', 0),
+                    (array)($request->files()['manual_asset_evidence'] ?? [])
                 ),
                 'search_asset_disposal_receipts' => ['success' => true],
                 'reconcile_manual_asset_with_transaction' => $service->reconcileManualAssetWithTransaction(

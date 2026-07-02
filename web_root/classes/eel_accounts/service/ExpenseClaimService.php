@@ -714,13 +714,30 @@ final class ExpenseClaimService
     }
 
     private function fetchStatisticsHealthChecks(array $scope): array {
+        $statusExpression = "CASE
+                    WHEN ec.status = 'draft'
+                     AND COALESCE(lc.line_count, 0) = 0
+                     AND (COALESCE(pc.payment_link_count, 0) > 0 OR ABS(COALESCE(ec.payments_amount, 0)) > 0)
+                    THEN 'repayment_only'
+                    ELSE ec.status
+                END";
         $statusRows = \InterfaceDB::fetchAll(
-            'SELECT ec.status,
+            'SELECT ' . $statusExpression . ' AS status,
                     COUNT(ec.id) AS claim_count,
                     COALESCE(SUM(ec.claimed_amount), 0) AS claimed_total
              FROM expense_claims ec
+             LEFT JOIN (
+                SELECT expense_claim_id, COUNT(*) AS line_count
+                FROM expense_claim_lines
+                GROUP BY expense_claim_id
+             ) lc ON lc.expense_claim_id = ec.id
+             LEFT JOIN (
+                SELECT expense_claim_id, COUNT(*) AS payment_link_count
+                FROM expense_claim_payment_links
+                GROUP BY expense_claim_id
+             ) pc ON pc.expense_claim_id = ec.id
              WHERE ' . $scope['where'] . '
-             GROUP BY ec.status',
+             GROUP BY ' . $statusExpression,
             $scope['params']
         );
         $statusTotals = [

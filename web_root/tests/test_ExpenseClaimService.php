@@ -195,6 +195,12 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
             $harness->assertSame((int)$fixture['expense_nominal_id'], (int)($transaction['nominal_account_id'] ?? 0));
             $harness->assertSame('manual', (string)($transaction['category_status'] ?? ''));
 
+            $statistics = $instance->fetchStatistics((int)$fixture['company_id'], [
+                'accounting_period_id' => (int)$fixture['period_id'],
+            ]);
+            $health = (array)($statistics['health_checks'] ?? []);
+            $harness->assertSame(0, (int)(($health['draft'] ?? [])['claim_count'] ?? -1));
+
             $otherClaimId = expenseClaimServiceInsertClaim($fixture, 2026, 6, '2026-06-01', '2026-06-30');
             $otherTransactionId = expenseClaimServiceInsertTransaction($fixture, -50.00, 'repayment-linked-elsewhere');
             \InterfaceDB::prepareExecute(

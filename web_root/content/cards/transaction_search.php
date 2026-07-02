@@ -34,6 +34,7 @@ final class _transaction_searchCard extends CardBaseFramework
                     'keyword' => ':transaction_search.keyword',
                     'sourceAccountId' => ':transaction_search.source_account_id',
                     'nominalAccountIds' => ':transaction_search.nominal_account_ids',
+                    'amount' => ':transaction_search.amount',
                 ],
             ],
             [
@@ -67,6 +68,7 @@ final class _transaction_searchCard extends CardBaseFramework
                 'keyword' => trim((string)$request->input('transaction_search_keyword', '')),
                 'source_account_id' => max(0, (int)$request->input('transaction_search_source_account_id', 0)),
                 'nominal_account_ids' => $this->normaliseIds($request->input('transaction_search_nominal_account_ids', [])),
+                'amount' => $this->normaliseAmount((string)$request->input('transaction_search_amount', '')),
             ]
         );
 
@@ -216,6 +218,7 @@ final class _transaction_searchCard extends CardBaseFramework
     private function searchForm(array $context): string
     {
         $keyword = $this->keyword($context);
+        $amount = $this->amount($context);
         $sourceAccountId = $this->sourceAccountId($context);
         $selectedNominalIds = $this->nominalAccountIds($context);
 
@@ -228,6 +231,10 @@ final class _transaction_searchCard extends CardBaseFramework
                 <div class="mini-field">
                     <label for="transaction_search_keyword">Keyword</label>
                     <input class="input" id="transaction_search_keyword" name="transaction_search_keyword" value="' . HelperFramework::escape($keyword) . '">
+                </div>
+                <div class="mini-field">
+                    <label for="transaction_search_amount">Amount</label>
+                    <input class="input" id="transaction_search_amount" name="transaction_search_amount" inputmode="decimal" value="' . HelperFramework::escape($amount) . '">
                 </div>
                 <div class="mini-field">
                     <label for="transaction_search_source_account_id">Source Account</label>
@@ -256,6 +263,7 @@ final class _transaction_searchCard extends CardBaseFramework
             'cards[]' => [$this->key()],
             'show_card' => $this->key(),
             'transaction_search_keyword' => $this->keyword($context),
+            'transaction_search_amount' => $this->amount($context),
             'transaction_search_source_account_id' => $this->sourceAccountId($context),
             'transaction_search_nominal_account_ids' => implode(',', $this->nominalAccountIds($context)),
         ];
@@ -364,6 +372,11 @@ final class _transaction_searchCard extends CardBaseFramework
         return max(0, (int)(($context[$this->key()] ?? [])['source_account_id'] ?? 0));
     }
 
+    private function amount(array $context): string
+    {
+        return $this->normaliseAmount((string)(($context[$this->key()] ?? [])['amount'] ?? ''));
+    }
+
     private function nominalAccountIds(array $context): array
     {
         return $this->normaliseIds(($context[$this->key()] ?? [])['nominal_account_ids'] ?? []);
@@ -372,8 +385,25 @@ final class _transaction_searchCard extends CardBaseFramework
     private function hasSearchCriteria(array $context): bool
     {
         return $this->keyword($context) !== ''
+            || $this->amount($context) !== ''
             || $this->sourceAccountId($context) > 0
             || $this->nominalAccountIds($context) !== [];
+    }
+
+    private function normaliseAmount(string $value): string
+    {
+        $value = trim(str_replace("\xC2\xA3", '', $value));
+
+        if ($value === '' || preg_match('/^-?\d+(?:\.\d{1,2})?$/', $value) !== 1) {
+            return '';
+        }
+
+        $amount = round((float)$value, 2);
+        if (abs($amount) < 0.005) {
+            $amount = 0.0;
+        }
+
+        return number_format($amount, 2, '.', '');
     }
 
     private function normaliseIds(mixed $values): array

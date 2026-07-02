@@ -23,6 +23,7 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         ],
         'transaction_search' => [
             'keyword' => 'Brian',
+            'amount' => '42.50',
             'source_account_id' => 7,
             'nominal_account_ids' => [31, 32],
         ],
@@ -78,6 +79,7 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         $html = $card->render($context);
 
         $harness->assertTrue(str_contains($html, 'name="transaction_search_keyword" value="Brian"'));
+        $harness->assertTrue(str_contains($html, 'name="transaction_search_amount" inputmode="decimal" value="42.50"'));
         $harness->assertTrue(str_contains($html, 'name="transaction_search_nominal_account_ids[]" multiple'));
         $harness->assertTrue(str_contains($html, 'name="_invalidate_fact" value="transaction.search"'));
         $harness->assertTrue(str_contains($html, '<option value="">Any</option>'));
@@ -132,6 +134,7 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
             ['page' => 'transactions'],
             [
                 'transaction_search_keyword' => ' Brian ',
+                'transaction_search_amount' => "-\xC2\xA31000",
                 'transaction_search_source_account_id' => '7',
                 'transaction_search_nominal_account_ids' => ['31', '32', '32', 'nope'],
             ],
@@ -143,6 +146,7 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         $handled = $card->handle($request, $services, $context, ActionResultFramework::none());
 
         $harness->assertSame('Brian', (string)$handled['transaction_search']['keyword']);
+        $harness->assertSame('-1000.00', (string)$handled['transaction_search']['amount']);
         $harness->assertSame(7, (int)$handled['transaction_search']['source_account_id']);
         $harness->assertSame([31, 32], $handled['transaction_search']['nominal_account_ids']);
     });
@@ -150,13 +154,14 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
     $harness->check(_transaction_searchCard::class, 'allows a blank keyword when another filter is selected', static function () use ($harness, $card, $context): void {
         $blankKeywordContext = $context;
         $blankKeywordContext['transaction_search']['keyword'] = '';
+        $blankKeywordContext['transaction_search']['amount'] = '1000';
         $blankKeywordContext['transaction_search']['source_account_id'] = 0;
-        $blankKeywordContext['transaction_search']['nominal_account_ids'] = [31];
+        $blankKeywordContext['transaction_search']['nominal_account_ids'] = [];
         $html = $card->render($blankKeywordContext);
 
         $harness->assertTrue(str_contains($html, 'name="transaction_search_keyword" value=""'));
         $harness->assertSame(false, str_contains($html, 'name="transaction_search_keyword" value="" required'));
-        $harness->assertTrue(str_contains($html, '<option value="31" selected>4000 - Sales</option>'));
+        $harness->assertTrue(str_contains($html, 'name="transaction_search_amount" inputmode="decimal" value="1000.00"'));
     });
 
     $harness->check(_transaction_searchCard::class, 'exports the full filtered result set', static function () use ($harness, $card, $context): void {

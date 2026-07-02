@@ -21,6 +21,16 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
         $harness->assertSame('all', $repository->normaliseTransactionCategoryFilter('unexpected'));
     });
 
+    $harness->check(\eel_accounts\Repository\DashboardRepository::class, 'normalises transaction amount filters', function () use ($harness): void {
+        $repository = new \eel_accounts\Repository\DashboardRepository();
+
+        $harness->assertSame('1000.00', $repository->normaliseTransactionAmountFilter('1000'));
+        $harness->assertSame('1000.00', $repository->normaliseTransactionAmountFilter("\xC2\xA31000.00"));
+        $harness->assertSame('-1000.00', $repository->normaliseTransactionAmountFilter("-\xC2\xA31000"));
+        $harness->assertSame('', $repository->normaliseTransactionAmountFilter(''));
+        $harness->assertSame('', $repository->normaliseTransactionAmountFilter('1000.999'));
+    });
+
     $harness->check(\eel_accounts\Repository\DashboardRepository::class, 'maps red setup health rows into dashboard actions', function () use ($harness): void {
         $repository = new \eel_accounts\Repository\DashboardRepository();
         $method = new ReflectionMethod(\eel_accounts\Repository\DashboardRepository::class, 'setupHealthContextToActionItems');

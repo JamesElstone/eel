@@ -437,12 +437,14 @@ final class DashboardRepository
         string $keyword,
         int $sourceAccountId = 0,
         array|string $nominalAccountIds = [],
-        int $limit = 5000
+        int $limit = 5000,
+        ?string $amount = ''
     ): array {
         $keyword = trim($keyword);
+        $amount = $this->normaliseTransactionAmountFilter($amount);
         $nominalAccountIds = $this->normalisePositiveIntList($nominalAccountIds);
         $sourceAccountId = max(0, $sourceAccountId);
-        if ($companyId <= 0 || $accountingPeriodId <= 0 || ($keyword === '' && $sourceAccountId <= 0 && $nominalAccountIds === [])) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || ($keyword === '' && $amount === '' && $sourceAccountId <= 0 && $nominalAccountIds === [])) {
             return [];
         }
 
@@ -464,6 +466,11 @@ final class DashboardRepository
         if ($sourceAccountId > 0) {
             $where[] = 't.account_id = :source_account_id';
             $params['source_account_id'] = $sourceAccountId;
+        }
+
+        if ($amount !== '') {
+            $where[] = 't.amount = :amount';
+            $params['amount'] = $amount;
         }
 
         if ($nominalAccountIds !== []) {
@@ -533,6 +540,22 @@ final class DashboardRepository
         $stmt->execute($params);
 
         return $stmt->fetchAll();
+    }
+
+    public function normaliseTransactionAmountFilter(?string $value): string
+    {
+        $value = trim(str_replace("\xC2\xA3", '', (string)$value));
+
+        if ($value === '' || preg_match('/^-?\d+(?:\.\d{1,2})?$/', $value) !== 1) {
+            return '';
+        }
+
+        $amount = round((float)$value, 2);
+        if (abs($amount) < 0.005) {
+            $amount = 0.0;
+        }
+
+        return number_format($amount, 2, '.', '');
     }
 
     private function normalisePositiveIntList(array|string $values): array

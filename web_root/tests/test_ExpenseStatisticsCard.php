@@ -45,6 +45,7 @@ $harness->run(_expense_statisticsCard::class, function (GeneratedServiceClassTes
         $harness->assertTrue(str_contains($html, 'Unassigned'));
         $harness->assertTrue(!str_contains($html, 'Claims By Claimant'));
         $harness->assertTrue(str_contains($html, 'Claims Over Time'));
+        $harness->assertTrue(strpos($html, 'Claims Over Time') < strpos($html, 'Claims By Nominal'));
         $harness->assertTrue(str_contains($html, 'Health Checks'));
         $harness->assertSame(1, substr_count($html, 'class="chart chart-pie"'));
         $harness->assertTrue(str_contains($html, 'chart-line'));

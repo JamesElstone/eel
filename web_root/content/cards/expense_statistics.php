@@ -54,8 +54,8 @@ final class _expense_statisticsCard extends CardBaseFramework
             ' . $this->renderHealthPanel((array)($statistics['health_checks'] ?? []), $companySettings) . '
             ' . $this->renderClaimantPanel((array)($statistics['claimants'] ?? [])) . '
             ' . $this->renderUnassignedEntriesPanel((array)($statistics['unassigned_entries'] ?? [])) . '
-            ' . $this->renderNominalPanel((array)($statistics['nominals'] ?? [])) . '
             ' . $this->renderTrendPanel((array)($statistics['monthly_trend'] ?? [])) . '
+            ' . $this->renderNominalPanel((array)($statistics['nominals'] ?? [])) . '
         </div>';
     }
 

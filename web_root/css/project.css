@@ -705,6 +705,23 @@
   width: fit-content;
 }
 
+.pl-summary-topline {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.pl-summary-topline .summary-card-fit {
+  flex: 0 0 auto;
+  margin-bottom: 0;
+}
+
+.pl-summary-topline .pl-summary-income-flow {
+  flex: 1 1 520px;
+  min-width: 320px;
+}
+
 .pl-profitability-value-profit {
   color: var(--success);
 }
@@ -2229,6 +2246,14 @@
   .month-grid,
   .path-meta {
   grid-template-columns: 1fr;
+  }
+
+  .pl-summary-topline {
+  flex-direction: column;
+  }
+
+  .pl-summary-topline .pl-summary-income-flow {
+  min-width: 0;
   }
 
   .expense-statistics-nominal-chart {

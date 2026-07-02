@@ -22,25 +22,10 @@ final class _pl_summaryCard extends CardBaseFramework
             return $this->messages((array)($summary['errors'] ?? ['Profit & Loss is not available.']));
         }
 
-        return '<div class="page-card-tabs pl-summary-tabs">
-            <div class="page-card-tab-shell">
-                <div class="page-card-tablist" role="tablist" aria-label="P&amp;L summary views">
-                    <button class="page-card-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="pl-summary-overview" data-page-card-tab="pl-summary-overview">Overview</button>
-                    <button class="page-card-tab" type="button" role="tab" aria-selected="false" aria-controls="pl-summary-income-flow" data-page-card-tab="pl-summary-income-flow">Income Flow</button>
-                </div>
-            </div>
-            <div class="page-card-tab-content">
-                <div class="page-card-tab-panel" id="pl-summary-overview" role="tabpanel">' . $this->overviewTab($context, $summary) . '</div>
-                <div class="page-card-tab-panel" id="pl-summary-income-flow" role="tabpanel" hidden>' . $this->incomeFlowTab($context) . '</div>
-            </div>
-        </div>';
-    }
-
-    private function overviewTab(array $context, array $summary): string
-    {
         $hasJournals = !empty($summary['has_journals']);
         $hasTransactions = !empty($summary['has_transactions']);
         $netProfit = (float)($summary['net_profit'] ?? 0);
+        $chart = $this->incomeFlowChart((array)($context['profit_loss']['breakdown'] ?? []));
         $notice = '';
         if (!$hasJournals && $hasTransactions) {
             $notice = '<div class="helper">Transactions exist but no posted journals were found for this period.</div>';
@@ -49,7 +34,10 @@ final class _pl_summaryCard extends CardBaseFramework
         }
 
         return '<div class="settings-stack">
-            <div class="summary-card summary-card-fit"><div class="summary-label">Profitability</div><div class="summary-value ' . HelperFramework::escape($this->resultClass($netProfit)) . '">' . HelperFramework::escape($this->resultLabel($netProfit)) . '</div></div>
+            <div class="pl-summary-topline">
+                <div class="summary-card summary-card-fit"><div class="summary-label">Profitability</div><div class="summary-value ' . HelperFramework::escape($this->resultClass($netProfit)) . '">' . HelperFramework::escape($this->resultLabel($netProfit)) . '</div></div>
+                ' . ($chart !== '' ? '<div class="pl-summary-income-flow">' . $chart . '</div>' : '<div class="helper">No incoming or outgoing nominal flow is available for the selected period.</div>') . '
+            </div>
             ' . $notice . '
             <div class="summary-grid">
                 ' . $this->summaryCard('Income', $summary['income_total'] ?? 0) . '
@@ -61,16 +49,6 @@ final class _pl_summaryCard extends CardBaseFramework
             </div>
             ' . $this->healthMetrics($context) . '
         </div>';
-    }
-
-    private function incomeFlowTab(array $context): string
-    {
-        $chart = $this->incomeFlowChart((array)($context['profit_loss']['breakdown'] ?? []));
-        if ($chart === '') {
-            return '<div class="helper">No incoming or outgoing nominal flow is available for the selected period.</div>';
-        }
-
-        return '<div class="pl-summary-income-flow">' . $chart . '</div>';
     }
 
     private function incomeFlowChart(array $breakdown): string

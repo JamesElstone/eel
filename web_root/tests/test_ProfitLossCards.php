@@ -172,8 +172,11 @@ $harness->run(_pl_summaryCard::class, static function (GeneratedServiceClassTest
 
     $harness->check(_pl_summaryCard::class, 'renders summary and health metrics without selected period label', static function () use ($harness, $html): void {
         $harness->assertSame(false, str_contains($html, '05/09/2022 to 30/09/2023'));
+        $harness->assertTrue(str_contains($html, 'pl-summary-topline'));
         $harness->assertTrue(str_contains($html, 'summary-card summary-card-fit'));
         $harness->assertTrue(str_contains($html, '<div class="summary-label">Profitability</div><div class="summary-value pl-profitability-value pl-profitability-value-profit">Profit</div>'));
+        $harness->assertSame(false, str_contains($html, 'page-card-tabs'));
+        $harness->assertSame(false, str_contains($html, 'page-card-tab'));
         $harness->assertSame(false, str_contains($html, '<div class="summary-label">Result</div>'));
         $harness->assertSame(false, str_contains($html, 'class="badge'));
         $harness->assertSame(false, str_contains($html, 'panel-soft'));
@@ -183,7 +186,16 @@ $harness->run(_pl_summaryCard::class, static function (GeneratedServiceClassTest
         $harness->assertSame(false, str_contains($html, 'Books health score'));
     });
 
-    $harness->check(_pl_summaryCard::class, 'renders income flow tab with Sankey chart', static function () use ($harness, $html): void {
+    $harness->check(_pl_summaryCard::class, 'renders income flow Sankey chart next to profitability', static function () use ($harness, $html): void {
+        $profitabilityPosition = strpos($html, '<div class="summary-label">Profitability</div>');
+        $chartPosition = strpos($html, 'pl-summary-income-flow');
+        $summaryGridPosition = strpos($html, '<div class="summary-grid">');
+
+        $harness->assertTrue($profitabilityPosition !== false);
+        $harness->assertTrue($chartPosition !== false);
+        $harness->assertTrue($summaryGridPosition !== false);
+        $harness->assertTrue($profitabilityPosition < $chartPosition);
+        $harness->assertTrue($chartPosition < $summaryGridPosition);
         $harness->assertTrue(str_contains($html, 'Income Flow'));
         $harness->assertTrue(str_contains($html, 'pl-summary-income-flow'));
         $harness->assertTrue(str_contains($html, 'chart chart-sankey'));

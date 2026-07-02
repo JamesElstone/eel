@@ -40,11 +40,25 @@ $harness->run(_expense_statisticsCard::class, function (GeneratedServiceClassTes
         $harness->assertTrue(str_contains($html, 'Claims By Claimant'));
         $harness->assertTrue(str_contains($html, 'Claims Over Time'));
         $harness->assertTrue(str_contains($html, 'Health Checks'));
-        $harness->assertSame(2, substr_count($html, 'chart-pie'));
+        $harness->assertSame(2, substr_count($html, 'class="chart chart-pie"'));
         $harness->assertTrue(str_contains($html, 'chart-line'));
         $harness->assertTrue(str_contains($html, 'Missing receipts'));
         $harness->assertTrue(str_contains($html, 'Oldest outstanding'));
         $harness->assertTrue(str_contains($html, 'EXP-2605-001'));
+
+        $nominalSection = expenseStatisticsCardSection($html, 'Claims By Nominal');
+        $claimantSection = expenseStatisticsCardSection($html, 'Claims By Claimant');
+
+        $harness->assertTrue(str_contains($nominalSection, 'expense-statistics-nominal-layout'));
+        $harness->assertTrue(strpos($nominalSection, '<div class="table-scroll">') < strpos($nominalSection, 'class="chart chart-pie"'));
+        $harness->assertTrue(!str_contains($nominalSection, 'chart-legend-swatch'));
+        $harness->assertTrue(!str_contains($nominalSection, 'chart-legend-label'));
+        foreach (['#828146', '#825746', '#614682', '#468278', '#D7D7BC'] as $colour) {
+            $harness->assertTrue(str_contains($nominalSection, 'fill="' . $colour . '"'));
+        }
+
+        $harness->assertTrue(str_contains($claimantSection, 'chart-legend-swatch'));
+        $harness->assertTrue(str_contains($claimantSection, 'chart-legend-label'));
     });
 
     $harness->check(_expense_statisticsCard::class, 'renders useful empty state without service data', function () use ($harness, $instance): void {
@@ -113,6 +127,27 @@ function expenseStatisticsCardContext(): array
                         'line_count' => 1,
                         'claimed_total' => 50.00,
                     ],
+                    [
+                        'nominal_account_id' => 2,
+                        'code' => '6100',
+                        'name' => 'Travel',
+                        'line_count' => 2,
+                        'claimed_total' => 35.00,
+                    ],
+                    [
+                        'nominal_account_id' => 3,
+                        'code' => '6200',
+                        'name' => 'Subsistence',
+                        'line_count' => 1,
+                        'claimed_total' => 25.00,
+                    ],
+                    [
+                        'nominal_account_id' => 4,
+                        'code' => '6300',
+                        'name' => 'Software',
+                        'line_count' => 1,
+                        'claimed_total' => 15.00,
+                    ],
                 ],
                 'claimant_breakdown' => [
                     [
@@ -166,4 +201,25 @@ function expenseStatisticsCardContext(): array
             ],
         ],
     ];
+}
+
+function expenseStatisticsCardSection(string $html, string $title): string
+{
+    $heading = '<h3 class="card-title">' . $title . '</h3>';
+    $start = strpos($html, $heading);
+    if ($start === false) {
+        return '';
+    }
+
+    $sectionStart = strrpos(substr($html, 0, $start), '<section class="panel-soft">');
+    if ($sectionStart === false) {
+        return '';
+    }
+
+    $end = strpos($html, '</section>', $start);
+    if ($end === false) {
+        return '';
+    }
+
+    return substr($html, $sectionStart, $end + strlen('</section>') - $sectionStart);
 }

@@ -1196,6 +1196,24 @@
   /*gap: 18px;*/
 }
 
+.expense-statistics-nominal-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+  gap: 18px;
+  align-items: start;
+}
+
+.expense-statistics-nominal-chart {
+  min-width: 0;
+  justify-self: end;
+  width: 100%;
+  max-width: 320px;
+}
+
+.expense-statistics-nominal-chart .chart {
+  max-width: 320px;
+}
+
 .nominals-layout {
   display: grid;
   grid-template-columns: 1.5fr 1fr;
@@ -2079,6 +2097,7 @@
 
 @media (max-width: 900px) {
 .settings-layout,
+  .expense-statistics-nominal-layout,
   .nominals-layout,
   .page-stack.page-stack-banking,
   .page-stack.page-stack-uploads,
@@ -2089,6 +2108,11 @@
   .path-meta {
   grid-template-columns: 1fr;
   }
+
+  .expense-statistics-nominal-chart {
+      justify-self: stretch;
+      max-width: none;
+    }
 
   .indexed-section {
       grid-template-columns: minmax(0, 1fr);

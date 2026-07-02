@@ -104,13 +104,15 @@ final class _expense_statisticsCard extends CardBaseFramework
 
         return '<section class="panel-soft">
             <h3 class="card-title">Claims By Nominal</h3>
-            <div class="settings-stack">
-                ' . $this->pieChart($rows, 'claimed_total', 'nominal', 'Expense total by nominal') . '
+            <div class="expense-statistics-nominal-layout">
                 <div class="table-scroll">
                     <table>
                         <thead><tr><th>Nominal</th><th>Items</th><th>Total</th></tr></thead>
                         <tbody>' . $tableRows . '</tbody>
                     </table>
+                </div>
+                <div class="expense-statistics-nominal-chart">
+                    ' . $this->pieChart($rows, 'claimed_total', 'nominal', 'Expense total by nominal', true, ['legend' => false]) . '
                 </div>
             </div>
         </section>';
@@ -182,7 +184,7 @@ final class _expense_statisticsCard extends CardBaseFramework
         </section>';
     }
 
-    private function pieChart(array $rows, string $valueKey, string $labelType, string $title): string
+    private function pieChart(array $rows, string $valueKey, string $labelType, string $title, bool $useProjectColours = false, array $options = []): string
     {
         $segments = [];
 
@@ -198,7 +200,14 @@ final class _expense_statisticsCard extends CardBaseFramework
             ];
         }
 
-        return (new ChartService())->pie($segments, ['title' => $title]);
+        if ($useProjectColours) {
+            $colours = (new \eel_accounts\Service\ColourService())->generateColours(count($segments));
+            foreach ($segments as $index => $segment) {
+                $segments[$index]['color'] = $colours[$index] ?? '';
+            }
+        }
+
+        return (new ChartService())->pie($segments, array_merge(['title' => $title], $options));
     }
 
     private function metric(string $label, string $value, string $foot): string

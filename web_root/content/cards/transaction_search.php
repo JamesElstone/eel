@@ -241,8 +241,6 @@ final class _transaction_searchCard extends CardBaseFramework
                         ' . $this->nominalOptions($context, $selectedNominalIds) . '
                     </select>
                 </div>
-            </div>
-            <div class="actions-row">
                 <button class="button primary" type="submit">Search</button>
                 <a class="button" href="?page=transactions&amp;show_card=transaction_search">Clear</a>
             </div>

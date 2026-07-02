@@ -92,12 +92,12 @@ $harness->run(_expense_statisticsCard::class, function (GeneratedServiceClassTes
     });
 });
 
-$harness->run(_expenses::class, function (GeneratedServiceClassTestHarness $harness, object $instance): void {
-    if (!$instance instanceof _expenses) {
+$harness->run(_expense_claims::class, function (GeneratedServiceClassTestHarness $harness, object $instance): void {
+    if (!$instance instanceof _expense_claims) {
         $harness->skip('Expenses page did not instantiate.');
     }
 
-    $harness->check(_expenses::class, 'registers expense statistics on the summary tab', function () use ($harness, $instance): void {
+    $harness->check(_expense_claims::class, 'registers expense statistics on the summary tab', function () use ($harness, $instance): void {
         $harness->assertSame(
             ['expense_statistics', 'expense_claimants', 'expense_add_claimant', 'expense_claim_create', 'expenses_state', 'expense_claim_editor'],
             $instance->cards()

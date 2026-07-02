@@ -3076,6 +3076,34 @@
         return false;
     }
 
+    function syncAccountingPeriodSummaryButton(target) {
+        if (!(target instanceof Element)) {
+            return;
+        }
+
+        const button = target.closest('[data-accounting-period-summary-button="true"]');
+        if (!(button instanceof HTMLElement)) {
+            return;
+        }
+
+        const accountingPeriodId = String(button.dataset.accountingPeriodId || button.getAttribute('value') || '').trim();
+        if (accountingPeriodId === '') {
+            return;
+        }
+
+        const accountingPeriodSelect = document.querySelector('select[name="accounting_period_id"]');
+        if (!(accountingPeriodSelect instanceof HTMLSelectElement)) {
+            return;
+        }
+
+        accountingPeriodSelect.value = accountingPeriodId;
+        accountingPeriodSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    document.addEventListener('click', (event) => {
+        syncAccountingPeriodSummaryButton(event.target);
+    });
+
     document.addEventListener('submit', async (event) => {
         const form = event.target;
         if (!(form instanceof HTMLFormElement)) {

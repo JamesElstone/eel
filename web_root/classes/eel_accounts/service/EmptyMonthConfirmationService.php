@@ -89,8 +89,7 @@ final class EmptyMonthConfirmationService
             $evidenceJson = '{}';
         }
 
-        \InterfaceDB::prepareExecute(
-            'INSERT INTO ' . self::TABLE . ' (
+        $upsertSql = 'INSERT INTO ' . self::TABLE . ' (
                 company_id,
                 accounting_period_id,
                 month_start,
@@ -112,14 +111,31 @@ final class EmptyMonthConfirmationService
                 :confirmed_by,
                 NULL,
                 NULL
-             )
+             )';
+
+        if (\InterfaceDB::driverName() === 'sqlite') {
+            $upsertSql .= '
+             ON CONFLICT(company_id, accounting_period_id, month_start, confirmation_type) DO UPDATE SET
+                notes = excluded.notes,
+                evidence_json = excluded.evidence_json,
+                confirmed_at = CURRENT_TIMESTAMP,
+                confirmed_by = excluded.confirmed_by,
+                revoked_at = NULL,
+                revoked_by = NULL,
+                updated_at = CURRENT_TIMESTAMP';
+        } else {
+            $upsertSql .= '
              ON DUPLICATE KEY UPDATE
                 notes = VALUES(notes),
                 evidence_json = VALUES(evidence_json),
                 confirmed_at = CURRENT_TIMESTAMP,
                 confirmed_by = VALUES(confirmed_by),
                 revoked_at = NULL,
-                revoked_by = NULL',
+                revoked_by = NULL';
+        }
+
+        \InterfaceDB::prepareExecute(
+            $upsertSql,
             [
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,

@@ -242,7 +242,7 @@ $harness->run(_statement_field_mappingCard::class, static function (GeneratedSer
         ]);
 
         $harness->assertTrue(str_contains($html, 'unassigned-statement.csv'));
-        $harness->assertTrue(str_contains($html, 'Field mappings apply to: <strong>No account selected</strong>'));
+        $harness->assertTrue(str_contains($html, 'Field mappings apply to: <strong>No account selected</strong>.'));
         $harness->assertTrue(str_contains($html, '<option value="" disabled selected></option>'));
         $harness->assertTrue(str_contains($html, 'data-statement-mapping-account-selector'));
         $harness->assertTrue(str_contains($html, 'name="mapping_description" disabled data-statement-mapping-requires-account'));

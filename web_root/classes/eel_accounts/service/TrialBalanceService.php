@@ -519,8 +519,8 @@ final class TrialBalanceService
             'bank_csv' => preg_match('/transaction:(\d+)/', $sourceRef, $matches) === 1
                 ? '?page=transactions&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&month_key=' . urlencode(substr($journalDate, 0, 7) . '-01') . '&category_filter=all#transaction-' . (int)$matches[1]
                 : '?page=transactions&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId,
-            'director_loan_register' => '?page=director-loan&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId,
-            'expense_register', 'expense_claim_post', 'expense_claim_payment_link' => '?page=expenses&company_id=' . $companyId,
+            'director_loan_register' => '?page=director_loans&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId,
+            'expense_register', 'expense_claim_post', 'expense_claim_payment_link' => '?page=expense_claims&company_id=' . $companyId,
             'manual' => '?page=journals&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId,
             default => '?page=journals&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId,
         };

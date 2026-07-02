@@ -35,7 +35,7 @@ CREATE TABLE `application_activity_flash_history` (
   `page_id` varchar(255) NOT NULL,
   `action_name` varchar(255) DEFAULT NULL,
   `card_action_name` varchar(255) DEFAULT NULL,
-  `message_type` enum('success','error') NOT NULL,
+  `message_type` enum('success','warning','error') NOT NULL,
   `message_text` longtext NOT NULL,
   `message_html_text` longtext DEFAULT NULL,
   `request_method` varchar(10) DEFAULT NULL,
@@ -794,6 +794,27 @@ CREATE TABLE `nominal_account_subtypes` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Baseline seed rows for table `nominal_account_subtypes`
+--
+
+INSERT INTO `nominal_account_subtypes` (`code`, `name`, `parent_account_type`, `sort_order`, `is_active`) VALUES
+  ('bank', 'Bank', 'asset', 10, 1),
+  ('fixed_asset', 'Fixed Asset', 'asset', 20, 1),
+  ('director_loan_asset', 'Director Loan Asset', 'asset', 30, 1),
+  ('trade_creditor', 'Trade Creditor', 'liability', 45, 1),
+  ('expense_payable', 'Expense Payable', 'liability', 46, 1),
+  ('director_loan_liability', 'Director Loan Liability', 'liability', 50, 1),
+  ('vat_control', 'VAT Control', 'liability', 55, 1),
+  ('ordinary_share_capital', 'Ordinary Share Capital', 'equity', 70, 1),
+  ('capital_reserves', 'Capital Reserves', 'equity', 80, 1),
+  ('dividends_payable', 'Dividends Payable', 'liability', 85, 1),
+  ('overhead', 'Overhead', 'expense', 600, 1),
+  ('corp_tax', 'Corporation Tax', 'liability', 650, 1),
+  ('asset_disposal_gain', 'Asset Disposal Gain', 'income', 420, 1),
+  ('depreciation_expense', 'Depreciation Expense', 'expense', 620, 1),
+  ('asset_disposal_loss', 'Asset Disposal Loss', 'expense', 621, 1);
+
+--
 -- Table structure for table `nominal_accounts`
 --
 
@@ -1012,6 +1033,32 @@ CREATE TABLE `corporation_tax_rate_rules` (
   KEY `idx_ct_rate_rules_lookup` (`regime`,`is_active`,`financial_year_start`,`financial_year_end`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Baseline seed rows for table `corporation_tax_rate_rules`
+--
+
+INSERT INTO `corporation_tax_rate_rules` (
+  `regime`,
+  `financial_year_start`,
+  `financial_year_end`,
+  `rule_version`,
+  `main_rate`,
+  `small_profits_rate`,
+  `lower_limit`,
+  `upper_limit`,
+  `marginal_relief_fraction`,
+  `source_url`,
+  `source_updated_at`,
+  `source_checked_at`,
+  `is_active`,
+  `notes`
+) VALUES
+  ('non_ring_fence', '2022-04-01', '2023-03-31', 'govuk-2026-04-01', 0.190000, NULL, NULL, NULL, NULL, 'https://www.gov.uk/government/publications/rates-and-allowances-corporation-tax/rates-and-allowances-corporation-tax', '2026-04-01', '2026-05-26', 1, 'Main rate for all non-ring-fence profits before the 1 April 2023 small profits/main rate split.'),
+  ('non_ring_fence', '2023-04-01', '2024-03-31', 'govuk-2026-04-01', 0.250000, 0.190000, 50000.00, 250000.00, 0.015000, 'https://www.gov.uk/government/publications/rates-and-allowances-corporation-tax/rates-and-allowances-corporation-tax', '2026-04-01', '2026-05-26', 1, 'GOV.UK rates table shows small profits rate 19%, main rate 25%, lower limit 50000, upper limit 250000, standard fraction 3/200.'),
+  ('non_ring_fence', '2024-04-01', '2025-03-31', 'govuk-2026-04-01', 0.250000, 0.190000, 50000.00, 250000.00, 0.015000, 'https://www.gov.uk/government/publications/rates-and-allowances-corporation-tax/rates-and-allowances-corporation-tax', '2026-04-01', '2026-05-26', 1, 'GOV.UK rates table shows small profits rate 19%, main rate 25%, lower limit 50000, upper limit 250000, standard fraction 3/200.'),
+  ('non_ring_fence', '2025-04-01', '2026-03-31', 'govuk-2026-04-01', 0.250000, 0.190000, 50000.00, 250000.00, 0.015000, 'https://www.gov.uk/government/publications/rates-and-allowances-corporation-tax/rates-and-allowances-corporation-tax', '2026-04-01', '2026-05-26', 1, 'GOV.UK rates table shows small profits rate 19%, main rate 25%, lower limit 50000, upper limit 250000, standard fraction 3/200.'),
+  ('non_ring_fence', '2026-04-01', '2027-03-31', 'govuk-2026-04-01', 0.250000, 0.190000, 50000.00, 250000.00, 0.015000, 'https://www.gov.uk/government/publications/rates-and-allowances-corporation-tax/rates-and-allowances-corporation-tax', '2026-04-01', '2026-05-26', 1, 'GOV.UK rates table shows small profits rate 19%, main rate 25%, lower limit 50000, upper limit 250000, standard fraction 3/200.');
 
 --
 -- Table structure for table `corporation_tax_treatment_rules`

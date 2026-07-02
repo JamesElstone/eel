@@ -58,7 +58,7 @@ final class _expense_claim_createCard extends CardBaseFramework
         $claimPeriodDefaults = $this->claimPeriodDefaults($accountingPeriod);
 
         return '<div class="expense-claims-stack">
-        <form id="' . $createFormId . '" method="post" action="?page=expenses" data-ajax="true">
+        <form id="' . $createFormId . '" method="post" action="?page=expense_claims" data-ajax="true">
             <input type="hidden" name="card_action" value="Expense">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="intent" value="create_claim">

@@ -42,7 +42,7 @@ $harness->run(VatRegistrationAction::class, function (GeneratedServiceClassTestH
         authenticateTestSession();
 
         try {
-            $companyNumber = 'VAT' . strtoupper(substr(hash('sha256', microtime(true)), 0, 8));
+            $companyNumber = 'VAT' . strtoupper(substr(hash('sha256', (string)microtime(true)), 0, 8));
             InterfaceDB::prepareExecute(
                 'INSERT INTO companies (company_name, company_number) VALUES (:company_name, :company_number)',
                 ['company_name' => 'VAT Fixture Limited', 'company_number' => $companyNumber]

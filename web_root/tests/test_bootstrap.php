@@ -96,19 +96,7 @@ PHP;
                 throw new RuntimeException('Namespaced downstream class fixture did not instantiate correctly.');
             }
         } finally {
-            if (is_file($file)) {
-                unlink($file);
-            }
-
-            if (is_dir($directory)) {
-                rmdir($directory);
-            }
-
-            $projectDirectory = dirname($directory);
-
-            if (is_dir($projectDirectory)) {
-                rmdir($projectDirectory);
-            }
+            test_bootstrap_remove_directory(dirname($directory));
         }
     },
     'suggests the migration tool for schema exceptions' => static function (): void {
@@ -164,6 +152,38 @@ PHP;
         }
     },
 ];
+
+function test_bootstrap_remove_directory(string $directory): void
+{
+    if (!is_dir($directory)) {
+        return;
+    }
+
+    $items = scandir($directory);
+
+    if ($items === false) {
+        return;
+    }
+
+    foreach ($items as $item) {
+        if ($item === '.' || $item === '..') {
+            continue;
+        }
+
+        $path = $directory . DIRECTORY_SEPARATOR . $item;
+
+        if (is_dir($path) && !is_link($path)) {
+            test_bootstrap_remove_directory($path);
+            continue;
+        }
+
+        if (is_file($path) || is_link($path)) {
+            @unlink($path);
+        }
+    }
+
+    @rmdir($directory);
+}
 
 foreach ($tests as $description => $callback) {
     $callback();

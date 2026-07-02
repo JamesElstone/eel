@@ -773,8 +773,8 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, 'id="rule_ref_value" name="rule_ref_value"'));
         $harness->assertSame(true, str_contains($html, '<option value="none">None</option>'));
         $harness->assertSame(true, str_contains($html, '<option value="starts_with" selected>Starts with</option>'));
-        $harness->assertSame(true, str_contains($html, '<select class="select" id="rule_source_category_value" name="source_category_value">'));
-        $harness->assertSame(true, str_contains($html, '<select class="select" id="rule_source_account_value" name="source_account_value">'));
+        $harness->assertSame(true, str_contains($html, '<select class="select" id="rule_source_category_value" name="source_category_value" data-no-submit-on-change="true">'));
+        $harness->assertSame(true, str_contains($html, '<select class="select" id="rule_source_account_value" name="source_account_value" data-no-submit-on-change="true">'));
         $harness->assertSame(false, str_contains($html, '<input class="input" id="rule_source_category_value" name="source_category_value"'));
         $harness->assertSame(false, str_contains($html, '<input class="input" id="rule_source_account_value" name="source_account_value"'));
         $harness->assertSame(true, str_contains($html, '<option value="">Any Category</option>'));
@@ -790,6 +790,10 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
             'company' => [
                 'id' => 1,
                 'accounting_period_id' => 2,
+                'settings' => [
+                    'director_loan_asset_nominal_id' => 1200,
+                    'director_loan_liability_nominal_id' => 2100,
+                ],
             ],
             'page' => [
                 'month_key' => '2026-03-01',

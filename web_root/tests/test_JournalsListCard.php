@@ -64,7 +64,8 @@ $harness->run(_journals_listCard::class, static function (GeneratedServiceClassT
         ]);
 
         $harness->assertTrue(str_contains($html, 'Materials purchase'));
-        $harness->assertTrue(str_contains($html, '5000 - Purchases'));
+        $harness->assertTrue(str_contains($html, '<td>5000</td>'));
+        $harness->assertTrue(str_contains($html, '<td>Purchases</td>'));
         $harness->assertTrue(str_contains($html, '<th>Code</th>'));
         $harness->assertTrue(str_contains($html, '<th>Label</th>'));
         $harness->assertTrue(str_contains($html, '<th>CR</th>'));
@@ -120,8 +121,8 @@ $harness->run(_journals_listCard::class, static function (GeneratedServiceClassT
         $harness->assertTrue(count($tables) === 1);
         $export = $tables[0]->exportCsv();
         $harness->assertTrue(str_contains($export, 'Date,Description,Source,Status,Total,Code,Label,CR,DR'));
-        $harness->assertTrue(str_contains($export, '5000,Purchases,,"123.45"'));
-        $harness->assertTrue(str_contains($export, '1200,Bank,"123.45",'));
+        $harness->assertTrue(str_contains($export, '5000,Purchases,,123.45'));
+        $harness->assertTrue(str_contains($export, '1200,Bank,123.45,'));
         $harness->assertTrue(str_contains($export, 'Posted'));
         $harness->assertTrue(!str_contains($export, 'Review Transaction'));
     });

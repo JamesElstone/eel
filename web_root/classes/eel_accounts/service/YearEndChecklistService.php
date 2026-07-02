@@ -355,7 +355,7 @@ final class YearEndChecklistService
                 ? (string)($directorLoan['error'] ?? 'Director loan summary unavailable.')
                 : 'Review whether the period-end director loan balance is expected before filing.',
             empty($directorLoan['available']) ? '' : (string)number_format($dlaClosing, 2, '.', ''),
-            '?page=director-loan&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
+            '?page=director_loans&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
         );
         $sections['director_loan_expenses'][] = $this->makeCheck(
             'unpaid_expense_claims',
@@ -366,7 +366,7 @@ final class YearEndChecklistService
                 ? 'Expense claims carried forward at period end should be reviewed.'
                 : 'Expense claim register is not available yet.',
             !empty($unpaidExpenses['available']) ? (string)number_format((float)$unpaidExpenses['outstanding_amount'], 2, '.', '') : '',
-            '?page=expenses&company_id=' . $companyId
+            '?page=expense_claims&company_id=' . $companyId
         );
         $sections['director_loan_expenses'][] = $this->makeCheck(
             'duplicate_repayment_protection',
@@ -377,7 +377,7 @@ final class YearEndChecklistService
                 ? 'Potentially duplicated repayment recognition should be checked where the same bank transaction is linked more than once.'
                 : 'Expense repayment links are not available yet.',
             !empty($duplicateRepayments['available']) ? (string)$duplicateRepayments['risk_count'] : '',
-            '?page=expenses&company_id=' . $companyId
+            '?page=expense_claims&company_id=' . $companyId
         );
 
         $profitBeforeTax = (float)($financialStatements['profit_and_loss']['profit_before_tax'] ?? 0);

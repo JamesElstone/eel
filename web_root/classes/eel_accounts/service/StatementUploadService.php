@@ -398,6 +398,12 @@ final class StatementUploadService
         }
 
         $sourceHeaders = $this->decodeJsonArray((string)($upload['source_headers_json'] ?? ''));
+        if ($isCommittedUpload && $existingMappingRow !== null) {
+            $existingSourceHeaders = $this->decodeJsonArray((string)($existingMappingRow['original_headers_json'] ?? ''));
+            if ($existingSourceHeaders !== []) {
+                $sourceHeaders = $existingSourceHeaders;
+            }
+        }
         $mapping = [];
 
         foreach (array_keys(self::FIELD_DEFINITIONS) as $fieldName) {

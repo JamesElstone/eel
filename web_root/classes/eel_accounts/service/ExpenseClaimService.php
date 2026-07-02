@@ -1102,7 +1102,9 @@ final class ExpenseClaimService
         return [
             'success' => true,
             'claim' => $this->fetchClaim($companyId, $claimId),
-            'claims' => $this->listClaims($companyId),
+            'claims' => $this->listClaims($companyId, [
+                'heatmap_claimant_id' => (int)$claim['claimant_id'],
+            ]),
         ];
     }
 
@@ -1647,7 +1649,9 @@ final class ExpenseClaimService
         return [
             'success' => true,
             'claim' => $this->fetchClaim($companyId, $claimId),
-            'claims' => $this->listClaims($companyId),
+            'claims' => $this->listClaims($companyId, [
+                'heatmap_claimant_id' => (int)$claim['claimant_id'],
+            ]),
         ];
     }
 
@@ -2589,8 +2593,7 @@ final class ExpenseClaimService
             return;
         }
 
-        \InterfaceDB::prepare(
-            'INSERT INTO expense_claim_line_assets (
+        $upsertSql = 'INSERT INTO expense_claim_line_assets (
                 expense_claim_line_id,
                 category,
                 description,
@@ -2608,15 +2611,29 @@ final class ExpenseClaimService
                 :residual_value,
                 CURRENT_TIMESTAMP,
                 CURRENT_TIMESTAMP
-             )
+             )';
+
+        if (\InterfaceDB::driverName() === 'sqlite') {
+            $upsertSql .= '
+             ON CONFLICT(expense_claim_line_id) DO UPDATE SET
+                category = excluded.category,
+                description = excluded.description,
+                useful_life_years = excluded.useful_life_years,
+                depreciation_method = excluded.depreciation_method,
+                residual_value = excluded.residual_value,
+                updated_at = CURRENT_TIMESTAMP';
+        } else {
+            $upsertSql .= '
              ON DUPLICATE KEY UPDATE
                 category = VALUES(category),
                 description = VALUES(description),
                 useful_life_years = VALUES(useful_life_years),
                 depreciation_method = VALUES(depreciation_method),
                 residual_value = VALUES(residual_value),
-                updated_at = CURRENT_TIMESTAMP'
-        )->execute([
+                updated_at = CURRENT_TIMESTAMP';
+        }
+
+        \InterfaceDB::prepare($upsertSql)->execute([
             'expense_claim_line_id' => $lineId,
             'category' => (string)($values['category'] ?? 'tools_equipment'),
             'description' => trim((string)($values['description'] ?? '')) !== '' ? trim((string)$values['description']) : null,
@@ -2864,15 +2881,20 @@ final class ExpenseClaimService
     }
 
     private function claimStatusLabel(array $claim): string {
-        if (
-            (string)($claim['status'] ?? '') === 'draft'
-            && (int)($claim['line_count'] ?? count((array)($claim['lines'] ?? []))) === 0
-            && (int)($claim['payment_link_count'] ?? count((array)($claim['payment_links'] ?? []))) > 0
-        ) {
+        $status = strtolower(trim((string)($claim['status'] ?? '')));
+        if ($status === '') {
+            $status = 'draft';
+        }
+
+        $lineCount = (int)($claim['line_count'] ?? count((array)($claim['lines'] ?? [])));
+        $paymentLinkCount = (int)($claim['payment_link_count'] ?? count((array)($claim['payment_links'] ?? [])));
+        $paymentsAmount = round(abs((float)($claim['payments_amount'] ?? 0)), 2);
+
+        if ($status === 'draft' && $lineCount === 0 && ($paymentLinkCount > 0 || $paymentsAmount > 0.0)) {
             return 'Repayment Only';
         }
 
-        return ucfirst((string)($claim['status'] ?? ''));
+        return ucfirst($status);
     }
 
     private function isValidDate(string $value): bool {

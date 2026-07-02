@@ -35,7 +35,7 @@ final class _expense_add_claimantCard extends CardBaseFramework
             : '<div class="helper">Select or add a company before configuring expense claimants.</div>';
 
         return $addHelper . '
-            <form class="expense-claimant-add-form" method="post" action="?page=expenses" data-ajax="true">
+            <form class="expense-claimant-add-form" method="post" action="?page=expense_claims" data-ajax="true">
                 <input type="hidden" name="card_action" value="Expense">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="intent" value="add_claimant">

@@ -263,6 +263,13 @@ final class GeneratedServiceClassTestHarness
             throw new RuntimeException('Assertion failed. Expected condition to be true.');
         }
     }
+
+    public function assertFalse(bool $condition): void
+    {
+        if ($condition) {
+            throw new RuntimeException('Assertion failed. Expected condition to be false.');
+        }
+    }
 }
 
 final class GeneratedServiceClassTestSkippedException extends RuntimeException

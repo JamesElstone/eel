@@ -267,7 +267,11 @@ final class _statement_field_mappingCard extends CardBaseFramework
             ? 'Selected upload: <strong>' . HelperFramework::escape((string)($upload['original_filename'] ?? '')) . '</strong>.'
             : 'Saved account mapping source: <strong>' . HelperFramework::escape((string)($upload['original_filename'] ?? '')) . '</strong>.';
 
-        $message .= '<br>Field mappings apply to: <strong>' . HelperFramework::escape((string)($upload['account_name'] ?? 'No account selected')) . '</strong>.';
+        $accountName = trim((string)($upload['account_name'] ?? ''));
+        if ($accountName === '') {
+            $accountName = 'No account selected';
+        }
+        $message .= '<br>Field mappings apply to: <strong>' . HelperFramework::escape($accountName) . '</strong>.';
         $mappingLabel = $this->mappingStatusLabel($mappingRow);
 
         if ($mappingLabel !== '') {

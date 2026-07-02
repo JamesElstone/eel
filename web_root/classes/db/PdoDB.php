@@ -177,6 +177,14 @@ final class PdoDB
             array_push($statements, ...$indexStatements);
         }
 
+        preg_match_all('/INSERT\s+INTO\s+(?:`[^`]+`|[a-zA-Z_][a-zA-Z0-9_]*)\s+.*?;/is', $schema, $insertMatches);
+        foreach ($insertMatches[0] ?? [] as $insertStatement) {
+            $insertStatement = trim($insertStatement);
+            if ($insertStatement !== '') {
+                $statements[] = rtrim($insertStatement, ';');
+            }
+        }
+
         if (count($statements) === 1) {
             throw new RuntimeException('No MariaDB CREATE TABLE statements were found in the configured SQLite schema fixture.');
         }

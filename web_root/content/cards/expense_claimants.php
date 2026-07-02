@@ -183,7 +183,7 @@ final class _expense_claimantsCard extends CardBaseFramework
         }
 
         if ($searchQuery !== '') {
-            $clearForm = '<form method="post" action="?page=expenses" data-ajax="true" class="toolbar">
+            $clearForm = '<form method="post" action="?page=expense_claims" data-ajax="true" class="toolbar">
                 ' . $this->hiddenInputs($fields + [self::SEARCH_FIELD => '']) . '
                 <button class="button" type="submit">Clear</button>
             </form>';
@@ -191,7 +191,7 @@ final class _expense_claimantsCard extends CardBaseFramework
 
         return '</div>
             <div class="actions-row">
-                <form method="post" action="?page=expenses" data-ajax="true" class="toolbar">
+                <form method="post" action="?page=expense_claims" data-ajax="true" class="toolbar">
                     ' . $this->hiddenInputs($fields) . '
                     <label for="expense-claimants-query">Search claimants</label>
                     <input class="input" id="expense-claimants-query" name="' . self::SEARCH_FIELD . '" type="search" value="' . HelperFramework::escape($searchQuery) . '" placeholder="Search claimants">
@@ -240,7 +240,7 @@ final class _expense_claimantsCard extends CardBaseFramework
             return '';
         }
 
-        return '<form method="post" action="?page=expenses" data-ajax="true" class="actions-row actions-row-nowrap">
+        return '<form method="post" action="?page=expense_claims" data-ajax="true" class="actions-row actions-row-nowrap">
             <input type="hidden" name="card_action" value="Expense">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="claimant_id" value="' . $claimantId . '">

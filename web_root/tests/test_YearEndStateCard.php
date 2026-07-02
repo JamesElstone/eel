@@ -85,8 +85,8 @@ $harness->run(_year_end_stateCard::class, static function (GeneratedServiceClass
         ]));
 
         $harness->assertSame(true, str_contains($html, 'Director loan offset'));
-        $harness->assertSame(true, str_contains($html, '1200 Director Loan Asset'));
-        $harness->assertSame(true, str_contains($html, '2100 Director Loan Liability'));
+        $harness->assertSame(true, str_contains($html, '1200 - Director Loan Asset'));
+        $harness->assertSame(true, str_contains($html, '2100 - Director Loan Liability'));
         $harness->assertSame(true, str_contains($html, 'post_director_loan_offset'));
         $harness->assertSame(true, str_contains($html, 'Post Offset Journal'));
     });

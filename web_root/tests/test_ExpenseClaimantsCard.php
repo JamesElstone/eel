@@ -59,8 +59,8 @@ $harness->run(_expense_claimantsCard::class, function (GeneratedServiceClassTest
         $csv = $table->exportCsv();
 
         $harness->assertTrue(str_starts_with($csv, "Claimant,Status\n"));
-        $harness->assertTrue(str_contains($csv, 'Alex Example,Active'));
-        $harness->assertTrue(str_contains($csv, 'Claimant 12,Inactive'));
+        $harness->assertTrue(str_contains($csv, '"Alex Example",Active'));
+        $harness->assertTrue(str_contains($csv, '"Claimant 12",Inactive'));
         $harness->assertSame(false, str_contains($csv, 'Action'));
         $harness->assertSame(false, str_contains($csv, 'deactivate_claimant'));
         $harness->assertSame(false, str_contains($csv, 'activate_claimant'));
@@ -85,8 +85,8 @@ $harness->run(_expense_claimantsCard::class, function (GeneratedServiceClassTest
         $harness->assertTrue($table instanceof TableFramework);
 
         $csv = $table->exportCsv();
-        $harness->assertTrue(str_contains($csv, 'Inactive Claimant,Inactive'));
-        $harness->assertSame(false, str_contains($csv, 'Alex Example,Active'));
+        $harness->assertTrue(str_contains($csv, '"Inactive Claimant",Inactive'));
+        $harness->assertSame(false, str_contains($csv, '"Alex Example",Active'));
     });
 
     $harness->check(_expense_claimantsCard::class, 'searches claimant table by claimant name', function () use ($harness, $instance): void {
@@ -103,8 +103,8 @@ $harness->run(_expense_claimantsCard::class, function (GeneratedServiceClassTest
         $harness->assertTrue($table instanceof TableFramework);
 
         $csv = $table->exportCsv();
-        $harness->assertTrue(str_contains($csv, 'Alex Example,Active'));
-        $harness->assertSame(false, str_contains($csv, 'Inactive Claimant,Inactive'));
+        $harness->assertTrue(str_contains($csv, '"Alex Example",Active'));
+        $harness->assertSame(false, str_contains($csv, '"Inactive Claimant",Inactive'));
         $harness->assertSame(false, str_contains($csv, 'Action'));
     });
 

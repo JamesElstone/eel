@@ -106,7 +106,7 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
         $harness->assertTrue(str_contains($html, 'director-loan-control-helper'));
         $harness->assertTrue(str_contains($html, '<th>Account</th>'));
         $harness->assertTrue(str_contains($html, '1200 - Director Loan Asset'));
-        $harness->assertTrue(str_contains($html, '2100 - Director Loan Liability'));
+        $harness->assertTrue(str_contains($html, '2100 Director Loan Liability'));
         $harness->assertTrue(str_contains($html, 'Company owes director'));
     });
 

@@ -577,7 +577,7 @@ final class _transactions_importedCard extends CardBaseFramework
         $directorLoanButtonHtml = $this->directorLoanButtonHtml($transaction, $settings, $isPeriodLocked, $journalRebuildAttributes);
         $dividendButtonHtml = $this->dividendButtonHtml($transaction, $dividendFormId, $isPeriodLocked);
 
-        return '<form method="post" action="?page=assets" id="' . HelperFramework::escape($assetFormId) . '">
+        return '<form method="post" action="?page=assets&amp;show_card=asset_create" id="' . HelperFramework::escape($assetFormId) . '">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="transaction_id" value="' . $transactionId . '">

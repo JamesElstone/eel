@@ -74,7 +74,7 @@ $harness->run(_asset_taxCard::class, static function (GeneratedServiceClassTestH
         $harness->assertTrue(!str_contains($html, 'name="accounting_period_id"'));
     });
 
-    $harness->check(_asset_taxCard::class, 'renders empty state without duplicate accounting period controls', static function () use ($harness, $card): void {
+    $harness->check(_asset_taxCard::class, 'renders unavailable tax view empty state without duplicate accounting period controls', static function () use ($harness, $card): void {
         $html = $card->render([
             'accounting_period_id' => 22,
             'company' => [
@@ -89,10 +89,37 @@ $harness->run(_asset_taxCard::class, static function (GeneratedServiceClassTestH
             ],
         ]);
 
-        $harness->assertTrue(str_contains($html, 'Select an accounting period in the page context to view tax adjustments.'));
+        $harness->assertTrue(str_contains($html, 'No tax view is available for the selected accounting period.'));
         $harness->assertTrue(!str_contains($html, '<select'));
         $harness->assertTrue(!str_contains($html, 'data-accounting-period-selector'));
         $harness->assertTrue(!str_contains($html, 'name="action" value="set-page-context"'));
         $harness->assertTrue(!str_contains($html, 'name="accounting_period_id"'));
     });
 });
+
+    $harness->check(_asset_taxCard::class, 'renders no accounting period empty state', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'services' => [
+                'assetPageData' => [
+                    'accounting_period_id' => 0,
+                    'tax_view' => null,
+                ],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, 'Select an accounting period to view tax adjustments.'));
+    });
+
+    $harness->check(_asset_taxCard::class, 'renders schema migration empty state', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'services' => [
+                'assetPageData' => [
+                    'accounting_period_id' => 22,
+                    'tax_view' => null,
+                    'schema_ready' => false,
+                ],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, 'Run the fixed asset migrations before viewing tax adjustments.'));
+    });

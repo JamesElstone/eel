@@ -56,6 +56,8 @@ $harness->run(_asset_registerCard::class, static function (GeneratedServiceClass
 
         $harness->assertTrue(str_contains($html, 'class="asset-disposal-form"'));
         $harness->assertTrue(str_contains($html, 'class="asset-disposal-controls"'));
+        $harness->assertTrue(str_contains($html, 'FA-7-1'));
+        $harness->assertTrue(str_contains($html, 'Test asset'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="search_asset_disposal_receipts"'));
         $harness->assertTrue(str_contains($html, 'Dispose of at Nil Value'));
     });

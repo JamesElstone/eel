@@ -18,6 +18,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
             $pageData = $service->fetchPageData(0, 0);
             $harness->assertSame(true, $pageData['schema_ready'] ?? false);
+            $harness->assertSame(true, $pageData['manual_schema_ready'] ?? false);
         });
 
         $harness->check(\eel_accounts\Service\AssetService::class, 'normalises blank default bank nominal from settings context', static function () use ($harness, $service): void {

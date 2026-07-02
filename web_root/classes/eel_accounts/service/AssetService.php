@@ -26,6 +26,7 @@ final class AssetService
     private \eel_accounts\Service\TransactionCategorisationService $categorisationService;
     private \eel_accounts\Service\TransactionJournalService $transactionJournalService;
     private ?bool $schemaReady = null;
+    private ?bool $manualSchemaReady = null;
 
     public function __construct(
         ?\eel_accounts\Service\TransactionCategorisationService $categorisationService = null,
@@ -101,6 +102,7 @@ final class AssetService
                 'asset_categories' => self::assetCategoryOptions(),
                 'disposal_search' => $this->emptyDisposalSearch($disposalSearchDate, $disposalSearchAssetId),
                 'schema_ready' => false,
+                'manual_schema_ready' => false,
             ];
         }
 
@@ -114,6 +116,7 @@ final class AssetService
             'asset_categories' => self::assetCategoryOptions(),
             'disposal_search' => $this->fetchDisposalSearch($companyId, $disposalSearchDate, $disposalSearchAssetId),
             'schema_ready' => true,
+            'manual_schema_ready' => $this->hasManualAssetSchema(),
         ];
     }
 
@@ -247,7 +250,7 @@ final class AssetService
 
     public function fetchManualAssetsNeedingReconciliation(int $companyId): array
     {
-        if ($companyId <= 0 || !$this->hasRequiredSchema()) {
+        if ($companyId <= 0 || !$this->hasManualAssetSchema()) {
             return [];
         }
 
@@ -312,7 +315,7 @@ final class AssetService
         $assetId = (int)($asset['id'] ?? 0);
         $purchaseDate = (string)($asset['purchase_date'] ?? '');
         $cost = round((float)($asset['cost'] ?? 0), 2);
-        if ($companyId <= 0 || $assetId <= 0 || $cost <= 0 || !$this->isIsoDate($purchaseDate) || !$this->hasRequiredSchema()) {
+        if ($companyId <= 0 || $assetId <= 0 || $cost <= 0 || !$this->isIsoDate($purchaseDate) || !$this->hasManualAssetSchema()) {
             return [];
         }
 
@@ -461,8 +464,8 @@ final class AssetService
     }
 
     public function createManualAsset(int $companyId, int $accountingPeriodId, array $payload, int $offsetNominalId): array {
-        if (!$this->hasRequiredSchema()) {
-            return ['success' => false, 'errors' => ['Run the fixed asset migration before using the asset register.']];
+        if (!$this->hasManualAssetSchema()) {
+            return ['success' => false, 'errors' => ['Run the manual asset reconciliation migration before posting manual assets.']];
         }
 
         $manualAdditionReason = $this->normaliseManualAdditionReason((string)($payload['manual_addition_reason'] ?? ''));
@@ -1403,6 +1406,60 @@ final class AssetService
             $errors[] = 'Enter an asset description.';
         }
         if (!array_key_exists($category, self::assetCategoryOptions())) {
+            $errors[] = 'Choose a valid asset category.';
+        }
+        if (!$this->isIsoDate($purchaseDate)) {
+            $errors[] = 'Enter a valid purchase date.';
+        }
+        if ($cost <= 0) {
+            $errors[] = 'Asset cost must be greater than zero.';
+        }
+        if (!in_array($method, ['straight_line', 'reducing_balance', 'none'], true)) {
+            $errors[] = 'Choose a valid depreciation method.';
+        }
+        if ($lifeYears <= 0) {
+            $errors[] = 'Useful life must be at least one year.';
+        }
+        if ($residualValue < 0 || $residualValue >= $cost) {
+            $errors[] = 'Residual value must be zero or less than cost.';
+        }
+        if ($accountingPeriodId <= 0 && $purchaseDate !== '') {
+            $accountingPeriodId = $this->resolveAccountingPeriodIdForDate($companyId, $purchaseDate);
+        }
+        if ($accountingPeriodId <= 0) {
+            $errors[] = 'No accounting period exists for the chosen purchase date.';
+        }
+
+        $nominalCodes = $this->nominalCodesForCategory($category);
+        $nominalAccountId = $this->findNominalIdByCode($nominalCodes['cost']);
+        $accumDepNominalId = $this->findNominalIdByCode($nominalCodes['accum']);
+        if ($nominalAccountId <= 0 || $accumDepNominalId <= 0) {
+            $errors[] = 'The required fixed asset nominal accounts are missing.';
+        }
+
+        return [
+            'errors' => $errors,
+            'values' => [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'description' => $description,
+                'category' => $category,
+                'nominal_account_id' => $nominalAccountId,
+                'accum_dep_nominal_id' => $accumDepNominalId,
+                'purchase_date' => $purchaseDate,
+                'cost' => $cost,
+                'useful_life_years' => $lifeYears,
+                'depreciation_method' => $method,
+                'residual_value' => $residualValue,
+                'status' => $status !== '' ? $status : 'active',
+            ],
+        ];
+    }
+
+    private function nominalCodesForCategory(string $category): array {
+        return self::assetNominalCodesForCategory($category);
+    }
+
     private function normaliseManualAdditionReason(string $reason): string
     {
         $reason = trim($reason);
@@ -1441,111 +1498,50 @@ final class AssetService
         ];
     }
 
-            $errors[] = 'Choose a valid asset category.';
-        }
-        if (!$this->isIsoDate($purchaseDate)) {
-            $errors[] = 'Enter a valid purchase date.';
-        }
-        if ($cost <= 0) {
-            $errors[] = 'Asset cost must be greater than zero.';
-        }
-        if (!in_array($method, ['straight_line', 'reducing_balance', 'none'], true)) {
-            $errors[] = 'Choose a valid depreciation method.';
-        }
-        if ($lifeYears <= 0) {
-            $errors[] = 'Useful life must be at least one year.';
-        }
-        if ($residualValue < 0 || $residualValue >= $cost) {
-            $errors[] = 'Residual value must be zero or less than cost.';
-        }
-        if ($accountingPeriodId <= 0 && $purchaseDate !== '') {
-                manual_addition_reason,
-                manual_offset_nominal_id,
-            $accountingPeriodId = $this->resolveAccountingPeriodIdForDate($companyId, $purchaseDate);
-        }
-        if ($accountingPeriodId <= 0) {
-            $errors[] = 'No accounting period exists for the chosen purchase date.';
-        }
-
-        $nominalCodes = $this->nominalCodesForCategory($category);
-        $nominalAccountId = $this->findNominalIdByCode($nominalCodes['cost']);
-        $accumDepNominalId = $this->findNominalIdByCode($nominalCodes['accum']);
-        if ($nominalAccountId <= 0 || $accumDepNominalId <= 0) {
-            $errors[] = 'The required fixed asset nominal accounts are missing.';
-        }
-
-        return [
-            'errors' => $errors,
-            'values' => [
-                'company_id' => $companyId,
-                'accounting_period_id' => $accountingPeriodId,
-                'description' => $description,
-                'category' => $category,
-                :manual_addition_reason,
-                :manual_offset_nominal_id,
-                'nominal_account_id' => $nominalAccountId,
-                'accum_dep_nominal_id' => $accumDepNominalId,
-                'purchase_date' => $purchaseDate,
-                'cost' => $cost,
-                'useful_life_years' => $lifeYears,
-                'depreciation_method' => $method,
-                'residual_value' => $residualValue,
-                'status' => $status !== '' ? $status : 'active',
-            ],
-        ];
-    }
-
-    private function nominalCodesForCategory(string $category): array {
-        return self::assetNominalCodesForCategory($category);
-    }
-
     private function insertAssetRecord(array $values, array $links): void {
-        $stmt = \InterfaceDB::prepare(
-            'INSERT INTO asset_register (
-                company_id,
-                asset_code,
-                description,
-            'manual_addition_reason' => $links['manual_addition_reason'] ?? null,
-            'manual_offset_nominal_id' => $links['manual_offset_nominal_id'] ?? null,
-                category,
-                nominal_account_id,
-                accum_dep_nominal_id,
-                purchase_date,
-                cost,
-                useful_life_years,
-                depreciation_method,
-                residual_value,
-                status,
-                linked_journal_id,
-                linked_transaction_id,
-                linked_expense_claim_line_id,
-                disposal_date,
-                disposal_proceeds,
-                created_at,
-                updated_at
-             ) VALUES (
-                :company_id,
-                :asset_code,
-                :description,
-                :category,
-                :nominal_account_id,
-                :accum_dep_nominal_id,
-                :purchase_date,
-                :cost,
-                :useful_life_years,
-                :depreciation_method,
-                :residual_value,
-                :status,
-                :linked_journal_id,
-                :linked_transaction_id,
-                :linked_expense_claim_line_id,
-                NULL,
-                NULL,
-                CURRENT_TIMESTAMP,
-                CURRENT_TIMESTAMP
-             )'
-        );
-        $stmt->execute([
+        $columns = [
+            'company_id',
+            'asset_code',
+            'description',
+            'category',
+            'nominal_account_id',
+            'accum_dep_nominal_id',
+            'purchase_date',
+            'cost',
+            'useful_life_years',
+            'depreciation_method',
+            'residual_value',
+            'status',
+            'linked_journal_id',
+            'linked_transaction_id',
+            'linked_expense_claim_line_id',
+            'disposal_date',
+            'disposal_proceeds',
+            'created_at',
+            'updated_at',
+        ];
+        $placeholders = [
+            ':company_id',
+            ':asset_code',
+            ':description',
+            ':category',
+            ':nominal_account_id',
+            ':accum_dep_nominal_id',
+            ':purchase_date',
+            ':cost',
+            ':useful_life_years',
+            ':depreciation_method',
+            ':residual_value',
+            ':status',
+            ':linked_journal_id',
+            ':linked_transaction_id',
+            ':linked_expense_claim_line_id',
+            'NULL',
+            'NULL',
+            'CURRENT_TIMESTAMP',
+            'CURRENT_TIMESTAMP',
+        ];
+        $params = [
             'company_id' => $values['company_id'],
             'asset_code' => $links['asset_code'],
             'description' => $values['description'],
@@ -1561,7 +1557,20 @@ final class AssetService
             'linked_journal_id' => $links['linked_journal_id'] ?: null,
             'linked_transaction_id' => $links['linked_transaction_id'] ?? null,
             'linked_expense_claim_line_id' => $links['linked_expense_claim_line_id'] ?? null,
-        ]);
+        ];
+
+        if ($this->hasManualAssetSchema()) {
+            array_splice($columns, 15, 0, ['manual_addition_reason', 'manual_offset_nominal_id']);
+            array_splice($placeholders, 15, 0, [':manual_addition_reason', ':manual_offset_nominal_id']);
+            $params['manual_addition_reason'] = $links['manual_addition_reason'] ?? null;
+            $params['manual_offset_nominal_id'] = $links['manual_offset_nominal_id'] ?? null;
+        }
+
+        $stmt = \InterfaceDB::prepare(
+            'INSERT INTO asset_register (' . implode(', ', $columns) . ')
+             VALUES (' . implode(', ', $placeholders) . ')'
+        );
+        $stmt->execute($params);
     }
 
     private function fetchAccountingPeriods(int $companyId): array {
@@ -1751,14 +1760,29 @@ final class AssetService
                 && \InterfaceDB::tableExists('asset_depreciation_entries')
                 && \InterfaceDB::tableExists('asset_disposal_transaction_links')
                 && \InterfaceDB::tableExists('accounting_period_adjustments')
-                && \InterfaceDB::tableExists('tax_loss_carryforwards')
-                && \InterfaceDB::columnExists('asset_register', 'manual_addition_reason')
-                && \InterfaceDB::columnExists('asset_register', 'manual_offset_nominal_id');
+                && \InterfaceDB::tableExists('tax_loss_carryforwards');
         } catch (\Throwable) {
             $this->schemaReady = false;
         }
 
         return $this->schemaReady;
+    }
+
+    private function hasManualAssetSchema(): bool
+    {
+        if ($this->manualSchemaReady !== null) {
+            return $this->manualSchemaReady;
+        }
+
+        try {
+            $this->manualSchemaReady = $this->hasRequiredSchema()
+                && \InterfaceDB::columnExists('asset_register', 'manual_addition_reason')
+                && \InterfaceDB::columnExists('asset_register', 'manual_offset_nominal_id');
+        } catch (\Throwable) {
+            $this->manualSchemaReady = false;
+        }
+
+        return $this->manualSchemaReady;
     }
 }
 

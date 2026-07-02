@@ -22,6 +22,7 @@ final class TestPageArchitectureHarness
         $this->runTest('page factory resolves the dashboard page', [$this, 'testPageFactoryResolvesDashboard']);
         $this->runTest('logs page resolves all configured log cards', [$this, 'testLogsPageResolvesAllCards']);
         $this->runTest('assets page resolves all configured asset cards', [$this, 'testAssetsPageResolvesAllCards']);
+        $this->runTest('assets page groups cards into asset tabs', [$this, 'testAssetsPageCardLayout']);
         $this->runTest('AJAX delta responses include only stale cards', [$this, 'testAjaxDeltaResponseReturnsOnlyStaleCards']);
         $this->runTest('AJAX delta responses expose a nonce refresh slot', [$this, 'testAjaxDeltaResponseIncludesAjaxNonceField']);
         $this->runTest('selector ajax responses include compact selector UI data', [$this, 'testSelectorAjaxResponseIncludesSelectorUi']);
@@ -84,6 +85,31 @@ final class TestPageArchitectureHarness
                 'asset_tax',
             ],
             $page->cards()
+        );
+    }
+
+    private function testAssetsPageCardLayout(): void
+    {
+        $page = $this->loadPageCards('assets');
+
+        $this->assertSame(
+            [
+                [
+                    'tab' => 'Asset Register',
+                    'cards' => [
+                        'asset_register',
+                        'asset_tax',
+                    ],
+                ],
+                [
+                    'tab' => 'Manual Assets',
+                    'cards' => [
+                        'asset_create',
+                        'asset_reconcile_manual',
+                    ],
+                ],
+            ],
+            $page->cardLayout()
         );
     }
 

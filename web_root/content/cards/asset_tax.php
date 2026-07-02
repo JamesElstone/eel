@@ -43,8 +43,17 @@ final class _asset_taxCard extends CardBaseFramework
 
     public function render(array $context): string
     {
+        $page = (array)($context['page'] ?? []);
+        $company = (array)($context['company'] ?? []);
         $assetsPageData = (array)($context['services']['assetPageData'] ?? []);
         $assetTaxView = is_array($assetsPageData['tax_view'] ?? null) ? $assetsPageData['tax_view'] : null;
+        $accountingPeriodId = (int)(
+            $assetsPageData['accounting_period_id']
+            ?? $page['accounting_period_id']
+            ?? $context['accounting_period_id']
+            ?? $company['accounting_period_id']
+            ?? 0
+        );
 
         return $assetTaxView !== null
             ? '<div class="list">
@@ -57,7 +66,19 @@ final class _asset_taxCard extends CardBaseFramework
                     <div class="list-item"><strong>Losses C/F</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['losses_carried_forward'] ?? 0))) . '</span></div>
                     <div class="list-item"><strong>Taxable Profit</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['taxable_profit'] ?? 0))) . '</span></div>
                 </div>'
-            : '<div class="helper">Select an accounting period in the page context to view tax adjustments.</div>';
+            : '<div class="helper">' . HelperFramework::escape($this->emptyStateMessage($assetsPageData, $accountingPeriodId)) . '</div>';
     }
 
+    private function emptyStateMessage(array $assetsPageData, int $accountingPeriodId): string
+    {
+        if ($accountingPeriodId <= 0) {
+            return 'Select an accounting period to view tax adjustments.';
+        }
+
+        if (array_key_exists('schema_ready', $assetsPageData) && empty($assetsPageData['schema_ready'])) {
+            return 'Run the fixed asset migrations before viewing tax adjustments.';
+        }
+
+        return 'No tax view is available for the selected accounting period.';
+    }
 }

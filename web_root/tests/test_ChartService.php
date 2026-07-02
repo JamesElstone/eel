@@ -47,6 +47,20 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARAT
             $harness->assertTrue(str_contains($html, 'Test line'));
         });
 
+        $harness->check(ChartService::class, 'renders line chart with negative values', static function () use ($harness, $service): void {
+            $html = $service->line([
+                ['label' => 'One', 'value' => -5],
+                ['label' => 'Two', 'value' => 3],
+            ], ['title' => 'Test negative line']);
+
+            $harness->assertTrue(str_contains($html, '<svg'));
+            $harness->assertTrue(str_contains($html, 'chart-line-path'));
+            $harness->assertTrue(substr_count($html, 'chart-line-point') === 2);
+            $harness->assertTrue(str_contains($html, 'chart-zero-axis-line'));
+            $harness->assertTrue(str_contains($html, 'chart-zero-axis-label'));
+            $harness->assertTrue(str_contains($html, 'One: -5'));
+        });
+
         $harness->check(ChartService::class, 'renders multi series line chart SVG', static function () use ($harness, $service, $points): void {
             $html = $service->line([
                 ['label' => 'First', 'points' => $points],

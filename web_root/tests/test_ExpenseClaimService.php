@@ -516,6 +516,10 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
                 'SELECT description FROM expense_claim_line_assets WHERE expense_claim_line_id = :line_id',
                 ['line_id' => $assetLineId]
             ));
+            $harness->assertSame((int)$fixture['asset_cost_nominal_id'], (int)\InterfaceDB::fetchColumn(
+                'SELECT nominal_account_id FROM expense_claim_lines WHERE id = :line_id',
+                ['line_id' => $assetLineId]
+            ));
 
             $result = $instance->postClaim((int)$fixture['company_id'], (int)$fixture['claim_id'], [
                 'default_expense_nominal_id' => (int)$fixture['expense_nominal_id'],

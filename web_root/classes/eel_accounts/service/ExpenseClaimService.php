@@ -1403,13 +1403,34 @@ final class ExpenseClaimService
         }
 
         if ($lineType === 'asset') {
-            $this->upsertLineAssetDetails($line, [
+            $normalised = $this->normaliseLineAssetPayload($line, [
                 'category' => 'tools_equipment',
                 'description' => (string)($line['description'] ?? ''),
                 'useful_life_years' => 3,
                 'depreciation_method' => 'straight_line',
                 'residual_value' => 0,
+            ], (int)$claim['accounting_period_id'], $companyId);
+            if ($normalised['errors'] !== []) {
+                return ['success' => false, 'errors' => $normalised['errors']];
+            }
+
+            $this->upsertLineAssetDetails($line, $normalised['values']);
+            \InterfaceDB::prepare(
+                'UPDATE expense_claim_lines
+                 SET nominal_account_id = :nominal_account_id,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = :id
+                   AND expense_claim_id = :expense_claim_id'
+            )->execute([
+                'nominal_account_id' => (int)$normalised['values']['nominal_account_id'],
+                'id' => $lineId,
+                'expense_claim_id' => $claimId,
             ]);
+        } else {
+            \InterfaceDB::prepare(
+                'DELETE FROM expense_claim_line_assets
+                 WHERE expense_claim_line_id = :expense_claim_line_id'
+            )->execute(['expense_claim_line_id' => $lineId]);
             \InterfaceDB::prepare(
                 'UPDATE expense_claim_lines
                  SET nominal_account_id = NULL,
@@ -1420,11 +1441,6 @@ final class ExpenseClaimService
                 'id' => $lineId,
                 'expense_claim_id' => $claimId,
             ]);
-        } else {
-            \InterfaceDB::prepare(
-                'DELETE FROM expense_claim_line_assets
-                 WHERE expense_claim_line_id = :expense_claim_line_id'
-            )->execute(['expense_claim_line_id' => $lineId]);
         }
 
         return [
@@ -1458,11 +1474,12 @@ final class ExpenseClaimService
         $this->upsertLineAssetDetails($line, $normalised['values']);
         \InterfaceDB::prepare(
             'UPDATE expense_claim_lines
-             SET nominal_account_id = NULL,
+             SET nominal_account_id = :nominal_account_id,
                  updated_at = CURRENT_TIMESTAMP
              WHERE id = :id
                AND expense_claim_id = :expense_claim_id'
         )->execute([
+            'nominal_account_id' => (int)$normalised['values']['nominal_account_id'],
             'id' => $lineId,
             'expense_claim_id' => $claimId,
         ]);

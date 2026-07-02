@@ -69,16 +69,10 @@ final class _trial_balance_stateCard extends CardBaseFramework
     private function renderSummaryPanel(array $summary, string $readiness): string
     {
         $status = (array)($summary['trial_balance_status'] ?? []);
-        $readyClass = str_contains(strtolower($readiness), 'ready') && !str_starts_with(strtolower($readiness), 'not')
-            ? 'success'
-            : 'danger';
 
         return '<div>
-            <div class="status-head">
-                <h3 class="card-title">Summary</h3>
-                <span class="badge ' . $readyClass . '">' . HelperFramework::escape($readiness) . '</span>
-            </div>
-            <div class="summary-grid">
+            <div class="summary-grid" style="grid-template-columns: repeat(5, minmax(0, 1fr));">
+                ' . $this->readinessGaugeCard($readiness) . '
                 ' . $this->summaryCard('Trial Balance status', '<span class="badge ' . (!empty($status['is_balanced']) ? 'success' : 'danger') . '">' . HelperFramework::escape((string)($status['label'] ?? 'Not balanced')) . '</span>', true) . '
                 ' . $this->summaryCard('Profit before tax', FormattingFramework::money($summary['profit_before_tax'] ?? 0)) . '
                 ' . $this->summaryCard('Net assets', FormattingFramework::money($summary['net_assets'] ?? 0)) . '
@@ -90,6 +84,44 @@ final class _trial_balance_stateCard extends CardBaseFramework
                 ' . $this->summaryCard('Corporation tax nominal', FormattingFramework::money($summary['corporation_tax_balance'] ?? 0)) . '
             </div>
         </div>';
+    }
+
+    private function readinessGaugeCard(string $readiness): string
+    {
+        $score = $this->readinessScore($readiness);
+        $chart = (new ChartService())->gauge($score, [
+            'title' => 'Trial balance readiness',
+            'label' => $readiness,
+            'color' => $this->readinessColor($score),
+            'width' => 220,
+            'height' => 160,
+        ]);
+
+        return $this->summaryCard('Readiness', $chart, true);
+    }
+
+    private function readinessScore(string $readiness): int
+    {
+        $normalised = strtolower(trim($readiness));
+
+        if (str_contains($normalised, 'ready for ct')) {
+            return 100;
+        }
+
+        if (str_contains($normalised, 'nearly ready')) {
+            return 70;
+        }
+
+        return 0;
+    }
+
+    private function readinessColor(int $score): string
+    {
+        return match (true) {
+            $score >= 100 => '#16a34a',
+            $score > 0 => '#d97706',
+            default => '#dc2626',
+        };
     }
 
     private function summaryCard(string $label, string $value, bool $trustedValue = false): string

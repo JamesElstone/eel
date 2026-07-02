@@ -266,6 +266,294 @@ final class ExpenseClaimService
              ORDER BY ec.claim_year DESC, ec.claim_month DESC, ec.updated_at DESC, ec.id DESC', $params));
     }
 
+    public function fetchStatistics(int $companyId, array $filters = []): array {
+        if ($companyId <= 0) {
+            return $this->emptyStatistics($filters);
+        }
+
+        $scope = $this->expenseStatisticsScope($companyId, $filters);
+
+        return [
+            'claimants' => $this->fetchStatisticsClaimants($scope),
+            'nominals' => $this->fetchStatisticsNominals($scope),
+            'claimant_breakdown' => $this->fetchStatisticsClaimantBreakdown($scope),
+            'monthly_trend' => $this->fetchStatisticsMonthlyTrend($scope),
+            'health_checks' => $this->fetchStatisticsHealthChecks($scope),
+            'filters' => [
+                'accounting_period_id' => max(0, (int)($filters['accounting_period_id'] ?? 0)),
+                'accounting_period_start' => trim((string)($filters['accounting_period_start'] ?? '')),
+                'accounting_period_end' => trim((string)($filters['accounting_period_end'] ?? '')),
+            ],
+        ];
+    }
+
+    private function fetchStatisticsClaimants(array $scope): array {
+        return array_map(
+            static fn(array $row): array => [
+                'claimant_id' => (int)$row['claimant_id'],
+                'claimant_name' => (string)$row['claimant_name'],
+                'claim_count' => (int)$row['claim_count'],
+                'item_count' => (int)$row['item_count'],
+                'claimed_total' => round((float)$row['claimed_total'], 2),
+                'payments_made' => round((float)$row['payments_made'], 2),
+                'carried_forward' => round((float)$row['carried_forward'], 2),
+            ],
+            \InterfaceDB::fetchAll(
+                'SELECT ec.claimant_id,
+                        c.claimant_name,
+                        COUNT(ec.id) AS claim_count,
+                        COALESCE(SUM(lc.line_count), 0) AS item_count,
+                        COALESCE(SUM(ec.claimed_amount), 0) AS claimed_total,
+                        COALESCE(SUM(ec.payments_amount), 0) AS payments_made,
+                        COALESCE(SUM(ec.carried_forward_amount), 0) AS carried_forward
+                 FROM expense_claims ec
+                 INNER JOIN expense_claimants c ON c.id = ec.claimant_id
+                 LEFT JOIN (
+                    SELECT expense_claim_id, COUNT(*) AS line_count
+                    FROM expense_claim_lines
+                    GROUP BY expense_claim_id
+                 ) lc ON lc.expense_claim_id = ec.id
+                 WHERE ' . $scope['where'] . '
+                 GROUP BY ec.claimant_id, c.claimant_name
+                 ORDER BY c.claimant_name ASC, ec.claimant_id ASC',
+                $scope['params']
+            )
+        );
+    }
+
+    private function fetchStatisticsNominals(array $scope): array {
+        return array_map(
+            static fn(array $row): array => [
+                'nominal_account_id' => (int)($row['nominal_account_id'] ?? 0),
+                'code' => (string)($row['code'] ?? ''),
+                'name' => (string)($row['name'] ?? 'Unassigned'),
+                'line_count' => (int)$row['line_count'],
+                'claimed_total' => round((float)$row['claimed_total'], 2),
+            ],
+            \InterfaceDB::fetchAll(
+                'SELECT COALESCE(l.nominal_account_id, 0) AS nominal_account_id,
+                        COALESCE(na.code, \'\') AS code,
+                        COALESCE(na.name, \'Unassigned\') AS name,
+                        COUNT(l.id) AS line_count,
+                        COALESCE(SUM(l.amount), 0) AS claimed_total
+                 FROM expense_claim_lines l
+                 INNER JOIN expense_claims ec ON ec.id = l.expense_claim_id
+                 LEFT JOIN nominal_accounts na ON na.id = l.nominal_account_id
+                 WHERE ' . $scope['where'] . '
+                 GROUP BY COALESCE(l.nominal_account_id, 0), COALESCE(na.code, \'\'), COALESCE(na.name, \'Unassigned\')
+                 ORDER BY claimed_total DESC, name ASC',
+                $scope['params']
+            )
+        );
+    }
+
+    private function fetchStatisticsClaimantBreakdown(array $scope): array {
+        return array_map(
+            static fn(array $row): array => [
+                'claimant_id' => (int)$row['claimant_id'],
+                'claimant_name' => (string)$row['claimant_name'],
+                'claimed_total' => round((float)$row['claimed_total'], 2),
+            ],
+            \InterfaceDB::fetchAll(
+                'SELECT ec.claimant_id,
+                        c.claimant_name,
+                        COALESCE(SUM(ec.claimed_amount), 0) AS claimed_total
+                 FROM expense_claims ec
+                 INNER JOIN expense_claimants c ON c.id = ec.claimant_id
+                 WHERE ' . $scope['where'] . '
+                 GROUP BY ec.claimant_id, c.claimant_name
+                 ORDER BY claimed_total DESC, c.claimant_name ASC',
+                $scope['params']
+            )
+        );
+    }
+
+    private function fetchStatisticsMonthlyTrend(array $scope): array {
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT ec.claim_year,
+                    ec.claim_month,
+                    COALESCE(SUM(ec.claimed_amount), 0) AS claimed_total
+             FROM expense_claims ec
+             WHERE ' . $scope['where'] . '
+             GROUP BY ec.claim_year, ec.claim_month
+             ORDER BY ec.claim_year ASC, ec.claim_month ASC',
+            $scope['params']
+        );
+        $totals = [];
+
+        foreach ($rows as $row) {
+            $key = sprintf('%04d-%02d', (int)$row['claim_year'], (int)$row['claim_month']);
+            $totals[$key] = round((float)$row['claimed_total'], 2);
+        }
+
+        $periodStart = (string)$scope['period_start'];
+        $periodEnd = (string)$scope['period_end'];
+        if (!$this->isValidDate($periodStart) || !$this->isValidDate($periodEnd)) {
+            return array_map(
+                static fn(string $key, float $value): array => [
+                    'period' => $key,
+                    'label' => \DateTimeImmutable::createFromFormat('!Y-m', $key)?->format('M y') ?? $key,
+                    'claimed_total' => $value,
+                ],
+                array_keys($totals),
+                array_values($totals)
+            );
+        }
+
+        $points = [];
+        $cursor = (new \DateTimeImmutable($periodStart))->modify('first day of this month');
+        $end = (new \DateTimeImmutable($periodEnd))->modify('first day of this month');
+
+        while ($cursor <= $end) {
+            $key = $cursor->format('Y-m');
+            $points[] = [
+                'period' => $key,
+                'label' => $cursor->format('M y'),
+                'claimed_total' => $totals[$key] ?? 0.0,
+            ];
+            $cursor = $cursor->modify('+1 month');
+        }
+
+        return $points;
+    }
+
+    private function fetchStatisticsHealthChecks(array $scope): array {
+        $statusRows = \InterfaceDB::fetchAll(
+            'SELECT ec.status,
+                    COUNT(ec.id) AS claim_count,
+                    COALESCE(SUM(ec.claimed_amount), 0) AS claimed_total
+             FROM expense_claims ec
+             WHERE ' . $scope['where'] . '
+             GROUP BY ec.status',
+            $scope['params']
+        );
+        $statusTotals = [
+            'draft' => ['claim_count' => 0, 'claimed_total' => 0.0],
+            'posted' => ['claim_count' => 0, 'claimed_total' => 0.0],
+        ];
+
+        foreach ($statusRows as $row) {
+            $status = (string)$row['status'];
+            if (!isset($statusTotals[$status])) {
+                continue;
+            }
+            $statusTotals[$status] = [
+                'claim_count' => (int)$row['claim_count'],
+                'claimed_total' => round((float)$row['claimed_total'], 2),
+            ];
+        }
+
+        $lineChecks = \InterfaceDB::fetchOne(
+            'SELECT COALESCE(SUM(CASE WHEN l.receipt_reference IS NULL OR TRIM(l.receipt_reference) = \'\' THEN 1 ELSE 0 END), 0) AS missing_receipt_count,
+                    COALESCE(SUM(CASE WHEN l.receipt_reference IS NULL OR TRIM(l.receipt_reference) = \'\' THEN l.amount ELSE 0 END), 0) AS missing_receipt_value,
+                    COALESCE(SUM(CASE WHEN l.nominal_account_id IS NULL THEN 1 ELSE 0 END), 0) AS missing_nominal_count,
+                    COALESCE(SUM(CASE WHEN l.nominal_account_id IS NULL THEN l.amount ELSE 0 END), 0) AS missing_nominal_value
+             FROM expense_claim_lines l
+             INNER JOIN expense_claims ec ON ec.id = l.expense_claim_id
+             WHERE ' . $scope['where'],
+            $scope['params']
+        ) ?: [];
+
+        $oldestOutstanding = \InterfaceDB::fetchOne(
+            'SELECT ec.claim_reference_code,
+                    ec.period_start,
+                    ec.carried_forward_amount,
+                    c.claimant_name
+             FROM expense_claims ec
+             INNER JOIN expense_claimants c ON c.id = ec.claimant_id
+             WHERE ' . $scope['where'] . '
+               AND ec.carried_forward_amount > 0
+             ORDER BY ec.period_start ASC, ec.id ASC
+             LIMIT 1',
+            $scope['params']
+        ) ?: [];
+
+        $largestOutstandingClaimant = \InterfaceDB::fetchOne(
+            'SELECT ec.claimant_id,
+                    c.claimant_name,
+                    COALESCE(SUM(ec.carried_forward_amount), 0) AS carried_forward
+             FROM expense_claims ec
+             INNER JOIN expense_claimants c ON c.id = ec.claimant_id
+             WHERE ' . $scope['where'] . '
+             GROUP BY ec.claimant_id, c.claimant_name
+             HAVING carried_forward > 0
+             ORDER BY carried_forward DESC, c.claimant_name ASC
+             LIMIT 1',
+            $scope['params']
+        ) ?: [];
+
+        return [
+            'draft' => $statusTotals['draft'],
+            'posted' => $statusTotals['posted'],
+            'missing_receipts' => [
+                'count' => (int)($lineChecks['missing_receipt_count'] ?? 0),
+                'value' => round((float)($lineChecks['missing_receipt_value'] ?? 0), 2),
+            ],
+            'missing_nominals' => [
+                'count' => (int)($lineChecks['missing_nominal_count'] ?? 0),
+                'value' => round((float)($lineChecks['missing_nominal_value'] ?? 0), 2),
+            ],
+            'oldest_outstanding_claim' => $oldestOutstanding === [] ? null : [
+                'claim_reference_code' => (string)$oldestOutstanding['claim_reference_code'],
+                'claimant_name' => (string)$oldestOutstanding['claimant_name'],
+                'period_start' => (string)$oldestOutstanding['period_start'],
+                'carried_forward' => round((float)$oldestOutstanding['carried_forward_amount'], 2),
+            ],
+            'largest_outstanding_claimant' => $largestOutstandingClaimant === [] ? null : [
+                'claimant_id' => (int)$largestOutstandingClaimant['claimant_id'],
+                'claimant_name' => (string)$largestOutstandingClaimant['claimant_name'],
+                'carried_forward' => round((float)$largestOutstandingClaimant['carried_forward'], 2),
+            ],
+        ];
+    }
+
+    private function expenseStatisticsScope(int $companyId, array $filters): array {
+        $conditions = ['ec.company_id = :company_id'];
+        $params = ['company_id' => $companyId];
+        $periodStart = trim((string)($filters['accounting_period_start'] ?? ''));
+        $periodEnd = trim((string)($filters['accounting_period_end'] ?? ''));
+        $accountingPeriodId = max(0, (int)($filters['accounting_period_id'] ?? 0));
+
+        if ($accountingPeriodId > 0) {
+            $conditions[] = 'ec.accounting_period_id = :accounting_period_id';
+            $params['accounting_period_id'] = $accountingPeriodId;
+        } elseif ($this->isValidDate($periodStart) && $this->isValidDate($periodEnd)) {
+            $conditions[] = 'ec.period_start >= :accounting_period_start';
+            $conditions[] = 'ec.period_end <= :accounting_period_end';
+            $params['accounting_period_start'] = $periodStart;
+            $params['accounting_period_end'] = $periodEnd;
+        }
+
+        return [
+            'where' => implode(' AND ', $conditions),
+            'params' => $params,
+            'period_start' => $periodStart,
+            'period_end' => $periodEnd,
+        ];
+    }
+
+    private function emptyStatistics(array $filters): array {
+        return [
+            'claimants' => [],
+            'nominals' => [],
+            'claimant_breakdown' => [],
+            'monthly_trend' => [],
+            'health_checks' => [
+                'draft' => ['claim_count' => 0, 'claimed_total' => 0.0],
+                'posted' => ['claim_count' => 0, 'claimed_total' => 0.0],
+                'missing_receipts' => ['count' => 0, 'value' => 0.0],
+                'missing_nominals' => ['count' => 0, 'value' => 0.0],
+                'oldest_outstanding_claim' => null,
+                'largest_outstanding_claimant' => null,
+            ],
+            'filters' => [
+                'accounting_period_id' => max(0, (int)($filters['accounting_period_id'] ?? 0)),
+                'accounting_period_start' => trim((string)($filters['accounting_period_start'] ?? '')),
+                'accounting_period_end' => trim((string)($filters['accounting_period_end'] ?? '')),
+            ],
+        ];
+    }
+
     private function listClaimLinesForHeatmap(int $companyId): array {
         if ($companyId <= 0) {
             return [];

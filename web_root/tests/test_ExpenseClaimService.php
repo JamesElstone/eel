@@ -693,6 +693,99 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
             ));
         });
     });
+
+    $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'aggregates selected period expense statistics', function () use ($harness, $instance): void {
+        expenseClaimServiceWithFixture(static function (array $fixture) use ($harness, $instance): void {
+            $secondClaimantId = (int)$fixture['claimant_id'] + 100;
+            \InterfaceDB::prepareExecute(
+                'INSERT INTO expense_claimants (id, company_id, claimant_name, is_active)
+                 VALUES (:id, :company_id, :claimant_name, 1)',
+                [
+                    'id' => $secondClaimantId,
+                    'company_id' => (int)$fixture['company_id'],
+                    'claimant_name' => 'Second Claimant',
+                ]
+            );
+
+            expenseClaimServiceInsertClaimWithId($fixture, (int)$fixture['claim_id'] + 10, (int)$fixture['claimant_id'], 2026, 6, '2026-06-01', '2026-06-30');
+            expenseClaimServiceInsertClaimWithId($fixture, (int)$fixture['claim_id'] + 20, $secondClaimantId, 2026, 5, '2026-05-01', '2026-05-31');
+
+            expenseClaimServiceInsertStatisticsLine((int)$fixture['claim_id'], 1, '2026-05-05', 'Materials', 100.00, (int)$fixture['line_nominal_id'], 'receipt-1');
+            expenseClaimServiceInsertStatisticsLine((int)$fixture['claim_id'], 2, '2026-05-06', 'Unassigned', 50.00, null, '');
+            expenseClaimServiceInsertStatisticsLine((int)$fixture['claim_id'] + 10, 1, '2026-06-07', 'Tools', 25.00, (int)$fixture['line_nominal_id'], 'receipt-2');
+            expenseClaimServiceInsertStatisticsLine((int)$fixture['claim_id'] + 20, 1, '2026-05-08', 'Fuel', 80.00, (int)$fixture['line_nominal_id'], '');
+
+            $transactionId = expenseClaimServiceInsertTransaction($fixture, -40.00, 'stats-primary');
+            \InterfaceDB::prepareExecute(
+                'INSERT INTO expense_claim_payment_links (expense_claim_id, transaction_id, linked_amount)
+                 VALUES (:expense_claim_id, :transaction_id, :linked_amount)',
+                [
+                    'expense_claim_id' => (int)$fixture['claim_id'],
+                    'transaction_id' => $transactionId,
+                    'linked_amount' => 40.00,
+                ]
+            );
+            $secondTransactionId = expenseClaimServiceInsertTransaction($fixture, -20.00, 'stats-second');
+            \InterfaceDB::prepareExecute(
+                'INSERT INTO expense_claim_payment_links (expense_claim_id, transaction_id, linked_amount)
+                 VALUES (:expense_claim_id, :transaction_id, :linked_amount)',
+                [
+                    'expense_claim_id' => (int)$fixture['claim_id'] + 20,
+                    'transaction_id' => $secondTransactionId,
+                    'linked_amount' => 20.00,
+                ]
+            );
+            \InterfaceDB::prepareExecute(
+                'UPDATE expense_claims SET status = :status WHERE id = :id',
+                [
+                    'status' => 'posted',
+                    'id' => (int)$fixture['claim_id'] + 10,
+                ]
+            );
+
+            $instance->recalculateCompanyClaimSeries((int)$fixture['company_id']);
+
+            $statistics = $instance->fetchStatistics((int)$fixture['company_id'], [
+                'accounting_period_id' => (int)$fixture['period_id'],
+                'accounting_period_start' => '2026-04-01',
+                'accounting_period_end' => '2027-03-31',
+            ]);
+
+            $claimants = (array)($statistics['claimants'] ?? []);
+            $harness->assertCount(2, $claimants);
+            $primary = expenseClaimServiceFindStatisticsRow($claimants, 'claimant_id', (int)$fixture['claimant_id']);
+            $harness->assertSame(2, (int)($primary['claim_count'] ?? 0));
+            $harness->assertSame(3, (int)($primary['item_count'] ?? 0));
+            $harness->assertSame(175.00, (float)($primary['claimed_total'] ?? 0));
+            $harness->assertSame(40.00, (float)($primary['payments_made'] ?? 0));
+            $harness->assertSame(245.00, (float)($primary['carried_forward'] ?? 0));
+
+            $nominals = (array)($statistics['nominals'] ?? []);
+            $unassigned = expenseClaimServiceFindStatisticsRow($nominals, 'name', 'Unassigned');
+            $materials = expenseClaimServiceFindStatisticsRow($nominals, 'nominal_account_id', (int)$fixture['line_nominal_id']);
+            $harness->assertSame(50.00, (float)($unassigned['claimed_total'] ?? 0));
+            $harness->assertSame(205.00, (float)($materials['claimed_total'] ?? 0));
+
+            $trend = (array)($statistics['monthly_trend'] ?? []);
+            $harness->assertCount(12, $trend);
+            $may = expenseClaimServiceFindStatisticsRow($trend, 'period', '2026-05');
+            $june = expenseClaimServiceFindStatisticsRow($trend, 'period', '2026-06');
+            $harness->assertSame(230.00, (float)($may['claimed_total'] ?? 0));
+            $harness->assertSame(25.00, (float)($june['claimed_total'] ?? 0));
+
+            $health = (array)($statistics['health_checks'] ?? []);
+            $harness->assertSame(2, (int)(($health['draft'] ?? [])['claim_count'] ?? 0));
+            $harness->assertSame(230.00, (float)(($health['draft'] ?? [])['claimed_total'] ?? 0));
+            $harness->assertSame(1, (int)(($health['posted'] ?? [])['claim_count'] ?? 0));
+            $harness->assertSame(25.00, (float)(($health['posted'] ?? [])['claimed_total'] ?? 0));
+            $harness->assertSame(2, (int)(($health['missing_receipts'] ?? [])['count'] ?? 0));
+            $harness->assertSame(130.00, (float)(($health['missing_receipts'] ?? [])['value'] ?? 0));
+            $harness->assertSame(1, (int)(($health['missing_nominals'] ?? [])['count'] ?? 0));
+            $harness->assertSame(50.00, (float)(($health['missing_nominals'] ?? [])['value'] ?? 0));
+            $harness->assertSame('Fixture Claimant ' . (string)$fixture['marker'], (string)(($health['oldest_outstanding_claim'] ?? [])['claimant_name'] ?? ''));
+            $harness->assertSame('Fixture Claimant ' . (string)$fixture['marker'], (string)(($health['largest_outstanding_claimant'] ?? [])['claimant_name'] ?? ''));
+        });
+    });
 });
 
 function expenseClaimServiceParseBulkLines(\eel_accounts\Service\ExpenseClaimService $service, string $source, string $dateFormat): array
@@ -957,6 +1050,34 @@ function expenseClaimServiceInsertLine(array $fixture, int $claimId, int $lineNu
             'nominal_account_id' => (int)$fixture['line_nominal_id'],
         ]
     );
+}
+
+function expenseClaimServiceInsertStatisticsLine(int $claimId, int $lineNumber, string $expenseDate, string $description, float $amount, ?int $nominalAccountId, string $receiptReference): void
+{
+    \InterfaceDB::prepareExecute(
+        'INSERT INTO expense_claim_lines (expense_claim_id, line_number, expense_date, description, amount, nominal_account_id, receipt_reference)
+         VALUES (:expense_claim_id, :line_number, :expense_date, :description, :amount, :nominal_account_id, :receipt_reference)',
+        [
+            'expense_claim_id' => $claimId,
+            'line_number' => $lineNumber,
+            'expense_date' => $expenseDate,
+            'description' => $description,
+            'amount' => $amount,
+            'nominal_account_id' => $nominalAccountId,
+            'receipt_reference' => $receiptReference !== '' ? $receiptReference : null,
+        ]
+    );
+}
+
+function expenseClaimServiceFindStatisticsRow(array $rows, string $key, mixed $expected): array
+{
+    foreach ($rows as $row) {
+        if (is_array($row) && ($row[$key] ?? null) === $expected) {
+            return $row;
+        }
+    }
+
+    return [];
 }
 
 function expenseClaimServiceClaimTotals(int $claimId): array

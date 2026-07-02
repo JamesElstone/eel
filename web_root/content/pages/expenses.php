@@ -26,12 +26,18 @@ final class _expenses extends PageContextFramework
 
     public function cards(): array
     {
-        return ['expense_claimants', 'expense_add_claimant', 'expense_claim_create', 'expenses_state', 'expense_claim_editor'];
+        return ['expense_statistics', 'expense_claimants', 'expense_add_claimant', 'expense_claim_create', 'expenses_state', 'expense_claim_editor'];
     }
 
     public function cardLayout(): array
     {
         return [
+            [
+                'tab' => 'Summary',
+                'cards' => [
+                    'expense_statistics',
+                ],
+            ],
             [
                 'tab' => 'Claimants',
                 'cards' => [

@@ -32,8 +32,8 @@ final class _year_end_empty_month_confirmationsCard extends CardBaseFramework
                 'service' => \eel_accounts\Service\EmptyMonthConfirmationService::class,
                 'method' => 'fetchContext',
                 'params' => [
-                    'companyId' => ':company_id',
-                    'accountingPeriodId' => ':accounting_period_id',
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
         ];

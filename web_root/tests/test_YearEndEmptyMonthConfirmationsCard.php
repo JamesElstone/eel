@@ -22,6 +22,9 @@ $harness->run(_year_end_empty_month_confirmationsCard::class, static function (
         $harness->assertSame('emptyMonthConfirmations', (string)($service['key'] ?? ''));
         $harness->assertSame(\eel_accounts\Service\EmptyMonthConfirmationService::class, (string)($service['service'] ?? ''));
         $harness->assertSame('fetchContext', (string)($service['method'] ?? ''));
+        $params = (array)($service['params'] ?? []);
+        $harness->assertSame(':company.id', (string)($params['companyId'] ?? ''));
+        $harness->assertSame(':company.accounting_period_id', (string)($params['accountingPeriodId'] ?? ''));
     });
 
     $harness->check(_year_end_empty_month_confirmationsCard::class, 'renders confirm and revoke flows', static function () use ($harness, $card): void {

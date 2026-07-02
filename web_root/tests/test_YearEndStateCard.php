@@ -26,6 +26,19 @@ $harness->run(_year_end_stateCard::class, static function (GeneratedServiceClass
         $harness->assertSame('fetchContext', $offsetService['method'] ?? null);
     });
 
+    $harness->check(_year_end_stateCard::class, 'declares services with selected company context', static function () use ($harness, $card): void {
+        foreach ($card->services() as $service) {
+            $params = (array)($service['params'] ?? []);
+            if (array_key_exists('companyId', $params)) {
+                $harness->assertSame(':company.id', (string)$params['companyId']);
+            }
+
+            if (array_key_exists('accountingPeriodId', $params)) {
+                $harness->assertSame(':company.accounting_period_id', (string)$params['accountingPeriodId']);
+            }
+        }
+    });
+
     $harness->check(_year_end_stateCard::class, 'renders director loan offset balances and post button', static function () use ($harness, $card): void {
         $html = $card->render(yearEndStateCardDirectorLoanContext([
             'available' => true,

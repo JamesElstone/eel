@@ -22,8 +22,8 @@ final class _year_end_stateCard extends CardBaseFramework
                 'service' => \eel_accounts\Service\YearEndChecklistService::class,
                 'method' => 'fetchChecklist',
                 'params' => [
-                    'companyId' => ':company_id',
-                    'accountingPeriodId' => ':accounting_period_id',
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                     'persist' => false,
                 ],
             ],
@@ -32,8 +32,8 @@ final class _year_end_stateCard extends CardBaseFramework
                 'service' => \eel_accounts\Service\YearEndTaxReadinessService::class,
                 'method' => 'fetchSummary',
                 'params' => [
-                    'companyId' => ':company_id',
-                    'accountingPeriodId' => ':accounting_period_id',
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
             [
@@ -41,8 +41,8 @@ final class _year_end_stateCard extends CardBaseFramework
                 'service' => \eel_accounts\Service\OpeningBalanceService::class,
                 'method' => 'fetchContext',
                 'params' => [
-                    'companyId' => ':company_id',
-                    'accountingPeriodId' => ':accounting_period_id',
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
             [
@@ -50,8 +50,8 @@ final class _year_end_stateCard extends CardBaseFramework
                 'service' => \eel_accounts\Service\YearEndAdjustmentService::class,
                 'method' => 'fetchContext',
                 'params' => [
-                    'companyId' => ':company_id',
-                    'accountingPeriodId' => ':accounting_period_id',
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
             [
@@ -59,8 +59,8 @@ final class _year_end_stateCard extends CardBaseFramework
                 'service' => \eel_accounts\Service\DirectorLoanReconciliationService::class,
                 'method' => 'fetchContext',
                 'params' => [
-                    'companyId' => ':company_id',
-                    'accountingPeriodId' => ':accounting_period_id',
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
             [
@@ -68,8 +68,8 @@ final class _year_end_stateCard extends CardBaseFramework
                 'service' => \eel_accounts\Service\YearEndCompaniesHouseComparisonService::class,
                 'method' => 'fetchComparison',
                 'params' => [
-                    'companyId' => ':company_id',
-                    'accountingPeriodId' => ':accounting_period_id',
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
         ];

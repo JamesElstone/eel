@@ -53,7 +53,6 @@ final class _expense_statisticsCard extends CardBaseFramework
             ' . $this->renderClaimantPanel((array)($statistics['claimants'] ?? [])) . '
             ' . $this->renderUnassignedEntriesPanel((array)($statistics['unassigned_entries'] ?? [])) . '
             ' . $this->renderNominalPanel((array)($statistics['nominals'] ?? [])) . '
-            ' . $this->renderClaimantBreakdownPanel((array)($statistics['claimant_breakdown'] ?? [])) . '
             ' . $this->renderTrendPanel((array)($statistics['monthly_trend'] ?? [])) . '
         </div>';
     }
@@ -167,37 +166,6 @@ final class _expense_statisticsCard extends CardBaseFramework
         </section>';
     }
 
-    private function renderClaimantBreakdownPanel(array $rows): string
-    {
-        if ($rows === []) {
-            return $this->emptyPanel('Claims By Claimant', 'No claimant totals were found for the selected accounting period.');
-        }
-
-        $chart = count($rows) > 1
-            ? $this->pieChart($rows, 'claimed_total', 'claimant', 'Expense total by claimant')
-            : '';
-        $tableRows = '';
-        foreach ($rows as $row) {
-            $tableRows .= '<tr>
-                <td>' . HelperFramework::escape((string)($row['claimant_name'] ?? '')) . '</td>
-                <td class="numeric">' . HelperFramework::escape(FormattingFramework::money((float)($row['claimed_total'] ?? 0))) . '</td>
-            </tr>';
-        }
-
-        return '<section class="panel-soft">
-            <h3 class="card-title">Claims By Claimant</h3>
-            <div class="settings-stack">
-                ' . $chart . '
-                <div class="table-scroll">
-                    <table>
-                        <thead><tr><th>Claimant</th><th>Total</th></tr></thead>
-                        <tbody>' . $tableRows . '</tbody>
-                    </table>
-                </div>
-            </div>
-        </section>';
-    }
-
     private function renderTrendPanel(array $rows): string
     {
         if ($rows === []) {
@@ -222,9 +190,6 @@ final class _expense_statisticsCard extends CardBaseFramework
 
     private function renderHealthPanel(array $health): string
     {
-        $oldest = $health['oldest_outstanding_claim'] ?? null;
-        $largest = $health['largest_outstanding_claimant'] ?? null;
-
         return '<section class="panel-soft">
             <h3 class="card-title">Health Checks</h3>
             <div class="grid-stats">
@@ -232,8 +197,6 @@ final class _expense_statisticsCard extends CardBaseFramework
                 ' . $this->metric('Posted claims', (string)(int)(($health['posted'] ?? [])['claim_count'] ?? 0), FormattingFramework::money((float)(($health['posted'] ?? [])['claimed_total'] ?? 0))) . '
                 ' . $this->metric('Missing receipts', (string)(int)(($health['missing_receipts'] ?? [])['count'] ?? 0), FormattingFramework::money((float)(($health['missing_receipts'] ?? [])['value'] ?? 0))) . '
                 ' . $this->metric('Missing nominals', (string)(int)(($health['missing_nominals'] ?? [])['count'] ?? 0), FormattingFramework::money((float)(($health['missing_nominals'] ?? [])['value'] ?? 0))) . '
-                ' . $this->metric('Oldest outstanding', $oldest !== null ? (string)($oldest['claim_reference_code'] ?? '-') : '-', $oldest !== null ? (string)($oldest['claimant_name'] ?? '') . ' ' . FormattingFramework::money((float)($oldest['carried_forward'] ?? 0)) : 'No outstanding claims') . '
-                ' . $this->metric('Largest balance', $largest !== null ? (string)($largest['claimant_name'] ?? '-') : '-', $largest !== null ? FormattingFramework::money((float)($largest['carried_forward'] ?? 0)) : 'No outstanding balances') . '
             </div>
         </section>';
     }

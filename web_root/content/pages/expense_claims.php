@@ -7,7 +7,7 @@
  */
 declare(strict_types=1);
 
-final class _expenses extends PageContextFramework
+final class _expense_claims extends PageContextFramework
 {
     public function id(): string
     {

@@ -69,7 +69,27 @@ final class _trial_balance_validationCard extends CardBaseFramework
             return '';
         }
 
-        return '<div><strong>' . HelperFramework::escape($this->metricText($value)) . '</strong></div>';
+        $html = '';
+        foreach ($this->metricLines($value) as $line) {
+            $html .= '<div><strong>' . HelperFramework::escape($line) . '</strong></div>';
+        }
+
+        return $html;
+    }
+
+    private function metricLines(mixed $value): array
+    {
+        if (!is_array($value) || $this->isListArray($value)) {
+            return [$this->metricText($value)];
+        }
+
+        $lines = [];
+        foreach ($value as $key => $metric) {
+            $label = HelperFramework::labelFromKey((string)$key, '_');
+            $lines[] = $label . ': ' . $this->metricText($metric);
+        }
+
+        return $lines;
     }
 
     private function metricText(mixed $value): string

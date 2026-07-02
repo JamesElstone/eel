@@ -29,7 +29,7 @@ $harness->run(_expense_statisticsCard::class, function (GeneratedServiceClassTes
     $harness->check(_expense_statisticsCard::class, 'renders populated statistics panels and charts', function () use ($harness, $instance): void {
         $html = $instance->render(expenseStatisticsCardContext());
 
-        $harness->assertSame(5, substr_count($html, '<section class="panel-soft">'));
+        $harness->assertSame(6, substr_count($html, '<section class="panel-soft">'));
         $harness->assertTrue(strpos($html, 'Health Checks') < strpos($html, 'Claimant Balances'));
         $harness->assertTrue(str_contains($html, 'Claimant Balances'));
         $harness->assertTrue(str_contains($html, '<th>Claims</th><th>Items</th><th>Unassigned</th><th>Balance b/f</th><th>Claimed</th><th>Payments</th><th>Balance c/f</th>'));
@@ -40,11 +40,17 @@ $harness->run(_expense_statisticsCard::class, function (GeneratedServiceClassTes
         $harness->assertTrue(str_contains($html, 'EXP-2605-001'));
         $harness->assertTrue(str_contains($html, 'May 2026'));
         $harness->assertTrue(str_contains($html, '06/05/2026'));
+        $harness->assertTrue(str_contains($html, 'Claims With No Lines'));
+        $harness->assertTrue(str_contains($html, '<th>Claimant</th><th>Claim ID</th><th>Month</th><th>Status</th>'));
+        $harness->assertTrue(str_contains($html, 'EXP-2607-003'));
+        $harness->assertTrue(str_contains($html, 'Jul 2026'));
         $harness->assertTrue(str_contains($html, 'Claims By Nominal'));
         $harness->assertTrue(str_contains($html, '6000 Materials'));
         $harness->assertTrue(str_contains($html, 'Unassigned'));
         $harness->assertTrue(!str_contains($html, 'Claims By Claimant'));
         $harness->assertTrue(str_contains($html, 'Claims Over Time'));
+        $harness->assertTrue(strpos($html, 'Unassigned Claim Entries') < strpos($html, 'Claims With No Lines'));
+        $harness->assertTrue(strpos($html, 'Claims With No Lines') < strpos($html, 'Claims Over Time'));
         $harness->assertTrue(strpos($html, 'Claims Over Time') < strpos($html, 'Claims By Nominal'));
         $harness->assertTrue(str_contains($html, 'Health Checks'));
         $harness->assertSame(1, substr_count($html, 'class="chart chart-pie"'));
@@ -78,6 +84,7 @@ $harness->run(_expense_statisticsCard::class, function (GeneratedServiceClassTes
 
         $harness->assertTrue(str_contains($html, 'No expense claims were found for the selected accounting period.'));
         $harness->assertTrue(str_contains($html, 'No unassigned expense claim entries were found for the selected accounting period.'));
+        $harness->assertTrue(str_contains($html, 'No unconfirmed no-line claims were found for the selected accounting period.'));
         $harness->assertTrue(str_contains($html, 'No expense claim lines were found for the selected accounting period.'));
         $harness->assertTrue(str_contains($html, 'No monthly expense claim totals were found for the selected accounting period.'));
         $harness->assertTrue(!str_contains($html, 'No claimant totals were found for the selected accounting period.'));
@@ -140,6 +147,15 @@ function expenseStatisticsCardContext(): array
                         'month' => 'May 2026',
                         'expense_date' => '2026-05-06',
                         'amount' => 50.00,
+                    ],
+                ],
+                'unconfirmed_no_line_claims' => [
+                    [
+                        'claim_id' => 3,
+                        'claim_reference_code' => 'EXP-2607-003',
+                        'claimant_name' => 'Bob',
+                        'month' => 'Jul 2026',
+                        'status' => 'draft',
                     ],
                 ],
                 'nominals' => [

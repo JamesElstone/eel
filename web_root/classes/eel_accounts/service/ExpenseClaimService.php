@@ -341,6 +341,7 @@ final class ExpenseClaimService
         return [
             'claimants' => $this->fetchStatisticsClaimants($scope),
             'unassigned_entries' => $this->fetchStatisticsUnassignedEntries($scope),
+            'unconfirmed_no_line_claims' => $this->fetchStatisticsUnconfirmedNoLineClaims($scope),
             'nominals' => $this->fetchStatisticsNominals($scope),
             'claimant_breakdown' => $this->fetchStatisticsClaimantBreakdown($scope),
             'monthly_trend' => $this->fetchStatisticsMonthlyTrend($scope),
@@ -445,6 +446,42 @@ final class ExpenseClaimService
                  WHERE ' . $scope['where'] . '
                    AND l.nominal_account_id IS NULL
                  ORDER BY ec.claim_year ASC, ec.claim_month ASC, ec.id ASC, l.expense_date ASC, l.line_number ASC, l.id ASC',
+                $scope['params']
+            )
+        );
+    }
+
+    private function fetchStatisticsUnconfirmedNoLineClaims(array $scope): array {
+        return array_map(
+            function (array $row): array {
+                $monthDate = \DateTimeImmutable::createFromFormat(
+                    '!Y-n-j',
+                    (string)(int)$row['claim_year'] . '-' . (string)(int)$row['claim_month'] . '-1'
+                );
+
+                return [
+                    'claim_id' => (int)$row['claim_id'],
+                    'claim_reference_code' => (string)$row['claim_reference_code'],
+                    'claimant_name' => (string)$row['claimant_name'],
+                    'month' => $monthDate !== false ? $monthDate->format('M Y') : '',
+                    'status' => (string)$row['status'],
+                ];
+            },
+            \InterfaceDB::fetchAll(
+                'SELECT ec.id AS claim_id,
+                        ec.claim_reference_code,
+                        c.claimant_name,
+                        ec.claim_year,
+                        ec.claim_month,
+                        ec.status
+                 FROM expense_claims ec
+                 INNER JOIN expense_claimants c ON c.id = ec.claimant_id
+                 LEFT JOIN expense_claim_lines l ON l.expense_claim_id = ec.id
+                 WHERE ' . $scope['where'] . '
+                   AND ec.no_lines_confirmed_at IS NULL
+                 GROUP BY ec.id, ec.claim_reference_code, c.claimant_name, ec.claim_year, ec.claim_month, ec.status
+                 HAVING COUNT(l.id) = 0
+                 ORDER BY ec.claim_year ASC, ec.claim_month ASC, ec.id ASC',
                 $scope['params']
             )
         );
@@ -702,6 +739,7 @@ final class ExpenseClaimService
         return [
             'claimants' => [],
             'unassigned_entries' => [],
+            'unconfirmed_no_line_claims' => [],
             'nominals' => [],
             'claimant_breakdown' => [],
             'monthly_trend' => [],

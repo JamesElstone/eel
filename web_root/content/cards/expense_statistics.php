@@ -54,6 +54,7 @@ final class _expense_statisticsCard extends CardBaseFramework
             ' . $this->renderHealthPanel((array)($statistics['health_checks'] ?? []), $companySettings) . '
             ' . $this->renderClaimantPanel((array)($statistics['claimants'] ?? [])) . '
             ' . $this->renderUnassignedEntriesPanel((array)($statistics['unassigned_entries'] ?? [])) . '
+            ' . $this->renderUnconfirmedNoLineClaimsPanel((array)($statistics['unconfirmed_no_line_claims'] ?? [])) . '
             ' . $this->renderTrendPanel((array)($statistics['monthly_trend'] ?? [])) . '
             ' . $this->renderNominalPanel((array)($statistics['nominals'] ?? [])) . '
         </div>';
@@ -117,6 +118,43 @@ final class _expense_statisticsCard extends CardBaseFramework
             <div class="table-scroll">
                 <table>
                     <thead><tr><th>Claimant</th><th>Claim ID</th><th>Month</th><th>Date unassigned</th><th>Amount</th></tr></thead>
+                    <tbody>' . $body . '</tbody>
+                </table>
+            </div>
+        </section>';
+    }
+
+    private function renderUnconfirmedNoLineClaimsPanel(array $rows): string
+    {
+        if ($rows === []) {
+            return $this->emptyPanel('Claims With No Lines', 'No unconfirmed no-line claims were found for the selected accounting period.');
+        }
+
+        $body = '';
+        foreach ($rows as $row) {
+            $claimReference = trim((string)($row['claim_reference_code'] ?? ''));
+            if ($claimReference === '') {
+                $claimReference = '#' . (string)(int)($row['claim_id'] ?? 0);
+            }
+
+            $status = trim((string)($row['status'] ?? ''));
+            if ($status !== '') {
+                $status = ucfirst($status);
+            }
+
+            $body .= '<tr>
+                <td>' . HelperFramework::escape((string)($row['claimant_name'] ?? '')) . '</td>
+                <td>' . HelperFramework::escape($claimReference) . '</td>
+                <td>' . HelperFramework::escape((string)($row['month'] ?? '')) . '</td>
+                <td>' . HelperFramework::escape($status) . '</td>
+            </tr>';
+        }
+
+        return '<section class="panel-soft">
+            <h3 class="card-title">Claims With No Lines</h3>
+            <div class="table-scroll">
+                <table>
+                    <thead><tr><th>Claimant</th><th>Claim ID</th><th>Month</th><th>Status</th></tr></thead>
                     <tbody>' . $body . '</tbody>
                 </table>
             </div>

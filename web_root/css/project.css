@@ -1852,6 +1852,28 @@
   margin: 6px 0 4px;
 }
 
+.year-end-review-notes {
+  min-height: 120px;
+}
+
+.year-end-check-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.year-end-related-workflow {
+  align-self: flex-end;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+}
+
+.year-end-related-workflow .button {
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
 .coverage-light-grid {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));

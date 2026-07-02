@@ -39,6 +39,33 @@ $harness->run(_year_end_stateCard::class, static function (GeneratedServiceClass
         }
     });
 
+    $harness->check(_year_end_stateCard::class, 'renders CSP-safe review notes and related workflow control', static function () use ($harness, $card): void {
+        $context = yearEndStateCardDirectorLoanContext([
+            'available' => false,
+            'errors' => ['Director loan offset is not available.'],
+        ]);
+        $context['services']['yearEndChecklist']['sections'] = [
+            'ledger_integrity' => [
+                [
+                    'title' => 'Trial balance review',
+                    'status' => 'warning',
+                    'detail_text' => 'Review the current imbalance.',
+                    'metric_value' => '2 warnings',
+                    'action_url' => '?page=trial_balance',
+                ],
+            ],
+        ];
+
+        $html = $card->render($context);
+
+        $harness->assertSame(true, str_contains($html, 'year-end-review-notes'));
+        $harness->assertSame(false, str_contains($html, 'style='));
+        $harness->assertSame(true, str_contains($html, 'year-end-check-panel'));
+        $harness->assertSame(true, str_contains($html, 'year-end-related-workflow'));
+        $harness->assertSame(true, str_contains($html, 'Open Related Workflow'));
+        $harness->assertSame(false, str_contains($html, 'Open related workflow'));
+    });
+
     $harness->check(_year_end_stateCard::class, 'renders director loan offset balances and post button', static function () use ($harness, $card): void {
         $html = $card->render(yearEndStateCardDirectorLoanContext([
             'available' => true,

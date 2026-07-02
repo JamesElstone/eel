@@ -151,7 +151,7 @@ final class _year_end_stateCard extends CardBaseFramework
                     <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                     <div class="form-row full">
                         <label for="year-end-review-notes">Year end notes</label>
-                        <textarea class="input" id="year-end-review-notes" name="review_notes" style="min-height:120px;">' . HelperFramework::escape((string)($review['review_notes'] ?? '')) . '</textarea>
+                        <textarea class="input year-end-review-notes" id="year-end-review-notes" name="review_notes">' . HelperFramework::escape((string)($review['review_notes'] ?? '')) . '</textarea>
                     </div>
                     <div><button class="button primary" type="submit">Save notes</button></div>
                 </form>
@@ -222,14 +222,14 @@ final class _year_end_stateCard extends CardBaseFramework
     {
         $actionUrl = trim((string)($check['action_url'] ?? ''));
 
-        return '<div class="panel-soft">
+        return '<div class="panel-soft year-end-check-panel">
             <div class="status-head">
                 <h4 class="card-title">' . HelperFramework::escape((string)($check['title'] ?? '')) . '</h4>
                 <span class="badge ' . HelperFramework::escape($this->badgeClass((string)($check['status'] ?? ''))) . '">' . HelperFramework::escape(HelperFramework::labelFromKey((string)($check['status'] ?? ''), '_')) . '</span>
             </div>
             <div class="helper">' . HelperFramework::escape((string)($check['detail_text'] ?? '')) . '</div>
             ' . (trim((string)($check['metric_value'] ?? '')) !== '' ? '<div><strong>' . HelperFramework::escape((string)$check['metric_value']) . '</strong></div>' : '') . '
-            ' . ($actionUrl !== '' ? '<div><a class="button" href="' . HelperFramework::escape($actionUrl) . '">Open related workflow</a></div>' : '') . '
+            ' . ($actionUrl !== '' ? '<div class="year-end-related-workflow"><a class="button" href="' . HelperFramework::escape($actionUrl) . '">Open Related Workflow</a></div>' : '') . '
         </div>';
     }
 

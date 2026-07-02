@@ -96,17 +96,9 @@ final class _trial_balance_validationCard extends CardBaseFramework
                 . ($failCount > 0 ? ', ' . $failCount . ' failing' : '')
                 . '.'
             : 'No validation checks were returned.';
-        $gauge = (new ChartService())->gauge($percentOk, [
-            'title' => 'Trial balance validation readiness',
-            'label' => $okCount . '/' . max(1, $total) . ' OK',
-            'color' => $this->summaryColor($overallClass),
-            'width' => 220,
-            'height' => 160,
-        ]);
-
         return '<section class="summary-grid">
             ' . $this->summaryCard('Overall status', '<span class="badge ' . $overallClass . '">' . HelperFramework::escape($overallLabel) . '</span>', $overallDetail, true) . '
-            ' . $this->summaryCard('Readiness', $gauge, $percentOk . '% OK', true) . '
+            ' . $this->summaryCard('Readiness', $percentOk . '%', $okCount . '/' . max(1, $total) . ' OK') . '
         </section>';
     }
 
@@ -117,15 +109,6 @@ final class _trial_balance_validationCard extends CardBaseFramework
             <div class="summary-value">' . ($trustedValue ? $value : HelperFramework::escape($value)) . '</div>
             ' . ($helper !== '' ? '<div class="helper">' . HelperFramework::escape($helper) . '</div>' : '') . '
         </div>';
-    }
-
-    private function summaryColor(string $statusClass): string
-    {
-        return match ($statusClass) {
-            'success' => '#16a34a',
-            'warning' => '#d97706',
-            default => '#dc2626',
-        };
     }
 
     private function metricValue(mixed $value): string

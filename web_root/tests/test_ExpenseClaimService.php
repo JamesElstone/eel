@@ -737,6 +737,7 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
     $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'aggregates selected period expense statistics', function () use ($harness, $instance): void {
         expenseClaimServiceWithFixture(static function (array $fixture) use ($harness, $instance): void {
             $secondClaimantId = (int)$fixture['claimant_id'] + 100;
+            $previousPeriodId = (int)$fixture['period_id'] + 100;
             \InterfaceDB::prepareExecute(
                 'INSERT INTO expense_claimants (id, company_id, claimant_name, is_active)
                  VALUES (:id, :company_id, :claimant_name, 1)',
@@ -746,10 +747,23 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
                     'claimant_name' => 'Second Claimant',
                 ]
             );
+            \InterfaceDB::prepareExecute(
+                'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end)
+                 VALUES (:id, :company_id, :label, :period_start, :period_end)',
+                [
+                    'id' => $previousPeriodId,
+                    'company_id' => (int)$fixture['company_id'],
+                    'label' => 'Previous Fixture ' . (string)$fixture['marker'],
+                    'period_start' => '2025-04-01',
+                    'period_end' => '2026-03-31',
+                ]
+            );
 
+            expenseClaimServiceInsertClaimWithId($fixture, (int)$fixture['claim_id'] + 30, (int)$fixture['claimant_id'], 2026, 3, '2026-03-01', '2026-03-31', $previousPeriodId);
             expenseClaimServiceInsertClaimWithId($fixture, (int)$fixture['claim_id'] + 10, (int)$fixture['claimant_id'], 2026, 6, '2026-06-01', '2026-06-30');
             expenseClaimServiceInsertClaimWithId($fixture, (int)$fixture['claim_id'] + 20, $secondClaimantId, 2026, 5, '2026-05-01', '2026-05-31');
 
+            expenseClaimServiceInsertStatisticsLine((int)$fixture['claim_id'] + 30, 1, '2026-03-05', 'Previous period materials', 500.00, (int)$fixture['line_nominal_id'], '');
             expenseClaimServiceInsertStatisticsLine((int)$fixture['claim_id'], 1, '2026-05-05', 'Materials', 100.00, (int)$fixture['line_nominal_id'], 'receipt-1');
             expenseClaimServiceInsertStatisticsLine((int)$fixture['claim_id'], 2, '2026-05-06', 'Unassigned', 50.00, null, '');
             expenseClaimServiceInsertStatisticsLine((int)$fixture['claim_id'] + 10, 1, '2026-06-07', 'Tools', 25.00, (int)$fixture['line_nominal_id'], 'receipt-2');
@@ -798,7 +812,7 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
             $harness->assertSame(3, (int)($primary['item_count'] ?? 0));
             $harness->assertSame(175.00, (float)($primary['claimed_total'] ?? 0));
             $harness->assertSame(40.00, (float)($primary['payments_made'] ?? 0));
-            $harness->assertSame(245.00, (float)($primary['carried_forward'] ?? 0));
+            $harness->assertSame(135.00, (float)($primary['carried_forward'] ?? 0));
 
             $nominals = (array)($statistics['nominals'] ?? []);
             $unassigned = expenseClaimServiceFindStatisticsRow($nominals, 'name', 'Unassigned');
@@ -824,6 +838,8 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
             $harness->assertSame(50.00, (float)(($health['missing_nominals'] ?? [])['value'] ?? 0));
             $harness->assertSame('Fixture Claimant ' . (string)$fixture['marker'], (string)(($health['oldest_outstanding_claim'] ?? [])['claimant_name'] ?? ''));
             $harness->assertSame('Fixture Claimant ' . (string)$fixture['marker'], (string)(($health['largest_outstanding_claimant'] ?? [])['claimant_name'] ?? ''));
+            $harness->assertSame(110.00, (float)(($health['oldest_outstanding_claim'] ?? [])['carried_forward'] ?? 0));
+            $harness->assertSame(135.00, (float)(($health['largest_outstanding_claimant'] ?? [])['carried_forward'] ?? 0));
         });
     });
 });
@@ -1038,7 +1054,7 @@ function expenseClaimServiceInsertClaim(array $fixture, int $year, int $month, s
     return $claimId;
 }
 
-function expenseClaimServiceInsertClaimWithId(array $fixture, int $claimId, int $claimantId, int $year, int $month, string $periodStart, string $periodEnd): void
+function expenseClaimServiceInsertClaimWithId(array $fixture, int $claimId, int $claimantId, int $year, int $month, string $periodStart, string $periodEnd, ?int $accountingPeriodId = null): void
 {
     \InterfaceDB::prepareExecute(
         'INSERT INTO expense_claims (
@@ -1065,7 +1081,7 @@ function expenseClaimServiceInsertClaimWithId(array $fixture, int $claimId, int 
         [
             'id' => $claimId,
             'company_id' => (int)$fixture['company_id'],
-            'accounting_period_id' => (int)$fixture['period_id'],
+            'accounting_period_id' => $accountingPeriodId ?? (int)$fixture['period_id'],
             'claimant_id' => $claimantId,
             'claim_year' => $year,
             'claim_month' => $month,

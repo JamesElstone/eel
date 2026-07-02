@@ -93,12 +93,24 @@ final class _expense_statisticsCard extends CardBaseFramework
         }
 
         $tableRows = '';
+        $nominalColours = $this->chartColours($rows, 'claimed_total');
+        $nominalColourIndex = 0;
+
         foreach ($rows as $row) {
             $label = $this->nominalLabel($row);
+            $value = (float)($row['claimed_total'] ?? 0);
+            $colour = '';
+
+            if ($value > 0) {
+                $colour = $nominalColours[$nominalColourIndex] ?? '';
+                $nominalColourIndex++;
+            }
+
             $tableRows .= '<tr>
+                <td class="expense-statistics-colour-column">' . $this->colourSwatch($colour) . '</td>
                 <td>' . HelperFramework::escape($label) . '</td>
                 <td class="numeric">' . (int)($row['line_count'] ?? 0) . '</td>
-                <td class="numeric">' . HelperFramework::escape(FormattingFramework::money((float)($row['claimed_total'] ?? 0))) . '</td>
+                <td class="numeric">' . HelperFramework::escape(FormattingFramework::money($value)) . '</td>
             </tr>';
         }
 
@@ -107,12 +119,12 @@ final class _expense_statisticsCard extends CardBaseFramework
             <div class="expense-statistics-nominal-layout">
                 <div class="table-scroll">
                     <table>
-                        <thead><tr><th>Nominal</th><th>Items</th><th>Total</th></tr></thead>
+                        <thead><tr><th class="expense-statistics-colour-column"><span class="sr-only">Colour</span></th><th>Nominal</th><th>Items</th><th>Total</th></tr></thead>
                         <tbody>' . $tableRows . '</tbody>
                     </table>
                 </div>
                 <div class="expense-statistics-nominal-chart">
-                    ' . $this->pieChart($rows, 'claimed_total', 'nominal', 'Expense total by nominal', true, ['legend' => false]) . '
+                    ' . $this->pieChart($rows, 'claimed_total', 'nominal', 'Expense total by nominal', true, ['legend' => false], $nominalColours) . '
                 </div>
             </div>
         </section>';
@@ -184,7 +196,7 @@ final class _expense_statisticsCard extends CardBaseFramework
         </section>';
     }
 
-    private function pieChart(array $rows, string $valueKey, string $labelType, string $title, bool $useProjectColours = false, array $options = []): string
+    private function pieChart(array $rows, string $valueKey, string $labelType, string $title, bool $useProjectColours = false, array $options = [], ?array $colours = null): string
     {
         $segments = [];
 
@@ -201,13 +213,34 @@ final class _expense_statisticsCard extends CardBaseFramework
         }
 
         if ($useProjectColours) {
-            $colours = (new \eel_accounts\Service\ColourService())->generateColours(count($segments));
+            $colours ??= (new \eel_accounts\Service\ColourService())->generateColours(count($segments));
             foreach ($segments as $index => $segment) {
                 $segments[$index]['color'] = $colours[$index] ?? '';
             }
         }
 
         return (new ChartService())->pie($segments, array_merge(['title' => $title], $options));
+    }
+
+    private function chartColours(array $rows, string $valueKey): array
+    {
+        $segmentCount = 0;
+        foreach ($rows as $row) {
+            if ((float)($row[$valueKey] ?? 0) > 0) {
+                $segmentCount++;
+            }
+        }
+
+        return (new \eel_accounts\Service\ColourService())->generateColours($segmentCount);
+    }
+
+    private function colourSwatch(string $colour): string
+    {
+        if ($colour === '') {
+            return '<svg class="expense-statistics-colour-swatch" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect class="expense-statistics-colour-swatch-muted" x="0" y="0" width="20" height="20" rx="2"></rect></svg>';
+        }
+
+        return '<svg class="expense-statistics-colour-swatch" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect class="expense-statistics-colour-swatch-square" x="0" y="0" width="20" height="20" rx="2" fill="' . HelperFramework::escape($colour) . '"></rect></svg>';
     }
 
     private function metric(string $label, string $value, string $foot): string

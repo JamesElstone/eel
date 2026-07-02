@@ -51,10 +51,14 @@ $harness->run(_expense_statisticsCard::class, function (GeneratedServiceClassTes
 
         $harness->assertTrue(str_contains($nominalSection, 'expense-statistics-nominal-layout'));
         $harness->assertTrue(strpos($nominalSection, '<div class="table-scroll">') < strpos($nominalSection, 'class="chart chart-pie"'));
+        $harness->assertTrue(str_contains($nominalSection, '<th class="expense-statistics-colour-column"><span class="sr-only">Colour</span></th><th>Nominal</th>'));
+        $harness->assertSame(5, substr_count($nominalSection, '<svg class="expense-statistics-colour-swatch" width="20" height="20" viewBox="0 0 20 20"'));
+        $harness->assertTrue(!str_contains($nominalSection, 'style="'));
         $harness->assertTrue(!str_contains($nominalSection, 'chart-legend-swatch'));
         $harness->assertTrue(!str_contains($nominalSection, 'chart-legend-label'));
-        foreach (['#828146', '#825746', '#614682', '#468278', '#D7D7BC'] as $colour) {
+        foreach (['#311142', '#825746', '#BAD74A', '#018240', '#A64AD7'] as $colour) {
             $harness->assertTrue(str_contains($nominalSection, 'fill="' . $colour . '"'));
+            $harness->assertTrue(str_contains($nominalSection, '<rect class="expense-statistics-colour-swatch-square" x="0" y="0" width="20" height="20" rx="2" fill="' . $colour . '"></rect>'));
         }
 
         $harness->assertTrue(str_contains($claimantSection, 'chart-legend-swatch'));

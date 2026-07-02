@@ -368,16 +368,21 @@ final class ExpenseClaimService
                         c.claimant_name,
                         COUNT(ec.id) AS claim_count,
                         COALESCE(SUM(lc.line_count), 0) AS item_count,
-                        COALESCE(SUM(ec.claimed_amount), 0) AS claimed_total,
-                        COALESCE(SUM(ec.payments_amount), 0) AS payments_made,
-                        COALESCE(SUM(ec.carried_forward_amount), 0) AS carried_forward
+                        COALESCE(SUM(lc.line_total), 0) AS claimed_total,
+                        COALESCE(SUM(pc.payment_total), 0) AS payments_made,
+                        COALESCE(SUM(COALESCE(lc.line_total, 0) - COALESCE(pc.payment_total, 0)), 0) AS carried_forward
                  FROM expense_claims ec
                  INNER JOIN expense_claimants c ON c.id = ec.claimant_id
                  LEFT JOIN (
-                    SELECT expense_claim_id, COUNT(*) AS line_count
+                    SELECT expense_claim_id, COUNT(*) AS line_count, COALESCE(SUM(amount), 0) AS line_total
                     FROM expense_claim_lines
                     GROUP BY expense_claim_id
                  ) lc ON lc.expense_claim_id = ec.id
+                 LEFT JOIN (
+                    SELECT expense_claim_id, COALESCE(SUM(linked_amount), 0) AS payment_total
+                    FROM expense_claim_payment_links
+                    GROUP BY expense_claim_id
+                 ) pc ON pc.expense_claim_id = ec.id
                  WHERE ' . $scope['where'] . '
                  GROUP BY ec.claimant_id, c.claimant_name
                  ORDER BY c.claimant_name ASC, ec.claimant_id ASC',
@@ -522,12 +527,22 @@ final class ExpenseClaimService
         $oldestOutstanding = \InterfaceDB::fetchOne(
             'SELECT ec.claim_reference_code,
                     ec.period_start,
-                    ec.carried_forward_amount,
+                    (COALESCE(lc.line_total, 0) - COALESCE(pc.payment_total, 0)) AS period_balance,
                     c.claimant_name
              FROM expense_claims ec
              INNER JOIN expense_claimants c ON c.id = ec.claimant_id
+             LEFT JOIN (
+                SELECT expense_claim_id, COALESCE(SUM(amount), 0) AS line_total
+                FROM expense_claim_lines
+                GROUP BY expense_claim_id
+             ) lc ON lc.expense_claim_id = ec.id
+             LEFT JOIN (
+                SELECT expense_claim_id, COALESCE(SUM(linked_amount), 0) AS payment_total
+                FROM expense_claim_payment_links
+                GROUP BY expense_claim_id
+             ) pc ON pc.expense_claim_id = ec.id
              WHERE ' . $scope['where'] . '
-               AND ec.carried_forward_amount > 0
+               AND (COALESCE(lc.line_total, 0) - COALESCE(pc.payment_total, 0)) > 0
              ORDER BY ec.period_start ASC, ec.id ASC
              LIMIT 1',
             $scope['params']
@@ -536,9 +551,19 @@ final class ExpenseClaimService
         $largestOutstandingClaimant = \InterfaceDB::fetchOne(
             'SELECT ec.claimant_id,
                     c.claimant_name,
-                    COALESCE(SUM(ec.carried_forward_amount), 0) AS carried_forward
+                    COALESCE(SUM(COALESCE(lc.line_total, 0) - COALESCE(pc.payment_total, 0)), 0) AS carried_forward
              FROM expense_claims ec
              INNER JOIN expense_claimants c ON c.id = ec.claimant_id
+             LEFT JOIN (
+                SELECT expense_claim_id, COALESCE(SUM(amount), 0) AS line_total
+                FROM expense_claim_lines
+                GROUP BY expense_claim_id
+             ) lc ON lc.expense_claim_id = ec.id
+             LEFT JOIN (
+                SELECT expense_claim_id, COALESCE(SUM(linked_amount), 0) AS payment_total
+                FROM expense_claim_payment_links
+                GROUP BY expense_claim_id
+             ) pc ON pc.expense_claim_id = ec.id
              WHERE ' . $scope['where'] . '
              GROUP BY ec.claimant_id, c.claimant_name
              HAVING carried_forward > 0
@@ -562,7 +587,7 @@ final class ExpenseClaimService
                 'claim_reference_code' => (string)$oldestOutstanding['claim_reference_code'],
                 'claimant_name' => (string)$oldestOutstanding['claimant_name'],
                 'period_start' => (string)$oldestOutstanding['period_start'],
-                'carried_forward' => round((float)$oldestOutstanding['carried_forward_amount'], 2),
+                'carried_forward' => round((float)$oldestOutstanding['period_balance'], 2),
             ],
             'largest_outstanding_claimant' => $largestOutstandingClaimant === [] ? null : [
                 'claimant_id' => (int)$largestOutstandingClaimant['claimant_id'],

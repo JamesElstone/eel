@@ -1198,20 +1198,49 @@
 
 .expense-statistics-nominal-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+  grid-template-columns: max-content minmax(320px, 1fr);
   gap: 18px;
   align-items: start;
 }
 
+.expense-statistics-nominal-layout > .table-scroll {
+  width: max-content;
+  max-width: 100%;
+}
+
+.expense-statistics-nominal-layout > .table-scroll table {
+  width: max-content;
+}
+
 .expense-statistics-nominal-chart {
   min-width: 0;
-  justify-self: end;
+  justify-self: stretch;
   width: 100%;
-  max-width: 320px;
 }
 
 .expense-statistics-nominal-chart .chart {
-  max-width: 320px;
+  width: 100%;
+}
+
+.expense-statistics-colour-column {
+  width: 24px;
+  text-align: center;
+}
+
+.expense-statistics-colour-swatch {
+  display: block;
+  margin: 0 auto;
+  vertical-align: middle;
+}
+
+.expense-statistics-colour-swatch-square,
+.expense-statistics-colour-swatch-muted {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.expense-statistics-colour-swatch-muted {
+  fill: var(--panel-soft);
 }
 
 .nominals-layout {

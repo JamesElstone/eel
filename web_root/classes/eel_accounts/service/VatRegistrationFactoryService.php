@@ -16,9 +16,10 @@ final class VatRegistrationFactoryService
         $config ??= \AppConfigurationStore::config();
         $hmrcConfig = is_array($config['hmrc']['vat'] ?? null) ? $config['hmrc']['vat'] : [];
 
-        if ($hmrcMode !== null && trim($hmrcMode) !== '') {
-            $hmrcConfig['mode'] = \HelperFramework::normaliseEnvironmentMode($hmrcMode);
-        }
+        $mode = $hmrcMode !== null && trim($hmrcMode) !== ''
+            ? $hmrcMode
+            : (string)(($config['runtime'] ?? [])['hmrc_mode'] ?? ($hmrcConfig['mode'] ?? 'TEST'));
+        $hmrcConfig['mode'] = \HelperFramework::normaliseEnvironmentMode($mode);
 
         return new \eel_accounts\Service\VatRegistrationService(
             new \eel_accounts\Outbound\HmrcOutbound($hmrcConfig)

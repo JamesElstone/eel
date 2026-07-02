@@ -577,6 +577,19 @@ final class _expenses_stateCard extends CardBaseFramework
 
     private function claimStatusLabel(array $claim): string
     {
+        $statusLabel = trim((string)($claim['status_label'] ?? ''));
+        if ($statusLabel !== '') {
+            return $statusLabel;
+        }
+
+        if (
+            (string)($claim['status'] ?? '') === 'draft'
+            && (int)($claim['line_count'] ?? 0) === 0
+            && (int)($claim['payment_link_count'] ?? 0) > 0
+        ) {
+            return 'Repayment Only';
+        }
+
         return HelperFramework::labelFromKey((string)($claim['status'] ?? ''), '_');
     }
 

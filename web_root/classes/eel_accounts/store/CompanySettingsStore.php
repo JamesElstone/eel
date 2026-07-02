@@ -30,6 +30,8 @@ final class CompanySettingsStore
             'default_trade_nominal_id' => ['type' => 'int', 'default' => ''],
             'default_expense_nominal_id' => ['type' => 'int', 'default' => ''],
             'director_loan_nominal_id' => ['type' => 'int', 'default' => ''],
+            'director_loan_asset_nominal_id' => ['type' => 'int', 'default' => ''],
+            'director_loan_liability_nominal_id' => ['type' => 'int', 'default' => ''],
             'vat_nominal_id' => ['type' => 'int', 'default' => ''],
             'uncategorised_nominal_id' => ['type' => 'int', 'default' => ''],
             'uploads_path' => ['type' => 'char', 'default' => '/var/eel_accounts/uploads'],

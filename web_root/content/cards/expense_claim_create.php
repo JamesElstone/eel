@@ -50,19 +50,18 @@ final class _expense_claim_createCard extends CardBaseFramework
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $companySettings = (array)($context['expense_page_settings'] ?? $company['settings'] ?? []);
+        $accountingPeriod = (array)($context['accounting_period'] ?? []);
         $claimants = (array)($data['claimants'] ?? []);
         $activeClaimantCount = (int)($data['active_claimant_count'] ?? 0);
         $createDisabled = $activeClaimantCount <= 0;
         $createFormId = 'expense-create-claim-form';
-        $currentYear = (int)date('Y');
-        $currentMonth = (int)date('n');
+        $claimPeriodDefaults = $this->claimPeriodDefaults($accountingPeriod);
 
         return '<div class="expense-claims-stack">
         <form id="' . $createFormId . '" method="post" action="?page=expenses" data-ajax="true">
             <input type="hidden" name="card_action" value="Expense">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="intent" value="create_claim">
-            <input type="hidden" name="incorporation_date" value="' . HelperFramework::escape((string)($companySettings['incorporation_date'] ?? '')) . '">
         </form>
         ' . ($createDisabled ? '<div class="helper">Create Expense Claim is disabled because there are no active claimants.</div>' : '') . '
         <div class="create-expense-claim">
@@ -72,11 +71,11 @@ final class _expense_claim_createCard extends CardBaseFramework
                 </div>
                 <div class="mini-field">
                     <label for="expense-create-year">Year</label>
-                    <select class="select" id="expense-create-year" name="claim_year" form="' . $createFormId . '"' . ($createDisabled ? ' disabled' : '') . '>' . $this->yearOptions($currentYear) . '</select>
+                    <select class="select" id="expense-create-year" name="claim_year" form="' . $createFormId . '"' . ($createDisabled ? ' disabled' : '') . '>' . $this->yearOptions((int)$claimPeriodDefaults['year'], (string)($companySettings['incorporation_date'] ?? ''), $accountingPeriod) . '</select>
                 </div>
                 <div class="mini-field">
                     <label for="expense-create-month">Month</label>
-                    <select class="select" id="expense-create-month" name="claim_month" form="' . $createFormId . '"' . ($createDisabled ? ' disabled' : '') . '>' . $this->monthOptions($currentMonth) . '</select>
+                    <select class="select" id="expense-create-month" name="claim_month" form="' . $createFormId . '"' . ($createDisabled ? ' disabled' : '') . '>' . $this->monthOptions((int)$claimPeriodDefaults['month']) . '</select>
                 </div>
                 <button class="button primary" type="submit" form="' . $createFormId . '" data-show-card="expense_claim_editor"' . ($createDisabled ? ' disabled' : '') . '>Create Expense Claim</button>
         </div>
@@ -103,15 +102,73 @@ final class _expense_claim_createCard extends CardBaseFramework
         return '<option value="">' . HelperFramework::escape($emptyLabel) . '</option>' . $options;
     }
 
-    private function yearOptions(int $selectedYear): string
+    private function claimPeriodDefaults(array $accountingPeriod): array
+    {
+        $currentYear = (int)date('Y');
+        $currentMonth = (int)date('n');
+        $periodStart = trim((string)($accountingPeriod['period_start'] ?? ''));
+        $periodEnd = trim((string)($accountingPeriod['period_end'] ?? ''));
+
+        if (!$this->validDate($periodStart) || !$this->validDate($periodEnd)) {
+            return ['year' => $currentYear, 'month' => $currentMonth];
+        }
+
+        $today = (new DateTimeImmutable('today'))->format('Y-m-d');
+        if ($today >= $periodStart && $today <= $periodEnd) {
+            return ['year' => $currentYear, 'month' => $currentMonth];
+        }
+
+        $startDate = new DateTimeImmutable($periodStart);
+        return [
+            'year' => (int)$startDate->format('Y'),
+            'month' => (int)$startDate->format('n'),
+        ];
+    }
+
+    private function yearOptions(int $selectedYear, string $incorporationDate, array $accountingPeriod): string
     {
         $html = '';
-        for ($year = $selectedYear - 4; $year <= $selectedYear + 5; $year++) {
+        $years = $this->accountingPeriodYears($accountingPeriod);
+
+        if ($years === []) {
+            $firstYear = $this->firstClaimYear($selectedYear, $incorporationDate);
+            $years = range($firstYear, $selectedYear);
+        }
+
+        foreach ($years as $year) {
             $selected = $year === $selectedYear ? ' selected' : '';
             $html .= '<option value="' . $year . '"' . $selected . '>' . $year . '</option>';
         }
 
         return $html;
+    }
+
+    private function accountingPeriodYears(array $accountingPeriod): array
+    {
+        $periodStart = trim((string)($accountingPeriod['period_start'] ?? ''));
+        $periodEnd = trim((string)($accountingPeriod['period_end'] ?? ''));
+
+        if (!$this->validDate($periodStart) || !$this->validDate($periodEnd)) {
+            return [];
+        }
+
+        $startYear = (int)(new DateTimeImmutable($periodStart))->format('Y');
+        $endYear = (int)(new DateTimeImmutable($periodEnd))->format('Y');
+        if ($endYear < $startYear) {
+            return [];
+        }
+
+        return range($startYear, $endYear);
+    }
+
+    private function firstClaimYear(int $currentYear, string $incorporationDate): int
+    {
+        if (!$this->validDate($incorporationDate)) {
+            return $currentYear - 4;
+        }
+
+        $incorporatedAt = new DateTimeImmutable($incorporationDate);
+        return min((int)$incorporatedAt->format('Y'), $currentYear);
     }
 
     private function monthOptions(int $selectedMonth): string
@@ -143,5 +200,15 @@ final class _expense_claim_createCard extends CardBaseFramework
         ];
 
         return (string)($names[$month] ?? '');
+    }
+
+    private function validDate(string $value): bool
+    {
+        $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+        $errors = DateTimeImmutable::getLastErrors();
+
+        return $date instanceof DateTimeImmutable
+            && $date->format('Y-m-d') === $value
+            && (!is_array($errors) || ($errors['warning_count'] === 0 && $errors['error_count'] === 0));
     }
 }

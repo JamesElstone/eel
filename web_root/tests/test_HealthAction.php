@@ -128,6 +128,7 @@ $harness->run(HealthAction::class, function (GeneratedServiceClassTestHarness $h
             ['id' => 15],
             ['id' => 20],
             ['id' => 30],
+            ['id' => 31],
             ['id' => 40],
             ['id' => 50],
         ];
@@ -146,7 +147,8 @@ $harness->run(HealthAction::class, function (GeneratedServiceClassTestHarness $h
             'default_bank_nominal_id' => 10,
             'default_trade_nominal_id' => 15,
             'default_expense_nominal_id' => 20,
-            'director_loan_nominal_id' => 30,
+            'director_loan_asset_nominal_id' => 30,
+            'director_loan_liability_nominal_id' => 31,
             'vat_nominal_id' => 40,
             'uncategorised_nominal_id' => 50,
         ], $nominalAccounts);

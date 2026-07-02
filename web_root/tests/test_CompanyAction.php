@@ -68,6 +68,41 @@ $harness->run(CompanyAction::class, function (GeneratedServiceClassTestHarness $
         $harness->assertSame(true, in_array('Select an existing accounting period before saving changes.', $errors, true));
     });
 
+    $harness->check('CompanyAction', 'add_company blocks companies with more than one active director before creating a company row', function () use ($harness): void {
+        if (!InterfaceDB::tableExists('companies')) {
+            $harness->skip('Companies table is not available on the default InterfaceDB connection.');
+        }
+
+        $companyNumber = 'DIR' . strtoupper(substr(hash('sha256', __FILE__ . microtime(true)), 0, 8));
+        $action = new CompanyAction(companyActionDirectorEligibilityServiceWithDirectorCount(2));
+        $request = new RequestFramework(
+            [],
+            [
+                'card_action' => 'Company',
+                'intent' => 'add_company',
+                'company_name' => 'Multi Director Fixture Limited',
+                'selected_company_number' => $companyNumber,
+                'selected_incorporation_date' => '2024-01-01',
+                'selected_company_profile_payload' => json_encode([
+                    'company_name' => 'Multi Director Fixture Limited',
+                    'company_number' => $companyNumber,
+                    'company_status' => 'active',
+                    'date_of_creation' => '2024-01-01',
+                ], JSON_UNESCAPED_SLASHES),
+            ],
+            ['REQUEST_METHOD' => 'POST', 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest', 'HTTP_ACCEPT' => 'application/json'],
+            [],
+            [],
+            null
+        );
+
+        $result = $action->handle($request, createTestPageServiceFramework());
+
+        $harness->assertSame(false, $result->isSuccess());
+        $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'exactly 1 active director'));
+        $harness->assertSame(0, InterfaceDB::countWhere('companies', ['company_number' => $companyNumber]));
+    });
+
     $harness->check('CompanyAction', 'add_accounting_period requires a selected company', function () use ($harness, $instance): void {
         (new \eel_accounts\Service\AccountingContextService())->clearPageContext();
 
@@ -168,3 +203,31 @@ $harness->run(CompanyAction::class, function (GeneratedServiceClassTestHarness $
         }
     });
 });
+
+function companyActionDirectorEligibilityServiceWithDirectorCount(int $directorCount): \eel_accounts\Service\CompanyDirectorEligibilityService
+{
+    $service = new \eel_accounts\Service\CompaniesHouseService(
+        'TEST',
+        20,
+        static function (array $request) use ($directorCount): array {
+            $items = [];
+            for ($index = 0; $index < $directorCount; $index++) {
+                $items[] = ['officer_role' => 'director', 'name' => 'Director ' . ($index + 1)];
+            }
+
+            return [
+                'status_code' => 200,
+                'headers' => [],
+                'body' => json_encode([
+                    'items' => $items,
+                    'items_per_page' => 100,
+                    'start_index' => 0,
+                    'total_results' => count($items),
+                ], JSON_UNESCAPED_SLASHES),
+                'url' => 'https://example.test' . (string)($request['path'] ?? ''),
+            ];
+        }
+    );
+
+    return new \eel_accounts\Service\CompanyDirectorEligibilityService($service);
+}

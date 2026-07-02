@@ -22,13 +22,40 @@ final class _asset_registerCard extends CardBaseFramework
                 'service' => \eel_accounts\Service\AssetService::class,
                 'method' => 'fetchPageData',
                 'params' => [
-                    'companyId' => ':company_id',
-                    'accountingPeriodId' => ':accounting_period_id',
-                    'defaultBankNominalId' => ':default_bank_nominal_id',
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                    'defaultBankNominalId' => ':company.settings.default_bank_nominal_id',
                     'prefillTransactionId' => ':prefill_transaction_id',
+                    'disposalSearchDate' => ':asset_disposal_search_date',
+                    'disposalSearchAssetId' => ':asset_disposal_search_asset_id',
                 ],
             ],
         ];
+    }
+
+    public function handle(
+        RequestFramework $request,
+        PageServiceFramework $services,
+        array $pageContext,
+        ActionResultFramework $actionResult
+    ): array {
+        $pageContext = parent::handle($request, $services, $pageContext, $actionResult);
+        $resultContext = $actionResult->context();
+        $searchDate = trim((string)(
+            $resultContext['asset_disposal_search_date']
+            ?? $request->input('asset_disposal_search_date', $request->input('disposal_search_date', ''))
+        ));
+        $assetId = max(0, (int)(
+            $resultContext['asset_disposal_search_asset_id']
+            ?? $request->input('asset_disposal_search_asset_id', $request->input('asset_id', 0))
+        ));
+
+        if ($searchDate !== '') {
+            $pageContext['asset_disposal_search_date'] = $searchDate;
+            $pageContext['asset_disposal_search_asset_id'] = $assetId;
+        }
+
+        return $pageContext;
     }
 
     protected function additionalInvalidationFacts(): array
@@ -38,7 +65,7 @@ final class _asset_registerCard extends CardBaseFramework
 
     public function handleError(string $serviceKey, array $error, array $context): string
     {
-        return '';
+        return 'Asset data could not be loaded: ' . (string)($error['message'] ?? 'service error');
     }
 
     public function render(array $context): string
@@ -49,10 +76,13 @@ final class _asset_registerCard extends CardBaseFramework
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $assets = is_array($assetsPageData['assets'] ?? null) ? $assetsPageData['assets'] : [];
+        $defaultBankNominalId = (int)($assetsPageData['default_bank_nominal_id'] ?? 0);
+        $disposalSearch = (array)($assetsPageData['disposal_search'] ?? []);
         $rowsHtml = '';
 
         foreach ($assets as $asset) {
             $status = (string)($asset['status'] ?? 'active');
+            $assetId = (int)($asset['id'] ?? 0);
             $rowsHtml .= '<tr>
                 <td>' . HelperFramework::escape((string)($asset['asset_code'] ?? '')) . '</td>
                 <td>
@@ -63,17 +93,7 @@ final class _asset_registerCard extends CardBaseFramework
                 <td>' . HelperFramework::escape(FormattingFramework::money((float)($asset['nbv'] ?? 0))) . '</td>
                 <td><span class="badge ' . HelperFramework::escape($status === 'disposed' ? 'warning' : 'success') . '">' . HelperFramework::escape($status) . '</span></td>
                 <td>' . ($status !== 'disposed'
-                    ? '<form method="post" action="?page=assets" data-ajax="true">
-                        <input type="hidden" name="company_id" value="' . $companyId . '">
-                        <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                        <input type="hidden" name="asset_id" value="' . (int)($asset['id'] ?? 0) . '">
-                        <input type="hidden" name="global_action" value="dispose_asset">
-                        <div>
-                            <input class="input" type="date" name="disposal_date" value="' . HelperFramework::escape(date('Y-m-d')) . '">
-                            <input class="input" type="number" step="0.01" name="disposal_proceeds" placeholder="Proceeds">
-                            <button class="button" type="submit">Dispose</button>
-                        </div>
-                    </form>'
+                    ? $this->disposalControls($companyId, $accountingPeriodId, $assetId, $defaultBankNominalId, $disposalSearch)
                     : '<span class="helper">Disposed on ' . HelperFramework::escape($this->displayDate((string)($asset['disposal_date'] ?? ''))) . '</span>') . '</td>
             </tr>';
         }
@@ -87,7 +107,8 @@ final class _asset_registerCard extends CardBaseFramework
                 <form method="post" action="?page=assets" data-ajax="true">
                     <input type="hidden" name="company_id" value="' . $companyId . '">
                     <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                    <input type="hidden" name="global_action" value="run_asset_depreciation">
+                    <input type="hidden" name="card_action" value="Asset">
+                    <input type="hidden" name="intent" value="run_asset_depreciation">
                     <button class="button primary" type="submit">Run Depreciation</button>
                 </form>
             </div>
@@ -107,6 +128,83 @@ final class _asset_registerCard extends CardBaseFramework
                 </table>
             </div>
         ';
+    }
+
+    private function disposalControls(
+        int $companyId,
+        int $accountingPeriodId,
+        int $assetId,
+        int $defaultBankNominalId,
+        array $disposalSearch
+    ): string {
+        $selectedAssetId = (int)($disposalSearch['asset_id'] ?? 0);
+        $searchDate = $selectedAssetId === $assetId
+            ? (string)($disposalSearch['search_date'] ?? date('Y-m-d'))
+            : date('Y-m-d');
+        $candidateHtml = $selectedAssetId === $assetId
+            ? $this->disposalCandidates($companyId, $accountingPeriodId, $assetId, $defaultBankNominalId, $disposalSearch)
+            : '';
+
+        return '<div class="asset-disposal-panel">
+            <form class="asset-disposal-form" method="post" action="?page=assets" data-ajax="true">
+                <input type="hidden" name="card_action" value="Asset">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <input type="hidden" name="asset_id" value="' . $assetId . '">
+                <div class="asset-disposal-controls">
+                    <input class="input" type="date" name="disposal_search_date" value="' . HelperFramework::escape($searchDate) . '">
+                    <button class="button button-inline primary" type="submit" name="intent" value="search_asset_disposal_receipts">Search Receipts</button>
+                    <button class="button button-inline primary" type="submit" name="intent" value="dispose_asset_nil">Dispose of at Nil Value</button>
+                </div>
+            </form>
+            ' . $candidateHtml . '
+        </div>';
+    }
+
+    private function disposalCandidates(
+        int $companyId,
+        int $accountingPeriodId,
+        int $assetId,
+        int $defaultBankNominalId,
+        array $disposalSearch
+    ): string {
+        $errors = (array)($disposalSearch['errors'] ?? []);
+        if ($errors !== []) {
+            return '<div class="helper asset-disposal-error">' . HelperFramework::escape(implode(' ', array_map('strval', $errors))) . '</div>';
+        }
+
+        $windowStart = $this->displayDate((string)($disposalSearch['window_start'] ?? ''));
+        $windowEnd = $this->displayDate((string)($disposalSearch['window_end'] ?? ''));
+        $candidates = (array)($disposalSearch['candidates'] ?? []);
+        $candidateRows = '';
+
+        foreach ($candidates as $candidate) {
+            $candidateRows .= '<div class="asset-disposal-candidate">
+                <div>
+                    <div>' . HelperFramework::escape($this->displayDate((string)($candidate['txn_date'] ?? '')) . ' - ' . FormattingFramework::money((float)($candidate['amount'] ?? 0))) . '</div>
+                    <div class="helper">' . HelperFramework::escape((string)($candidate['description'] ?? '')) . '</div>
+                </div>
+                <form method="post" action="?page=assets" data-ajax="true">
+                    <input type="hidden" name="card_action" value="Asset">
+                    <input type="hidden" name="intent" value="dispose_asset_with_transaction">
+                    <input type="hidden" name="company_id" value="' . $companyId . '">
+                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                    <input type="hidden" name="asset_id" value="' . $assetId . '">
+                    <input type="hidden" name="transaction_id" value="' . (int)($candidate['id'] ?? 0) . '">
+                    <input type="hidden" name="default_bank_nominal_id" value="' . $defaultBankNominalId . '">
+                    <button class="button button-inline primary" type="submit">Link &amp; Dispose</button>
+                </form>
+            </div>';
+        }
+
+        if ($candidateRows === '') {
+            $candidateRows = '<div class="helper">No incoming receipt transactions found.</div>';
+        }
+
+        return '<div class="asset-disposal-candidates">
+            <div class="helper">Receipts from ' . HelperFramework::escape($windowStart) . ' to ' . HelperFramework::escape($windowEnd) . '</div>
+            ' . $candidateRows . '
+        </div>';
     }
 
     private function displayDate(string $value): string

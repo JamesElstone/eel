@@ -55,8 +55,13 @@ final class _companies_nominalsCard extends CardBaseFramework
         }
 
         $settings = (array)($context['company']['settings'] ?? []);
+        if (trim((string)($settings['director_loan_liability_nominal_id'] ?? '')) === ''
+            && trim((string)($settings['director_loan_nominal_id'] ?? '')) !== '') {
+            $settings['director_loan_liability_nominal_id'] = $settings['director_loan_nominal_id'];
+        }
         $nominalAccounts = (array)($context['services']['company_nominals'] ?? []);
         $nominalSuggestions = $this->buildNominalDefaultSuggestions($nominalAccounts, $settings);
+        $assetMappingsHtml = $this->renderAssetNominalMappings($nominalAccounts);
 
         $suggestionsHtml = '';
         if ($nominalSuggestions !== []) {
@@ -65,8 +70,9 @@ final class _companies_nominalsCard extends CardBaseFramework
             $suggestionLabels = [
                 'default_bank_nominal_id' => 'Default bank nominal',
                 'default_trade_nominal_id' => 'Default trade nominal',
-                'default_expense_nominal_id' => 'Default expense nominal',
-                'director_loan_nominal_id' => 'Director loan nominal',
+                'default_expense_nominal_id' => 'Expense claims payable nominal',
+                'director_loan_asset_nominal_id' => 'Director Loan Asset nominal',
+                'director_loan_liability_nominal_id' => 'Director Loan Liability nominal',
                 'vat_nominal_id' => 'VAT control nominal',
                 'uncategorised_nominal_id' => 'Fallback uncategorised nominal',
             ];
@@ -108,7 +114,7 @@ final class _companies_nominalsCard extends CardBaseFramework
                 <input type="hidden" name="intent" value="save_nominals">
                 <input type="hidden" name="company_id" value="' . HelperFramework::escape((string)($context['company']['id'] ?? 0)) . '">
                 <div class="panel-soft">
-                    <section data-state-fields="default_bank_nominal_id,default_trade_nominal_id,default_expense_nominal_id,director_loan_nominal_id,vat_nominal_id,uncategorised_nominal_id" data-state-target="save_default_nominals">
+                    <section data-state-fields="default_bank_nominal_id,default_trade_nominal_id,default_expense_nominal_id,director_loan_asset_nominal_id,director_loan_liability_nominal_id,vat_nominal_id,uncategorised_nominal_id" data-state-target="save_default_nominals">
                     <div class="form-flex-flow">
                         <div class="form-row">
                             <label for="default_bank_nominal_id">Default Bank nominal</label>
@@ -125,17 +131,24 @@ final class _companies_nominalsCard extends CardBaseFramework
                             </select>
                         </div>
                         <div class="form-row">
-                            <label for="default_expense_nominal_id">Default Expense nominal</label>
+                            <label for="default_expense_nominal_id">Expense claims payable nominal</label>
                             <select class="select" id="default_expense_nominal_id" name="default_expense_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['default_expense_nominal_id'] ?? '')) . '">
                                 <option value="">Select nominal account</option>
                                 ' . $this->nominalOptions($nominalAccounts, (string)($settings['default_expense_nominal_id'] ?? '')) . '
                             </select>
                         </div>
                         <div class="form-row">
-                            <label for="director_loan_nominal_id">Default Director Loan nominal</label>
-                            <select class="select" id="director_loan_nominal_id" name="director_loan_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['director_loan_nominal_id'] ?? '')) . '">
+                            <label for="director_loan_asset_nominal_id">Director Loan Asset nominal</label>
+                            <select class="select" id="director_loan_asset_nominal_id" name="director_loan_asset_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['director_loan_asset_nominal_id'] ?? '')) . '">
                                 <option value="">Select nominal account</option>
-                                ' . $this->nominalOptions($nominalAccounts, (string)($settings['director_loan_nominal_id'] ?? '')) . '
+                                ' . $this->nominalOptions($nominalAccounts, (string)($settings['director_loan_asset_nominal_id'] ?? '')) . '
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <label for="director_loan_liability_nominal_id">Director Loan Liability nominal</label>
+                            <select class="select" id="director_loan_liability_nominal_id" name="director_loan_liability_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['director_loan_liability_nominal_id'] ?? '')) . '">
+                                <option value="">Select nominal account</option>
+                                ' . $this->nominalOptions($nominalAccounts, (string)($settings['director_loan_liability_nominal_id'] ?? '')) . '
                             </select>
                         </div>
                         <div class="form-row">
@@ -164,9 +177,46 @@ final class _companies_nominalsCard extends CardBaseFramework
         return '
             <div class="nominals-layout">
                 <div>' . $mainHtml . '</div>
-                <div>' . $suggestionsHtml . '</div>
+                <div>' . $suggestionsHtml . $assetMappingsHtml . '</div>
             </div>
         ';
+    }
+
+    private function renderAssetNominalMappings(array $nominalAccounts): string
+    {
+        $nominalsByCode = [];
+        foreach ($nominalAccounts as $nominal) {
+            $code = trim((string)($nominal['code'] ?? ''));
+            if ($code !== '') {
+                $nominalsByCode[$code] = $nominal;
+            }
+        }
+
+        $items = '';
+        foreach (\eel_accounts\Service\AssetService::assetCategoryOptions() as $category => $label) {
+            $codes = \eel_accounts\Service\AssetService::assetNominalCodesForCategory((string)$category);
+            $costNominal = $nominalsByCode[(string)$codes['cost']] ?? null;
+            $accumNominal = $nominalsByCode[(string)$codes['accum']] ?? null;
+            $status = is_array($costNominal) && is_array($accumNominal) ? 'Ready' : 'Missing setup';
+            $items .= '<div class="list-item"><strong>'
+                . HelperFramework::escape((string)$label)
+                . '</strong><span>'
+                . HelperFramework::escape($status . ': cost ' . $this->mappingNominalLabel($costNominal, (string)$codes['cost']) . ', accumulated depreciation ' . $this->mappingNominalLabel($accumNominal, (string)$codes['accum']))
+                . '</span></div>';
+        }
+
+        return '<div class="panel-soft">
+            <h4 class="card-title">Asset Nominal Mappings</h4>
+            <span class="helper">Asset claim lines use these shared fixed asset mappings automatically.</span>
+            <div class="list">' . $items . '</div>
+        </div>';
+    }
+
+    private function mappingNominalLabel(mixed $nominal, string $expectedCode): string
+    {
+        return is_array($nominal)
+            ? FormattingFramework::nominalLabel($nominal, ' ')
+            : $expectedCode . ' missing';
     }
 
     private function nominalOptions(array $nominalAccounts, string $selectedId): string
@@ -218,8 +268,11 @@ final class _companies_nominalsCard extends CardBaseFramework
                     return $row['id'] > 0 && $row['account_type'] === 'expense' && !str_contains($name, 'director loan') && !str_contains($name, 'vat') && !str_contains($name, 'tax');
                 }))
                 : null,
-            'director_loan_nominal_id' => !$this->hasAssignedNominal($settings, 'director_loan_nominal_id')
-                ? $this->firstMatchingNominal($normalised, static fn(array $row): bool => $row['id'] > 0 && ($row['subtype_code'] === 'director_loan_liability' || str_contains(strtolower($row['name']), 'director loan')))
+            'director_loan_asset_nominal_id' => !$this->hasAssignedNominal($settings, 'director_loan_asset_nominal_id')
+                ? $this->directorLoanAssetNominalSuggestion($normalised)
+                : null,
+            'director_loan_liability_nominal_id' => !$this->hasAssignedNominal($settings, 'director_loan_liability_nominal_id')
+                ? $this->directorLoanLiabilityNominalSuggestion($normalised)
                 : null,
             'vat_nominal_id' => !$this->hasAssignedNominal($settings, 'vat_nominal_id')
                 ? $this->firstMatchingNominal($normalised, static fn(array $row): bool => $row['id'] > 0 && ($row['subtype_code'] === 'vat_control' || str_contains(strtolower($row['name']), 'vat') || str_contains(strtolower($row['code']), 'vat')))
@@ -236,6 +289,48 @@ final class _companies_nominalsCard extends CardBaseFramework
     private function hasAssignedNominal(array $settings, string $key): bool
     {
         return (int)($settings[$key] ?? 0) > 0;
+    }
+
+    private function directorLoanAssetNominalSuggestion(array $nominals): ?array
+    {
+        return $this->firstMatchingNominal(
+            $nominals,
+            static fn(array $row): bool => $row['id'] > 0
+                && $row['subtype_code'] === 'director_loan_asset'
+        ) ?? $this->firstMatchingNominal(
+            $nominals,
+            static fn(array $row): bool => $row['id'] > 0
+                && $row['account_type'] === 'asset'
+                && $row['code'] === '1200'
+        ) ?? $this->firstMatchingNominal(
+            $nominals,
+            static fn(array $row): bool => $row['id'] > 0
+                && $row['account_type'] === 'asset'
+                && str_contains(strtolower($row['name']), 'director loan')
+        );
+    }
+
+    private function directorLoanLiabilityNominalSuggestion(array $nominals): ?array
+    {
+        return $this->firstMatchingNominal(
+            $nominals,
+            static fn(array $row): bool => $row['id'] > 0
+                && $row['subtype_code'] === 'director_loan_liability'
+        ) ?? $this->firstMatchingNominal(
+            $nominals,
+            static fn(array $row): bool => $row['id'] > 0
+                && $row['account_type'] === 'liability'
+                && $row['code'] === '2100'
+        ) ?? $this->firstMatchingNominal(
+            $nominals,
+            static fn(array $row): bool => $row['id'] > 0
+                && $row['account_type'] === 'liability'
+                && str_contains(strtolower($row['name']), 'director loan')
+        ) ?? $this->firstMatchingNominal(
+            $nominals,
+            static fn(array $row): bool => $row['id'] > 0
+                && str_contains(strtolower($row['name']), 'director loan')
+        );
     }
 
     private function firstMatchingNominal(array $nominals, callable $predicate): ?array

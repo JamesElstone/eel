@@ -290,7 +290,11 @@ final class TrialBalanceService
         $uncategorisedExposure = 0.0;
         $corporationTaxBalance = 0.0;
 
-        $directorLoanNominalId = (int)($settings['director_loan_nominal_id'] ?? 0);
+        $directorLoanAssetNominalId = (int)($settings['director_loan_asset_nominal_id'] ?? 0);
+        $directorLoanLiabilityNominalId = (int)($settings['director_loan_liability_nominal_id'] ?? 0);
+        if ($directorLoanLiabilityNominalId <= 0) {
+            $directorLoanLiabilityNominalId = (int)($settings['director_loan_nominal_id'] ?? 0);
+        }
         $vatNominalId = (int)($settings['vat_nominal_id'] ?? 0);
         $uncategorisedNominalId = (int)($settings['uncategorised_nominal_id'] ?? 0);
         $defaultBankNominalId = (int)($settings['default_bank_nominal_id'] ?? 0);
@@ -308,8 +312,14 @@ final class TrialBalanceService
             if ($subtypeCode === 'bank' || $nominalId === $defaultBankNominalId) {
                 $bankBalance += $net;
             }
-            if ($nominalId === $directorLoanNominalId) {
-                $directorLoanBalance = $net;
+            $isDirectorLoanAsset = ($directorLoanAssetNominalId > 0 && $nominalId === $directorLoanAssetNominalId)
+                || $subtypeCode === 'director_loan_asset'
+                || ($code === '1200' && str_contains($name, 'director loan'));
+            $isDirectorLoanLiability = ($directorLoanLiabilityNominalId > 0 && $nominalId === $directorLoanLiabilityNominalId)
+                || $subtypeCode === 'director_loan_liability'
+                || ($code === '2100' && str_contains($name, 'director loan'));
+            if ($isDirectorLoanAsset || $isDirectorLoanLiability) {
+                $directorLoanBalance -= $net;
             }
             if ($nominalId === $vatNominalId) {
                 $vatBalance = $net;

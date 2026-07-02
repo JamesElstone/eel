@@ -357,17 +357,39 @@ final class _trial_balance_stateCard extends CardBaseFramework
             return '';
         }
 
-        if (is_array($value)) {
-            $value = implode(', ', array_map(
-                static fn(string $key, mixed $metric): string => HelperFramework::labelFromKey($key, '_') . ': ' . (is_numeric($metric) ? FormattingFramework::money($metric) : (string)$metric),
-                array_keys($value),
-                $value
-            ));
-        } elseif (is_numeric($value)) {
-            $value = FormattingFramework::money($value);
+        return '<div><strong>' . HelperFramework::escape($this->metricText($value)) . '</strong></div>';
+    }
+
+    private function metricText(mixed $value): string
+    {
+        if ($value === null || $value === '') {
+            return '';
         }
 
-        return '<div><strong>' . HelperFramework::escape((string)$value) . '</strong></div>';
+        if (is_numeric($value)) {
+            return FormattingFramework::money($value);
+        }
+
+        if (!is_array($value)) {
+            return (string)$value;
+        }
+
+        if ($this->isListArray($value)) {
+            return count($value) . ' item' . (count($value) === 1 ? '' : 's');
+        }
+
+        $parts = [];
+        foreach ($value as $key => $metric) {
+            $label = HelperFramework::labelFromKey((string)$key, '_');
+            $parts[] = $label . ': ' . $this->metricText($metric);
+        }
+
+        return implode(', ', $parts);
+    }
+
+    private function isListArray(array $value): bool
+    {
+        return array_keys($value) === range(0, count($value) - 1);
     }
 
     private function monthTiles(array $tiles): string

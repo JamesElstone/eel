@@ -9,6 +9,11 @@ declare(strict_types=1);
 
 final class YearEndAction implements ActionInterfaceFramework
 {
+    public function __construct(
+        private readonly ?\eel_accounts\Service\CompanyDirectorEligibilityService $directorEligibilityService = null,
+    ) {
+    }
+
     public function handle(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
         $companyId = max(0, (int)$request->input('company_id', 0));
@@ -20,11 +25,33 @@ final class YearEndAction implements ActionInterfaceFramework
         }
 
         try {
+            if ($this->requiresVatRegistrationGuard($intent) && $this->companyIsVatRegistered($companyId)) {
+                return $this->result(false, ['Year-end processing is blocked while this company is marked as VAT registered.']);
+            }
+
+            if ($this->requiresSingleDirectorCheck($intent)) {
+                $eligibility = $this->directorEligibilityService()->assertSingleActiveDirector($companyId);
+                if (empty($eligibility['success'])) {
+                    return $this->result(false, (array)($eligibility['errors'] ?? []));
+                }
+            }
+
             $result = match ($intent) {
                 'recalculate' => (new \eel_accounts\Service\YearEndChecklistService())->recalculateChecklist($companyId, $accountingPeriodId),
                 'lock_period' => (new \eel_accounts\Service\YearEndChecklistService())->lockPeriod($companyId, $accountingPeriodId),
                 'unlock_period' => (new \eel_accounts\Service\YearEndChecklistService())->unlockPeriod($companyId, $accountingPeriodId),
                 'save_notes' => (new \eel_accounts\Service\YearEndChecklistService())->saveNotes($companyId, $accountingPeriodId, (string)$request->input('review_notes', '')),
+                'confirm_empty_month' => (new \eel_accounts\Service\EmptyMonthConfirmationService())->confirmMonth(
+                    $companyId,
+                    $accountingPeriodId,
+                    (string)$request->input('month_start', ''),
+                    (string)$request->input('confirmation_notes', '')
+                ),
+                'revoke_empty_month' => (new \eel_accounts\Service\EmptyMonthConfirmationService())->revokeMonth(
+                    $companyId,
+                    $accountingPeriodId,
+                    (string)$request->input('month_start', '')
+                ),
                 'save_opening_balance' => (new \eel_accounts\Service\OpeningBalanceService())->saveOpeningBalance(
                     $companyId,
                     $accountingPeriodId,
@@ -34,6 +61,10 @@ final class YearEndAction implements ActionInterfaceFramework
                     $companyId,
                     $accountingPeriodId,
                     $this->adjustmentPayload($request)
+                ),
+                'post_director_loan_offset' => (new \eel_accounts\Service\DirectorLoanReconciliationService())->postOffset(
+                    $companyId,
+                    $accountingPeriodId
                 ),
                 default => ['success' => false, 'errors' => ['Unknown year-end action.']],
             };
@@ -66,7 +97,7 @@ final class YearEndAction implements ActionInterfaceFramework
             }
         }
 
-        return new ActionResultFramework($success, ['year.end.state', 'year.end.audit.log', 'trial.balance.state'], $flashMessages);
+        return new ActionResultFramework($success, ['year.end.state', 'year.end.empty.month.confirmations', 'year.end.audit.log', 'trial.balance.state'], $flashMessages);
     }
 
     private function successMessage(string $intent): string
@@ -76,10 +107,47 @@ final class YearEndAction implements ActionInterfaceFramework
             'lock_period' => 'Accounting period locked.',
             'unlock_period' => 'Accounting period unlocked.',
             'save_notes' => 'Year-end notes saved.',
+            'confirm_empty_month' => 'Empty month confirmation saved.',
+            'revoke_empty_month' => 'Empty month confirmation revoked.',
             'save_opening_balance' => 'Opening balance journal saved.',
             'create_adjustment' => 'Year-end adjustment posted.',
+            'post_director_loan_offset' => 'Director loan offset journal posted.',
             default => 'Year-end readiness updated.',
         };
+    }
+
+    private function requiresSingleDirectorCheck(string $intent): bool
+    {
+        return in_array($intent, [
+            'recalculate',
+            'lock_period',
+            'save_opening_balance',
+            'create_adjustment',
+            'post_director_loan_offset',
+        ], true);
+    }
+
+    private function requiresVatRegistrationGuard(string $intent): bool
+    {
+        return in_array($intent, [
+            'recalculate',
+            'lock_period',
+            'save_opening_balance',
+            'create_adjustment',
+            'post_director_loan_offset',
+        ], true);
+    }
+
+    private function companyIsVatRegistered(int $companyId): bool
+    {
+        $details = (new \eel_accounts\Repository\CompanyRepository())->fetchCompanyDetails($companyId);
+
+        return !empty($details['is_vat_registered']);
+    }
+
+    private function directorEligibilityService(): \eel_accounts\Service\CompanyDirectorEligibilityService
+    {
+        return $this->directorEligibilityService ?? new \eel_accounts\Service\CompanyDirectorEligibilityService();
     }
 
     private function openingBalancePayload(RequestFramework $request): array

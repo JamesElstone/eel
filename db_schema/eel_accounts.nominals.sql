@@ -72,7 +72,8 @@ INSERT INTO `nominal_accounts` (`id`,`code`,`name`,`account_type`,`account_subty
 (45,'3010','Ordinary Share Capital','equity',13,'other',1,65,'2026-06-30 00:00:00'),
 (46,'2150','Dividends Payable','liability',17,'other',1,56,'2026-06-30 00:00:00'),
 (47,'3000','Retained Earnings','equity',13,'other',1,66,'2026-06-30 00:00:00'),
-(48,'3100','Dividends Paid','equity',13,'other',1,71,'2026-06-30 00:00:00');
+(48,'3100','Dividends Paid','equity',13,'other',1,71,'2026-06-30 00:00:00'),
+(49,'1490','Asset Disposal Clearing','asset',18,'other',1,149,'2026-07-01 00:00:00');
 /*!40000 ALTER TABLE `nominal_accounts` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -99,7 +100,8 @@ INSERT INTO `nominal_account_subtypes` VALUES
 (14,'asset_disposal_gain','Asset Disposal Gain','income',420,1),
 (15,'depreciation_expense','Depreciation Expense','expense',620,1),
 (16,'asset_disposal_loss','Asset Disposal Loss','expense',621,1),
-(17,'dividends_payable','Dividends Payable','liability',56,1);
+(17,'dividends_payable','Dividends Payable','liability',56,1),
+(18,'asset_disposal_clearing','Asset Disposal Clearing','asset',149,1);
 /*!40000 ALTER TABLE `nominal_account_subtypes` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;

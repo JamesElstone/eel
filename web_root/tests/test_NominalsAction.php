@@ -29,22 +29,25 @@ $harness->run(NominalsAction::class, function (GeneratedServiceClassTestHarness 
             'default_bank_nominal_id' => '10',
             'default_trade_nominal_id' => '15',
             'default_expense_nominal_id' => '20',
-            'director_loan_nominal_id' => '30',
+            'director_loan_asset_nominal_id' => '30',
+            'director_loan_liability_nominal_id' => '31',
             'vat_nominal_id' => '',
             'uncategorised_nominal_id' => '50',
         ], [
             ['id' => 10, 'code' => '1200', 'name' => 'Bank'],
             ['id' => 15, 'code' => '2300', 'name' => 'Trade Creditors'],
             ['id' => 20, 'code' => '5000', 'name' => 'Expenses'],
-            ['id' => 30, 'code' => '2100', 'name' => 'Director Loan'],
+            ['id' => 30, 'code' => '1200', 'name' => 'Director Loan Asset'],
+            ['id' => 31, 'code' => '2100', 'name' => 'Director Loan Liability'],
             ['id' => 50, 'code' => '9999', 'name' => 'Uncategorised'],
         ]);
 
         $harness->assertSame(true, str_contains($message, 'Default bank: 1200 - Bank'));
         $harness->assertSame(true, str_contains($message, '<br>Saved:<br>'));
         $harness->assertSame(true, str_contains($message, 'Default trade: 2300 - Trade Creditors'));
-        $harness->assertSame(true, str_contains($message, 'Default expense: 5000 - Expenses'));
-        $harness->assertSame(true, str_contains($message, 'Director loan: 2100 - Director Loan'));
+        $harness->assertSame(true, str_contains($message, 'Expense claims payable: 5000 - Expenses'));
+        $harness->assertSame(true, str_contains($message, 'Director loan asset: 1200 - Director Loan Asset'));
+        $harness->assertSame(true, str_contains($message, 'Director loan liability: 2100 - Director Loan Liability'));
         $harness->assertSame(true, str_contains($message, 'VAT control: Unassigned'));
         $harness->assertSame(true, str_contains($message, 'Fallback uncategorised: 9999 - Uncategorised'));
     });
@@ -89,7 +92,8 @@ $harness->run(NominalsAction::class, function (GeneratedServiceClassTestHarness 
             'default_bank_nominal_id',
             'default_trade_nominal_id',
             'default_expense_nominal_id',
-            'director_loan_nominal_id',
+            'director_loan_asset_nominal_id',
+            'director_loan_liability_nominal_id',
             'vat_nominal_id',
             'uncategorised_nominal_id',
         ] as $index => $setting) {

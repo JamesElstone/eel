@@ -129,6 +129,9 @@ CREATE TABLE `companies` (
   `companies_house_etag` varchar(255) DEFAULT NULL,
   `companies_house_last_checked_at` datetime DEFAULT NULL,
   `companies_house_profile_json` longtext DEFAULT NULL,
+  `companies_house_active_director_count` int(11) DEFAULT NULL,
+  `companies_house_officers_last_checked_at` datetime DEFAULT NULL,
+  `companies_house_officers_json` longtext DEFAULT NULL,
   `is_active` tinyint(1) NOT NULL DEFAULT 1,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
@@ -409,6 +412,8 @@ CREATE TABLE `expense_claims` (
   `carried_forward_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
   `status` enum('draft','posted') NOT NULL DEFAULT 'draft',
   `posted_journal_id` bigint(20) DEFAULT NULL,
+  `no_lines_confirmed_at` datetime DEFAULT NULL,
+  `no_lines_confirmed_by` varchar(100) DEFAULT NULL,
   `notes` text DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
@@ -416,6 +421,7 @@ CREATE TABLE `expense_claims` (
   UNIQUE KEY `uniq_expense_claims_company_reference` (`company_id`,`claim_reference_code`),
   UNIQUE KEY `uniq_expense_claims_company_claimant_month` (`company_id`,`claimant_id`,`claim_year`,`claim_month`),
   KEY `idx_expense_claims_company_period` (`company_id`,`claim_year`,`claim_month`),
+  KEY `idx_expense_claims_company_claimant_period` (`company_id`,`claimant_id`,`period_start`,`id`),
   KEY `idx_expense_claims_accounting_period` (`accounting_period_id`),
   KEY `idx_expense_claims_claimant` (`claimant_id`),
   KEY `idx_expense_claims_posted_journal` (`posted_journal_id`),
@@ -1152,6 +1158,36 @@ CREATE TABLE `accounting_periods` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `accounting_period_month_confirmations`
+--
+
+DROP TABLE IF EXISTS `accounting_period_month_confirmations`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `accounting_period_month_confirmations` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `month_start` date NOT NULL,
+  `confirmation_type` varchar(64) NOT NULL DEFAULT 'no_financial_activity',
+  `notes` text DEFAULT NULL,
+  `evidence_json` longtext NOT NULL,
+  `confirmed_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `confirmed_by` varchar(100) NOT NULL DEFAULT 'web_app',
+  `revoked_at` datetime DEFAULT NULL,
+  `revoked_by` varchar(100) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ap_month_confirmation` (`company_id`,`accounting_period_id`,`month_start`,`confirmation_type`),
+  KEY `idx_ap_month_confirmations_period` (`company_id`,`accounting_period_id`,`revoked_at`),
+  KEY `fk_ap_month_confirmations_period` (`accounting_period_id`),
+  CONSTRAINT `fk_ap_month_confirmations_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ap_month_confirmations_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `transaction_category_audit`
 --
 
@@ -1279,6 +1315,9 @@ CREATE TABLE `asset_register` (
   `status` varchar(32) NOT NULL DEFAULT 'active',
   `linked_journal_id` bigint(20) DEFAULT NULL,
   `linked_transaction_id` bigint(20) DEFAULT NULL,
+  `linked_expense_claim_line_id` bigint(20) DEFAULT NULL,
+  `manual_addition_reason` varchar(64) DEFAULT NULL,
+  `manual_offset_nominal_id` int(11) DEFAULT NULL,
   `disposal_date` date DEFAULT NULL,
   `disposal_proceeds` decimal(12,2) DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
@@ -1290,14 +1329,69 @@ CREATE TABLE `asset_register` (
   KEY `idx_asset_register_accum_dep_nominal` (`accum_dep_nominal_id`),
   KEY `idx_asset_register_linked_journal` (`linked_journal_id`),
   KEY `idx_asset_register_linked_transaction` (`linked_transaction_id`),
+  KEY `idx_asset_register_expense_claim_line` (`linked_expense_claim_line_id`),
+  KEY `idx_asset_register_manual_reconcile` (`company_id`,`manual_addition_reason`,`linked_transaction_id`),
+  KEY `idx_asset_register_manual_offset_nominal` (`manual_offset_nominal_id`),
   CONSTRAINT `fk_asset_register_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_asset_register_nominal` FOREIGN KEY (`nominal_account_id`) REFERENCES `nominal_accounts` (`id`) ON UPDATE CASCADE,
   CONSTRAINT `fk_asset_register_accum_dep_nominal` FOREIGN KEY (`accum_dep_nominal_id`) REFERENCES `nominal_accounts` (`id`) ON UPDATE CASCADE,
   CONSTRAINT `fk_asset_register_linked_journal` FOREIGN KEY (`linked_journal_id`) REFERENCES `journals` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_asset_register_linked_transaction` FOREIGN KEY (`linked_transaction_id`) REFERENCES `transactions` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_asset_register_expense_claim_line` FOREIGN KEY (`linked_expense_claim_line_id`) REFERENCES `expense_claim_lines` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_asset_register_manual_offset_nominal` FOREIGN KEY (`manual_offset_nominal_id`) REFERENCES `nominal_accounts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `chk_asset_register_cost` CHECK (`cost` > 0),
   CONSTRAINT `chk_asset_register_useful_life` CHECK (`useful_life_years` > 0),
   CONSTRAINT `chk_asset_register_residual` CHECK (`residual_value` >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `asset_disposal_transaction_links`
+--
+
+DROP TABLE IF EXISTS `asset_disposal_transaction_links`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `asset_disposal_transaction_links` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `asset_id` bigint(20) NOT NULL,
+  `transaction_id` bigint(20) NOT NULL,
+  `linked_amount` decimal(12,2) NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_asset_disposal_transaction_links_asset` (`asset_id`),
+  UNIQUE KEY `uq_asset_disposal_transaction_links_transaction` (`transaction_id`),
+  CONSTRAINT `fk_asset_disposal_transaction_links_asset` FOREIGN KEY (`asset_id`) REFERENCES `asset_register` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_asset_disposal_transaction_links_transaction` FOREIGN KEY (`transaction_id`) REFERENCES `transactions` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `chk_asset_disposal_transaction_links_amount` CHECK (`linked_amount` > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `expense_claim_line_assets`
+--
+
+DROP TABLE IF EXISTS `expense_claim_line_assets`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `expense_claim_line_assets` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `expense_claim_line_id` bigint(20) NOT NULL,
+  `category` varchar(64) NOT NULL DEFAULT 'tools_equipment',
+  `description` varchar(255) DEFAULT NULL,
+  `useful_life_years` int(11) NOT NULL DEFAULT 3,
+  `depreciation_method` varchar(32) NOT NULL DEFAULT 'straight_line',
+  `residual_value` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `generated_asset_id` bigint(20) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_expense_claim_line_assets_line` (`expense_claim_line_id`),
+  KEY `idx_expense_claim_line_assets_asset` (`generated_asset_id`),
+  CONSTRAINT `fk_expense_claim_line_assets_line` FOREIGN KEY (`expense_claim_line_id`) REFERENCES `expense_claim_lines` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_expense_claim_line_assets_asset` FOREIGN KEY (`generated_asset_id`) REFERENCES `asset_register` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `chk_expense_claim_line_assets_life` CHECK (`useful_life_years` > 0),
+  CONSTRAINT `chk_expense_claim_line_assets_residual` CHECK (`residual_value` >= 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -1779,7 +1873,20 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_06_29_003_nominal_account_origin.sql'),
   ('2026_06_29_004_database_integrity_alignment.sql'),
   ('2026_06_29_005_remove_deferred_tax_ct_rule.sql'),
-  ('2026_06_30_001_ensure_expense_claim_tables.sql');
+  ('2026_06_30_001_ensure_expense_claim_tables.sql'),
+  ('2026_06_30_001_warning_flash_messages.sql'),
+  ('2026_06_30_002_ordinary_share_capital_default_nominal.sql'),
+  ('2026_06_30_003_expense_payable_nominal_subtype.sql'),
+  ('2026_06_30_004_fixed_asset_pl_nominal_subtypes.sql'),
+  ('2026_06_30_005_dividend_default_nominals.sql'),
+  ('2026_06_30_006_reference_aware_auto_rules.sql'),
+  ('2026_06_30_007_preserve_regex_auto_rule_matches.sql'),
+  ('2026_07_01_001_expense_add_claimant_card_permission.sql'),
+  ('2026_07_01_002_expense_claim_create_card_permission.sql'),
+  ('2026_07_01_003_expense_claim_line_assets.sql'),
+  ('2026_07_01_004_expense_claim_series_index.sql'),
+  ('2026_07_01_005_asset_disposal_transaction_links.sql'),
+  ('2026_07_01_007_manual_asset_reconciliation.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

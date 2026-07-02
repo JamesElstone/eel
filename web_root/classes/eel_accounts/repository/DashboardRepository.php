@@ -397,6 +397,7 @@ final class DashboardRepository
                        COALESCE(ca.internal_transfer_marker, '') AS internal_transfer_marker,
                        COALESCE(ca.account_name, '') AS owned_account_name,
                        COALESCE(ta.account_name, '') AS transfer_account_name,
+                       COALESCE(na.code, '') AS nominal_code,
                        COALESCE(na.name, '') AS assigned_nominal,
                        t.category_status,
                        COALESCE(t.auto_rule_id, 0) AS auto_rule_id,
@@ -407,7 +408,14 @@ final class DashboardRepository
                            FROM journals j
                            WHERE j.source_type = 'bank_csv'
                              AND j.source_ref = CONCAT('transaction:', t.id)
-                       ) AS has_derived_journal
+                       ) AS has_derived_journal,
+                       EXISTS(
+                           SELECT 1
+                           FROM journals dividend_j
+                           WHERE dividend_j.company_id = t.company_id
+                             AND dividend_j.source_type = 'manual'
+                             AND dividend_j.source_ref = CONCAT('dividend:transaction:', t.id)
+                       ) AS has_dividend_declaration
                 FROM transactions t
                 LEFT JOIN company_accounts ca ON ca.id = t.account_id
                 LEFT JOIN company_accounts ta ON ta.id = t.transfer_account_id
@@ -421,6 +429,136 @@ final class DashboardRepository
         $stmt->execute($params);
 
         return $stmt->fetchAll();
+    }
+
+    public function searchTransactions(
+        int $companyId,
+        int $accountingPeriodId,
+        string $keyword,
+        int $sourceAccountId = 0,
+        array|string $nominalAccountIds = [],
+        int $limit = 5000
+    ): array {
+        $keyword = trim($keyword);
+        $nominalAccountIds = $this->normalisePositiveIntList($nominalAccountIds);
+        $sourceAccountId = max(0, $sourceAccountId);
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || ($keyword === '' && $sourceAccountId <= 0 && $nominalAccountIds === [])) {
+            return [];
+        }
+
+        $limit = max(1, min($limit, 5000));
+        $where = [
+            't.company_id = :company_id',
+            't.accounting_period_id = :accounting_period_id',
+        ];
+        $params = [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+        ];
+
+        if ($keyword !== '') {
+            $where[] = "(t.description LIKE :keyword ESCAPE '\\\\' OR COALESCE(t.reference, '') LIKE :keyword ESCAPE '\\\\')";
+            $params['keyword'] = '%' . $this->escapeLike($keyword) . '%';
+        }
+
+        if ($sourceAccountId > 0) {
+            $where[] = 't.account_id = :source_account_id';
+            $params['source_account_id'] = $sourceAccountId;
+        }
+
+        if ($nominalAccountIds !== []) {
+            $placeholders = [];
+            foreach ($nominalAccountIds as $index => $nominalAccountId) {
+                $key = 'nominal_account_id_' . $index;
+                $placeholders[] = ':' . $key;
+                $params[$key] = $nominalAccountId;
+            }
+
+            $where[] = 't.nominal_account_id IN (' . implode(', ', $placeholders) . ')';
+        }
+
+        $sql = "SELECT t.id,
+                       t.statement_upload_id,
+                       t.account_id,
+                       t.txn_date,
+                       DATE_FORMAT(t.txn_date, '%Y-%m-01') AS month_key,
+                       COALESCE(t.txn_type, '') AS txn_type,
+                       t.description,
+                       COALESCE(t.reference, '') AS reference,
+                       t.amount,
+                       COALESCE(t.currency, '') AS currency,
+                       t.balance,
+                       COALESCE(t.source_account_label, '') AS source_account_label,
+                       COALESCE(t.source_category, '') AS source_category,
+                       COALESCE(t.document_download_status, 'skipped') AS document_download_status,
+                       t.nominal_account_id,
+                       t.transfer_account_id,
+                       COALESCE(t.is_internal_transfer, 0) AS is_internal_transfer,
+                       COALESCE(ca.account_name, '') AS owned_account_name,
+                       COALESCE(ca.institution_name, '') AS owned_institution_name,
+                       COALESCE(ta.account_name, '') AS transfer_account_name,
+                       COALESCE(na.code, '') AS nominal_code,
+                       COALESCE(na.name, '') AS assigned_nominal,
+                       t.category_status,
+                       COALESCE(t.auto_rule_id, 0) AS auto_rule_id,
+                       COALESCE(cr.desc_match_value, '') AS auto_rule_match_value,
+                       COALESCE(cr.ref_match_value, '') AS auto_rule_reference_match_value,
+                       COALESCE(t.is_auto_excluded, 0) AS is_auto_excluded,
+                       COALESCE(t.notes, '') AS notes,
+                       t.created_at,
+                       t.updated_at,
+                       EXISTS(
+                           SELECT 1
+                           FROM journals j
+                           WHERE j.source_type = 'bank_csv'
+                             AND j.source_ref = CONCAT('transaction:', t.id)
+                       ) AS has_derived_journal,
+                       EXISTS(
+                           SELECT 1
+                           FROM journals dividend_j
+                           WHERE dividend_j.company_id = t.company_id
+                             AND dividend_j.source_type = 'manual'
+                             AND dividend_j.source_ref = CONCAT('dividend:transaction:', t.id)
+                       ) AS has_dividend_declaration
+                FROM transactions t
+                LEFT JOIN company_accounts ca ON ca.id = t.account_id
+                LEFT JOIN company_accounts ta ON ta.id = t.transfer_account_id
+                LEFT JOIN nominal_accounts na ON na.id = t.nominal_account_id
+                LEFT JOIN categorisation_rules cr ON cr.id = t.auto_rule_id
+                WHERE " . implode(' AND ', $where) . "
+                ORDER BY t.txn_date DESC, t.id DESC
+                LIMIT {$limit}";
+
+        $stmt = \InterfaceDB::prepare($sql);
+        $stmt->execute($params);
+
+        return $stmt->fetchAll();
+    }
+
+    private function normalisePositiveIntList(array|string $values): array
+    {
+        if (is_string($values)) {
+            $values = preg_split('/[,\s]+/', $values) ?: [];
+        }
+
+        $normalised = [];
+        foreach ($values as $value) {
+            $id = (int)$value;
+            if ($id > 0) {
+                $normalised[$id] = $id;
+            }
+        }
+
+        return array_values($normalised);
+    }
+
+    private function escapeLike(string $value): string
+    {
+        return str_replace(
+            ['\\', '%', '_'],
+            ['\\\\', '\\%', '\\_'],
+            $value
+        );
     }
 
 }

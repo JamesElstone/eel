@@ -26,12 +26,18 @@ final class _expenses extends PageContextFramework
 
     public function cards(): array
     {
-        return ['expense_claimants', 'expense_add_claimant', 'expense_claim_create', 'expenses_state', 'expense_claim_editor'];
+        return ['expense_statistics', 'expense_claimants', 'expense_add_claimant', 'expense_claim_create', 'expenses_state', 'expense_claim_editor'];
     }
 
     public function cardLayout(): array
     {
         return [
+            [
+                'tab' => 'Summary',
+                'cards' => [
+                    'expense_statistics',
+                ],
+            ],
             [
                 'tab' => 'Claimants',
                 'cards' => [
@@ -81,27 +87,49 @@ final class _expenses extends PageContextFramework
             $expenseFilters,
             static fn(mixed $value): bool => $value !== null && $value !== '' && $value !== 0
         );
+        $expenseFilters = array_merge($expenseFilters, $this->selectedAccountingPeriodFilters($baseContext));
 
         return [
             'expense_filters' => $expenseFilters,
             'expense_page_settings' => $this->expensePageSettings((array)($baseContext['company']['settings'] ?? [])),
-            'expense_bulk_preview_input' => [
-                'claim_id' => max(0, (int)$request->input('claim_id', 0)),
-                'pasted_lines' => (string)$request->input('pasted_lines', ''),
-                'date_format' => (string)$request->input('date_format', (string)(($baseContext['company']['settings'] ?? [])['date_format'] ?? 'd/m/Y')),
-            ],
         ];
     }
 
     private function expensePageSettings(array $settings): array
     {
+        $directorLoanNominalId = $this->settingId($settings, 'director_loan_liability_nominal_id');
+        if ($directorLoanNominalId <= 0) {
+            $directorLoanNominalId = $this->settingId($settings, 'director_loan_nominal_id');
+        }
+
         return [
             'incorporation_date' => (string)($settings['incorporation_date'] ?? ''),
             'date_format' => (string)($settings['date_format'] ?? 'd/m/Y'),
-            'director_loan_nominal_id' => $this->settingId($settings, 'director_loan_nominal_id'),
+            'director_loan_nominal_id' => $directorLoanNominalId,
             'default_bank_nominal_id' => $this->settingId($settings, 'default_bank_nominal_id'),
             'default_expense_nominal_id' => $this->settingId($settings, 'default_expense_nominal_id'),
         ];
+    }
+
+    private function selectedAccountingPeriodFilters(array $context): array
+    {
+        $company = (array)($context['company'] ?? []);
+        $accountingPeriod = (array)($context['accounting_period'] ?? []);
+        $accountingPeriodId = max(0, (int)($accountingPeriod['id'] ?? $company['accounting_period_id'] ?? 0));
+        $filters = [];
+
+        if ($accountingPeriodId > 0) {
+            $filters['accounting_period_id'] = $accountingPeriodId;
+        }
+
+        $periodStart = trim((string)($accountingPeriod['period_start'] ?? ''));
+        $periodEnd = trim((string)($accountingPeriod['period_end'] ?? ''));
+        if ($this->isValidDate($periodStart) && $this->isValidDate($periodEnd)) {
+            $filters['accounting_period_start'] = $periodStart;
+            $filters['accounting_period_end'] = $periodEnd;
+        }
+
+        return $filters;
     }
 
     private function normaliseHeatmapPeriodStart(string $date): string
@@ -118,6 +146,16 @@ final class _expenses extends PageContextFramework
         }
 
         return $parsed->format('Y-m-d');
+    }
+
+    private function isValidDate(string $date): bool
+    {
+        $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+        $errors = DateTimeImmutable::getLastErrors();
+
+        return $parsed instanceof DateTimeImmutable
+            && $parsed->format('Y-m-d') === $date
+            && (!is_array($errors) || ((int)($errors['warning_count'] ?? 0) === 0 && (int)($errors['error_count'] ?? 0) === 0));
     }
 
     private function settingId(array $settings, string $key): int

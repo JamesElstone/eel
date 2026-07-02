@@ -46,6 +46,7 @@ $harness->run(_expenses_stateCard::class, function (GeneratedServiceClassTestHar
         $harness->assertSame(false, str_contains($html, '14 claims on 1 May 2026'));
         $harness->assertTrue(str_contains($html, 'EXP-2605-001'));
         $harness->assertSame(false, str_contains($html, 'EXP-2605-BOB'));
+        $harness->assertTrue(str_contains($html, 'Repayment Only'));
         $harness->assertSame(6, substr_count($html, 'name="intent" value="delete_claim"'));
         $harness->assertTrue(str_contains($html, '<button class="button button-inline danger" type="submit">Delete</button>'));
         $harness->assertSame(false, str_contains($html, 'Create or open a monthly expense claim for an active claimant.'));
@@ -214,10 +215,11 @@ function expensesStateCardClaims(array $filters = []): array
             'period_end' => '2026-05-31',
             'claim_reference_code' => 'EXP-2605-' . str_pad((string)$index, 3, '0', STR_PAD_LEFT),
             'A' => 0,
-            'B' => 94.99 + $index,
-            'C' => 0,
-            'D' => 94.99 + $index,
+            'B' => $index === 3 ? 0 : 94.99 + $index,
+            'C' => $index === 3 ? 50 : 0,
+            'D' => $index === 3 ? -50 : 94.99 + $index,
             'status' => $index % 2 === 0 ? 'posted' : 'draft',
+            'line_count' => $index === 3 ? 0 : 1,
             'payment_link_count' => $index === 3 ? 1 : 0,
             'last_updated' => '2026-05-' . str_pad((string)min($index + 1, 28), 2, '0', STR_PAD_LEFT) . ' 10:00:00',
         ];
@@ -237,6 +239,7 @@ function expensesStateCardClaims(array $filters = []): array
         'C' => 0,
         'D' => 50,
         'status' => 'draft',
+        'line_count' => 1,
         'payment_link_count' => 0,
         'last_updated' => '2026-05-20 10:00:00',
     ];

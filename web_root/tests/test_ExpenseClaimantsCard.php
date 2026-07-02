@@ -43,6 +43,13 @@ $harness->run(_expense_claimantsCard::class, function (GeneratedServiceClassTest
         $harness->assertTrue(str_contains($html, 'name="intent" value="activate_claimant"'));
         $harness->assertTrue(str_contains($html, 'class="button button-inline danger" type="submit" name="intent" value="delete_claimant"'));
         $harness->assertSame(1, substr_count($html, 'name="intent" value="delete_claimant"'));
+        $harness->assertSame(10, substr_count($html, 'name="intent" value="filter_claims" data-page-card-switch-tab="Claims">Claims</button>'));
+        $harness->assertTrue(
+            strpos($html, 'name="intent" value="deactivate_claimant"') < strpos($html, 'name="intent" value="filter_claims" data-page-card-switch-tab="Claims">Claims</button>')
+        );
+        $harness->assertTrue(
+            strpos($html, 'name="intent" value="activate_claimant"') < strpos($html, 'name="intent" value="filter_claims" data-page-card-switch-tab="Claims">Claims</button>', strpos($html, 'name="intent" value="activate_claimant"'))
+        );
     });
 
     $harness->check(_expense_claimantsCard::class, 'keeps action column screen-only in exports', function () use ($harness, $instance): void {
@@ -57,6 +64,9 @@ $harness->run(_expense_claimantsCard::class, function (GeneratedServiceClassTest
         $harness->assertSame(false, str_contains($csv, 'Action'));
         $harness->assertSame(false, str_contains($csv, 'deactivate_claimant'));
         $harness->assertSame(false, str_contains($csv, 'activate_claimant'));
+        $harness->assertSame(false, str_contains($csv, 'filter_claims'));
+        $harness->assertSame(false, str_contains($csv, 'data-page-card-switch-tab'));
+        $harness->assertSame(false, str_contains($csv, 'Claims'));
     });
 
     $harness->check(_expense_claimantsCard::class, 'filters claimant table by active status', function () use ($harness, $instance): void {

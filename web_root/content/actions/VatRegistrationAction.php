@@ -35,6 +35,12 @@ final class VatRegistrationAction implements ActionInterfaceFramework
                 $settings = $this->clearVatDetails($settings);
             } else {
                 $settings = $vatService->applyManualSaveRules($settings, $previousSettings);
+                if ((string)($settings['vat_validation_status'] ?? '') !== 'valid') {
+                    return new ActionResultFramework(false, ['vat_registration', 'vat_readiness'], [[
+                        'type' => 'error',
+                        'message' => 'Check the VAT number and confirm the returned company name matches before saving VAT registration settings.',
+                    ]]);
+                }
             }
 
             $this->saveSettings($settings);

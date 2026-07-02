@@ -26,7 +26,7 @@ final class _trial_balance extends PageContextFramework
 
     public function cards(): array
     {
-        return ['trial_balance_state'];
+        return ['trial_balance_state', 'companies_house_snapshot'];
     }
 
     protected function moduleContext(

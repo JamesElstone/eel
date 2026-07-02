@@ -43,6 +43,7 @@ final class ExpenseClaimService
             'active_claimant_count' => count($this->fetchClaimants($companyId, true)),
             'accounting_periods' => (new \eel_accounts\Repository\AccountingPeriodRepository())->fetchAccountingPeriods($companyId),
             'nominal_accounts' => $this->fetchExpenseNominals(),
+            'asset_categories' => \eel_accounts\Service\AssetService::assetCategoryOptions(),
             'payment_candidates' => $selectedClaim !== null
                 ? $this->searchTransactions($companyId, [
                     'claim_id' => (int)$selectedClaim['id'],
@@ -60,6 +61,9 @@ final class ExpenseClaimService
                 'heatmap_claimant_id' => $heatmapClaimantId,
                 'heatmap_period_start' => trim((string)($filters['heatmap_period_start'] ?? '')),
                 'heatmap_date' => $heatmapDate,
+                'accounting_period_id' => max(0, (int)($filters['accounting_period_id'] ?? 0)),
+                'accounting_period_start' => trim((string)($filters['accounting_period_start'] ?? '')),
+                'accounting_period_end' => trim((string)($filters['accounting_period_end'] ?? '')),
             ],
         ];
     }
@@ -261,6 +265,7 @@ final class ExpenseClaimService
         $query = trim((string)($filters['query'] ?? ''));
         $status = $this->normaliseStatusFilter((string)($filters['status'] ?? 'all'));
         $claimantId = max(0, (int)($filters['heatmap_claimant_id'] ?? 0));
+        $accountingPeriodId = max(0, (int)($filters['accounting_period_id'] ?? 0));
 
         if ($claimantId <= 0) {
             return [];
@@ -268,6 +273,20 @@ final class ExpenseClaimService
 
         $conditions[] = 'ec.claimant_id = :claimant_id';
         $params['claimant_id'] = $claimantId;
+
+        if ($accountingPeriodId > 0) {
+            $conditions[] = 'ec.accounting_period_id = :accounting_period_id';
+            $params['accounting_period_id'] = $accountingPeriodId;
+        } else {
+            $periodStart = trim((string)($filters['accounting_period_start'] ?? ''));
+            $periodEnd = trim((string)($filters['accounting_period_end'] ?? ''));
+            if ($this->isValidDate($periodStart) && $this->isValidDate($periodEnd)) {
+                $conditions[] = 'ec.period_start >= :accounting_period_start';
+                $conditions[] = 'ec.period_end <= :accounting_period_end';
+                $params['accounting_period_start'] = $periodStart;
+                $params['accounting_period_end'] = $periodEnd;
+            }
+        }
 
         if ($query !== '') {
             $conditions[] = '(ec.claim_reference_code LIKE :query_reference OR ec.notes LIKE :query_notes OR c.claimant_name LIKE :query_claimant)';
@@ -301,12 +320,303 @@ final class ExpenseClaimService
                     ec.updated_at,
                     c.claimant_name,
                     (SELECT COUNT(*)
+                       FROM expense_claim_lines ecl
+                      WHERE ecl.expense_claim_id = ec.id) AS line_count,
+                    (SELECT COUNT(*)
                        FROM expense_claim_payment_links epl
                       WHERE epl.expense_claim_id = ec.id) AS payment_link_count
              FROM expense_claims ec
              INNER JOIN expense_claimants c ON c.id = ec.claimant_id
              WHERE ' . implode(' AND ', $conditions) . '
              ORDER BY ec.claim_year DESC, ec.claim_month DESC, ec.updated_at DESC, ec.id DESC', $params));
+    }
+
+    public function fetchStatistics(int $companyId, array $filters = []): array {
+        if ($companyId <= 0) {
+            return $this->emptyStatistics($filters);
+        }
+
+        $scope = $this->expenseStatisticsScope($companyId, $filters);
+
+        return [
+            'claimants' => $this->fetchStatisticsClaimants($scope),
+            'nominals' => $this->fetchStatisticsNominals($scope),
+            'claimant_breakdown' => $this->fetchStatisticsClaimantBreakdown($scope),
+            'monthly_trend' => $this->fetchStatisticsMonthlyTrend($scope),
+            'health_checks' => $this->fetchStatisticsHealthChecks($scope),
+            'filters' => [
+                'accounting_period_id' => max(0, (int)($filters['accounting_period_id'] ?? 0)),
+                'accounting_period_start' => trim((string)($filters['accounting_period_start'] ?? '')),
+                'accounting_period_end' => trim((string)($filters['accounting_period_end'] ?? '')),
+            ],
+        ];
+    }
+
+    private function fetchStatisticsClaimants(array $scope): array {
+        return array_map(
+            static fn(array $row): array => [
+                'claimant_id' => (int)$row['claimant_id'],
+                'claimant_name' => (string)$row['claimant_name'],
+                'claim_count' => (int)$row['claim_count'],
+                'item_count' => (int)$row['item_count'],
+                'claimed_total' => round((float)$row['claimed_total'], 2),
+                'payments_made' => round((float)$row['payments_made'], 2),
+                'carried_forward' => round((float)$row['carried_forward'], 2),
+            ],
+            \InterfaceDB::fetchAll(
+                'SELECT ec.claimant_id,
+                        c.claimant_name,
+                        COUNT(ec.id) AS claim_count,
+                        COALESCE(SUM(lc.line_count), 0) AS item_count,
+                        COALESCE(SUM(ec.claimed_amount), 0) AS claimed_total,
+                        COALESCE(SUM(ec.payments_amount), 0) AS payments_made,
+                        COALESCE(SUM(ec.carried_forward_amount), 0) AS carried_forward
+                 FROM expense_claims ec
+                 INNER JOIN expense_claimants c ON c.id = ec.claimant_id
+                 LEFT JOIN (
+                    SELECT expense_claim_id, COUNT(*) AS line_count
+                    FROM expense_claim_lines
+                    GROUP BY expense_claim_id
+                 ) lc ON lc.expense_claim_id = ec.id
+                 WHERE ' . $scope['where'] . '
+                 GROUP BY ec.claimant_id, c.claimant_name
+                 ORDER BY c.claimant_name ASC, ec.claimant_id ASC',
+                $scope['params']
+            )
+        );
+    }
+
+    private function fetchStatisticsNominals(array $scope): array {
+        return array_map(
+            static fn(array $row): array => [
+                'nominal_account_id' => (int)($row['nominal_account_id'] ?? 0),
+                'code' => (string)($row['code'] ?? ''),
+                'name' => (string)($row['name'] ?? 'Unassigned'),
+                'line_count' => (int)$row['line_count'],
+                'claimed_total' => round((float)$row['claimed_total'], 2),
+            ],
+            \InterfaceDB::fetchAll(
+                'SELECT COALESCE(l.nominal_account_id, 0) AS nominal_account_id,
+                        COALESCE(na.code, \'\') AS code,
+                        COALESCE(na.name, \'Unassigned\') AS name,
+                        COUNT(l.id) AS line_count,
+                        COALESCE(SUM(l.amount), 0) AS claimed_total
+                 FROM expense_claim_lines l
+                 INNER JOIN expense_claims ec ON ec.id = l.expense_claim_id
+                 LEFT JOIN nominal_accounts na ON na.id = l.nominal_account_id
+                 WHERE ' . $scope['where'] . '
+                 GROUP BY COALESCE(l.nominal_account_id, 0), COALESCE(na.code, \'\'), COALESCE(na.name, \'Unassigned\')
+                 ORDER BY claimed_total DESC, name ASC',
+                $scope['params']
+            )
+        );
+    }
+
+    private function fetchStatisticsClaimantBreakdown(array $scope): array {
+        return array_map(
+            static fn(array $row): array => [
+                'claimant_id' => (int)$row['claimant_id'],
+                'claimant_name' => (string)$row['claimant_name'],
+                'claimed_total' => round((float)$row['claimed_total'], 2),
+            ],
+            \InterfaceDB::fetchAll(
+                'SELECT ec.claimant_id,
+                        c.claimant_name,
+                        COALESCE(SUM(ec.claimed_amount), 0) AS claimed_total
+                 FROM expense_claims ec
+                 INNER JOIN expense_claimants c ON c.id = ec.claimant_id
+                 WHERE ' . $scope['where'] . '
+                 GROUP BY ec.claimant_id, c.claimant_name
+                 ORDER BY claimed_total DESC, c.claimant_name ASC',
+                $scope['params']
+            )
+        );
+    }
+
+    private function fetchStatisticsMonthlyTrend(array $scope): array {
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT ec.claim_year,
+                    ec.claim_month,
+                    COALESCE(SUM(ec.claimed_amount), 0) AS claimed_total
+             FROM expense_claims ec
+             WHERE ' . $scope['where'] . '
+             GROUP BY ec.claim_year, ec.claim_month
+             ORDER BY ec.claim_year ASC, ec.claim_month ASC',
+            $scope['params']
+        );
+        $totals = [];
+
+        foreach ($rows as $row) {
+            $key = sprintf('%04d-%02d', (int)$row['claim_year'], (int)$row['claim_month']);
+            $totals[$key] = round((float)$row['claimed_total'], 2);
+        }
+
+        $periodStart = (string)$scope['period_start'];
+        $periodEnd = (string)$scope['period_end'];
+        if (!$this->isValidDate($periodStart) || !$this->isValidDate($periodEnd)) {
+            return array_map(
+                static fn(string $key, float $value): array => [
+                    'period' => $key,
+                    'label' => \DateTimeImmutable::createFromFormat('!Y-m', $key)?->format('M y') ?? $key,
+                    'claimed_total' => $value,
+                ],
+                array_keys($totals),
+                array_values($totals)
+            );
+        }
+
+        $points = [];
+        $cursor = (new \DateTimeImmutable($periodStart))->modify('first day of this month');
+        $end = (new \DateTimeImmutable($periodEnd))->modify('first day of this month');
+
+        while ($cursor <= $end) {
+            $key = $cursor->format('Y-m');
+            $points[] = [
+                'period' => $key,
+                'label' => $cursor->format('M y'),
+                'claimed_total' => $totals[$key] ?? 0.0,
+            ];
+            $cursor = $cursor->modify('+1 month');
+        }
+
+        return $points;
+    }
+
+    private function fetchStatisticsHealthChecks(array $scope): array {
+        $statusRows = \InterfaceDB::fetchAll(
+            'SELECT ec.status,
+                    COUNT(ec.id) AS claim_count,
+                    COALESCE(SUM(ec.claimed_amount), 0) AS claimed_total
+             FROM expense_claims ec
+             WHERE ' . $scope['where'] . '
+             GROUP BY ec.status',
+            $scope['params']
+        );
+        $statusTotals = [
+            'draft' => ['claim_count' => 0, 'claimed_total' => 0.0],
+            'posted' => ['claim_count' => 0, 'claimed_total' => 0.0],
+        ];
+
+        foreach ($statusRows as $row) {
+            $status = (string)$row['status'];
+            if (!isset($statusTotals[$status])) {
+                continue;
+            }
+            $statusTotals[$status] = [
+                'claim_count' => (int)$row['claim_count'],
+                'claimed_total' => round((float)$row['claimed_total'], 2),
+            ];
+        }
+
+        $lineChecks = \InterfaceDB::fetchOne(
+            'SELECT COALESCE(SUM(CASE WHEN l.receipt_reference IS NULL OR TRIM(l.receipt_reference) = \'\' THEN 1 ELSE 0 END), 0) AS missing_receipt_count,
+                    COALESCE(SUM(CASE WHEN l.receipt_reference IS NULL OR TRIM(l.receipt_reference) = \'\' THEN l.amount ELSE 0 END), 0) AS missing_receipt_value,
+                    COALESCE(SUM(CASE WHEN l.nominal_account_id IS NULL THEN 1 ELSE 0 END), 0) AS missing_nominal_count,
+                    COALESCE(SUM(CASE WHEN l.nominal_account_id IS NULL THEN l.amount ELSE 0 END), 0) AS missing_nominal_value
+             FROM expense_claim_lines l
+             INNER JOIN expense_claims ec ON ec.id = l.expense_claim_id
+             WHERE ' . $scope['where'],
+            $scope['params']
+        ) ?: [];
+
+        $oldestOutstanding = \InterfaceDB::fetchOne(
+            'SELECT ec.claim_reference_code,
+                    ec.period_start,
+                    ec.carried_forward_amount,
+                    c.claimant_name
+             FROM expense_claims ec
+             INNER JOIN expense_claimants c ON c.id = ec.claimant_id
+             WHERE ' . $scope['where'] . '
+               AND ec.carried_forward_amount > 0
+             ORDER BY ec.period_start ASC, ec.id ASC
+             LIMIT 1',
+            $scope['params']
+        ) ?: [];
+
+        $largestOutstandingClaimant = \InterfaceDB::fetchOne(
+            'SELECT ec.claimant_id,
+                    c.claimant_name,
+                    COALESCE(SUM(ec.carried_forward_amount), 0) AS carried_forward
+             FROM expense_claims ec
+             INNER JOIN expense_claimants c ON c.id = ec.claimant_id
+             WHERE ' . $scope['where'] . '
+             GROUP BY ec.claimant_id, c.claimant_name
+             HAVING carried_forward > 0
+             ORDER BY carried_forward DESC, c.claimant_name ASC
+             LIMIT 1',
+            $scope['params']
+        ) ?: [];
+
+        return [
+            'draft' => $statusTotals['draft'],
+            'posted' => $statusTotals['posted'],
+            'missing_receipts' => [
+                'count' => (int)($lineChecks['missing_receipt_count'] ?? 0),
+                'value' => round((float)($lineChecks['missing_receipt_value'] ?? 0), 2),
+            ],
+            'missing_nominals' => [
+                'count' => (int)($lineChecks['missing_nominal_count'] ?? 0),
+                'value' => round((float)($lineChecks['missing_nominal_value'] ?? 0), 2),
+            ],
+            'oldest_outstanding_claim' => $oldestOutstanding === [] ? null : [
+                'claim_reference_code' => (string)$oldestOutstanding['claim_reference_code'],
+                'claimant_name' => (string)$oldestOutstanding['claimant_name'],
+                'period_start' => (string)$oldestOutstanding['period_start'],
+                'carried_forward' => round((float)$oldestOutstanding['carried_forward_amount'], 2),
+            ],
+            'largest_outstanding_claimant' => $largestOutstandingClaimant === [] ? null : [
+                'claimant_id' => (int)$largestOutstandingClaimant['claimant_id'],
+                'claimant_name' => (string)$largestOutstandingClaimant['claimant_name'],
+                'carried_forward' => round((float)$largestOutstandingClaimant['carried_forward'], 2),
+            ],
+        ];
+    }
+
+    private function expenseStatisticsScope(int $companyId, array $filters): array {
+        $conditions = ['ec.company_id = :company_id'];
+        $params = ['company_id' => $companyId];
+        $periodStart = trim((string)($filters['accounting_period_start'] ?? ''));
+        $periodEnd = trim((string)($filters['accounting_period_end'] ?? ''));
+        $accountingPeriodId = max(0, (int)($filters['accounting_period_id'] ?? 0));
+
+        if ($accountingPeriodId > 0) {
+            $conditions[] = 'ec.accounting_period_id = :accounting_period_id';
+            $params['accounting_period_id'] = $accountingPeriodId;
+        } elseif ($this->isValidDate($periodStart) && $this->isValidDate($periodEnd)) {
+            $conditions[] = 'ec.period_start >= :accounting_period_start';
+            $conditions[] = 'ec.period_end <= :accounting_period_end';
+            $params['accounting_period_start'] = $periodStart;
+            $params['accounting_period_end'] = $periodEnd;
+        }
+
+        return [
+            'where' => implode(' AND ', $conditions),
+            'params' => $params,
+            'period_start' => $periodStart,
+            'period_end' => $periodEnd,
+        ];
+    }
+
+    private function emptyStatistics(array $filters): array {
+        return [
+            'claimants' => [],
+            'nominals' => [],
+            'claimant_breakdown' => [],
+            'monthly_trend' => [],
+            'health_checks' => [
+                'draft' => ['claim_count' => 0, 'claimed_total' => 0.0],
+                'posted' => ['claim_count' => 0, 'claimed_total' => 0.0],
+                'missing_receipts' => ['count' => 0, 'value' => 0.0],
+                'missing_nominals' => ['count' => 0, 'value' => 0.0],
+                'oldest_outstanding_claim' => null,
+                'largest_outstanding_claimant' => null,
+            ],
+            'filters' => [
+                'accounting_period_id' => max(0, (int)($filters['accounting_period_id'] ?? 0)),
+                'accounting_period_start' => trim((string)($filters['accounting_period_start'] ?? '')),
+                'accounting_period_end' => trim((string)($filters['accounting_period_end'] ?? '')),
+            ],
+        ];
     }
 
     private function listClaimLinesForHeatmap(int $companyId): array {
@@ -352,9 +662,9 @@ final class ExpenseClaimService
             return ['success' => false, 'errors' => ['Choose a valid claim month.']];
         }
 
-        $incorporationDate = trim((string)($payload['incorporation_date'] ?? ''));
-        if ($incorporationDate !== '' && !$this->periodIsOnOrAfterIncorporation($period['year'], $period['month'], $incorporationDate)) {
-            return ['success' => false, 'errors' => ['Claim month cannot be earlier than the company incorporation date.']];
+        $claimPeriodValidation = $this->validateClaimPeriodSelection($companyId, $period['year'], $period['month']);
+        if ($claimPeriodValidation['errors'] !== []) {
+            return ['success' => false, 'errors' => $claimPeriodValidation['errors']];
         }
 
         $existing = $this->findClaimByUniqueMonth($companyId, $claimantId, $period['year'], $period['month']);
@@ -372,19 +682,11 @@ final class ExpenseClaimService
             return ['success' => false, 'errors' => ['The selected claimant could not be found.']];
         }
 
-        $derivedPeriod = $this->deriveMonthlyPeriod($period['year'], $period['month']);
-        $resolvedAccountingPeriodId = $this->resolveAccountingPeriodIdForDate($companyId, $derivedPeriod['period_end']);
-        if ($resolvedAccountingPeriodId > 0) {
-            (new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $resolvedAccountingPeriodId, 'create expense claims in this period');
-        }
+        $derivedPeriod = $claimPeriodValidation['period'];
+        $accountingPeriodId = (int)$claimPeriodValidation['accounting_period_id'];
+        (new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'create expense claims in this period');
         if ((int)($claimant['is_active'] ?? 0) !== 1) {
             return ['success' => false, 'errors' => ['Only active claimants can be used for new claims.']];
-        }
-
-        $accountingPeriodId = $this->deriveAccountingPeriodId($companyId, $derivedPeriod['period_start'], $derivedPeriod['period_end']);
-
-        if ($accountingPeriodId <= 0) {
-            return ['success' => false, 'errors' => ['No accounting period overlaps the selected claim month.']];
         }
 
         $referenceCode = $this->generateUniqueReferenceCode($companyId, $period['year'], $period['month']);
@@ -476,6 +778,13 @@ final class ExpenseClaimService
 
         $claim['lines'] = $this->fetchClaimLines($claimId);
         $claim['payment_links'] = $this->fetchPaymentLinks($claimId);
+        $claim['line_count'] = count((array)$claim['lines']);
+        $claim['payment_link_count'] = count((array)$claim['payment_links']);
+        $claim['no_lines_confirmed_at'] = (string)($claim['no_lines_confirmed_at'] ?? '');
+        $claim['no_lines_confirmed_by'] = (string)($claim['no_lines_confirmed_by'] ?? '');
+        $claim['no_lines_confirmed'] = (string)$claim['status'] === 'draft'
+            && (int)$claim['line_count'] === 0
+            && $claim['no_lines_confirmed_at'] !== '';
         $claim['control_totals'] = [
             'A' => (float)$claim['brought_forward_amount'],
             'B' => (float)$claim['claimed_amount'],
@@ -484,7 +793,7 @@ final class ExpenseClaimService
         ];
         $claim['claim_period'] = sprintf('%04d-%02d', (int)$claim['claim_year'], (int)$claim['claim_month']);
         $claim['is_posted'] = (string)$claim['status'] === 'posted';
-        $claim['status_label'] = ucfirst((string)$claim['status']);
+        $claim['status_label'] = $this->claimStatusLabel($claim);
 
         return $claim;
     }
@@ -504,6 +813,47 @@ final class ExpenseClaimService
             'claim_reference_code' => $referenceCode,
         ]);
         return $claimId > 0 ? $this->fetchClaim($companyId, $claimId) : null;
+    }
+
+    public function confirmNoLines(int $companyId, int $claimId, string $changedBy = 'web_app'): array {
+        $claim = $this->fetchClaim($companyId, $claimId);
+        if ($claim === null) {
+            return ['success' => false, 'errors' => ['The selected claim could not be found.']];
+        }
+
+        if ((string)$claim['status'] === 'posted') {
+            return ['success' => false, 'errors' => ['Posted claims are already locked.']];
+        }
+
+        if ((int)($claim['line_count'] ?? 0) > 0) {
+            return ['success' => false, 'errors' => ['This claim already has lines, so submit the claim instead.']];
+        }
+
+        (new \eel_accounts\Service\YearEndLockService())->assertUnlocked(
+            $companyId,
+            (int)($claim['accounting_period_id'] ?? 0),
+            'confirm no expense claim lines in this period'
+        );
+
+        \InterfaceDB::prepare(
+            'UPDATE expense_claims
+             SET no_lines_confirmed_at = CURRENT_TIMESTAMP,
+                 no_lines_confirmed_by = :no_lines_confirmed_by,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = :id
+               AND company_id = :company_id'
+        )->execute([
+            'no_lines_confirmed_by' => $this->actorValue($changedBy),
+            'id' => $claimId,
+            'company_id' => $companyId,
+        ]);
+
+        return [
+            'success' => true,
+            'claim' => $this->fetchClaim($companyId, $claimId),
+            'claims' => $this->listClaims($companyId),
+            'messages' => ['No-lines month confirmed.'],
+        ];
     }
 
     private function fetchClaimForHeatmapLine(int $companyId, int $claimantId, string $expenseDate): ?array {
@@ -559,9 +909,9 @@ final class ExpenseClaimService
             return ['success' => false, 'errors' => ['Choose a valid claim month.']];
         }
 
-        $incorporationDate = trim((string)($payload['incorporation_date'] ?? ''));
-        if ($incorporationDate !== '' && !$this->periodIsOnOrAfterIncorporation($nextPeriod['year'], $nextPeriod['month'], $incorporationDate)) {
-            return ['success' => false, 'errors' => ['Claim month cannot be earlier than the company incorporation date.']];
+        $claimPeriodValidation = $this->validateClaimPeriodSelection($companyId, $nextPeriod['year'], $nextPeriod['month']);
+        if ($claimPeriodValidation['errors'] !== []) {
+            return ['success' => false, 'errors' => $claimPeriodValidation['errors']];
         }
 
         $nextClaimant = $this->fetchClaimantById($companyId, $nextClaimantId);
@@ -577,12 +927,8 @@ final class ExpenseClaimService
             return ['success' => false, 'errors' => ['That claimant already has a claim for the selected month.']];
         }
 
-        $derivedPeriod = $this->deriveMonthlyPeriod($nextPeriod['year'], $nextPeriod['month']);
-        $accountingPeriodId = $this->deriveAccountingPeriodId($companyId, $derivedPeriod['period_start'], $derivedPeriod['period_end']);
-
-        if ($accountingPeriodId <= 0) {
-            return ['success' => false, 'errors' => ['No accounting period overlaps the selected claim month.']];
-        }
+        $derivedPeriod = $claimPeriodValidation['period'];
+        $accountingPeriodId = (int)$claimPeriodValidation['accounting_period_id'];
 
         \InterfaceDB::prepare(
             'UPDATE expense_claims
@@ -641,9 +987,7 @@ final class ExpenseClaimService
         $amount = round((float)$payload['amount'], 2);
         $nominalAccountId = isset($payload['nominal_account_id']) && (int)$payload['nominal_account_id'] > 0
             ? (int)$payload['nominal_account_id']
-            : (isset($payload['default_expense_nominal_id']) && (int)$payload['default_expense_nominal_id'] > 0
-                ? (int)$payload['default_expense_nominal_id']
-                : null);
+            : null;
         $receiptReference = trim((string)($payload['receipt_reference'] ?? ''));
         $notes = trim((string)($payload['notes'] ?? ''));
 
@@ -705,6 +1049,7 @@ final class ExpenseClaimService
                 'receipt_reference' => $receiptReference !== '' ? $receiptReference : null,
                 'notes' => $notes !== '' ? $notes : null,
             ]);
+            $this->clearNoLinesConfirmation($companyId, $claimId);
         }
 
         $this->recalculateClaimSeries($companyId, (int)$claim['claimant_id']);
@@ -815,51 +1160,69 @@ final class ExpenseClaimService
             return $parsed;
         }
 
+        $existingLineKeys = $this->bulkLineDedupeKeys((array)($claim['lines'] ?? []));
+        $rowsToImport = [];
+        $duplicateCount = 0;
+
+        foreach ((array)$parsed['rows'] as $row) {
+            $dedupeKey = $this->bulkLineDedupeKey($row);
+            if (isset($existingLineKeys[$dedupeKey])) {
+                $duplicateCount++;
+                continue;
+            }
+
+            $existingLineKeys[$dedupeKey] = true;
+            $rowsToImport[] = $row;
+        }
+
         $ownsTransaction = !\InterfaceDB::inTransaction();
-        if ($ownsTransaction) {
+        if ($rowsToImport !== [] && $ownsTransaction) {
             \InterfaceDB::beginTransaction();
         }
 
         try {
-            $lineNumber = $this->nextLineNumber($claimId);
-            foreach ((array)$parsed['rows'] as $row) {
-                \InterfaceDB::prepare(
-                    'INSERT INTO expense_claim_lines (
-                        expense_claim_id,
-                        line_number,
-                        expense_date,
-                        description,
-                        amount,
-                        nominal_account_id,
-                        receipt_reference,
-                        notes,
-                        created_at,
-                        updated_at
-                     ) VALUES (
-                        :expense_claim_id,
-                        :line_number,
-                        :expense_date,
-                        :description,
-                        :amount,
-                        NULL,
-                        NULL,
-                        NULL,
-                        CURRENT_TIMESTAMP,
-                        CURRENT_TIMESTAMP
-                     )'
-                )->execute([
-                    'expense_claim_id' => $claimId,
-                    'line_number' => $lineNumber,
-                    'expense_date' => (string)$row['expense_date'],
-                    'description' => (string)$row['description'],
-                    'amount' => round((float)$row['amount'], 2),
-                ]);
-                $lineNumber++;
+            if ($rowsToImport !== []) {
+                $lineNumber = $this->nextLineNumber($claimId);
+                foreach ($rowsToImport as $row) {
+                    \InterfaceDB::prepare(
+                        'INSERT INTO expense_claim_lines (
+                            expense_claim_id,
+                            line_number,
+                            expense_date,
+                            description,
+                            amount,
+                            nominal_account_id,
+                            receipt_reference,
+                            notes,
+                            created_at,
+                            updated_at
+                         ) VALUES (
+                            :expense_claim_id,
+                            :line_number,
+                            :expense_date,
+                            :description,
+                            :amount,
+                            NULL,
+                            NULL,
+                            NULL,
+                            CURRENT_TIMESTAMP,
+                            CURRENT_TIMESTAMP
+                         )'
+                    )->execute([
+                        'expense_claim_id' => $claimId,
+                        'line_number' => $lineNumber,
+                        'expense_date' => (string)$row['expense_date'],
+                        'description' => trim((string)$row['description']),
+                        'amount' => round((float)$row['amount'], 2),
+                    ]);
+                    $lineNumber++;
+                }
+
+                $this->clearNoLinesConfirmation($companyId, $claimId);
+                $this->recalculateClaimSeries($companyId, (int)$claim['claimant_id']);
             }
 
-            $this->recalculateClaimSeries($companyId, (int)$claim['claimant_id']);
-
-            if ($ownsTransaction) {
+            if ($rowsToImport !== [] && $ownsTransaction) {
                 \InterfaceDB::commit();
             }
         } catch (\Throwable $exception) {
@@ -874,7 +1237,7 @@ final class ExpenseClaimService
             'success' => true,
             'claim' => $this->fetchClaim($companyId, $claimId),
             'claims' => $this->listClaims($companyId),
-            'messages' => [sprintf('%d expense line%s imported.', count((array)$parsed['rows']), count((array)$parsed['rows']) === 1 ? '' : 's')],
+            'messages' => [$this->bulkImportMessage(count($rowsToImport), $duplicateCount)],
         ];
     }
 
@@ -890,6 +1253,11 @@ final class ExpenseClaimService
 
         if ($lineId <= 0) {
             return ['success' => false, 'errors' => ['Select a valid expense line.']];
+        }
+
+        $line = $this->fetchClaimLine($claimId, $lineId);
+        if ($line !== null && (string)($line['line_type'] ?? 'expense') === 'asset') {
+            return ['success' => false, 'errors' => ['Switch the line back to Expense before choosing an expense charge.']];
         }
 
         \InterfaceDB::prepare(
@@ -908,7 +1276,100 @@ final class ExpenseClaimService
             'success' => true,
             'claim' => $this->fetchClaim($companyId, $claimId),
             'claims' => $this->listClaims($companyId),
-            'messages' => ['Line nominal saved.'],
+            'messages' => ['Line charge saved.'],
+        ];
+    }
+
+    public function updateLineType(int $companyId, int $claimId, int $lineId, string $lineType): array {
+        $claim = $this->fetchClaim($companyId, $claimId);
+        if ($claim === null) {
+            return ['success' => false, 'errors' => ['The selected claim could not be found.']];
+        }
+
+        if ((string)$claim['status'] === 'posted') {
+            return ['success' => false, 'errors' => ['Posted claims are locked.']];
+        }
+
+        $line = $this->fetchClaimLine($claimId, $lineId);
+        if ($line === null) {
+            return ['success' => false, 'errors' => ['Select a valid expense line.']];
+        }
+
+        $lineType = strtolower(trim($lineType));
+        if (!in_array($lineType, ['expense', 'asset'], true)) {
+            return ['success' => false, 'errors' => ['Choose Expense or Asset for the line type.']];
+        }
+
+        if ($lineType === 'asset') {
+            $this->upsertLineAssetDetails($line, [
+                'category' => 'tools_equipment',
+                'description' => (string)($line['description'] ?? ''),
+                'useful_life_years' => 3,
+                'depreciation_method' => 'straight_line',
+                'residual_value' => 0,
+            ]);
+            \InterfaceDB::prepare(
+                'UPDATE expense_claim_lines
+                 SET nominal_account_id = NULL,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = :id
+                   AND expense_claim_id = :expense_claim_id'
+            )->execute([
+                'id' => $lineId,
+                'expense_claim_id' => $claimId,
+            ]);
+        } else {
+            \InterfaceDB::prepare(
+                'DELETE FROM expense_claim_line_assets
+                 WHERE expense_claim_line_id = :expense_claim_line_id'
+            )->execute(['expense_claim_line_id' => $lineId]);
+        }
+
+        return [
+            'success' => true,
+            'claim' => $this->fetchClaim($companyId, $claimId),
+            'claims' => $this->listClaims($companyId),
+            'messages' => ['Line type saved.'],
+        ];
+    }
+
+    public function saveLineAssetDetails(int $companyId, int $claimId, int $lineId, array $payload): array {
+        $claim = $this->fetchClaim($companyId, $claimId);
+        if ($claim === null) {
+            return ['success' => false, 'errors' => ['The selected claim could not be found.']];
+        }
+
+        if ((string)$claim['status'] === 'posted') {
+            return ['success' => false, 'errors' => ['Posted claims are locked.']];
+        }
+
+        $line = $this->fetchClaimLine($claimId, $lineId);
+        if ($line === null) {
+            return ['success' => false, 'errors' => ['Select a valid expense line.']];
+        }
+
+        $normalised = $this->normaliseLineAssetPayload($line, $payload, (int)$claim['accounting_period_id'], $companyId);
+        if ($normalised['errors'] !== []) {
+            return ['success' => false, 'errors' => $normalised['errors']];
+        }
+
+        $this->upsertLineAssetDetails($line, $normalised['values']);
+        \InterfaceDB::prepare(
+            'UPDATE expense_claim_lines
+             SET nominal_account_id = NULL,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = :id
+               AND expense_claim_id = :expense_claim_id'
+        )->execute([
+            'id' => $lineId,
+            'expense_claim_id' => $claimId,
+        ]);
+
+        return [
+            'success' => true,
+            'claim' => $this->fetchClaim($companyId, $claimId),
+            'claims' => $this->listClaims($companyId),
+            'messages' => ['Asset details saved.'],
         ];
     }
 
@@ -919,10 +1380,6 @@ final class ExpenseClaimService
         }
         (new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, (int)($claim['accounting_period_id'] ?? 0), 'link expense repayments in this period');
 
-        if ((string)$claim['status'] === 'posted') {
-            return ['success' => false, 'errors' => ['Posted claims are locked.']];
-        }
-
         $transactionId = isset($payload['transaction_id']) ? (int)$payload['transaction_id'] : 0;
         $defaultExpenseNominalId = isset($payload['default_expense_nominal_id']) ? (int)$payload['default_expense_nominal_id'] : 0;
         $defaultBankNominalId = isset($payload['default_bank_nominal_id']) ? (int)$payload['default_bank_nominal_id'] : 0;
@@ -932,7 +1389,7 @@ final class ExpenseClaimService
         }
 
         if ($defaultExpenseNominalId <= 0) {
-            return ['success' => false, 'errors' => ['Set the default expense nominal before linking repayments.']];
+            return ['success' => false, 'errors' => ['Set the expense claims payable nominal before linking repayments.']];
         }
 
         $transaction = $this->categorisationService->fetchTransaction($transactionId);
@@ -1155,9 +1612,9 @@ final class ExpenseClaimService
             return ['success' => false, 'errors' => ['Claim reference code is missing.']];
         }
 
-        $defaultExpenseNominalId = isset($payload['default_expense_nominal_id']) ? (int)$payload['default_expense_nominal_id'] : 0;
-        if ($defaultExpenseNominalId <= 0) {
-            return ['success' => false, 'errors' => ['Set the default expense nominal before posting a claim.']];
+        $expenseClaimsPayableNominalId = isset($payload['default_expense_nominal_id']) ? (int)$payload['default_expense_nominal_id'] : 0;
+        if ($expenseClaimsPayableNominalId <= 0) {
+            return ['success' => false, 'errors' => ['Set the expense claims payable nominal before submitting a claim.']];
         }
 
         $lines = $this->fetchClaimLines($claimId);
@@ -1166,16 +1623,17 @@ final class ExpenseClaimService
         }
 
         foreach ($lines as $line) {
-            $lineErrors = $this->validateLineForPosting($line);
+            $lineErrors = $this->validateLineForPosting($companyId, (int)$claim['accounting_period_id'], $line);
             if ($lineErrors !== []) {
                 return ['success' => false, 'errors' => $lineErrors];
             }
         }
 
-        $totalClaimed = round((float)$claim['claimed_amount'], 2);
+        $totalClaimed = $this->sumClaimLines($claimId);
         if ($totalClaimed <= 0) {
             return ['success' => false, 'errors' => ['Claim total must be greater than zero before posting.']];
         }
+        $this->recalculateClaimSeries($companyId, (int)$claim['claimant_id']);
 
         $existingJournal = $this->fetchExistingExpenseJournal($companyId, (string)$claim['claim_reference_code']);
         if ($existingJournal !== null) {
@@ -1224,7 +1682,42 @@ final class ExpenseClaimService
                 throw new \RuntimeException('The expense journal could not be created.');
             }
 
+            $assetService = new \eel_accounts\Service\AssetService();
             foreach ($lines as $line) {
+                if ((string)($line['line_type'] ?? 'expense') === 'asset') {
+                    $normalisedAsset = $this->normaliseAssetValuesForPosting($assetService, $companyId, (int)$claim['accounting_period_id'], $line);
+                    if ($normalisedAsset['errors'] !== []) {
+                        throw new \RuntimeException(implode(' ', $normalisedAsset['errors']));
+                    }
+
+                    $values = (array)$normalisedAsset['values'];
+                    $this->insertJournalLine(
+                        (int)$journal['id'],
+                        (int)$values['nominal_account_id'],
+                        round((float)$line['amount'], 2),
+                        0.0,
+                        (string)$line['description']
+                    );
+                    $asset = $assetService->createAssetRecordFromValues($values, [
+                        'linked_journal_id' => (int)$journal['id'],
+                        'linked_transaction_id' => null,
+                        'linked_expense_claim_line_id' => (int)$line['id'],
+                    ]);
+                    if ($asset === null) {
+                        throw new \RuntimeException('The asset could not be reloaded after save.');
+                    }
+                    \InterfaceDB::prepare(
+                        'UPDATE expense_claim_line_assets
+                         SET generated_asset_id = :generated_asset_id,
+                             updated_at = CURRENT_TIMESTAMP
+                         WHERE expense_claim_line_id = :expense_claim_line_id'
+                    )->execute([
+                        'generated_asset_id' => (int)$asset['id'],
+                        'expense_claim_line_id' => (int)$line['id'],
+                    ]);
+                    continue;
+                }
+
                 $this->insertJournalLine(
                     (int)$journal['id'],
                     (int)$line['nominal_account_id'],
@@ -1236,7 +1729,7 @@ final class ExpenseClaimService
 
             $this->insertJournalLine(
                 (int)$journal['id'],
-                $defaultExpenseNominalId,
+                $expenseClaimsPayableNominalId,
                 0.0,
                 $totalClaimed,
                 'Expense claim payable'
@@ -1286,38 +1779,23 @@ final class ExpenseClaimService
         return $stmt->fetchAll() ?: [];
     }
 
+    private function fetchClaimLine(int $claimId, int $lineId): ?array {
+        foreach ($this->fetchClaimLines($claimId) as $line) {
+            if ((int)($line['id'] ?? 0) === $lineId) {
+                return $line;
+            }
+        }
+
+        return null;
+    }
+
     public function recalculateClaim(int $claimId): void {
         $claimRow = $this->fetchClaimRow($claimId);
         if ($claimRow === null) {
             return;
         }
 
-        $broughtForward = $this->previousCarryForward(
-            (int)$claimRow['company_id'],
-            (int)$claimRow['claimant_id'],
-            $claimId,
-            (string)$claimRow['period_start']
-        );
-
-        $claimed = $this->sumClaimLines($claimId);
-        $payments = $this->sumPayments($claimId);
-        $carriedForward = round($broughtForward + $claimed - $payments, 2);
-
-        \InterfaceDB::prepare(
-            'UPDATE expense_claims
-             SET brought_forward_amount = :brought_forward_amount,
-                 claimed_amount = :claimed_amount,
-                 payments_amount = :payments_amount,
-                 carried_forward_amount = :carried_forward_amount,
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE id = :id'
-        )->execute([
-            'brought_forward_amount' => $broughtForward,
-            'claimed_amount' => $claimed,
-            'payments_amount' => $payments,
-            'carried_forward_amount' => $carriedForward,
-            'id' => $claimId,
-        ]);
+        $this->recalculateClaimSeries((int)$claimRow['company_id'], (int)$claimRow['claimant_id']);
     }
 
     public function recalculateClaimSeries(int $companyId, int $claimantId): void {
@@ -1325,20 +1803,42 @@ final class ExpenseClaimService
             return;
         }
 
-        $claimIds = array_map('intval', \InterfaceDB::fetchAll( 'SELECT id
+        $claims = \InterfaceDB::fetchAll( 'SELECT id,
+                    brought_forward_amount,
+                    claimed_amount,
+                    payments_amount,
+                    carried_forward_amount
              FROM expense_claims
              WHERE company_id = :company_id
                AND claimant_id = :claimant_id
              ORDER BY period_start ASC, id ASC', [
             'company_id' => $companyId,
             'claimant_id' => $claimantId,
-        ]));
+        ]);
+        if ($claims === []) {
+            return;
+        }
+
+        $claimIds = array_values(array_map(static fn(array $claim): int => (int)$claim['id'], $claims));
+        $lineTotals = $this->fetchClaimLineTotals($claimIds);
+        $paymentTotals = $this->fetchClaimPaymentTotals($claimIds);
         $broughtForward = 0.0;
 
-        foreach ($claimIds as $seriesClaimId) {
-            $claimed = $this->sumClaimLines($seriesClaimId);
-            $payments = $this->sumPayments($seriesClaimId);
+        foreach ($claims as $claim) {
+            $seriesClaimId = (int)$claim['id'];
+            $claimed = (float)($lineTotals[$seriesClaimId] ?? 0.0);
+            $payments = (float)($paymentTotals[$seriesClaimId] ?? 0.0);
             $carriedForward = round($broughtForward + $claimed - $payments, 2);
+
+            if (
+                round((float)$claim['brought_forward_amount'], 2) === $broughtForward
+                && round((float)$claim['claimed_amount'], 2) === $claimed
+                && round((float)$claim['payments_amount'], 2) === $payments
+                && round((float)$claim['carried_forward_amount'], 2) === $carriedForward
+            ) {
+                $broughtForward = $carriedForward;
+                continue;
+            }
 
             \InterfaceDB::prepare(
                 'UPDATE expense_claims
@@ -1360,9 +1860,86 @@ final class ExpenseClaimService
         }
     }
 
+    public function recalculateCompanyClaimSeries(int $companyId): void {
+        if ($companyId <= 0) {
+            return;
+        }
+
+        $claimants = \InterfaceDB::fetchAll(
+            'SELECT DISTINCT claimant_id
+             FROM expense_claims
+             WHERE company_id = :company_id
+             ORDER BY claimant_id ASC',
+            ['company_id' => $companyId]
+        );
+
+        foreach ($claimants as $claimant) {
+            $this->recalculateClaimSeries($companyId, (int)($claimant['claimant_id'] ?? 0));
+        }
+    }
+
+    /**
+     * @param list<int> $claimIds
+     * @return array<int, float>
+     */
+    private function fetchClaimLineTotals(array $claimIds): array {
+        return $this->fetchClaimTotalsByTable($claimIds, 'expense_claim_lines', 'amount');
+    }
+
+    /**
+     * @param list<int> $claimIds
+     * @return array<int, float>
+     */
+    private function fetchClaimPaymentTotals(array $claimIds): array {
+        return $this->fetchClaimTotalsByTable($claimIds, 'expense_claim_payment_links', 'linked_amount');
+    }
+
+    /**
+     * @param list<int> $claimIds
+     * @return array<int, float>
+     */
+    private function fetchClaimTotalsByTable(array $claimIds, string $table, string $amountColumn): array {
+        $claimIds = array_values(array_filter(array_map('intval', $claimIds), static fn(int $claimId): bool => $claimId > 0));
+        if ($claimIds === []) {
+            return [];
+        }
+
+        if (!in_array($table, ['expense_claim_lines', 'expense_claim_payment_links'], true)) {
+            return [];
+        }
+        if (!in_array($amountColumn, ['amount', 'linked_amount'], true)) {
+            return [];
+        }
+
+        $totals = [];
+        foreach (array_chunk($claimIds, 500) as $chunk) {
+            $placeholders = implode(', ', array_fill(0, count($chunk), '?'));
+            $rows = \InterfaceDB::fetchAll(
+                'SELECT expense_claim_id, COALESCE(SUM(' . $amountColumn . '), 0) AS total
+                 FROM ' . $table . '
+                 WHERE expense_claim_id IN (' . $placeholders . ')
+                 GROUP BY expense_claim_id',
+                $chunk
+            );
+
+            foreach ($rows as $row) {
+                $totals[(int)$row['expense_claim_id']] = round((float)$row['total'], 2);
+            }
+        }
+
+        return $totals;
+    }
+
     private function fetchClaimLines(int $claimId): array {
+        $assetCategories = \eel_accounts\Service\AssetService::assetCategoryOptions();
+
         return array_map(
-            static function (array $row): array {
+            static function (array $row) use ($assetCategories): array {
+                $assetCategory = trim((string)($row['asset_category'] ?? ''));
+                $assetCategoryLabel = $assetCategory !== ''
+                    ? (string)($assetCategories[$assetCategory] ?? $assetCategory)
+                    : '';
+
                 return [
                     'id' => (int)$row['id'],
                     'expense_claim_id' => (int)$row['expense_claim_id'],
@@ -1371,8 +1948,17 @@ final class ExpenseClaimService
                     'description' => (string)$row['description'],
                     'amount' => round((float)$row['amount'], 2),
                     'nominal_account_id' => isset($row['nominal_account_id']) ? (int)$row['nominal_account_id'] : null,
+                    'line_type' => $assetCategory !== '' ? 'asset' : 'expense',
                     'receipt_reference' => (string)($row['receipt_reference'] ?? ''),
                     'notes' => (string)($row['notes'] ?? ''),
+                    'asset_category' => $assetCategory,
+                    'asset_category_label' => $assetCategoryLabel,
+                    'asset_description' => (string)($row['asset_description'] ?? ''),
+                    'asset_useful_life_years' => isset($row['asset_useful_life_years']) ? (int)$row['asset_useful_life_years'] : 3,
+                    'asset_depreciation_method' => (string)($row['asset_depreciation_method'] ?? 'straight_line'),
+                    'asset_residual_value' => round((float)($row['asset_residual_value'] ?? 0), 2),
+                    'generated_asset_id' => isset($row['generated_asset_id']) ? (int)$row['generated_asset_id'] : null,
+                    'asset_code' => (string)($row['asset_code'] ?? ''),
                     'nominal_label' => trim((string)($row['nominal_code'] ?? '')) !== ''
                         ? (string)$row['nominal_code'] . ' - ' . (string)($row['nominal_name'] ?? '')
                         : (string)($row['nominal_name'] ?? ''),
@@ -1389,10 +1975,19 @@ final class ExpenseClaimService
                     l.notes,
                     l.created_at,
                     l.updated_at,
+                    la.category AS asset_category,
+                    la.description AS asset_description,
+                    la.useful_life_years AS asset_useful_life_years,
+                    la.depreciation_method AS asset_depreciation_method,
+                    la.residual_value AS asset_residual_value,
+                    la.generated_asset_id,
+                    ar.asset_code,
                     n.code AS nominal_code,
                     n.name AS nominal_name
              FROM expense_claim_lines l
              LEFT JOIN nominal_accounts n ON n.id = l.nominal_account_id
+             LEFT JOIN expense_claim_line_assets la ON la.expense_claim_line_id = l.id
+             LEFT JOIN asset_register ar ON ar.id = la.generated_asset_id
              WHERE l.expense_claim_id = :expense_claim_id
              ORDER BY l.line_number ASC, l.id ASC', ['expense_claim_id' => $claimId])
         );
@@ -1504,31 +2099,9 @@ final class ExpenseClaimService
         return is_array($row) ? $row : null;
     }
 
-    private function previousCarryForward(int $companyId, int $claimantId, int $claimId, string $periodStart): float {
-        return round((float)\InterfaceDB::fetchColumn( 'SELECT carried_forward_amount
-             FROM expense_claims
-             WHERE company_id = :company_id
-               AND claimant_id = :claimant_id
-               AND id <> :id
-               AND period_start < :period_start
-             ORDER BY period_start DESC, id DESC
-             LIMIT 1', [
-            'company_id' => $companyId,
-            'claimant_id' => $claimantId,
-            'id' => $claimId,
-            'period_start' => $periodStart,
-        ]), 2);
-    }
-
     private function sumClaimLines(int $claimId): float {
         return round((float)\InterfaceDB::fetchColumn( 'SELECT COALESCE(SUM(amount), 0)
              FROM expense_claim_lines
-             WHERE expense_claim_id = :expense_claim_id', ['expense_claim_id' => $claimId]), 2);
-    }
-
-    private function sumPayments(int $claimId): float {
-        return round((float)\InterfaceDB::fetchColumn( 'SELECT COALESCE(SUM(linked_amount), 0)
-             FROM expense_claim_payment_links
              WHERE expense_claim_id = :expense_claim_id', ['expense_claim_id' => $claimId]), 2);
     }
 
@@ -1706,6 +2279,46 @@ final class ExpenseClaimService
         ];
     }
 
+    private function bulkLineDedupeKeys(array $lines): array {
+        $keys = [];
+
+        foreach ($lines as $line) {
+            if (is_array($line)) {
+                $keys[$this->bulkLineDedupeKey($line)] = true;
+            }
+        }
+
+        return $keys;
+    }
+
+    private function bulkLineDedupeKey(array $line): string {
+        return implode("\t", [
+            (string)($line['expense_date'] ?? ''),
+            trim((string)($line['description'] ?? '')),
+            number_format(round((float)($line['amount'] ?? 0), 2), 2, '.', ''),
+        ]);
+    }
+
+    private function bulkImportMessage(int $importedCount, int $duplicateCount): string {
+        $message = sprintf(
+            '%d expense line%s imported.',
+            $importedCount,
+            $importedCount === 1 ? '' : 's'
+        );
+
+        if ($duplicateCount > 0) {
+            $message = sprintf(
+                '%d expense line%s imported; %d duplicate line%s skipped.',
+                $importedCount,
+                $importedCount === 1 ? '' : 's',
+                $duplicateCount,
+                $duplicateCount === 1 ? '' : 's'
+            );
+        }
+
+        return $message;
+    }
+
     private function bulkLineIsIgnorable(array $cells): bool {
         $joined = strtolower(trim(implode(' ', $cells)));
         $normalised = preg_replace('/\s+/', ' ', $joined) ?: $joined;
@@ -1774,15 +2387,102 @@ final class ExpenseClaimService
             : 'd/m/Y';
     }
 
-    private function validateLineForPosting(array $line): array {
+    private function normaliseLineAssetPayload(array $line, array $payload, int $accountingPeriodId, int $companyId): array {
+        $assetService = new \eel_accounts\Service\AssetService();
+        $normalised = $assetService->normaliseAssetValues($companyId, [
+            'description' => trim((string)($line['description'] ?? '')),
+            'category' => trim((string)($payload['asset_category'] ?? $payload['category'] ?? $line['asset_category'] ?? 'tools_equipment')),
+            'purchase_date' => (string)($line['expense_date'] ?? ''),
+            'cost' => (float)($line['amount'] ?? 0),
+            'useful_life_years' => (int)($payload['asset_useful_life_years'] ?? $payload['useful_life_years'] ?? $line['asset_useful_life_years'] ?? 3),
+            'depreciation_method' => trim((string)($payload['asset_depreciation_method'] ?? $payload['depreciation_method'] ?? $line['asset_depreciation_method'] ?? 'straight_line')),
+            'residual_value' => (float)($payload['asset_residual_value'] ?? $payload['residual_value'] ?? $line['asset_residual_value'] ?? 0),
+            'accounting_period_id' => $accountingPeriodId,
+        ], [
+            'description' => (string)($line['description'] ?? ''),
+            'purchase_date' => (string)($line['expense_date'] ?? ''),
+            'cost' => (float)($line['amount'] ?? 0),
+            'accounting_period_id' => $accountingPeriodId,
+        ]);
+
+        return $normalised;
+    }
+
+    private function normaliseAssetValuesForPosting(\eel_accounts\Service\AssetService $assetService, int $companyId, int $accountingPeriodId, array $line): array {
+        return $assetService->normaliseAssetValues($companyId, [
+            'description' => trim((string)($line['description'] ?? '')),
+            'category' => (string)($line['asset_category'] ?? 'tools_equipment'),
+            'purchase_date' => (string)($line['expense_date'] ?? ''),
+            'cost' => (float)($line['amount'] ?? 0),
+            'useful_life_years' => (int)($line['asset_useful_life_years'] ?? 3),
+            'depreciation_method' => (string)($line['asset_depreciation_method'] ?? 'straight_line'),
+            'residual_value' => (float)($line['asset_residual_value'] ?? 0),
+            'accounting_period_id' => $accountingPeriodId,
+        ], [
+            'description' => (string)($line['description'] ?? ''),
+            'purchase_date' => (string)($line['expense_date'] ?? ''),
+            'cost' => (float)($line['amount'] ?? 0),
+            'accounting_period_id' => $accountingPeriodId,
+        ]);
+    }
+
+    private function upsertLineAssetDetails(array $line, array $values): void {
+        $lineId = (int)($line['id'] ?? 0);
+        if ($lineId <= 0) {
+            return;
+        }
+
+        \InterfaceDB::prepare(
+            'INSERT INTO expense_claim_line_assets (
+                expense_claim_line_id,
+                category,
+                description,
+                useful_life_years,
+                depreciation_method,
+                residual_value,
+                created_at,
+                updated_at
+             ) VALUES (
+                :expense_claim_line_id,
+                :category,
+                :description,
+                :useful_life_years,
+                :depreciation_method,
+                :residual_value,
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP
+             )
+             ON DUPLICATE KEY UPDATE
+                category = VALUES(category),
+                description = VALUES(description),
+                useful_life_years = VALUES(useful_life_years),
+                depreciation_method = VALUES(depreciation_method),
+                residual_value = VALUES(residual_value),
+                updated_at = CURRENT_TIMESTAMP'
+        )->execute([
+            'expense_claim_line_id' => $lineId,
+            'category' => (string)($values['category'] ?? 'tools_equipment'),
+            'description' => trim((string)($values['description'] ?? '')) !== '' ? trim((string)$values['description']) : null,
+            'useful_life_years' => max(1, (int)($values['useful_life_years'] ?? 3)),
+            'depreciation_method' => (string)($values['depreciation_method'] ?? 'straight_line'),
+            'residual_value' => round((float)($values['residual_value'] ?? 0), 2),
+        ]);
+    }
+
+    private function validateLineForPosting(int $companyId, int $accountingPeriodId, array $line): array {
         $errors = $this->validateLinePayload([
             'expense_date' => (string)($line['expense_date'] ?? ''),
             'description' => (string)($line['description'] ?? ''),
             'amount' => (float)($line['amount'] ?? 0),
         ]);
 
+        if ((string)($line['line_type'] ?? 'expense') === 'asset') {
+            $normalised = $this->normaliseAssetValuesForPosting(new \eel_accounts\Service\AssetService(), $companyId, $accountingPeriodId, $line);
+            return array_merge($errors, $normalised['errors']);
+        }
+
         if ((int)($line['nominal_account_id'] ?? 0) <= 0) {
-            $errors[] = 'Every expense line needs a nominal account before posting.';
+            $errors[] = 'Every expense line needs a Charge To value before submitting.';
         }
 
         return $errors;
@@ -1798,44 +2498,52 @@ final class ExpenseClaimService
         ];
     }
 
-    private function deriveAccountingPeriodId(int $companyId, string $periodStart, string $periodEnd): int {
-        $stmt = \InterfaceDB::prepare(
-            'SELECT id, period_start, period_end
-             FROM accounting_periods
-             WHERE company_id = :company_id
-               AND period_end >= :period_start
-               AND period_start <= :period_end
-             ORDER BY period_start ASC, period_end ASC'
-        );
-        $stmt->execute([
-            'company_id' => $companyId,
-            'period_start' => $periodStart,
-            'period_end' => $periodEnd,
-        ]);
+    private function validateClaimPeriodSelection(int $companyId, int $claimYear, int $claimMonth): array {
+        $period = $this->deriveMonthlyPeriod($claimYear, $claimMonth);
+        $errors = [];
 
-        $bestId = 0;
-        $bestOverlapDays = -1;
-        $targetStart = new \DateTimeImmutable($periodStart);
-        $targetEnd = new \DateTimeImmutable($periodEnd);
-
-        foreach ($stmt->fetchAll() ?: [] as $row) {
-            $rowStart = new \DateTimeImmutable((string)$row['period_start']);
-            $rowEnd = new \DateTimeImmutable((string)$row['period_end']);
-            $overlapStart = $rowStart > $targetStart ? $rowStart : $targetStart;
-            $overlapEnd = $rowEnd < $targetEnd ? $rowEnd : $targetEnd;
-
-            if ($overlapEnd < $overlapStart) {
-                continue;
-            }
-
-            $days = (int)$overlapStart->diff($overlapEnd)->format('%a');
-            if ($days > $bestOverlapDays) {
-                $bestOverlapDays = $days;
-                $bestId = (int)$row['id'];
-            }
+        if ($this->claimMonthIsAfterCurrentMonth($claimYear, $claimMonth)) {
+            $errors[] = 'Claim month cannot be in the future.';
         }
 
-        return $bestId;
+        $incorporationDate = $this->fetchCompanyIncorporationDate($companyId);
+        if ($incorporationDate !== '' && !$this->periodIsOnOrAfterIncorporation($claimYear, $claimMonth, $incorporationDate)) {
+            $errors[] = 'Claim month cannot be earlier than the company incorporation date.';
+        }
+
+        $accountingPeriodId = $this->resolveAccountingPeriodIdForDate($companyId, $period['period_end']);
+        if ($accountingPeriodId <= 0) {
+            $errors[] = 'Claim month must fall inside an accounting period.';
+        }
+
+        return [
+            'errors' => $errors,
+            'period' => $period,
+            'accounting_period_id' => $accountingPeriodId,
+        ];
+    }
+
+    private function claimMonthIsAfterCurrentMonth(int $claimYear, int $claimMonth): bool {
+        $claimMonthStart = new \DateTimeImmutable(sprintf('%04d-%02d-01', $claimYear, $claimMonth));
+        $currentMonthStart = new \DateTimeImmutable('first day of this month');
+
+        return $claimMonthStart > $currentMonthStart;
+    }
+
+    private function fetchCompanyIncorporationDate(int $companyId): string {
+        if ($companyId <= 0) {
+            return '';
+        }
+
+        $value = (string)(\InterfaceDB::fetchColumn(
+            'SELECT incorporation_date
+             FROM companies
+             WHERE id = :id
+             LIMIT 1',
+            ['id' => $companyId]
+        ) ?: '');
+
+        return $this->isValidDate($value) ? $value : '';
     }
 
     private function generateUniqueReferenceCode(int $companyId, int $claimYear, int $claimMonth): string {
@@ -1856,6 +2564,26 @@ final class ExpenseClaimService
             'company_id' => $companyId,
             'claim_reference_code' => $referenceCode,
         ]) > 0;
+    }
+
+    private function clearNoLinesConfirmation(int $companyId, int $claimId): void {
+        \InterfaceDB::prepare(
+            'UPDATE expense_claims
+             SET no_lines_confirmed_at = NULL,
+                 no_lines_confirmed_by = NULL,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = :id
+               AND company_id = :company_id
+               AND no_lines_confirmed_at IS NOT NULL'
+        )->execute([
+            'id' => $claimId,
+            'company_id' => $companyId,
+        ]);
+    }
+
+    private function actorValue(string $changedBy): string {
+        $changedBy = trim($changedBy);
+        return $changedBy !== '' ? substr($changedBy, 0, 100) : 'web_app';
     }
 
     private function fetchExistingExpenseJournal(int $companyId, string $sourceRef): ?array {
@@ -1971,9 +2699,23 @@ final class ExpenseClaimService
             'C' => round((float)$claim['payments_amount'], 2),
             'D' => round((float)$claim['carried_forward_amount'], 2),
             'status' => (string)$claim['status'],
+            'status_label' => $this->claimStatusLabel($claim),
+            'line_count' => (int)($claim['line_count'] ?? 0),
             'payment_link_count' => (int)($claim['payment_link_count'] ?? 0),
             'last_updated' => (string)$claim['updated_at'],
         ];
+    }
+
+    private function claimStatusLabel(array $claim): string {
+        if (
+            (string)($claim['status'] ?? '') === 'draft'
+            && (int)($claim['line_count'] ?? count((array)($claim['lines'] ?? []))) === 0
+            && (int)($claim['payment_link_count'] ?? count((array)($claim['payment_links'] ?? []))) > 0
+        ) {
+            return 'Repayment Only';
+        }
+
+        return ucfirst((string)($claim['status'] ?? ''));
     }
 
     private function isValidDate(string $value): bool {

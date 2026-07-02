@@ -81,6 +81,9 @@ final class _source_accounts extends PageContextFramework
 
         return [
             'edit_account_id' => $editAccountId,
+            'uploads' => [
+                'id' => 0,
+            ],
             'field_mapping' => [
                 'account_id' => max(0, (int)$request->input(
                     'field_mapping_account_id',

@@ -22,8 +22,8 @@ final class _year_end_stateCard extends CardBaseFramework
                 'service' => \eel_accounts\Service\YearEndChecklistService::class,
                 'method' => 'fetchChecklist',
                 'params' => [
-                    'companyId' => ':company_id',
-                    'accountingPeriodId' => ':accounting_period_id',
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                     'persist' => false,
                 ],
             ],
@@ -32,8 +32,8 @@ final class _year_end_stateCard extends CardBaseFramework
                 'service' => \eel_accounts\Service\YearEndTaxReadinessService::class,
                 'method' => 'fetchSummary',
                 'params' => [
-                    'companyId' => ':company_id',
-                    'accountingPeriodId' => ':accounting_period_id',
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
             [
@@ -41,8 +41,8 @@ final class _year_end_stateCard extends CardBaseFramework
                 'service' => \eel_accounts\Service\OpeningBalanceService::class,
                 'method' => 'fetchContext',
                 'params' => [
-                    'companyId' => ':company_id',
-                    'accountingPeriodId' => ':accounting_period_id',
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
             [
@@ -50,8 +50,17 @@ final class _year_end_stateCard extends CardBaseFramework
                 'service' => \eel_accounts\Service\YearEndAdjustmentService::class,
                 'method' => 'fetchContext',
                 'params' => [
-                    'companyId' => ':company_id',
-                    'accountingPeriodId' => ':accounting_period_id',
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                ],
+            ],
+            [
+                'key' => 'directorLoanOffset',
+                'service' => \eel_accounts\Service\DirectorLoanReconciliationService::class,
+                'method' => 'fetchContext',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
             [
@@ -59,8 +68,8 @@ final class _year_end_stateCard extends CardBaseFramework
                 'service' => \eel_accounts\Service\YearEndCompaniesHouseComparisonService::class,
                 'method' => 'fetchComparison',
                 'params' => [
-                    'companyId' => ':company_id',
-                    'accountingPeriodId' => ':accounting_period_id',
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
         ];
@@ -87,6 +96,7 @@ final class _year_end_stateCard extends CardBaseFramework
         $taxReadiness = (array)($context['services']['yearEndTaxReadiness'] ?? []);
         $openingBalances = (array)($context['services']['yearEndOpeningBalances'] ?? []);
         $adjustments = (array)($context['services']['yearEndAdjustments'] ?? []);
+        $directorLoanOffset = (array)($context['services']['directorLoanOffset'] ?? []);
         $comparison = (array)($context['services']['yearEndCompaniesHouseComparison'] ?? []);
         if ($checklist === []) {
             return '<div class="helper">Year-end checklist is not available for the selected accounting period.</div>';
@@ -97,6 +107,7 @@ final class _year_end_stateCard extends CardBaseFramework
             . $this->renderCheckSections($checklist)
             . $this->renderOpeningBalances($context, $openingBalances)
             . $this->renderAdjustments($context, $adjustments)
+            . $this->renderDirectorLoanOffset($context, $directorLoanOffset)
             . $this->renderTaxReadiness($taxReadiness)
             . $this->renderCompaniesHouseComparison($comparison);
     }
@@ -140,7 +151,7 @@ final class _year_end_stateCard extends CardBaseFramework
                     <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                     <div class="form-row full">
                         <label for="year-end-review-notes">Year end notes</label>
-                        <textarea class="input" id="year-end-review-notes" name="review_notes" style="min-height:120px;">' . HelperFramework::escape((string)($review['review_notes'] ?? '')) . '</textarea>
+                        <textarea class="input year-end-review-notes" id="year-end-review-notes" name="review_notes">' . HelperFramework::escape((string)($review['review_notes'] ?? '')) . '</textarea>
                     </div>
                     <div><button class="button primary" type="submit">Save notes</button></div>
                 </form>
@@ -166,6 +177,9 @@ final class _year_end_stateCard extends CardBaseFramework
             $parts = explode(' ', $label);
             $month = (string)($tile['month_short_name'] ?? ($parts[0] ?? ''));
             $year = (string)($parts[1] ?? '');
+            $confirmedEmptyHtml = !empty($tile['empty_month_confirmed'])
+                ? '<div class="helper">Confirmed no activity</div>'
+                : '';
             $tilesHtml .= '<div class="month-tile ' . HelperFramework::escape((string)($tile['status'] ?? 'red')) . '">
                 <div class="month-head">
                     <div><div class="month-name">' . HelperFramework::escape($month) . '</div><div class="month-year">' . HelperFramework::escape($year) . '</div></div>
@@ -173,8 +187,10 @@ final class _year_end_stateCard extends CardBaseFramework
                 </div>
                 <div class="month-metric">' . (int)($tile['transaction_count'] ?? 0) . '</div>
                 <div class="helper">' . (int)($tile['statement_upload_count'] ?? 0) . ' upload(s)</div>
+                <div class="helper">' . (int)($tile['posted_journal_count'] ?? 0) . ' posted journal(s)</div>
                 <div class="helper">' . (int)($tile['uncategorised_count'] ?? 0) . ' uncategorised</div>
                 <div class="helper">' . (int)($tile['suspense_count'] ?? 0) . ' suspense</div>
+                ' . $confirmedEmptyHtml . '
             </div>';
         }
 
@@ -206,14 +222,14 @@ final class _year_end_stateCard extends CardBaseFramework
     {
         $actionUrl = trim((string)($check['action_url'] ?? ''));
 
-        return '<div class="panel-soft">
+        return '<div class="panel-soft year-end-check-panel">
             <div class="status-head">
                 <h4 class="card-title">' . HelperFramework::escape((string)($check['title'] ?? '')) . '</h4>
                 <span class="badge ' . HelperFramework::escape($this->badgeClass((string)($check['status'] ?? ''))) . '">' . HelperFramework::escape(HelperFramework::labelFromKey((string)($check['status'] ?? ''), '_')) . '</span>
             </div>
             <div class="helper">' . HelperFramework::escape((string)($check['detail_text'] ?? '')) . '</div>
             ' . (trim((string)($check['metric_value'] ?? '')) !== '' ? '<div><strong>' . HelperFramework::escape((string)$check['metric_value']) . '</strong></div>' : '') . '
-            ' . ($actionUrl !== '' ? '<div><a class="button" href="' . HelperFramework::escape($actionUrl) . '">Open related workflow</a></div>' : '') . '
+            ' . ($actionUrl !== '' ? '<div class="year-end-related-workflow"><a class="button" href="' . HelperFramework::escape($actionUrl) . '">Open Related Workflow</a></div>' : '') . '
         </div>';
     }
 
@@ -375,6 +391,77 @@ final class _year_end_stateCard extends CardBaseFramework
         }
 
         return '<div><h4 class="card-title">Posted adjustments</h4><div class="table-scroll"><table><thead><tr><th>Date</th><th>Description</th><th>Type</th><th>Lines</th></tr></thead><tbody>' . $rows . '</tbody></table></div></div>';
+    }
+
+    private function renderDirectorLoanOffset(array $context, array $offset): string
+    {
+        $company = (array)($context['company'] ?? []);
+        $companyId = (int)($company['id'] ?? 0);
+        $accountingPeriod = (array)($offset['accounting_period'] ?? []);
+        $accountingPeriodId = (int)($accountingPeriod['id'] ?? ($company['accounting_period_id'] ?? 0));
+
+        if (empty($offset['available'])) {
+            return '<section class="settings-stack" id="director-loan-offset"><h3 class="card-title">Director loan offset</h3>' . $this->renderErrors((array)($offset['errors'] ?? ['Director loan offset review is not available.'])) . '</section>';
+        }
+
+        $assetNominal = (array)($offset['asset_nominal'] ?? []);
+        $liabilityNominal = (array)($offset['liability_nominal'] ?? []);
+        $warningsHtml = '';
+        foreach ((array)($offset['warnings'] ?? []) as $warning) {
+            $warningsHtml .= '<div class="helper">' . HelperFramework::escape((string)$warning) . '</div>';
+        }
+
+        $status = (string)($offset['offset_status'] ?? '');
+        $postButton = '';
+        if (!empty($offset['can_post'])) {
+            $postButton = '<form method="post" data-ajax="true">
+                <input type="hidden" name="card_action" value="YearEnd">
+                <input type="hidden" name="intent" value="post_director_loan_offset">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <button class="button primary" type="submit">Post Offset Journal</button>
+            </form>';
+        }
+
+        return '<section class="settings-stack" id="director-loan-offset">
+            <div class="status-head">
+                <h3 class="card-title">Director loan offset</h3>
+                <span class="badge ' . HelperFramework::escape($this->badgeClass($this->offsetBadgeStatus($status))) . '">' . HelperFramework::escape((string)($offset['offset_status_label'] ?? HelperFramework::labelFromKey($status, '_'))) . '</span>
+            </div>
+            <div class="month-grid">
+                ' . $this->summaryCard(FormattingFramework::nominalLabel($assetNominal), FormattingFramework::money($offset['asset_receivable'] ?? 0)) . '
+                ' . $this->summaryCard(FormattingFramework::nominalLabel($liabilityNominal), FormattingFramework::money($offset['liability_payable'] ?? 0)) . '
+                ' . $this->summaryCard('Proposed offset', FormattingFramework::money($offset['offset_amount'] ?? 0)) . '
+                ' . $this->summaryCard('Net position', FormattingFramework::money($offset['net_position'] ?? 0) . ' ' . (string)($offset['net_position_label'] ?? '')) . '
+            </div>
+            <div class="table-scroll">
+                <table>
+                    <thead><tr><th>Journal line</th><th>Debit</th><th>Credit</th></tr></thead>
+                    <tbody>
+                        <tr><td>' . HelperFramework::escape(FormattingFramework::nominalLabel($liabilityNominal)) . '</td><td>' . HelperFramework::escape(FormattingFramework::money($offset['offset_amount'] ?? 0)) . '</td><td>0.00</td></tr>
+                        <tr><td>' . HelperFramework::escape(FormattingFramework::nominalLabel($assetNominal)) . '</td><td>0.00</td><td>' . HelperFramework::escape(FormattingFramework::money($offset['offset_amount'] ?? 0)) . '</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="helper">Existing posted offset: ' . HelperFramework::escape(FormattingFramework::money($offset['posted_offset_amount'] ?? 0)) . '</div>
+            ' . $warningsHtml . '
+            ' . (empty($offset['can_post']) ? '<div class="helper">' . HelperFramework::escape((string)($offset['post_blocked_reason'] ?? '')) . '</div>' : '') . '
+            <div class="actions-row">' . $postButton . '</div>
+        </section>';
+    }
+
+    private function summaryCard(string $label, string $value): string
+    {
+        return '<div class="stat-card"><div class="eyebrow">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+    }
+
+    private function offsetBadgeStatus(string $status): string
+    {
+        return match ($status) {
+            'current', 'not_required' => 'pass',
+            'missing', 'stale' => 'warning',
+            default => 'info',
+        };
     }
 
     private function nominalOptions(array $nominals, int $selectedNominalId): string

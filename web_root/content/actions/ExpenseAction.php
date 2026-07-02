@@ -26,7 +26,6 @@ final class ExpenseAction implements ActionInterfaceFramework
                     'claimant_id' => (int)$request->input('claimant_id', 0),
                     'claim_year' => (int)$request->input('claim_year', 0),
                     'claim_month' => (int)$request->input('claim_month', 0),
-                    'incorporation_date' => (string)$request->input('incorporation_date', ''),
                 ]),
                 'save_line' => $service->saveLine($companyId, (int)$request->input('claim_id', 0), [
                     'id' => (int)$request->input('line_id', 0),
@@ -38,21 +37,33 @@ final class ExpenseAction implements ActionInterfaceFramework
                     'receipt_reference' => (string)$request->input('receipt_reference', ''),
                     'notes' => (string)$request->input('notes', ''),
                 ]),
-                'preview_bulk_lines' => $service->previewBulkLines(
-                    $companyId,
-                    (int)$request->input('claim_id', 0),
-                    (string)$request->input('pasted_lines', ''),
-                    (string)$request->input('date_format', 'd/m/Y')
-                ),
                 'bulk_save_lines' => $service->bulkSaveLines($companyId, (int)$request->input('claim_id', 0), [
                     'pasted_lines' => (string)$request->input('pasted_lines', ''),
                     'date_format' => (string)$request->input('date_format', 'd/m/Y'),
                 ]),
+                'confirm_no_lines' => $service->confirmNoLines($companyId, (int)$request->input('claim_id', 0), 'web_app'),
                 'update_line_nominal' => $service->updateLineNominal(
                     $companyId,
                     (int)$request->input('claim_id', 0),
                     (int)$request->input('line_id', 0),
                     (int)$request->input('nominal_account_id', 0)
+                ),
+                'update_line_type' => $service->updateLineType(
+                    $companyId,
+                    (int)$request->input('claim_id', 0),
+                    (int)$request->input('line_id', 0),
+                    (string)$request->input('line_type', 'expense')
+                ),
+                'save_line_asset_details' => $service->saveLineAssetDetails(
+                    $companyId,
+                    (int)$request->input('claim_id', 0),
+                    (int)$request->input('line_id', 0),
+                    [
+                        'asset_category' => (string)$request->input('asset_category', ''),
+                        'asset_useful_life_years' => (int)$request->input('asset_useful_life_years', 0),
+                        'asset_depreciation_method' => (string)$request->input('asset_depreciation_method', ''),
+                        'asset_residual_value' => (string)$request->input('asset_residual_value', ''),
+                    ]
                 ),
                 'delete_line' => $service->deleteLine(
                     $companyId,
@@ -86,11 +97,6 @@ final class ExpenseAction implements ActionInterfaceFramework
         $filters = $this->filtersFromRequest($request, $result);
 
         $resultContext = ['expense_filters' => $filters];
-        if ($intent === 'preview_bulk_lines') {
-            $resultContext['expense_bulk_preview'] = array_merge($result, [
-                'claim_id' => max(0, (int)$request->input('claim_id', 0)),
-            ]);
-        }
 
         return new ActionResultFramework(
             !empty($result['success']),
@@ -162,14 +168,16 @@ final class ExpenseAction implements ActionInterfaceFramework
                 'delete_claimant' => 'Claimant deleted.',
                 'create_claim' => 'Expense claim opened.',
                 'save_line' => 'Expense line saved.',
-                'preview_bulk_lines' => '',
                 'bulk_save_lines' => 'Expense lines imported.',
-                'update_line_nominal' => 'Line nominal saved.',
+                'update_line_nominal' => 'Line charge saved.',
+                'update_line_type' => 'Line type saved.',
+                'save_line_asset_details' => 'Asset details saved.',
                 'delete_line' => 'Expense line deleted.',
                 'delete_claim' => 'Expense claim deleted.',
                 'link_payment' => 'Repayment linked.',
                 'unlink_payment' => 'Repayment unlinked.',
-                'post_claim' => 'Expense claim posted.',
+                'confirm_no_lines' => 'No-lines month confirmed.',
+                'post_claim' => 'Expense claim submitted.',
                 default => '',
             };
         }

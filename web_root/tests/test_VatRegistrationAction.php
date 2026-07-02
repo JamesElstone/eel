@@ -38,7 +38,7 @@ $harness->run(VatRegistrationAction::class, function (GeneratedServiceClassTestH
         $harness->assertSame('Select a company before updating VAT registration.', (string)($result->flashMessages()[0]['message'] ?? ''));
     });
 
-    $harness->check('VatRegistrationAction', 'save_vat persists submitted VAT details as unverified', function () use ($harness, $instance): void {
+    $harness->check('VatRegistrationAction', 'save_vat rejects submitted VAT details until validation matched', function () use ($harness, $instance): void {
         authenticateTestSession();
 
         try {
@@ -79,11 +79,12 @@ $harness->run(VatRegistrationAction::class, function (GeneratedServiceClassTestH
             $result = $instance->handle($request, createTestPageServiceFramework());
             $row = (new \eel_accounts\Repository\CompanyRepository())->fetchCompanyDetails($companyId);
 
-            $harness->assertSame(true, $result->isSuccess());
-            $harness->assertSame(1, (int)($row['is_vat_registered'] ?? 0));
-            $harness->assertSame('GB', (string)($row['vat_country_code'] ?? ''));
-            $harness->assertSame('123456789', (string)($row['vat_number'] ?? ''));
-            $harness->assertSame('unverified', (string)($row['vat_validation_status'] ?? ''));
+            $harness->assertSame(false, $result->isSuccess());
+            $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'Check the VAT number'));
+            $harness->assertSame(0, (int)($row['is_vat_registered'] ?? 0));
+            $harness->assertSame('', (string)($row['vat_country_code'] ?? ''));
+            $harness->assertSame('', (string)($row['vat_number'] ?? ''));
+            $harness->assertSame('', (string)($row['vat_validation_status'] ?? ''));
         } finally {
             clearAuthenticatedTestSession();
         }

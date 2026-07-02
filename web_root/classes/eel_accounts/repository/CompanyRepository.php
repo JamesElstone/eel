@@ -17,6 +17,8 @@ final class CompanyRepository
         'default_trade_nominal_id',
         'default_expense_nominal_id',
         'director_loan_nominal_id',
+        'director_loan_asset_nominal_id',
+        'director_loan_liability_nominal_id',
         'vat_nominal_id',
         'uncategorised_nominal_id',
     ];
@@ -71,6 +73,9 @@ final class CompanyRepository
             'companies_house_etag',
             'companies_house_last_checked_at',
             'companies_house_profile_json',
+            'companies_house_active_director_count',
+            'companies_house_officers_last_checked_at',
+            'companies_house_officers_json',
             'is_vat_registered',
             'vat_country_code',
             'vat_number',
@@ -498,8 +503,35 @@ final class CompanyRepository
                        companies_house_environment,
                        companies_house_etag,
                        companies_house_last_checked_at,
-                       companies_house_profile_json
+                       companies_house_profile_json,
+                       companies_house_active_director_count,
+                       companies_house_officers_last_checked_at,
+                       companies_house_officers_json
                 FROM companies
                 ORDER BY company_name, id';
+    }
+
+    public function updateCompaniesHouseDirectorCheck(int $companyId, array $directorCheck): void
+    {
+        if ($companyId <= 0 || !\InterfaceDB::columnExists('companies', 'companies_house_active_director_count')) {
+            return;
+        }
+
+        if (!array_key_exists('director_count', $directorCheck) || $directorCheck['director_count'] === null) {
+            return;
+        }
+
+        \InterfaceDB::prepareExecute(
+            'UPDATE companies
+             SET companies_house_active_director_count = :director_count,
+                 companies_house_officers_json = :officers_json,
+                 companies_house_officers_last_checked_at = CURRENT_TIMESTAMP
+             WHERE id = :company_id',
+            [
+                'director_count' => (int)$directorCheck['director_count'],
+                'officers_json' => $directorCheck['officers_json'] ?? null,
+                'company_id' => $companyId,
+            ]
+        );
     }
 }

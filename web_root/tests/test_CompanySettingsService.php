@@ -44,4 +44,30 @@ $harness->run(\eel_accounts\Service\CompanySettingsService::class, static functi
 
         $harness->assertSame(14, (int)($suggestions['default_expense_nominal_id']['id'] ?? 0));
     });
+
+    $harness->check(\eel_accounts\Service\CompanySettingsService::class, 'suggests director loan asset and liability nominals separately', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod(\eel_accounts\Service\CompanySettingsService::class, 'buildNominalDefaultSuggestions');
+        $method->setAccessible(true);
+
+        $suggestions = $method->invoke($service, [
+            ['id' => 3, 'code' => '1200', 'name' => 'Director Loan Asset', 'account_type' => 'asset', 'subtype_code' => 'director_loan_asset'],
+            ['id' => 5, 'code' => '2100', 'name' => 'Director Loan Liability', 'account_type' => 'liability', 'subtype_code' => 'director_loan_liability'],
+        ]);
+
+        $harness->assertSame(3, (int)($suggestions['director_loan_asset_nominal_id']['id'] ?? 0));
+        $harness->assertSame(5, (int)($suggestions['director_loan_liability_nominal_id']['id'] ?? 0));
+        $harness->assertSame(5, (int)($suggestions['director_loan_nominal_id']['id'] ?? 0));
+    });
+
+    $harness->check(\eel_accounts\Service\CompanySettingsService::class, 'maps legacy director loan setting to liability setting', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod(\eel_accounts\Service\CompanySettingsService::class, 'normaliseDirectorLoanNominalSettings');
+        $method->setAccessible(true);
+
+        $settings = $method->invoke($service, [
+            'director_loan_nominal_id' => '42',
+        ]);
+
+        $harness->assertSame('42', (string)($settings['director_loan_liability_nominal_id'] ?? ''));
+        $harness->assertSame('42', (string)($settings['director_loan_nominal_id'] ?? ''));
+    });
 });

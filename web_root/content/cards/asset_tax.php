@@ -22,9 +22,9 @@ final class _asset_taxCard extends CardBaseFramework
                 'service' => \eel_accounts\Service\AssetService::class,
                 'method' => 'fetchPageData',
                 'params' => [
-                    'companyId' => ':company_id',
-                    'accountingPeriodId' => ':accounting_period_id',
-                    'defaultBankNominalId' => ':default_bank_nominal_id',
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                    'defaultBankNominalId' => ':company.settings.default_bank_nominal_id',
                     'prefillTransactionId' => ':prefill_transaction_id',
                 ],
             ],
@@ -38,17 +38,27 @@ final class _asset_taxCard extends CardBaseFramework
 
     public function handleError(string $serviceKey, array $error, array $context): string
     {
-        return '';
+        return 'Asset data could not be loaded: ' . (string)($error['message'] ?? 'service error');
     }
 
     public function render(array $context): string
     {
+        $page = (array)($context['page'] ?? []);
+        $company = (array)($context['company'] ?? []);
         $assetsPageData = (array)($context['services']['assetPageData'] ?? []);
         $assetTaxView = is_array($assetsPageData['tax_view'] ?? null) ? $assetsPageData['tax_view'] : null;
+        $accountingPeriodId = (int)(
+            $assetsPageData['accounting_period_id']
+            ?? $page['accounting_period_id']
+            ?? $context['accounting_period_id']
+            ?? $company['accounting_period_id']
+            ?? 0
+        );
 
         return $assetTaxView !== null
             ? '<div class="list">
                     <div class="list-item"><strong>Accounting Profit</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['accounting_profit'] ?? 0))) . '</span></div>
+                    <div class="list-item"><strong>+ Disallowable Expenses</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['disallowable_add_backs'] ?? 0))) . '</span></div>
                     <div class="list-item"><strong>+ Depreciation</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['depreciation_add_back'] ?? 0))) . '</span></div>
                     <div class="list-item"><strong>- Capital Allowances</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['capital_allowances'] ?? 0))) . '</span></div>
                     <div class="list-item"><strong>= Taxable Profit Before Losses</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['taxable_before_losses'] ?? 0))) . '</span></div>
@@ -57,7 +67,19 @@ final class _asset_taxCard extends CardBaseFramework
                     <div class="list-item"><strong>Losses C/F</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['losses_carried_forward'] ?? 0))) . '</span></div>
                     <div class="list-item"><strong>Taxable Profit</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['taxable_profit'] ?? 0))) . '</span></div>
                 </div>'
-            : '<div class="helper">Select an accounting period in the page context to view tax adjustments.</div>';
+            : '<div class="helper">' . HelperFramework::escape($this->emptyStateMessage($assetsPageData, $accountingPeriodId)) . '</div>';
     }
 
+    private function emptyStateMessage(array $assetsPageData, int $accountingPeriodId): string
+    {
+        if ($accountingPeriodId <= 0) {
+            return 'Select an accounting period to view tax adjustments.';
+        }
+
+        if (array_key_exists('schema_ready', $assetsPageData) && empty($assetsPageData['schema_ready'])) {
+            return 'Run the fixed asset migrations before viewing tax adjustments.';
+        }
+
+        return 'No tax view is available for the selected accounting period.';
+    }
 }

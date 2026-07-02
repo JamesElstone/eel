@@ -26,6 +26,10 @@
   min-width: 0;
 }
 
+.form-row {
+  padding-bottom: 0;
+}
+
 .expenses-toolbar {
   align-items: flex-end;
   flex-wrap: nowrap;
@@ -95,9 +99,8 @@
   width: fit-content;
 }
 
-#expense-line-description,
-#expense-line-notes {
-  width: 24ch;
+#expense-line-description {
+  width: 40ch;
 }
 
 #expense-line-amount {
@@ -114,6 +117,37 @@
 .expense-line-form-actions .button {
   margin-bottom: 0;
   white-space: nowrap;
+}
+
+.expense-line-asset-form {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.expense-line-asset-form .form-flex-flow {
+  align-items: flex-end;
+  flex-flow: row nowrap;
+  min-width: max-content;
+}
+
+.expense-line-asset-form .form-row {
+  flex: 0 0 fit-content;
+  padding-bottom: 0;
+}
+
+.expense-line-asset-form .input,
+.expense-line-asset-form .select {
+  max-width: 100%;
+  width: fit-content;
+}
+
+.expense-line-asset-form [name="asset_useful_life_years"] {
+  width: auto;
+  min-width: max-content;
+}
+
+.expense-line-asset-form [name="asset_residual_value"] {
+  width: 10ch;
 }
 
 .expense-bulk-paste-controls {
@@ -142,8 +176,103 @@
   align-items: flex-end;
   gap: 12px;
   flex-wrap: wrap;
-  margin-top: 16px;
-  margin-bottom: 16px;
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.asset-disposal-panel {
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.asset-disposal-form {
+  width: fit-content;
+  max-width: 100%;
+}
+
+.asset-disposal-controls {
+  display: flex;
+  flex-flow: row nowrap;
+  align-items: center;
+  gap: 8px;
+  min-width: max-content;
+  width: fit-content;
+}
+
+.asset-disposal-controls .input {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.asset-disposal-controls [name="disposal_search_date"] {
+  width: 20ch;
+}
+
+.asset-disposal-controls .button {
+  flex: 0 0 auto;
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
+.asset-disposal-candidates {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  min-width: min(48rem, 100%);
+}
+
+.asset-disposal-candidate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.asset-disposal-candidate .button {
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
+.asset-disposal-error {
+  margin-top: 8px;
+  color: var(--danger);
+}
+
+.asset-reconcile-manual {
+  display: grid;
+  gap: 10px;
+}
+
+.asset-reconcile-manual h3 {
+  margin: 0;
+}
+
+.asset-reconcile-candidates {
+  display: grid;
+  gap: 8px;
+  min-width: min(42rem, 100%);
+}
+
+.asset-reconcile-candidate {
+  align-items: center;
+  border-top: 1px solid var(--line);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 8px 0;
+}
+
+.asset-reconcile-candidate:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.asset-reconcile-candidate .button {
+  margin-bottom: 0;
+  white-space: nowrap;
 }
 
 .expense-claimant-add-form .mini-field {
@@ -582,6 +711,10 @@
   margin-top: 6px;
   font-size: 1.45rem;
   font-weight: 800;
+}
+
+.director-loan-control-helper {
+  margin: 14px 0 12px;
 }
 
 .chart-demo-grid {
@@ -1033,6 +1166,12 @@
   padding: 8px 12px;
   /*font-size: 0.85rem;*/
   box-shadow: none;
+}
+
+.segmented-option.is-active {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
 }
 
 .form-row-actions {
@@ -1713,6 +1852,28 @@
   margin: 6px 0 4px;
 }
 
+.year-end-review-notes {
+  min-height: 120px;
+}
+
+.year-end-check-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.year-end-related-workflow {
+  align-self: flex-end;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+}
+
+.year-end-related-workflow .button {
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
 .coverage-light-grid {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -1996,6 +2157,86 @@
 
 .panel-soft.warn.full {
   width: 100%;
+}
+
+.transaction-search-table-footer {
+  position: relative;
+}
+
+.transaction-search-controls {
+  align-items: flex-start;
+}
+
+.transaction-search-controls > .button {
+  margin-top: calc(0.75rem * 1.5 + 6px);
+}
+
+.transaction-search-amount-total {
+  color: var(--ink);
+  font-size: 0.92rem;
+  left: 50%;
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.asset-create-form {
+  margin: 0;
+}
+
+.asset-create-controls {
+  align-items: flex-end;
+  display: flex;
+  flex-flow: row wrap;
+  gap: 10px;
+}
+
+.asset-create-controls > .field {
+  display: grid;
+  flex: 0 1 fit-content;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.asset-create-controls .input,
+.asset-create-controls .select {
+  max-width: 100%;
+  width: fit-content;
+}
+
+.asset-create-controls #asset_description {
+  min-width: min(260px, 100%);
+}
+
+.asset-create-controls #asset_cost,
+.asset-create-controls #asset_life,
+.asset-create-controls #asset_residual {
+  max-width: 9rem;
+}
+
+.asset-create-controls .button {
+  flex: 0 0 auto;
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
+.transaction-search-amount-total span {
+  color: var(--muted);
+}
+
+@media (max-width: 760px) {
+  .transaction-search-table-footer {
+    justify-content: center;
+  }
+
+  .transaction-search-amount-total {
+    order: 2;
+    position: static;
+    text-align: center;
+    transform: none;
+    width: 100%;
+  }
 }
 
 .submission-log {

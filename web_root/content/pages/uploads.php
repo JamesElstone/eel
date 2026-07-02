@@ -62,4 +62,25 @@ final class _uploads extends PageContextFramework
             ],
         ];
     }
+
+    protected function moduleContext(
+        RequestFramework $request,
+        PageServiceFramework $services,
+        ActionResultFramework $actionResult,
+        array $baseContext
+    ): array {
+        $uploads = (array)($actionResult->context()['uploads'] ?? []);
+        $filter = trim((string)($uploads['filter'] ?? $request->input('filter', 'ready')));
+
+        return [
+            'uploads' => [
+                'id' => max(0, (int)($uploads['id'] ?? $request->input('upload_id', 0))),
+                'filter' => $filter !== '' ? $filter : 'ready',
+                'page' => max(1, (int)($uploads['page'] ?? $request->input('page', 1))),
+            ],
+            'field_mapping' => [
+                'account_id' => 0,
+            ],
+        ];
+    }
 }

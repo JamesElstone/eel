@@ -103,7 +103,11 @@ final class _transaction_searchCard extends CardBaseFramework
         return $this->searchForm($context)
             . $table->renderToolbar($context, $hiddenFields)
             . $table->renderTable()
-            . $this->footerWithAmountTotal($table->renderFooter(), (array)$tableState['visible_rows']);
+            . $this->footerWithAmountTotal(
+                $table->renderFooter(),
+                (array)$tableState['visible_rows'],
+                (array)$tableState['query_rows']
+            );
     }
 
     public function tables(array $context): array
@@ -115,7 +119,8 @@ final class _transaction_searchCard extends CardBaseFramework
     {
         $hiddenFields = $this->hiddenFields($context);
         $table = $this->configureTableSorting($this->table($context), $context, $hiddenFields);
-        $pagination = HelperFramework::paginateArray($table->sortedRows(), $this->paginationPage($context), self::PAGE_SIZE);
+        $queryRows = $table->sortedRows();
+        $pagination = HelperFramework::paginateArray($queryRows, $this->paginationPage($context), self::PAGE_SIZE);
         $visibleRows = (array)$pagination['items'];
 
         $table = $table
@@ -131,6 +136,7 @@ final class _transaction_searchCard extends CardBaseFramework
             'table' => $table,
             'hidden_fields' => $hiddenFields,
             'visible_rows' => $visibleRows,
+            'query_rows' => $queryRows,
         ];
     }
 
@@ -346,7 +352,7 @@ final class _transaction_searchCard extends CardBaseFramework
         return 'No transactions match this search [' . (new DateTimeImmutable())->format('Y-m-d H:i:s') . '].';
     }
 
-    private function footerWithAmountTotal(string $footer, array $visibleRows): string
+    private function footerWithAmountTotal(string $footer, array $visibleRows, array $queryRows): string
     {
         if ($footer === '') {
             return '';
@@ -354,7 +360,10 @@ final class _transaction_searchCard extends CardBaseFramework
 
         $totalHtml = '<div class="transaction-search-amount-total">'
             . '<span>Amount total:</span> '
-            . '<strong>' . HelperFramework::escape(FormattingFramework::money($this->amountTotal($visibleRows))) . '</strong>'
+            . '<span>Page</span> '
+            . '<strong>' . HelperFramework::escape(FormattingFramework::money($this->amountTotal($visibleRows))) . '</strong> '
+            . '<span>Query</span> '
+            . '<strong>' . HelperFramework::escape(FormattingFramework::money($this->amountTotal($queryRows))) . '</strong>'
             . '</div>';
 
         $footer = str_replace(

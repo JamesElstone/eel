@@ -117,7 +117,7 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         $harness->assertTrue(str_contains($html, 'Amount total:'));
     });
 
-    $harness->check(_transaction_searchCard::class, 'shows an amount total for the current visible page', static function () use ($harness, $card, $context): void {
+    $harness->check(_transaction_searchCard::class, 'shows page and query amount totals', static function () use ($harness, $card, $context): void {
         $totalContext = $context;
         $templateRow = $context['services']['transaction_search_results'][0];
         $totalContext['services']['transaction_search_results'] = [];
@@ -131,8 +131,10 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
 
         $html = $card->render($totalContext);
 
+        $harness->assertTrue(str_contains($html, '<span>Page</span>'));
+        $harness->assertTrue(str_contains($html, '<span>Query</span>'));
         $harness->assertTrue(str_contains($html, '<strong>' . FormattingFramework::money(120) . '</strong>'));
-        $harness->assertSame(false, str_contains($html, '<strong>' . FormattingFramework::money(136) . '</strong>'));
+        $harness->assertTrue(str_contains($html, '<strong>' . FormattingFramework::money(136) . '</strong>'));
     });
 
     $harness->check(_transaction_searchCard::class, 'handle normalises selected source account and nominal ids', static function () use ($harness, $card, $context): void {

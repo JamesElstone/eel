@@ -2448,6 +2448,32 @@
   color: var(--muted);
 }
 
+.journal-source-cell {
+  min-width: 20rem;
+  white-space: nowrap;
+}
+
+.journal-source-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.journal-source-line .helper {
+  margin-top: 0;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.journal-source-line .button {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
 @media (max-width: 760px) {
   .transaction-search-table-footer {
     justify-content: center;

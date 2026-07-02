@@ -9,7 +9,7 @@ declare(strict_types=1);
 
 final class _journals_listCard extends CardBaseFramework
 {
-    private const PAGE_SIZE = 30;
+    private const PAGE_SIZE = 5;
 
     public function key(): string
     {
@@ -54,14 +54,12 @@ final class _journals_listCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        return '
-            <div class="helper">Transaction-derived journals are read-only here. Use Review Transaction to change the source posting.</div>
-            ' . $this->configuredTable($context)->render(
-                $context,
-                [
-                    'cards[]' => (array)($context['page']['page_cards'] ?? []),
-                ]
-            );
+        return $this->configuredTable($context)->render(
+            $context,
+            [
+                'cards[]' => (array)($context['page']['page_cards'] ?? []),
+            ]
+        );
     }
 
     public function tables(array $context): array
@@ -113,7 +111,8 @@ final class _journals_listCard extends CardBaseFramework
                 'source_type',
                 'Source',
                 html: fn(array $row): string => $this->sourceCellHtml($row, $companyId, $accountingPeriodId),
-                export: fn(array $row): string => $this->journalExportValue($row, $this->sourceExport($row))
+                export: fn(array $row): string => $this->journalExportValue($row, $this->sourceExport($row)),
+                cellClass: 'journal-source-cell'
             )
             ->column(
                 'is_posted',
@@ -222,7 +221,10 @@ final class _journals_listCard extends CardBaseFramework
             return '';
         }
 
-        return $this->sourceHtml($journal) . '<div class="helper">' . $this->actionHtml($journal, $companyId, $accountingPeriodId) . '</div>';
+        return '<div class="journal-source-line">'
+            . $this->sourceHtml($journal)
+            . '<div class="helper">' . $this->actionHtml($journal, $companyId, $accountingPeriodId) . '</div>'
+            . '</div>';
     }
 
     private function sourceHtml(array $journal): string
@@ -280,11 +282,20 @@ final class _journals_listCard extends CardBaseFramework
     {
         $sourceTransactionId = $this->journalSourceTransactionId($journal);
         if ((string)($journal['source_type'] ?? '') === 'bank_csv' && $sourceTransactionId > 0) {
-            return '<a class="button" href="' . HelperFramework::escape($this->buildTransactionsUrl(
+            return '<a class="button button-inline primary" href="' . HelperFramework::escape($this->buildTransactionsUrl(
                 $companyId,
                 $accountingPeriodId,
                 $this->monthKeyFromDate((string)($journal['journal_date'] ?? ''))
             )) . '#transaction-' . $sourceTransactionId . '">Review Transaction</a>';
+        }
+
+        $sourceRef = trim((string)($journal['source_ref'] ?? ''));
+        if ((string)($journal['source_type'] ?? '') === 'expense_register' && $sourceRef !== '') {
+            return '<a class="button button-inline primary" href="' . HelperFramework::escape($this->buildExpenseClaimUrl(
+                $companyId,
+                $accountingPeriodId,
+                $sourceRef
+            )) . '">Review Claim</a>';
         }
 
         return '<span class="helper">Review at source</span>';
@@ -328,6 +339,17 @@ final class _journals_listCard extends CardBaseFramework
             'accounting_period_id' => $accountingPeriodId,
             'month_key' => $monthKey,
             'category_filter' => 'all',
+        ]);
+    }
+
+    private function buildExpenseClaimUrl(int $companyId, int $accountingPeriodId, string $claimReferenceCode): string
+    {
+        return '?' . http_build_query([
+            'page' => 'expense_claims',
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'show_card' => 'expense_claim_editor',
+            'claim_reference_code' => $claimReferenceCode,
         ]);
     }
 

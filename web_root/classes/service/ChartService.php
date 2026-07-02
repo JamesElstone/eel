@@ -232,6 +232,7 @@ final class ChartService
         $startAngle = -90.0;
         $pathsHtml = '';
         $legendHtml = '';
+        $showLegend = ($options['legend'] ?? true) !== false;
 
         foreach ($segments as $index => $segment) {
             $angle = ($segment['value'] / $total) * 360.0;
@@ -246,9 +247,11 @@ final class ChartService
             $pathsHtml .= '<title>' . HelperFramework::escape($segment['label'] . ': ' . $this->formatValue($segment['value']) . ' (' . $percent . '%)') . '</title>';
             $pathsHtml .= '</path>';
 
-            $legendY = 62 + ($index * 28);
-            $legendHtml .= '<rect class="chart-legend-swatch" x="' . $this->number($width * 0.66) . '" y="' . $this->number($legendY - 11) . '" width="12" height="12" fill="' . HelperFramework::escape($color) . '"></rect>';
-            $legendHtml .= '<text class="chart-legend-label" x="' . $this->number(($width * 0.66) + 20) . '" y="' . $this->number($legendY) . '">' . HelperFramework::escape($segment['label'] . ' ' . $percent . '%') . '</text>';
+            if ($showLegend) {
+                $legendY = 62 + ($index * 28);
+                $legendHtml .= '<rect class="chart-legend-swatch" x="' . $this->number($width * 0.66) . '" y="' . $this->number($legendY - 11) . '" width="12" height="12" fill="' . HelperFramework::escape($color) . '"></rect>';
+                $legendHtml .= '<text class="chart-legend-label" x="' . $this->number(($width * 0.66) + 20) . '" y="' . $this->number($legendY) . '">' . HelperFramework::escape($segment['label'] . ' ' . $percent . '%') . '</text>';
+            }
             $startAngle = $endAngle;
         }
 
@@ -283,6 +286,7 @@ final class ChartService
         $offset = 0.0;
         $segmentsHtml = '';
         $legendHtml = '';
+        $showLegend = ($options['legend'] ?? true) !== false;
 
         foreach ($segments as $index => $segment) {
             $share = $segment['value'] / $total;
@@ -295,9 +299,11 @@ final class ChartService
             $segmentsHtml .= '<title>' . HelperFramework::escape($segment['label'] . ': ' . $this->formatValue($segment['value']) . ' (' . $percent . '%)') . '</title>';
             $segmentsHtml .= '</circle>';
 
-            $legendY = 62 + ($index * 28);
-            $legendHtml .= '<rect class="chart-legend-swatch" x="' . $this->number($width * 0.66) . '" y="' . $this->number($legendY - 11) . '" width="12" height="12" fill="' . HelperFramework::escape($color) . '"></rect>';
-            $legendHtml .= '<text class="chart-legend-label" x="' . $this->number(($width * 0.66) + 20) . '" y="' . $this->number($legendY) . '">' . HelperFramework::escape($segment['label'] . ' ' . $percent . '%') . '</text>';
+            if ($showLegend) {
+                $legendY = 62 + ($index * 28);
+                $legendHtml .= '<rect class="chart-legend-swatch" x="' . $this->number($width * 0.66) . '" y="' . $this->number($legendY - 11) . '" width="12" height="12" fill="' . HelperFramework::escape($color) . '"></rect>';
+                $legendHtml .= '<text class="chart-legend-label" x="' . $this->number(($width * 0.66) + 20) . '" y="' . $this->number($legendY) . '">' . HelperFramework::escape($segment['label'] . ' ' . $percent . '%') . '</text>';
+            }
             $offset += $dash;
         }
 

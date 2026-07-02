@@ -70,12 +70,42 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARAT
             $harness->assertTrue(str_contains($html, 'Test pie'));
         });
 
+        $harness->check(ChartService::class, 'hides pie chart legend when disabled', static function () use ($harness, $service): void {
+            $html = $service->pie([
+                ['label' => 'One', 'value' => 1, 'color' => '#16a34a'],
+                ['label' => 'Two', 'value' => 2, 'color' => '#d97706'],
+            ], [
+                'title' => 'Test pie without legend',
+                'legend' => false,
+            ]);
+
+            $harness->assertTrue(str_contains($html, '<svg'));
+            $harness->assertTrue(str_contains($html, 'chart-pie-slice'));
+            $harness->assertTrue(!str_contains($html, 'chart-legend-swatch'));
+            $harness->assertTrue(!str_contains($html, 'chart-legend-label'));
+        });
+
         $harness->check(ChartService::class, 'renders donut chart SVG', static function () use ($harness, $service, $points): void {
             $html = $service->donut($points, ['title' => 'Test donut']);
 
             $harness->assertTrue(str_contains($html, '<svg'));
             $harness->assertTrue(str_contains($html, 'chart-donut-segment'));
             $harness->assertTrue(str_contains($html, 'Test donut'));
+        });
+
+        $harness->check(ChartService::class, 'hides donut chart legend when disabled', static function () use ($harness, $service): void {
+            $html = $service->donut([
+                ['label' => 'One', 'value' => 1, 'color' => '#16a34a'],
+                ['label' => 'Two', 'value' => 2, 'color' => '#d97706'],
+            ], [
+                'title' => 'Test donut without legend',
+                'legend' => false,
+            ]);
+
+            $harness->assertTrue(str_contains($html, '<svg'));
+            $harness->assertTrue(str_contains($html, 'chart-donut-segment'));
+            $harness->assertTrue(!str_contains($html, 'chart-legend-swatch'));
+            $harness->assertTrue(!str_contains($html, 'chart-legend-label'));
         });
 
         $harness->check(ChartService::class, 'renders gauge SVG', static function () use ($harness, $service): void {

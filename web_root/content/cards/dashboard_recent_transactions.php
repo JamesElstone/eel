@@ -20,9 +20,9 @@ final class _dashboard_recent_transactionsCard extends CardBaseFramework
     {
         return [
             [
-                'key' => 'dashboard_data',
+                'key' => 'recent_transactions',
                 'service' => \eel_accounts\Repository\DashboardRepository::class,
-                'method' => 'fetchDashboardData',
+                'method' => 'fetchRecentTransactions',
                 'params' => [
                     'companyId' => ':company.id',
                     'accountingPeriodId' => ':company.accounting_period_id',
@@ -106,10 +106,11 @@ final class _dashboard_recent_transactionsCard extends CardBaseFramework
 
     private function rows(array $context): array
     {
-        $dashboardData = (array)(($context['services'] ?? [])['dashboard_data'] ?? []);
+        $services = (array)($context['services'] ?? []);
+        $dashboardData = (array)($services['dashboard_data'] ?? []);
 
         return array_values(array_filter(
-            (array)($dashboardData['recent_transactions'] ?? (($context['page'] ?? [])['recent_transactions'] ?? [])),
+            (array)($services['recent_transactions'] ?? ($dashboardData['recent_transactions'] ?? (($context['page'] ?? [])['recent_transactions'] ?? []))),
             static fn(mixed $row): bool => is_array($row)
         ));
     }

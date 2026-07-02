@@ -157,6 +157,11 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
 
     $harness->check('_dashboard_action_queueCard', 'renders action queue from page context', function () use ($harness): void {
         $card = new _dashboard_action_queueCard();
+        $services = $card->services();
+
+        $harness->assertSame('dashboard_action_queue', (string)($services[0]['key'] ?? ''));
+        $harness->assertSame('fetchDashboardActionQueue', (string)($services[0]['method'] ?? ''));
+
         $html = $card->render([
             'page' => [
                 'action_queue' => [
@@ -208,7 +213,11 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
 
     $harness->check('_dashboard_recent_transactionsCard', 'paginates recent transaction rows', function () use ($harness): void {
         $card = new _dashboard_recent_transactionsCard();
+        $services = $card->services();
         $transactions = [];
+
+        $harness->assertSame('recent_transactions', (string)($services[0]['key'] ?? ''));
+        $harness->assertSame('fetchRecentTransactions', (string)($services[0]['method'] ?? ''));
 
         for ($i = 1; $i <= 13; $i++) {
             $transactions[] = [
@@ -223,9 +232,7 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
 
         $firstPageHtml = $card->render([
             'services' => [
-                'dashboard_data' => [
-                    'recent_transactions' => $transactions,
-                ],
+                'recent_transactions' => $transactions,
             ],
         ]);
 
@@ -234,9 +241,7 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
                 'dashboard_recent_transactions_page' => 2,
             ],
             'services' => [
-                'dashboard_data' => [
-                    'recent_transactions' => $transactions,
-                ],
+                'recent_transactions' => $transactions,
             ],
         ]);
 
@@ -291,16 +296,19 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
 
     $harness->check('_overviewCard', 'renders bank and trade account dashboard stats', function () use ($harness): void {
         $card = new _overviewCard();
+        $services = $card->services();
+
+        $harness->assertSame('dashboard_stats', (string)($services[0]['key'] ?? ''));
+        $harness->assertSame('fetchDashboardStats', (string)($services[0]['method'] ?? ''));
+
         $html = $card->render([
             'services' => [
-                'dashboard_data' => [
-                    'stats' => [
-                        'bank_accounts' => 2,
-                        'trade_accounts' => 3,
-                        'unreconciled_items' => 4,
-                        'draft_journals' => 5,
-                        'staged_upload_rows' => 6,
-                    ],
+                'dashboard_stats' => [
+                    'bank_accounts' => 2,
+                    'trade_accounts' => 3,
+                    'unreconciled_items' => 4,
+                    'draft_journals' => 5,
+                    'staged_upload_rows' => 6,
                 ],
             ],
         ]);

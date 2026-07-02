@@ -27,11 +27,11 @@ final class YearEndChecklistService
             ? $accountingPeriodId
             : $metrics->resolveLatestOpenAccountingPeriodId($companyId);
 
-        $checklist = $resolvedAccountingPeriodId > 0
-            ? $this->fetchChecklist($companyId, $resolvedAccountingPeriodId, false)
+        $accountingPeriod = $resolvedAccountingPeriodId > 0
+            ? $metrics->fetchAccountingPeriod($companyId, $resolvedAccountingPeriodId)
             : null;
 
-        if (!is_array($checklist)) {
+        if (!is_array($accountingPeriod)) {
             return [
                 'available' => false,
                 'status' => 'not_started',
@@ -41,15 +41,233 @@ final class YearEndChecklistService
             ];
         }
 
-        $topIssues = $this->topIssuesFromChecks((array)($checklist['checks_flat'] ?? []));
+        $lock = $this->lockService ?? new \eel_accounts\Service\YearEndLockService();
+        $review = $lock->fetchReview($companyId, $resolvedAccountingPeriodId);
+        $topIssues = $this->fetchPersistedDashboardTopIssues($companyId, $resolvedAccountingPeriodId);
+        $hasPersistedSnapshot = is_array($review) && trim((string)($review['last_recalculated_at'] ?? '')) !== '';
+
+        if ($hasPersistedSnapshot || $topIssues !== []) {
+            return [
+                'available' => true,
+                'status' => $this->dashboardReviewStatus($review),
+                'period_label' => (string)($accountingPeriod['label'] ?? ''),
+                'accounting_period_id' => (int)($accountingPeriod['id'] ?? $resolvedAccountingPeriodId),
+                'top_issues' => $topIssues,
+                'action_url' => $this->dashboardActionUrl($companyId, $resolvedAccountingPeriodId),
+            ];
+        }
+
+        $bootstrap = $this->buildDashboardBootstrapChecks($companyId, $resolvedAccountingPeriodId, $accountingPeriod, $review);
+        $checks = (array)($bootstrap['checks'] ?? []);
+        $isLocked = is_array($review) && (int)($review['is_locked'] ?? 0) === 1;
 
         return [
             'available' => true,
-            'status' => (string)$checklist['overall_status'],
-            'period_label' => (string)($checklist['accounting_period']['label'] ?? ''),
-            'accounting_period_id' => (int)($checklist['accounting_period']['id'] ?? 0),
-            'top_issues' => $topIssues,
-            'action_url' => '?page=year-end&company_id=' . (int)$companyId . '&accounting_period_id=' . (int)($checklist['accounting_period']['id'] ?? 0),
+            'status' => $this->determineOverallStatus($checks, (bool)($bootstrap['has_source_data'] ?? false), $isLocked),
+            'period_label' => (string)($accountingPeriod['label'] ?? ''),
+            'accounting_period_id' => (int)($accountingPeriod['id'] ?? $resolvedAccountingPeriodId),
+            'top_issues' => $this->topIssuesFromChecks($checks),
+            'action_url' => $this->dashboardActionUrl($companyId, $resolvedAccountingPeriodId),
+        ];
+    }
+
+    private function dashboardReviewStatus(?array $review): string
+    {
+        $status = (string)($review['status'] ?? 'not_started');
+
+        return in_array($status, ['not_started', 'in_progress', 'needs_attention', 'ready_for_review', 'locked'], true)
+            ? $status
+            : 'not_started';
+    }
+
+    private function dashboardActionUrl(int $companyId, int $accountingPeriodId): string
+    {
+        return '?page=year-end&company_id=' . (int)$companyId . '&accounting_period_id=' . (int)$accountingPeriodId;
+    }
+
+    private function fetchPersistedDashboardTopIssues(int $companyId, int $accountingPeriodId): array
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || !$this->tableExists('year_end_check_results')) {
+            return [];
+        }
+
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT title,
+                    detail_text,
+                    metric_value,
+                    status
+             FROM year_end_check_results
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+               AND status IN (:warning_status, :fail_status)
+             ORDER BY id ASC
+             LIMIT 5',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'warning_status' => 'warning',
+                'fail_status' => 'fail',
+            ]
+        );
+
+        return $this->topIssuesFromChecks((array)$rows);
+    }
+
+    private function buildDashboardBootstrapChecks(int $companyId, int $accountingPeriodId, array $accountingPeriod, ?array $review): array
+    {
+        $periodStart = (string)($accountingPeriod['period_start'] ?? '');
+        $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
+        $transactionCount = $this->dashboardCountTransactions($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $postedJournalCount = $this->dashboardCountPostedJournals($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $uncategorisedCount = $this->dashboardCountUncategorisedTransactions($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $trialBalance = $this->dashboardTrialBalanceStatus($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $hasSourceData = ($transactionCount + $postedJournalCount) > 0;
+        $isLocked = is_array($review) && (int)($review['is_locked'] ?? 0) === 1;
+        $checks = [];
+
+        $checks[] = $this->makeCheck(
+            'source_data_present',
+            'Source data present',
+            'fail',
+            $hasSourceData ? 'pass' : 'fail',
+            $hasSourceData
+                ? 'Transactions or posted journals exist for this period.'
+                : 'No committed bank transactions or posted journals were found in this period.',
+            (string)($transactionCount + $postedJournalCount),
+            '?page=uploads&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
+        );
+        $checks[] = $this->makeCheck(
+            'uncategorised_transactions',
+            'Uncategorised transactions',
+            'fail',
+            $uncategorisedCount > 0 ? 'fail' : 'pass',
+            $uncategorisedCount > 0
+                ? 'Transactions still need a nominal account before the period is ready.'
+                : 'Every transaction in the selected period has a nominal account.',
+            (string)$uncategorisedCount,
+            '?page=transactions&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&category_filter=uncategorised'
+        );
+        $checks[] = $this->makeCheck(
+            'trial_balance_exists',
+            'Trial balance exists',
+            'fail',
+            !empty($trialBalance['exists']) ? 'pass' : 'fail',
+            !empty($trialBalance['exists'])
+                ? 'A trial balance can be generated from posted journals in this period.'
+                : 'No posted journal data exists to generate a trial balance for this period.',
+            (string)($trialBalance['line_count'] ?? 0),
+            '?page=journals&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
+        );
+        $checks[] = $this->makeCheck(
+            'trial_balance_balances',
+            'Trial balance balances',
+            'fail',
+            !empty($trialBalance['balances']) ? 'pass' : 'fail',
+            !empty($trialBalance['balances'])
+                ? 'Total debits equal total credits.'
+                : 'Total debits and credits do not match for the selected period.',
+            (string)number_format((float)($trialBalance['difference'] ?? 0), 2, '.', ''),
+            '?page=journals&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
+        );
+        $checks[] = $this->makeCheck(
+            'posted_only_period_integrity',
+            'Posted-only period integrity',
+            'info',
+            $isLocked ? 'pass' : 'warning',
+            $isLocked
+                ? 'This period is locked and backend mutation guards are enabled.'
+                : 'This period is still open for posting changes.',
+            $isLocked ? 'Locked' : 'Unlocked',
+            $this->dashboardActionUrl($companyId, $accountingPeriodId)
+        );
+
+        return [
+            'has_source_data' => $hasSourceData,
+            'checks' => $checks,
+        ];
+    }
+
+    private function dashboardCountTransactions(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): int
+    {
+        return (int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*)
+             FROM transactions
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+               AND txn_date BETWEEN :period_start AND :period_end',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
+            ]
+        );
+    }
+
+    private function dashboardCountUncategorisedTransactions(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): int
+    {
+        return (int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*)
+             FROM transactions
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+               AND txn_date BETWEEN :period_start AND :period_end
+               AND (category_status = :category_status OR nominal_account_id IS NULL)',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
+                'category_status' => 'uncategorised',
+            ]
+        );
+    }
+
+    private function dashboardCountPostedJournals(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): int
+    {
+        return (int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*)
+             FROM journals
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+               AND is_posted = 1
+               AND journal_date BETWEEN :period_start AND :period_end',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
+            ]
+        );
+    }
+
+    private function dashboardTrialBalanceStatus(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array
+    {
+        $row = \InterfaceDB::fetchOne(
+            'SELECT COUNT(jl.id) AS line_count,
+                    COALESCE(SUM(jl.debit), 0) AS total_debits,
+                    COALESCE(SUM(jl.credit), 0) AS total_credits
+             FROM journals j
+             INNER JOIN journal_lines jl ON jl.journal_id = j.id
+             WHERE j.company_id = :company_id
+               AND j.accounting_period_id = :accounting_period_id
+               AND j.is_posted = 1
+               AND j.journal_date BETWEEN :period_start AND :period_end',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
+            ]
+        ) ?: [];
+        $difference = round((float)($row['total_debits'] ?? 0) - (float)($row['total_credits'] ?? 0), 2);
+        $lineCount = (int)($row['line_count'] ?? 0);
+
+        return [
+            'exists' => $lineCount > 0,
+            'line_count' => $lineCount,
+            'difference' => $difference,
+            'balances' => $lineCount > 0 && abs($difference) < 0.005,
         ];
     }
 
@@ -647,5 +865,20 @@ final class YearEndChecklistService
         }
 
         return 'ready_for_review';
+    }
+
+    private function tableExists(string $table): bool {
+        static $cache = [];
+        if (array_key_exists($table, $cache)) {
+            return $cache[$table];
+        }
+
+        try {
+            $cache[$table] = \InterfaceDB::tableExists($table);
+        } catch (\Throwable) {
+            $cache[$table] = false;
+        }
+
+        return $cache[$table];
     }
 }

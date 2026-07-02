@@ -19,80 +19,159 @@ final class DashboardRepository
         int $recentLimit = 12
     ): array
     {
-        $stats = [
-            'bank_accounts' => 0,
-            'trade_accounts' => 0,
-            'statement_uploads' => 0,
-            'unreconciled_items' => 0,
-            'draft_journals' => 0,
-            'staged_upload_rows' => 0,
+        return [
+            'stats' => $this->fetchDashboardStats($companyId, $accountingPeriodId),
+            'activity' => $this->fetchDashboardActionQueue($companyId, $accountingPeriodId),
+            'recent_transactions' => $this->fetchRecentTransactions($companyId, $accountingPeriodId, $defaultBankNominalId, $recentLimit),
         ];
-        $data = [
-            'stats' => $stats,
-            'activity' => [],
-            'recent_transactions' => [],
-        ];
+    }
+
+    public function fetchDashboardStats(int $companyId, int $accountingPeriodId): array
+    {
+        $stats = $this->emptyDashboardStats();
+
+        if ($companyId <= 0) {
+            return $stats;
+        }
+
+        $accountCounts = \InterfaceDB::fetchOne(
+            'SELECT
+                    COALESCE(SUM(CASE WHEN account_type = :bank_type THEN 1 ELSE 0 END), 0) AS bank_accounts,
+                    COALESCE(SUM(CASE WHEN account_type = :trade_type THEN 1 ELSE 0 END), 0) AS trade_accounts
+             FROM company_accounts
+             WHERE company_id = :company_id
+               AND is_active = 1',
+            [
+                'bank_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
+                'trade_type' => \eel_accounts\Service\CompanyAccountService::TYPE_TRADE,
+                'company_id' => $companyId,
+            ]
+        ) ?: [];
+
+        $stats['bank_accounts'] = (int)($accountCounts['bank_accounts'] ?? 0);
+        $stats['trade_accounts'] = (int)($accountCounts['trade_accounts'] ?? 0);
+        $stats['statement_uploads'] = (int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*)
+             FROM statement_uploads
+             WHERE company_id = :company_id',
+            ['company_id' => $companyId]
+        );
+
+        if ($accountingPeriodId <= 0) {
+            return $stats;
+        }
+
+        $transactionCounts = $this->fetchTransactionDashboardCounts($companyId, $accountingPeriodId);
+        $stats['unreconciled_items'] = (int)($transactionCounts['unreconciled_items'] ?? 0);
+        $stats['draft_journals'] = (int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*)
+             FROM journals
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+               AND source_type = :source_type',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'source_type' => 'manual',
+            ]
+        );
+        $stats['staged_upload_rows'] = $this->countStagedUploadRows($companyId, $accountingPeriodId);
+
+        return $stats;
+    }
+
+    public function fetchDashboardActionQueue(int $companyId, int $accountingPeriodId): array
+    {
+        $stats = $this->emptyDashboardStats();
+        $activity = [];
         $setupHealthActions = $this->fetchSetupHealthActions($companyId);
 
         if ($companyId <= 0) {
-            $data['activity'] = $this->finaliseActivity([
+            return $this->finaliseActivity([
                 [
                     'title' => 'Company required',
                     'detail' => 'A company must exist before dashboard activity can be calculated.',
                 ],
             ], $setupHealthActions);
-
-            return $data;
         }
 
-        $stats['bank_accounts'] = \InterfaceDB::countWhere('company_accounts', [
-            'company_id' => $companyId,
-            'is_active' => 1,
-            'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
-        ]);
-        $stats['trade_accounts'] = \InterfaceDB::countWhere('company_accounts', [
-            'company_id' => $companyId,
-            'is_active' => 1,
-            'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_TRADE,
-        ]);
-        $stats['statement_uploads'] = \InterfaceDB::countWhere('statement_uploads', [
-            'company_id' => $companyId,
-        ]);
-
+        $stats = $this->fetchDashboardStats($companyId, $accountingPeriodId);
         $this->appendCompanySetupActions(
-            $data['activity'],
+            $activity,
             (int)$stats['bank_accounts'],
             (int)$stats['statement_uploads']
         );
 
-        if ($accountingPeriodId > 0) {
-            $transactionCount = \InterfaceDB::countWhere('transactions', [
-                'company_id' => $companyId,
-                'accounting_period_id' => $accountingPeriodId,
-            ]);
-
-            $stats['unreconciled_items'] = \InterfaceDB::countWhere('transactions', [
-                'company_id' => $companyId,
-                'accounting_period_id' => $accountingPeriodId,
-                'category_status' => 'uncategorised',
-            ]);
-
-            $stats['draft_journals'] = \InterfaceDB::countWhere('journals', [
-                'company_id' => $companyId,
-                'accounting_period_id' => $accountingPeriodId,
-                'source_type' => 'manual',
-            ]);
-            $stats['staged_upload_rows'] = $this->countStagedUploadRows($companyId, $accountingPeriodId);
-
-            $this->appendMissingTransactionAction($data['activity'], (int)$transactionCount);
+        if ($accountingPeriodId <= 0) {
+            return $this->finaliseActivity($activity, $setupHealthActions);
         }
 
-        $data['stats'] = $stats;
+        $transactionCounts = $this->fetchTransactionDashboardCounts($companyId, $accountingPeriodId);
+        $this->appendMissingTransactionAction($activity, (int)($transactionCounts['transaction_count'] ?? 0));
 
-        if ($accountingPeriodId <= 0) {
-            $data['activity'] = $this->finaliseActivity([], $setupHealthActions);
+        $uncategorisedCount = (int)$stats['unreconciled_items'];
+        if ($uncategorisedCount > 0) {
+            $activity[] = [
+                'title' => 'Categorise uncategorised transactions',
+                'detail' => $uncategorisedCount . ' transaction' . ($uncategorisedCount === 1 ? '' : 's') . ' still need to be categorised against a nominal account.',
+            ];
+        }
 
-            return $data;
+        $stagedUploadRows = (int)$stats['staged_upload_rows'];
+        if ($stagedUploadRows > 0) {
+            $activity[] = [
+                'title' => 'Process staged upload rows',
+                'detail' => $stagedUploadRows . ' staged upload row' . ($stagedUploadRows === 1 ? '' : 's') . ' still need processing.',
+            ];
+        }
+
+        $duplicateUploads = \InterfaceDB::countWhereCompare('statement_uploads', 'rows_duplicate', '>', 0, [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+        ]);
+        if ($duplicateUploads > 0) {
+            $activity[] = [
+                'title' => 'Review duplicate upload hits',
+                'detail' => $duplicateUploads . ' upload' . ($duplicateUploads === 1 ? '' : 's') . ' reported duplicate rows.',
+            ];
+        }
+
+        $emptyUploads = \InterfaceDB::countWhere('statement_uploads', [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'rows_inserted' => 0,
+        ]);
+        if ($emptyUploads > 0) {
+            $activity[] = [
+                'title' => 'Check empty imports',
+                'detail' => $emptyUploads . ' upload' . ($emptyUploads === 1 ? '' : 's') . ' inserted no rows and may need inspection.',
+            ];
+        }
+
+        $manualTransactions = \InterfaceDB::countWhere('transactions', [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'statement_upload_id' => null,
+        ]);
+        if ($manualTransactions > 0) {
+            $activity[] = [
+                'title' => 'Review manually added transactions',
+                'detail' => $manualTransactions . ' transaction' . ($manualTransactions === 1 ? '' : 's') . ' are not tied to an uploaded statement.',
+            ];
+        }
+
+        return $this->finaliseActivity($activity, $setupHealthActions);
+    }
+
+    public function fetchRecentTransactions(
+        int $companyId,
+        int $accountingPeriodId,
+        ?int $defaultBankNominalId = null,
+        int $recentLimit = 100
+    ): array
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return [];
         }
 
         if ($defaultBankNominalId === null) {
@@ -128,62 +207,48 @@ final class DashboardRepository
             $companyId,
             $accountingPeriodId,
         ]);
-        $data['recent_transactions'] = $stmt->fetchAll();
 
-        $uncategorisedCount = (int)$stats['unreconciled_items'];
-        if ($uncategorisedCount > 0) {
-            $data['activity'][] = [
-                'title' => 'Categorise uncategorised transactions',
-                'detail' => $uncategorisedCount . ' transaction' . ($uncategorisedCount === 1 ? '' : 's') . ' still need to be categorised against a nominal account.',
+        return $stmt->fetchAll();
+    }
+
+    private function emptyDashboardStats(): array
+    {
+        return [
+            'bank_accounts' => 0,
+            'trade_accounts' => 0,
+            'statement_uploads' => 0,
+            'unreconciled_items' => 0,
+            'draft_journals' => 0,
+            'staged_upload_rows' => 0,
+        ];
+    }
+
+    private function fetchTransactionDashboardCounts(int $companyId, int $accountingPeriodId): array
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return [
+                'transaction_count' => 0,
+                'unreconciled_items' => 0,
             ];
         }
 
-        $stagedUploadRows = (int)$stats['staged_upload_rows'];
-        if ($stagedUploadRows > 0) {
-            $data['activity'][] = [
-                'title' => 'Process staged upload rows',
-                'detail' => $stagedUploadRows . ' staged upload row' . ($stagedUploadRows === 1 ? '' : 's') . ' still need processing.',
-            ];
-        }
+        $row = \InterfaceDB::fetchOne(
+            'SELECT COUNT(*) AS transaction_count,
+                    COALESCE(SUM(CASE WHEN category_status = :category_status THEN 1 ELSE 0 END), 0) AS unreconciled_items
+             FROM transactions
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id',
+            [
+                'category_status' => 'uncategorised',
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+            ]
+        ) ?: [];
 
-        $duplicateUploads = \InterfaceDB::countWhereCompare('statement_uploads', 'rows_duplicate', '>', 0, [
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-        ]);
-        if ($duplicateUploads > 0) {
-            $data['activity'][] = [
-                'title' => 'Review duplicate upload hits',
-                'detail' => $duplicateUploads . ' upload' . ($duplicateUploads === 1 ? '' : 's') . ' reported duplicate rows.',
-            ];
-        }
-
-        $emptyUploads = \InterfaceDB::countWhere('statement_uploads', [
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-            'rows_inserted' => 0,
-        ]);
-        if ($emptyUploads > 0) {
-            $data['activity'][] = [
-                'title' => 'Check empty imports',
-                'detail' => $emptyUploads . ' upload' . ($emptyUploads === 1 ? '' : 's') . ' inserted no rows and may need inspection.',
-            ];
-        }
-
-        $manualTransactions = \InterfaceDB::countWhere('transactions', [
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-            'statement_upload_id' => null,
-        ]);
-        if ($manualTransactions > 0) {
-            $data['activity'][] = [
-                'title' => 'Review manually added transactions',
-                'detail' => $manualTransactions . ' transaction' . ($manualTransactions === 1 ? '' : 's') . ' are not tied to an uploaded statement.',
-            ];
-        }
-
-        $data['activity'] = $this->finaliseActivity($data['activity'], $setupHealthActions);
-
-        return $data;
+        return [
+            'transaction_count' => (int)($row['transaction_count'] ?? 0),
+            'unreconciled_items' => (int)($row['unreconciled_items'] ?? 0),
+        ];
     }
 
     private function finaliseActivity(array $activity, array $setupHealthActions): array

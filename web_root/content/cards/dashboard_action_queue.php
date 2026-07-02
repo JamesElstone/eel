@@ -18,9 +18,9 @@ final class _dashboard_action_queueCard extends CardBaseFramework
     {
         return [
             [
-                'key' => 'dashboard_data',
+                'key' => 'dashboard_action_queue',
                 'service' => \eel_accounts\Repository\DashboardRepository::class,
-                'method' => 'fetchDashboardData',
+                'method' => 'fetchDashboardActionQueue',
                 'params' => [
                     'companyId' => ':company.id',
                     'accountingPeriodId' => ':company.accounting_period_id',
@@ -59,8 +59,9 @@ final class _dashboard_action_queueCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $dashboardData = (array)(($context['services'] ?? [])['dashboard_data'] ?? []);
-        $actionQueue = (array)($dashboardData['activity'] ?? (($context['page'] ?? [])['action_queue'] ?? []));
+        $services = (array)($context['services'] ?? []);
+        $dashboardData = (array)($services['dashboard_data'] ?? []);
+        $actionQueue = (array)($services['dashboard_action_queue'] ?? ($dashboardData['activity'] ?? (($context['page'] ?? [])['action_queue'] ?? [])));
         $itemsHtml = '';
 
         foreach ($actionQueue as $item) {

@@ -11,6 +11,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(_dashboard_year_end_readinessCard::class, static function (GeneratedServiceClassTestHarness $harness, _dashboard_year_end_readinessCard $card): void {
+    $harness->check(_dashboard_year_end_readinessCard::class, 'declares lightweight dashboard summary service', static function () use ($harness, $card): void {
+        $services = $card->services();
+
+        $harness->assertSame('year_end_dashboard_summary', (string)($services[0]['key'] ?? ''));
+        $harness->assertSame(\eel_accounts\Service\YearEndChecklistService::class, (string)($services[0]['service'] ?? ''));
+        $harness->assertSame('fetchDashboardSummary', (string)($services[0]['method'] ?? ''));
+    });
+
     $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'dashboard summary includes only warning and fail checks as top issues', static function () use ($harness): void {
         $method = new ReflectionMethod(\eel_accounts\Service\YearEndChecklistService::class, 'topIssuesFromChecks');
         $method->setAccessible(true);
@@ -33,6 +41,62 @@ $harness->run(_dashboard_year_end_readinessCard::class, static function (Generat
         $harness->assertSame('Source data present', $topIssues[0]['title'] ?? '');
         $harness->assertSame('No committed bank transactions or posted journals were found in this period.', $topIssues[0]['detail'] ?? '');
         $harness->assertSame('0', $topIssues[0]['metric_value'] ?? '');
+    });
+
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'dashboard summary reads persisted review and top issues', static function () use ($harness): void {
+        dashboardYearEndReadinessRequireSchema($harness);
+
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = dashboardYearEndReadinessCreateFixture('Persisted');
+            dashboardYearEndReadinessInsertReview($fixture, 'needs_attention', '2026-07-02 12:00:00');
+
+            $statuses = ['pass', 'warning', 'fail', 'warning', 'fail', 'warning', 'fail'];
+            foreach ($statuses as $index => $status) {
+                dashboardYearEndReadinessInsertCheck($fixture, $index, $status);
+            }
+
+            $summary = (new \eel_accounts\Service\YearEndChecklistService())->fetchDashboardSummary(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id']
+            );
+
+            $harness->assertSame(true, (bool)($summary['available'] ?? false));
+            $harness->assertSame('needs_attention', (string)($summary['status'] ?? ''));
+            $harness->assertSame((int)$fixture['accounting_period_id'], (int)($summary['accounting_period_id'] ?? 0));
+            $harness->assertCount(5, (array)($summary['top_issues'] ?? []));
+            $harness->assertSame('Persisted check 1', (string)($summary['top_issues'][0]['title'] ?? ''));
+            $harness->assertSame(false, in_array('Persisted check 0', array_column((array)$summary['top_issues'], 'title'), true));
+            $harness->assertSame(false, in_array('Persisted check 6', array_column((array)$summary['top_issues'], 'title'), true));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'dashboard summary bootstraps when no snapshot exists', static function () use ($harness): void {
+        dashboardYearEndReadinessRequireSchema($harness);
+
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = dashboardYearEndReadinessCreateFixture('Bootstrap');
+
+            $summary = (new \eel_accounts\Service\YearEndChecklistService())->fetchDashboardSummary(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id']
+            );
+
+            $harness->assertSame(true, (bool)($summary['available'] ?? false));
+            $harness->assertSame('not_started', (string)($summary['status'] ?? ''));
+            $harness->assertSame((int)$fixture['accounting_period_id'], (int)($summary['accounting_period_id'] ?? 0));
+            $harness->assertSame(true, count((array)($summary['top_issues'] ?? [])) > 0);
+            $harness->assertSame('Source data present', (string)($summary['top_issues'][0]['title'] ?? ''));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
     });
 
     $harness->check(_dashboard_year_end_readinessCard::class, 'renders year end summary as stat cards', static function () use ($harness, $card): void {
@@ -104,3 +168,117 @@ $harness->run(_dashboard_year_end_readinessCard::class, static function (Generat
         $harness->assertSame(true, str_contains($html, 'Open the Year End To Do page to calculate the detailed checklist.'));
     });
 });
+
+function dashboardYearEndReadinessRequireSchema(GeneratedServiceClassTestHarness $harness): void
+{
+    foreach (['companies', 'accounting_periods', 'year_end_reviews', 'year_end_check_results'] as $table) {
+        if (!InterfaceDB::tableExists($table)) {
+            $harness->skip($table . ' table is not available.');
+        }
+    }
+}
+
+function dashboardYearEndReadinessCreateFixture(string $labelPrefix): array
+{
+    $marker = (string)random_int(100000, 999999);
+    $companyId = (int)('71' . $marker);
+    $accountingPeriodId = (int)('72' . $marker);
+
+    InterfaceDB::prepareExecute(
+        'INSERT INTO companies (id, company_name, company_number, is_active)
+         VALUES (:id, :company_name, :company_number, 1)',
+        [
+            'id' => $companyId,
+            'company_name' => 'Year End Dashboard ' . $labelPrefix . ' Fixture ' . $marker,
+            'company_number' => 'YDS' . substr($marker, 0, 5),
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end)
+         VALUES (:id, :company_id, :label, :period_start, :period_end)',
+        [
+            'id' => $accountingPeriodId,
+            'company_id' => $companyId,
+            'label' => $labelPrefix . ' FY ' . $marker,
+            'period_start' => '2025-01-01',
+            'period_end' => '2025-12-31',
+        ]
+    );
+
+    return [
+        'company_id' => $companyId,
+        'accounting_period_id' => $accountingPeriodId,
+    ];
+}
+
+function dashboardYearEndReadinessInsertReview(array $fixture, string $status, string $lastRecalculatedAt): void
+{
+    InterfaceDB::prepareExecute(
+        'INSERT INTO year_end_reviews (
+            company_id,
+            accounting_period_id,
+            status,
+            is_locked,
+            last_recalculated_at,
+            created_at,
+            updated_at
+         ) VALUES (
+            :company_id,
+            :accounting_period_id,
+            :status,
+            0,
+            :last_recalculated_at,
+            :created_at,
+            :updated_at
+         )',
+        [
+            'company_id' => (int)$fixture['company_id'],
+            'accounting_period_id' => (int)$fixture['accounting_period_id'],
+            'status' => $status,
+            'last_recalculated_at' => $lastRecalculatedAt,
+            'created_at' => $lastRecalculatedAt,
+            'updated_at' => $lastRecalculatedAt,
+        ]
+    );
+}
+
+function dashboardYearEndReadinessInsertCheck(array $fixture, int $index, string $status): void
+{
+    InterfaceDB::prepareExecute(
+        'INSERT INTO year_end_check_results (
+            company_id,
+            accounting_period_id,
+            check_code,
+            severity,
+            status,
+            title,
+            detail_text,
+            metric_value,
+            action_url,
+            calculated_at
+         ) VALUES (
+            :company_id,
+            :accounting_period_id,
+            :check_code,
+            :severity,
+            :status,
+            :title,
+            :detail_text,
+            :metric_value,
+            :action_url,
+            :calculated_at
+         )',
+        [
+            'company_id' => (int)$fixture['company_id'],
+            'accounting_period_id' => (int)$fixture['accounting_period_id'],
+            'check_code' => 'dashboard_test_' . $index,
+            'severity' => $status === 'fail' ? 'fail' : 'warning',
+            'status' => $status,
+            'title' => 'Persisted check ' . $index,
+            'detail_text' => 'Persisted detail ' . $index,
+            'metric_value' => (string)$index,
+            'action_url' => '?page=year-end',
+            'calculated_at' => '2026-07-02 12:00:00',
+        ]
+    );
+}

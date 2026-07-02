@@ -18,9 +18,9 @@ final class _overviewCard extends CardBaseFramework
     {
         return [
             [
-                'key' => 'dashboard_data',
+                'key' => 'dashboard_stats',
                 'service' => \eel_accounts\Repository\DashboardRepository::class,
-                'method' => 'fetchDashboardData',
+                'method' => 'fetchDashboardStats',
                 'params' => [
                     'companyId' => ':company.id',
                     'accountingPeriodId' => ':company.accounting_period_id',
@@ -43,8 +43,9 @@ final class _overviewCard extends CardBaseFramework
     {
         $statsHtml = '';
         $page = (array)($context['page'] ?? []);
-        $dashboardData = (array)(($context['services'] ?? [])['dashboard_data'] ?? []);
-        $rawStats = (array)($dashboardData['stats'] ?? []);
+        $services = (array)($context['services'] ?? []);
+        $dashboardData = (array)($services['dashboard_data'] ?? []);
+        $rawStats = (array)($services['dashboard_stats'] ?? ($dashboardData['stats'] ?? []));
         $stats = (array)($page['stats'] ?? []);
 
         if ($stats === [] && $rawStats !== []) {

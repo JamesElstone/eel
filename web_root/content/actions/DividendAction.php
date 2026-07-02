@@ -29,6 +29,7 @@ final class DividendAction implements ActionInterfaceFramework
                     'accounting_period_id' => (int)$request->input('accounting_period_id', 0),
                     'declaration_date' => (string)$request->input('declaration_date', ''),
                     'amount' => (string)$request->input('amount', ''),
+                    'reconciliation_transaction_id' => (int)$request->input('reconciliation_transaction_id', 0),
                     'description' => (string)$request->input('description', ''),
                     'settlement_target' => (string)$request->input('settlement_target', ''),
                 ]);
@@ -43,7 +44,9 @@ final class DividendAction implements ActionInterfaceFramework
                 'type' => 'success',
                 'message' => !empty($result['already_exists'])
                     ? 'Dividend declaration already exists for this transaction.'
-                    : 'Dividend declaration posted.',
+                    : (!empty($result['posted'])
+                        ? 'Dividend declaration posted.'
+                        : 'Dividend declaration saved as draft pending reconciliation.'),
             ];
         } else {
             foreach ((array)($result['errors'] ?? ['Dividend declaration could not be posted.']) as $error) {

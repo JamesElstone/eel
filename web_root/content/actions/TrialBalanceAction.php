@@ -44,14 +44,12 @@ final class TrialBalanceAction implements ActionInterfaceFramework
                 'focus' => $filters['focus'],
                 'view_mode' => $filters['view_mode'],
                 'include_zero' => $this->truthy($request->input('include_zero', '0')) ? '1' : '0',
-                'include_unposted' => $this->truthy($request->input('include_unposted', '0')) ? '1' : '0',
             ],
             [
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
                 'trial_balance_filters' => $filters,
                 'trial_balance_include_zero' => $this->truthy($request->input('include_zero', '0')),
-                'trial_balance_include_unposted' => $this->truthy($request->input('include_unposted', '0')),
             ]
         );
     }

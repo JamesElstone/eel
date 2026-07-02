@@ -71,7 +71,6 @@ final class _trial_balance extends PageContextFramework
             ],
             'trial_balance_view_mode' => $filters['view_mode'],
             'trial_balance_include_zero' => $this->truthy($actionResult->context()['trial_balance_include_zero'] ?? $request->input('include_zero', '0')),
-            'trial_balance_include_unposted' => $this->truthy($actionResult->context()['trial_balance_include_unposted'] ?? $request->input('include_unposted', '0')),
         ];
     }
 

@@ -24,9 +24,9 @@ final class _trial_balance_stateCard extends CardBaseFramework
                 'params' => [
                     'companyId' => ':company.id',
                     'accountingPeriodId' => ':company.accounting_period_id',
-                    'includeZero' => ':trial_balance_include_zero',
-                    'includeUnposted' => ':trial_balance_include_unposted',
-                    'filters' => ':trial_balance_filters',
+                    'includeZero' => false,
+                    'includeUnposted' => false,
+                    'filters' => [],
                 ],
             ],
             [
@@ -67,100 +67,17 @@ final class _trial_balance_stateCard extends CardBaseFramework
             return $this->renderErrors((array)($trialBalance['errors'] ?? ['Trial balance is not available for the selected period.']));
         }
 
-        $company = (array)($context['company'] ?? []);
-        $companyId = (int)($company['id'] ?? 0);
-        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
-        $pageId = (string)(($context['page'] ?? [])['page_id'] ?? 'trial_balance');
         $validation = (array)($context['services']['trialBalanceValidation'] ?? []);
         $comparison = (array)($context['services']['trialBalanceComparison'] ?? []);
-        $filters = (array)($trialBalance['filters'] ?? []);
-        $viewMode = (string)($context['trial_balance_view_mode'] ?? 'summary');
-        $includeZero = !empty($trialBalance['include_zero']);
-        $includeUnposted = !empty($trialBalance['include_unposted']);
         $summary = (array)($trialBalance['summary'] ?? []);
         $taxComputation = (array)($summary['tax_computation'] ?? []);
 
         return '<div id="trial-balance-app" class="settings-stack">
-            ' . $this->renderFilterPanel($company, (array)($trialBalance['accounting_period'] ?? []), $companyId, $accountingPeriodId, $pageId, $filters, $viewMode, $includeZero, $includeUnposted) . '
             ' . $this->renderSummaryPanel($summary, (string)($validation['ready_for_ct_working_papers'] ?? 'Not ready')) . '
             ' . $this->renderValidationPanel($validation) . '
-            ' . $this->renderNominalRowsPanel((array)($trialBalance['rows'] ?? []), $viewMode) . '
             ' . $this->renderTaxLossPanel($taxComputation) . '
             ' . $this->renderComparisonPanel($comparison) . '
         </div>';
-    }
-
-    private function renderFilterPanel(
-        array $company,
-        array $accountingPeriod,
-        int $companyId,
-        int $accountingPeriodId,
-        string $pageId,
-        array $filters,
-        string $viewMode,
-        bool $includeZero,
-        bool $includeUnposted
-    ): string {
-        $formId = 'trial-balance-filter-form';
-        $search = (string)($filters['search'] ?? '');
-        $accountType = (string)($filters['account_type'] ?? 'all');
-        $focus = (string)($filters['focus'] ?? 'all');
-        $csvUrl = 'api/trial-balance/export-csv.php?' . http_build_query([
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-            'include_zero' => $includeZero ? '1' : '0',
-            'include_unposted' => $includeUnposted ? '1' : '0',
-            'search' => $search,
-            'account_type' => $accountType,
-            'focus' => $focus,
-        ]);
-
-        return '<section class="panel-soft">
-            <form id="' . $formId . '" method="get" action="?page=trial-balance" data-ajax="true">
-                <input type="hidden" name="page" value="' . HelperFramework::escape($pageId) . '">
-                <input type="hidden" name="card_action" value="TrialBalance">
-                <input type="hidden" name="intent" value="filter">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-            </form>
-            <div class="form-grid">
-                <div class="form-row">
-                    <label>Company</label>
-                    <input class="input" value="' . HelperFramework::escape((string)($company['name'] ?? '')) . '" readonly>
-                </div>
-                <div class="form-row">
-                    <label>Accounting period</label>
-                    <input class="input" value="' . HelperFramework::escape((string)($accountingPeriod['label'] ?? '')) . '" readonly>
-                </div>
-                <div class="form-row">
-                    <label for="trial-balance-view-mode">View mode</label>
-                    <select class="select" id="trial-balance-view-mode" name="view_mode" form="' . $formId . '">' . $this->options(['summary' => 'Summary', 'detailed' => 'Detailed'], $viewMode) . '</select>
-                </div>
-                <div class="form-row">
-                    <label for="trial-balance-account-type">Account type</label>
-                    <select class="select" id="trial-balance-account-type" name="account_type" form="' . $formId . '">' . $this->options($this->accountTypeOptions(), $accountType) . '</select>
-                </div>
-                <div class="form-row">
-                    <label for="trial-balance-focus">Quick toggle</label>
-                    <select class="select" id="trial-balance-focus" name="focus" form="' . $formId . '">' . $this->options($this->focusOptions(), $focus) . '</select>
-                </div>
-            </div>
-            <div class="actions-row">
-                <label class="checkbox-item">
-                    <input type="checkbox" id="trial-balance-include-zero" name="include_zero" value="1" form="' . $formId . '"' . ($includeZero ? ' checked' : '') . '>
-                    <div class="checkbox-copy"><strong>Include zero-balance accounts</strong><span>Show the full nominal list for the selected period.</span></div>
-                </label>
-                <label class="checkbox-item">
-                    <input type="checkbox" id="trial-balance-include-unposted" name="include_unposted" value="1" form="' . $formId . '"' . ($includeUnposted ? ' checked' : '') . '>
-                    <div class="checkbox-copy"><strong>Include unposted journals</strong><span>Advisory only. The standard TB remains posted-ledger first.</span></div>
-                </label>
-            </div>
-            <div class="actions-row">
-                <button class="button primary" type="submit" form="' . $formId . '">Refresh</button>
-                <a class="button" href="' . HelperFramework::escape($csvUrl) . '">CSV</a>
-                <button class="button" type="button" disabled>Printable view</button>
-            </div>
-        </section>';
     }
 
     private function renderSummaryPanel(array $summary, string $readiness): string
@@ -213,44 +130,6 @@ final class _trial_balance_stateCard extends CardBaseFramework
                 <h3 class="card-title">Validation</h3>
             </div>
             <div class="settings-stack">' . $checksHtml . '</div>
-            <div>
-                <h3 class="card-title">Month readiness</h3>
-                <div class="month-grid">' . $this->monthTiles((array)($validation['month_tiles'] ?? [])) . '</div>
-            </div>
-        </section>';
-    }
-
-    private function renderNominalRowsPanel(array $rows, string $viewMode): string
-    {
-        if ($rows === []) {
-            return $this->panel('', '<div class="helper">No nominal accounts match the current filters.</div>');
-        }
-
-        $html = '';
-        foreach ($rows as $row) {
-            $flags = implode(' ', array_map(
-                static fn(array $flag): string => '<span class="badge info">' . HelperFramework::escape((string)($flag['label'] ?? '')) . '</span>',
-                (array)($row['flags'] ?? [])
-            ));
-            $html .= '<tr>
-                <td>' . HelperFramework::escape((string)($row['nominal_code'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape((string)($row['nominal_name'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($row['account_type'] ?? ''), '_')) . '</td>
-                <td>' . HelperFramework::escape((string)($row['subtype_name'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::money($row[$viewMode === 'detailed' ? 'total_debit' : 'display_debit'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::money($row[$viewMode === 'detailed' ? 'total_credit' : 'display_credit'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::money($row['net_movement'] ?? 0)) . '</td>
-                <td>' . $flags . '</td>
-            </tr>';
-        }
-
-        return '<section class="panel-soft">
-            <div class="table-scroll">
-                <table>
-                    <thead><tr><th>Code</th><th>Nominal</th><th>Type</th><th>Subtype</th><th>Debit</th><th>Credit</th><th>Net</th><th>Flags</th></tr></thead>
-                    <tbody>' . $html . '</tbody>
-                </table>
-            </div>
         </section>';
     }
 
@@ -267,7 +146,7 @@ final class _trial_balance_stateCard extends CardBaseFramework
 
         return '<section class="panel-soft">
             <div class="status-head"><h3 class="card-title">Tax Losses / Brought Forward Losses</h3></div>
-            <div class="summary-grid">
+            <div class="summary-grid four">
                 ' . $this->summaryCard('Loss created', FormattingFramework::money($taxComputation['loss_created_in_period'] ?? 0)) . '
                 ' . $this->summaryCard('Brought forward', FormattingFramework::money($taxComputation['losses_brought_forward'] ?? 0)) . '
                 ' . $this->summaryCard('Utilised', FormattingFramework::money($taxComputation['losses_used'] ?? 0)) . '
@@ -308,39 +187,6 @@ final class _trial_balance_stateCard extends CardBaseFramework
                 </table>
             </div>
         </section>';
-    }
-
-    private function options(array $options, string $selectedValue): string
-    {
-        $html = '';
-        foreach ($options as $value => $label) {
-            $html .= '<option value="' . HelperFramework::escape((string)$value) . '"' . ((string)$value === $selectedValue ? ' selected' : '') . '>' . HelperFramework::escape((string)$label) . '</option>';
-        }
-
-        return $html;
-    }
-
-    private function accountTypeOptions(): array
-    {
-        return [
-            'all' => 'All',
-            'asset' => 'Asset',
-            'liability' => 'Liability',
-            'equity' => 'Equity',
-            'income' => 'Income',
-            'cost_of_sales' => 'Cost of sales',
-            'expense' => 'Expense',
-        ];
-    }
-
-    private function focusOptions(): array
-    {
-        return [
-            'all' => 'All accounts',
-            'income_statement' => 'Income statement',
-            'balance_sheet' => 'Balance sheet',
-            'exception' => 'Exception accounts only',
-        ];
     }
 
     private function summaryCard(string $label, string $value, bool $trustedValue = false): string
@@ -396,24 +242,6 @@ final class _trial_balance_stateCard extends CardBaseFramework
     private function isListArray(array $value): bool
     {
         return array_keys($value) === range(0, count($value) - 1);
-    }
-
-    private function monthTiles(array $tiles): string
-    {
-        $html = '';
-        foreach ($tiles as $tile) {
-            $monthKey = (string)($tile['month_key'] ?? '');
-            $year = $monthKey !== '' ? substr($monthKey, 0, 4) : '';
-            $html .= '<div class="month-tile ' . HelperFramework::escape((string)($tile['status'] ?? 'red')) . '">
-                <div class="month-head"><div><div class="month-name">' . HelperFramework::escape((string)($tile['month_short_name'] ?? '')) . '</div><div class="month-year">' . HelperFramework::escape($year) . '</div></div><span class="month-dot"></span></div>
-                <div class="month-metric">' . (int)($tile['transaction_count'] ?? 0) . '</div>
-                <div class="helper">' . (int)($tile['statement_upload_count'] ?? 0) . ' upload(s)</div>
-                <div class="helper">' . (int)($tile['uncategorised_count'] ?? 0) . ' uncategorised</div>
-                <div class="helper">' . (int)($tile['suspense_count'] ?? 0) . ' suspense</div>
-            </div>';
-        }
-
-        return $html !== '' ? $html : '<div class="helper">No month readiness data is available for this period.</div>';
     }
 
     private function panel(string $title, string $body): string

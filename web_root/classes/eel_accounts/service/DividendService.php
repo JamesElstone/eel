@@ -144,6 +144,7 @@ final class DividendService
         $description = trim((string)($input['description'] ?? ''));
         $settlementTarget = trim((string)($input['settlement_target'] ?? ''));
         $amount = round((float)($input['amount'] ?? 0), 2);
+        $reconciliationTransactionId = (int)($input['reconciliation_transaction_id'] ?? 0);
 
         if ($description === '') {
             $description = 'Interim dividend';
@@ -156,7 +157,7 @@ final class DividendService
         if (!$this->isValidDate($declarationDate)) {
             $errors[] = 'Enter a valid declaration date.';
         }
-        if ($amount <= 0) {
+        if ($reconciliationTransactionId <= 0 && $amount <= 0) {
             $errors[] = 'Dividend amount must be greater than zero.';
         }
         if (!in_array($settlementTarget, ['director_loan_liability', 'unpaid_dividend_liability'], true)) {
@@ -167,12 +168,19 @@ final class DividendService
         if ($accountingPeriod === null && $companyId > 0 && $accountingPeriodId > 0) {
             $errors[] = 'The selected accounting period could not be found.';
         }
+        if ($accountingPeriod !== null && $this->accountingPeriodEndsAfterToday($accountingPeriod)) {
+            $errors[] = 'Dividend declarations are disabled until the selected accounting period has ended.';
+        }
         if ($accountingPeriod !== null && $this->dateInsidePeriod($declarationDate, (string)$accountingPeriod['period_start'], (string)$accountingPeriod['period_end']) === false) {
             $errors[] = 'Declaration date must fall inside the selected accounting period.';
         }
 
         if ($errors !== []) {
             return ['success' => false, 'errors' => $errors];
+        }
+
+        if ($reconciliationTransactionId > 0) {
+            return $this->declareDividendFromTransaction($reconciliationTransactionId, $companyId, $accountingPeriodId);
         }
 
         $nominalResult = $this->ensureDividendNominals($companyId);
@@ -206,11 +214,14 @@ final class DividendService
 
         $capacity = $this->getDividendCapacity($companyId, $accountingPeriodId, $declarationDate);
         $availableReserves = round((float)($capacity['available_distributable_reserves'] ?? 0), 2);
-        if ($availableReserves <= 0) {
-            return ['success' => false, 'errors' => ['Dividend declaration is blocked because distributable reserves are not positive.']];
+        if ($availableReserves < 0) {
+            return ['success' => false, 'errors' => ['Dividend declaration is blocked because distributable reserves are negative.']];
         }
         if ($amount > $availableReserves) {
             return ['success' => false, 'errors' => ['Dividend amount exceeds available distributable reserves.']];
+        }
+        if ($availableReserves <= 0) {
+            return ['success' => false, 'errors' => ['Dividend declaration is blocked because distributable reserves are not positive.']];
         }
 
         try {
@@ -238,7 +249,7 @@ final class DividendService
                     is_posted,
                     created_at,
                     updated_at
-                 ) VALUES (?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)',
+                 ) VALUES (?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)',
                 [
                     $companyId,
                     $accountingPeriodId,
@@ -263,6 +274,7 @@ final class DividendService
 
             return [
                 'success' => true,
+                'posted' => false,
                 'journal_id' => $journalId,
                 'source_ref' => $sourceRef,
             ];
@@ -309,8 +321,23 @@ final class DividendService
         if ($accountingPeriod === null) {
             return ['success' => false, 'errors' => ['The selected accounting period could not be found.']];
         }
+        if ($this->accountingPeriodEndsAfterToday($accountingPeriod)) {
+            return ['success' => false, 'errors' => ['Dividend declarations are disabled until the selected accounting period has ended.']];
+        }
         if (!$this->dateInsidePeriod($declarationDate, (string)$accountingPeriod['period_start'], (string)$accountingPeriod['period_end'])) {
             return ['success' => false, 'errors' => ['The transaction date must fall inside the selected accounting period.']];
+        }
+
+        $capacity = $this->getDividendCapacity($companyId, $accountingPeriodId, $declarationDate);
+        $availableReserves = round((float)($capacity['available_distributable_reserves'] ?? 0), 2);
+        if ($availableReserves < 0) {
+            return ['success' => false, 'errors' => ['Dividend declaration is blocked because distributable reserves are negative.']];
+        }
+        if ($amount > $availableReserves) {
+            return ['success' => false, 'errors' => ['Dividend amount exceeds available distributable reserves.']];
+        }
+        if ($availableReserves <= 0) {
+            return ['success' => false, 'errors' => ['Dividend declaration is blocked because distributable reserves are not positive.']];
         }
 
         try {
@@ -339,6 +366,7 @@ final class DividendService
         if ($existingJournalId > 0) {
             return [
                 'success' => true,
+                'posted' => true,
                 'already_exists' => true,
                 'journal_id' => $existingJournalId,
                 'source_ref' => $sourceRef,
@@ -393,6 +421,7 @@ final class DividendService
 
             return [
                 'success' => true,
+                'posted' => true,
                 'already_exists' => false,
                 'journal_id' => $journalId,
                 'source_ref' => $sourceRef,
@@ -404,6 +433,47 @@ final class DividendService
 
             return ['success' => false, 'errors' => [$exception->getMessage()]];
         }
+    }
+
+    public function listDividendReconciliationCandidates(int $companyId, int $accountingPeriodId): array
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return [];
+        }
+
+        $dividendsPayable = $this->findNominalByCode(self::DIVIDENDS_PAYABLE_CODE);
+        $dividendsPayableId = (int)($dividendsPayable['id'] ?? 0);
+        if ($dividendsPayableId <= 0) {
+            return [];
+        }
+
+        $stmt = \InterfaceDB::prepare(
+            'SELECT t.id,
+                    t.txn_date,
+                    t.description,
+                    t.amount
+             FROM transactions t
+             WHERE t.company_id = ?
+               AND t.accounting_period_id = ?
+               AND COALESCE(t.is_internal_transfer, 0) = 0
+               AND t.nominal_account_id = ?
+               AND t.amount < 0
+               AND t.category_status IN (\'auto\', \'manual\')
+               AND NOT EXISTS (
+                    SELECT 1
+                    FROM journals dividend_j
+                    WHERE dividend_j.company_id = t.company_id
+                      AND dividend_j.source_type = \'manual\'
+                      AND dividend_j.source_ref = CONCAT(\'dividend:transaction:\', t.id)
+               )
+             ORDER BY t.txn_date DESC, t.id DESC'
+        );
+        if ($stmt === false) {
+            return [];
+        }
+
+        $stmt->execute([$companyId, $accountingPeriodId, $dividendsPayableId]);
+        return $stmt->fetchAll() ?: [];
     }
 
     public function listDividends(int $companyId, int $accountingPeriodId): array
@@ -656,7 +726,7 @@ final class DividendService
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
              WHERE j.company_id = :company_id
                AND j.accounting_period_id = :accounting_period_id
-               AND j.is_posted = 1
+               AND (j.is_posted = 1 OR (j.source_type = :draft_source_type AND j.source_ref LIKE :draft_source_ref))
                AND j.journal_date BETWEEN :period_start AND :as_at_date
                AND jl.nominal_account_id = :nominal_account_id',
             [
@@ -665,6 +735,8 @@ final class DividendService
                 'period_start' => $periodStart,
                 'as_at_date' => $asAtDate,
                 'nominal_account_id' => $nominalId,
+                'draft_source_type' => 'manual',
+                'draft_source_ref' => 'dividend:%',
             ]
         ), 2);
     }
@@ -776,7 +848,8 @@ final class DividendService
     {
         $value = trim((string)($asAtDate ?? ''));
         if (!$this->isValidDate($value)) {
-            $value = (new \DateTimeImmutable('today'))->format('Y-m-d');
+            $today = (new \DateTimeImmutable('today'))->format('Y-m-d');
+            return $today > $periodEnd ? $periodEnd : $today;
         }
         if ($value < $periodStart) {
             return $periodStart;
@@ -786,6 +859,12 @@ final class DividendService
         }
 
         return $value;
+    }
+
+    private function accountingPeriodEndsAfterToday(array $accountingPeriod): bool
+    {
+        $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
+        return $periodEnd !== '' && $periodEnd > (new \DateTimeImmutable('today'))->format('Y-m-d');
     }
 
     private function dateInsidePeriod(string $date, string $periodStart, string $periodEnd): bool

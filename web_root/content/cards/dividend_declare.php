@@ -29,20 +29,52 @@ final class _dividend_declareCard extends CardBaseFramework
         $company = (array)($context['company'] ?? []);
         $capacity = (array)($context['dividends']['capacity'] ?? []);
         $accountingPeriod = (array)($capacity['accounting_period'] ?? []);
+        $candidates = (array)($context['dividends']['reconciliation_candidates'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $periodStart = (string)($accountingPeriod['period_start'] ?? '');
         $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
+        $today = date('Y-m-d');
         $defaultDate = (string)($capacity['as_at_date'] ?? date('Y-m-d'));
         $availableReserves = round((float)($capacity['available_distributable_reserves'] ?? 0), 2);
-        $canDeclare = !empty($capacity['available']) && $availableReserves > 0 && $companyId > 0 && $accountingPeriodId > 0;
-        $disabled = $canDeclare ? '' : ' disabled';
 
+        $disabledReason = '';
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            $disabledReason = 'Select a company and accounting period before declaring a dividend.';
+        } elseif (empty($capacity['available'])) {
+            $capacityErrors = (array)($capacity['errors'] ?? []);
+            $disabledReason = (string)($capacityErrors[0] ?? 'Dividend capacity is not available.');
+        } elseif ($periodEnd !== '' && $periodEnd > $today) {
+            $disabledReason = 'The selected accounting period has not ended yet.';
+        } elseif ($availableReserves < 0) {
+            $disabledReason = 'Available distributable reserves are negative.';
+        } elseif ($availableReserves <= 0) {
+            $disabledReason = 'The selected period has no positive available reserves.';
+        }
+
+        $canDeclare = $disabledReason === '';
+        $disabled = $canDeclare ? '' : ' disabled';
+        $disabledHelper = $canDeclare
+            ? ''
+            : '<div class="helper">Form Disabled - Reason: ' . HelperFramework::escape($disabledReason) . '</div>';
         $helper = $canDeclare
             ? 'Maximum currently available: ' . FormattingFramework::money($availableReserves) . '.'
-            : 'Dividend declaration is blocked until the selected period has positive available reserves.';
+            : 'Dividend declarations can be saved only once the form is enabled.';
+
+        $candidateOptions = '<option value="0">Not reconciled yet - save as draft</option>';
+        foreach ($candidates as $candidate) {
+            $candidateId = (int)($candidate['id'] ?? 0);
+            if ($candidateId <= 0) {
+                continue;
+            }
+            $label = trim((string)($candidate['txn_date'] ?? '')
+                . ' - ' . FormattingFramework::money(abs((float)($candidate['amount'] ?? 0)))
+                . ' - ' . (string)($candidate['description'] ?? ''));
+            $candidateOptions .= '<option value="' . $candidateId . '">' . HelperFramework::escape($label) . '</option>';
+        }
 
         return '<div class="settings-stack">
+            ' . $disabledHelper . '
             <div class="helper">' . HelperFramework::escape($helper) . '</div>
             <form method="post" action="?page=dividends" data-ajax="true" class="form-grid">
                 <input type="hidden" name="card_action" value="Dividend">
@@ -56,6 +88,12 @@ final class _dividend_declareCard extends CardBaseFramework
                 <div class="form-row">
                     <label for="dividend_amount">Amount</label>
                     <input class="input" id="dividend_amount" type="number" name="amount" step="0.01" min="0.01" max="' . HelperFramework::escape(number_format(max(0, $availableReserves), 2, '.', '')) . '"' . $disabled . '>
+                </div>
+                <div class="form-row">
+                    <label for="dividend_reconciliation_transaction_id">Reconcile with transaction</label>
+                    <select class="select" id="dividend_reconciliation_transaction_id" name="reconciliation_transaction_id"' . $disabled . '>
+                        ' . $candidateOptions . '
+                    </select>
                 </div>
                 <div class="form-row">
                     <label for="dividend_description">Description</label>

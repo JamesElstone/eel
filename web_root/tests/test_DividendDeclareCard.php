@@ -1,0 +1,66 @@
+<?php
+/**
+ * EEL Accounts
+ * Copyright (c) 2026 James Elstone
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3)
+ * See LICENSE file for details.
+ */
+declare(strict_types=1);
+
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+
+$harness = new GeneratedServiceClassTestHarness();
+
+$harness->run(_dividend_declareCard::class, static function (GeneratedServiceClassTestHarness $harness, _dividend_declareCard $card): void {
+    $baseContext = [
+        'company' => [
+            'id' => 7,
+            'accounting_period_id' => 22,
+        ],
+        'dividends' => [
+            'capacity' => [
+                'available' => true,
+                'as_at_date' => '2026-06-30',
+                'available_distributable_reserves' => 250.00,
+                'accounting_period' => [
+                    'period_start' => '2026-01-01',
+                    'period_end' => '2026-06-30',
+                ],
+            ],
+            'reconciliation_candidates' => [[
+                'id' => 91,
+                'txn_date' => '2026-06-15',
+                'amount' => -50.00,
+                'description' => 'Dividend payment',
+            ]],
+        ],
+    ];
+
+    $harness->check(_dividend_declareCard::class, 'renders reconciliation candidates when enabled', static function () use ($harness, $card, $baseContext): void {
+        $html = $card->render($baseContext);
+
+        $harness->assertTrue(str_contains($html, 'Maximum currently available'));
+        $harness->assertTrue(str_contains($html, '<option value="0">Not reconciled yet - save as draft</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="91">2026-06-15 -'));
+        $harness->assertFalse(str_contains($html, 'Form Disabled - Reason:'));
+    });
+
+    $harness->check(_dividend_declareCard::class, 'disables declaration controls when distributable reserves are negative', static function () use ($harness, $card, $baseContext): void {
+        $context = $baseContext;
+        $context['dividends']['capacity']['available_distributable_reserves'] = -12.34;
+        $html = $card->render($context);
+
+        $harness->assertTrue(str_contains($html, 'Form Disabled - Reason: Available distributable reserves are negative.'));
+        $harness->assertTrue(str_contains($html, 'id="dividend_amount" type="number" name="amount" step="0.01" min="0.01" max="0.00" disabled'));
+        $harness->assertTrue(str_contains($html, '<button class="button primary" type="submit" disabled>Declare Dividend</button>'));
+    });
+
+    $harness->check(_dividend_declareCard::class, 'disables declaration controls when the period ends in the future', static function () use ($harness, $card, $baseContext): void {
+        $context = $baseContext;
+        $context['dividends']['capacity']['accounting_period']['period_end'] = (new DateTimeImmutable('today'))->modify('+1 day')->format('Y-m-d');
+        $html = $card->render($context);
+
+        $harness->assertTrue(str_contains($html, 'Form Disabled - Reason: The selected accounting period has not ended yet.'));
+        $harness->assertTrue(str_contains($html, 'id="dividend_reconciliation_transaction_id" name="reconciliation_transaction_id" disabled'));
+    });
+});

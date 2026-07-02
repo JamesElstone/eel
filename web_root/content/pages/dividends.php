@@ -30,7 +30,6 @@ final class _dividends extends PageContextFramework
             'dividend_capacity',
             'dividend_declare',
             'dividend_history',
-            'dividend_warnings',
         ];
     }
 
@@ -41,7 +40,6 @@ final class _dividends extends PageContextFramework
                 'tab' => 'Overview',
                 'cards' => [
                     'dividend_capacity',
-                    'dividend_warnings',
                 ],
             ],
             [
@@ -68,7 +66,6 @@ final class _dividends extends PageContextFramework
         $company = (array)($baseContext['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
-        $asAtDate = trim((string)$request->input('as_at_date', ''));
         $dividendService = new \eel_accounts\Service\DividendService();
 
         $nominals = $companyId > 0
@@ -77,12 +74,14 @@ final class _dividends extends PageContextFramework
 
         return [
             'dividends' => [
-                'as_at_date' => $asAtDate,
                 'capacity' => $companyId > 0 && $accountingPeriodId > 0
-                    ? $dividendService->getDividendCapacity($companyId, $accountingPeriodId, $asAtDate !== '' ? $asAtDate : null)
+                    ? $dividendService->getDividendCapacity($companyId, $accountingPeriodId)
                     : ['available' => false, 'errors' => ['Select a company and accounting period before reviewing dividends.']],
                 'history' => $companyId > 0 && $accountingPeriodId > 0
                     ? $dividendService->listDividends($companyId, $accountingPeriodId)
+                    : [],
+                'reconciliation_candidates' => $companyId > 0 && $accountingPeriodId > 0
+                    ? $dividendService->listDividendReconciliationCandidates($companyId, $accountingPeriodId)
                     : [],
                 'warnings' => $dividendService->getDividendWarnings($companyId, $accountingPeriodId),
                 'nominals' => (array)($nominals['accounts'] ?? []),

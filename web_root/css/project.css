@@ -2145,6 +2145,10 @@
   align-items: flex-start;
 }
 
+.transaction-search-controls > .button {
+  margin-top: calc(0.75rem * 1.5 + 6px);
+}
+
 .transaction-search-amount-total {
   color: var(--ink);
   font-size: 0.92rem;

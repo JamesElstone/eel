@@ -35,6 +35,7 @@ final class _settings extends PageContextFramework
             'api_mode',
             'settings_import_review',
             'api_connectivity_test',
+            'hmrc_anti_fraud_test',
             'check_file_paths',
             'settings_setup_health',
             'application_settings',

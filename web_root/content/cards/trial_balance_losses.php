@@ -61,7 +61,7 @@ final class _trial_balance_lossesCard extends CardBaseFramework
             $stepsHtml .= '<tr><td>' . HelperFramework::escape((string)($step['label'] ?? '')) . '</td><td>' . HelperFramework::escape(FormattingFramework::money($step['amount'] ?? 0)) . '</td></tr>';
         }
 
-        return '<section class="panel-soft">
+        return '<div>
             <div class="status-head"><h3 class="card-title">Trial Balance Losses</h3></div>
             <div class="summary-grid four">
                 ' . $this->summaryCard('Loss created', FormattingFramework::money($taxComputation['loss_created_in_period'] ?? 0)) . '
@@ -73,7 +73,7 @@ final class _trial_balance_lossesCard extends CardBaseFramework
             <div class="table-scroll">
                 <table><thead><tr><th>Step</th><th>Amount</th></tr></thead><tbody>' . $stepsHtml . '</tbody></table>
             </div>
-        </section>';
+        </div>';
     }
 
     private function summaryCard(string $label, string $value): string
@@ -83,7 +83,7 @@ final class _trial_balance_lossesCard extends CardBaseFramework
 
     private function panel(string $title, string $body): string
     {
-        return '<section class="panel-soft"><div class="status-head"><h3 class="card-title">' . HelperFramework::escape($title) . '</h3></div>' . $body . '</section>';
+        return '<div><div class="status-head"><h3 class="card-title">' . HelperFramework::escape($title) . '</h3></div>' . $body . '</div>';
     }
 
     private function renderErrors(array $errors): string

@@ -50,7 +50,7 @@ final class _trial_balance_validationCard extends CardBaseFramework
         $checksHtml = '';
         foreach ((array)($validation['checks'] ?? []) as $check) {
             $status = (string)($check['status'] ?? 'warning');
-            $checksHtml .= '<div class="panel-soft">
+            $checksHtml .= '<div>
                 <div class="status-head">
                     <h4 class="card-title">' . HelperFramework::escape((string)($check['title'] ?? 'Check')) . '</h4>
                     <span class="badge ' . $this->badgeClass($status) . '">' . HelperFramework::escape($status) . '</span>
@@ -60,12 +60,12 @@ final class _trial_balance_validationCard extends CardBaseFramework
             </div>';
         }
 
-        return '<section class="panel-soft">
+        return '<div>
             <div class="status-head">
                 <h3 class="card-title">Trial Balance Validation</h3>
             </div>
             <div class="settings-stack">' . $checksHtml . '</div>
-        </section>';
+        </div>';
     }
 
     private function metricValue(mixed $value): string
@@ -111,7 +111,7 @@ final class _trial_balance_validationCard extends CardBaseFramework
 
     private function panel(string $title, string $body): string
     {
-        return '<section class="panel-soft"><div class="status-head"><h3 class="card-title">' . HelperFramework::escape($title) . '</h3></div>' . $body . '</section>';
+        return '<div><div class="status-head"><h3 class="card-title">' . HelperFramework::escape($title) . '</h3></div>' . $body . '</div>';
     }
 
     private function badgeClass(string $status): string

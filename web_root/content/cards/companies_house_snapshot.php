@@ -96,7 +96,7 @@ final class _companies_house_snapshotCard extends CardBaseFramework
         }
 
         return '<div class="settings-stack">
-            <section class="panel-soft">
+            <div>
                 <div class="status-head">
                     <h3 class="card-title">Companies House Snapshot</h3>
                     <span class="badge ' . (!empty($snapshot['is_balance_sheet_balanced']) ? 'success' : 'warning') . '">' . (!empty($snapshot['is_balance_sheet_balanced']) ? 'Balanced' : 'Review') . '</span>
@@ -116,7 +116,7 @@ final class _companies_house_snapshotCard extends CardBaseFramework
                 </div>
                 ' . ($assumptionsHtml !== '' ? '<div class="helper"><ul>' . $assumptionsHtml . '</ul></div>' : '') . '
                 <div class="helper">Current assets exclude fixed assets. Bank balances are current assets; asset register values should flow through fixed-asset and depreciation ledger postings.</div>
-            </section>
+            </div>
             ' . $this->renderComparisonPanel($comparison) . '
         </div>';
     }
@@ -128,7 +128,7 @@ final class _companies_house_snapshotCard extends CardBaseFramework
 
     private function panel(string $title, string $body): string
     {
-        return '<section class="panel-soft"><div class="status-head"><h3 class="card-title">' . HelperFramework::escape($title) . '</h3></div>' . $body . '</section>';
+        return '<div><div class="status-head"><h3 class="card-title">' . HelperFramework::escape($title) . '</h3></div>' . $body . '</div>';
     }
 
     private function renderComparisonPanel(array $comparison): string
@@ -149,7 +149,7 @@ final class _companies_house_snapshotCard extends CardBaseFramework
             </tr>';
         }
 
-        return '<section class="panel-soft">
+        return '<div>
             <div class="status-head"><h3 class="card-title">Filed Accounts Comparison</h3></div>
             <div class="helper">Stored filing date: ' . HelperFramework::escape((string)($comparison['filing']['filing_date'] ?? '')) . '</div>
             <div class="table-scroll">
@@ -158,7 +158,7 @@ final class _companies_house_snapshotCard extends CardBaseFramework
                     <tbody>' . $rowsHtml . '</tbody>
                 </table>
             </div>
-        </section>';
+        </div>';
     }
 
     private function badgeClass(string $status): string

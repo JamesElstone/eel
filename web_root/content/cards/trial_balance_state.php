@@ -73,7 +73,7 @@ final class _trial_balance_stateCard extends CardBaseFramework
             ? 'success'
             : 'danger';
 
-        return '<section class="panel-soft">
+        return '<div>
             <div class="status-head">
                 <h3 class="card-title">Summary</h3>
                 <span class="badge ' . $readyClass . '">' . HelperFramework::escape($readiness) . '</span>
@@ -89,7 +89,7 @@ final class _trial_balance_stateCard extends CardBaseFramework
                 ' . $this->summaryCard('Uncategorised / suspense', FormattingFramework::money($summary['uncategorised_exposure'] ?? 0)) . '
                 ' . $this->summaryCard('Corporation tax nominal', FormattingFramework::money($summary['corporation_tax_balance'] ?? 0)) . '
             </div>
-        </section>';
+        </div>';
     }
 
     private function summaryCard(string $label, string $value, bool $trustedValue = false): string

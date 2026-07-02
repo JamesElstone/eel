@@ -26,7 +26,7 @@ final class _year_end extends PageContextFramework
 
     public function cards(): array
     {
-        return ['year_end_state', 'year_end_audit_log'];
+        return ['year_end_state', 'year_end_empty_month_confirmations', 'year_end_audit_log'];
     }
 
     protected function moduleContext(

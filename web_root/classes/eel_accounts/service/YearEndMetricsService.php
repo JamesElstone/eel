@@ -16,6 +16,7 @@ final class YearEndMetricsService
         private readonly ?\eel_accounts\Service\BankingReconciliationService $bankingReconciliationService = null,
         private readonly ?\eel_accounts\Service\DirectorLoanService $directorLoanService = null,
         private readonly ?\eel_accounts\Service\ExpenseClaimService $expenseClaimService = null,
+        private readonly ?\eel_accounts\Service\EmptyMonthConfirmationService $emptyMonthConfirmationService = null,
     ) {
     }
 
@@ -86,6 +87,9 @@ final class YearEndMetricsService
         $coverage = $coverageService->summarise($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $uploadsByMonth = $this->fetchUploadCountsByMonth($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $transactionByMonth = $this->fetchTransactionCountsByMonth($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $postedJournalsByMonth = $this->fetchPostedJournalCountsByMonth($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $confirmedEmptyMonths = ($this->emptyMonthConfirmationService ?? new \eel_accounts\Service\EmptyMonthConfirmationService())
+            ->activeConfirmationMap($companyId, $accountingPeriodId);
         $suspenseNominalId = $this->findSuspenseNominalId($companyId);
         $suspenseByMonth = $suspenseNominalId > 0
             ? $this->fetchSuspenseCountsByMonth($companyId, $accountingPeriodId, $suspenseNominalId)
@@ -98,9 +102,16 @@ final class YearEndMetricsService
             $txnSummary = $transactionByMonth[$monthKey] ?? ['transactions' => 0, 'uncategorised' => 0];
             $txnCount = (int)($txnSummary['transactions'] ?? 0);
             $uncategorisedCount = (int)($txnSummary['uncategorised'] ?? 0);
+            $postedJournalCount = (int)($postedJournalsByMonth[$monthKey] ?? 0);
             $suspenseCount = (int)($suspenseByMonth[$monthKey] ?? 0);
+            $isConfirmedEmpty = isset($confirmedEmptyMonths[$monthKey])
+                && $txnCount === 0
+                && $uploadCount === 0
+                && $postedJournalCount === 0;
 
-            if ($txnCount === 0 && $uploadCount === 0) {
+            if ($isConfirmedEmpty) {
+                $status = 'green';
+            } elseif ($txnCount === 0 && $uploadCount === 0 && $postedJournalCount === 0) {
                 $status = 'red';
             } elseif ($uncategorisedCount > 0 || $suspenseCount > 0) {
                 $status = 'amber';
@@ -115,8 +126,11 @@ final class YearEndMetricsService
                 'status' => $status,
                 'statement_upload_count' => $uploadCount,
                 'transaction_count' => $txnCount,
+                'posted_journal_count' => $postedJournalCount,
                 'uncategorised_count' => $uncategorisedCount,
                 'suspense_count' => $suspenseCount,
+                'empty_month_confirmed' => $isConfirmedEmpty,
+                'empty_month_confirmation' => $isConfirmedEmpty ? $confirmedEmptyMonths[$monthKey] : null,
             ];
         }
 
@@ -596,6 +610,27 @@ final class YearEndMetricsService
                 'transactions' => (int)($row['transaction_count'] ?? 0),
                 'uncategorised' => (int)($row['uncategorised_count'] ?? 0),
             ];
+        }
+
+        return $result;
+    }
+
+    private function fetchPostedJournalCountsByMonth(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array {
+        $result = [];
+        foreach (\InterfaceDB::fetchAll( 'SELECT DATE_FORMAT(journal_date, \'%Y-%m-01\') AS month_key,
+                    COUNT(*) AS journal_count
+             FROM journals
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+               AND is_posted = 1
+               AND journal_date BETWEEN :period_start AND :period_end
+             GROUP BY DATE_FORMAT(journal_date, \'%Y-%m-01\')', [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'period_start' => $periodStart,
+            'period_end' => $periodEnd,
+        ]) as $row) {
+            $result[(string)$row['month_key']] = (int)($row['journal_count'] ?? 0);
         }
 
         return $result;

@@ -84,6 +84,31 @@ $harness->run(_year_end_stateCard::class, static function (GeneratedServiceClass
         $harness->assertSame(true, str_contains($html, 'Director Loan Asset nominal 1200 is not available.'));
         $harness->assertSame(false, str_contains($html, 'Post Offset Journal'));
     });
+
+    $harness->check(_year_end_stateCard::class, 'annotates confirmed empty month tiles', static function () use ($harness, $card): void {
+        $context = yearEndStateCardDirectorLoanContext([
+            'available' => false,
+            'errors' => ['Director loan offset is not available.'],
+        ]);
+        $context['services']['yearEndChecklist']['month_tiles'] = [
+            [
+                'label' => 'September 2022',
+                'month_short_name' => 'Sep',
+                'status' => 'green',
+                'transaction_count' => 0,
+                'statement_upload_count' => 0,
+                'posted_journal_count' => 0,
+                'uncategorised_count' => 0,
+                'suspense_count' => 0,
+                'empty_month_confirmed' => true,
+            ],
+        ];
+
+        $html = $card->render($context);
+
+        $harness->assertSame(true, str_contains($html, 'Confirmed no activity'));
+        $harness->assertSame(true, str_contains($html, '0 posted journal(s)'));
+    });
 });
 
 function yearEndStateCardDirectorLoanContext(array $offset): array

@@ -1158,6 +1158,36 @@ CREATE TABLE `accounting_periods` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `accounting_period_month_confirmations`
+--
+
+DROP TABLE IF EXISTS `accounting_period_month_confirmations`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `accounting_period_month_confirmations` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `month_start` date NOT NULL,
+  `confirmation_type` varchar(64) NOT NULL DEFAULT 'no_financial_activity',
+  `notes` text DEFAULT NULL,
+  `evidence_json` longtext NOT NULL,
+  `confirmed_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `confirmed_by` varchar(100) NOT NULL DEFAULT 'web_app',
+  `revoked_at` datetime DEFAULT NULL,
+  `revoked_by` varchar(100) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ap_month_confirmation` (`company_id`,`accounting_period_id`,`month_start`,`confirmation_type`),
+  KEY `idx_ap_month_confirmations_period` (`company_id`,`accounting_period_id`,`revoked_at`),
+  KEY `fk_ap_month_confirmations_period` (`accounting_period_id`),
+  CONSTRAINT `fk_ap_month_confirmations_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_ap_month_confirmations_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `transaction_category_audit`
 --
 

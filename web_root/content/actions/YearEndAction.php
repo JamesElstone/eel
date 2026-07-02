@@ -41,6 +41,17 @@ final class YearEndAction implements ActionInterfaceFramework
                 'lock_period' => (new \eel_accounts\Service\YearEndChecklistService())->lockPeriod($companyId, $accountingPeriodId),
                 'unlock_period' => (new \eel_accounts\Service\YearEndChecklistService())->unlockPeriod($companyId, $accountingPeriodId),
                 'save_notes' => (new \eel_accounts\Service\YearEndChecklistService())->saveNotes($companyId, $accountingPeriodId, (string)$request->input('review_notes', '')),
+                'confirm_empty_month' => (new \eel_accounts\Service\EmptyMonthConfirmationService())->confirmMonth(
+                    $companyId,
+                    $accountingPeriodId,
+                    (string)$request->input('month_start', ''),
+                    (string)$request->input('confirmation_notes', '')
+                ),
+                'revoke_empty_month' => (new \eel_accounts\Service\EmptyMonthConfirmationService())->revokeMonth(
+                    $companyId,
+                    $accountingPeriodId,
+                    (string)$request->input('month_start', '')
+                ),
                 'save_opening_balance' => (new \eel_accounts\Service\OpeningBalanceService())->saveOpeningBalance(
                     $companyId,
                     $accountingPeriodId,
@@ -86,7 +97,7 @@ final class YearEndAction implements ActionInterfaceFramework
             }
         }
 
-        return new ActionResultFramework($success, ['year.end.state', 'year.end.audit.log', 'trial.balance.state'], $flashMessages);
+        return new ActionResultFramework($success, ['year.end.state', 'year.end.empty.month.confirmations', 'year.end.audit.log', 'trial.balance.state'], $flashMessages);
     }
 
     private function successMessage(string $intent): string
@@ -96,6 +107,8 @@ final class YearEndAction implements ActionInterfaceFramework
             'lock_period' => 'Accounting period locked.',
             'unlock_period' => 'Accounting period unlocked.',
             'save_notes' => 'Year-end notes saved.',
+            'confirm_empty_month' => 'Empty month confirmation saved.',
+            'revoke_empty_month' => 'Empty month confirmation revoked.',
             'save_opening_balance' => 'Opening balance journal saved.',
             'create_adjustment' => 'Year-end adjustment posted.',
             'post_director_loan_offset' => 'Director loan offset journal posted.',

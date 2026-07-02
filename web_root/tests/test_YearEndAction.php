@@ -148,6 +148,41 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             $harness->assertSame(false, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'exactly 1 active director'));
         });
     });
+
+    $harness->check('YearEndAction', 'confirms and revokes empty month confirmations', static function () use ($harness): void {
+        yearEndActionEmptyMonthTestWithFixture($harness, static function (array $fixture) use ($harness): void {
+            $instance = yearEndActionTestInstanceWithDirectorCount(2);
+
+            $confirm = $instance->handle(
+                yearEndActionEmptyMonthTestRequest((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'confirm_empty_month'),
+                createTestPageServiceFramework()
+            );
+
+            $harness->assertSame(true, $confirm->isSuccess());
+            $harness->assertSame(true, in_array('year.end.empty.month.confirmations', $confirm->changedFacts(), true));
+            $harness->assertSame(true, str_contains((string)($confirm->flashMessages()[0]['message'] ?? ''), 'saved'));
+            $harness->assertSame(1, InterfaceDB::countWhere('accounting_period_month_confirmations', [
+                'company_id' => (int)$fixture['company_id'],
+                'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                'month_start' => '2022-09-01',
+                'revoked_at' => null,
+            ]));
+
+            $revoke = $instance->handle(
+                yearEndActionEmptyMonthTestRequest((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'revoke_empty_month'),
+                createTestPageServiceFramework()
+            );
+
+            $harness->assertSame(true, $revoke->isSuccess());
+            $harness->assertSame(true, in_array('year.end.empty.month.confirmations', $revoke->changedFacts(), true));
+            $harness->assertSame(0, InterfaceDB::countWhere('accounting_period_month_confirmations', [
+                'company_id' => (int)$fixture['company_id'],
+                'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                'month_start' => '2022-09-01',
+                'revoked_at' => null,
+            ]));
+        });
+    });
 });
 
 function yearEndActionDirectorLoanTestWithFixture(GeneratedServiceClassTestHarness $harness, callable $callback): void
@@ -245,6 +280,203 @@ function yearEndActionDirectorLoanTestRequest(int $companyId, int $accountingPer
             'company_id' => (string)$companyId,
             'accounting_period_id' => (string)$accountingPeriodId,
             'review_notes' => 'Notes from director eligibility test.',
+        ],
+        ['REQUEST_METHOD' => 'POST', 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest', 'HTTP_ACCEPT' => 'application/json'],
+        [],
+        [],
+        null
+    );
+}
+
+function yearEndActionEmptyMonthTestWithFixture(GeneratedServiceClassTestHarness $harness, callable $callback): void
+{
+    foreach (['companies', 'accounting_periods', 'company_accounts', 'statement_uploads', 'statement_import_rows', 'accounting_period_month_confirmations'] as $table) {
+        if (!InterfaceDB::tableExists($table)) {
+            $harness->skip($table . ' table is not available on the default InterfaceDB connection.');
+        }
+    }
+
+    InterfaceDB::beginTransaction();
+    try {
+        $marker = substr(hash('sha256', __FILE__ . 'empty-month-action' . microtime(true) . random_int(1, PHP_INT_MAX)), 0, 12);
+        InterfaceDB::prepareExecute(
+            'INSERT INTO companies (company_name, company_number, incorporation_date)
+             VALUES (:company_name, :company_number, :incorporation_date)',
+            [
+                'company_name' => 'Year End Action Empty Month Fixture Limited',
+                'company_number' => 'YEEM' . $marker,
+                'incorporation_date' => '2022-09-14',
+            ]
+        );
+        $companyId = (int)InterfaceDB::fetchColumn('SELECT id FROM companies WHERE company_number = :company_number', ['company_number' => 'YEEM' . $marker]);
+        InterfaceDB::prepareExecute(
+            'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
+             VALUES (:company_id, :label, :period_start, :period_end)',
+            [
+                'company_id' => $companyId,
+                'label' => 'YEEM ' . $marker,
+                'period_start' => '2022-09-01',
+                'period_end' => '2023-08-31',
+            ]
+        );
+        $periodId = (int)InterfaceDB::fetchColumn(
+            'SELECT id FROM accounting_periods WHERE company_id = :company_id AND label = :label',
+            ['company_id' => $companyId, 'label' => 'YEEM ' . $marker]
+        );
+        InterfaceDB::prepareExecute(
+            'INSERT INTO company_accounts (company_id, account_name, account_type, is_active)
+             VALUES (:company_id, :account_name, :account_type, 1)',
+            [
+                'company_id' => $companyId,
+                'account_name' => 'Action Fixture Current Account ' . $marker,
+                'account_type' => 'bank',
+            ]
+        );
+        $accountId = (int)InterfaceDB::fetchColumn(
+            'SELECT id FROM company_accounts WHERE company_id = :company_id ORDER BY id DESC LIMIT 1',
+            ['company_id' => $companyId]
+        );
+
+        yearEndActionEmptyMonthInsertStatement($marker, $companyId, $periodId, $accountId);
+
+        $callback([
+            'company_id' => $companyId,
+            'accounting_period_id' => $periodId,
+        ]);
+    } finally {
+        if (InterfaceDB::inTransaction()) {
+            InterfaceDB::rollBack();
+        }
+    }
+}
+
+function yearEndActionEmptyMonthInsertStatement(string $marker, int $companyId, int $periodId, int $accountId): void
+{
+    InterfaceDB::prepareExecute(
+        'INSERT INTO statement_uploads (
+            company_id,
+            accounting_period_id,
+            account_id,
+            source_type,
+            workflow_status,
+            statement_month,
+            original_filename,
+            stored_filename,
+            file_sha256,
+            date_range_start,
+            date_range_end,
+            source_headers_json,
+            rows_parsed,
+            rows_ready_to_import
+        ) VALUES (
+            :company_id,
+            :accounting_period_id,
+            :account_id,
+            :source_type,
+            :workflow_status,
+            :statement_month,
+            :original_filename,
+            :stored_filename,
+            :file_sha256,
+            :date_range_start,
+            :date_range_end,
+            :source_headers_json,
+            1,
+            1
+        )',
+        [
+            'company_id' => $companyId,
+            'accounting_period_id' => $periodId,
+            'account_id' => $accountId,
+            'source_type' => 'bank_account',
+            'workflow_status' => 'staged',
+            'statement_month' => '2022-10-01',
+            'original_filename' => 'year-end-empty-action-' . $marker . '.csv',
+            'stored_filename' => 'year-end-empty-action-' . $marker . '.csv',
+            'file_sha256' => hash('sha256', 'year-end-empty-action-' . $marker),
+            'date_range_start' => '2022-10-01',
+            'date_range_end' => '2022-10-31',
+            'source_headers_json' => '[]',
+        ]
+    );
+    $uploadId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM statement_uploads WHERE company_id = :company_id ORDER BY id DESC LIMIT 1',
+        ['company_id' => $companyId]
+    );
+
+    InterfaceDB::prepareExecute(
+        'INSERT INTO statement_import_rows (
+            upload_id,
+            row_number,
+            raw_json,
+            source_account,
+            source_created,
+            source_description,
+            source_amount,
+            source_balance,
+            source_currency,
+            accounting_period_id,
+            chosen_txn_date,
+            chosen_date_source,
+            normalised_description,
+            normalised_amount,
+            normalised_balance,
+            normalised_currency,
+            row_hash,
+            validation_status
+        ) VALUES (
+            :upload_id,
+            1,
+            :raw_json,
+            :source_account,
+            :source_created,
+            :source_description,
+            :source_amount,
+            :source_balance,
+            :source_currency,
+            :accounting_period_id,
+            :chosen_txn_date,
+            :chosen_date_source,
+            :normalised_description,
+            :normalised_amount,
+            :normalised_balance,
+            :normalised_currency,
+            :row_hash,
+            :validation_status
+        )',
+        [
+            'upload_id' => $uploadId,
+            'raw_json' => json_encode(['fixture' => true], JSON_THROW_ON_ERROR),
+            'source_account' => 'Action Fixture Current Account',
+            'source_created' => '2022-10-05',
+            'source_description' => 'First later transaction',
+            'source_amount' => '42.50',
+            'source_balance' => '42.50',
+            'source_currency' => 'GBP',
+            'accounting_period_id' => $periodId,
+            'chosen_txn_date' => '2022-10-05',
+            'chosen_date_source' => 'created',
+            'normalised_description' => 'First later transaction',
+            'normalised_amount' => '42.50',
+            'normalised_balance' => '42.50',
+            'normalised_currency' => 'GBP',
+            'row_hash' => hash('sha256', 'year-end-empty-action-row-' . $marker),
+            'validation_status' => 'valid',
+        ]
+    );
+}
+
+function yearEndActionEmptyMonthTestRequest(int $companyId, int $accountingPeriodId, string $intent): RequestFramework
+{
+    return new RequestFramework(
+        [],
+        [
+            'card_action' => 'YearEnd',
+            'intent' => $intent,
+            'company_id' => (string)$companyId,
+            'accounting_period_id' => (string)$accountingPeriodId,
+            'month_start' => '2022-09-01',
+            'confirmation_notes' => 'No financial activity before bank account opening.',
         ],
         ['REQUEST_METHOD' => 'POST', 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest', 'HTTP_ACCEPT' => 'application/json'],
         [],

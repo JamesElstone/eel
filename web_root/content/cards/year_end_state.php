@@ -177,6 +177,9 @@ final class _year_end_stateCard extends CardBaseFramework
             $parts = explode(' ', $label);
             $month = (string)($tile['month_short_name'] ?? ($parts[0] ?? ''));
             $year = (string)($parts[1] ?? '');
+            $confirmedEmptyHtml = !empty($tile['empty_month_confirmed'])
+                ? '<div class="helper">Confirmed no activity</div>'
+                : '';
             $tilesHtml .= '<div class="month-tile ' . HelperFramework::escape((string)($tile['status'] ?? 'red')) . '">
                 <div class="month-head">
                     <div><div class="month-name">' . HelperFramework::escape($month) . '</div><div class="month-year">' . HelperFramework::escape($year) . '</div></div>
@@ -184,8 +187,10 @@ final class _year_end_stateCard extends CardBaseFramework
                 </div>
                 <div class="month-metric">' . (int)($tile['transaction_count'] ?? 0) . '</div>
                 <div class="helper">' . (int)($tile['statement_upload_count'] ?? 0) . ' upload(s)</div>
+                <div class="helper">' . (int)($tile['posted_journal_count'] ?? 0) . ' posted journal(s)</div>
                 <div class="helper">' . (int)($tile['uncategorised_count'] ?? 0) . ' uncategorised</div>
                 <div class="helper">' . (int)($tile['suspense_count'] ?? 0) . ' suspense</div>
+                ' . $confirmedEmptyHtml . '
             </div>';
         }
 

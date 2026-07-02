@@ -35,6 +35,7 @@ final class _transaction_searchCard extends CardBaseFramework
                     'sourceAccountId' => ':transaction_search.source_account_id',
                     'nominalAccountIds' => ':transaction_search.nominal_account_ids',
                     'amount' => ':transaction_search.amount',
+                    'flow' => ':transaction_search.flow',
                 ],
             ],
             [
@@ -62,13 +63,15 @@ final class _transaction_searchCard extends CardBaseFramework
     ): array {
         $pageContext = parent::handle($request, $services, $pageContext, $actionResult);
         $pageContext = $this->applyTableSortContext($request, $pageContext, $this->key());
+        $flow = $this->normaliseFlow((string)$request->input('transaction_search_flow', 'any'));
         $pageContext[$this->key()] = array_merge(
             (array)($pageContext[$this->key()] ?? []),
             [
                 'keyword' => trim((string)$request->input('transaction_search_keyword', '')),
                 'source_account_id' => max(0, (int)$request->input('transaction_search_source_account_id', 0)),
                 'nominal_account_ids' => $this->normaliseIds($request->input('transaction_search_nominal_account_ids', [])),
-                'amount' => $this->normaliseAmount((string)$request->input('transaction_search_amount', '')),
+                'amount' => $this->normaliseAmount((string)$request->input('transaction_search_amount', ''), $flow),
+                'flow' => $flow,
             ]
         );
 
@@ -219,6 +222,7 @@ final class _transaction_searchCard extends CardBaseFramework
     {
         $keyword = $this->keyword($context);
         $amount = $this->amount($context);
+        $flow = $this->flow($context);
         $sourceAccountId = $this->sourceAccountId($context);
         $selectedNominalIds = $this->nominalAccountIds($context);
 
@@ -235,6 +239,12 @@ final class _transaction_searchCard extends CardBaseFramework
                 <div class="mini-field">
                     <label for="transaction_search_amount">Amount</label>
                     <input class="input" id="transaction_search_amount" name="transaction_search_amount" inputmode="decimal" value="' . HelperFramework::escape($amount) . '">
+                </div>
+                <div class="mini-field">
+                    <label for="transaction_search_flow">Flow</label>
+                    <select class="select" id="transaction_search_flow" name="transaction_search_flow">
+                        ' . $this->flowOptions($flow) . '
+                    </select>
                 </div>
                 <div class="mini-field">
                     <label for="transaction_search_source_account_id">Source Account</label>
@@ -264,9 +274,28 @@ final class _transaction_searchCard extends CardBaseFramework
             'show_card' => $this->key(),
             'transaction_search_keyword' => $this->keyword($context),
             'transaction_search_amount' => $this->amount($context),
+            'transaction_search_flow' => $this->flow($context),
             'transaction_search_source_account_id' => $this->sourceAccountId($context),
             'transaction_search_nominal_account_ids' => implode(',', $this->nominalAccountIds($context)),
         ];
+    }
+
+    private function flowOptions(string $selectedFlow): string
+    {
+        $options = [
+            'any' => 'Any',
+            'in' => 'In (positive)',
+            'out' => 'Out (negative)',
+        ];
+        $html = '';
+
+        foreach ($options as $value => $label) {
+            $html .= '<option value="' . HelperFramework::escape($value) . '"' . ($value === $selectedFlow ? ' selected' : '') . '>'
+                . HelperFramework::escape($label)
+                . '</option>';
+        }
+
+        return $html;
     }
 
     private function sourceAccountOptions(array $context, int $selectedAccountId): string
@@ -379,7 +408,12 @@ final class _transaction_searchCard extends CardBaseFramework
 
     private function amount(array $context): string
     {
-        return $this->normaliseAmount((string)(($context[$this->key()] ?? [])['amount'] ?? ''));
+        return $this->normaliseAmount((string)(($context[$this->key()] ?? [])['amount'] ?? ''), $this->flow($context));
+    }
+
+    private function flow(array $context): string
+    {
+        return $this->normaliseFlow((string)(($context[$this->key()] ?? [])['flow'] ?? 'any'));
     }
 
     private function nominalAccountIds(array $context): array
@@ -391,24 +425,39 @@ final class _transaction_searchCard extends CardBaseFramework
     {
         return $this->keyword($context) !== ''
             || $this->amount($context) !== ''
+            || $this->flow($context) !== 'any'
             || $this->sourceAccountId($context) > 0
             || $this->nominalAccountIds($context) !== [];
     }
 
-    private function normaliseAmount(string $value): string
+    private function normaliseAmount(string $value, string $flow = 'any'): string
     {
         $value = trim(str_replace("\xC2\xA3", '', $value));
+        $flow = $this->normaliseFlow($flow);
 
         if ($value === '' || preg_match('/^-?\d+(?:\.\d{1,2})?$/', $value) !== 1) {
             return '';
         }
 
         $amount = round((float)$value, 2);
+        if ($flow === 'in') {
+            $amount = abs($amount);
+        } elseif ($flow === 'out') {
+            $amount = 0 - abs($amount);
+        }
+
         if (abs($amount) < 0.005) {
             $amount = 0.0;
         }
 
         return number_format($amount, 2, '.', '');
+    }
+
+    private function normaliseFlow(string $value): string
+    {
+        $value = strtolower(trim($value));
+
+        return in_array($value, ['in', 'out'], true) ? $value : 'any';
     }
 
     private function normaliseIds(mixed $values): array

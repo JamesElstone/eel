@@ -24,6 +24,7 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         'transaction_search' => [
             'keyword' => 'Brian',
             'amount' => '42.50',
+            'flow' => 'out',
             'source_account_id' => 7,
             'nominal_account_ids' => [31, 32],
         ],
@@ -79,7 +80,12 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         $html = $card->render($context);
 
         $harness->assertTrue(str_contains($html, 'name="transaction_search_keyword" value="Brian"'));
-        $harness->assertTrue(str_contains($html, 'name="transaction_search_amount" inputmode="decimal" value="42.50"'));
+        $harness->assertTrue(str_contains($html, 'name="transaction_search_amount" inputmode="decimal" value="-42.50"'));
+        $harness->assertTrue(strpos($html, 'id="transaction_search_amount"') < strpos($html, 'id="transaction_search_flow"'));
+        $harness->assertTrue(str_contains($html, 'name="transaction_search_flow"'));
+        $harness->assertTrue(str_contains($html, '<option value="any">Any</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="in">In (positive)</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="out" selected>Out (negative)</option>'));
         $harness->assertTrue(str_contains($html, 'name="transaction_search_nominal_account_ids[]" multiple'));
         $harness->assertTrue(str_contains($html, 'name="_invalidate_fact" value="transaction.search"'));
         $harness->assertTrue(str_contains($html, '<option value="">Any</option>'));
@@ -135,6 +141,7 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
             [
                 'transaction_search_keyword' => ' Brian ',
                 'transaction_search_amount' => "-\xC2\xA31000",
+                'transaction_search_flow' => 'any',
                 'transaction_search_source_account_id' => '7',
                 'transaction_search_nominal_account_ids' => ['31', '32', '32', 'nope'],
             ],
@@ -147,14 +154,48 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
 
         $harness->assertSame('Brian', (string)$handled['transaction_search']['keyword']);
         $harness->assertSame('-1000.00', (string)$handled['transaction_search']['amount']);
+        $harness->assertSame('any', (string)$handled['transaction_search']['flow']);
         $harness->assertSame(7, (int)$handled['transaction_search']['source_account_id']);
         $harness->assertSame([31, 32], $handled['transaction_search']['nominal_account_ids']);
+    });
+
+    $harness->check(_transaction_searchCard::class, 'handle applies flow to amount sign and keeps flow-only criteria', static function () use ($harness, $card, $context): void {
+        $cases = [
+            ['100', 'in', '100.00'],
+            ['100', 'out', '-100.00'],
+            ['-100', 'in', '100.00'],
+            ['-100', 'out', '-100.00'],
+            ['', 'in', ''],
+            ['', 'out', ''],
+        ];
+
+        foreach ($cases as [$amountInput, $flowInput, $expectedAmount]) {
+            $request = new RequestFramework(
+                ['page' => 'transactions'],
+                [
+                    'transaction_search_keyword' => '',
+                    'transaction_search_amount' => $amountInput,
+                    'transaction_search_flow' => $flowInput,
+                    'transaction_search_source_account_id' => '0',
+                    'transaction_search_nominal_account_ids' => [],
+                ],
+                ['REQUEST_METHOD' => 'POST'],
+                [],
+                []
+            );
+            $services = new PageServiceFramework(new AppService(APP_ROOT . 'uploads'));
+            $handled = $card->handle($request, $services, $context, ActionResultFramework::none());
+
+            $harness->assertSame($expectedAmount, (string)$handled['transaction_search']['amount']);
+            $harness->assertSame($flowInput, (string)$handled['transaction_search']['flow']);
+        }
     });
 
     $harness->check(_transaction_searchCard::class, 'allows a blank keyword when another filter is selected', static function () use ($harness, $card, $context): void {
         $blankKeywordContext = $context;
         $blankKeywordContext['transaction_search']['keyword'] = '';
         $blankKeywordContext['transaction_search']['amount'] = '1000';
+        $blankKeywordContext['transaction_search']['flow'] = 'any';
         $blankKeywordContext['transaction_search']['source_account_id'] = 0;
         $blankKeywordContext['transaction_search']['nominal_account_ids'] = [];
         $html = $card->render($blankKeywordContext);
@@ -162,6 +203,20 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         $harness->assertTrue(str_contains($html, 'name="transaction_search_keyword" value=""'));
         $harness->assertSame(false, str_contains($html, 'name="transaction_search_keyword" value="" required'));
         $harness->assertTrue(str_contains($html, 'name="transaction_search_amount" inputmode="decimal" value="1000.00"'));
+    });
+
+    $harness->check(_transaction_searchCard::class, 'allows flow as the only search criterion', static function () use ($harness, $card, $context): void {
+        $flowContext = $context;
+        $flowContext['transaction_search']['keyword'] = '';
+        $flowContext['transaction_search']['amount'] = '';
+        $flowContext['transaction_search']['flow'] = 'in';
+        $flowContext['transaction_search']['source_account_id'] = 0;
+        $flowContext['transaction_search']['nominal_account_ids'] = [];
+        $flowContext['services']['transaction_search_results'] = [];
+        $html = $card->render($flowContext);
+
+        $harness->assertTrue(str_contains($html, '<option value="in" selected>In (positive)</option>'));
+        $harness->assertSame(1, preg_match('/No transactions match this search \[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]\./', $html));
     });
 
     $harness->check(_transaction_searchCard::class, 'timestamps the no match empty search message', static function () use ($harness, $card, $context): void {

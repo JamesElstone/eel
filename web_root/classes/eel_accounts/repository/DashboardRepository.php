@@ -438,13 +438,15 @@ final class DashboardRepository
         int $sourceAccountId = 0,
         array|string $nominalAccountIds = [],
         int $limit = 5000,
-        ?string $amount = ''
+        ?string $amount = '',
+        ?string $flow = 'any'
     ): array {
         $keyword = trim($keyword);
-        $amount = $this->normaliseTransactionAmountFilter($amount);
+        $flow = $this->normaliseTransactionFlowFilter($flow);
+        $amount = $this->normaliseTransactionAmountFilter($amount, $flow);
         $nominalAccountIds = $this->normalisePositiveIntList($nominalAccountIds);
         $sourceAccountId = max(0, $sourceAccountId);
-        if ($companyId <= 0 || $accountingPeriodId <= 0 || ($keyword === '' && $amount === '' && $sourceAccountId <= 0 && $nominalAccountIds === [])) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || ($keyword === '' && $amount === '' && $flow === 'any' && $sourceAccountId <= 0 && $nominalAccountIds === [])) {
             return [];
         }
 
@@ -471,6 +473,10 @@ final class DashboardRepository
         if ($amount !== '') {
             $where[] = 't.amount = :amount';
             $params['amount'] = $amount;
+        } elseif ($flow === 'in') {
+            $where[] = 't.amount > 0';
+        } elseif ($flow === 'out') {
+            $where[] = 't.amount < 0';
         }
 
         if ($nominalAccountIds !== []) {
@@ -542,20 +548,34 @@ final class DashboardRepository
         return $stmt->fetchAll();
     }
 
-    public function normaliseTransactionAmountFilter(?string $value): string
+    public function normaliseTransactionAmountFilter(?string $value, ?string $flow = 'any'): string
     {
         $value = trim(str_replace("\xC2\xA3", '', (string)$value));
+        $flow = $this->normaliseTransactionFlowFilter($flow);
 
         if ($value === '' || preg_match('/^-?\d+(?:\.\d{1,2})?$/', $value) !== 1) {
             return '';
         }
 
         $amount = round((float)$value, 2);
+        if ($flow === 'in') {
+            $amount = abs($amount);
+        } elseif ($flow === 'out') {
+            $amount = 0 - abs($amount);
+        }
+
         if (abs($amount) < 0.005) {
             $amount = 0.0;
         }
 
         return number_format($amount, 2, '.', '');
+    }
+
+    public function normaliseTransactionFlowFilter(?string $value): string
+    {
+        $value = strtolower(trim((string)$value));
+
+        return in_array($value, ['in', 'out'], true) ? $value : 'any';
     }
 
     private function normalisePositiveIntList(array|string $values): array

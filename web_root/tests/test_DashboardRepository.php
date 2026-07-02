@@ -27,8 +27,22 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
         $harness->assertSame('1000.00', $repository->normaliseTransactionAmountFilter('1000'));
         $harness->assertSame('1000.00', $repository->normaliseTransactionAmountFilter("\xC2\xA31000.00"));
         $harness->assertSame('-1000.00', $repository->normaliseTransactionAmountFilter("-\xC2\xA31000"));
+        $harness->assertSame('100.00', $repository->normaliseTransactionAmountFilter('100', 'in'));
+        $harness->assertSame('-100.00', $repository->normaliseTransactionAmountFilter('100', 'out'));
+        $harness->assertSame('100.00', $repository->normaliseTransactionAmountFilter('-100', 'in'));
+        $harness->assertSame('-100.00', $repository->normaliseTransactionAmountFilter('-100', 'out'));
         $harness->assertSame('', $repository->normaliseTransactionAmountFilter(''));
         $harness->assertSame('', $repository->normaliseTransactionAmountFilter('1000.999'));
+    });
+
+    $harness->check(\eel_accounts\Repository\DashboardRepository::class, 'normalises transaction flow filters', function () use ($harness): void {
+        $repository = new \eel_accounts\Repository\DashboardRepository();
+
+        $harness->assertSame('any', $repository->normaliseTransactionFlowFilter(''));
+        $harness->assertSame('any', $repository->normaliseTransactionFlowFilter('unexpected'));
+        $harness->assertSame('in', $repository->normaliseTransactionFlowFilter('in'));
+        $harness->assertSame('out', $repository->normaliseTransactionFlowFilter('out'));
+        $harness->assertSame('in', $repository->normaliseTransactionFlowFilter(' IN '));
     });
 
     $harness->check(\eel_accounts\Repository\DashboardRepository::class, 'maps red setup health rows into dashboard actions', function () use ($harness): void {

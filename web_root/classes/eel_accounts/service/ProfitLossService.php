@@ -54,6 +54,7 @@ final class ProfitLossService
                 'income' => [],
                 'cost_of_sales' => [],
                 'expense' => [],
+                'positive_non_income_receipts' => [],
             ];
         }
 
@@ -62,17 +63,20 @@ final class ProfitLossService
                     COALESCE(na.code, \'\') AS code,
                     COALESCE(na.name, \'\') AS name,
                     na.account_type,
+                    COALESCE(nas.code, \'\') AS account_subtype_code,
+                    COALESCE(nas.name, \'\') AS account_subtype_name,
                     COALESCE(SUM(jl.debit), 0) AS total_debit,
                     COALESCE(SUM(jl.credit), 0) AS total_credit
              FROM journals j
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
              INNER JOIN nominal_accounts na ON na.id = jl.nominal_account_id
+             LEFT JOIN nominal_account_subtypes nas ON nas.id = na.account_subtype_id
              WHERE j.company_id = :company_id
                AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
                AND j.journal_date BETWEEN :period_start AND :period_end
                AND na.account_type IN (:income_type, :cost_type, :expense_type)
-             GROUP BY na.id, na.code, na.name, na.account_type
+             GROUP BY na.id, na.code, na.name, na.account_type, nas.code, nas.name
              ORDER BY na.account_type ASC, ABS(COALESCE(SUM(jl.debit), 0) - COALESCE(SUM(jl.credit), 0)) DESC, na.code ASC',
             [
                 'company_id' => $companyId,
@@ -89,6 +93,7 @@ final class ProfitLossService
             'income' => [],
             'cost_of_sales' => [],
             'expense' => [],
+            'positive_non_income_receipts' => [],
         ];
 
         foreach ($rows as $row) {
@@ -112,6 +117,8 @@ final class ProfitLossService
                 'code' => (string)($row['code'] ?? ''),
                 'name' => (string)($row['name'] ?? ''),
                 'account_type' => $accountType,
+                'account_subtype_code' => (string)($row['account_subtype_code'] ?? ''),
+                'account_subtype_name' => (string)($row['account_subtype_name'] ?? ''),
                 'amount' => $amount,
             ];
         }
@@ -120,6 +127,13 @@ final class ProfitLossService
             usort($groupRows, static fn(array $left, array $right): int => abs((float)$right['amount']) <=> abs((float)$left['amount']));
         }
         unset($groupRows);
+
+        $breakdown['positive_non_income_receipts'] = $this->positiveNonIncomeReceipts(
+            $companyId,
+            $accountingPeriodId,
+            (string)$accountingPeriod['period_start'],
+            (string)$accountingPeriod['period_end']
+        );
 
         return $breakdown;
     }
@@ -275,6 +289,7 @@ final class ProfitLossService
         }
 
         $months = $this->periodMonths((string)$accountingPeriod['period_start'], (string)$accountingPeriod['period_end']);
+        $emptyMonthConfirmations = $this->emptyMonthConfirmationMonths($companyId, $accountingPeriodId);
         foreach ($this->transactionMonths($companyId, $accountingPeriodId) as $monthKey => $row) {
             if (!isset($months[$monthKey])) {
                 continue;
@@ -305,6 +320,22 @@ final class ProfitLossService
                 $month['status'] = 'no_data';
             } else {
                 $month['status'] = 'ready';
+            }
+
+            $monthStart = (string)($month['month_start'] ?? '');
+            $emptyMonth = (array)($emptyMonthConfirmations[$monthStart] ?? []);
+            if ($emptyMonth === []) {
+                continue;
+            }
+
+            $month['empty_month_confirmation_status'] = (string)($emptyMonth['status'] ?? '');
+            $month['empty_month_confirmation_reason'] = (string)($emptyMonth['reason'] ?? '');
+            $month['empty_month_confirmation'] = (array)($emptyMonth['confirmation'] ?? []);
+
+            if ((string)$month['status'] === 'no_data' && (string)($emptyMonth['status'] ?? '') === 'confirmed') {
+                $month['status'] = 'confirmed_empty';
+            } elseif ((string)$month['status'] === 'no_data' && !empty($emptyMonth['can_confirm'])) {
+                $month['can_confirm_empty_month'] = true;
             }
         }
         unset($month);
@@ -442,6 +473,63 @@ final class ProfitLossService
         return $totals;
     }
 
+    private function positiveNonIncomeReceipts(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return [];
+        }
+
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT na.id AS nominal_account_id,
+                    COALESCE(na.code, \'\') AS code,
+                    COALESCE(na.name, \'\') AS name,
+                    na.account_type,
+                    COALESCE(nas.code, \'\') AS account_subtype_code,
+                    COALESCE(nas.name, \'\') AS account_subtype_name,
+                    COUNT(*) AS transaction_count,
+                    COALESCE(SUM(t.amount), 0) AS amount
+             FROM transactions t
+             INNER JOIN nominal_accounts na ON na.id = t.nominal_account_id
+             LEFT JOIN nominal_account_subtypes nas ON nas.id = na.account_subtype_id
+             LEFT JOIN company_accounts ca ON ca.id = t.account_id
+             WHERE t.company_id = :company_id
+               AND t.accounting_period_id = :accounting_period_id
+               AND t.txn_date BETWEEN :period_start AND :period_end
+               AND t.amount > 0
+               AND t.category_status IN (:auto_status, :manual_status)
+               AND COALESCE(t.is_internal_transfer, 0) = 0
+               AND COALESCE(ca.account_type, \'\') = :bank_account_type
+               AND na.account_type <> :income_type
+             GROUP BY na.id, na.code, na.name, na.account_type, nas.code, nas.name
+             HAVING COALESCE(SUM(t.amount), 0) > 0
+             ORDER BY COALESCE(SUM(t.amount), 0) DESC, na.code ASC',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
+                'auto_status' => 'auto',
+                'manual_status' => 'manual',
+                'bank_account_type' => CompanyAccountService::TYPE_BANK,
+                'income_type' => 'income',
+            ]
+        );
+
+        return array_map(
+            static fn(array $row): array => [
+                'nominal_account_id' => (int)($row['nominal_account_id'] ?? 0),
+                'code' => (string)($row['code'] ?? ''),
+                'name' => (string)($row['name'] ?? ''),
+                'account_type' => (string)($row['account_type'] ?? ''),
+                'account_subtype_code' => (string)($row['account_subtype_code'] ?? ''),
+                'account_subtype_name' => (string)($row['account_subtype_name'] ?? ''),
+                'transaction_count' => (int)($row['transaction_count'] ?? 0),
+                'amount' => round((float)($row['amount'] ?? 0), 2),
+            ],
+            $rows
+        );
+    }
+
     private function periodMonths(string $periodStart, string $periodEnd): array
     {
         $months = [];
@@ -467,9 +555,40 @@ final class ProfitLossService
                 'committed_count' => 0,
                 'in_progress_count' => 0,
                 'journal_count' => 0,
+                'can_confirm_empty_month' => false,
+                'empty_month_confirmation_status' => '',
+                'empty_month_confirmation_reason' => '',
+                'empty_month_confirmation' => [],
                 'status' => 'no_data',
             ];
             $cursor = $cursor->modify('+1 month');
+        }
+
+        return $months;
+    }
+
+    private function emptyMonthConfirmationMonths(int $companyId, int $accountingPeriodId): array
+    {
+        try {
+            $context = (new EmptyMonthConfirmationService())->fetchContext($companyId, $accountingPeriodId);
+        } catch (\Throwable) {
+            return [];
+        }
+
+        if (empty($context['available'])) {
+            return [];
+        }
+
+        $months = [];
+        foreach ((array)($context['months'] ?? []) as $month) {
+            if (!is_array($month)) {
+                continue;
+            }
+
+            $monthStart = (string)($month['month_start'] ?? '');
+            if ($monthStart !== '') {
+                $months[$monthStart] = $month;
+            }
         }
 
         return $months;

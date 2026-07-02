@@ -97,7 +97,7 @@ final class YearEndAction implements ActionInterfaceFramework
             }
         }
 
-        return new ActionResultFramework($success, ['year.end.state', 'year.end.empty.month.confirmations', 'year.end.audit.log', 'trial.balance.state', 'nominal.opening.balances'], $flashMessages);
+        return new ActionResultFramework($success, ['page.context', 'year.end.state', 'year.end.empty.month.confirmations', 'year.end.audit.log', 'trial.balance.state', 'nominal.opening.balances'], $flashMessages);
     }
 
     private function successMessage(string $intent): string

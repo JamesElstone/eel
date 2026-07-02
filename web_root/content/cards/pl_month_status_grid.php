@@ -21,6 +21,9 @@ final class _pl_month_status_gridCard extends CardBaseFramework
         if ($months === []) {
             return '<div class="helper">No accounting period months are available.</div>';
         }
+        $company = (array)($context['company'] ?? []);
+        $companyId = (int)($company['id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $html = '';
         foreach ($months as $month) {
             $status = (string)($month['status'] ?? 'no_data');
@@ -30,6 +33,7 @@ final class _pl_month_status_gridCard extends CardBaseFramework
                 <div class="helper">' . (int)($month['uncategorised_count'] ?? 0) . ' uncategorised</div>
                 <div class="helper">' . (int)($month['upload_count'] ?? 0) . ' upload(s)</div>
                 <span class="badge ' . HelperFramework::escape($this->badgeClass($status)) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($status, '_')) . '</span>
+                ' . $this->emptyMonthAction((array)$month, $companyId, $accountingPeriodId) . '
             </div>';
         }
         return '<div class="month-grid">' . $html . '</div>';
@@ -38,7 +42,7 @@ final class _pl_month_status_gridCard extends CardBaseFramework
     private function badgeClass(string $status): string
     {
         return match ($status) {
-            'ready' => 'success',
+            'ready', 'confirmed_empty' => 'success',
             'needs_categorisation', 'upload_in_progress' => 'warning',
             'outside_period' => 'info',
             default => 'danger',
@@ -48,9 +52,45 @@ final class _pl_month_status_gridCard extends CardBaseFramework
     private function tileClass(string $status): string
     {
         return match ($status) {
-            'ready' => 'green',
+            'ready', 'confirmed_empty' => 'green',
             'needs_categorisation', 'upload_in_progress' => 'amber',
             default => 'red',
         };
+    }
+
+    private function emptyMonthAction(array $month, int $companyId, int $accountingPeriodId): string
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return '';
+        }
+
+        $monthStart = (string)($month['month_start'] ?? '');
+        if ($monthStart === '') {
+            return '';
+        }
+
+        if (!empty($month['can_confirm_empty_month'])) {
+            return '<form method="post" data-ajax="true" class="actions-row">
+                <input type="hidden" name="card_action" value="YearEnd">
+                <input type="hidden" name="intent" value="confirm_empty_month">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <input type="hidden" name="month_start" value="' . HelperFramework::escape($monthStart) . '">
+                <button class="button primary" type="submit">Confirm no activity</button>
+            </form>';
+        }
+
+        if ((string)($month['status'] ?? '') === 'confirmed_empty') {
+            return '<form method="post" data-ajax="true" class="actions-row">
+                <input type="hidden" name="card_action" value="YearEnd">
+                <input type="hidden" name="intent" value="revoke_empty_month">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <input type="hidden" name="month_start" value="' . HelperFramework::escape($monthStart) . '">
+                <button class="button" type="submit">Revoke confirmation</button>
+            </form>';
+        }
+
+        return '';
     }
 }

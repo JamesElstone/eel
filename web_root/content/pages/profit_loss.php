@@ -28,7 +28,6 @@ final class _profit_loss extends PageContextFramework
     {
         return [
             'pl_summary',
-            'pl_health_indicators',
             'pl_monthly_trend',
             'pl_income_breakdown',
             'pl_expense_breakdown',
@@ -46,7 +45,6 @@ final class _profit_loss extends PageContextFramework
                 'tab' => 'Overview',
                 'cards' => [
                     'pl_summary',
-                    'pl_health_indicators',
                     'pl_monthly_trend',
                 ],
             ],

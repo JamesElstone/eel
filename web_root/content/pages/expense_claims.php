@@ -11,12 +11,12 @@ final class _expense_claims extends PageContextFramework
 {
     public function id(): string
     {
-        return 'expenses';
+        return 'expense_claims';
     }
 
     public function title(): string
     {
-        return 'Expenses';
+        return 'Expense Claims';
     }
 
     public function subtitle(): string

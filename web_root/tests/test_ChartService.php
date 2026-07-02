@@ -67,7 +67,17 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARAT
 
             $harness->assertTrue(str_contains($html, '<svg'));
             $harness->assertTrue(str_contains($html, 'chart-pie-slice'));
+            $harness->assertTrue(str_contains($html, 'chart-pie-separator'));
             $harness->assertTrue(str_contains($html, 'Test pie'));
+        });
+
+        $harness->check(ChartService::class, 'renders pie separators away from centre point', static function () use ($harness, $service, $points): void {
+            $html = $service->pie($points, ['title' => 'Test pie separators']);
+
+            $harness->assertTrue(str_contains($html, 'chart-pie-separator'));
+            $harness->assertTrue(!str_contains($html, 'class="chart-pie-separator" x1="142.8" y1="150"'));
+            $harness->assertTrue(!str_contains($html, 'class="chart-pie-separator" x1="142.8" y1="148"'));
+            $harness->assertTrue(str_contains($html, 'class="chart-pie-separator" x1="142.8" y1="139.8"'));
         });
 
         $harness->check(ChartService::class, 'hides pie chart legend when disabled', static function () use ($harness, $service): void {

@@ -1887,8 +1887,13 @@ table.table-condensed .select {
 }
 
 .chart-pie-slice {
+  stroke: none;
+}
+
+.chart-pie-separator {
   stroke: var(--panel);
   stroke-width: 2;
+  stroke-linecap: butt;
 }
 
 .chart-donut-segment {

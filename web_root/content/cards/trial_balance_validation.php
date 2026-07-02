@@ -47,8 +47,10 @@ final class _trial_balance_validationCard extends CardBaseFramework
             return $this->renderErrors((array)($validation['errors'] ?? []));
         }
 
+        $checks = (array)($validation['checks'] ?? []);
+        $summaryHtml = $this->renderSummaryCards($checks);
         $checksHtml = '';
-        foreach ((array)($validation['checks'] ?? []) as $check) {
+        foreach ($checks as $check) {
             $status = (string)($check['status'] ?? 'warning');
             $checksHtml .= '<div class="panel-soft">
                 <div class="status-head">
@@ -60,7 +62,70 @@ final class _trial_balance_validationCard extends CardBaseFramework
             </div>';
         }
 
-        return '<div class="settings-stack">' . $checksHtml . '</div>';
+        return '<div class="settings-stack">' . $summaryHtml . $checksHtml . '</div>';
+    }
+
+    private function renderSummaryCards(array $checks): string
+    {
+        $total = count($checks);
+        $okCount = 0;
+        $warningCount = 0;
+        $failCount = 0;
+
+        foreach ($checks as $check) {
+            $statusClass = $this->badgeClass((string)($check['status'] ?? 'warning'));
+            if ($statusClass === 'success') {
+                $okCount++;
+            } elseif ($statusClass === 'danger') {
+                $failCount++;
+            } else {
+                $warningCount++;
+            }
+        }
+
+        $percentOk = $total > 0 ? (int)round(($okCount / $total) * 100) : 0;
+        $overallClass = $failCount > 0 ? 'danger' : ($warningCount > 0 ? 'warning' : 'success');
+        $overallLabel = match ($overallClass) {
+            'success' => 'OK',
+            'warning' => 'Warnings',
+            default => 'Blocked',
+        };
+        $overallDetail = $total > 0
+            ? $okCount . ' of ' . $total . ' checks OK'
+                . ($warningCount > 0 ? ', ' . $warningCount . ' warning' . ($warningCount === 1 ? '' : 's') : '')
+                . ($failCount > 0 ? ', ' . $failCount . ' failing' : '')
+                . '.'
+            : 'No validation checks were returned.';
+        $gauge = (new ChartService())->gauge($percentOk, [
+            'title' => 'Trial balance validation readiness',
+            'label' => $okCount . '/' . max(1, $total) . ' OK',
+            'color' => $this->summaryColor($overallClass),
+            'width' => 220,
+            'height' => 160,
+        ]);
+
+        return '<section class="summary-grid">
+            ' . $this->summaryCard('Overall status', '<span class="badge ' . $overallClass . '">' . HelperFramework::escape($overallLabel) . '</span>', $overallDetail, true) . '
+            ' . $this->summaryCard('Readiness', $gauge, $percentOk . '% OK', true) . '
+        </section>';
+    }
+
+    private function summaryCard(string $label, string $value, string $helper = '', bool $trustedValue = false): string
+    {
+        return '<div class="summary-card">
+            <div class="summary-label">' . HelperFramework::escape($label) . '</div>
+            <div class="summary-value">' . ($trustedValue ? $value : HelperFramework::escape($value)) . '</div>
+            ' . ($helper !== '' ? '<div class="helper">' . HelperFramework::escape($helper) . '</div>' : '') . '
+        </div>';
+    }
+
+    private function summaryColor(string $statusClass): string
+    {
+        return match ($statusClass) {
+            'success' => '#16a34a',
+            'warning' => '#d97706',
+            default => '#dc2626',
+        };
     }
 
     private function metricValue(mixed $value): string

@@ -70,9 +70,9 @@ final class _trial_balance_stateCard extends CardBaseFramework
     {
         $status = (array)($summary['trial_balance_status'] ?? []);
 
-        return '<div style="display: grid; grid-template-columns: minmax(180px, 1fr) minmax(0, 4fr); gap: 12px; align-items: stretch;">
+        return '<div class="trial-balance-summary-layout">
             <div>' . $this->readinessGaugeCard($validation) . '</div>
-            <div class="summary-grid" style="grid-template-columns: repeat(4, minmax(0, 1fr));">
+            <div class="summary-grid trial-balance-summary-grid">
                 ' . $this->summaryCard('Trial Balance status', '<span class="badge ' . (!empty($status['is_balanced']) ? 'success' : 'danger') . '">' . HelperFramework::escape((string)($status['label'] ?? 'Not balanced')) . '</span>', true) . '
                 ' . $this->summaryCard('Profit before tax', FormattingFramework::money($summary['profit_before_tax'] ?? 0)) . '
                 ' . $this->summaryCard('Net assets', FormattingFramework::money($summary['net_assets'] ?? 0)) . '

@@ -673,6 +673,17 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.trial-balance-summary-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(0, 4fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.trial-balance-summary-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .expense-claim-summary-grid {
   grid-template-columns: repeat(7, minmax(0, 1fr));
 }
@@ -2255,6 +2266,11 @@
   .pl-summary-topline .pl-summary-income-flow {
   min-width: 0;
   }
+
+  .trial-balance-summary-layout,
+  .trial-balance-summary-grid {
+      grid-template-columns: 1fr;
+    }
 
   .expense-statistics-nominal-chart {
       justify-self: stretch;

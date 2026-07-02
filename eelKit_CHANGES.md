@@ -1,5 +1,26 @@
 # eelKit Changes
 
+## Pie and donut legend toggle
+
+Feature name: `pie_donut_legend_toggle`.
+
+`ChartService::pie()` and `ChartService::donut()` now accept `legend => false` to hide the built-in SVG key. This lets downstream applications render their own table or summary beside the chart while reusing caller-supplied segment colours.
+
+```php
+$segments = [
+    ['label' => 'Complete', 'value' => 46, 'color' => '#16a34a'],
+    ['label' => 'Review', 'value' => 22, 'color' => '#d97706'],
+    ['label' => 'Queued', 'value' => 32, 'color' => '#1d4ed8'],
+];
+
+$html = (new ChartService())->pie($segments, [
+    'title' => 'Status mix',
+    'legend' => false,
+]);
+```
+
+Existing pie and donut calls keep rendering the built-in key by default. Supplying `color` on each segment remains optional, but it is the recommended pattern when the downstream application will display matching colour swatches in an external table.
+
 ## Calendar heatmap date range selector
 
 Feature name: `calendar_heatmap_date_range_selector`.

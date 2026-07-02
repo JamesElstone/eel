@@ -105,6 +105,39 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(0.0, $amount);
         });
 
+        $harness->check(\eel_accounts\Service\AssetService::class, 'open accounting period blocks depreciation posting', static function () use ($harness, $service): void {
+            assetServiceTestRequireTaxViewSchema($harness);
+            $marker = (string)random_int(100000, 999999);
+            $companyId = (int)('71' . $marker);
+            $accountingPeriodId = (int)('72' . $marker);
+
+            InterfaceDB::prepareExecute(
+                'INSERT INTO companies (id, company_name, company_number, is_active)
+                 VALUES (:id, :company_name, :company_number, 1)',
+                [
+                    'id' => $companyId,
+                    'company_name' => 'Future Depreciation Fixture ' . $marker,
+                    'company_number' => 'FD' . substr($marker, 0, 6),
+                ]
+            );
+            InterfaceDB::prepareExecute(
+                'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end)
+                 VALUES (:id, :company_id, :label, :period_start, :period_end)',
+                [
+                    'id' => $accountingPeriodId,
+                    'company_id' => $companyId,
+                    'label' => 'Future depreciation FY ' . $marker,
+                    'period_start' => '2999-01-01',
+                    'period_end' => '2999-12-31',
+                ]
+            );
+
+            $result = $service->runDepreciation($companyId, $accountingPeriodId);
+
+            $harness->assertSame(false, (bool)($result['success'] ?? true));
+            $harness->assertTrue(str_contains((string)(($result['errors'] ?? [])[0] ?? ''), 'after the accounting period end date'));
+        });
+
         $harness->check(\eel_accounts\Service\AssetService::class, 'manual asset offset nominal must use a funding subtype', static function () use ($harness, $service): void {
             foreach (['nominal_accounts', 'nominal_account_subtypes'] as $table) {
                 if (!InterfaceDB::tableExists($table)) {

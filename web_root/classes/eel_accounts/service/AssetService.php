@@ -690,6 +690,20 @@ final class AssetService
         if ($accountingPeriod === null) {
             return ['success' => false, 'errors' => ['The selected accounting period could not be found.']];
         }
+        $periodEnd = trim((string)($accountingPeriod['period_end'] ?? ''));
+        $today = (new \DateTimeImmutable('today'))->format('Y-m-d');
+        if ($periodEnd === '' || $today <= $periodEnd) {
+            return [
+                'success' => false,
+                'errors' => [
+                    sprintf(
+                        'Depreciation can only be posted after the accounting period end date. Period ends %s; today is %s.',
+                        $periodEnd !== '' ? $periodEnd : 'unknown',
+                        $today
+                    ),
+                ],
+            ];
+        }
         (new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'post depreciation in this period');
 
         $assets = $this->fetchDepreciableAssets($companyId, (string)$accountingPeriod['period_start'], (string)$accountingPeriod['period_end']);

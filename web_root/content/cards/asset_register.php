@@ -103,15 +103,6 @@ final class _asset_registerCard extends CardBaseFramework
         }
 
         return '
-            <div>
-                <form method="post" action="?page=assets" data-ajax="true">
-                    <input type="hidden" name="company_id" value="' . $companyId . '">
-                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                    <input type="hidden" name="card_action" value="Asset">
-                    <input type="hidden" name="intent" value="run_asset_depreciation">
-                    <button class="button primary" type="submit">Run Depreciation</button>
-                </form>
-            </div>
             <div class="table-scroll">
                 <table>
                     <thead>

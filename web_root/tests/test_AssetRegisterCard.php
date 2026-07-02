@@ -60,6 +60,8 @@ $harness->run(_asset_registerCard::class, static function (GeneratedServiceClass
         $harness->assertTrue(str_contains($html, 'Test asset'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="search_asset_disposal_receipts"'));
         $harness->assertTrue(str_contains($html, 'Dispose of at Nil Value'));
+        $harness->assertSame(false, str_contains($html, 'name="intent" value="run_asset_depreciation"'));
+        $harness->assertSame(false, str_contains($html, 'Run Depreciation'));
     });
 
     $harness->check(_asset_registerCard::class, 'renders disposal receipt candidates for selected asset', static function () use ($harness, $card): void {

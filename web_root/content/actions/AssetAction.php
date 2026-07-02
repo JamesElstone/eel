@@ -54,7 +54,7 @@ final class AssetAction implements ActionInterfaceFramework
                     (int)$request->input('asset_id', 0),
                     (string)$request->input('disposal_search_date', $request->input('disposal_date', ''))
                 ),
-                'run_asset_depreciation' => $service->postDepreciationForPeriod(
+                'run_asset_depreciation' => $service->runDepreciation(
                     $companyId,
                     (int)$request->input('accounting_period_id', 0)
                 ),

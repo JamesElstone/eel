@@ -42,6 +42,9 @@ final class TestCardsHarness
 
         $this->assertRoleAssignmentCardOwnsDashboardContext();
         $this->assertTrialBalanceStateUsesSelectedCompanyContext();
+        $this->assertTrialBalanceStateRendersNestedMetrics();
+        $this->assertTrialBalancePageIncludesCompaniesHouseSnapshot();
+        $this->assertCompaniesHouseSnapshotUsesSelectedCompanyContext();
     }
 
     private function assertRoleAssignmentCardOwnsDashboardContext(): void
@@ -108,6 +111,135 @@ final class TestCardsHarness
         }
 
         test_output_line('Cards: trial_balance_state uses selected company context for services.');
+    }
+
+    private function assertTrialBalanceStateRendersNestedMetrics(): void
+    {
+        $card = new _trial_balance_stateCard();
+        $warnings = [];
+        set_error_handler(static function (int $severity, string $message) use (&$warnings): bool {
+            $warnings[] = $message;
+
+            return true;
+        });
+
+        try {
+            $html = $card->render([
+                'company' => [
+                    'id' => 27,
+                    'accounting_period_id' => 31,
+                    'name' => 'Nested Metric Limited',
+                ],
+                'page' => ['page_id' => 'trial_balance'],
+                'trial_balance_view_mode' => 'summary',
+                'services' => [
+                    'trialBalancePageData' => [
+                        'available' => true,
+                        'company' => ['company_name' => 'Nested Metric Limited'],
+                        'accounting_period' => ['label' => '2025'],
+                        'filters' => [
+                            'search' => '',
+                            'account_type' => 'all',
+                            'focus' => 'all',
+                        ],
+                        'summary' => [
+                            'trial_balance_status' => ['is_balanced' => true, 'label' => 'Balanced'],
+                            'tax_computation' => ['available' => false, 'errors' => ['No tax computation.']],
+                        ],
+                        'rows' => [],
+                    ],
+                    'trialBalanceValidation' => [
+                        'available' => true,
+                        'ready_for_ct_working_papers' => 'Nearly ready',
+                        'checks' => [
+                            [
+                                'title' => 'Nested metric check',
+                                'status' => 'warning',
+                                'detail' => 'Contains nested metric arrays.',
+                                'metric_value' => [
+                                    'difference' => 0.0,
+                                    'bank_ledger_reasonableness' => [
+                                        'transaction_movement' => 100.0,
+                                        'ledger_movement' => 100.0,
+                                    ],
+                                    'month_tiles' => [
+                                        [
+                                            'month_key' => '2025-01',
+                                            'status' => 'green',
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                        'month_tiles' => [],
+                    ],
+                    'trialBalanceComparison' => [
+                        'available' => false,
+                        'errors' => ['No comparison.'],
+                    ],
+                ],
+            ]);
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertSame([], $warnings);
+        $this->assertSame(false, str_contains($html, 'Array'));
+
+        test_output_line('Cards: trial_balance_state renders nested metric values without warnings.');
+    }
+
+    private function assertTrialBalancePageIncludesCompaniesHouseSnapshot(): void
+    {
+        $page = new _trial_balance();
+
+        $this->assertSame(['trial_balance_state', 'companies_house_snapshot'], $page->cards());
+
+        test_output_line('Cards: trial_balance page includes the Companies House snapshot card.');
+    }
+
+    private function assertCompaniesHouseSnapshotUsesSelectedCompanyContext(): void
+    {
+        $card = new _companies_house_snapshotCard();
+        $this->assertSame('Companies House Snapshot', $card->title());
+
+        foreach ($card->services() as $definition) {
+            $params = (array)($definition['params'] ?? []);
+
+            if (array_key_exists('companyId', $params)) {
+                $this->assertSame(':company.id', $params['companyId']);
+            }
+
+            if (array_key_exists('accountingPeriodId', $params)) {
+                $this->assertSame(':company.accounting_period_id', $params['accountingPeriodId']);
+            }
+        }
+
+        $html = $card->render([
+            'services' => [
+                'companiesHouseSnapshot' => [
+                    'available' => true,
+                    'is_balance_sheet_balanced' => true,
+                    'fields' => [
+                        ['label' => 'Company name', 'value' => 'Snapshot Limited', 'is_money' => false],
+                        ['label' => 'Current assets', 'value' => 5000.0, 'is_money' => true, 'note' => 'Current assets exclude fixed assets.'],
+                    ],
+                    'checks' => [
+                        ['label' => 'Balance equation check', 'value' => 0.0, 'detail' => 'Total net assets less capital and reserves.'],
+                    ],
+                    'sources' => [
+                        ['label' => 'Current assets', 'count' => 1, 'amount' => 5000.0],
+                    ],
+                    'assumptions' => ['Balance sheet facts use closing posted-journal balances.'],
+                ],
+            ],
+        ]);
+
+        $this->assertTrue(str_contains($html, 'Manual Companies House balance-sheet entry only.'));
+        $this->assertTrue(str_contains($html, 'Snapshot Limited'));
+        $this->assertSame(false, str_contains($html, 'Profit and loss figures remain') && str_contains($html, 'Expenses</td>'));
+
+        test_output_line('Cards: companies_house_snapshot uses selected company context and renders balance sheet fields.');
     }
 
     /**

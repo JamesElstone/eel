@@ -172,7 +172,7 @@ final class IxbrlBalanceSheetMetricsService
 
     private function isLongTermLiabilitySubtype(string $subtype): bool
     {
-        return in_array($subtype, ['long_term_liability', 'non_current_liability', 'creditors_after_one_year', 'creditors_after_more_than_one_year'], true);
+        return in_array($subtype, ['long_term_liability', 'non_current_liability', 'creditors_after_one_year', 'creditors_after_more_than_one_year', 'director_loan_long_term_liability'], true);
     }
 
     private function addSource(array &$sources, string $bucket, string $label, float $amount): void

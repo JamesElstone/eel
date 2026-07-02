@@ -231,8 +231,11 @@ final class ChartService
         $total = max(1.0, array_sum(array_column($segments, 'value')));
         $startAngle = -90.0;
         $pathsHtml = '';
+        $separatorHtml = '';
         $legendHtml = '';
         $showLegend = ($options['legend'] ?? true) !== false;
+        $showSeparators = count($segments) > 1;
+        $separatorInset = max(8.0, min($radius * 0.1, 14.0));
 
         foreach ($segments as $index => $segment) {
             $angle = ($segment['value'] / $total) * 360.0;
@@ -247,6 +250,11 @@ final class ChartService
             $pathsHtml .= '<title>' . HelperFramework::escape($segment['label'] . ': ' . $this->formatValue($segment['value']) . ' (' . $percent . '%)') . '</title>';
             $pathsHtml .= '</path>';
 
+            if ($showSeparators && $angle > 0.0) {
+                $separatorStart = $this->polarPoint($centerX, $centerY, $separatorInset, $startAngle);
+                $separatorHtml .= '<line class="chart-pie-separator" x1="' . $this->number($separatorStart['x']) . '" y1="' . $this->number($separatorStart['y']) . '" x2="' . $this->number($start['x']) . '" y2="' . $this->number($start['y']) . '"></line>';
+            }
+
             if ($showLegend) {
                 $legendY = 62 + ($index * 28);
                 $legendHtml .= '<rect class="chart-legend-swatch" x="' . $this->number($width * 0.66) . '" y="' . $this->number($legendY - 11) . '" width="12" height="12" fill="' . HelperFramework::escape($color) . '"></rect>';
@@ -259,7 +267,7 @@ final class ChartService
             $width,
             $height,
             (string)($options['title'] ?? 'Pie chart'),
-            $pathsHtml . $legendHtml,
+            $pathsHtml . $separatorHtml . $legendHtml,
             'pie'
         );
     }

@@ -110,7 +110,7 @@ final class _year_end_stateCard extends CardBaseFramework
         $review = (array)($checklist['review'] ?? []);
         $isLocked = !empty($review['is_locked']);
         $lockIntent = $isLocked ? 'unlock_period' : 'lock_period';
-        $lockLabel = $isLocked ? 'Unlock Period' : 'Lock Period';
+        $lockLabel = $isLocked ? 'Unlock Period' : 'Lock Accounting Period';
 
         return '
             <section class="settings-stack">

@@ -64,6 +64,8 @@ $harness->run(_year_end_stateCard::class, static function (GeneratedServiceClass
         $harness->assertSame(true, str_contains($html, 'year-end-related-workflow'));
         $harness->assertSame(true, str_contains($html, 'Open Related Workflow'));
         $harness->assertSame(false, str_contains($html, 'Open related workflow'));
+        $harness->assertSame(true, str_contains($html, 'Lock Accounting Period'));
+        $harness->assertSame(false, str_contains($html, '>Lock Period<'));
     });
 
     $harness->check(_year_end_stateCard::class, 'renders director loan offset balances and post button', static function () use ($harness, $card): void {

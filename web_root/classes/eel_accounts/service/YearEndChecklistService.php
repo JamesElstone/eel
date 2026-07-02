@@ -17,6 +17,7 @@ final class YearEndChecklistService
         private readonly ?\eel_accounts\Service\YearEndTaxReadinessService $taxReadinessService = null,
         private readonly ?\eel_accounts\Service\YearEndCompaniesHouseComparisonService $companiesHouseComparisonService = null,
         private readonly ?\eel_accounts\Service\YearEndLockService $lockService = null,
+        private readonly ?\eel_accounts\Service\AssetService $assetService = null,
     ) {
     }
 
@@ -92,6 +93,17 @@ final class YearEndChecklistService
             ];
         }
 
+        $depreciationResult = ($this->assetService ?? new \eel_accounts\Service\AssetService())->runDepreciation($companyId, $accountingPeriodId);
+        if (empty($depreciationResult['success'])) {
+            return [
+                'success' => false,
+                'status' => (int)($depreciationResult['status'] ?? 422),
+                'errors' => (array)($depreciationResult['errors'] ?? ['Depreciation could not be posted before locking this period.']),
+                'checklist' => $checklist,
+                'depreciation' => $depreciationResult,
+            ];
+        }
+
         $lock = $this->lockService ?? new \eel_accounts\Service\YearEndLockService();
         $result = $lock->lockPeriod($companyId, $accountingPeriodId, $lockedBy);
         if (empty($result['success'])) {
@@ -99,6 +111,7 @@ final class YearEndChecklistService
         }
 
         return $result + [
+            'depreciation' => $depreciationResult,
             'checklist' => $this->fetchChecklist($companyId, $accountingPeriodId, true),
         ];
     }

@@ -70,4 +70,10 @@ $harness->run(\eel_accounts\Service\CompanySettingsService::class, static functi
         $harness->assertSame('42', (string)($settings['director_loan_liability_nominal_id'] ?? ''));
         $harness->assertSame('42', (string)($settings['director_loan_nominal_id'] ?? ''));
     });
+
+    $harness->check(\eel_accounts\Service\CompanySettingsService::class, 'formats money with the configured currency symbol', static function () use ($harness, $service): void {
+        $harness->assertSame('€123.45', $service->money(['default_currency_symbol' => '&#8364;'], 123.45));
+        $harness->assertSame('£10.00', $service->money(['default_currency_symbol' => ''], 10));
+        $harness->assertSame('$50.00', $service->money(['default_currency_symbol' => '$'], 50));
+    });
 });

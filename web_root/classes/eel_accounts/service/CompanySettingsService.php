@@ -274,6 +274,18 @@ final class CompanySettingsService
         return \InterfaceDB::countWhere('company_settings', 'company_id', $companyId) > 0;
     }
 
+    public function defaultCurrencySymbol(array $settings): string
+    {
+        $symbol = html_entity_decode((string)($settings['default_currency_symbol'] ?? '&#163;'), \ENT_QUOTES | \ENT_HTML5, 'UTF-8');
+
+        return $symbol !== '' ? $symbol : html_entity_decode('&#163;', \ENT_QUOTES | \ENT_HTML5, 'UTF-8');
+    }
+
+    public function money(array $settings, float|int|string|null $value): string
+    {
+        return $this->defaultCurrencySymbol($settings) . \FormattingFramework::money($value);
+    }
+
     private function defaultSettings(): array
     {
         return array_merge(\eel_accounts\Store\CompanySettingsStore::defaults(), [

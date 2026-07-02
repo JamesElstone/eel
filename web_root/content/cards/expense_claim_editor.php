@@ -748,9 +748,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
 
     private function defaultCurrencySymbol(array $companySettings): string
     {
-        $symbol = html_entity_decode((string)($companySettings['default_currency_symbol'] ?? '&#163;'), \ENT_QUOTES | \ENT_HTML5, 'UTF-8');
-
-        return $symbol !== '' ? $symbol : html_entity_decode('&#163;', \ENT_QUOTES | \ENT_HTML5, 'UTF-8');
+        return (new \eel_accounts\Service\CompanySettingsService())->defaultCurrencySymbol($companySettings);
     }
 
     private function tablePaginationFields(array $extra = []): array

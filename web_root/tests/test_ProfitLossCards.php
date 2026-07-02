@@ -36,6 +36,94 @@ $harness->run(_pl_summaryCard::class, static function (GeneratedServiceClassTest
                 'committed_month_count' => 11,
                 'upload_in_progress_count' => 0,
             ],
+            'breakdown' => [
+                'income' => [[
+                    'nominal_account_id' => 1,
+                    'code' => '4000',
+                    'name' => 'Sales',
+                    'amount' => 1200,
+                ]],
+                'cost_of_sales' => [[
+                    'nominal_account_id' => 2,
+                    'code' => '5000',
+                    'name' => 'Materials',
+                    'amount' => 300,
+                ]],
+                'expense' => [
+                    [
+                        'nominal_account_id' => 3,
+                        'code' => '7000',
+                        'name' => 'Software',
+                        'amount' => 200,
+                    ],
+                    [
+                        'nominal_account_id' => 4,
+                        'code' => '7100',
+                        'name' => 'Rent',
+                        'amount' => 150,
+                    ],
+                    [
+                        'nominal_account_id' => 5,
+                        'code' => '6001',
+                        'name' => 'Small Expense 1',
+                        'amount' => 20,
+                    ],
+                    [
+                        'nominal_account_id' => 6,
+                        'code' => '6002',
+                        'name' => 'Small Expense 2',
+                        'amount' => 18,
+                    ],
+                    [
+                        'nominal_account_id' => 7,
+                        'code' => '6003',
+                        'name' => 'Small Expense 3',
+                        'amount' => 16,
+                    ],
+                    [
+                        'nominal_account_id' => 8,
+                        'code' => '6004',
+                        'name' => 'Small Expense 4',
+                        'amount' => 14,
+                    ],
+                    [
+                        'nominal_account_id' => 9,
+                        'code' => '6005',
+                        'name' => 'Small Expense 5',
+                        'amount' => 12,
+                    ],
+                    [
+                        'nominal_account_id' => 10,
+                        'code' => '6006',
+                        'name' => 'Small Expense 6',
+                        'amount' => 10,
+                    ],
+                    [
+                        'nominal_account_id' => 11,
+                        'code' => '6007',
+                        'name' => 'Small Expense 7',
+                        'amount' => 8,
+                    ],
+                    [
+                        'nominal_account_id' => 12,
+                        'code' => '6008',
+                        'name' => 'Small Expense 8',
+                        'amount' => 6,
+                    ],
+                    [
+                        'nominal_account_id' => 13,
+                        'code' => '6009',
+                        'name' => 'Small Expense 9',
+                        'amount' => 4,
+                    ],
+                    [
+                        'nominal_account_id' => 14,
+                        'code' => '6010',
+                        'name' => 'Small Expense 10',
+                        'amount' => 2,
+                    ],
+                ],
+            ],
         ],
     ]);
 
@@ -45,6 +133,30 @@ $harness->run(_pl_summaryCard::class, static function (GeneratedServiceClassTest
                 'available' => true,
                 'has_journals' => true,
                 'net_profit' => -50,
+            ],
+        ],
+    ]);
+    $lossFlowHtml = $card->render([
+        'profit_loss' => [
+            'summary' => [
+                'available' => true,
+                'has_journals' => true,
+                'net_profit' => -50,
+            ],
+            'breakdown' => [
+                'income' => [[
+                    'nominal_account_id' => 1,
+                    'code' => '4000',
+                    'name' => 'Sales',
+                    'amount' => 100,
+                ]],
+                'cost_of_sales' => [[
+                    'nominal_account_id' => 2,
+                    'code' => '5000',
+                    'name' => 'Materials',
+                    'amount' => 150,
+                ]],
+                'expense' => [],
             ],
         ],
     ]);
@@ -71,9 +183,27 @@ $harness->run(_pl_summaryCard::class, static function (GeneratedServiceClassTest
         $harness->assertSame(false, str_contains($html, 'Books health score'));
     });
 
+    $harness->check(_pl_summaryCard::class, 'renders income flow tab with Sankey chart', static function () use ($harness, $html): void {
+        $harness->assertTrue(str_contains($html, 'Income Flow'));
+        $harness->assertTrue(str_contains($html, 'pl-summary-income-flow'));
+        $harness->assertTrue(str_contains($html, 'chart chart-sankey'));
+        $harness->assertTrue(str_contains($html, '4000 Sales to Income Flow'));
+        $harness->assertTrue(str_contains($html, 'Income Flow to 5000 Materials'));
+        $harness->assertTrue(str_contains($html, 'Income Flow to 7000 Software'));
+        $harness->assertTrue(str_contains($html, 'Income Flow to 7100 Rent'));
+        $harness->assertTrue(str_contains($html, 'Income Flow to Other Expenses'));
+        $harness->assertTrue(str_contains($html, 'Income Flow to Profit'));
+        $harness->assertSame(false, str_contains($html, 'Small Expense 1'));
+    });
+
     $harness->check(_pl_summaryCard::class, 'renders loss and nill result labels', static function () use ($harness, $lossHtml, $nillHtml): void {
         $harness->assertTrue(str_contains($lossHtml, '<div class="summary-label">Profitability</div><div class="summary-value pl-profitability-value pl-profitability-value-loss">Loss</div>'));
         $harness->assertTrue(str_contains($nillHtml, '<div class="summary-label">Profitability</div><div class="summary-value pl-profitability-value pl-profitability-value-nill">Nill</div>'));
+    });
+
+    $harness->check(_pl_summaryCard::class, 'renders loss as an incoming balancing Sankey flow', static function () use ($harness, $lossFlowHtml): void {
+        $harness->assertTrue(str_contains($lossFlowHtml, 'Loss to Income Flow'));
+        $harness->assertTrue(str_contains($lossFlowHtml, 'Income Flow to 5000 Materials'));
     });
 });
 
@@ -138,8 +268,11 @@ $harness->run(_pl_income_breakdownCard::class, static function (GeneratedService
 
     $harness->check(_pl_income_breakdownCard::class, 'explains positive non-income receipts when other income is empty', static function () use ($harness, $nonIncomeReceiptHtml): void {
         $harness->assertTrue(str_contains($nonIncomeReceiptHtml, 'No other income journals have been posted for this period.'));
-        $harness->assertTrue(str_contains($nonIncomeReceiptHtml, '2100 - Director Loan Liability'));
+        $harness->assertTrue(str_contains($nonIncomeReceiptHtml, 'Monies posted to Director Loan Liability are excluded from income'));
+        $harness->assertSame(false, str_contains($nonIncomeReceiptHtml, '2100 - Director Loan Liability'));
+        $harness->assertSame(false, str_contains($nonIncomeReceiptHtml, '(500.00)'));
         $harness->assertTrue(str_contains($nonIncomeReceiptHtml, 'are excluded from income'));
+        $harness->assertTrue(str_contains($nonIncomeReceiptHtml, '<br>Director loans'));
         $harness->assertTrue(str_contains($nonIncomeReceiptHtml, 'Director loans'));
         $harness->assertTrue(str_contains($nonIncomeReceiptHtml, 'not income'));
     });
@@ -150,6 +283,7 @@ $harness->run(_pl_monthly_trendCard::class, static function (GeneratedServiceCla
         'profit_loss' => [
             'monthly_trend' => [
                 [
+                    'month_start' => '2026-01-01',
                     'month_label' => 'January 2026',
                     'income_total' => 1200,
                     'cost_of_sales_total' => 300,
@@ -157,6 +291,7 @@ $harness->run(_pl_monthly_trendCard::class, static function (GeneratedServiceCla
                     'net_profit' => 700,
                 ],
                 [
+                    'month_start' => '2026-02-01',
                     'month_label' => 'February 2026',
                     'income_total' => 1500,
                     'cost_of_sales_total' => 400,
@@ -172,53 +307,11 @@ $harness->run(_pl_monthly_trendCard::class, static function (GeneratedServiceCla
         $harness->assertTrue(str_contains($html, 'pl-monthly-trend-table'));
         $harness->assertTrue(str_contains($html, 'pl-monthly-trend-chart'));
         $harness->assertTrue(str_contains($html, 'chart chart-line'));
-        $harness->assertTrue(str_contains($html, 'Income - January 2026'));
-        $harness->assertTrue(str_contains($html, 'Cost of sales - January 2026'));
-        $harness->assertTrue(str_contains($html, 'Expenses - January 2026'));
-        $harness->assertTrue(str_contains($html, 'Net - January 2026'));
-    });
-});
-
-$harness->run(_pl_month_status_gridCard::class, static function (GeneratedServiceClassTestHarness $harness, _pl_month_status_gridCard $card): void {
-    $confirmHtml = $card->render([
-        'company' => [
-            'id' => 10,
-            'accounting_period_id' => 20,
-        ],
-        'profit_loss' => [
-            'month_status_grid' => [[
-                'month_start' => '2026-01-01',
-                'month_label' => 'January 2026',
-                'status' => 'no_data',
-                'transaction_count' => 0,
-                'uncategorised_count' => 0,
-                'upload_count' => 0,
-                'can_confirm_empty_month' => true,
-            ]],
-        ],
-    ]);
-
-    $confirmedHtml = $card->render([
-        'company' => [
-            'id' => 10,
-            'accounting_period_id' => 20,
-        ],
-        'profit_loss' => [
-            'month_status_grid' => [[
-                'month_start' => '2026-01-01',
-                'month_label' => 'January 2026',
-                'status' => 'confirmed_empty',
-                'transaction_count' => 0,
-                'uncategorised_count' => 0,
-                'upload_count' => 0,
-            ]],
-        ],
-    ]);
-
-    $harness->check(_pl_month_status_gridCard::class, 'renders empty month confirmation actions', static function () use ($harness, $confirmHtml, $confirmedHtml): void {
-        $harness->assertTrue(str_contains($confirmHtml, 'name="intent" value="confirm_empty_month"'));
-        $harness->assertTrue(str_contains($confirmHtml, 'Confirm no activity'));
-        $harness->assertTrue(str_contains($confirmedHtml, 'Confirmed Empty'));
-        $harness->assertTrue(str_contains($confirmedHtml, 'name="intent" value="revoke_empty_month"'));
+        $harness->assertTrue(str_contains($html, '>January 2026</td>'));
+        $harness->assertTrue(str_contains($html, 'Income - 1'));
+        $harness->assertTrue(str_contains($html, 'Cost of sales - 1'));
+        $harness->assertTrue(str_contains($html, 'Expenses - 1'));
+        $harness->assertTrue(str_contains($html, 'Net - 1'));
+        $harness->assertSame(false, str_contains($html, 'Income - January 2026'));
     });
 });

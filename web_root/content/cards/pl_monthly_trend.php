@@ -80,11 +80,32 @@ final class _pl_monthly_trendCard extends CardBaseFramework
     private function points(array $rows, string $valueKey): array
     {
         return array_map(
-            static fn(array $row): array => [
-                'label' => (string)($row['month_label'] ?? ''),
+            fn(array $row): array => [
+                'label' => $this->chartMonthNumber($row),
                 'value' => (float)($row[$valueKey] ?? 0),
             ],
             $rows
         );
+    }
+
+    private function chartMonthNumber(array $row): string
+    {
+        $monthStart = trim((string)($row['month_start'] ?? ''));
+        if ($monthStart !== '') {
+            try {
+                return (new DateTimeImmutable($monthStart))->format('n');
+            } catch (Throwable) {
+            }
+        }
+
+        $monthLabel = trim((string)($row['month_label'] ?? ''));
+        if ($monthLabel !== '') {
+            try {
+                return (new DateTimeImmutable($monthLabel))->format('n');
+            } catch (Throwable) {
+            }
+        }
+
+        return '';
     }
 }

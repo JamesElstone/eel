@@ -22,6 +22,22 @@ final class _pl_summaryCard extends CardBaseFramework
             return $this->messages((array)($summary['errors'] ?? ['Profit & Loss is not available.']));
         }
 
+        return '<div class="page-card-tabs pl-summary-tabs">
+            <div class="page-card-tab-shell">
+                <div class="page-card-tablist" role="tablist" aria-label="P&amp;L summary views">
+                    <button class="page-card-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="pl-summary-overview" data-page-card-tab="pl-summary-overview">Overview</button>
+                    <button class="page-card-tab" type="button" role="tab" aria-selected="false" aria-controls="pl-summary-income-flow" data-page-card-tab="pl-summary-income-flow">Income Flow</button>
+                </div>
+            </div>
+            <div class="page-card-tab-content">
+                <div class="page-card-tab-panel" id="pl-summary-overview" role="tabpanel">' . $this->overviewTab($context, $summary) . '</div>
+                <div class="page-card-tab-panel" id="pl-summary-income-flow" role="tabpanel" hidden>' . $this->incomeFlowTab($context) . '</div>
+            </div>
+        </div>';
+    }
+
+    private function overviewTab(array $context, array $summary): string
+    {
         $hasJournals = !empty($summary['has_journals']);
         $hasTransactions = !empty($summary['has_transactions']);
         $netProfit = (float)($summary['net_profit'] ?? 0);
@@ -45,6 +61,185 @@ final class _pl_summaryCard extends CardBaseFramework
             </div>
             ' . $this->healthMetrics($context) . '
         </div>';
+    }
+
+    private function incomeFlowTab(array $context): string
+    {
+        $chart = $this->incomeFlowChart((array)($context['profit_loss']['breakdown'] ?? []));
+        if ($chart === '') {
+            return '<div class="helper">No incoming or outgoing nominal flow is available for the selected period.</div>';
+        }
+
+        return '<div class="pl-summary-income-flow">' . $chart . '</div>';
+    }
+
+    private function incomeFlowChart(array $breakdown): string
+    {
+        $nodes = [[
+            'id' => 'income_flow_total',
+            'label' => 'Income Flow',
+            'column' => 1,
+            'color' => '#475569',
+        ]];
+        $links = [];
+        $incomeFlowTotal = 0.0;
+        $outgoingFlowTotal = 0.0;
+
+        foreach ((array)($breakdown['income'] ?? []) as $index => $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $amount = round((float)($row['amount'] ?? 0), 2);
+            if ($amount <= 0) {
+                continue;
+            }
+
+            $id = 'income_' . $index . '_' . (int)($row['nominal_account_id'] ?? 0);
+            $nodes[] = [
+                'id' => $id,
+                'label' => $this->flowNominalLabel($row),
+                'column' => 0,
+                'color' => '#1d4ed8',
+            ];
+            $links[] = [
+                'source' => $id,
+                'target' => 'income_flow_total',
+                'value' => $amount,
+                'color' => '#1d4ed8',
+            ];
+            $incomeFlowTotal += $amount;
+        }
+
+        foreach ($this->positiveFlowRows((array)($breakdown['cost_of_sales'] ?? [])) as $index => $row) {
+            $amount = (float)$row['amount'];
+            $id = 'cost_of_sales_' . $index . '_' . (int)($row['nominal_account_id'] ?? 0);
+            $nodes[] = [
+                'id' => $id,
+                'label' => $this->flowNominalLabel($row),
+                'column' => 2,
+                'color' => '#d97706',
+            ];
+            $links[] = [
+                'source' => 'income_flow_total',
+                'target' => $id,
+                'value' => $amount,
+                'color' => '#d97706',
+            ];
+            $outgoingFlowTotal += $amount;
+        }
+
+        $expenseRows = $this->positiveFlowRows((array)($breakdown['expense'] ?? []));
+        $topExpenseCount = $expenseRows === [] ? 0 : max(1, (int)ceil(count($expenseRows) * 0.1));
+        foreach (array_slice($expenseRows, 0, $topExpenseCount) as $index => $row) {
+            $amount = (float)$row['amount'];
+            $id = 'expense_' . $index . '_' . (int)($row['nominal_account_id'] ?? 0);
+            $nodes[] = [
+                'id' => $id,
+                'label' => $this->flowNominalLabel($row),
+                'column' => 2,
+                'color' => '#dc2626',
+            ];
+            $links[] = [
+                'source' => 'income_flow_total',
+                'target' => $id,
+                'value' => $amount,
+                'color' => '#dc2626',
+            ];
+            $outgoingFlowTotal += $amount;
+        }
+
+        $otherExpenseTotal = 0.0;
+        foreach (array_slice($expenseRows, $topExpenseCount) as $row) {
+            $otherExpenseTotal += (float)$row['amount'];
+        }
+        $otherExpenseTotal = round($otherExpenseTotal, 2);
+        if ($otherExpenseTotal > 0) {
+            $nodes[] = [
+                'id' => 'other_expenses',
+                'label' => 'Other Expenses',
+                'column' => 2,
+                'color' => '#991b1b',
+            ];
+            $links[] = [
+                'source' => 'income_flow_total',
+                'target' => 'other_expenses',
+                'value' => $otherExpenseTotal,
+                'color' => '#991b1b',
+            ];
+            $outgoingFlowTotal += $otherExpenseTotal;
+        }
+
+        $profitLossAmount = round($incomeFlowTotal - $outgoingFlowTotal, 2);
+        if ($profitLossAmount > 0) {
+            $nodes[] = [
+                'id' => 'profit',
+                'label' => 'Profit',
+                'column' => 2,
+                'color' => '#16a34a',
+            ];
+            $links[] = [
+                'source' => 'income_flow_total',
+                'target' => 'profit',
+                'value' => $profitLossAmount,
+                'color' => '#16a34a',
+            ];
+        } elseif ($profitLossAmount < 0) {
+            $nodes[] = [
+                'id' => 'loss',
+                'label' => 'Loss',
+                'column' => 0,
+                'color' => '#dc2626',
+            ];
+            $links[] = [
+                'source' => 'loss',
+                'target' => 'income_flow_total',
+                'value' => abs($profitLossAmount),
+                'color' => '#dc2626',
+            ];
+        }
+
+        if ($links === []) {
+            return '';
+        }
+
+        return (new ChartService())->sankey($nodes, $links, [
+            'title' => 'Income flow by nominal',
+            'value_prefix' => '£',
+            'balance_node' => 'income_flow_total',
+            'width' => 900,
+            'height' => max(360, min(400, count($nodes) * 44)),
+        ]);
+    }
+
+    private function positiveFlowRows(array $rows): array
+    {
+        $positiveRows = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $amount = round((float)($row['amount'] ?? 0), 2);
+            if ($amount <= 0) {
+                continue;
+            }
+
+            $row['amount'] = $amount;
+            $positiveRows[] = $row;
+        }
+
+        usort($positiveRows, static fn(array $left, array $right): int => (float)$right['amount'] <=> (float)$left['amount']);
+
+        return $positiveRows;
+    }
+
+    private function flowNominalLabel(array $row): string
+    {
+        return FormattingFramework::nominalLabel([
+            'code' => (string)($row['code'] ?? ''),
+            'name' => (string)($row['name'] ?? ''),
+        ], ' ');
     }
 
     private function summaryCard(string $label, mixed $value): string

@@ -32,8 +32,6 @@ final class _profit_loss extends PageContextFramework
             'pl_income_breakdown',
             'pl_expense_breakdown',
             'pl_net_profit_bridge',
-            'pl_uncategorised_watch',
-            'pl_month_status_grid',
             'pl_source_coverage',
         ];
     }
@@ -59,8 +57,6 @@ final class _profit_loss extends PageContextFramework
             [
                 'tab' => 'Data Quality',
                 'cards' => [
-                    'pl_uncategorised_watch',
-                    'pl_month_status_grid',
                     'pl_source_coverage',
                 ],
             ],
@@ -84,8 +80,6 @@ final class _profit_loss extends PageContextFramework
                 'breakdown' => $profitLossService->getProfitLossBreakdown($companyId, $accountingPeriodId),
                 'monthly_trend' => $profitLossService->getMonthlyProfitLossTrend($companyId, $accountingPeriodId),
                 'health' => $profitLossService->getProfitLossHealth($companyId, $accountingPeriodId),
-                'uncategorised_watch' => $profitLossService->getUncategorisedWatch($companyId, $accountingPeriodId, 10),
-                'month_status_grid' => $profitLossService->getMonthStatusGrid($companyId, $accountingPeriodId),
                 'source_coverage' => $profitLossService->getSourceCoverage($companyId, $accountingPeriodId),
             ],
         ];

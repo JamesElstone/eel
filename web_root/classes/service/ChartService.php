@@ -169,6 +169,9 @@ final class ChartService
             $max += 1.0;
         }
 
+        $yAxisScale = $this->lineAxisScale($min, $max);
+        $min = $yAxisScale['min'];
+        $max = $yAxisScale['max'];
         $stepX = $plotWidth / max(1, count($xLabels) - 1);
         $lineHtml = '';
         $pointHtml = '';
@@ -207,7 +210,7 @@ final class ChartService
             $width,
             $height,
             (string)($options['title'] ?? 'Line chart'),
-            $this->gridLines($padding, $plotWidth, $plotHeight, $max, 4, $min) . $lineHtml . $pointHtml . $labelHtml . $legendHtml . $this->axisLines($padding, $plotWidth, $plotHeight),
+            $this->gridLinesForValues($padding, $plotWidth, $plotHeight, $min, $max, $yAxisScale['ticks']) . $this->zeroAxisLine($padding, $plotWidth, $plotHeight, $min, $max) . $lineHtml . $pointHtml . $labelHtml . $legendHtml . $this->axisLines($padding, $plotWidth, $plotHeight),
             'line'
         );
     }
@@ -757,10 +760,10 @@ final class ChartService
                 'points' => [
                     ['label' => 'Jan', 'value' => 24],
                     ['label' => 'Feb', 'value' => 31],
-                    ['label' => 'Mar', 'value' => 29],
-                    ['label' => 'Apr', 'value' => 36],
-                    ['label' => 'May', 'value' => 52],
-                    ['label' => 'Jun', 'value' => 61],
+                    ['label' => 'Mar', 'value' => -12],
+                    ['label' => 'Apr', 'value' => -6],
+                    ['label' => 'May', 'value' => 18],
+                    ['label' => 'Jun', 'value' => 34],
                 ],
             ],
             [
@@ -1525,6 +1528,40 @@ final class ChartService
     }
 
     /**
+     * @param array<int, array{label?: string, value?: int|float|string, color?: string}> $points
+     * @return array<int, array{label: string, value: float, color?: string}>
+     */
+    private function normaliseLinePoints(array $points): array
+    {
+        $normalised = [];
+
+        foreach ($points as $index => $point) {
+            if (!is_array($point)) {
+                continue;
+            }
+
+            $value = (float)($point['value'] ?? 0);
+            if (!is_finite($value)) {
+                continue;
+            }
+
+            $label = trim((string)($point['label'] ?? ('Item ' . ($index + 1))));
+            $item = [
+                'label' => $label !== '' ? $label : ('Item ' . ($index + 1)),
+                'value' => $value,
+            ];
+
+            if (isset($point['color'])) {
+                $item['color'] = (string)$point['color'];
+            }
+
+            $normalised[] = $item;
+        }
+
+        return $normalised;
+    }
+
+    /**
      * @param array<int, array{id?: string, label?: string, column?: int|string, color?: string}> $nodesInput
      * @return array<string, array{id: string, label: string, column: int, color: string}>
      */
@@ -1704,7 +1741,7 @@ final class ChartService
     private function normaliseLineSeries(array $seriesInput, array $options): array
     {
         if (!$this->hasSeriesShape($seriesInput)) {
-            $points = $this->normalisePoints($seriesInput);
+            $points = $this->normaliseLinePoints($seriesInput);
 
             return $points === []
                 ? []
@@ -1716,7 +1753,7 @@ final class ChartService
         }
 
         return array_values(array_filter(
-            $this->normaliseSeries($seriesInput, 5),
+            $this->normaliseSeries($seriesInput, 5, true),
             static fn(array $series): bool => count($series['points']) >= 2
         ));
     }
@@ -1736,7 +1773,7 @@ final class ChartService
      * @param array<int, array{label?: string, color?: string, points?: array<int, array{label?: string, value?: int|float|string, color?: string}>}> $seriesInput
      * @return array<int, array{label: string, color: string, points: array<int, array{label: string, value: float, color?: string}>}>
      */
-    private function normaliseSeries(array $seriesInput, int $limit): array
+    private function normaliseSeries(array $seriesInput, int $limit, bool $allowNegativePoints = false): array
     {
         $series = [];
 
@@ -1745,7 +1782,10 @@ final class ChartService
                 continue;
             }
 
-            $points = $this->normalisePoints((array)($item['points'] ?? []));
+            $pointsInput = (array)($item['points'] ?? []);
+            $points = $allowNegativePoints
+                ? $this->normaliseLinePoints($pointsInput)
+                : $this->normalisePoints($pointsInput);
             if (count($points) < 1) {
                 continue;
             }
@@ -1803,6 +1843,54 @@ final class ChartService
     }
 
     /**
+     * @return array{min: float, max: float, ticks: array<int, float>}
+     */
+    private function lineAxisScale(float $min, float $max): array
+    {
+        $range = max(1.0, $max - $min);
+        $step = $this->niceWholeNumberStep($range / 6.0);
+        $axisMin = floor($min / $step) * $step;
+        $axisMax = ceil($max / $step) * $step;
+
+        if ($axisMax <= $axisMin) {
+            $axisMax = $axisMin + $step;
+        }
+
+        $ticks = [];
+        for ($value = $axisMin; $value <= $axisMax + ($step * 0.001); $value += $step) {
+            $ticks[] = round($value, 6);
+        }
+
+        return [
+            'min' => $axisMin,
+            'max' => $axisMax,
+            'ticks' => $ticks,
+        ];
+    }
+
+    private function niceWholeNumberStep(float $rawStep): float
+    {
+        if (!is_finite($rawStep) || $rawStep <= 0.0) {
+            return 1.0;
+        }
+
+        $magnitude = 10 ** floor(log10($rawStep));
+        $fraction = $rawStep / $magnitude;
+
+        if ($fraction <= 1.0) {
+            $step = 1.0;
+        } elseif ($fraction <= 2.0) {
+            $step = 2.0;
+        } elseif ($fraction <= 5.0) {
+            $step = 5.0;
+        } else {
+            $step = 10.0;
+        }
+
+        return max(1.0, $step * $magnitude);
+    }
+
+    /**
      * @param array{top: float, right: float, bottom: float, left: float} $padding
      */
     private function gridLines(array $padding, float $plotWidth, float $plotHeight, float $max, int $steps, float $min = 0.0): string
@@ -1823,11 +1911,50 @@ final class ChartService
 
     /**
      * @param array{top: float, right: float, bottom: float, left: float} $padding
+     * @param array<int, float> $values
+     */
+    private function gridLinesForValues(array $padding, float $plotWidth, float $plotHeight, float $min, float $max, array $values): string
+    {
+        $html = '';
+        $range = max(1.0, $max - $min);
+        $hasZeroAxis = $min < 0.0 && $max > 0.0;
+
+        foreach ($values as $value) {
+            $y = $padding['top'] + $plotHeight - (($value - $min) / $range * $plotHeight);
+            $html .= '<line class="chart-grid-line" x1="' . $this->number($padding['left']) . '" y1="' . $this->number($y) . '" x2="' . $this->number($padding['left'] + $plotWidth) . '" y2="' . $this->number($y) . '"></line>';
+
+            if ($hasZeroAxis && abs($value) < 0.001) {
+                continue;
+            }
+
+            $html .= '<text class="chart-axis-label" x="' . $this->number($padding['left'] - 10) . '" y="' . $this->number($y + 4) . '" text-anchor="end">' . HelperFramework::escape((string)(int)round($value)) . '</text>';
+        }
+
+        return $html;
+    }
+
+    /**
+     * @param array{top: float, right: float, bottom: float, left: float} $padding
      */
     private function axisLines(array $padding, float $plotWidth, float $plotHeight): string
     {
         return '<line class="chart-axis-line" x1="' . $this->number($padding['left']) . '" y1="' . $this->number($padding['top']) . '" x2="' . $this->number($padding['left']) . '" y2="' . $this->number($padding['top'] + $plotHeight) . '"></line>'
             . '<line class="chart-axis-line" x1="' . $this->number($padding['left']) . '" y1="' . $this->number($padding['top'] + $plotHeight) . '" x2="' . $this->number($padding['left'] + $plotWidth) . '" y2="' . $this->number($padding['top'] + $plotHeight) . '"></line>';
+    }
+
+    /**
+     * @param array{top: float, right: float, bottom: float, left: float} $padding
+     */
+    private function zeroAxisLine(array $padding, float $plotWidth, float $plotHeight, float $min, float $max): string
+    {
+        if ($min >= 0.0 || $max <= 0.0) {
+            return '';
+        }
+
+        $y = $padding['top'] + $plotHeight - ((0.0 - $min) / ($max - $min) * $plotHeight);
+
+        return '<line class="chart-axis-line chart-zero-axis-line" x1="' . $this->number($padding['left']) . '" y1="' . $this->number($y) . '" x2="' . $this->number($padding['left'] + $plotWidth) . '" y2="' . $this->number($y) . '"></line>'
+            . '<text class="chart-axis-label chart-zero-axis-label" x="' . $this->number($padding['left'] - 10) . '" y="' . $this->number($y + 4) . '" text-anchor="end">0</text>';
     }
 
     /**

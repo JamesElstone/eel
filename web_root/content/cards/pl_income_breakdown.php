@@ -63,22 +63,21 @@ final class _pl_income_breakdownCard extends CardBaseFramework
 
         $labels = [];
         foreach ($rows as $row) {
-            $labels[] = $this->nominalLabel($row) . ' (' . FormattingFramework::money($row['amount'] ?? 0) . ')';
+            $labels[] = $this->nominalName($row);
         }
 
-        return '<div class="helper">Positive bank receipts posted to nominal(s) '
+        return '<div class="helper">Monies posted to '
             . HelperFramework::escape(implode(', ', $labels))
-            . ' are excluded from income because those nominal accounts do not affect P&amp;L income. Director loans, capital introduced, internal transfers, and other balance-sheet movements are not income.</div>';
+            . ' are excluded from income because those nominal accounts do not affect P&amp;L income.<br>Director loans, capital introduced, internal transfers, and other balance-sheet movements are not income.</div>';
     }
 
-    private function nominalLabel(array $row): string
+    private function nominalName(array $row): string
     {
-        $code = trim((string)($row['code'] ?? ''));
         $name = trim((string)($row['name'] ?? ''));
-        if ($code !== '' && $name !== '') {
-            return $code . ' - ' . $name;
+        if ($name !== '') {
+            return $name;
         }
 
-        return $code !== '' ? $code : $name;
+        return trim((string)($row['code'] ?? ''));
     }
 }

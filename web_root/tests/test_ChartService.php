@@ -49,8 +49,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARAT
 
         $harness->check(ChartService::class, 'renders line chart with negative values', static function () use ($harness, $service): void {
             $html = $service->line([
-                ['label' => 'One', 'value' => -5],
-                ['label' => 'Two', 'value' => 3],
+                ['label' => 'One', 'value' => -5.2],
+                ['label' => 'Two', 'value' => 3.8],
             ], ['title' => 'Test negative line']);
 
             $harness->assertTrue(str_contains($html, '<svg'));
@@ -58,7 +58,51 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARAT
             $harness->assertTrue(substr_count($html, 'chart-line-point') === 2);
             $harness->assertTrue(str_contains($html, 'chart-zero-axis-line'));
             $harness->assertTrue(str_contains($html, 'chart-zero-axis-label'));
-            $harness->assertTrue(str_contains($html, 'One: -5'));
+            $harness->assertTrue(str_contains($html, '>2</text>'));
+            $harness->assertTrue(!str_contains($html, '>1.55</text>'));
+            $harness->assertTrue(str_contains($html, 'One: -5.2'));
+        });
+
+        $harness->check(ChartService::class, 'renders line chart with nice whole number y axis values', static function () use ($harness, $service): void {
+            $html = $service->line([
+                ['label' => 'Income', 'points' => [
+                    ['label' => '09/2022', 'value' => 0.00],
+                    ['label' => '10/2022', 'value' => 295.00],
+                    ['label' => '11/2022', 'value' => 285.00],
+                    ['label' => '12/2022', 'value' => 1097.02],
+                    ['label' => '01/2023', 'value' => 60.00],
+                    ['label' => '02/2023', 'value' => 310.90],
+                    ['label' => '03/2023', 'value' => 1355.60],
+                    ['label' => '04/2023', 'value' => 550.00],
+                    ['label' => '05/2023', 'value' => 2125.26],
+                    ['label' => '06/2023', 'value' => 1560.79],
+                    ['label' => '07/2023', 'value' => 345.58],
+                    ['label' => '08/2023', 'value' => 1060.00],
+                ]],
+                ['label' => 'Net', 'points' => [
+                    ['label' => '09/2022', 'value' => 0.00],
+                    ['label' => '10/2022', 'value' => -824.18],
+                    ['label' => '11/2022', 'value' => 39.18],
+                    ['label' => '12/2022', 'value' => -393.77],
+                    ['label' => '01/2023', 'value' => -40.17],
+                    ['label' => '02/2023', 'value' => 54.42],
+                    ['label' => '03/2023', 'value' => -92.55],
+                    ['label' => '04/2023', 'value' => 323.74],
+                    ['label' => '05/2023', 'value' => 510.92],
+                    ['label' => '06/2023', 'value' => 493.10],
+                    ['label' => '07/2023', 'value' => -138.83],
+                    ['label' => '08/2023', 'value' => -323.13],
+                ]],
+            ], ['title' => 'Finance trend']);
+
+            foreach (['-1000', '-500', '500', '1000', '1500', '2000', '2500'] as $label) {
+                $harness->assertTrue(str_contains($html, '>' . $label . '</text>'));
+            }
+
+            $harness->assertTrue(str_contains($html, 'chart-zero-axis-label'));
+            $harness->assertTrue(!str_contains($html, '>-87</text>'));
+            $harness->assertTrue(!str_contains($html, '>651</text>'));
+            $harness->assertTrue(!str_contains($html, '>1388</text>'));
         });
 
         $harness->check(ChartService::class, 'renders multi series line chart SVG', static function () use ($harness, $service, $points): void {

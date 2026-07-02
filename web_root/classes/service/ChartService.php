@@ -169,6 +169,9 @@ final class ChartService
             $max += 1.0;
         }
 
+        $yAxisScale = $this->lineAxisScale($min, $max);
+        $min = $yAxisScale['min'];
+        $max = $yAxisScale['max'];
         $stepX = $plotWidth / max(1, count($xLabels) - 1);
         $lineHtml = '';
         $pointHtml = '';
@@ -207,7 +210,7 @@ final class ChartService
             $width,
             $height,
             (string)($options['title'] ?? 'Line chart'),
-            $this->gridLines($padding, $plotWidth, $plotHeight, $max, 4, $min) . $this->zeroAxisLine($padding, $plotWidth, $plotHeight, $min, $max) . $lineHtml . $pointHtml . $labelHtml . $legendHtml . $this->axisLines($padding, $plotWidth, $plotHeight),
+            $this->gridLinesForValues($padding, $plotWidth, $plotHeight, $min, $max, $yAxisScale['ticks']) . $this->zeroAxisLine($padding, $plotWidth, $plotHeight, $min, $max) . $lineHtml . $pointHtml . $labelHtml . $legendHtml . $this->axisLines($padding, $plotWidth, $plotHeight),
             'line'
         );
     }
@@ -1840,6 +1843,54 @@ final class ChartService
     }
 
     /**
+     * @return array{min: float, max: float, ticks: array<int, float>}
+     */
+    private function lineAxisScale(float $min, float $max): array
+    {
+        $range = max(1.0, $max - $min);
+        $step = $this->niceWholeNumberStep($range / 6.0);
+        $axisMin = floor($min / $step) * $step;
+        $axisMax = ceil($max / $step) * $step;
+
+        if ($axisMax <= $axisMin) {
+            $axisMax = $axisMin + $step;
+        }
+
+        $ticks = [];
+        for ($value = $axisMin; $value <= $axisMax + ($step * 0.001); $value += $step) {
+            $ticks[] = round($value, 6);
+        }
+
+        return [
+            'min' => $axisMin,
+            'max' => $axisMax,
+            'ticks' => $ticks,
+        ];
+    }
+
+    private function niceWholeNumberStep(float $rawStep): float
+    {
+        if (!is_finite($rawStep) || $rawStep <= 0.0) {
+            return 1.0;
+        }
+
+        $magnitude = 10 ** floor(log10($rawStep));
+        $fraction = $rawStep / $magnitude;
+
+        if ($fraction <= 1.0) {
+            $step = 1.0;
+        } elseif ($fraction <= 2.0) {
+            $step = 2.0;
+        } elseif ($fraction <= 5.0) {
+            $step = 5.0;
+        } else {
+            $step = 10.0;
+        }
+
+        return max(1.0, $step * $magnitude);
+    }
+
+    /**
      * @param array{top: float, right: float, bottom: float, left: float} $padding
      */
     private function gridLines(array $padding, float $plotWidth, float $plotHeight, float $max, int $steps, float $min = 0.0): string
@@ -1853,6 +1904,30 @@ final class ChartService
             $value = $max - ($range * $ratio);
             $html .= '<line class="chart-grid-line" x1="' . $this->number($padding['left']) . '" y1="' . $this->number($y) . '" x2="' . $this->number($padding['left'] + $plotWidth) . '" y2="' . $this->number($y) . '"></line>';
             $html .= '<text class="chart-axis-label" x="' . $this->number($padding['left'] - 10) . '" y="' . $this->number($y + 4) . '" text-anchor="end">' . HelperFramework::escape($this->formatValue($value)) . '</text>';
+        }
+
+        return $html;
+    }
+
+    /**
+     * @param array{top: float, right: float, bottom: float, left: float} $padding
+     * @param array<int, float> $values
+     */
+    private function gridLinesForValues(array $padding, float $plotWidth, float $plotHeight, float $min, float $max, array $values): string
+    {
+        $html = '';
+        $range = max(1.0, $max - $min);
+        $hasZeroAxis = $min < 0.0 && $max > 0.0;
+
+        foreach ($values as $value) {
+            $y = $padding['top'] + $plotHeight - (($value - $min) / $range * $plotHeight);
+            $html .= '<line class="chart-grid-line" x1="' . $this->number($padding['left']) . '" y1="' . $this->number($y) . '" x2="' . $this->number($padding['left'] + $plotWidth) . '" y2="' . $this->number($y) . '"></line>';
+
+            if ($hasZeroAxis && abs($value) < 0.001) {
+                continue;
+            }
+
+            $html .= '<text class="chart-axis-label" x="' . $this->number($padding['left'] - 10) . '" y="' . $this->number($y + 4) . '" text-anchor="end">' . HelperFramework::escape((string)(int)round($value)) . '</text>';
         }
 
         return $html;

@@ -62,17 +62,17 @@ final class _trial_balance_stateCard extends CardBaseFramework
         $summary = (array)($trialBalance['summary'] ?? []);
 
         return '<div id="trial-balance-app" class="settings-stack">
-            ' . $this->renderSummaryPanel($summary, (string)($validation['ready_for_ct_working_papers'] ?? 'Not ready')) . '
+            ' . $this->renderSummaryPanel($summary, $validation) . '
         </div>';
     }
 
-    private function renderSummaryPanel(array $summary, string $readiness): string
+    private function renderSummaryPanel(array $summary, array $validation): string
     {
         $status = (array)($summary['trial_balance_status'] ?? []);
 
-        return '<div>
-            <div class="summary-grid" style="grid-template-columns: repeat(5, minmax(0, 1fr));">
-                ' . $this->readinessGaugeCard($readiness) . '
+        return '<div style="display: grid; grid-template-columns: minmax(180px, 1fr) minmax(0, 4fr); gap: 12px; align-items: stretch;">
+            <div>' . $this->readinessGaugeCard($validation) . '</div>
+            <div class="summary-grid" style="grid-template-columns: repeat(4, minmax(0, 1fr));">
                 ' . $this->summaryCard('Trial Balance status', '<span class="badge ' . (!empty($status['is_balanced']) ? 'success' : 'danger') . '">' . HelperFramework::escape((string)($status['label'] ?? 'Not balanced')) . '</span>', true) . '
                 ' . $this->summaryCard('Profit before tax', FormattingFramework::money($summary['profit_before_tax'] ?? 0)) . '
                 ' . $this->summaryCard('Net assets', FormattingFramework::money($summary['net_assets'] ?? 0)) . '
@@ -86,9 +86,10 @@ final class _trial_balance_stateCard extends CardBaseFramework
         </div>';
     }
 
-    private function readinessGaugeCard(string $readiness): string
+    private function readinessGaugeCard(array $validation): string
     {
-        $score = $this->readinessScore($readiness);
+        $readiness = (string)($validation['ready_for_ct_working_papers'] ?? 'Not ready');
+        $score = $this->readinessScore($validation, $readiness);
         $chart = (new ChartService())->gauge($score, [
             'title' => 'Trial balance readiness',
             'label' => $readiness,
@@ -100,7 +101,34 @@ final class _trial_balance_stateCard extends CardBaseFramework
         return $this->summaryCard('Readiness', $chart, true);
     }
 
-    private function readinessScore(string $readiness): int
+    private function readinessScore(array $validation, string $readiness): int
+    {
+        $checks = array_values(array_filter(
+            (array)($validation['checks'] ?? []),
+            fn(mixed $check): bool => is_array($check) && $this->isActionableReadinessCheck($check)
+        ));
+
+        if ($checks === []) {
+            return $this->readinessLabelScore($readiness);
+        }
+
+        $passed = count(array_filter(
+            $checks,
+            static fn(array $check): bool => in_array((string)($check['status'] ?? ''), ['pass', 'success', 'matches'], true)
+        ));
+
+        return (int)round(($passed / count($checks)) * 100);
+    }
+
+    private function isActionableReadinessCheck(array $check): bool
+    {
+        $code = strtolower((string)($check['code'] ?? ''));
+        $title = strtolower((string)($check['title'] ?? ''));
+
+        return !str_contains($code, 'solvency') && !str_contains($title, 'solvency');
+    }
+
+    private function readinessLabelScore(string $readiness): int
     {
         $normalised = strtolower(trim($readiness));
 

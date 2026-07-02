@@ -96,9 +96,11 @@ final class _trial_balance_validationCard extends CardBaseFramework
                 . ($failCount > 0 ? ', ' . $failCount . ' failing' : '')
                 . '.'
             : 'No validation checks were returned.';
+        $overallValue = '<span class="badge ' . $overallClass . '">' . HelperFramework::escape($overallLabel) . '</span> '
+            . HelperFramework::escape($percentOk . '% ready');
+
         return '<section class="summary-grid">
-            ' . $this->summaryCard('Overall status', '<span class="badge ' . $overallClass . '">' . HelperFramework::escape($overallLabel) . '</span>', $overallDetail, true) . '
-            ' . $this->summaryCard('Readiness', $percentOk . '%', $okCount . '/' . max(1, $total) . ' OK') . '
+            ' . $this->summaryCard('Overall status', $overallValue, $overallDetail, true) . '
         </section>';
     }
 

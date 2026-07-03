@@ -328,6 +328,18 @@ final class DividendService
             return ['success' => false, 'errors' => ['The transaction date must fall inside the selected accounting period.']];
         }
 
+        $sourceRef = $this->transactionDividendSourceRef($transactionId);
+        $existingJournalId = $this->findJournalId($companyId, $sourceRef);
+        if ($existingJournalId > 0) {
+            return [
+                'success' => true,
+                'posted' => true,
+                'already_exists' => true,
+                'journal_id' => $existingJournalId,
+                'source_ref' => $sourceRef,
+            ];
+        }
+
         $capacity = $this->getDividendCapacity($companyId, $accountingPeriodId, $declarationDate);
         $availableReserves = round((float)($capacity['available_distributable_reserves'] ?? 0), 2);
         if ($availableReserves < 0) {
@@ -359,18 +371,6 @@ final class DividendService
         $dividendsPayableNominalId = (int)($nominals['dividends_payable']['id'] ?? 0);
         if ($dividendsPaidNominalId <= 0 || $dividendsPayableNominalId <= 0) {
             return ['success' => false, 'errors' => ['Dividend nominal accounts are missing.']];
-        }
-
-        $sourceRef = $this->transactionDividendSourceRef($transactionId);
-        $existingJournalId = $this->findJournalId($companyId, $sourceRef);
-        if ($existingJournalId > 0) {
-            return [
-                'success' => true,
-                'posted' => true,
-                'already_exists' => true,
-                'journal_id' => $existingJournalId,
-                'source_ref' => $sourceRef,
-            ];
         }
 
         $ownsTransaction = !\InterfaceDB::inTransaction();

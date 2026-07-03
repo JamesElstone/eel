@@ -613,7 +613,7 @@ final class DashboardRepository
                        t.statement_upload_id,
                        t.account_id,
                        t.txn_date,
-                       DATE_FORMAT(t.txn_date, '%Y-%m-01') AS month_key,
+                       " . $this->transactionMonthKeySql('t.txn_date') . " AS month_key,
                        COALESCE(t.txn_type, '') AS txn_type,
                        t.description,
                        COALESCE(t.reference, '') AS reference,
@@ -673,6 +673,15 @@ final class DashboardRepository
         $stmt->execute($params);
 
         return $stmt->fetchAll();
+    }
+
+    private function transactionMonthKeySql(string $dateExpression): string
+    {
+        if (\InterfaceDB::driverName() === 'sqlite') {
+            return "SUBSTR(" . $dateExpression . ", 1, 7) || '-01'";
+        }
+
+        return "DATE_FORMAT(" . $dateExpression . ", '%Y-%m-01')";
     }
 
     public function normaliseTransactionAmountFilter(?string $value, ?string $flow = 'any'): string

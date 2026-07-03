@@ -105,8 +105,37 @@ final class TransactionAutoApprovalService
 
         $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
         $actorUserId = $userId !== null && $userId > 0 ? $userId : null;
-        $statement = \InterfaceDB::prepare(
-            'INSERT INTO transaction_auto_approvals (
+        $statement = \InterfaceDB::prepare($this->approvalStateUpsertSql(false));
+
+        $updated = 0;
+        foreach ($transactions as $transaction) {
+            $transactionId = (int)($transaction['id'] ?? 0);
+            $checked = (bool)($normalisedStates[$transactionId] ?? false);
+            $statement->execute([
+                'transaction_id' => $transactionId,
+                'state' => $checked ? self::STATE_CHECKED : self::STATE_PENDING,
+                'state_change_user_id' => $actorUserId,
+                'state_change_at' => $now,
+                'state_change_transaction_updated_at' => $checked ? (string)$transaction['updated_at'] : null,
+                'confirmed_by_user_id' => null,
+                'confirmed_at' => null,
+                'confirmed_transaction_updated_at' => null,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+            $updated++;
+        }
+
+        return [
+            'success' => true,
+            'updated' => $updated,
+            'errors' => [],
+        ];
+    }
+
+    private function approvalStateUpsertSql(bool $includeConfirmation): string
+    {
+        $sql = 'INSERT INTO transaction_auto_approvals (
                 transaction_id,
                 state,
                 state_change_user_id,
@@ -123,44 +152,36 @@ final class TransactionAutoApprovalService
                 :state_change_user_id,
                 :state_change_at,
                 :state_change_transaction_updated_at,
-                NULL,
-                NULL,
-                NULL,
+                :confirmed_by_user_id,
+                :confirmed_at,
+                :confirmed_transaction_updated_at,
                 :created_at,
                 :updated_at
-            )
+            )';
+
+        if (\InterfaceDB::driverName() === 'sqlite') {
+            return $sql . '
+            ON CONFLICT(transaction_id) DO UPDATE SET
+                state = excluded.state,
+                state_change_user_id = excluded.state_change_user_id,
+                state_change_at = excluded.state_change_at,
+                state_change_transaction_updated_at = excluded.state_change_transaction_updated_at,
+                confirmed_by_user_id = ' . ($includeConfirmation ? 'excluded.confirmed_by_user_id' : 'NULL') . ',
+                confirmed_at = ' . ($includeConfirmation ? 'excluded.confirmed_at' : 'NULL') . ',
+                confirmed_transaction_updated_at = ' . ($includeConfirmation ? 'excluded.confirmed_transaction_updated_at' : 'NULL') . ',
+                updated_at = excluded.updated_at';
+        }
+
+        return $sql . '
             ON DUPLICATE KEY UPDATE
                 state = VALUES(state),
                 state_change_user_id = VALUES(state_change_user_id),
                 state_change_at = VALUES(state_change_at),
                 state_change_transaction_updated_at = VALUES(state_change_transaction_updated_at),
-                confirmed_by_user_id = NULL,
-                confirmed_at = NULL,
-                confirmed_transaction_updated_at = NULL,
-                updated_at = VALUES(updated_at)'
-        );
-
-        $updated = 0;
-        foreach ($transactions as $transaction) {
-            $transactionId = (int)($transaction['id'] ?? 0);
-            $checked = (bool)($normalisedStates[$transactionId] ?? false);
-            $statement->execute([
-                'transaction_id' => $transactionId,
-                'state' => $checked ? self::STATE_CHECKED : self::STATE_PENDING,
-                'state_change_user_id' => $actorUserId,
-                'state_change_at' => $now,
-                'state_change_transaction_updated_at' => $checked ? (string)$transaction['updated_at'] : null,
-                'created_at' => $now,
-                'updated_at' => $now,
-            ]);
-            $updated++;
-        }
-
-        return [
-            'success' => true,
-            'updated' => $updated,
-            'errors' => [],
-        ];
+                confirmed_by_user_id = ' . ($includeConfirmation ? 'VALUES(confirmed_by_user_id)' : 'NULL') . ',
+                confirmed_at = ' . ($includeConfirmation ? 'VALUES(confirmed_at)' : 'NULL') . ',
+                confirmed_transaction_updated_at = ' . ($includeConfirmation ? 'VALUES(confirmed_transaction_updated_at)' : 'NULL') . ',
+                updated_at = VALUES(updated_at)';
     }
 
     public function pendingPostConfirmationCount(int $companyId, int $accountingPeriodId, ?string $monthKey = null): int
@@ -185,40 +206,7 @@ final class TransactionAutoApprovalService
 
         $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
         $actorUserId = $userId !== null && $userId > 0 ? $userId : null;
-        $statement = \InterfaceDB::prepare(
-            'INSERT INTO transaction_auto_approvals (
-                transaction_id,
-                state,
-                state_change_user_id,
-                state_change_at,
-                state_change_transaction_updated_at,
-                confirmed_by_user_id,
-                confirmed_at,
-                confirmed_transaction_updated_at,
-                created_at,
-                updated_at
-            ) VALUES (
-                :transaction_id,
-                :state,
-                :state_change_user_id,
-                :state_change_at,
-                :state_change_transaction_updated_at,
-                :confirmed_by_user_id,
-                :confirmed_at,
-                :confirmed_transaction_updated_at,
-                :created_at,
-                :updated_at
-            )
-            ON DUPLICATE KEY UPDATE
-                state = VALUES(state),
-                state_change_user_id = VALUES(state_change_user_id),
-                state_change_at = VALUES(state_change_at),
-                state_change_transaction_updated_at = VALUES(state_change_transaction_updated_at),
-                confirmed_by_user_id = VALUES(confirmed_by_user_id),
-                confirmed_at = VALUES(confirmed_at),
-                confirmed_transaction_updated_at = VALUES(confirmed_transaction_updated_at),
-                updated_at = VALUES(updated_at)'
-        );
+        $statement = \InterfaceDB::prepare($this->approvalStateUpsertSql(true));
 
         foreach ($transactions as $transaction) {
             $statement->execute([

@@ -814,7 +814,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         );
         $blocked = $instance->handle($requestWithoutConfirmation, createTestPageServiceFramework());
         $harness->assertSame(false, $blocked->isSuccess());
-        $harness->assertSame(true, str_contains((string)($blocked->flashMessages()[0] ?? ''), 'Confirm 1 checked auto decision(s)'));
+        $harness->assertSame(true, str_contains(transactionActionFlashText($blocked), 'Confirm 1 checked auto decision(s)'));
         $harness->assertSame(0, InterfaceDB::countWhere('journals', [
             'company_id' => (int)$fixture['company_id'],
             'source_type' => 'bank_csv',
@@ -839,7 +839,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $posted = $instance->handle($requestWithConfirmation, createTestPageServiceFramework());
 
         $harness->assertSame(true, $posted->isSuccess());
-        $harness->assertSame(true, in_array('1 checked auto decision(s) confirmed.', $posted->flashMessages(), true));
+        $harness->assertSame(true, str_contains(transactionActionFlashText($posted), '1 checked auto decision(s) confirmed.'));
         $harness->assertSame(1, InterfaceDB::countWhere('journals', [
             'company_id' => (int)$fixture['company_id'],
             'source_type' => 'bank_csv',
@@ -1083,7 +1083,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, 'name="transaction_reference" value="INV-42"'));
         $harness->assertSame(true, str_contains($html, 'name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form"'));
         $harness->assertSame(true, str_contains($html, 'name="global_action" value="mark_director_loan"'));
-        $harness->assertSame(true, str_contains($html, '<span class="badge success">Manually Categorised</span>'));
+        $harness->assertSame(true, str_contains($html, '<span class="badge success">Manual</span>'));
     });
 
     $harness->check('_transactions_importedCard', 'does not require chicken for unticked auto decisions', function () use ($harness): void {
@@ -1672,3 +1672,18 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, 'name="transactions_imported_page" value="2"'));
     });
 });
+
+function transactionActionFlashText(ActionResultFramework $result): string
+{
+    $messages = [];
+    foreach ($result->flashMessages() as $flashMessage) {
+        if (is_array($flashMessage)) {
+            $messages[] = (string)($flashMessage['message'] ?? '');
+            continue;
+        }
+
+        $messages[] = (string)$flashMessage;
+    }
+
+    return implode("\n", $messages);
+}

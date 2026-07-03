@@ -9,7 +9,7 @@ declare(strict_types=1);
 
 final class _journals_listCard extends CardBaseFramework
 {
-    private const PAGE_SIZE = 5;
+    private const PAGE_SIZE = 30;
 
     public function key(): string
     {

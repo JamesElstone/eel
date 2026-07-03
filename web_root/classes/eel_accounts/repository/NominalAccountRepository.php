@@ -12,8 +12,6 @@ namespace eel_accounts\Repository;
 
 final class NominalAccountRepository
 {
-    private static array $referenceSourceAvailabilityCache = [];
-
     private ?array $availableNominalReferenceSources = null;
     private ?bool $nominalReferenceSchemaComplete = null;
 
@@ -347,15 +345,10 @@ final class NominalAccountRepository
             return false;
         }
 
-        $cacheKey = $table . ':' . implode(',', array_map('strval', $columns));
-        if (array_key_exists($cacheKey, self::$referenceSourceAvailabilityCache)) {
-            return self::$referenceSourceAvailabilityCache[$cacheKey];
-        }
-
         try {
-            return self::$referenceSourceAvailabilityCache[$cacheKey] = \InterfaceDB::tableExists($table) && \InterfaceDB::columnsExists($table, $columns);
+            return \InterfaceDB::tableExists($table) && \InterfaceDB::columnsExists($table, $columns);
         } catch (\Throwable) {
-            return self::$referenceSourceAvailabilityCache[$cacheKey] = false;
+            return false;
         }
     }
 

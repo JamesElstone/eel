@@ -106,7 +106,7 @@ $harness->run(\eel_accounts\Service\TransactionAutoApprovalService::class, stati
             InterfaceDB::prepareExecute(
                 'UPDATE transactions
                  SET notes = :notes,
-                     updated_at = DATE_ADD(updated_at, INTERVAL 2 SECOND)
+                     updated_at = ' . transactionAutoApprovalUpdatedAtPlusTwoSecondsSql() . '
                  WHERE id = :id',
                 [
                     'id' => $uncheckedTransactionId,
@@ -204,7 +204,7 @@ $harness->run(\eel_accounts\Service\TransactionAutoApprovalService::class, stati
             InterfaceDB::prepareExecute(
                 'UPDATE transactions
                  SET notes = :notes,
-                     updated_at = DATE_ADD(updated_at, INTERVAL 2 SECOND)
+                     updated_at = ' . transactionAutoApprovalUpdatedAtPlusTwoSecondsSql() . '
                  WHERE id = :id',
                 [
                     'id' => $staleCheckedTransactionId,
@@ -278,7 +278,7 @@ $harness->run(\eel_accounts\Service\TransactionAutoApprovalService::class, stati
             InterfaceDB::prepareExecute(
                 'UPDATE transactions
                  SET notes = :notes,
-                     updated_at = DATE_ADD(updated_at, INTERVAL 2 SECOND)
+                     updated_at = ' . transactionAutoApprovalUpdatedAtPlusTwoSecondsSql() . '
                  WHERE id = :id',
                 [
                     'id' => $staleCheckedTransactionId,
@@ -465,6 +465,13 @@ function transactionAutoApprovalCreateFixture(): array
         'rule_id' => $ruleId,
         'nominal_account_id' => $nominalAccountId,
     ];
+}
+
+function transactionAutoApprovalUpdatedAtPlusTwoSecondsSql(): string
+{
+    return InterfaceDB::driverName() === 'sqlite'
+        ? "DATETIME(updated_at, '+2 seconds')"
+        : 'DATE_ADD(updated_at, INTERVAL 2 SECOND)';
 }
 
 function transactionAutoApprovalInsertFixtureTransaction(array $fixture, int $offset, string $description): int

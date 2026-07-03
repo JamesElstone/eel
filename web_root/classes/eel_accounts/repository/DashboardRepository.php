@@ -477,6 +477,7 @@ final class DashboardRepository
                        COALESCE(t.local_document_path, '') AS local_document_path,
                        COALESCE(t.document_download_status, 'skipped') AS document_download_status,
                        COALESCE(t.document_error, '') AS document_error,
+                       COALESCE(t.notes, '') AS notes,
                        t.nominal_account_id,
                        t.transfer_account_id,
                        COALESCE(t.is_internal_transfer, 0) AS is_internal_transfer,

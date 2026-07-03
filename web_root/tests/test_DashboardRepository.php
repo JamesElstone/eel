@@ -48,6 +48,138 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
         $harness->assertSame('in', $repository->normaliseTransactionFlowFilter(' IN '));
     });
 
+    $harness->check(\eel_accounts\Repository\DashboardRepository::class, 'fetches imported transaction notes for month rows', function () use ($harness): void {
+        if (!InterfaceDB::tableExists('companies') || !InterfaceDB::tableExists('accounting_periods') || !InterfaceDB::tableExists('statement_uploads') || !InterfaceDB::tableExists('transactions')) {
+            $harness->skip('Transaction fixture tables are not available on the default InterfaceDB connection.');
+        }
+
+        InterfaceDB::beginTransaction();
+        try {
+            $repository = new \eel_accounts\Repository\DashboardRepository();
+            $marker = 'DASHNOTE' . strtoupper(substr(hash('sha256', uniqid('', true)), 0, 8));
+
+            InterfaceDB::prepareExecute(
+                'INSERT INTO companies (company_name, company_number, is_active)
+                 VALUES (:company_name, :company_number, 1)',
+                [
+                    'company_name' => 'Dashboard Notes ' . $marker,
+                    'company_number' => $marker,
+                ]
+            );
+            $companyId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM companies WHERE company_number = :company_number ORDER BY id DESC LIMIT 1',
+                ['company_number' => $marker]
+            );
+
+            InterfaceDB::prepareExecute(
+                'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
+                 VALUES (:company_id, :label, :period_start, :period_end)',
+                [
+                    'company_id' => $companyId,
+                    'label' => 'FY ' . $marker,
+                    'period_start' => '2022-01-01',
+                    'period_end' => '2022-12-31',
+                ]
+            );
+            $accountingPeriodId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM accounting_periods WHERE company_id = :company_id AND label = :label ORDER BY id DESC LIMIT 1',
+                [
+                    'company_id' => $companyId,
+                    'label' => 'FY ' . $marker,
+                ]
+            );
+
+            InterfaceDB::prepareExecute(
+                'INSERT INTO statement_uploads (
+                    company_id,
+                    accounting_period_id,
+                    statement_month,
+                    original_filename,
+                    stored_filename,
+                    file_sha256,
+                    workflow_status
+                 ) VALUES (
+                    :company_id,
+                    :accounting_period_id,
+                    :statement_month,
+                    :original_filename,
+                    :stored_filename,
+                    :file_sha256,
+                    :workflow_status
+                 )',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'statement_month' => '2022-11-01',
+                    'original_filename' => $marker . '.csv',
+                    'stored_filename' => $marker . '.csv',
+                    'file_sha256' => hash('sha256', $marker),
+                    'workflow_status' => 'committed',
+                ]
+            );
+            $uploadId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM statement_uploads WHERE company_id = :company_id AND original_filename = :filename ORDER BY id DESC LIMIT 1',
+                [
+                    'company_id' => $companyId,
+                    'filename' => $marker . '.csv',
+                ]
+            );
+
+            InterfaceDB::prepareExecute(
+                'INSERT INTO transactions (
+                    company_id,
+                    accounting_period_id,
+                    statement_upload_id,
+                    txn_date,
+                    description,
+                    reference,
+                    amount,
+                    currency,
+                    source_account_label,
+                    dedupe_hash,
+                    category_status,
+                    notes
+                 ) VALUES (
+                    :company_id,
+                    :accounting_period_id,
+                    :statement_upload_id,
+                    :txn_date,
+                    :description,
+                    :reference,
+                    :amount,
+                    :currency,
+                    :source_account_label,
+                    :dedupe_hash,
+                    :category_status,
+                    :notes
+                 )',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'statement_upload_id' => $uploadId,
+                    'txn_date' => '2022-11-02',
+                    'description' => 'Dashboard note fixture',
+                    'reference' => 'DIVIDEND',
+                    'amount' => '-129.00',
+                    'currency' => 'GBP',
+                    'source_account_label' => 'Fixture current account',
+                    'dedupe_hash' => hash('sha256', 'dashboard-note-' . $marker),
+                    'category_status' => 'manual',
+                    'notes' => 'Retain this note after AJAX refresh.',
+                ]
+            );
+
+            $rows = $repository->fetchTransactionsForMonth($companyId, $accountingPeriodId, '2022-11-01', 'all');
+
+            $harness->assertSame(1, count($rows));
+            $harness->assertSame('Retain this note after AJAX refresh.', (string)($rows[0]['notes'] ?? ''));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
     $harness->check(\eel_accounts\Repository\DashboardRepository::class, 'maps red setup health rows into dashboard actions', function () use ($harness): void {
         $repository = new \eel_accounts\Repository\DashboardRepository();
         $method = new ReflectionMethod(\eel_accounts\Repository\DashboardRepository::class, 'setupHealthContextToActionItems');

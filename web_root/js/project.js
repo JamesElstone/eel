@@ -386,7 +386,9 @@
         controls.forEach((control) => {
             const status = autoApprovalStatusForControl(control);
             if (status instanceof HTMLElement) {
-                status.textContent = message;
+                status.textContent = message !== ''
+                    ? message
+                    : String(status.dataset.autoApprovalDefaultStatus || 'Correct?');
             }
         });
     }

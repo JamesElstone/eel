@@ -663,6 +663,13 @@ final class YearEndChecklistService
         $expensePosition = (new \eel_accounts\Service\YearEndExpenseConfirmationService($metrics))->fetchContext($companyId, $accountingPeriodId);
         $duplicateRepayments = $metrics->duplicateRepaymentRiskSummary($companyId, $periodStart, $periodEnd);
         $financialStatements = $metrics->financialStatementsSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd, $trialBalance);
+        $potentialAssetThreshold = \eel_accounts\Service\AssetService::normalisePotentialAssetThreshold($settings['potential_asset_threshold'] ?? 250);
+        $potentialAssetCandidateCount = ($this->assetService ?? new \eel_accounts\Service\AssetService())->potentialAssetCandidateCount(
+            $companyId,
+            $accountingPeriodId,
+            (int)($settings['tools_small_equipment_nominal_id'] ?? 0),
+            $potentialAssetThreshold
+        );
         $taxReadiness = $tax->fetchCurrentPeriodEstimate(
             $companyId,
             $accountingPeriodId,
@@ -906,12 +913,12 @@ final class YearEndChecklistService
             'fixed_asset_review_placeholder',
             'Fixed asset review',
             'warning',
-            (int)($financialStatements['fixed_asset_hint_count'] ?? 0) > 0 ? 'warning' : 'pass',
-            (int)($financialStatements['fixed_asset_hint_count'] ?? 0) > 0
-                ? 'Transactions with capital-style signals were found and should be reviewed for fixed asset treatment.'
-                : 'No obvious capital purchase hints were found in this period.',
-            (string)($financialStatements['fixed_asset_hint_count'] ?? 0),
-            '?page=assets&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
+            $potentialAssetCandidateCount > 0 ? 'warning' : 'pass',
+            $potentialAssetCandidateCount > 0
+                ? 'Tools & Small Equipment items over the potential asset threshold should be reviewed for fixed asset treatment.'
+                : 'No Tools & Small Equipment items are over the potential asset threshold.',
+            (string)$potentialAssetCandidateCount,
+            '?page=assets&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=not_an_asset'
         ), $reviewAcknowledgements);
         $sections['year_end_accounts_review'][] = $this->applyReviewAcknowledgement($this->makeCheck(
             'prepayments_accruals_placeholder',

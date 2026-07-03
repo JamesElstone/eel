@@ -2051,7 +2051,8 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_02_004_expense_search_card_permission.sql'),
   ('2026_07_02_005_manual_asset_evidence.sql'),
   ('2026_07_03_005_dividend_vouchers.sql'),
-  ('2026_07_03_006_company_minutes_card_permission.sql');
+  ('2026_07_03_006_company_minutes_card_permission.sql'),
+  ('2026_07_03_007_non_assets_card_permission.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

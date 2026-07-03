@@ -427,6 +427,114 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(0.0, assetServiceTestJournalLineAmount($assetJournalId, assetServiceTestNominalId('1490'), 'debit'));
             $harness->assertSame(0.0, assetServiceTestJournalLineAmount($assetJournalId, $fixture['bank_nominal_id'], 'debit'));
         });
+
+        $harness->check(\eel_accounts\Service\AssetService::class, 'non-asset candidates combine unlinked transactions and expense claim lines over threshold', static function () use ($harness, $service): void {
+            assetServiceTestRequireTaxViewSchema($harness);
+            foreach (['expense_claimants', 'expense_claims', 'expense_claim_lines'] as $table) {
+                if (!InterfaceDB::tableExists($table)) {
+                    $harness->skip($table . ' table is not available.');
+                }
+            }
+            foreach (['linked_transaction_id', 'linked_expense_claim_line_id'] as $column) {
+                if (!InterfaceDB::columnExists('asset_register', $column)) {
+                    $harness->skip('asset_register.' . $column . ' column is not available.');
+                }
+            }
+
+            $fixture = assetServiceTestCreateDisposalFixture('non-asset');
+            $nominalId = assetServiceTestInsertNominal('TSE', 'Tools Small Equipment Candidate', 'expense', 'overhead');
+            $includedTransactionId = assetServiceTestInsertTransaction($fixture, 1, '2026-07-03', -251.00, 'Candidate transaction');
+            $equalTransactionId = assetServiceTestInsertTransaction($fixture, 2, '2026-07-04', -250.00, 'Equal threshold transaction');
+            $linkedTransactionId = assetServiceTestInsertTransaction($fixture, 3, '2026-07-05', -500.00, 'Linked transaction');
+            foreach ([$includedTransactionId, $equalTransactionId, $linkedTransactionId] as $transactionId) {
+                InterfaceDB::prepareExecute(
+                    'UPDATE transactions
+                     SET nominal_account_id = :nominal_account_id,
+                         reference = :reference,
+                         category_status = :category_status
+                     WHERE id = :id',
+                    [
+                        'nominal_account_id' => $nominalId,
+                        'reference' => 'TX-' . $transactionId,
+                        'category_status' => 'manual',
+                        'id' => $transactionId,
+                    ]
+                );
+            }
+            InterfaceDB::prepareExecute(
+                'UPDATE asset_register
+                 SET linked_transaction_id = :transaction_id
+                 WHERE id = :asset_id',
+                [
+                    'transaction_id' => $linkedTransactionId,
+                    'asset_id' => $fixture['asset_id'],
+                ]
+            );
+
+            $expenseFixture = assetServiceTestCreateExpenseClaimLineFixture($fixture, $nominalId);
+            $linkedAssetId = (int)('87' . substr((string)$fixture['marker'], 0, 5) . '9');
+            InterfaceDB::prepareExecute(
+                'INSERT INTO asset_register (
+                    id,
+                    company_id,
+                    asset_code,
+                    description,
+                    category,
+                    nominal_account_id,
+                    accum_dep_nominal_id,
+                    purchase_date,
+                    cost,
+                    useful_life_years,
+                    depreciation_method,
+                    residual_value,
+                    status,
+                    linked_expense_claim_line_id
+                 ) VALUES (
+                    :id,
+                    :company_id,
+                    :asset_code,
+                    :description,
+                    :category,
+                    :nominal_account_id,
+                    :accum_dep_nominal_id,
+                    :purchase_date,
+                    :cost,
+                    :useful_life_years,
+                    :depreciation_method,
+                    :residual_value,
+                    :status,
+                    :linked_expense_claim_line_id
+                 )',
+                [
+                    'id' => $linkedAssetId,
+                    'company_id' => $fixture['company_id'],
+                    'asset_code' => 'FA-L-' . $fixture['marker'],
+                    'description' => 'Linked expense asset ' . $fixture['marker'],
+                    'category' => 'tools_equipment',
+                    'nominal_account_id' => assetServiceTestNominalId('1300'),
+                    'accum_dep_nominal_id' => assetServiceTestNominalId('1330'),
+                    'purchase_date' => '2026-07-08',
+                    'cost' => 750.00,
+                    'useful_life_years' => 3,
+                    'depreciation_method' => 'none',
+                    'residual_value' => 0.00,
+                    'status' => 'active',
+                    'linked_expense_claim_line_id' => $expenseFixture['linked_line_id'],
+                ]
+            );
+
+            $data = $service->fetchNonAssetCandidates($fixture['company_id'], $fixture['accounting_period_id'], $nominalId, 250);
+            $rows = (array)($data['rows'] ?? []);
+            $descriptions = array_map(static fn(array $row): string => (string)$row['description'], $rows);
+
+            $harness->assertSame(2, (int)($data['count'] ?? 0));
+            $harness->assertTrue(in_array('Candidate transaction ' . $fixture['marker'] . ' 1', $descriptions, true));
+            $harness->assertTrue(in_array('Candidate receipt ' . $fixture['marker'], $descriptions, true));
+            $harness->assertFalse(in_array('Equal threshold transaction ' . $fixture['marker'] . ' 2', $descriptions, true));
+            $harness->assertFalse(in_array('Linked transaction ' . $fixture['marker'] . ' 3', $descriptions, true));
+            $harness->assertFalse(in_array('Equal receipt ' . $fixture['marker'], $descriptions, true));
+            $harness->assertFalse(in_array('Linked receipt ' . $fixture['marker'], $descriptions, true));
+        });
     }
 );
 
@@ -895,6 +1003,111 @@ function assetServiceTestInsertTransaction(array $fixture, int $offset, string $
     );
 
     return $transactionId;
+}
+
+function assetServiceTestCreateExpenseClaimLineFixture(array $fixture, int $nominalId): array
+{
+    $markerPrefix = substr((string)$fixture['marker'], 0, 5);
+    $claimantId = (int)('88' . $markerPrefix);
+    $claimId = (int)('89' . $markerPrefix);
+    $includedLineId = (int)('90' . $markerPrefix . '1');
+    $equalLineId = (int)('90' . $markerPrefix . '2');
+    $linkedLineId = (int)('90' . $markerPrefix . '3');
+
+    InterfaceDB::prepareExecute(
+        'INSERT INTO expense_claimants (id, company_id, claimant_name, is_active)
+         VALUES (:id, :company_id, :claimant_name, 1)',
+        [
+            'id' => $claimantId,
+            'company_id' => $fixture['company_id'],
+            'claimant_name' => 'Non Asset Claimant ' . $fixture['marker'],
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO expense_claims (
+            id,
+            company_id,
+            accounting_period_id,
+            claimant_id,
+            claim_year,
+            claim_month,
+            period_start,
+            period_end,
+            claim_reference_code,
+            claimed_amount,
+            status
+         ) VALUES (
+            :id,
+            :company_id,
+            :accounting_period_id,
+            :claimant_id,
+            :claim_year,
+            :claim_month,
+            :period_start,
+            :period_end,
+            :claim_reference_code,
+            :claimed_amount,
+            :status
+         )',
+        [
+            'id' => $claimId,
+            'company_id' => $fixture['company_id'],
+            'accounting_period_id' => $fixture['accounting_period_id'],
+            'claimant_id' => $claimantId,
+            'claim_year' => 2026,
+            'claim_month' => 7,
+            'period_start' => '2026-07-01',
+            'period_end' => '2026-07-31',
+            'claim_reference_code' => 'NA-' . $fixture['marker'],
+            'claimed_amount' => 1501.00,
+            'status' => 'draft',
+        ]
+    );
+
+    foreach ([
+        [$includedLineId, 1, '2026-07-06', 'Candidate receipt ', 501.00, 'RCPT-501'],
+        [$equalLineId, 2, '2026-07-07', 'Equal receipt ', 250.00, 'RCPT-250'],
+        [$linkedLineId, 3, '2026-07-08', 'Linked receipt ', 750.00, 'RCPT-750'],
+    ] as $line) {
+        InterfaceDB::prepareExecute(
+            'INSERT INTO expense_claim_lines (
+                id,
+                expense_claim_id,
+                line_number,
+                expense_date,
+                description,
+                amount,
+                nominal_account_id,
+                receipt_reference
+             ) VALUES (
+                :id,
+                :expense_claim_id,
+                :line_number,
+                :expense_date,
+                :description,
+                :amount,
+                :nominal_account_id,
+                :receipt_reference
+             )',
+            [
+                'id' => (int)$line[0],
+                'expense_claim_id' => $claimId,
+                'line_number' => (int)$line[1],
+                'expense_date' => (string)$line[2],
+                'description' => (string)$line[3] . $fixture['marker'],
+                'amount' => (float)$line[4],
+                'nominal_account_id' => $nominalId,
+                'receipt_reference' => (string)$line[5],
+            ]
+        );
+    }
+
+    return [
+        'claim_id' => $claimId,
+        'included_line_id' => $includedLineId,
+        'equal_line_id' => $equalLineId,
+        'linked_line_id' => $linkedLineId,
+    ];
 }
 
 function assetServiceTestNominalId(string $code): int

@@ -29,6 +29,7 @@ $harness->run(_companies_nominalsCard::class, static function (GeneratedServiceC
                 ['id' => 15, 'code' => '2300', 'name' => 'Trade Creditors', 'account_type' => 'liability', 'subtype_code' => 'trade_creditor'],
                 ['id' => 16, 'code' => '1300', 'name' => 'Tools and Equipment', 'account_type' => 'asset', 'subtype_code' => ''],
                 ['id' => 17, 'code' => '1330', 'name' => 'Accumulated Depreciation - Tools', 'account_type' => 'asset', 'subtype_code' => ''],
+                ['id' => 18, 'code' => '6070', 'name' => 'Tools & Small Equipment', 'account_type' => 'expense', 'subtype_code' => 'overhead'],
                 ['id' => 20, 'code' => '5000', 'name' => 'Materials', 'account_type' => 'expense', 'subtype_code' => ''],
             ],
         ],
@@ -39,13 +40,18 @@ $harness->run(_companies_nominalsCard::class, static function (GeneratedServiceC
     $harness->check(_companies_nominalsCard::class, 'renders default trade nominal field', static function () use ($harness, $html): void {
         $harness->assertTrue(str_contains($html, 'default_trade_nominal_id'));
         $harness->assertTrue(str_contains($html, '<label for="default_trade_nominal_id">Default Trade nominal</label>'));
-        $harness->assertTrue(str_contains($html, 'data-state-fields="default_bank_nominal_id,default_trade_nominal_id,default_expense_nominal_id,director_loan_asset_nominal_id,director_loan_liability_nominal_id,vat_nominal_id,uncategorised_nominal_id"'));
+        $harness->assertTrue(str_contains($html, 'data-state-fields="default_bank_nominal_id,default_trade_nominal_id,default_expense_nominal_id,tools_small_equipment_nominal_id,director_loan_asset_nominal_id,director_loan_liability_nominal_id,vat_nominal_id,uncategorised_nominal_id"'));
         $harness->assertTrue(str_contains($html, '<option value="15" selected>2300 Trade Creditors</option>'));
     });
 
     $harness->check(_companies_nominalsCard::class, 'suggests expense claims payable as the default expense nominal', static function () use ($harness, $html): void {
         $harness->assertTrue(str_contains($html, '<strong>Expense claims payable nominal</strong><span>2110 Expense Claims Payable</span>'));
         $harness->assertFalse(str_contains($html, '<strong>Expense claims payable nominal</strong><span>5000 Materials</span>'));
+    });
+
+    $harness->check(_companies_nominalsCard::class, 'renders and suggests Tools and Small Equipment nominal', static function () use ($harness, $html): void {
+        $harness->assertTrue(str_contains($html, '<label for="tools_small_equipment_nominal_id">Tools &amp; Small Equipment nominal</label>'));
+        $harness->assertTrue(str_contains($html, '<strong>Tools &amp; Small Equipment nominal</strong><span>6070 Tools &amp; Small Equipment</span>'));
     });
 
     $harness->check(_companies_nominalsCard::class, 'renders and suggests director loan asset and liability fields', static function () use ($harness, $html): void {

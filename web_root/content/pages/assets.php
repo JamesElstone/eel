@@ -26,7 +26,7 @@ final class _assets extends PageContextFramework
 
     public function cards(): array
     {
-        return ['asset_create', 'asset_reconcile_manual', 'asset_register', 'asset_tax'];
+        return ['asset_create', 'asset_reconcile_manual', 'asset_register', 'asset_tax', 'not_an_asset'];
     }
 
     public function cardLayout(): array
@@ -44,6 +44,12 @@ final class _assets extends PageContextFramework
                 'cards' => [
                     'asset_create',
                     'asset_reconcile_manual',
+                ],
+            ],
+            [
+                'tab' => 'Non-Assets',
+                'cards' => [
+                    'not_an_asset',
                 ],
             ],
         ];

@@ -18,11 +18,15 @@ $harness->run(\eel_accounts\Store\CompanySettingsStore::class, function (Generat
         $harness->assertSame('d/m/Y', $defaults['date_format'] ?? null);
         $harness->assertSame('TEST', $defaults['hmrc_mode'] ?? null);
         $harness->assertSame('/var/eel_accounts/uploads', $defaults['uploads_path'] ?? null);
+        $harness->assertSame('', $defaults['tools_small_equipment_nominal_id'] ?? null);
+        $harness->assertSame('250', $defaults['potential_asset_threshold'] ?? null);
     });
 
     $harness->check(\eel_accounts\Store\CompanySettingsStore::class, 'includes duplicate row check in definitions', function () use ($harness): void {
         $definitions = \eel_accounts\Store\CompanySettingsStore::definitions();
         $harness->assertTrue(isset($definitions['enable_duplicate_row_check']));
         $harness->assertTrue(isset($definitions['hmrc_mode']));
+        $harness->assertSame('int', (string)($definitions['tools_small_equipment_nominal_id']['type'] ?? ''));
+        $harness->assertSame('int', (string)($definitions['potential_asset_threshold']['type'] ?? ''));
     });
 });

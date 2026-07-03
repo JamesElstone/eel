@@ -204,6 +204,64 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
         );
     });
 
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'fixed asset review warns from Tools and Small Equipment threshold candidates', static function () use ($harness): void {
+        yearEndChecklistServiceRequirePostedSourceWorkSchema($harness);
+        if (yearEndChecklistServiceNominalId('6070') <= 0) {
+            $harness->skip('Nominal 6070 is not available.');
+        }
+
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = yearEndChecklistServiceCreatePostedSourceWorkFixture();
+            InterfaceDB::prepareExecute(
+                'UPDATE transactions
+                 SET amount = :amount,
+                     description = :description,
+                     nominal_account_id = :nominal_account_id,
+                     category_status = :category_status
+                 WHERE id = :id',
+                [
+                    'amount' => '-600.00',
+                    'description' => 'Potential asset drill',
+                    'nominal_account_id' => yearEndChecklistServiceNominalId('6070'),
+                    'category_status' => 'manual',
+                    'id' => (int)$fixture['transaction_id'],
+                ]
+            );
+            $settingsStore = new \eel_accounts\Store\CompanySettingsStore((int)$fixture['company_id']);
+            $settingsStore->set('tools_small_equipment_nominal_id', yearEndChecklistServiceNominalId('6070'), 'int');
+            $settingsStore->set('potential_asset_threshold', 500, 'int');
+            $settingsStore->flush();
+
+            $service = new \eel_accounts\Service\YearEndChecklistService();
+            $warningChecklist = $service->fetchChecklist((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], false);
+            $warningCheck = yearEndChecklistServiceFindCheck((array)$warningChecklist, 'fixed_asset_review_placeholder');
+
+            $harness->assertSame('warning', (string)($warningCheck['status'] ?? ''));
+            $harness->assertSame('1', (string)($warningCheck['metric_value'] ?? ''));
+            $harness->assertSame('?page=assets&show_card=not_an_asset', (string)($warningCheck['action_url'] ?? ''));
+
+            InterfaceDB::prepareExecute(
+                'UPDATE transactions
+                 SET amount = :amount
+                 WHERE id = :id',
+                [
+                    'amount' => '-500.00',
+                    'id' => (int)$fixture['transaction_id'],
+                ]
+            );
+            $passChecklist = $service->fetchChecklist((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], false);
+            $passCheck = yearEndChecklistServiceFindCheck((array)$passChecklist, 'fixed_asset_review_placeholder');
+
+            $harness->assertSame('pass', (string)($passCheck['status'] ?? ''));
+            $harness->assertSame('0', (string)($passCheck['metric_value'] ?? ''));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
     $harness->check(\eel_accounts\Service\YearEndMetricsService::class, 'posted source work summary tracks unposted transactions expenses and assets', static function () use ($harness): void {
         yearEndChecklistServiceRequirePostedSourceWorkSchema($harness);
 
@@ -288,6 +346,17 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
     });
 });
 
+function yearEndChecklistServiceFindCheck(array $checklist, string $checkCode): array
+{
+    foreach ((array)($checklist['checks_flat'] ?? []) as $check) {
+        if (is_array($check) && (string)($check['check_code'] ?? '') === $checkCode) {
+            return $check;
+        }
+    }
+
+    throw new RuntimeException('Unable to find year-end check: ' . $checkCode);
+}
+
 function yearEndChecklistServiceRequireDepreciationLockSchema(GeneratedServiceClassTestHarness $harness): void
 {
     foreach (['companies', 'accounting_periods', 'journals', 'journal_lines', 'nominal_accounts', 'asset_register', 'asset_depreciation_entries', 'year_end_reviews', 'year_end_check_results', 'year_end_audit_log', 'accounting_period_adjustments', 'tax_loss_carryforwards'] as $table) {
@@ -320,7 +389,7 @@ function yearEndChecklistServiceRequireDirectorLoanOffsetLockSchema(GeneratedSer
 
 function yearEndChecklistServiceRequirePostedSourceWorkSchema(GeneratedServiceClassTestHarness $harness): void
 {
-    foreach (['companies', 'accounting_periods', 'statement_uploads', 'transactions', 'expense_claimants', 'expense_claims', 'expense_claim_lines', 'asset_register', 'journals', 'nominal_accounts'] as $table) {
+    foreach (['companies', 'accounting_periods', 'company_settings', 'statement_uploads', 'transactions', 'expense_claimants', 'expense_claims', 'expense_claim_lines', 'asset_register', 'journals', 'nominal_accounts'] as $table) {
         if (!InterfaceDB::tableExists($table)) {
             $harness->skip($table . ' table is not available.');
         }

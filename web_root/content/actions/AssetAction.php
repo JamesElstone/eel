@@ -58,6 +58,10 @@ final class AssetAction implements ActionInterfaceFramework
                     $companyId,
                     (int)$request->input('accounting_period_id', 0)
                 ),
+                'save_potential_asset_threshold' => $service->savePotentialAssetThreshold(
+                    $companyId,
+                    $request->input('potential_asset_threshold', 250)
+                ),
                 default => ['success' => false, 'errors' => ['Unknown asset action.']],
             };
         } catch (Throwable $exception) {
@@ -70,7 +74,7 @@ final class AssetAction implements ActionInterfaceFramework
 
         return new ActionResultFramework(
             !empty($result['success']),
-            ['asset.create', 'asset.reconcile_manual', 'asset.register', 'asset.tax', 'page.context'],
+            ['asset.create', 'asset.reconcile_manual', 'asset.register', 'asset.tax', 'asset.not_an_asset', 'page.context', 'year.end.checklist'],
             $this->flashMessages($intent, $result),
             $searchContext,
             $searchContext
@@ -104,6 +108,7 @@ final class AssetAction implements ActionInterfaceFramework
         if ($messages === []) {
             $messages[] = match ($intent) {
                 'run_asset_depreciation' => 'Depreciation posted.',
+                'save_potential_asset_threshold' => 'Potential asset threshold saved.',
                 default => '',
             };
         }

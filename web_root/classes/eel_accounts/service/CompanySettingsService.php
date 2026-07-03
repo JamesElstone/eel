@@ -188,6 +188,7 @@ final class CompanySettingsService
         $settingsStore->set('default_bank_nominal_id', $settings['default_bank_nominal_id'] ?? '', 'int');
         $settingsStore->set('default_trade_nominal_id', $settings['default_trade_nominal_id'] ?? '', 'int');
         $settingsStore->set('default_expense_nominal_id', $settings['default_expense_nominal_id'] ?? '', 'int');
+        $settingsStore->set('tools_small_equipment_nominal_id', $settings['tools_small_equipment_nominal_id'] ?? '', 'int');
         $directorLoanLiabilityNominalId = $this->directorLoanLiabilityNominalSetting($settings);
         $settingsStore->set('director_loan_asset_nominal_id', $settings['director_loan_asset_nominal_id'] ?? '', 'int');
         $settingsStore->set('director_loan_liability_nominal_id', $directorLoanLiabilityNominalId, 'int');
@@ -215,6 +216,7 @@ final class CompanySettingsService
             'default_bank_nominal_id',
             'default_trade_nominal_id',
             'default_expense_nominal_id',
+            'tools_small_equipment_nominal_id',
             'director_loan_asset_nominal_id',
             'director_loan_liability_nominal_id',
             'vat_nominal_id',
@@ -376,6 +378,15 @@ final class CompanySettingsService
                     && !str_contains($name, 'vat')
                     && !str_contains($name, 'tax');
             }),
+            'tools_small_equipment_nominal_id' => $this->firstMatchingNominal($normalised, static fn(array $row): bool => $row['id'] > 0 && $row['code'] === '6070')
+                ?? $this->firstMatchingNominal($normalised, static function (array $row): bool {
+                    $name = strtolower($row['name']);
+
+                    return $row['id'] > 0
+                        && $row['account_type'] === 'expense'
+                        && str_contains($name, 'tools')
+                        && str_contains($name, 'equipment');
+                }),
             'director_loan_asset_nominal_id' => $this->directorLoanAssetNominalSuggestion($normalised),
             'director_loan_liability_nominal_id' => $this->directorLoanLiabilityNominalSuggestion($normalised),
             'director_loan_nominal_id' => $this->directorLoanLiabilityNominalSuggestion($normalised),

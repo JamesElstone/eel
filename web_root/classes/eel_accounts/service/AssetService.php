@@ -29,6 +29,7 @@ final class AssetService
     private const DISPOSAL_CLEARING_NOMINAL_CODE = '1490';
     private const DISPOSAL_SEARCH_DAYS_BEFORE = 1;
     private const DISPOSAL_SEARCH_DAYS_AFTER = 3;
+    private const POTENTIAL_ASSET_THRESHOLD_OPTIONS = [50, 100, 250, 500, 750, 1000];
 
     private \eel_accounts\Service\TransactionCategorisationService $categorisationService;
     private \eel_accounts\Service\TransactionJournalService $transactionJournalService;
@@ -68,6 +69,18 @@ final class AssetService
             self::MANUAL_ASSET_REASON_DELAYED_BANK_CSV => 'Delayed bank CSV',
             self::MANUAL_ASSET_REASON_OPENING_HISTORICAL => 'Opening / historical asset',
         ];
+    }
+
+    public static function potentialAssetThresholdOptions(): array
+    {
+        return self::POTENTIAL_ASSET_THRESHOLD_OPTIONS;
+    }
+
+    public static function normalisePotentialAssetThreshold(mixed $threshold): int
+    {
+        $value = (int)$threshold;
+
+        return in_array($value, self::POTENTIAL_ASSET_THRESHOLD_OPTIONS, true) ? $value : 250;
     }
 
     public static function isManualAssetOffsetNominalCandidate(array $nominal): bool
@@ -258,6 +271,179 @@ final class AssetService
             'assets' => $assets,
             'manual_addition_reasons' => self::manualAdditionReasonOptions(),
         ];
+    }
+
+    public function fetchNonAssetCandidates(
+        int $companyId,
+        int $accountingPeriodId,
+        int|string $toolsSmallEquipmentNominalId,
+        int|string $threshold
+    ): array {
+        $nominalId = max(0, (int)$toolsSmallEquipmentNominalId);
+        $threshold = self::normalisePotentialAssetThreshold($threshold);
+
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || $nominalId <= 0 || !$this->hasRequiredSchema()) {
+            return [
+                'available' => $nominalId > 0,
+                'threshold' => $threshold,
+                'threshold_options' => self::potentialAssetThresholdOptions(),
+                'rows' => [],
+                'count' => 0,
+            ];
+        }
+
+        $rows = array_merge(
+            $this->fetchNonAssetTransactionCandidates($companyId, $accountingPeriodId, $nominalId, $threshold),
+            $this->fetchNonAssetExpenseClaimCandidates($companyId, $accountingPeriodId, $nominalId, $threshold)
+        );
+
+        usort($rows, static function (array $left, array $right): int {
+            return [
+                (string)($right['date'] ?? ''),
+                (string)($right['source'] ?? ''),
+                (int)($right['source_id'] ?? 0),
+            ] <=> [
+                (string)($left['date'] ?? ''),
+                (string)($left['source'] ?? ''),
+                (int)($left['source_id'] ?? 0),
+            ];
+        });
+
+        return [
+            'available' => true,
+            'threshold' => $threshold,
+            'threshold_options' => self::potentialAssetThresholdOptions(),
+            'rows' => $rows,
+            'count' => count($rows),
+        ];
+    }
+
+    public function potentialAssetCandidateCount(
+        int $companyId,
+        int $accountingPeriodId,
+        int|string $toolsSmallEquipmentNominalId,
+        int|string $threshold
+    ): int {
+        return (int)$this->fetchNonAssetCandidates($companyId, $accountingPeriodId, $toolsSmallEquipmentNominalId, $threshold)['count'];
+    }
+
+    public function savePotentialAssetThreshold(int $companyId, mixed $threshold): array
+    {
+        if ($companyId <= 0) {
+            return [
+                'success' => false,
+                'errors' => ['Select a company before saving the potential asset threshold.'],
+            ];
+        }
+
+        $rawThreshold = (int)$threshold;
+        if (!in_array($rawThreshold, self::POTENTIAL_ASSET_THRESHOLD_OPTIONS, true)) {
+            return [
+                'success' => false,
+                'errors' => ['Choose a valid potential asset threshold.'],
+            ];
+        }
+
+        $settingsStore = new \eel_accounts\Store\CompanySettingsStore($companyId);
+        $settingsStore->set('potential_asset_threshold', $rawThreshold, 'int');
+        $settingsStore->flush();
+
+        return [
+            'success' => true,
+            'messages' => ['Potential asset threshold saved.'],
+        ];
+    }
+
+    private function fetchNonAssetTransactionCandidates(int $companyId, int $accountingPeriodId, int $nominalId, int $threshold): array
+    {
+        if (!$this->tableExists('transactions')) {
+            return [];
+        }
+
+        return array_map(
+            static function (array $row): array {
+                return [
+                    'source_id' => (int)$row['id'],
+                    'date' => (string)$row['txn_date'],
+                    'source' => 'Transaction',
+                    'description' => (string)$row['description'],
+                    'reference' => (string)($row['reference'] ?? ''),
+                    'amount' => round(abs((float)$row['amount']), 2),
+                ];
+            },
+            \InterfaceDB::fetchAll(
+                'SELECT t.id,
+                        t.txn_date,
+                        t.description,
+                        t.reference,
+                        t.amount
+                 FROM transactions t
+                 WHERE t.company_id = :company_id
+                   AND t.accounting_period_id = :accounting_period_id
+                   AND t.nominal_account_id = :nominal_account_id
+                   AND ABS(t.amount) > :threshold
+                   AND COALESCE(t.is_internal_transfer, 0) = 0
+                   AND t.transfer_account_id IS NULL
+                   AND NOT EXISTS (
+                       SELECT 1
+                       FROM asset_register linked_asset
+                       WHERE linked_asset.linked_transaction_id = t.id
+                   )',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'nominal_account_id' => $nominalId,
+                    'threshold' => $threshold,
+                ]
+            ) ?: []
+        );
+    }
+
+    private function fetchNonAssetExpenseClaimCandidates(int $companyId, int $accountingPeriodId, int $nominalId, int $threshold): array
+    {
+        if (!$this->tableExists('expense_claims') || !$this->tableExists('expense_claim_lines')) {
+            return [];
+        }
+
+        return array_map(
+            static function (array $row): array {
+                return [
+                    'source_id' => (int)$row['id'],
+                    'date' => (string)$row['expense_date'],
+                    'source' => 'Expense claim',
+                    'description' => (string)$row['description'],
+                    'reference' => (string)(trim((string)($row['receipt_reference'] ?? '')) !== ''
+                        ? $row['receipt_reference']
+                        : ($row['claim_reference_code'] ?? '')),
+                    'amount' => round((float)$row['amount'], 2),
+                ];
+            },
+            \InterfaceDB::fetchAll(
+                'SELECT ecl.id,
+                        ecl.expense_date,
+                        ecl.description,
+                        ecl.receipt_reference,
+                        ecl.amount,
+                        ec.claim_reference_code
+                 FROM expense_claim_lines ecl
+                 INNER JOIN expense_claims ec ON ec.id = ecl.expense_claim_id
+                 WHERE ec.company_id = :company_id
+                   AND ec.accounting_period_id = :accounting_period_id
+                   AND ecl.nominal_account_id = :nominal_account_id
+                   AND ecl.amount > :threshold
+                   AND NOT EXISTS (
+                       SELECT 1
+                       FROM asset_register linked_asset
+                       WHERE linked_asset.linked_expense_claim_line_id = ecl.id
+                   )',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'nominal_account_id' => $nominalId,
+                    'threshold' => $threshold,
+                ]
+            ) ?: []
+        );
     }
 
     public function fetchManualAssetsNeedingReconciliation(int $companyId): array
@@ -1820,6 +2006,22 @@ final class AssetService
         }
 
         return $this->manualSchemaReady;
+    }
+
+    private function tableExists(string $table): bool
+    {
+        static $cache = [];
+        if (array_key_exists($table, $cache)) {
+            return $cache[$table];
+        }
+
+        try {
+            $cache[$table] = \InterfaceDB::tableExists($table);
+        } catch (\Throwable) {
+            $cache[$table] = false;
+        }
+
+        return $cache[$table];
     }
 }
 

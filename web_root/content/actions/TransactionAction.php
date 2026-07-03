@@ -34,6 +34,7 @@ final class TransactionAction implements ActionInterfaceFramework
             'mark_director_loan' => $this->saveTransactionCategory($request, $services, $intent),
             'auto_create_transaction_rule' => $this->draftCategorisationRule($request, $services),
             'run_auto_rules' => $this->runAutoRules($request, $services),
+            'approve_auto_categorisations' => $this->approveAutoCategorisations($request, $services),
             'post_categorised_transactions' => $this->postCategorisedTransactions($request, $services),
             'save_categorisation_rule' => $this->saveCategorisationRule($request, $services),
             'export_categorisation_rules' => $this->exportCategorisationRules($request, $services),
@@ -346,6 +347,47 @@ final class TransactionAction implements ActionInterfaceFramework
         return $this->result($errors === [], $errors, $flashMessages, $context);
     }
 
+    private function approveAutoCategorisations(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
+    {
+        $context = $this->filterContext($request);
+        $companyId = $this->selectedCompanyId($request);
+        $accountingPeriodId = $this->selectedAccountingPeriodId($request);
+        $errors = [];
+        $flashMessages = [];
+
+        try {
+            $result = self::service($services, \eel_accounts\Service\TransactionCategorisationService::class)->approveAutoCategorisationsBatch(
+                $companyId,
+                $accountingPeriodId,
+                $context['month_key'] !== '' ? $context['month_key'] : null,
+                'transactions_page_review'
+            );
+
+            $errors = array_merge($errors, array_map('strval', (array)($result['errors'] ?? [])));
+            if (!empty($result['success'])) {
+                $flashMessages[] = sprintf(
+                    'Approved %d auto-categorised transaction(s).',
+                    (int)($result['changed'] ?? 0)
+                );
+
+                if ((int)($result['skipped'] ?? 0) > 0) {
+                    $flashMessages[] = sprintf('%d auto-categorised transaction(s) were skipped because they need manual review.', (int)$result['skipped']);
+                }
+            }
+        } catch (Throwable $exception) {
+            $errors[] = 'The auto categorisation review could not be completed: ' . $exception->getMessage();
+        }
+
+        return $this->result(
+            $errors === [],
+            $errors,
+            $flashMessages,
+            $context,
+            [],
+            ['page.context', self::TRANSACTIONS_IMPORTED_FACT, 'year.end.checklist', 'year.end.state']
+        );
+    }
+
     private function postCategorisedTransactions(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
         $context = $this->filterContext($request);
@@ -523,7 +565,7 @@ final class TransactionAction implements ActionInterfaceFramework
         ];
     }
 
-    private function result(bool $success, array $errors, array $messages, array $context, array $query = []): ActionResultFramework
+    private function result(bool $success, array $errors, array $messages, array $context, array $query = [], array $changedFacts = ['page.context']): ActionResultFramework
     {
         $flashMessages = array_map(
             static fn(string $message): array => ['type' => 'error', 'message' => $message],
@@ -534,7 +576,7 @@ final class TransactionAction implements ActionInterfaceFramework
             $flashMessages[] = ['type' => 'success', 'message' => (string)$message];
         }
 
-        return new ActionResultFramework($success, ['page.context'], $flashMessages, $query, $context);
+        return new ActionResultFramework($success, $changedFacts, $flashMessages, $query, $context);
     }
 
     private static function service(PageServiceFramework $services, string $className): object

@@ -26,7 +26,10 @@ final class _journal extends PageContextFramework
 
     public function cards(): array
     {
-        return ['journals_list'];
+        return [
+            'journals_list',
+            'nominal_closing_balances',
+        ];
     }
 
     public function cardLayout(): array
@@ -36,6 +39,12 @@ final class _journal extends PageContextFramework
                 'tab' => 'History',
                 'cards' => [
                     'journals_list',
+                ],
+            ],
+            [
+                'tab' => 'Adjustments',
+                'cards' => [
+                    'nominal_closing_balances',
                 ],
             ],
         ];

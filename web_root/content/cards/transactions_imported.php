@@ -243,6 +243,7 @@ final class _transactions_importedCard extends CardBaseFramework
     ): string
     {
         $autoButtonAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit"';
+        $approveAutoButtonAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit"';
         $postButtonAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit"';
 
         return '<form method="post" action="?page=transactions" data-ajax="true">
@@ -254,6 +255,20 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="auto_scope" value="uncategorised">
                 <input type="hidden" name="global_action" value="run_auto_rules">
                 <button class="button"' . $autoButtonAttributes . '>Run Auto Rules</button>
+            </form>
+            <form method="post" action="?page=transactions" data-ajax="true">
+                <input type="hidden" name="card_action" value="Transaction">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
+                <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                <input type="hidden" name="global_action" value="approve_auto_categorisations">
+                <button class="button"' . $approveAutoButtonAttributes . '
+                    data-chicken-check="true"
+                    data-chicken-title="Approve auto categorisations"
+                    data-chicken-message="This will mark auto-categorised transactions in the selected month as manually reviewed without changing their nominal account.<br><br>Continue?"
+                    data-chicken-confirm-text="Approve"
+                    data-chicken-button-class="button primary">Approve Auto Categorisations</button>
             </form>
             <form method="post" action="?page=transactions" data-ajax="true">
                 <input type="hidden" name="card_action" value="Transaction">

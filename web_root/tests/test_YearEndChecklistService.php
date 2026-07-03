@@ -89,6 +89,43 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
             }
         }
     });
+
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'review acknowledgement clears advisory warning checks only', static function () use ($harness): void {
+        $service = new \eel_accounts\Service\YearEndChecklistService();
+        $method = new ReflectionMethod($service, 'applyReviewAcknowledgement');
+        $method->setAccessible(true);
+
+        $warning = [
+            'check_code' => 'filing_basis_reminder',
+            'status' => 'warning',
+            'metric_value' => '',
+            'detail_text' => 'App numbers remain working figures.',
+        ];
+        $acknowledged = $method->invoke($service, $warning, [
+            'filing_basis_reminder' => [
+                'acknowledged_at' => '2026-07-03 12:00:00',
+                'acknowledged_by' => 'test',
+                'note' => null,
+            ],
+        ]);
+
+        $harness->assertSame('pass', (string)$acknowledged['status']);
+        $harness->assertSame('Reviewed', (string)$acknowledged['metric_value']);
+        $harness->assertSame(true, str_contains((string)$acknowledged['detail_text'], 'Review acknowledged'));
+
+        $fail = $method->invoke($service, [
+            'check_code' => 'lock_readiness_checklist',
+            'status' => 'fail',
+            'metric_value' => 'Not ready',
+            'detail_text' => 'Blocking check failed.',
+        ], [
+            'lock_readiness_checklist' => [
+                'acknowledged_at' => '2026-07-03 12:00:00',
+            ],
+        ]);
+
+        $harness->assertSame('fail', (string)$fail['status']);
+    });
 });
 
 function yearEndChecklistServiceRequireDepreciationLockSchema(GeneratedServiceClassTestHarness $harness): void

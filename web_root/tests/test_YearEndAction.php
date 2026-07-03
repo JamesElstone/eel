@@ -182,6 +182,39 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
         });
     });
 
+    $harness->check('YearEndAction', 'acknowledges and reopens review checks without director guard', static function () use ($harness): void {
+        yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness): void {
+            if (!InterfaceDB::tableExists('year_end_review_acknowledgements')) {
+                $harness->skip('Year-end review acknowledgement table is not available on the default InterfaceDB connection.');
+            }
+
+            $instance = yearEndActionTestInstanceWithDirectorCount(2);
+            $acknowledge = $instance->handle(
+                yearEndActionReviewCheckRequest((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'acknowledge_review_check'),
+                createTestPageServiceFramework()
+            );
+
+            $harness->assertSame(true, $acknowledge->isSuccess());
+            $harness->assertSame(1, InterfaceDB::countWhere('year_end_review_acknowledgements', [
+                'company_id' => (int)$fixture['company_id'],
+                'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                'check_code' => 'filing_basis_reminder',
+            ]));
+
+            $reopen = $instance->handle(
+                yearEndActionReviewCheckRequest((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'reopen_review_check'),
+                createTestPageServiceFramework()
+            );
+
+            $harness->assertSame(true, $reopen->isSuccess());
+            $harness->assertSame(0, InterfaceDB::countWhere('year_end_review_acknowledgements', [
+                'company_id' => (int)$fixture['company_id'],
+                'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                'check_code' => 'filing_basis_reminder',
+            ]));
+        });
+    });
+
     $harness->check('YearEndAction', 'confirms and revokes empty month confirmations', static function () use ($harness): void {
         yearEndActionEmptyMonthTestWithFixture($harness, static function (array $fixture) use ($harness): void {
             $instance = yearEndActionTestInstanceWithDirectorCount(2);
@@ -511,6 +544,25 @@ function yearEndActionEmptyMonthTestRequest(int $companyId, int $accountingPerio
             'accounting_period_id' => (string)$accountingPeriodId,
             'month_start' => '2022-09-01',
             'confirmation_notes' => 'No financial activity before bank account opening.',
+        ],
+        ['REQUEST_METHOD' => 'POST', 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest', 'HTTP_ACCEPT' => 'application/json'],
+        [],
+        [],
+        null
+    );
+}
+
+function yearEndActionReviewCheckRequest(int $companyId, int $accountingPeriodId, string $intent): RequestFramework
+{
+    return new RequestFramework(
+        [],
+        [
+            'card_action' => 'YearEnd',
+            'intent' => $intent,
+            'company_id' => (string)$companyId,
+            'accounting_period_id' => (string)$accountingPeriodId,
+            'check_code' => 'filing_basis_reminder',
+            'review_acknowledgement_note' => 'Reviewed for test.',
         ],
         ['REQUEST_METHOD' => 'POST', 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest', 'HTTP_ACCEPT' => 'application/json'],
         [],

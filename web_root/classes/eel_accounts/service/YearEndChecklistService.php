@@ -12,6 +12,14 @@ namespace eel_accounts\Service;
 
 final class YearEndChecklistService
 {
+    private const REVIEW_ACKNOWLEDGEABLE_CHECKS = [
+        'unpaid_expense_claims',
+        'retained_earnings_movement',
+        'fixed_asset_review_placeholder',
+        'prepayments_accruals_placeholder',
+        'filing_basis_reminder',
+    ];
+
     public function __construct(
         private readonly ?\eel_accounts\Service\YearEndMetricsService $metricsService = null,
         private readonly ?\eel_accounts\Service\YearEndTaxReadinessService $taxReadinessService = null,
@@ -413,6 +421,124 @@ final class YearEndChecklistService
         ];
     }
 
+    public function acknowledgeReviewCheck(
+        int $companyId,
+        int $accountingPeriodId,
+        string $checkCode,
+        bool $acknowledged,
+        string $note = '',
+        string $changedBy = 'web_app'
+    ): array {
+        $checkCode = trim($checkCode);
+        if (!in_array($checkCode, self::REVIEW_ACKNOWLEDGEABLE_CHECKS, true)) {
+            return [
+                'success' => false,
+                'errors' => ['This year-end check cannot be cleared by acknowledgement.'],
+            ];
+        }
+
+        if (!$this->tableExists('year_end_review_acknowledgements')) {
+            return [
+                'success' => false,
+                'errors' => ['Run the Year End review acknowledgement migration before saving this review.'],
+            ];
+        }
+
+        $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId, false);
+        if (empty($checklistResult['success'])) {
+            return $checklistResult;
+        }
+
+        $currentCheck = $this->findChecklistCheck((array)$checklistResult['checklist'], $checkCode);
+        if ($currentCheck === null) {
+            return [
+                'success' => false,
+                'errors' => ['The selected year-end check could not be found.'],
+            ];
+        }
+
+        if ((string)($currentCheck['status'] ?? '') === 'fail') {
+            return [
+                'success' => false,
+                'errors' => ['Resolve the blocking year-end check instead of acknowledging it.'],
+            ];
+        }
+
+        $existing = $this->fetchReviewAcknowledgements($companyId, $accountingPeriodId)[$checkCode] ?? null;
+        $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
+        $actor = $this->actorValue($changedBy);
+        $note = trim($note);
+
+        if ($acknowledged) {
+            \InterfaceDB::execute(
+                'INSERT INTO year_end_review_acknowledgements (
+                    company_id,
+                    accounting_period_id,
+                    check_code,
+                    acknowledged_at,
+                    acknowledged_by,
+                    note,
+                    created_at,
+                    updated_at
+                 ) VALUES (
+                    :company_id,
+                    :accounting_period_id,
+                    :check_code,
+                    :acknowledged_at,
+                    :acknowledged_by,
+                    :note,
+                    :created_at,
+                    :updated_at
+                 )
+                 ON DUPLICATE KEY UPDATE
+                    acknowledged_at = VALUES(acknowledged_at),
+                    acknowledged_by = VALUES(acknowledged_by),
+                    note = VALUES(note),
+                    updated_at = VALUES(updated_at)',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'check_code' => $checkCode,
+                    'acknowledged_at' => $now,
+                    'acknowledged_by' => $actor,
+                    'note' => $note !== '' ? $note : null,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]
+            );
+        } else {
+            \InterfaceDB::execute(
+                'DELETE FROM year_end_review_acknowledgements
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id
+                   AND check_code = :check_code',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'check_code' => $checkCode,
+                ]
+            );
+        }
+
+        ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->writeAuditLog(
+            $companyId,
+            $accountingPeriodId,
+            $acknowledged ? 'review_check_acknowledged' : 'review_check_reopened',
+            $changedBy,
+            is_array($existing) ? $existing : null,
+            [
+                'check_code' => $checkCode,
+                'acknowledged' => $acknowledged,
+                'note' => $note !== '' ? $note : null,
+            ]
+        );
+
+        return [
+            'success' => true,
+            'checklist' => $this->fetchChecklist($companyId, $accountingPeriodId, true),
+        ];
+    }
+
     public function unlockPeriod(int $companyId, int $accountingPeriodId, string $changedBy = 'web_app', ?string $notes = null): array {
         $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId, true);
         if (empty($checklistResult['success'])) {
@@ -470,6 +596,7 @@ final class YearEndChecklistService
         $periodStart = (string)$accountingPeriod['period_start'];
         $periodEnd = (string)$accountingPeriod['period_end'];
         $review = $lock->fetchReview($companyId, $accountingPeriodId);
+        $reviewAcknowledgements = $this->fetchReviewAcknowledgements($companyId, $accountingPeriodId);
 
         $monthTiles = $metrics->buildMonthTiles($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $sourceData = $metrics->sourceDataSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
@@ -663,7 +790,7 @@ final class YearEndChecklistService
             empty($directorLoan['available']) ? '' : (string)number_format($dlaClosing, 2, '.', ''),
             '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_director_loan_offset'
         );
-        $sections['director_loan_expenses'][] = $this->makeCheck(
+        $sections['director_loan_expenses'][] = $this->applyReviewAcknowledgement($this->makeCheck(
             'unpaid_expense_claims',
             'Unpaid expense claims',
             'warning',
@@ -673,7 +800,7 @@ final class YearEndChecklistService
                 : 'Expense claim register is not available yet.',
             !empty($unpaidExpenses['available']) ? (string)number_format((float)$unpaidExpenses['outstanding_amount'], 2, '.', '') : '',
             '?page=expense_claims&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
-        );
+        ), $reviewAcknowledgements);
         $sections['director_loan_expenses'][] = $this->makeCheck(
             'duplicate_repayment_protection',
             'Duplicate repayment protection',
@@ -710,7 +837,7 @@ final class YearEndChecklistService
             '?page=companies_house&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '#companies-house-comparison'
         );
         $equityMovement = abs((float)($financialStatements['retained_earnings']['unexplained_movement'] ?? 0));
-        $sections['year_end_accounts_review'][] = $this->makeCheck(
+        $sections['year_end_accounts_review'][] = $this->applyReviewAcknowledgement($this->makeCheck(
             'retained_earnings_movement',
             'Retained earnings movement',
             'warning',
@@ -719,9 +846,9 @@ final class YearEndChecklistService
                 ? 'Opening equity, profit, and closing equity do not fully reconcile.'
                 : 'Opening equity, profit, and closing equity look internally consistent.',
             (string)number_format((float)($financialStatements['retained_earnings']['unexplained_movement'] ?? 0), 2, '.', ''),
-            '?page=journal&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
-        );
-        $sections['year_end_accounts_review'][] = $this->makeCheck(
+            '?page=journal&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=nominal_closing_balances'
+        ), $reviewAcknowledgements);
+        $sections['year_end_accounts_review'][] = $this->applyReviewAcknowledgement($this->makeCheck(
             'fixed_asset_review_placeholder',
             'Fixed asset review',
             'warning',
@@ -731,16 +858,16 @@ final class YearEndChecklistService
                 : 'No obvious capital purchase hints were found in this period.',
             (string)($financialStatements['fixed_asset_hint_count'] ?? 0),
             '?page=assets&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
-        );
-        $sections['year_end_accounts_review'][] = $this->makeCheck(
+        ), $reviewAcknowledgements);
+        $sections['year_end_accounts_review'][] = $this->applyReviewAcknowledgement($this->makeCheck(
             'prepayments_accruals_placeholder',
             'Prepayments and accruals review',
             'warning',
             'warning',
             'Manual review reminder: consider year-end accruals, prepayments, and other cut-off journals before filing.',
             '',
-            '?page=journal&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
-        );
+            '?page=journal&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=nominal_closing_balances'
+        ), $reviewAcknowledgements);
 
         $sections['corporation_tax_readiness'][] = $this->makeCheck(
             'tax_adjusted_profit_basis_available',
@@ -775,7 +902,7 @@ final class YearEndChecklistService
             !empty($taxReadiness['available']) ? (string)number_format((float)($taxReadiness['losses_carried_forward'] ?? 0), 2, '.', '') : '',
             '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_tax_readiness#tax-readiness'
         );
-        $sections['corporation_tax_readiness'][] = $this->makeCheck(
+        $sections['corporation_tax_readiness'][] = $this->applyReviewAcknowledgement($this->makeCheck(
             'filing_basis_reminder',
             'Filing basis reminder',
             'warning',
@@ -783,7 +910,7 @@ final class YearEndChecklistService
             'App numbers remain working figures until final adjustments and filing outputs are finalised.',
             '',
             '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_tax_readiness'
-        );
+        ), $reviewAcknowledgements);
 
         $comparisonFailures = 0;
         if (!empty($chComparison['available'])) {
@@ -874,6 +1001,7 @@ final class YearEndChecklistService
                 ? (string)(($lock->fetchReview($companyId, $accountingPeriodId)['last_recalculated_at'] ?? '') ?: '')
                 : (string)($review['last_recalculated_at'] ?? ''),
             'review' => $lock->fetchReview($companyId, $accountingPeriodId),
+            'review_acknowledgements' => $reviewAcknowledgements,
             'month_tiles' => $monthTiles,
             'sections' => $sections,
             'checks_flat' => $checks,
@@ -892,6 +1020,83 @@ final class YearEndChecklistService
             'metric_value' => $metricValue,
             'action_url' => $actionUrl,
         ];
+    }
+
+    private function applyReviewAcknowledgement(array $check, array $acknowledgements): array
+    {
+        $checkCode = (string)($check['check_code'] ?? '');
+        if (!in_array($checkCode, self::REVIEW_ACKNOWLEDGEABLE_CHECKS, true)) {
+            return $check;
+        }
+
+        $check['review_clearable'] = true;
+        $acknowledgement = $acknowledgements[$checkCode] ?? null;
+        if (!is_array($acknowledgement)) {
+            return $check;
+        }
+
+        $check['review_acknowledgement'] = $acknowledgement;
+        if ((string)($check['status'] ?? '') === 'warning') {
+            $check['status'] = 'pass';
+            $check['metric_value'] = trim((string)($check['metric_value'] ?? '')) !== ''
+                ? (string)$check['metric_value']
+                : 'Reviewed';
+            $check['detail_text'] = 'Review acknowledged for this period. ' . (string)($check['detail_text'] ?? '');
+        }
+
+        return $check;
+    }
+
+    private function findChecklistCheck(array $checklist, string $checkCode): ?array
+    {
+        foreach ((array)($checklist['checks_flat'] ?? []) as $check) {
+            if (is_array($check) && (string)($check['check_code'] ?? '') === $checkCode) {
+                return $check;
+            }
+        }
+
+        return null;
+    }
+
+    private function fetchReviewAcknowledgements(int $companyId, int $accountingPeriodId): array
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || !$this->tableExists('year_end_review_acknowledgements')) {
+            return [];
+        }
+
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT check_code,
+                    acknowledged_at,
+                    acknowledged_by,
+                    note
+             FROM year_end_review_acknowledgements
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+            ]
+        );
+
+        $acknowledgements = [];
+        foreach ((array)$rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $checkCode = (string)($row['check_code'] ?? '');
+            if ($checkCode !== '') {
+                $acknowledgements[$checkCode] = $row;
+            }
+        }
+
+        return $acknowledgements;
+    }
+
+    private function actorValue(string $value): string
+    {
+        $value = trim($value);
+        return $value !== '' ? $value : 'web_app';
     }
 
     private function fetchChecklistResult(int $companyId, int $accountingPeriodId, bool $persist = true): array {

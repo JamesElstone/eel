@@ -67,6 +67,20 @@ final class YearEndAction implements ActionInterfaceFramework
                     $accountingPeriodId,
                     $this->truthy($request->input('director_loan_offset_acknowledgement', '0'))
                 ),
+                'acknowledge_review_check' => (new \eel_accounts\Service\YearEndChecklistService())->acknowledgeReviewCheck(
+                    $companyId,
+                    $accountingPeriodId,
+                    (string)$request->input('check_code', ''),
+                    true,
+                    (string)$request->input('review_acknowledgement_note', '')
+                ),
+                'reopen_review_check' => (new \eel_accounts\Service\YearEndChecklistService())->acknowledgeReviewCheck(
+                    $companyId,
+                    $accountingPeriodId,
+                    (string)$request->input('check_code', ''),
+                    false,
+                    (string)$request->input('review_acknowledgement_note', '')
+                ),
                 'post_director_loan_offset' => (new \eel_accounts\Service\DirectorLoanReconciliationService())->postOffset(
                     $companyId,
                     $accountingPeriodId
@@ -117,6 +131,8 @@ final class YearEndAction implements ActionInterfaceFramework
             'save_opening_balance' => 'Opening balance journal saved.',
             'create_adjustment' => 'Year-end adjustment posted.',
             'save_director_loan_offset_acknowledgement' => 'Director loan offset acknowledgement saved.',
+            'acknowledge_review_check' => 'Year-end review check marked reviewed.',
+            'reopen_review_check' => 'Year-end review check reopened.',
             'post_director_loan_offset' => 'Director loan offset journal posted.',
             default => 'Year-end readiness updated.',
         };

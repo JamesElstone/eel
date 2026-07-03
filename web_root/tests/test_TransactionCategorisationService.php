@@ -234,4 +234,156 @@ $harness->run(\eel_accounts\Service\TransactionCategorisationService::class, fun
             $harness->assertSame($refMatchType, (string)($rule['ref_match_type'] ?? ''));
         }
     });
+
+    $harness->check(\eel_accounts\Service\TransactionCategorisationService::class, 'approves auto categorisations as manual review without changing nominal', function () use ($harness, $service): void {
+        foreach (['companies', 'accounting_periods', 'statement_uploads', 'transactions', 'transaction_category_audit', 'nominal_accounts'] as $table) {
+            if (!InterfaceDB::tableExists($table)) {
+                $harness->skip($table . ' table is not available.');
+            }
+        }
+
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = transactionCategorisationServiceCreateAutoApprovalFixture();
+            $result = $service->approveAutoCategorisationsBatch(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                '2026-03-01',
+                'test'
+            );
+
+            $row = InterfaceDB::fetchOne(
+                'SELECT nominal_account_id, category_status, auto_rule_id
+                 FROM transactions
+                 WHERE id = :id',
+                ['id' => (int)$fixture['transaction_id']]
+            );
+
+            $harness->assertSame(true, (bool)($result['success'] ?? false));
+            $harness->assertSame(1, (int)($result['changed'] ?? 0));
+            $harness->assertSame((int)$fixture['nominal_account_id'], (int)($row['nominal_account_id'] ?? 0));
+            $harness->assertSame('manual', (string)($row['category_status'] ?? ''));
+            $harness->assertSame(null, $row['auto_rule_id'] ?? null);
+            $harness->assertSame(1, InterfaceDB::countWhere('transaction_category_audit', [
+                'transaction_id' => (int)$fixture['transaction_id'],
+                'old_category_status' => 'auto',
+                'new_category_status' => 'manual',
+            ]));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
 });
+
+function transactionCategorisationServiceCreateAutoApprovalFixture(): array
+{
+    $marker = (string)random_int(100000, 999999);
+    $companyId = (int)('81' . $marker);
+    $accountingPeriodId = (int)('82' . $marker);
+    $uploadId = (int)('83' . $marker);
+    $transactionId = (int)('84' . $marker);
+    $nominalAccountId = (int)('85' . $marker);
+
+    InterfaceDB::prepareExecute(
+        'INSERT INTO companies (id, company_name, company_number, is_active)
+         VALUES (:id, :company_name, :company_number, 1)',
+        [
+            'id' => $companyId,
+            'company_name' => 'Auto Approval Fixture ' . $marker,
+            'company_number' => 'AAF' . substr($marker, 0, 5),
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end)
+         VALUES (:id, :company_id, :label, :period_start, :period_end)',
+        [
+            'id' => $accountingPeriodId,
+            'company_id' => $companyId,
+            'label' => 'AAF FY ' . $marker,
+            'period_start' => '2026-01-01',
+            'period_end' => '2026-12-31',
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO nominal_accounts (id, code, name, account_type, tax_treatment, is_active, sort_order)
+         VALUES (:id, :code, :name, :account_type, :tax_treatment, 1, 100)',
+        [
+            'id' => $nominalAccountId,
+            'code' => 'AA' . substr($marker, 0, 4),
+            'name' => 'Auto Approval Nominal ' . $marker,
+            'account_type' => 'expense',
+            'tax_treatment' => 'allowable',
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO statement_uploads (id, company_id, accounting_period_id, statement_month, original_filename, stored_filename, file_sha256)
+         VALUES (:id, :company_id, :accounting_period_id, :statement_month, :original_filename, :stored_filename, :file_sha256)',
+        [
+            'id' => $uploadId,
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'statement_month' => '2026-03-01',
+            'original_filename' => 'auto-approval-' . $marker . '.csv',
+            'stored_filename' => 'auto-approval-' . $marker . '.csv',
+            'file_sha256' => hash('sha256', 'auto-approval-upload-' . $marker),
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO transactions (
+            id,
+            company_id,
+            accounting_period_id,
+            statement_upload_id,
+            txn_date,
+            description,
+            reference,
+            amount,
+            source_account_label,
+            source_category,
+            dedupe_hash,
+            nominal_account_id,
+            category_status,
+            auto_rule_id
+         ) VALUES (
+            :id,
+            :company_id,
+            :accounting_period_id,
+            :statement_upload_id,
+            :txn_date,
+            :description,
+            :reference,
+            :amount,
+            :source_account_label,
+            :source_category,
+            :dedupe_hash,
+            :nominal_account_id,
+            :category_status,
+            :auto_rule_id
+         )',
+        [
+            'id' => $transactionId,
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'statement_upload_id' => $uploadId,
+            'txn_date' => '2026-03-15',
+            'description' => 'AUTO APPROVAL TEST ' . $marker,
+            'reference' => 'AA-' . $marker,
+            'amount' => '-42.50',
+            'source_account_label' => 'Main account',
+            'source_category' => 'Materials',
+            'dedupe_hash' => hash('sha256', 'auto-approval-transaction-' . $marker),
+            'nominal_account_id' => $nominalAccountId,
+            'category_status' => 'auto',
+            'auto_rule_id' => null,
+        ]
+    );
+
+    return [
+        'company_id' => $companyId,
+        'accounting_period_id' => $accountingPeriodId,
+        'transaction_id' => $transactionId,
+        'nominal_account_id' => $nominalAccountId,
+    ];
+}

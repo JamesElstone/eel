@@ -227,6 +227,77 @@ final class TransactionCategorisationService
         ];
     }
 
+    public function approveAutoCategorisationsBatch(
+        int $companyId,
+        ?int $accountingPeriodId = null,
+        ?string $monthKey = null,
+        string $changedBy = 'transactions_page_review'
+    ): array {
+        $transactions = $this->fetchAutoReviewTransactions($companyId, $accountingPeriodId, $monthKey);
+        $summary = [
+            'success' => true,
+            'processed' => 0,
+            'changed' => 0,
+            'skipped' => 0,
+            'errors' => [],
+        ];
+
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
+        }
+
+        try {
+            foreach ($transactions as $transaction) {
+                $summary['processed']++;
+                $nominalAccountId = (int)($transaction['nominal_account_id'] ?? 0);
+                if ($nominalAccountId <= 0 || $this->isTransferTransaction($transaction)) {
+                    $summary['skipped']++;
+                    continue;
+                }
+
+                $result = $this->saveManualCategorisation(
+                    (int)$transaction['id'],
+                    $nominalAccountId,
+                    null,
+                    (int)($transaction['is_auto_excluded'] ?? 0) === 1,
+                    $changedBy,
+                    true
+                );
+
+                if (!empty($result['errors'])) {
+                    $summary['errors'] = array_merge($summary['errors'], array_map('strval', (array)$result['errors']));
+                    continue;
+                }
+
+                if (!empty($result['changed'])) {
+                    $summary['changed']++;
+                }
+            }
+
+            if ($summary['errors'] !== []) {
+                $summary['success'] = false;
+                if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                    \InterfaceDB::rollBack();
+                }
+
+                return $summary;
+            }
+
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+
+            throw $exception;
+        }
+
+        return $summary;
+    }
+
     private function assertPeriodUnlocked(array $transaction, string $actionLabel): void {
         (new \eel_accounts\Service\YearEndLockService())->assertUnlocked(
             (int)($transaction['company_id'] ?? 0),
@@ -313,6 +384,63 @@ final class TransactionCategorisationService
         $stmt->execute(['company_id' => $companyId]);
 
         return $stmt->fetchAll();
+    }
+
+    private function fetchAutoReviewTransactions(int $companyId, ?int $accountingPeriodId, ?string $monthKey): array
+    {
+        if ($companyId <= 0) {
+            return [];
+        }
+
+        $where = [
+            't.company_id = :company_id',
+            't.category_status = :category_status',
+        ];
+        $params = [
+            'company_id' => $companyId,
+            'category_status' => 'auto',
+        ];
+
+        if ($accountingPeriodId !== null && $accountingPeriodId > 0) {
+            $where[] = 't.accounting_period_id = :accounting_period_id';
+            $params['accounting_period_id'] = $accountingPeriodId;
+        }
+
+        $monthKey = trim((string)$monthKey);
+        if ($monthKey !== '') {
+            try {
+                $monthStart = (new \DateTimeImmutable($monthKey))->modify('first day of this month')->format('Y-m-d');
+                $monthEnd = (new \DateTimeImmutable($monthStart))->modify('+1 month')->format('Y-m-d');
+                $where[] = 't.txn_date >= :month_start';
+                $where[] = 't.txn_date < :month_end';
+                $params['month_start'] = $monthStart;
+                $params['month_end'] = $monthEnd;
+            } catch (\Throwable) {
+                $monthKey = '';
+            }
+        }
+
+        $stmt = \InterfaceDB::prepare(
+            'SELECT t.id,
+                    t.company_id,
+                    t.accounting_period_id,
+                    t.account_id,
+                    t.nominal_account_id,
+                    t.transfer_account_id,
+                    t.is_internal_transfer,
+                    t.category_status,
+                    t.auto_rule_id,
+                    t.is_auto_excluded,
+                    COALESCE(ca.internal_transfer_marker, \'\') AS internal_transfer_marker
+             FROM transactions t
+             LEFT JOIN company_accounts ca ON ca.id = t.account_id
+             WHERE ' . implode(' AND ', $where) . '
+             ORDER BY t.txn_date ASC, t.id ASC'
+        );
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+
+        return is_array($rows) ? $rows : [];
     }
 
     private function findMatchingRuleInSet(array $rules, array $transactionPayload): ?array {

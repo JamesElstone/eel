@@ -43,6 +43,7 @@ final class TestCardsHarness
         $this->assertRoleAssignmentCardOwnsDashboardContext();
         $this->assertTrialBalanceStateUsesSelectedCompanyContext();
         $this->assertTrialBalanceStateRendersNestedMetrics();
+        $this->assertTrialBalanceValidationUsesCompanyCurrency();
         $this->assertCompaniesHousePageIncludesCompaniesHouseSnapshot();
         $this->assertCompaniesHouseSnapshotUsesSelectedCompanyContext();
     }
@@ -187,6 +188,40 @@ final class TestCardsHarness
         $this->assertSame(false, str_contains($html, 'Array'));
 
         test_output_line('Cards: trial_balance_state renders nested metric values without warnings.');
+    }
+
+    private function assertTrialBalanceValidationUsesCompanyCurrency(): void
+    {
+        $card = new _trial_balance_validationCard();
+        $html = $card->render([
+            'company' => [
+                'settings' => ['default_currency_symbol' => '&#36;'],
+            ],
+            'services' => [
+                'trialBalanceValidation' => [
+                    'available' => true,
+                    'checks' => [
+                        [
+                            'title' => 'Nested metric check',
+                            'status' => 'warning',
+                            'detail' => 'Contains nested metric arrays.',
+                            'metric_value' => [
+                                'difference' => 0.0,
+                                'bank_ledger_reasonableness' => [
+                                    'transaction_movement' => 100.0,
+                                    'ledger_movement' => 100.0,
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->assertTrue(str_contains($html, '$0.00'));
+        $this->assertTrue(str_contains($html, '$100.00'));
+
+        test_output_line('Cards: trial_balance_validation renders monetary metrics with company currency.');
     }
 
     private function assertCompaniesHousePageIncludesCompaniesHouseSnapshot(): void

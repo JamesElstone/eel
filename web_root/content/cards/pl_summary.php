@@ -18,6 +18,7 @@ final class _pl_summaryCard extends CardBaseFramework
     public function render(array $context): string
     {
         $summary = (array)($context['profit_loss']['summary'] ?? []);
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
         if (empty($summary['available'])) {
             return $this->messages((array)($summary['errors'] ?? ['Profit & Loss is not available.']));
         }
@@ -40,11 +41,11 @@ final class _pl_summaryCard extends CardBaseFramework
             </div>
             ' . $notice . '
             <div class="summary-grid">
-                ' . $this->summaryCard('Income', $summary['income_total'] ?? 0) . '
-                ' . $this->summaryCard('Cost of sales', $summary['cost_of_sales_total'] ?? 0) . '
-                ' . $this->summaryCard('Gross profit', $summary['gross_profit'] ?? 0) . '
-                ' . $this->summaryCard('Expenses', $summary['expense_total'] ?? 0) . '
-                ' . $this->summaryCard('Net profit / loss', $summary['net_profit'] ?? 0) . '
+                ' . $this->summaryCard('Income', $summary['income_total'] ?? 0, $companySettings) . '
+                ' . $this->summaryCard('Cost of sales', $summary['cost_of_sales_total'] ?? 0, $companySettings) . '
+                ' . $this->summaryCard('Gross profit', $summary['gross_profit'] ?? 0, $companySettings) . '
+                ' . $this->summaryCard('Expenses', $summary['expense_total'] ?? 0, $companySettings) . '
+                ' . $this->summaryCard('Net profit / loss', $summary['net_profit'] ?? 0, $companySettings) . '
                 <div class="summary-card"><div class="summary-label">Profit margin</div><div class="summary-value">' . HelperFramework::escape(number_format((float)($summary['profit_margin_percent'] ?? 0), 1)) . '%</div></div>
             </div>
             ' . $this->healthMetrics($context) . '
@@ -220,9 +221,14 @@ final class _pl_summaryCard extends CardBaseFramework
         ], ' ');
     }
 
-    private function summaryCard(string $label, mixed $value): string
+    private function summaryCard(string $label, mixed $value, array $companySettings): string
     {
-        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($value)) . '</div></div>';
+        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $value)) . '</div></div>';
+    }
+
+    private function money(array $companySettings, float|int|string|null $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 
     private function resultLabel(float $netProfit): string

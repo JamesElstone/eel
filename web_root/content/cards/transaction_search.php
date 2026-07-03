@@ -146,6 +146,8 @@ final class _transaction_searchCard extends CardBaseFramework
 
     private function table(array $context): TableFramework
     {
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
+
         return TableFramework::make($this->key(), $this->rows($context))
             ->filename('transaction-search')
             ->exportLimit(5000)
@@ -170,7 +172,7 @@ final class _transaction_searchCard extends CardBaseFramework
             ->column(
                 'amount',
                 'Amount',
-                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::money($row['amount'] ?? 0)),
+                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['amount'] ?? 0)),
                 export: static fn(array $row): string => FormattingFramework::money($row['amount'] ?? 0),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -457,6 +459,11 @@ final class _transaction_searchCard extends CardBaseFramework
         }
 
         return round($total, 2);
+    }
+
+    private function money(array $companySettings, float|int|string|null $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 
     private function companyAccounts(array $context): array

@@ -122,6 +122,8 @@ final class _expenses_stateCard extends CardBaseFramework
 
     private function claimsTable(array $claims, array $context): TableFramework
     {
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
+
         return TableFramework::make($this->key(), $this->claimTableRows($claims))
             ->filename('expense-claims')
             ->exportLimit(1000)
@@ -132,7 +134,7 @@ final class _expenses_stateCard extends CardBaseFramework
             ->column(
                 'A',
                 'A',
-                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::money($row['A'] ?? 0)),
+                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['A'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['A'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -140,7 +142,7 @@ final class _expenses_stateCard extends CardBaseFramework
             ->column(
                 'B',
                 'B',
-                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::money($row['B'] ?? 0)),
+                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['B'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['B'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -148,7 +150,7 @@ final class _expenses_stateCard extends CardBaseFramework
             ->column(
                 'C',
                 'C',
-                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::money($row['C'] ?? 0)),
+                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['C'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['C'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -156,7 +158,7 @@ final class _expenses_stateCard extends CardBaseFramework
             ->column(
                 'D',
                 'D',
-                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::money($row['D'] ?? 0)),
+                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['D'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['D'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -175,6 +177,11 @@ final class _expenses_stateCard extends CardBaseFramework
                 exportable: false,
                 cellClass: 'cell-fit'
             );
+    }
+
+    private function money(array $companySettings, float|int|string|null $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 
     private function claimTableRows(array $claims): array

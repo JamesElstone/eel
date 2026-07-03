@@ -20,6 +20,9 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         'company' => [
             'id' => 12,
             'accounting_period_id' => 34,
+            'settings' => [
+                'default_currency_symbol' => '&#36;',
+            ],
         ],
         'transaction_search' => [
             'keyword' => 'Brian',
@@ -125,6 +128,7 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         $harness->assertSame(false, str_contains($html, '<span class="table-sort-label">Created</span>'));
         $harness->assertSame(false, str_contains($html, '<span class="table-sort-label">Updated</span>'));
         $harness->assertTrue(str_contains($html, 'Brian Supplies'));
+        $harness->assertTrue(str_contains($html, '$42.50'));
         $harness->assertTrue(str_contains($html, 'Rule #5 | Description: Brian'));
         $harness->assertSame(false, str_contains($html, 'name="global_action" value="sync_auto_approval_state"'));
         $harness->assertSame(false, str_contains($html, 'data-auto-approval-batch-form="true"'));

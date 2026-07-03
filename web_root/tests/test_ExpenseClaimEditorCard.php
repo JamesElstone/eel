@@ -302,7 +302,10 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $repaymentsPosition = strpos($html, '<h4 class="card-title">Repayments</h4>');
         $candidateRepaymentsPosition = strpos($html, '<h4 class="card-title">Candidate Repayments</h4>');
         $repaymentsHtml = substr($html, (int)$repaymentsPosition, (int)$candidateRepaymentsPosition - (int)$repaymentsPosition);
+        $candidateRepaymentsHtml = substr($html, (int)$candidateRepaymentsPosition);
         $harness->assertSame(0, preg_match('/<div class="actions-row">\s*<\/div>/', $repaymentsHtml));
+        $harness->assertTrue(str_contains($repaymentsHtml, '$75.00'));
+        $harness->assertSame(2, substr_count($candidateRepaymentsHtml, '$75.00'));
         $harness->assertTrue(str_contains($html, 'name="default_expense_nominal_id" value="5000"'));
         $harness->assertSame(false, str_contains($html, 'name="director_loan_nominal_id"'));
         $harness->assertSame(false, str_contains($html, 'name="linked_amount" inputmode="decimal"'));

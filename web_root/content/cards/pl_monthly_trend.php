@@ -18,6 +18,7 @@ final class _pl_monthly_trendCard extends CardBaseFramework
     public function render(array $context): string
     {
         $rows = (array)($context['profit_loss']['monthly_trend'] ?? []);
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
         if ($rows === []) {
             return '<div class="helper">No monthly Profit & Loss data is available for the selected period.</div>';
         }
@@ -27,10 +28,10 @@ final class _pl_monthly_trendCard extends CardBaseFramework
             $net = (float)($row['net_profit'] ?? 0);
             $html .= '<tr>
                 <td>' . HelperFramework::escape((string)($row['month_label'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::money($row['income_total'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::money($row['cost_of_sales_total'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::money($row['expense_total'] ?? 0)) . '</td>
-                <td><span class="badge ' . ($net >= 0 ? 'success' : 'danger') . '">' . HelperFramework::escape(FormattingFramework::money($net)) . '</span></td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $row['income_total'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $row['cost_of_sales_total'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $row['expense_total'] ?? 0)) . '</td>
+                <td><span class="badge ' . ($net >= 0 ? 'success' : 'danger') . '">' . HelperFramework::escape($this->money($companySettings, $net)) . '</span></td>
             </tr>';
         }
 
@@ -107,5 +108,10 @@ final class _pl_monthly_trendCard extends CardBaseFramework
         }
 
         return '';
+    }
+
+    private function money(array $companySettings, float|int|string|null $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 }

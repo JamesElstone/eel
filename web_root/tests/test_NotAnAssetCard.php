@@ -66,6 +66,14 @@ $harness->run(_not_an_assetCard::class, static function (GeneratedServiceClassTe
 
         $harness->assertTrue(str_contains($html, 'name="intent" value="save_potential_asset_threshold"'));
         $harness->assertTrue(str_contains($html, '<option value="250" selected>$250.00</option>'));
+        $harness->assertFalse(str_contains($html, '>Save Threshold</button>'));
+        $harness->assertSame(
+            1,
+            preg_match(
+                '/<div class="card-toolbar">\s*<div class="actions-row">(?:(?!<\/div>).)*name="potential_asset_threshold"(?:(?!<\/div>).)*<\/div>\s*<div class="actions-row">(?:(?!<\/div>).)*_table_export_prepare/s',
+                $html
+            )
+        );
         $harness->assertTrue(str_contains($html, '$301.00'));
         $harness->assertTrue(str_contains($html, 'Cordless drill 1'));
         $harness->assertTrue(str_contains($html, 'Cordless drill 15'));

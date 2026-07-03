@@ -1050,6 +1050,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
                 'settings' => [
                     'director_loan_asset_nominal_id' => 1200,
                     'director_loan_liability_nominal_id' => 2100,
+                    'default_currency_symbol' => '&#36;',
                 ],
             ],
             'page' => [
@@ -1126,6 +1127,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, '<th>Date</th>'));
         $harness->assertSame(true, str_contains($html, '<th>Auto Decision</th>'));
         $harness->assertSame(true, str_contains($html, 'Test transaction'));
+        $harness->assertSame(true, str_contains($html, '<span class="amount-negative">$-12.34</span>'));
         $harness->assertSame(true, str_contains($html, 'Ref: INV-42<br>Matched by rule #3 (Test)'));
         $harness->assertSame(true, str_contains($html, 'Matched by rule #3 (Test)'));
         $harness->assertSame(true, str_contains($html, 'View Receipt'));

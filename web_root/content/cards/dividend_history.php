@@ -28,6 +28,7 @@ final class _dividend_historyCard extends CardBaseFramework
     {
         $rows = (array)($context['dividends']['history'] ?? []);
         $company = (array)($context['company'] ?? []);
+        $companySettings = (array)($company['settings'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         if ($rows === []) {
@@ -41,7 +42,7 @@ final class _dividend_historyCard extends CardBaseFramework
             $rowsHtml .= '<tr>
                 <td>' . HelperFramework::escape((string)($row['journal_date'] ?? '')) . '</td>
                 <td>' . HelperFramework::escape((string)($row['description'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::money($row['amount'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $row['amount'] ?? 0)) . '</td>
                 <td>' . HelperFramework::escape((string)($row['settlement_account'] ?? '')) . '</td>
                 <td><div class="helper">' . HelperFramework::escape((string)($row['source_ref'] ?? '')) . '</div></td>
                 <td><span class="badge ' . HelperFramework::escape($this->statusBadgeClass($status)) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($status, '_')) . '</span></td>
@@ -59,6 +60,11 @@ final class _dividend_historyCard extends CardBaseFramework
                 <tbody>' . $rowsHtml . '</tbody>
             </table>
         </div>';
+    }
+
+    private function money(array $companySettings, float|int|string|null $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 
     private function actionsHtml(array $row, int $companyId, int $accountingPeriodId): string

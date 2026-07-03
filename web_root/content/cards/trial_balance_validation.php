@@ -42,6 +42,7 @@ final class _trial_balance_validationCard extends CardBaseFramework
     public function render(array $context): string
     {
         $validation = (array)($context['services']['trialBalanceValidation'] ?? []);
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
 
         if (empty($validation['available'])) {
             return $this->renderErrors((array)($validation['errors'] ?? []));
@@ -58,7 +59,7 @@ final class _trial_balance_validationCard extends CardBaseFramework
                     <span class="badge ' . $this->badgeClass($status) . '">' . HelperFramework::escape($status) . '</span>
                 </div>
                 <div class="helper">' . HelperFramework::escape((string)($check['detail'] ?? '')) . '</div>
-                ' . $this->metricValue($check['metric_value'] ?? null) . '
+                ' . $this->metricValue($check['metric_value'] ?? null, $companySettings) . '
             </div>';
         }
 
@@ -117,43 +118,43 @@ final class _trial_balance_validationCard extends CardBaseFramework
         </div>';
     }
 
-    private function metricValue(mixed $value): string
+    private function metricValue(mixed $value, array $companySettings): string
     {
         if ($value === null || $value === '') {
             return '';
         }
 
         $html = '';
-        foreach ($this->metricLines($value) as $line) {
+        foreach ($this->metricLines($value, $companySettings) as $line) {
             $html .= '<div><strong>' . HelperFramework::escape($line) . '</strong></div>';
         }
 
         return $html;
     }
 
-    private function metricLines(mixed $value): array
+    private function metricLines(mixed $value, array $companySettings): array
     {
         if (!is_array($value) || $this->isListArray($value)) {
-            return [$this->metricText($value)];
+            return [$this->metricText($value, $companySettings)];
         }
 
         $lines = [];
         foreach ($value as $key => $metric) {
             $label = HelperFramework::labelFromKey((string)$key, '_');
-            $lines[] = $label . ': ' . $this->metricText($metric);
+            $lines[] = $label . ': ' . $this->metricText($metric, $companySettings);
         }
 
         return $lines;
     }
 
-    private function metricText(mixed $value): string
+    private function metricText(mixed $value, array $companySettings): string
     {
         if ($value === null || $value === '') {
             return '';
         }
 
         if (is_numeric($value)) {
-            return FormattingFramework::money($value);
+            return $this->money($companySettings, $value);
         }
 
         if (!is_array($value)) {
@@ -167,10 +168,15 @@ final class _trial_balance_validationCard extends CardBaseFramework
         $parts = [];
         foreach ($value as $key => $metric) {
             $label = HelperFramework::labelFromKey((string)$key, '_');
-            $parts[] = $label . ': ' . $this->metricText($metric);
+            $parts[] = $label . ': ' . $this->metricText($metric, $companySettings);
         }
 
         return implode(', ', $parts);
+    }
+
+    private function money(array $companySettings, float|int|string|null $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 
     private function isListArray(array $value): bool

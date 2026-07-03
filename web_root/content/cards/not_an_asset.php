@@ -67,18 +67,15 @@ final class _not_an_assetCard extends CardBaseFramework
             return '<div class="helper">Select a company and accounting period before reviewing non-assets.</div>';
         }
 
-        $thresholdForm = $this->thresholdForm($companyId, $accountingPeriodId, $threshold, $settings);
-
         if ($nominalId <= 0 || empty($data['available'])) {
-            return $thresholdForm
+            return $this->thresholdToolbar($companyId, $accountingPeriodId, $threshold, $settings)
                 . '<div class="helper">Set the Tools &amp; Small Equipment nominal on Company Nominals before reviewing potential assets.</div>';
         }
 
-        return $thresholdForm . $this->configuredTable($context)->render(
+        return $this->renderTableWithThresholdToolbar(
+            $this->configuredTable($context),
             $context,
-            [
-                'cards[]' => (array)($context['page']['page_cards'] ?? []),
-            ]
+            $this->thresholdForm($companyId, $accountingPeriodId, $threshold, $settings)
         );
     }
 
@@ -174,8 +171,32 @@ final class _not_an_assetCard extends CardBaseFramework
             <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
             <label for="potential_asset_threshold">Threshold</label>
             <select class="select" id="potential_asset_threshold" name="potential_asset_threshold">' . $options . '</select>
-            <button class="button primary" type="submit">Save Threshold</button>
         </form>';
+    }
+
+    private function thresholdToolbar(int $companyId, int $accountingPeriodId, int $threshold, array $settings): string
+    {
+        return '<div class="card-toolbar">
+            <div class="actions-row">'
+                . $this->thresholdForm($companyId, $accountingPeriodId, $threshold, $settings)
+            . '</div>
+        </div>';
+    }
+
+    private function renderTableWithThresholdToolbar(TableFramework $table, array $context, string $thresholdForm): string
+    {
+        $exportHiddenFields = [
+            'cards[]' => (array)($context['page']['page_cards'] ?? []),
+        ];
+        $toolbar = $table->renderToolbar($context, $exportHiddenFields);
+        $toolbar = preg_replace(
+            '/<div class="actions-row">\s*<\/div>/',
+            '<div class="actions-row">' . $thresholdForm . '</div>',
+            $toolbar,
+            1
+        ) ?? $toolbar;
+
+        return $toolbar . $table->renderTable() . $table->renderFooter();
     }
 
     private function openSourceButton(array $row, int $companyId, int $accountingPeriodId): string

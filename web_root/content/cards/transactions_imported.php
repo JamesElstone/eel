@@ -396,11 +396,11 @@ final class _transactions_importedCard extends CardBaseFramework
             ->column(
                 'amount',
                 'Amount',
-                html: static function (array $row): string {
+                html: function (array $row) use ($settings): string {
                     $amount = (float)($row['amount'] ?? 0);
 
                     return '<span class="' . ($amount >= 0 ? 'amount-positive' : 'amount-negative') . '">'
-                        . HelperFramework::escape(FormattingFramework::money($amount))
+                        . HelperFramework::escape($this->money($settings, $amount))
                         . '</span>';
                 },
                 cellClass: 'numeric'
@@ -1071,5 +1071,10 @@ final class _transactions_importedCard extends CardBaseFramework
         }
 
         return HelperFramework::displayDate($value);
+    }
+
+    private function money(array $settings, float|int|string|null $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($settings, $value);
     }
 }

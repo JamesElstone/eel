@@ -488,7 +488,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
         $paymentQuery = (string)($filters['payment_query'] ?? '');
         $paymentsPanel = $this->renderTablePanel(
             'Repayments',
-            $this->withoutEmptyActionRows($this->configuredPaymentsTable($payments, $claimId, $isPosted, $companyId, $dateFormat, $context)->render($context, $this->tableExportFields(['claim_id' => $claimId]))),
+            $this->withoutEmptyActionRows($this->configuredPaymentsTable($payments, $companySettings, $claimId, $isPosted, $companyId, $dateFormat, $context)->render($context, $this->tableExportFields(['claim_id' => $claimId]))),
             'Link repayments from bank transactions in the month they were paid. The selected claim determines the claimant.'
         );
 
@@ -504,9 +504,9 @@ final class _expense_claim_editorCard extends CardBaseFramework
         return preg_replace('/<div class="actions-row">\s*<\/div>\s*/', '', $html) ?? $html;
     }
 
-    private function configuredPaymentsTable(array $payments, int $claimId, bool $isPosted, int $companyId, string $dateFormat, array $context): TableFramework
+    private function configuredPaymentsTable(array $payments, array $companySettings, int $claimId, bool $isPosted, int $companyId, string $dateFormat, array $context): TableFramework
     {
-        $table = $this->paymentsTable($payments, $claimId, $isPosted, $companyId, $dateFormat);
+        $table = $this->paymentsTable($payments, $companySettings, $claimId, $isPosted, $companyId, $dateFormat);
         $pagination = HelperFramework::paginateArray($table->sortedRows(), $this->paginationPage($context, self::TABLE_PAYMENTS), self::PAGE_SIZE);
 
         return $table
@@ -524,7 +524,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
         return $this->renderPaymentCandidateSearch($paymentQuery, $claimId, $companyId);
     }
 
-    private function paymentsTable(array $payments, int $claimId, bool $isPosted, int $companyId, string $dateFormat): TableFramework
+    private function paymentsTable(array $payments, array $companySettings, int $claimId, bool $isPosted, int $companyId, string $dateFormat): TableFramework
     {
         return TableFramework::make(self::TABLE_PAYMENTS, $this->paymentRows($payments, $dateFormat))
             ->filename('expense-claim-repayments')
@@ -536,7 +536,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
             ->column(
                 'linked_amount',
                 'Linked',
-                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::money($row['linked_amount'] ?? 0)),
+                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['linked_amount'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['linked_amount'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -602,7 +602,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
             ->column(
                 'amount',
                 'Amount',
-                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::money($row['amount'] ?? 0)),
+                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['amount'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['amount'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -610,7 +610,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
             ->column(
                 'available_amount',
                 'Available',
-                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::money($row['available_amount'] ?? 0)),
+                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['available_amount'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['available_amount'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -749,6 +749,11 @@ final class _expense_claim_editorCard extends CardBaseFramework
     private function defaultCurrencySymbol(array $companySettings): string
     {
         return (new \eel_accounts\Service\CompanySettingsService())->defaultCurrencySymbol($companySettings);
+    }
+
+    private function money(array $companySettings, float|int|string|null $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 
     private function tablePaginationFields(array $extra = []): array

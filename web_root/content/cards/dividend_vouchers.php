@@ -27,6 +27,7 @@ final class _dividend_vouchersCard extends CardBaseFramework
     public function render(array $context): string
     {
         $rows = (array)($context['dividends']['vouchers'] ?? []);
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
         if ($rows === []) {
             return '<div class="helper">No dividend vouchers have been issued for the selected company and accounting period.</div>';
         }
@@ -48,7 +49,7 @@ final class _dividend_vouchersCard extends CardBaseFramework
                     <div>' . HelperFramework::escape((string)($row['shareholder_name'] ?? '')) . '</div>
                     <div class="helper">' . HelperFramework::escape((string)($row['company_name'] ?? '')) . '</div>
                 </td>
-                <td class="numeric">' . HelperFramework::escape(FormattingFramework::money($row['amount'] ?? 0)) . '</td>
+                <td class="numeric">' . HelperFramework::escape($this->money($companySettings, $row['amount'] ?? 0)) . '</td>
                 <td>' . $this->documentDetailsHtml('Voucher', (string)($row['voucher_text'] ?? '')) . '</td>
                 <td>' . $this->documentDetailsHtml('Minutes', (string)($row['minutes_text'] ?? '')) . '</td>
                 <td>' . $statusHtml . '</td>
@@ -62,6 +63,11 @@ final class _dividend_vouchersCard extends CardBaseFramework
                 <tbody>' . $rowsHtml . '</tbody>
             </table>
         </div>';
+    }
+
+    private function money(array $companySettings, float|int|string|null $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 
     private function documentDetailsHtml(string $label, string $text): string

@@ -50,6 +50,7 @@ final class _asset_taxCard extends CardBaseFramework
     {
         $page = (array)($context['page'] ?? []);
         $company = (array)($context['company'] ?? []);
+        $settings = (array)($company['settings'] ?? []);
         $assetsPageData = (array)($context['services']['assetPageData'] ?? []);
         $assetTaxView = is_array($assetsPageData['tax_view'] ?? null) ? $assetsPageData['tax_view'] : null;
         $accountingPeriodId = (int)(
@@ -60,19 +61,33 @@ final class _asset_taxCard extends CardBaseFramework
             ?? 0
         );
 
-        return $assetTaxView !== null
-            ? '<div class="list">
-                    <div class="list-item"><strong>Accounting Profit</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['accounting_profit'] ?? 0))) . '</span></div>
-                    <div class="list-item"><strong>+ Disallowable Expenses</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['disallowable_add_backs'] ?? 0))) . '</span></div>
-                    <div class="list-item"><strong>+ Depreciation</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['depreciation_add_back'] ?? 0))) . '</span></div>
-                    <div class="list-item"><strong>- Capital Allowances</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['capital_allowances'] ?? 0))) . '</span></div>
-                    <div class="list-item"><strong>= Taxable Profit Before Losses</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['taxable_before_losses'] ?? 0))) . '</span></div>
-                    <div class="list-item"><strong>Losses B/F</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['losses_brought_forward'] ?? 0))) . '</span></div>
-                    <div class="list-item"><strong>Losses Used</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['losses_used'] ?? 0))) . '</span></div>
-                    <div class="list-item"><strong>Losses C/F</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['losses_carried_forward'] ?? 0))) . '</span></div>
-                    <div class="list-item"><strong>Taxable Profit</strong><span>' . HelperFramework::escape(FormattingFramework::money((float)($assetTaxView['taxable_profit'] ?? 0))) . '</span></div>
-                </div>'
-            : '<div class="helper">' . HelperFramework::escape($this->emptyStateMessage($assetsPageData, $accountingPeriodId)) . '</div>';
+        if ($assetTaxView === null) {
+            return '<div class="helper">' . HelperFramework::escape($this->emptyStateMessage($assetsPageData, $accountingPeriodId)) . '</div>';
+        }
+
+        $calculationRows = [
+            ['Accounting Profit', (float)($assetTaxView['accounting_profit'] ?? 0)],
+            ['+ Disallowable Expenses', (float)($assetTaxView['disallowable_add_backs'] ?? 0)],
+            ['+ Depreciation', (float)($assetTaxView['depreciation_add_back'] ?? 0)],
+            ['- Capital Allowances', (float)($assetTaxView['capital_allowances'] ?? 0)],
+            ['= Taxable Profit Before Losses', (float)($assetTaxView['taxable_before_losses'] ?? 0)],
+            ['Losses B/F', (float)($assetTaxView['losses_brought_forward'] ?? 0)],
+            ['Losses Used', (float)($assetTaxView['losses_used'] ?? 0)],
+            ['Losses C/F', (float)($assetTaxView['losses_carried_forward'] ?? 0)],
+            ['Taxable Profit', (float)($assetTaxView['taxable_profit'] ?? 0)],
+        ];
+
+        $rowsHtml = '';
+        foreach ($calculationRows as [$label, $amount]) {
+            $rowsHtml .= '<tr><td>' . HelperFramework::escape($label) . '</td><td>' . HelperFramework::escape($this->money($settings, $amount)) . '</td></tr>';
+        }
+
+        return '<div class="table-scroll"><table><thead><tr><th>Calculation</th><th>Amount</th></tr></thead><tbody>' . $rowsHtml . '</tbody></table></div>';
+    }
+
+    private function money(array $settings, float|int|string|null $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($settings, $value);
     }
 
     private function emptyStateMessage(array $assetsPageData, int $accountingPeriodId): string

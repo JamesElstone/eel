@@ -117,7 +117,6 @@ final class _asset_registerCard extends CardBaseFramework
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $defaultBankNominalId = (int)($assetsPageData['default_bank_nominal_id'] ?? 0);
         $disposalSearch = (array)($assetsPageData['disposal_search'] ?? []);
-        $currencySymbol = $this->defaultCurrencySymbol($settings);
 
         return TableFramework::make($this->key(), $this->rows($context))
             ->filename('asset-register')
@@ -133,7 +132,7 @@ final class _asset_registerCard extends CardBaseFramework
             ->column(
                 'cost',
                 'Cost',
-                html: static fn(array $row): string => HelperFramework::escape($currencySymbol . FormattingFramework::money((float)($row['cost'] ?? 0))),
+                html: fn(array $row): string => HelperFramework::escape($this->money($settings, (float)($row['cost'] ?? 0))),
                 export: static fn(array $row): string => number_format((float)($row['cost'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -141,7 +140,7 @@ final class _asset_registerCard extends CardBaseFramework
             ->column(
                 'nbv',
                 'NBV',
-                html: static fn(array $row): string => HelperFramework::escape($currencySymbol . FormattingFramework::money((float)($row['nbv'] ?? 0))),
+                html: fn(array $row): string => HelperFramework::escape($this->money($settings, (float)($row['nbv'] ?? 0))),
                 export: static fn(array $row): string => number_format((float)($row['nbv'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -160,7 +159,7 @@ final class _asset_registerCard extends CardBaseFramework
             ->column(
                 'actions',
                 'Actions',
-                html: fn(array $row): string => $this->actionsHtml($row, $companyId, $accountingPeriodId, $defaultBankNominalId, $disposalSearch, $currencySymbol),
+                html: fn(array $row): string => $this->actionsHtml($row, $companyId, $accountingPeriodId, $defaultBankNominalId, $disposalSearch, $settings),
                 exportable: false
             );
     }
@@ -189,7 +188,7 @@ final class _asset_registerCard extends CardBaseFramework
         int $accountingPeriodId,
         int $defaultBankNominalId,
         array $disposalSearch,
-        string $currencySymbol
+        array $settings
     ): string {
         $status = (string)($asset['status'] ?? 'active');
 
@@ -203,7 +202,7 @@ final class _asset_registerCard extends CardBaseFramework
             (int)($asset['id'] ?? 0),
             $defaultBankNominalId,
             $disposalSearch,
-            $currencySymbol
+            $settings
         );
     }
 
@@ -213,14 +212,14 @@ final class _asset_registerCard extends CardBaseFramework
         int $assetId,
         int $defaultBankNominalId,
         array $disposalSearch,
-        string $currencySymbol
+        array $settings
     ): string {
         $selectedAssetId = (int)($disposalSearch['asset_id'] ?? 0);
         $searchDate = $selectedAssetId === $assetId
             ? (string)($disposalSearch['search_date'] ?? date('Y-m-d'))
             : date('Y-m-d');
         $candidateHtml = $selectedAssetId === $assetId
-            ? $this->disposalCandidates($companyId, $accountingPeriodId, $assetId, $defaultBankNominalId, $disposalSearch, $currencySymbol)
+            ? $this->disposalCandidates($companyId, $accountingPeriodId, $assetId, $defaultBankNominalId, $disposalSearch, $settings)
             : '';
 
         return '<div class="asset-disposal-panel">
@@ -245,7 +244,7 @@ final class _asset_registerCard extends CardBaseFramework
         int $assetId,
         int $defaultBankNominalId,
         array $disposalSearch,
-        string $currencySymbol
+        array $settings
     ): string {
         $errors = (array)($disposalSearch['errors'] ?? []);
         if ($errors !== []) {
@@ -260,7 +259,7 @@ final class _asset_registerCard extends CardBaseFramework
         foreach ($candidates as $candidate) {
             $candidateRows .= '<div class="asset-disposal-candidate">
                 <div>
-                    <div>' . HelperFramework::escape($this->displayDate((string)($candidate['txn_date'] ?? '')) . ' - ' . $currencySymbol . FormattingFramework::money((float)($candidate['amount'] ?? 0))) . '</div>
+                    <div>' . HelperFramework::escape($this->displayDate((string)($candidate['txn_date'] ?? '')) . ' - ' . $this->money($settings, (float)($candidate['amount'] ?? 0))) . '</div>
                     <div class="helper">' . HelperFramework::escape((string)($candidate['description'] ?? '')) . '</div>
                 </div>
                 <form method="post" action="?page=assets" data-ajax="true">
@@ -286,9 +285,9 @@ final class _asset_registerCard extends CardBaseFramework
         </div>';
     }
 
-    private function defaultCurrencySymbol(array $settings): string
+    private function money(array $settings, float|int|string|null $value): string
     {
-        return (new \eel_accounts\Service\CompanySettingsService())->defaultCurrencySymbol($settings);
+        return (new \eel_accounts\Service\CompanySettingsService())->money($settings, $value);
     }
 
     private function tableInvalidationFact(): string

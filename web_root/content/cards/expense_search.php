@@ -95,6 +95,7 @@ final class _expense_searchCard extends CardBaseFramework
     public function render(array $context): string
     {
         $company = (array)($context['company'] ?? []);
+        $settings = (array)($company['settings'] ?? []);
         if ((int)($company['id'] ?? 0) <= 0) {
             return '<div class="helper">A company has to be added and selected before expenses can be searched.</div>';
         }
@@ -110,7 +111,8 @@ final class _expense_searchCard extends CardBaseFramework
             . $this->footerWithAmountTotal(
                 $table->renderFooter(),
                 (array)$tableState['visible_rows'],
-                (array)$tableState['query_rows']
+                (array)$tableState['query_rows'],
+                $settings
             );
     }
 
@@ -146,6 +148,8 @@ final class _expense_searchCard extends CardBaseFramework
 
     private function table(array $context): TableFramework
     {
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
+
         return TableFramework::make($this->key(), $this->rows($context))
             ->filename('expense-search')
             ->exportLimit(5000)
@@ -171,7 +175,7 @@ final class _expense_searchCard extends CardBaseFramework
             ->column(
                 'amount',
                 'Amount',
-                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::money($row['amount'] ?? 0)),
+                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['amount'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['amount'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -324,7 +328,7 @@ final class _expense_searchCard extends CardBaseFramework
         return $html;
     }
 
-    private function footerWithAmountTotal(string $footer, array $visibleRows, array $queryRows): string
+    private function footerWithAmountTotal(string $footer, array $visibleRows, array $queryRows, array $companySettings): string
     {
         if ($footer === '') {
             return '';
@@ -333,9 +337,9 @@ final class _expense_searchCard extends CardBaseFramework
         $totalHtml = '<div class="expense-search-amount-total">'
             . '<span>Amount total:</span> '
             . '<span>Page</span> '
-            . '<strong>' . HelperFramework::escape(FormattingFramework::money($this->amountTotal($visibleRows))) . '</strong> '
+            . '<strong>' . HelperFramework::escape($this->money($companySettings, $this->amountTotal($visibleRows))) . '</strong> '
             . '<span>Query</span> '
-            . '<strong>' . HelperFramework::escape(FormattingFramework::money($this->amountTotal($queryRows))) . '</strong>'
+            . '<strong>' . HelperFramework::escape($this->money($companySettings, $this->amountTotal($queryRows))) . '</strong>'
             . '</div>';
 
         $footer = str_replace(
@@ -347,6 +351,11 @@ final class _expense_searchCard extends CardBaseFramework
         $withTotal = preg_replace('/<div class="actions-row">/', $totalHtml . '<div class="actions-row">', $footer, 1);
 
         return is_string($withTotal) ? $withTotal : $footer;
+    }
+
+    private function money(array $companySettings, float|int|string|null $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 
     private function amountTotal(array $rows): float

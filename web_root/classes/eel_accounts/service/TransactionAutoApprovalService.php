@@ -29,6 +29,13 @@ final class TransactionAutoApprovalService
             OR (' . self::currentApprovalSql($alias, $transactionAlias) . '), 0)';
     }
 
+    public static function currentPostConfirmationPendingSql(string $alias = 'taa', string $transactionAlias = 't'): string
+    {
+        return 'COALESCE(' . $alias . ".state = 'checked'
+            AND " . $alias . '.state_change_transaction_updated_at = ' . $transactionAlias . '.updated_at
+            AND NOT (' . self::currentApprovalSql($alias, $transactionAlias) . '), 0)';
+    }
+
     public function setTransactionApprovalState(
         int $companyId,
         int $accountingPeriodId,

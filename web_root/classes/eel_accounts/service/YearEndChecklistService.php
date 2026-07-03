@@ -602,7 +602,8 @@ final class YearEndChecklistService
         $monthTiles = $metrics->buildMonthTiles($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $sourceData = $metrics->sourceDataSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $uncategorisedCount = $metrics->uncategorisedTransactionsCount($companyId, $accountingPeriodId, $periodStart, $periodEnd);
-        $autoPendingCount = $metrics->autoCategorisedPendingReviewCount($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $autoDecisionSummary = $metrics->autoCategorisedDecisionSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $autoAttentionCount = (int)($autoDecisionSummary['total_attention_count'] ?? 0);
         $suspenseSummary = $metrics->suspenseSummary($companyId, $accountingPeriodId, $periodEnd);
         $trialBalance = $metrics->trialBalanceSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $journalIntegrity = $metrics->journalIntegritySummary($companyId, $accountingPeriodId);
@@ -690,12 +691,10 @@ final class YearEndChecklistService
             'auto_categorisations_pending_review',
             'Transaction auto categorisations pending review',
             'warning',
-            $autoPendingCount > 0 ? 'warning' : 'pass',
-            $autoPendingCount > 0
-                ? 'Auto-categorised transactions remain and may need user review before final accounts work.'
-                : 'No auto-categorised transactions are waiting for review.',
-            (string)$autoPendingCount,
-            '?page=transactions&show_card=transaction_search&transaction_search_category_status=auto&transaction_search_auto_approval_filter=pending'
+            $autoAttentionCount > 0 ? 'warning' : 'pass',
+            $this->autoDecisionReviewDetail($autoDecisionSummary),
+            $this->autoDecisionReviewMetric($autoDecisionSummary),
+            $this->autoDecisionReviewActionUrl($autoDecisionSummary)
         );
 
         $sections['ledger_integrity'][] = $this->makeCheck(
@@ -1005,11 +1004,45 @@ final class YearEndChecklistService
             'review' => $lock->fetchReview($companyId, $accountingPeriodId),
             'review_acknowledgements' => $reviewAcknowledgements,
             'month_tiles' => $monthTiles,
+            'auto_decision_summary' => $autoDecisionSummary,
             'sections' => $sections,
             'checks_flat' => $checks,
             'tax_readiness' => $taxReadiness,
             'companies_house_comparison' => $chComparison,
         ];
+    }
+
+    private function autoDecisionReviewDetail(array $summary): string
+    {
+        $unreviewed = (int)($summary['unreviewed_count'] ?? 0);
+        $postConfirmationPending = (int)($summary['post_confirmation_pending_count'] ?? 0);
+
+        if ($unreviewed + $postConfirmationPending <= 0) {
+            return 'All transaction auto decisions have been reviewed and post-confirmed.';
+        }
+
+        return 'Auto-categorised transactions need attention before final accounts work: '
+            . $unreviewed . ' unreviewed row decision(s), '
+            . $postConfirmationPending . ' checked decision(s) awaiting post confirmation.';
+    }
+
+    private function autoDecisionReviewMetric(array $summary): string
+    {
+        $unreviewed = (int)($summary['unreviewed_count'] ?? 0);
+        $postConfirmationPending = (int)($summary['post_confirmation_pending_count'] ?? 0);
+
+        if ($unreviewed + $postConfirmationPending <= 0) {
+            return 'All reviewed';
+        }
+
+        return $unreviewed . ' unreviewed, ' . $postConfirmationPending . ' not post-confirmed';
+    }
+
+    private function autoDecisionReviewActionUrl(array $summary): string
+    {
+        $filter = (int)($summary['unreviewed_count'] ?? 0) > 0 ? 'pending' : 'post_pending';
+
+        return '?page=transactions&show_card=transaction_search&transaction_search_category_status=auto&transaction_search_auto_approval_filter=' . $filter;
     }
 
     private function postedSourceWorkDetail(array $postedSourceWork): string

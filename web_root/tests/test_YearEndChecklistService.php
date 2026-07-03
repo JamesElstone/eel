@@ -149,6 +149,50 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
         $harness->assertSame('?page=year_end&show_card=year_end_checklist', (string)$dashboardActionUrl->invoke($service, 12, 34));
     });
 
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'auto decision warning detail and routing split review from post confirmation', static function () use ($harness): void {
+        $service = new \eel_accounts\Service\YearEndChecklistService();
+        $detail = new ReflectionMethod($service, 'autoDecisionReviewDetail');
+        $detail->setAccessible(true);
+        $metric = new ReflectionMethod($service, 'autoDecisionReviewMetric');
+        $metric->setAccessible(true);
+        $actionUrl = new ReflectionMethod($service, 'autoDecisionReviewActionUrl');
+        $actionUrl->setAccessible(true);
+
+        $mixedSummary = [
+            'unreviewed_count' => 3,
+            'post_confirmation_pending_count' => 2,
+            'total_attention_count' => 5,
+        ];
+        $harness->assertSame('3 unreviewed, 2 not post-confirmed', (string)$metric->invoke($service, $mixedSummary));
+        $harness->assertTrue(str_contains((string)$detail->invoke($service, $mixedSummary), '3 unreviewed row decision(s)'));
+        $harness->assertTrue(str_contains((string)$detail->invoke($service, $mixedSummary), '2 checked decision(s) awaiting post confirmation'));
+        $harness->assertSame(
+            '?page=transactions&show_card=transaction_search&transaction_search_category_status=auto&transaction_search_auto_approval_filter=pending',
+            (string)$actionUrl->invoke($service, $mixedSummary)
+        );
+
+        $postPendingOnlySummary = [
+            'unreviewed_count' => 0,
+            'post_confirmation_pending_count' => 2,
+            'total_attention_count' => 2,
+        ];
+        $harness->assertSame(
+            '?page=transactions&show_card=transaction_search&transaction_search_category_status=auto&transaction_search_auto_approval_filter=post_pending',
+            (string)$actionUrl->invoke($service, $postPendingOnlySummary)
+        );
+
+        $clearSummary = [
+            'unreviewed_count' => 0,
+            'post_confirmation_pending_count' => 0,
+            'total_attention_count' => 0,
+        ];
+        $harness->assertSame('All reviewed', (string)$metric->invoke($service, $clearSummary));
+        $harness->assertSame(
+            'All transaction auto decisions have been reviewed and post-confirmed.',
+            (string)$detail->invoke($service, $clearSummary)
+        );
+    });
+
     $harness->check(\eel_accounts\Service\YearEndMetricsService::class, 'posted source work summary tracks unposted transactions expenses and assets', static function () use ($harness): void {
         yearEndChecklistServiceRequirePostedSourceWorkSchema($harness);
 

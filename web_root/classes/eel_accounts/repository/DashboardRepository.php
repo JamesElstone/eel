@@ -380,10 +380,12 @@ final class DashboardRepository
         $aliases = [
             'unconfirmed' => 'pending',
             'correct' => 'confirmed',
+            'awaiting_post_confirmation' => 'post_pending',
+            'awaiting post confirmation' => 'post_pending',
         ];
         $filter = $aliases[$filter] ?? $filter;
 
-        return in_array($filter, ['pending', 'confirmed'], true) ? $filter : '';
+        return in_array($filter, ['pending', 'confirmed', 'post_pending'], true) ? $filter : '';
     }
 
     public function defaultTransactionMonth(array $monthStatus): string
@@ -596,6 +598,12 @@ final class DashboardRepository
             $where[] = 't.auto_rule_id IS NOT NULL';
             $where[] = 't.auto_rule_id > 0';
             $where[] = 'NOT (' . \eel_accounts\Service\TransactionAutoApprovalService::currentCheckedSql('taa', 't') . ')';
+            $params['auto_approval_category_status'] = 'auto';
+        } elseif ($autoApprovalFilter === 'post_pending') {
+            $where[] = 't.category_status = :auto_approval_category_status';
+            $where[] = 't.auto_rule_id IS NOT NULL';
+            $where[] = 't.auto_rule_id > 0';
+            $where[] = \eel_accounts\Service\TransactionAutoApprovalService::currentPostConfirmationPendingSql('taa', 't');
             $params['auto_approval_category_status'] = 'auto';
         } elseif ($autoApprovalFilter === 'confirmed') {
             $where[] = \eel_accounts\Service\TransactionAutoApprovalService::currentCheckedSql('taa', 't');

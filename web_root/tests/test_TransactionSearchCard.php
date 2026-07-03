@@ -97,6 +97,7 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         $harness->assertTrue(str_contains($html, 'name="transaction_search_auto_approval_filter"'));
         $harness->assertTrue(str_contains($html, '<label for="transaction_search_auto_approval_filter">Auto Decision</label>'));
         $harness->assertTrue(str_contains($html, '<option value="pending" selected>Unconfirmed</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="post_pending">Awaiting post confirmation</option>'));
         $harness->assertTrue(str_contains($html, '<option value="confirmed">Correct</option>'));
         $harness->assertTrue(str_contains($html, 'name="_invalidate_fact" value="transaction.search"'));
         $harness->assertTrue(str_contains($html, '<option value="">Any</option>'));
@@ -179,6 +180,30 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         $harness->assertSame('any', (string)$handled['transaction_search']['flow']);
         $harness->assertSame(7, (int)$handled['transaction_search']['source_account_id']);
         $harness->assertSame([31, 32], $handled['transaction_search']['nominal_account_ids']);
+    });
+
+    $harness->check(_transaction_searchCard::class, 'handle normalises awaiting post confirmation auto decision filter', static function () use ($harness, $card, $context): void {
+        $request = new RequestFramework(
+            ['page' => 'transactions'],
+            [
+                'transaction_search_keyword' => '',
+                'transaction_search_amount' => '',
+                'transaction_search_flow' => 'any',
+                'transaction_search_source_account_id' => '0',
+                'transaction_search_nominal_account_ids' => [],
+                'transaction_search_category_status' => 'auto',
+                'transaction_search_auto_approval_filter' => 'awaiting_post_confirmation',
+            ],
+            ['REQUEST_METHOD' => 'POST'],
+            [],
+            []
+        );
+        $services = new PageServiceFramework(new AppService(APP_ROOT . 'uploads'));
+        $handled = $card->handle($request, $services, $context, ActionResultFramework::none());
+
+        $harness->assertSame('post_pending', (string)$handled['transaction_search']['auto_approval_filter']);
+        $html = $card->render($handled);
+        $harness->assertTrue(str_contains($html, '<option value="post_pending" selected>Awaiting post confirmation</option>'));
     });
 
     $harness->check(_transaction_searchCard::class, 'handle applies flow to amount sign and keeps flow-only criteria', static function () use ($harness, $card, $context): void {

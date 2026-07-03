@@ -137,7 +137,7 @@ $harness->run(\eel_accounts\Service\TransactionAutoApprovalService::class, stati
         }
     });
 
-    $harness->check(\eel_accounts\Service\TransactionAutoApprovalService::class, 'year end pending review count follows current checkbox decision', static function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\TransactionAutoApprovalService::class, 'year end auto decision summary splits row review from post confirmation', static function () use ($harness, $service): void {
         transactionAutoApprovalRequireSchema($harness);
 
         InterfaceDB::beginTransaction();
@@ -145,12 +145,15 @@ $harness->run(\eel_accounts\Service\TransactionAutoApprovalService::class, stati
             $fixture = transactionAutoApprovalCreateFixture();
             $metrics = new \eel_accounts\Service\YearEndMetricsService();
 
-            $harness->assertSame(1, $metrics->autoCategorisedPendingReviewCount(
+            $summary = $metrics->autoCategorisedDecisionSummary(
                 (int)$fixture['company_id'],
                 (int)$fixture['accounting_period_id'],
                 '2026-01-01',
                 '2026-12-31'
-            ));
+            );
+            $harness->assertSame(1, (int)$summary['unreviewed_count']);
+            $harness->assertSame(0, (int)$summary['post_confirmation_pending_count']);
+            $harness->assertSame(1, (int)$summary['total_attention_count']);
 
             $set = $service->setTransactionApprovalState(
                 (int)$fixture['company_id'],
@@ -160,12 +163,43 @@ $harness->run(\eel_accounts\Service\TransactionAutoApprovalService::class, stati
                 null
             );
             $harness->assertSame(true, (bool)($set['success'] ?? false));
-            $harness->assertSame(0, $metrics->autoCategorisedPendingReviewCount(
+
+            $summary = $metrics->autoCategorisedDecisionSummary(
                 (int)$fixture['company_id'],
                 (int)$fixture['accounting_period_id'],
                 '2026-01-01',
                 '2026-12-31'
-            ));
+            );
+            $harness->assertSame(0, (int)$summary['unreviewed_count']);
+            $harness->assertSame(1, (int)$summary['post_confirmation_pending_count']);
+            $harness->assertSame(1, (int)$summary['total_attention_count']);
+
+            $confirmed = $service->confirmPostableAutoTransactions(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                null,
+                null
+            );
+            $harness->assertSame(true, (bool)($confirmed['success'] ?? false));
+            $summary = $metrics->autoCategorisedDecisionSummary(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                '2026-01-01',
+                '2026-12-31'
+            );
+            $harness->assertSame(0, (int)$summary['unreviewed_count']);
+            $harness->assertSame(0, (int)$summary['post_confirmation_pending_count']);
+            $harness->assertSame(0, (int)$summary['total_attention_count']);
+
+            $staleCheckedTransactionId = transactionAutoApprovalInsertFixtureTransaction($fixture, 1, 'AUTO APPROVAL STALE CHECKED');
+            $staleSet = $service->setTransactionApprovalState(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                $staleCheckedTransactionId,
+                true,
+                null
+            );
+            $harness->assertSame(true, (bool)($staleSet['success'] ?? false));
 
             InterfaceDB::prepareExecute(
                 'UPDATE transactions
@@ -173,16 +207,100 @@ $harness->run(\eel_accounts\Service\TransactionAutoApprovalService::class, stati
                      updated_at = DATE_ADD(updated_at, INTERVAL 2 SECOND)
                  WHERE id = :id',
                 [
-                    'id' => (int)$fixture['transaction_id'],
+                    'id' => $staleCheckedTransactionId,
                     'notes' => 'Changed after checkbox decision',
                 ]
             );
+            $summary = $metrics->autoCategorisedDecisionSummary(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                '2026-01-01',
+                '2026-12-31'
+            );
+            $harness->assertSame(1, (int)$summary['unreviewed_count']);
+            $harness->assertSame(0, (int)$summary['post_confirmation_pending_count']);
+            $harness->assertSame(1, (int)$summary['total_attention_count']);
             $harness->assertSame(1, $metrics->autoCategorisedPendingReviewCount(
                 (int)$fixture['company_id'],
                 (int)$fixture['accounting_period_id'],
                 '2026-01-01',
                 '2026-12-31'
             ));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
+    $harness->check(\eel_accounts\Repository\DashboardRepository::class, 'transaction search filters checked decisions awaiting post confirmation', static function () use ($harness, $service): void {
+        transactionAutoApprovalRequireSchema($harness);
+
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = transactionAutoApprovalCreateFixture();
+            $confirmedTransactionId = (int)$fixture['transaction_id'];
+            $checkedTransactionId = transactionAutoApprovalInsertFixtureTransaction($fixture, 1, 'AUTO APPROVAL CHECKED POST PENDING');
+            $staleCheckedTransactionId = transactionAutoApprovalInsertFixtureTransaction($fixture, 2, 'AUTO APPROVAL STALE CHECKED');
+
+            $setConfirmed = $service->setTransactionApprovalState(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                $confirmedTransactionId,
+                true,
+                null
+            );
+            $harness->assertSame(true, (bool)($setConfirmed['success'] ?? false));
+            $confirmed = $service->confirmPostableAutoTransactions(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                null,
+                null
+            );
+            $harness->assertSame(true, (bool)($confirmed['success'] ?? false));
+
+            $setChecked = $service->setTransactionApprovalState(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                $checkedTransactionId,
+                true,
+                null
+            );
+            $harness->assertSame(true, (bool)($setChecked['success'] ?? false));
+            $setStale = $service->setTransactionApprovalState(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                $staleCheckedTransactionId,
+                true,
+                null
+            );
+            $harness->assertSame(true, (bool)($setStale['success'] ?? false));
+            InterfaceDB::prepareExecute(
+                'UPDATE transactions
+                 SET notes = :notes,
+                     updated_at = DATE_ADD(updated_at, INTERVAL 2 SECOND)
+                 WHERE id = :id',
+                [
+                    'id' => $staleCheckedTransactionId,
+                    'notes' => 'Changed after checkbox decision',
+                ]
+            );
+
+            $rows = (new \eel_accounts\Repository\DashboardRepository())->searchTransactions(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                '',
+                0,
+                [],
+                5000,
+                '',
+                'any',
+                'auto',
+                'post_pending'
+            );
+            $ids = array_map(static fn(array $row): int => (int)($row['id'] ?? 0), $rows);
+
+            $harness->assertSame([$checkedTransactionId], $ids);
         } finally {
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();

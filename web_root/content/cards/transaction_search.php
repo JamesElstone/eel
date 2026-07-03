@@ -360,6 +360,7 @@ final class _transaction_searchCard extends CardBaseFramework
         $options = [
             '' => 'Any',
             'pending' => 'Unconfirmed',
+            'post_pending' => 'Awaiting post confirmation',
             'confirmed' => 'Correct',
         ];
         $html = '';
@@ -563,10 +564,12 @@ final class _transaction_searchCard extends CardBaseFramework
         $aliases = [
             'unconfirmed' => 'pending',
             'correct' => 'confirmed',
+            'awaiting_post_confirmation' => 'post_pending',
+            'awaiting post confirmation' => 'post_pending',
         ];
         $value = $aliases[$value] ?? $value;
 
-        return in_array($value, ['pending', 'confirmed'], true) ? $value : '';
+        return in_array($value, ['pending', 'confirmed', 'post_pending'], true) ? $value : '';
     }
 
     private function normaliseIds(mixed $values): array

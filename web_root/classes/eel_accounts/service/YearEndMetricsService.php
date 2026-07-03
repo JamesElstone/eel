@@ -162,7 +162,23 @@ final class YearEndMetricsService
     }
 
     public function autoCategorisedPendingReviewCount(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): int {
-        return (int)\InterfaceDB::fetchColumn( 'SELECT COUNT(*)
+        $summary = $this->autoCategorisedDecisionSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+
+        return (int)($summary['unreviewed_count'] ?? 0);
+    }
+
+    public function autoCategorisedDecisionSummary(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array
+    {
+        $row = \InterfaceDB::fetchOne( 'SELECT COALESCE(SUM(CASE
+                        WHEN NOT (' . \eel_accounts\Service\TransactionAutoApprovalService::currentCheckedSql('taa', 't') . ')
+                        THEN 1
+                        ELSE 0
+                    END), 0) AS unreviewed_count,
+                    COALESCE(SUM(CASE
+                        WHEN ' . \eel_accounts\Service\TransactionAutoApprovalService::currentPostConfirmationPendingSql('taa', 't') . '
+                        THEN 1
+                        ELSE 0
+                    END), 0) AS post_confirmation_pending_count
              FROM transactions t
              LEFT JOIN transaction_auto_approvals taa ON taa.transaction_id = t.id
              WHERE t.company_id = :company_id
@@ -170,14 +186,22 @@ final class YearEndMetricsService
                AND t.txn_date BETWEEN :period_start AND :period_end
                AND t.category_status = :category_status
                AND t.auto_rule_id IS NOT NULL
-               AND t.auto_rule_id > 0
-               AND NOT (' . \eel_accounts\Service\TransactionAutoApprovalService::currentCheckedSql('taa', 't') . ')', [
+               AND t.auto_rule_id > 0', [
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
             'period_start' => $periodStart,
             'period_end' => $periodEnd,
             'category_status' => 'auto',
-        ]);
+        ]) ?: [];
+
+        $unreviewed = (int)($row['unreviewed_count'] ?? 0);
+        $postConfirmationPending = (int)($row['post_confirmation_pending_count'] ?? 0);
+
+        return [
+            'unreviewed_count' => $unreviewed,
+            'post_confirmation_pending_count' => $postConfirmationPending,
+            'total_attention_count' => $unreviewed + $postConfirmationPending,
+        ];
     }
 
     public function postedSourceWorkSummary(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array

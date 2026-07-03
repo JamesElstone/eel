@@ -20,9 +20,14 @@ final class YearEndCompaniesHouseComparisonService
     ) {
     }
 
-    public function fetchComparison(int $companyId, int $accountingPeriodId): array {
+    public function fetchComparison(
+        int $companyId,
+        int $accountingPeriodId,
+        ?array $accountingPeriod = null,
+        ?array $appMetrics = null
+    ): array {
         $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
-        $accountingPeriod = $metrics->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        $accountingPeriod ??= $metrics->fetchAccountingPeriod($companyId, $accountingPeriodId);
         $company = $metrics->fetchCompanySummary($companyId);
 
         if ($accountingPeriod === null || $company === null) {
@@ -51,7 +56,7 @@ final class YearEndCompaniesHouseComparisonService
         }
 
         $facts = $this->fetchMetricFacts((int)$nearest['id']);
-        $appMetrics = $metrics->fetchBalanceSheetMetricValues(
+        $appMetrics ??= $metrics->fetchBalanceSheetMetricValues(
             $companyId,
             $accountingPeriodId,
             (string)$accountingPeriod['period_start'],

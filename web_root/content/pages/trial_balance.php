@@ -28,7 +28,6 @@ final class _trial_balance extends PageContextFramework
     {
         return [
             'trial_balance_state',
-            'companies_house_snapshot',
             'trial_balance_validation',
             'trial_balance_losses',
         ];
@@ -38,7 +37,6 @@ final class _trial_balance extends PageContextFramework
     {
         return [
             ['tab' => 'Summary', 'cards' => ['trial_balance_state']],
-            ['tab' => 'Companies House', 'cards' => ['companies_house_snapshot']],
             ['tab' => 'Validation', 'cards' => ['trial_balance_validation']],
             ['tab' => 'Losses', 'cards' => ['trial_balance_losses']],
         ];

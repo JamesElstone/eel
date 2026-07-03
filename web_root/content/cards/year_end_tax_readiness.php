@@ -1,0 +1,85 @@
+<?php
+/**
+ * EEL Accounts
+ * Copyright (c) 2026 James Elstone
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3)
+ * See LICENSE file for details.
+ */
+declare(strict_types=1);
+
+final class _year_end_tax_readinessCard extends CardBaseFramework
+{
+    public function key(): string
+    {
+        return 'year_end_tax_readiness';
+    }
+
+    public function title(): string
+    {
+        return 'Year End Tax Readiness';
+    }
+
+    public function services(): array
+    {
+        return [
+            [
+                'key' => 'yearEndTaxReadiness',
+                'service' => \eel_accounts\Service\YearEndTaxReadinessService::class,
+                'method' => 'fetchCurrentPeriodEstimate',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                ],
+            ],
+        ];
+    }
+
+    protected function additionalInvalidationFacts(): array
+    {
+        return ['year.end.state', 'year.end.checklist'];
+    }
+
+    public function handleError(string $serviceKey, array $error, array $context): string
+    {
+        return '';
+    }
+
+    public function render(array $context): string
+    {
+        $taxReadiness = (array)($context['services']['yearEndTaxReadiness'] ?? []);
+
+        if (empty($taxReadiness['available'])) {
+            return '<section class="settings-stack" id="tax-readiness"><h3 class="card-title">Tax Readiness Snapshot</h3><div class="helper">' . HelperFramework::escape((string)($taxReadiness['errors'][0] ?? 'Tax readiness is not available.')) . '</div></section>';
+        }
+
+        $stepsHtml = '';
+        foreach ((array)($taxReadiness['steps'] ?? []) as $step) {
+            $stepsHtml .= '<tr><td>' . HelperFramework::escape((string)($step['label'] ?? '')) . '</td><td>' . HelperFramework::escape(FormattingFramework::money($step['amount'] ?? 0)) . '</td></tr>';
+        }
+
+        $scheduleHtml = '';
+        foreach ((array)($taxReadiness['schedule'] ?? []) as $row) {
+            $scheduleHtml .= '<tr>
+                <td>' . HelperFramework::escape((string)($row['label'] ?? '')) . '</td>
+                <td>' . HelperFramework::escape(FormattingFramework::money($row['loss_created'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape(FormattingFramework::money($row['loss_brought_forward'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape(FormattingFramework::money($row['loss_utilised'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape(FormattingFramework::money($row['loss_carried_forward'] ?? 0)) . '</td>
+            </tr>';
+        }
+
+        return '<section class="settings-stack" id="tax-readiness">
+            <h3 class="card-title">Tax Readiness Snapshot</h3>
+            <div class="summary-grid">
+                <div class="summary-card"><div class="summary-label">Taxable profit</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($taxReadiness['taxable_profit'] ?? 0)) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Taxable loss</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($taxReadiness['taxable_loss'] ?? 0)) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Estimated CT</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($taxReadiness['estimated_corporation_tax'] ?? 0)) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Losses c/f</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($taxReadiness['losses_carried_forward'] ?? 0)) . '</div></div>
+            </div>
+            <h3 class="card-title">Corporation Tax Computation</h3>
+            <div class="table-scroll"><table><thead><tr><th>Step</th><th>Amount</th></tr></thead><tbody>' . $stepsHtml . '</tbody></table></div>
+            <h3 class="card-title">Loss schedule</h3>
+            <div class="table-scroll"><table><thead><tr><th>Period</th><th>Loss created</th><th>Brought forward</th><th>Used</th><th>Carried forward</th></tr></thead><tbody>' . $scheduleHtml . '</tbody></table></div>
+        </section>';
+    }
+}

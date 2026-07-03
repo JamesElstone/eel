@@ -1,0 +1,173 @@
+<?php
+/**
+ * EEL Accounts
+ * Copyright (c) 2026 James Elstone
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3)
+ * See LICENSE file for details.
+ */
+declare(strict_types=1);
+
+final class _year_end_checklistCard extends CardBaseFramework
+{
+    public function key(): string
+    {
+        return 'year_end_checklist';
+    }
+
+    public function title(): string
+    {
+        return 'Year End Checklist';
+    }
+
+    protected function additionalInvalidationFacts(): array
+    {
+        return ['year.end.state'];
+    }
+
+    public function handleError(string $serviceKey, array $error, array $context): string
+    {
+        return '';
+    }
+
+    public function render(array $context): string
+    {
+        $checklist = $this->checklist($context);
+        if ($checklist === []) {
+            return '<div class="helper">Year-end checklist is not available for the selected accounting period.</div>';
+        }
+
+        return $this->renderOverallStatus($checklist)
+            . $this->renderBookkeepingSection($checklist)
+            . $this->renderCheckSections($checklist);
+    }
+
+    private function renderOverallStatus(array $checklist): string
+    {
+        $status = (string)($checklist['overall_status'] ?? '');
+
+        return '<section class="panel-soft settings-stack">
+            <div class="status-head">
+                <h3 class="card-title">Overall status</h3>
+                <span class="badge ' . HelperFramework::escape($this->badgeClass($status)) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($status, '_')) . '</span>
+            </div>
+        </section>';
+    }
+
+    private function renderBookkeepingSection(array $checklist): string
+    {
+        $checks = (array)(($checklist['sections'] ?? [])['bookkeeping_completeness'] ?? []);
+        if ($checks === []) {
+            return '';
+        }
+
+        $accountingPeriod = (array)($checklist['accounting_period'] ?? []);
+        $companyId = (int)($checklist['company_id'] ?? 0);
+        $accountingPeriodId = (int)($accountingPeriod['id'] ?? 0);
+        $transactionsUrl = '?page=transactions'
+            . ($companyId > 0 ? '&company_id=' . $companyId : '')
+            . ($accountingPeriodId > 0 ? '&accounting_period_id=' . $accountingPeriodId : '');
+        $status = $this->sectionStatus($checks);
+        $statusClass = $this->badgeClass($status);
+        $monthTiles = (array)($checklist['month_tiles'] ?? []);
+        $totalMonths = count($monthTiles);
+        $okMonths = count(array_filter($monthTiles, static fn(array $tile): bool => in_array((string)($tile['status'] ?? ''), ['green', 'complete', 'pass', 'ok'], true)));
+        $coverageValue = $totalMonths > 0 ? $okMonths . ' of ' . $totalMonths : '';
+
+        return '<section class="panel-soft settings-stack">
+            <h3 class="card-title">A. Bookkeeping completeness</h3>
+            <div class="summary-grid">
+                <div class="summary-card year-end-check-panel year-end-check-panel-' . HelperFramework::escape($statusClass) . '">
+                    <div class="status-head">
+                        <div class="summary-label">Transaction coverage</div>
+                        <span class="year-end-check-status-label">' . HelperFramework::escape(HelperFramework::labelFromKey($status, '_')) . '</span>
+                    </div>
+                    ' . ($coverageValue !== '' ? '<div class="summary-value">' . HelperFramework::escape($coverageValue) . '</div>' : '') . '
+                    <div class="helper">Review the transaction and monthly coverage detail from the Transactions page.</div>
+                    <div class="year-end-related-workflow"><a class="button" href="' . HelperFramework::escape($transactionsUrl) . '">Open Related Workflow</a></div>
+                </div>
+            </div>
+        </section>';
+    }
+
+    private function sectionStatus(array $checks): string
+    {
+        $hasWarning = false;
+        foreach ($checks as $check) {
+            $status = (string)(((array)$check)['status'] ?? '');
+            if ($status === 'fail' || $status === 'needs_attention') {
+                return 'needs_attention';
+            }
+            if ($status === 'warning' || $status === 'not_started') {
+                $hasWarning = true;
+            }
+        }
+
+        return $hasWarning ? 'warning' : 'pass';
+    }
+
+    private function renderCheckSections(array $checklist): string
+    {
+        $sections = (array)($checklist['sections'] ?? []);
+        unset($sections['bookkeeping_completeness']);
+
+        $html = '';
+        foreach ($sections as $key => $checks) {
+            $sectionKey = (string)$key;
+            $html .= '<section class="panel-soft settings-stack"><h3 class="card-title">' . HelperFramework::escape($this->sectionTitle($sectionKey)) . '</h3><div class="summary-grid">';
+            foreach ((array)$checks as $check) {
+                $html .= $this->renderSummaryCheck((array)$check);
+            }
+            $html .= '</div></section>';
+        }
+
+        return $html;
+    }
+
+    private function renderSummaryCheck(array $check): string
+    {
+        $actionUrl = trim((string)($check['action_url'] ?? ''));
+        $metricValue = trim((string)($check['metric_value'] ?? ''));
+        $status = (string)($check['status'] ?? '');
+        $statusClass = $this->badgeClass($status);
+
+        return '<div class="summary-card year-end-check-panel year-end-check-panel-' . HelperFramework::escape($statusClass) . '">
+            <div class="status-head">
+                <div class="summary-label">' . HelperFramework::escape((string)($check['title'] ?? '')) . '</div>
+                <span class="year-end-check-status-label">' . HelperFramework::escape(HelperFramework::labelFromKey($status, '_')) . '</span>
+            </div>
+            ' . ($metricValue !== '' ? '<div class="summary-value">' . HelperFramework::escape($metricValue) . '</div>' : '') . '
+            <div class="helper">' . HelperFramework::escape((string)($check['detail_text'] ?? '')) . '</div>
+            ' . ($actionUrl !== '' ? '<div class="year-end-related-workflow"><a class="button" href="' . HelperFramework::escape($actionUrl) . '">Open Related Workflow</a></div>' : '') . '
+        </div>';
+    }
+
+    private function sectionTitle(string $key): string
+    {
+        return match ($key) {
+            'categorisation_suspense' => 'B. Categorisation and suspense',
+            'ledger_integrity' => 'C. Ledger integrity',
+            'bank_source_completeness' => 'D. Bank and source completeness',
+            'director_loan_expenses' => 'E. Director loan and expense claims',
+            'year_end_accounts_review' => 'F. Year end accounts review',
+            'corporation_tax_readiness' => 'G. Corporation tax readiness',
+            'companies_house_comparison' => 'H. Companies House comparison',
+            'final_review_lock' => 'I. Final review and lock',
+            default => HelperFramework::labelFromKey($key, '_'),
+        };
+    }
+
+    private function badgeClass(string $status): string
+    {
+        return match ($status) {
+            'pass', 'ready', 'locked' => 'success',
+            'fail', 'needs_attention' => 'danger',
+            'warning', 'not_started' => 'warning',
+            default => 'info',
+        };
+    }
+
+    private function checklist(array $context): array
+    {
+        return (array)(($context['year_end'] ?? [])['checklist'] ?? (($context['services'] ?? [])['yearEndChecklist'] ?? []));
+    }
+}

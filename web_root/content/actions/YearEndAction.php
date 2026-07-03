@@ -62,6 +62,11 @@ final class YearEndAction implements ActionInterfaceFramework
                     $accountingPeriodId,
                     $this->adjustmentPayload($request)
                 ),
+                'save_director_loan_offset_acknowledgement' => (new \eel_accounts\Service\YearEndChecklistService())->saveDirectorLoanClosingAcknowledgement(
+                    $companyId,
+                    $accountingPeriodId,
+                    $this->truthy($request->input('director_loan_offset_acknowledgement', '0'))
+                ),
                 'post_director_loan_offset' => (new \eel_accounts\Service\DirectorLoanReconciliationService())->postOffset(
                     $companyId,
                     $accountingPeriodId
@@ -97,7 +102,7 @@ final class YearEndAction implements ActionInterfaceFramework
             }
         }
 
-        return new ActionResultFramework($success, ['page.context', 'year.end.state', 'year.end.empty.month.confirmations', 'year.end.audit.log', 'trial.balance.state', 'nominal.opening.balances'], $flashMessages);
+        return new ActionResultFramework($success, ['page.context', 'year.end.state', 'year.end.checklist', 'year.end.director.loan.offset', 'year.end.tax.readiness', 'year.end.empty.month.confirmations', 'year.end.notes', 'year.end.audit.log', 'trial.balance.state', 'nominal.opening.balances', 'nominal.closing.balances'], $flashMessages);
     }
 
     private function successMessage(string $intent): string
@@ -111,6 +116,7 @@ final class YearEndAction implements ActionInterfaceFramework
             'revoke_empty_month' => 'Empty month confirmation revoked.',
             'save_opening_balance' => 'Opening balance journal saved.',
             'create_adjustment' => 'Year-end adjustment posted.',
+            'save_director_loan_offset_acknowledgement' => 'Director loan offset acknowledgement saved.',
             'post_director_loan_offset' => 'Director loan offset journal posted.',
             default => 'Year-end readiness updated.',
         };
@@ -123,6 +129,7 @@ final class YearEndAction implements ActionInterfaceFramework
             'lock_period',
             'save_opening_balance',
             'create_adjustment',
+            'save_director_loan_offset_acknowledgement',
             'post_director_loan_offset',
         ], true);
     }
@@ -134,6 +141,7 @@ final class YearEndAction implements ActionInterfaceFramework
             'lock_period',
             'save_opening_balance',
             'create_adjustment',
+            'save_director_loan_offset_acknowledgement',
             'post_director_loan_offset',
         ], true);
     }

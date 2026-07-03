@@ -374,7 +374,7 @@ final class YearEndMetricsService
         ];
     }
 
-    public function unpaidExpenseSummary(int $companyId, string $periodEnd): array {
+    public function unpaidExpenseSummary(int $companyId, int $accountingPeriodId, string $periodEnd = ''): array {
         if (!$this->tableExists('expense_claims')) {
             return [
                 'available' => false,
@@ -383,20 +383,27 @@ final class YearEndMetricsService
             ];
         }
 
-        $row = \InterfaceDB::fetchOne( 'SELECT COUNT(*) AS unpaid_count,
-                    COALESCE(SUM(carried_forward_amount), 0) AS outstanding_amount
-             FROM expense_claims
-             WHERE company_id = :company_id
-               AND period_end <= :period_end
-               AND COALESCE(carried_forward_amount, 0) > 0.004', [
-            'company_id' => $companyId,
-            'period_end' => $periodEnd,
-        ]) ?: [];
+        $expenseClaims = $this->expenseClaimService ?? new \eel_accounts\Service\ExpenseClaimService();
+        $filters = $accountingPeriodId > 0
+            ? ['accounting_period_id' => $accountingPeriodId]
+            : ['accounting_period_end' => $periodEnd];
+        $unpaidCount = 0;
+        $outstandingAmount = 0.0;
+
+        foreach ($expenseClaims->fetchStatisticsClaimantBalances($companyId, $filters) as $claimant) {
+            $carriedForward = round((float)($claimant['carried_forward'] ?? 0), 2);
+            if ($carriedForward <= 0.004) {
+                continue;
+            }
+
+            $unpaidCount++;
+            $outstandingAmount += $carriedForward;
+        }
 
         return [
             'available' => true,
-            'unpaid_count' => (int)($row['unpaid_count'] ?? 0),
-            'outstanding_amount' => round((float)($row['outstanding_amount'] ?? 0), 2),
+            'unpaid_count' => $unpaidCount,
+            'outstanding_amount' => round($outstandingAmount, 2),
         ];
     }
 
@@ -427,8 +434,8 @@ final class YearEndMetricsService
         ];
     }
 
-    public function financialStatementsSummary(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array {
-        $trialBalance = $this->trialBalanceSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+    public function financialStatementsSummary(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd, ?array $trialBalance = null): array {
+        $trialBalance ??= $this->trialBalanceSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $balances = $this->fetchBalanceSheetMetricValues($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $profitAndLoss = $this->profitAndLossSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $openingEquity = $this->equityBalanceUntilDate($companyId, $periodStart, true);

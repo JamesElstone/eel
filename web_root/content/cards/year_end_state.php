@@ -14,58 +14,6 @@ final class _year_end_stateCard extends CardBaseFramework
         return 'year_end_state';
     }
 
-    public function services(): array
-    {
-        return [
-            [
-                'key' => 'yearEndChecklist',
-                'service' => \eel_accounts\Service\YearEndChecklistService::class,
-                'method' => 'fetchChecklist',
-                'params' => [
-                    'companyId' => ':company.id',
-                    'accountingPeriodId' => ':company.accounting_period_id',
-                    'persist' => false,
-                ],
-            ],
-            [
-                'key' => 'yearEndTaxReadiness',
-                'service' => \eel_accounts\Service\YearEndTaxReadinessService::class,
-                'method' => 'fetchSummary',
-                'params' => [
-                    'companyId' => ':company.id',
-                    'accountingPeriodId' => ':company.accounting_period_id',
-                ],
-            ],
-            [
-                'key' => 'yearEndAdjustments',
-                'service' => \eel_accounts\Service\YearEndAdjustmentService::class,
-                'method' => 'fetchContext',
-                'params' => [
-                    'companyId' => ':company.id',
-                    'accountingPeriodId' => ':company.accounting_period_id',
-                ],
-            ],
-            [
-                'key' => 'directorLoanOffset',
-                'service' => \eel_accounts\Service\DirectorLoanReconciliationService::class,
-                'method' => 'fetchContext',
-                'params' => [
-                    'companyId' => ':company.id',
-                    'accountingPeriodId' => ':company.accounting_period_id',
-                ],
-            ],
-            [
-                'key' => 'yearEndCompaniesHouseComparison',
-                'service' => \eel_accounts\Service\YearEndCompaniesHouseComparisonService::class,
-                'method' => 'fetchComparison',
-                'params' => [
-                    'companyId' => ':company.id',
-                    'accountingPeriodId' => ':company.accounting_period_id',
-                ],
-            ],
-        ];
-    }
-
     public function title(): string
     {
         return 'Year-End Readiness';
@@ -83,22 +31,12 @@ final class _year_end_stateCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $checklist = (array)($context['services']['yearEndChecklist'] ?? []);
-        $taxReadiness = (array)($context['services']['yearEndTaxReadiness'] ?? []);
-        $adjustments = (array)($context['services']['yearEndAdjustments'] ?? []);
-        $directorLoanOffset = (array)($context['services']['directorLoanOffset'] ?? []);
-        $comparison = (array)($context['services']['yearEndCompaniesHouseComparison'] ?? []);
+        $checklist = $this->checklist($context);
         if ($checklist === []) {
             return '<div class="helper">Year-end checklist is not available for the selected accounting period.</div>';
         }
 
-        return $this->renderControls($context, $checklist)
-            . $this->renderBookkeepingSection($checklist)
-            . $this->renderCheckSections($checklist)
-            . $this->renderAdjustments($context, $adjustments)
-            . $this->renderDirectorLoanOffset($context, $directorLoanOffset)
-            . $this->renderTaxReadiness($taxReadiness)
-            . $this->renderCompaniesHouseComparison($comparison);
+        return $this->renderControls($context, $checklist);
     }
 
     private function renderControls(array $context, array $checklist): string
@@ -111,14 +49,11 @@ final class _year_end_stateCard extends CardBaseFramework
         $isLocked = !empty($review['is_locked']);
         $lockIntent = $isLocked ? 'unlock_period' : 'lock_period';
         $lockLabel = $isLocked ? 'Unlock Period' : 'Lock Accounting Period';
+        $lockDisabled = !$isLocked && !empty((($context['year_end'] ?? [])['checklist_has_warnings'] ?? false));
 
         return '
-            <section class="settings-stack">
+            <section class="panel-soft settings-stack">
                 <div class="form-grid">
-                    <div class="form-row">
-                        <label>Company</label>
-                        <input class="input" value="' . HelperFramework::escape((string)($company['name'] ?? '')) . '" readonly>
-                    </div>
                     <div class="form-row">
                         <label>Status</label>
                         <div><span class="badge ' . HelperFramework::escape($this->badgeClass((string)($checklist['overall_status'] ?? ''))) . '">' . HelperFramework::escape(HelperFramework::labelFromKey((string)($checklist['overall_status'] ?? ''), '_')) . '</span></div>
@@ -130,348 +65,31 @@ final class _year_end_stateCard extends CardBaseFramework
                 </div>
                 <div class="actions-row">
                     ' . $this->actionForm($companyId, $accountingPeriodId, 'recalculate', 'Recalculate') . '
-                    ' . $this->actionForm($companyId, $accountingPeriodId, $lockIntent, $lockLabel) . '
+                    ' . $this->actionForm(
+                        $companyId,
+                        $accountingPeriodId,
+                        $lockIntent,
+                        $lockLabel,
+                        $lockDisabled,
+                        $lockDisabled ? 'Resolve year-end checklist warnings before locking this accounting period.' : ''
+                    ) . '
                     <button class="button" type="button" disabled>Export checklist</button>
                 </div>
-                <form method="post" data-ajax="true">
-                    <input type="hidden" name="card_action" value="YearEnd">
-                    <input type="hidden" name="intent" value="save_notes">
-                    <input type="hidden" name="company_id" value="' . $companyId . '">
-                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                    <div class="form-row full">
-                        <label for="year-end-review-notes">Year end notes</label>
-                        <textarea class="input year-end-review-notes" id="year-end-review-notes" name="review_notes">' . HelperFramework::escape((string)($review['review_notes'] ?? '')) . '</textarea>
-                    </div>
-                    <div><button class="button primary" type="submit">Save notes</button></div>
-                </form>
             </section>';
     }
 
-    private function actionForm(int $companyId, int $accountingPeriodId, string $intent, string $label): string
+    private function actionForm(int $companyId, int $accountingPeriodId, string $intent, string $label, bool $disabled = false, string $title = ''): string
     {
+        $disabledAttribute = $disabled ? ' disabled' : '';
+        $titleAttribute = $title !== '' ? ' title="' . HelperFramework::escape($title) . '"' : '';
+
         return '<form method="post" data-ajax="true">
             <input type="hidden" name="card_action" value="YearEnd">
             <input type="hidden" name="intent" value="' . HelperFramework::escape($intent) . '">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-            <button class="button primary" type="submit">' . HelperFramework::escape($label) . '</button>
+            <button class="button primary" type="submit"' . $disabledAttribute . $titleAttribute . '>' . HelperFramework::escape($label) . '</button>
         </form>';
-    }
-
-    private function renderBookkeepingSection(array $checklist): string
-    {
-        $tilesHtml = '';
-        foreach ((array)($checklist['month_tiles'] ?? []) as $tile) {
-            $label = (string)($tile['label'] ?? '');
-            $parts = explode(' ', $label);
-            $month = (string)($tile['month_short_name'] ?? ($parts[0] ?? ''));
-            $year = (string)($parts[1] ?? '');
-            $confirmedEmptyHtml = !empty($tile['empty_month_confirmed'])
-                ? '<div class="helper">Confirmed no activity</div>'
-                : '';
-            $tilesHtml .= '<div class="month-tile ' . HelperFramework::escape((string)($tile['status'] ?? 'red')) . '">
-                <div class="month-head">
-                    <div><div class="month-name">' . HelperFramework::escape($month) . '</div><div class="month-year">' . HelperFramework::escape($year) . '</div></div>
-                    <span class="month-dot"></span>
-                </div>
-                <div class="month-metric">' . (int)($tile['transaction_count'] ?? 0) . '</div>
-                <div class="helper">' . (int)($tile['statement_upload_count'] ?? 0) . ' upload(s)</div>
-                <div class="helper">' . (int)($tile['posted_journal_count'] ?? 0) . ' posted journal(s)</div>
-                <div class="helper">' . (int)($tile['uncategorised_count'] ?? 0) . ' uncategorised</div>
-                <div class="helper">' . (int)($tile['suspense_count'] ?? 0) . ' suspense</div>
-                ' . $confirmedEmptyHtml . '
-            </div>';
-        }
-
-        if ($tilesHtml === '') {
-            return '';
-        }
-
-        return '<section class="settings-stack"><h3 class="card-title">A. Bookkeeping completeness</h3><div class="month-grid">' . $tilesHtml . '</div></section>';
-    }
-
-    private function renderCheckSections(array $checklist): string
-    {
-        $sections = (array)($checklist['sections'] ?? []);
-        unset($sections['bookkeeping_completeness']);
-
-        $html = '';
-        foreach ($sections as $key => $checks) {
-            $html .= '<section class="settings-stack"><h3 class="card-title">' . HelperFramework::escape($this->sectionTitle((string)$key)) . '</h3><div class="settings-stack">';
-            foreach ((array)$checks as $check) {
-                $html .= $this->renderCheck((array)$check);
-            }
-            $html .= '</div></section>';
-        }
-
-        return $html;
-    }
-
-    private function renderCheck(array $check): string
-    {
-        $actionUrl = trim((string)($check['action_url'] ?? ''));
-
-        return '<div class="panel-soft year-end-check-panel">
-            <div class="status-head">
-                <h4 class="card-title">' . HelperFramework::escape((string)($check['title'] ?? '')) . '</h4>
-                <span class="badge ' . HelperFramework::escape($this->badgeClass((string)($check['status'] ?? ''))) . '">' . HelperFramework::escape(HelperFramework::labelFromKey((string)($check['status'] ?? ''), '_')) . '</span>
-            </div>
-            <div class="helper">' . HelperFramework::escape((string)($check['detail_text'] ?? '')) . '</div>
-            ' . (trim((string)($check['metric_value'] ?? '')) !== '' ? '<div><strong>' . HelperFramework::escape((string)$check['metric_value']) . '</strong></div>' : '') . '
-            ' . ($actionUrl !== '' ? '<div class="year-end-related-workflow"><a class="button" href="' . HelperFramework::escape($actionUrl) . '">Open Related Workflow</a></div>' : '') . '
-        </div>';
-    }
-
-    private function renderTaxReadiness(array $taxReadiness): string
-    {
-        if (empty($taxReadiness['available'])) {
-            return '<section class="settings-stack" id="tax-readiness"><h3 class="card-title">Tax Readiness Snapshot</h3><div class="helper">' . HelperFramework::escape((string)($taxReadiness['errors'][0] ?? 'Tax readiness is not available.')) . '</div></section>';
-        }
-
-        $stepsHtml = '';
-        foreach ((array)($taxReadiness['steps'] ?? []) as $step) {
-            $stepsHtml .= '<tr><td>' . HelperFramework::escape((string)($step['label'] ?? '')) . '</td><td>' . HelperFramework::escape(FormattingFramework::money($step['amount'] ?? 0)) . '</td></tr>';
-        }
-
-        $scheduleHtml = '';
-        foreach ((array)($taxReadiness['schedule'] ?? []) as $row) {
-            $scheduleHtml .= '<tr>
-                <td>' . HelperFramework::escape((string)($row['label'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::money($row['loss_created'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::money($row['loss_brought_forward'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::money($row['loss_utilised'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::money($row['loss_carried_forward'] ?? 0)) . '</td>
-            </tr>';
-        }
-
-        return '<section class="settings-stack" id="tax-readiness">
-            <h3 class="card-title">Tax Readiness Snapshot</h3>
-            <div class="summary-grid">
-                <div class="summary-card"><div class="summary-label">Taxable profit</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($taxReadiness['taxable_profit'] ?? 0)) . '</div></div>
-                <div class="summary-card"><div class="summary-label">Taxable loss</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($taxReadiness['taxable_loss'] ?? 0)) . '</div></div>
-                <div class="summary-card"><div class="summary-label">Estimated CT</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($taxReadiness['estimated_corporation_tax'] ?? 0)) . '</div></div>
-                <div class="summary-card"><div class="summary-label">Losses c/f</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($taxReadiness['losses_carried_forward'] ?? 0)) . '</div></div>
-            </div>
-            <h3 class="card-title">Corporation Tax Computation</h3>
-            <div class="table-scroll"><table><thead><tr><th>Step</th><th>Amount</th></tr></thead><tbody>' . $stepsHtml . '</tbody></table></div>
-            <h3 class="card-title">Loss schedule</h3>
-            <div class="table-scroll"><table><thead><tr><th>Period</th><th>Loss created</th><th>Brought forward</th><th>Used</th><th>Carried forward</th></tr></thead><tbody>' . $scheduleHtml . '</tbody></table></div>
-        </section>';
-    }
-
-    private function renderAdjustments(array $context, array $adjustments): string
-    {
-        if (empty($adjustments['available'])) {
-            return '<section class="settings-stack" id="year-end-adjustments"><h3 class="card-title">Year End Adjustments</h3>' . $this->renderErrors((array)($adjustments['errors'] ?? [])) . '</section>';
-        }
-
-        $company = (array)($context['company'] ?? []);
-        $companyId = (int)($company['id'] ?? 0);
-        $accountingPeriod = (array)($adjustments['accounting_period'] ?? []);
-        $accountingPeriodId = (int)($accountingPeriod['id'] ?? ($company['accounting_period_id'] ?? 0));
-        $formId = 'year-end-adjustment-form';
-
-        return '<section class="settings-stack" id="year-end-adjustments">
-            <h3 class="card-title">Year End Adjustments</h3>
-            <form id="' . $formId . '" method="post" data-ajax="true">
-                <input type="hidden" name="card_action" value="YearEnd">
-                <input type="hidden" name="intent" value="create_adjustment">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-            </form>
-            <div class="form-grid">
-                <div class="form-row"><label for="adjustment-template-type">Template</label><select class="select" id="adjustment-template-type" name="adjustment_template_type" form="' . $formId . '">' . $this->options(['accrual' => 'Create accrual', 'prepayment' => 'Create prepayment', 'deferred_income' => 'Create deferred income', 'custom' => 'Custom journal'], 'accrual') . '</select></div>
-                <div class="form-row"><label for="adjustment-date">Date</label><input class="input" id="adjustment-date" name="adjustment_date" form="' . $formId . '" type="date" value="' . HelperFramework::escape((string)($accountingPeriod['period_end'] ?? '')) . '"></div>
-                <div class="form-row"><label for="adjustment-description">Description</label><input class="input" id="adjustment-description" name="adjustment_description" form="' . $formId . '" value=""></div>
-                <div class="form-row"><label for="adjustment-notes">Notes</label><input class="input" id="adjustment-notes" name="adjustment_notes" form="' . $formId . '" value=""></div>
-                <div class="form-row"><label for="adjustment-primary-nominal">Primary nominal</label><select class="select" id="adjustment-primary-nominal" name="adjustment_primary_nominal_id" form="' . $formId . '">' . $this->nominalOptions((array)($adjustments['nominals'] ?? []), 0) . '</select></div>
-                <div class="form-row"><label for="adjustment-offset-nominal">Offset nominal</label><select class="select" id="adjustment-offset-nominal" name="adjustment_offset_nominal_id" form="' . $formId . '">' . $this->nominalOptions((array)($adjustments['nominals'] ?? []), 0) . '</select></div>
-                <div class="form-row"><label for="adjustment-amount">Amount</label><input class="input" id="adjustment-amount" name="adjustment_amount" form="' . $formId . '" inputmode="decimal"></div>
-                <div class="form-row"><label>&nbsp;</label><label class="checkbox-item"><input type="checkbox" id="adjustment-auto-reverse" name="adjustment_auto_reverse" form="' . $formId . '" value="1"><div class="checkbox-copy"><strong>Auto reverse into next period</strong><span>Create the reversing journal on the next period start date.</span></div></label></div>
-            </div>
-            <h4 class="card-title">Custom journal lines</h4>
-            ' . $this->lineEditorTable('adjustment', $formId, (array)($adjustments['nominals'] ?? []), [], 8) . '
-            <div class="actions-row"><button class="button primary" type="submit" form="' . $formId . '">Post Adjustment</button></div>
-            ' . $this->renderPostedAdjustments((array)($adjustments['adjustments'] ?? [])) . '
-        </section>';
-    }
-
-    private function lineEditorTable(string $prefix, string $formId, array $nominals, array $rows, int $rowCount): string
-    {
-        $html = '';
-        for ($index = 0; $index < $rowCount; $index++) {
-            $row = (array)($rows[$index] ?? []);
-            $nominalId = (int)($row['nominal_account_id'] ?? 0);
-            $description = (string)($row['line_description'] ?? '');
-            $html .= '<tr>
-                <td><select class="select" name="' . $prefix . '_line_' . $index . '_nominal_id" form="' . $formId . '">' . $this->nominalOptions($nominals, $nominalId) . '</select></td>
-                <td><input class="input" name="' . $prefix . '_line_' . $index . '_debit" form="' . $formId . '" value="' . HelperFramework::escape($this->lineAmount($row, 'debit')) . '" inputmode="decimal"></td>
-                <td><input class="input" name="' . $prefix . '_line_' . $index . '_credit" form="' . $formId . '" value="' . HelperFramework::escape($this->lineAmount($row, 'credit')) . '" inputmode="decimal"></td>
-                <td><input class="input" name="' . $prefix . '_line_' . $index . '_description" form="' . $formId . '" value="' . HelperFramework::escape($description) . '"></td>
-            </tr>';
-        }
-
-        return '<div class="table-scroll"><table><thead><tr><th>Nominal</th><th>Debit</th><th>Credit</th><th>Description</th></tr></thead><tbody>' . $html . '</tbody></table></div>';
-    }
-
-    private function renderPostedAdjustments(array $adjustments): string
-    {
-        if ($adjustments === []) {
-            return '<div><h4 class="card-title">Posted adjustments</h4><div class="helper">No year-end adjustments have been posted for this period yet.</div></div>';
-        }
-
-        $rows = '';
-        foreach ($adjustments as $adjustment) {
-            $rows .= '<tr>
-                <td>' . HelperFramework::escape(HelperFramework::displayDate((string)($adjustment['journal_date'] ?? ''))) . '</td>
-                <td>' . HelperFramework::escape((string)($adjustment['description'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($adjustment['journal_tag'] ?? ''), '_')) . '</td>
-                <td>' . count((array)($adjustment['lines'] ?? [])) . '</td>
-            </tr>';
-        }
-
-        return '<div><h4 class="card-title">Posted adjustments</h4><div class="table-scroll"><table><thead><tr><th>Date</th><th>Description</th><th>Type</th><th>Lines</th></tr></thead><tbody>' . $rows . '</tbody></table></div></div>';
-    }
-
-    private function renderDirectorLoanOffset(array $context, array $offset): string
-    {
-        $company = (array)($context['company'] ?? []);
-        $companyId = (int)($company['id'] ?? 0);
-        $accountingPeriod = (array)($offset['accounting_period'] ?? []);
-        $accountingPeriodId = (int)($accountingPeriod['id'] ?? ($company['accounting_period_id'] ?? 0));
-
-        if (empty($offset['available'])) {
-            return '<section class="settings-stack" id="director-loan-offset"><h3 class="card-title">Director loan offset</h3>' . $this->renderErrors((array)($offset['errors'] ?? ['Director loan offset review is not available.'])) . '</section>';
-        }
-
-        $assetNominal = (array)($offset['asset_nominal'] ?? []);
-        $liabilityNominal = (array)($offset['liability_nominal'] ?? []);
-        $warningsHtml = '';
-        foreach ((array)($offset['warnings'] ?? []) as $warning) {
-            $warningsHtml .= '<div class="helper">' . HelperFramework::escape((string)$warning) . '</div>';
-        }
-
-        $status = (string)($offset['offset_status'] ?? '');
-        $postButton = '';
-        if (!empty($offset['can_post'])) {
-            $postButton = '<form method="post" data-ajax="true">
-                <input type="hidden" name="card_action" value="YearEnd">
-                <input type="hidden" name="intent" value="post_director_loan_offset">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <button class="button primary" type="submit">Post Offset Journal</button>
-            </form>';
-        }
-
-        return '<section class="settings-stack" id="director-loan-offset">
-            <div class="status-head">
-                <h3 class="card-title">Director loan offset</h3>
-                <span class="badge ' . HelperFramework::escape($this->badgeClass($this->offsetBadgeStatus($status))) . '">' . HelperFramework::escape((string)($offset['offset_status_label'] ?? HelperFramework::labelFromKey($status, '_'))) . '</span>
-            </div>
-            <div class="month-grid">
-                ' . $this->summaryCard(FormattingFramework::nominalLabel($assetNominal), FormattingFramework::money($offset['asset_receivable'] ?? 0)) . '
-                ' . $this->summaryCard(FormattingFramework::nominalLabel($liabilityNominal), FormattingFramework::money($offset['liability_payable'] ?? 0)) . '
-                ' . $this->summaryCard('Proposed offset', FormattingFramework::money($offset['offset_amount'] ?? 0)) . '
-                ' . $this->summaryCard('Net position', FormattingFramework::money($offset['net_position'] ?? 0) . ' ' . (string)($offset['net_position_label'] ?? '')) . '
-            </div>
-            <div class="table-scroll">
-                <table>
-                    <thead><tr><th>Journal line</th><th>Debit</th><th>Credit</th></tr></thead>
-                    <tbody>
-                        <tr><td>' . HelperFramework::escape(FormattingFramework::nominalLabel($liabilityNominal)) . '</td><td>' . HelperFramework::escape(FormattingFramework::money($offset['offset_amount'] ?? 0)) . '</td><td>0.00</td></tr>
-                        <tr><td>' . HelperFramework::escape(FormattingFramework::nominalLabel($assetNominal)) . '</td><td>0.00</td><td>' . HelperFramework::escape(FormattingFramework::money($offset['offset_amount'] ?? 0)) . '</td></tr>
-                    </tbody>
-                </table>
-            </div>
-            <div class="helper">Existing posted offset: ' . HelperFramework::escape(FormattingFramework::money($offset['posted_offset_amount'] ?? 0)) . '</div>
-            ' . $warningsHtml . '
-            ' . (empty($offset['can_post']) ? '<div class="helper">' . HelperFramework::escape((string)($offset['post_blocked_reason'] ?? '')) . '</div>' : '') . '
-            <div class="actions-row">' . $postButton . '</div>
-        </section>';
-    }
-
-    private function summaryCard(string $label, string $value): string
-    {
-        return '<div class="stat-card"><div class="eyebrow">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
-    }
-
-    private function offsetBadgeStatus(string $status): string
-    {
-        return match ($status) {
-            'current', 'not_required' => 'pass',
-            'missing', 'stale' => 'warning',
-            default => 'info',
-        };
-    }
-
-    private function nominalOptions(array $nominals, int $selectedNominalId): string
-    {
-        $html = '<option value="">Select nominal</option>';
-        foreach ($nominals as $nominal) {
-            $nominalId = (int)($nominal['id'] ?? 0);
-            $html .= '<option value="' . $nominalId . '"' . ($nominalId === $selectedNominalId ? ' selected' : '') . '>' . HelperFramework::escape(FormattingFramework::nominalLabel($nominal)) . '</option>';
-        }
-
-        return $html;
-    }
-
-    private function options(array $options, string $selectedValue): string
-    {
-        $html = '';
-        foreach ($options as $value => $label) {
-            $html .= '<option value="' . HelperFramework::escape((string)$value) . '"' . ((string)$value === $selectedValue ? ' selected' : '') . '>' . HelperFramework::escape((string)$label) . '</option>';
-        }
-
-        return $html;
-    }
-
-    private function lineAmount(array $row, string $key): string
-    {
-        $value = $row[$key] ?? '';
-        if ($value === '' || $value === null) {
-            return '';
-        }
-
-        return FormattingFramework::money($value);
-    }
-
-    private function renderCompaniesHouseComparison(array $comparison): string
-    {
-        if (empty($comparison['available'])) {
-            return '<section class="settings-stack" id="companies-house-comparison"><h3 class="card-title">Companies House Comparison</h3><div class="helper">' . HelperFramework::escape((string)($comparison['errors'][0] ?? 'No Companies House comparison is available.')) . '</div></section>';
-        }
-
-        $rowsHtml = '';
-        foreach ((array)($comparison['rows'] ?? []) as $row) {
-            $rowsHtml .= '<tr>
-                <td>' . HelperFramework::escape((string)($row['label'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::nullableMoney($row['app_value'] ?? null, '-')) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::nullableMoney($row['filed_value'] ?? null, '-')) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::nullableMoney($row['variance'] ?? null, '-')) . '</td>
-                <td><span class="badge ' . HelperFramework::escape($this->badgeClass((string)($row['status'] ?? ''))) . '">' . HelperFramework::escape(HelperFramework::labelFromKey((string)($row['status'] ?? ''), '_')) . '</span></td>
-            </tr>';
-        }
-
-        return '<section class="settings-stack" id="companies-house-comparison">
-            <h3 class="card-title">Companies House Comparison</h3>
-            <div class="helper">' . HelperFramework::escape((string)($comparison['comparison_note'] ?? '')) . '</div>
-            <div class="table-scroll"><table><thead><tr><th>Metric</th><th>App</th><th>Filed</th><th>Variance</th><th>Status</th></tr></thead><tbody>' . $rowsHtml . '</tbody></table></div>
-        </section>';
-    }
-
-    private function sectionTitle(string $key): string
-    {
-        return match ($key) {
-            'categorisation_suspense' => 'B. Categorisation and suspense',
-            'ledger_integrity' => 'C. Ledger integrity',
-            'bank_source_completeness' => 'D. Bank and source completeness',
-            'director_loan_expenses' => 'E. Director loan and expense claims',
-            'year_end_accounts_review' => 'F. Year end accounts review',
-            'corporation_tax_readiness' => 'G. Corporation tax readiness',
-            'companies_house_comparison' => 'H. Companies House comparison',
-            'final_review_lock' => 'I. Final review and lock',
-            default => HelperFramework::labelFromKey($key, '_'),
-        };
     }
 
     private function badgeClass(string $status): string
@@ -492,5 +110,10 @@ final class _year_end_stateCard extends CardBaseFramework
         }
 
         return $html;
+    }
+
+    private function checklist(array $context): array
+    {
+        return (array)(($context['year_end'] ?? [])['checklist'] ?? (($context['services'] ?? [])['yearEndChecklist'] ?? []));
     }
 }

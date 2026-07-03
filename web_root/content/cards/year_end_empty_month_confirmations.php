@@ -85,7 +85,7 @@ final class _year_end_empty_month_confirmationsCard extends CardBaseFramework
         $action = $this->actionHtml($month, $confirmation, $companyId, $accountingPeriodId);
         $notes = trim((string)($confirmation['notes'] ?? ''));
 
-        return '<section class="panel-soft">
+        return '<section class="settings-stack">
             <div class="status-head">
                 <h3 class="card-title">' . HelperFramework::escape((string)($month['month_label'] ?? '')) . '</h3>
                 <span class="badge ' . HelperFramework::escape($this->badgeClass($status, !empty($month['can_confirm']))) . '">' . HelperFramework::escape($badgeLabel) . '</span>

@@ -32,8 +32,8 @@ final class _companies_house_snapshotCard extends CardBaseFramework
                 ],
             ],
             [
-                'key' => 'trialBalanceComparison',
-                'service' => \eel_accounts\Service\TrialBalanceComparisonService::class,
+                'key' => 'yearEndCompaniesHouseComparison',
+                'service' => \eel_accounts\Service\YearEndCompaniesHouseComparisonService::class,
                 'method' => 'fetchComparison',
                 'params' => [
                     'companyId' => ':company.id',
@@ -51,7 +51,7 @@ final class _companies_house_snapshotCard extends CardBaseFramework
     public function render(array $context): string
     {
         $snapshot = (array)($context['services']['companiesHouseSnapshot'] ?? []);
-        $comparison = (array)($context['services']['trialBalanceComparison'] ?? []);
+        $comparison = (array)($context['services']['yearEndCompaniesHouseComparison'] ?? []);
         if (empty($snapshot['available'])) {
             return $this->panel('Companies House Snapshot', $this->renderErrors((array)($snapshot['errors'] ?? ['Companies House snapshot is not available.'])));
         }
@@ -96,7 +96,7 @@ final class _companies_house_snapshotCard extends CardBaseFramework
         }
 
         return '<div class="settings-stack">
-            <div>
+            <section class="panel-soft">
                 <div class="status-head">
                     <h3 class="card-title">Companies House Snapshot</h3>
                     <span class="badge ' . (!empty($snapshot['is_balance_sheet_balanced']) ? 'success' : 'warning') . '">' . (!empty($snapshot['is_balance_sheet_balanced']) ? 'Balanced' : 'Review') . '</span>
@@ -106,17 +106,21 @@ final class _companies_house_snapshotCard extends CardBaseFramework
                 <div class="table-scroll">
                     <table><thead><tr><th>Companies House field</th><th>Value</th></tr></thead><tbody>' . $fieldsHtml . '</tbody></table>
                 </div>
+            </section>
+            <section class="panel-soft">
                 <h3 class="card-title">Checks</h3>
                 <div class="table-scroll">
                     <table><thead><tr><th>Check</th><th>Value</th></tr></thead><tbody>' . $checksHtml . '</tbody></table>
                 </div>
+            </section>
+            <section class="panel-soft">
                 <h3 class="card-title">Source summary</h3>
                 <div class="table-scroll">
                     <table><thead><tr><th>Bucket</th><th>Rows</th><th>Amount</th></tr></thead><tbody>' . $sourceHtml . '</tbody></table>
                 </div>
                 ' . ($assumptionsHtml !== '' ? '<div class="helper"><ul>' . $assumptionsHtml . '</ul></div>' : '') . '
                 <div class="helper">Current assets exclude fixed assets. Bank balances are current assets; asset register values should flow through fixed-asset and depreciation ledger postings.</div>
-            </div>
+            </section>
             ' . $this->renderComparisonPanel($comparison) . '
         </div>';
     }
@@ -128,13 +132,13 @@ final class _companies_house_snapshotCard extends CardBaseFramework
 
     private function panel(string $title, string $body): string
     {
-        return '<div><div class="status-head"><h3 class="card-title">' . HelperFramework::escape($title) . '</h3></div>' . $body . '</div>';
+        return '<section class="panel-soft"><div class="status-head"><h3 class="card-title">' . HelperFramework::escape($title) . '</h3></div>' . $body . '</section>';
     }
 
     private function renderComparisonPanel(array $comparison): string
     {
         if (empty($comparison['available'])) {
-            return $this->panel('Filed Accounts Comparison', $this->renderErrors((array)($comparison['errors'] ?? [])));
+            return $this->panel('Companies House Comparison', $this->renderErrors((array)($comparison['errors'] ?? [])));
         }
 
         $rowsHtml = '';
@@ -142,23 +146,24 @@ final class _companies_house_snapshotCard extends CardBaseFramework
             $status = (string)($row['status'] ?? '');
             $rowsHtml .= '<tr>
                 <td>' . HelperFramework::escape((string)($row['label'] ?? '')) . '</td>
+                <td>' . HelperFramework::escape($this->nullableMoney($row['app_value'] ?? null)) . '</td>
                 <td>' . HelperFramework::escape($this->nullableMoney($row['filed_value'] ?? null)) . '</td>
-                <td>' . HelperFramework::escape($this->nullableMoney($row['current_ledger_value'] ?? null)) . '</td>
-                <td>' . HelperFramework::escape($this->nullableMoney($row['difference'] ?? null)) . '</td>
+                <td>' . HelperFramework::escape($this->nullableMoney($row['variance'] ?? null)) . '</td>
                 <td><span class="badge ' . $this->badgeClass($status) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($status, '_')) . '</span></td>
             </tr>';
         }
 
-        return '<div>
-            <div class="status-head"><h3 class="card-title">Filed Accounts Comparison</h3></div>
+        return '<section class="panel-soft" id="companies-house-comparison">
+            <div class="status-head"><h3 class="card-title">Companies House Comparison</h3></div>
+            <div class="helper">' . HelperFramework::escape((string)($comparison['comparison_note'] ?? '')) . '</div>
             <div class="helper">Stored filing date: ' . HelperFramework::escape((string)($comparison['filing']['filing_date'] ?? '')) . '</div>
             <div class="table-scroll">
                 <table>
-                    <thead><tr><th>Metric</th><th>Filed value</th><th>Current ledger-derived value</th><th>Difference</th><th>Status</th></tr></thead>
+                    <thead><tr><th>Metric</th><th>App</th><th>Filed</th><th>Variance</th><th>Status</th></tr></thead>
                     <tbody>' . $rowsHtml . '</tbody>
                 </table>
             </div>
-        </div>';
+        </section>';
     }
 
     private function badgeClass(string $status): string

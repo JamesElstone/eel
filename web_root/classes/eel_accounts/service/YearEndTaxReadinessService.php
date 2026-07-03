@@ -25,4 +25,17 @@ final class YearEndTaxReadinessService
 
         return $service->fetchSummary($companyId, $accountingPeriodId);
     }
+
+    public function fetchCurrentPeriodEstimate(
+        int $companyId,
+        int $accountingPeriodId,
+        ?array $accountingPeriod = null,
+        ?array $profitAndLoss = null
+    ): array {
+        $service = $this->taxComputationService ?? new \eel_accounts\Service\CorporationTaxComputationService(
+            $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService()
+        );
+
+        return $service->fetchCurrentPeriodEstimate($companyId, $accountingPeriodId, $accountingPeriod, $profitAndLoss);
+    }
 }

@@ -3604,6 +3604,9 @@ final class StatementUploadService
             $unstagedUploadSummaries[(string)$row['month_key']] = $row;
         }
 
+        $confirmedEmptyMonths = (new \eel_accounts\Service\EmptyMonthConfirmationService())
+            ->activeConfirmationMap($companyId, $accountingPeriodId);
+
         $months = [];
         $cursor = new \DateTime((string)$accountingPeriod['period_start']);
         $end = new \DateTime((string)$accountingPeriod['period_end']);
@@ -3622,8 +3625,12 @@ final class StatementUploadService
             $stagedCount = (int)($importRowSummary['staged_count'] ?? 0);
             $rawRowCount = (int)($importRowSummary['raw_row_count'] ?? 0)
                 + (int)($unstagedUploadSummary['raw_row_count'] ?? 0);
+            $isConfirmedEmpty = isset($confirmedEmptyMonths[$monthKey])
+                && $txnCount === 0
+                && $rawRowCount === 0;
 
             $status = match (true) {
+                $isConfirmedEmpty => 'green',
                 $txnCount === 0 && $rawRowCount === 0 => 'red',
                 $uncatCount > 0 || $deferredCount > 0 || $readyToPostCount > 0 || $stagedCount > 0 => 'amber',
                 default => 'green',
@@ -3642,6 +3649,8 @@ final class StatementUploadService
                 'ready_to_post' => $readyToPostCount,
                 'staged' => $stagedCount,
                 'raw_rows' => $rawRowCount,
+                'empty_month_confirmed' => $isConfirmedEmpty,
+                'empty_month_confirmation' => $isConfirmedEmpty ? $confirmedEmptyMonths[$monthKey] : null,
             ];
 
             $cursor->modify('+1 month');

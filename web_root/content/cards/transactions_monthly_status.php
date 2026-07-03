@@ -77,6 +77,9 @@ final class _transactions_monthly_statusCard extends CardBaseFramework
             $monthYearHtml = $monthYear !== ''
                 ? '<div class="month-year">' . HelperFramework::escape($monthYear) . '</div>'
                 : '';
+            $confirmedEmptyHtml = !empty($month['empty_month_confirmed'])
+                ? '<div class="helper">Confirmed no activity</div>'
+                : '';
 
             $monthsHtml .= '<form class="month-card-form" method="post" action="?page=transactions" data-ajax="true">
                 <input type="hidden" name="card_action" value="Transaction">
@@ -99,6 +102,7 @@ final class _transactions_monthly_statusCard extends CardBaseFramework
                 <div class="helper">' . (int)($month['ready_to_post'] ?? 0) . ' unposted</div>
                 <div class="helper">' . (int)($month['staged'] ?? 0) . ' staged</div>
                 <div class="helper">' . (int)($month['raw_rows'] ?? 0) . ' raw rows</div>
+                ' . $confirmedEmptyHtml . '
                 </button>
             </form>';
         }

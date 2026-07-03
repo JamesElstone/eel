@@ -684,6 +684,29 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.trial-balance-validation-summary {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.trial-balance-validation-status {
+  display: grid;
+  gap: 6px;
+}
+
+.trial-balance-validation-status-main {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.trial-balance-validation-percent {
+  color: var(--text);
+  font-size: 1.15rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
 .expense-claim-summary-grid {
   grid-template-columns: repeat(7, minmax(0, 1fr));
 }
@@ -2028,6 +2051,32 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.year-end-check-panel-success {
+  background: var(--success-soft);
+  border-color: #b7ebc8;
+}
+
+.year-end-check-panel-warning {
+  background: var(--warning-soft);
+  border-color: #f5d08a;
+}
+
+.year-end-check-panel-danger {
+  background: var(--danger-soft);
+  border-color: #f4b5b5;
+}
+
+.year-end-check-panel-info {
+  background: var(--panel-soft);
+}
+
+.year-end-check-status-label {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .year-end-related-workflow {

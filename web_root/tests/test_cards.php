@@ -43,7 +43,7 @@ final class TestCardsHarness
         $this->assertRoleAssignmentCardOwnsDashboardContext();
         $this->assertTrialBalanceStateUsesSelectedCompanyContext();
         $this->assertTrialBalanceStateRendersNestedMetrics();
-        $this->assertTrialBalancePageIncludesCompaniesHouseSnapshot();
+        $this->assertCompaniesHousePageIncludesCompaniesHouseSnapshot();
         $this->assertCompaniesHouseSnapshotUsesSelectedCompanyContext();
     }
 
@@ -189,13 +189,15 @@ final class TestCardsHarness
         test_output_line('Cards: trial_balance_state renders nested metric values without warnings.');
     }
 
-    private function assertTrialBalancePageIncludesCompaniesHouseSnapshot(): void
+    private function assertCompaniesHousePageIncludesCompaniesHouseSnapshot(): void
     {
-        $page = new _trial_balance();
+        $trialBalancePage = new _trial_balance();
+        $companiesHousePage = new _companies_house();
 
-        $this->assertSame(['trial_balance_state', 'companies_house_snapshot'], $page->cards());
+        $this->assertSame(['trial_balance_state', 'trial_balance_validation', 'trial_balance_losses'], $trialBalancePage->cards());
+        $this->assertSame(['companies_house_snapshot'], $companiesHousePage->cards());
 
-        test_output_line('Cards: trial_balance page includes the Companies House snapshot card.');
+        test_output_line('Cards: companies_house page includes the Companies House snapshot card.');
     }
 
     private function assertCompaniesHouseSnapshotUsesSelectedCompanyContext(): void
@@ -237,6 +239,7 @@ final class TestCardsHarness
 
         $this->assertTrue(str_contains($html, 'Manual Companies House balance-sheet entry only.'));
         $this->assertTrue(str_contains($html, 'Snapshot Limited'));
+        $this->assertTrue(substr_count($html, 'class="panel-soft"') >= 4);
         $this->assertSame(false, str_contains($html, 'Profit and loss figures remain') && str_contains($html, 'Expenses</td>'));
 
         test_output_line('Cards: companies_house_snapshot uses selected company context and renders balance sheet fields.');

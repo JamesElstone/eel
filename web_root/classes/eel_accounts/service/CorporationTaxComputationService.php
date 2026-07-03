@@ -646,6 +646,107 @@ final class CorporationTaxComputationService
         ];
     }
 
+    public function fetchCurrentPeriodEstimate(
+        int $companyId,
+        int $accountingPeriodId,
+        ?array $accountingPeriod = null,
+        ?array $profitAndLoss = null
+    ): array {
+        $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
+        $accountingPeriod ??= $metrics->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null) {
+            return [
+                'available' => false,
+                'errors' => ['The selected accounting period could not be found.'],
+            ];
+        }
+
+        $periodStart = (string)($accountingPeriod['period_start'] ?? '');
+        $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
+        $profitAndLoss ??= $metrics->profitAndLossSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $assetAdjustments = $this->fetchAssetAdjustments($companyId, $accountingPeriodId);
+        $taxableBeforeLosses = round(
+            (float)($profitAndLoss['profit_before_tax'] ?? 0)
+            + (float)($profitAndLoss['disallowable_add_backs'] ?? 0)
+            + (float)$assetAdjustments['depreciation_add_back']
+            - (float)$assetAdjustments['capital_allowances'],
+            2
+        );
+        $lossesBroughtForward = $this->storedLossesBroughtForward($companyId, $accountingPeriodId, $periodStart);
+        $lossesUsed = min(max(0.0, $taxableBeforeLosses), $lossesBroughtForward);
+        $taxableProfit = max(0.0, round($taxableBeforeLosses - $lossesUsed, 2));
+        $lossCreated = $taxableBeforeLosses < 0 ? abs($taxableBeforeLosses) : 0.0;
+        $lossesCarriedForward = round($lossesBroughtForward - $lossesUsed + $lossCreated, 2);
+        $associatedCompanyCount = $this->associatedCompanyCount($companyId);
+        $rateCalculation = ($this->rateService ?? new \eel_accounts\Service\CorporationTaxRateService())->calculate(
+            $periodStart,
+            $periodEnd,
+            $taxableProfit,
+            $associatedCompanyCount
+        );
+        $warnings = [];
+
+        if ((int)($profitAndLoss['unknown_treatment_count'] ?? 0) > 0) {
+            $warnings[] = 'Some nominal tax treatments are unknown and should be reviewed before relying on the estimate.';
+        }
+        if ((int)($profitAndLoss['other_treatment_count'] ?? 0) > 0) {
+            $warnings[] = 'Some nominal tax treatments are marked as other and need manual review.';
+        }
+        if (!empty($assetAdjustments['warning'])) {
+            $warnings[] = (string)$assetAdjustments['warning'];
+        }
+        foreach ((array)($rateCalculation['warnings'] ?? []) as $warning) {
+            $warnings[] = (string)$warning;
+        }
+
+        $steps = [
+            ['label' => 'Accounting profit or loss', 'amount' => round((float)($profitAndLoss['profit_before_tax'] ?? 0), 2)],
+            ['label' => 'Add back disallowable expenses', 'amount' => round((float)($profitAndLoss['disallowable_add_backs'] ?? 0), 2)],
+            ['label' => 'Add back depreciation', 'amount' => round((float)$assetAdjustments['depreciation_add_back'], 2)],
+            ['label' => 'Deduct capital allowances', 'amount' => round(0 - (float)$assetAdjustments['capital_allowances'], 2)],
+            ['label' => 'Taxable result before losses', 'amount' => $taxableBeforeLosses],
+            ['label' => 'Less losses brought forward utilised', 'amount' => round(0 - $lossesUsed, 2)],
+            ['label' => 'Taxable profit after losses', 'amount' => $taxableProfit],
+            ['label' => 'Estimated corporation tax', 'amount' => round((float)$rateCalculation['liability'], 2)],
+        ];
+
+        return [
+            'available' => true,
+            'accounting_profit' => round((float)($profitAndLoss['profit_before_tax'] ?? 0), 2),
+            'disallowable_add_backs' => round((float)($profitAndLoss['disallowable_add_backs'] ?? 0), 2),
+            'depreciation_add_back' => round((float)$assetAdjustments['depreciation_add_back'], 2),
+            'capital_allowances' => round((float)$assetAdjustments['capital_allowances'], 2),
+            'taxable_before_losses' => $taxableBeforeLosses,
+            'taxable_profit' => $taxableProfit,
+            'taxable_loss' => round($lossCreated, 2),
+            'estimated_corporation_tax' => round((float)$rateCalculation['liability'], 2),
+            'estimated_rate' => round((float)$rateCalculation['effective_rate'], 6),
+            'associated_company_count' => $associatedCompanyCount,
+            'ct_rate_bands' => (array)($rateCalculation['bands'] ?? []),
+            'loss_created_in_period' => round($lossCreated, 2),
+            'losses_brought_forward' => round($lossesBroughtForward, 2),
+            'losses_used' => round($lossesUsed, 2),
+            'losses_carried_forward' => $lossesCarriedForward,
+            'other_treatment_count' => (int)($profitAndLoss['other_treatment_count'] ?? 0),
+            'unknown_treatment_count' => (int)($profitAndLoss['unknown_treatment_count'] ?? 0),
+            'warnings' => $warnings,
+            'steps' => $steps,
+            'schedule' => [
+                [
+                    'accounting_period_id' => $accountingPeriodId,
+                    'label' => (string)($accountingPeriod['label'] ?? 'Selected period'),
+                    'loss_created' => round($lossCreated, 2),
+                    'loss_brought_forward' => round($lossesBroughtForward, 2),
+                    'loss_utilised' => round($lossesUsed, 2),
+                    'loss_carried_forward' => $lossesCarriedForward,
+                    'taxable_before_losses' => $taxableBeforeLosses,
+                    'taxable_profit' => $taxableProfit,
+                ],
+            ],
+            'summary_scope' => 'current_period_estimate',
+        ];
+    }
+
     private function insertComputationRun(int $companyId, array $row, array $summary): int {
         if (!$this->tableExists('corporation_tax_computation_runs')) {
             return 0;
@@ -710,6 +811,34 @@ final class CorporationTaxComputationService
         }
 
         return \InterfaceDB::countWhere('asset_register', 'company_id', $companyId);
+    }
+
+    private function storedLossesBroughtForward(int $companyId, int $accountingPeriodId, string $periodStart): float {
+        if (!$this->tableExists('tax_loss_carryforwards')) {
+            return 0.0;
+        }
+
+        if (trim($periodStart) === '') {
+            return 0.0;
+        }
+
+        $row = \InterfaceDB::fetchOne(
+            'SELECT COALESCE(SUM(t.amount_remaining), 0) AS amount
+             FROM tax_loss_carryforwards t
+             LEFT JOIN accounting_periods ap ON ap.id = t.origin_accounting_period_id
+             WHERE t.company_id = :company_id
+               AND t.origin_accounting_period_id <> :accounting_period_id
+               AND (t.status = :open_status OR t.status IS NULL)
+               AND (ap.period_start IS NULL OR ap.period_start < :period_start)',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'open_status' => 'open',
+                'period_start' => $periodStart,
+            ]
+        ) ?: [];
+
+        return round((float)($row['amount'] ?? 0), 2);
     }
 
     private function associatedCompanyCount(int $companyId): int {

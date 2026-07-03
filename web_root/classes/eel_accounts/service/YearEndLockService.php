@@ -17,6 +17,15 @@ final class YearEndLockService
             return null;
         }
 
+        $acknowledgementColumns = $this->hasReviewColumn('director_loan_closing_acknowledged_at')
+            && $this->hasReviewColumn('director_loan_closing_acknowledged_by')
+            ? ',
+                    director_loan_closing_acknowledged_at,
+                    director_loan_closing_acknowledged_by'
+            : ',
+                    NULL AS director_loan_closing_acknowledged_at,
+                    NULL AS director_loan_closing_acknowledged_by';
+
         $row = \InterfaceDB::fetchOne( 'SELECT id,
                     company_id,
                     accounting_period_id,
@@ -25,6 +34,7 @@ final class YearEndLockService
                     locked_at,
                     locked_by,
                     review_notes,
+                    ' . ltrim($acknowledgementColumns, ",\n") . ',
                     last_recalculated_at,
                     created_at,
                     updated_at
@@ -219,6 +229,55 @@ final class YearEndLockService
         ];
     }
 
+    public function saveDirectorLoanClosingAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app'): array {
+        if (!$this->hasReviewTable()) {
+            return [
+                'success' => false,
+                'errors' => ['Run the Year End review migration before saving director loan acknowledgements.'],
+            ];
+        }
+
+        if (!$this->hasReviewColumn('director_loan_closing_acknowledged_at') || !$this->hasReviewColumn('director_loan_closing_acknowledged_by')) {
+            return [
+                'success' => false,
+                'errors' => ['Run the Director Loan year-end acknowledgement migration before saving this acknowledgement.'],
+            ];
+        }
+
+        if (!$acknowledged) {
+            return [
+                'success' => false,
+                'errors' => ['Tick the director loan offset acknowledgement before saving.'],
+            ];
+        }
+
+        $this->ensureReviewRow($companyId, $accountingPeriodId);
+        $existing = $this->fetchReview($companyId, $accountingPeriodId);
+        $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
+
+        \InterfaceDB::execute( 'UPDATE year_end_reviews
+             SET director_loan_closing_acknowledged_at = :acknowledged_at,
+                 director_loan_closing_acknowledged_by = :acknowledged_by,
+                 updated_at = :updated_at
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id'
+        , [
+            'acknowledged_at' => $now,
+            'acknowledged_by' => $this->actorValue($changedBy),
+            'updated_at' => $now,
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+        ]);
+
+        $review = $this->fetchReview($companyId, $accountingPeriodId);
+        $this->writeAuditLog($companyId, $accountingPeriodId, 'director_loan_closing_acknowledged', $changedBy, $existing, $review);
+
+        return [
+            'success' => true,
+            'review' => $review,
+        ];
+    }
+
     public function lockPeriod(int $companyId, int $accountingPeriodId, string $lockedBy = 'web_app'): array {
         if (!$this->hasReviewTable()) {
             return [
@@ -401,6 +460,10 @@ final class YearEndLockService
 
     private function hasReviewTable(): bool {
         return $this->tableExists('year_end_reviews');
+    }
+
+    private function hasReviewColumn(string $column): bool {
+        return $this->hasReviewTable() && \InterfaceDB::columnExists('year_end_reviews', $column);
     }
 
     private function hasAuditLogTable(): bool {

@@ -66,9 +66,14 @@ final class DirectorLoanReconciliationService
         );
 
         $summary = $this->buildSummary($assetNominal, $liabilityNominal, $balances, is_array($existingOffset) ? $existingOffset : null);
+        $review = (new \eel_accounts\Service\YearEndLockService())->fetchReview($companyId, $accountingPeriodId);
+        $acknowledgedAt = trim((string)($review['director_loan_closing_acknowledged_at'] ?? ''));
         $summary['available'] = true;
         $summary['errors'] = [];
         $summary['accounting_period'] = $accountingPeriod;
+        $summary['closing_balance_acknowledged'] = $acknowledgedAt !== '';
+        $summary['closing_balance_acknowledged_at'] = $acknowledgedAt;
+        $summary['closing_balance_acknowledged_by'] = (string)($review['director_loan_closing_acknowledged_by'] ?? '');
 
         return $summary;
     }

@@ -34,6 +34,7 @@ final class _nominals extends PageContextFramework
             'nominals_account_types',
             'nominals_import_export',
             'nominal_opening_balances',
+            'nominal_closing_balances',
         ];
     }
 
@@ -70,6 +71,12 @@ final class _nominals extends PageContextFramework
                 'tab' => 'Opening Balances',
                 'cards' => [
                     'nominal_opening_balances',
+                ],
+            ],
+            [
+                'tab' => 'Closing Balances',
+                'cards' => [
+                    'nominal_closing_balances',
                 ],
             ],
         ];

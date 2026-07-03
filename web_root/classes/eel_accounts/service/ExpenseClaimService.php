@@ -484,6 +484,14 @@ final class ExpenseClaimService
         ];
     }
 
+    public function fetchStatisticsClaimantBalances(int $companyId, array $filters = []): array {
+        if ($companyId <= 0) {
+            return [];
+        }
+
+        return $this->fetchStatisticsClaimants($this->expenseStatisticsScope($companyId, $filters));
+    }
+
     private function fetchStatisticsClaimants(array $scope): array {
         $firstClaimWhere = $this->expenseStatisticsScopedClaimWhere($scope, 'first_ec')
             . ' AND first_ec.claimant_id = ec.claimant_id';

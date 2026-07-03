@@ -37,7 +37,7 @@ final class YearEndChecklistService
                 'status' => 'not_started',
                 'period_label' => 'No accounting period selected',
                 'top_issues' => [],
-                'action_url' => '?page=year-end&company_id=' . (int)$companyId,
+                'action_url' => '?page=year_end&company_id=' . (int)$companyId,
             ];
         }
 
@@ -82,7 +82,7 @@ final class YearEndChecklistService
 
     private function dashboardActionUrl(int $companyId, int $accountingPeriodId): string
     {
-        return '?page=year-end&company_id=' . (int)$companyId . '&accounting_period_id=' . (int)$accountingPeriodId;
+        return '?page=year_end&company_id=' . (int)$companyId . '&accounting_period_id=' . (int)$accountingPeriodId . '&show_card=year_end_checklist';
     }
 
     private function fetchPersistedDashboardTopIssues(int $companyId, int $accountingPeriodId): array
@@ -156,7 +156,7 @@ final class YearEndChecklistService
                 ? 'A trial balance can be generated from posted journals in this period.'
                 : 'No posted journal data exists to generate a trial balance for this period.',
             (string)($trialBalance['line_count'] ?? 0),
-            '?page=journals&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
+            '?page=journal&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
         );
         $checks[] = $this->makeCheck(
             'trial_balance_balances',
@@ -167,7 +167,7 @@ final class YearEndChecklistService
                 ? 'Total debits equal total credits.'
                 : 'Total debits and credits do not match for the selected period.',
             (string)number_format((float)($trialBalance['difference'] ?? 0), 2, '.', ''),
-            '?page=journals&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
+            '?page=journal&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
         );
         $checks[] = $this->makeCheck(
             'posted_only_period_integrity',
@@ -311,6 +311,17 @@ final class YearEndChecklistService
             ];
         }
 
+        $directorLoanOffsetResult = $this->applyDirectorLoanOffsetBeforeLock($companyId, $accountingPeriodId, $checklist, $lockedBy);
+        if (empty($directorLoanOffsetResult['success'])) {
+            return [
+                'success' => false,
+                'status' => (int)($directorLoanOffsetResult['status'] ?? 422),
+                'errors' => (array)($directorLoanOffsetResult['errors'] ?? ['Director loan offset could not be applied before locking this period.']),
+                'checklist' => $checklist,
+                'director_loan_offset' => $directorLoanOffsetResult,
+            ];
+        }
+
         $depreciationResult = ($this->assetService ?? new \eel_accounts\Service\AssetService())->runDepreciation($companyId, $accountingPeriodId);
         if (empty($depreciationResult['success'])) {
             return [
@@ -318,6 +329,7 @@ final class YearEndChecklistService
                 'status' => (int)($depreciationResult['status'] ?? 422),
                 'errors' => (array)($depreciationResult['errors'] ?? ['Depreciation could not be posted before locking this period.']),
                 'checklist' => $checklist,
+                'director_loan_offset' => $directorLoanOffsetResult,
                 'depreciation' => $depreciationResult,
             ];
         }
@@ -330,8 +342,34 @@ final class YearEndChecklistService
 
         return $result + [
             'depreciation' => $depreciationResult,
+            'director_loan_offset' => $directorLoanOffsetResult,
             'checklist' => $this->fetchChecklist($companyId, $accountingPeriodId, true),
         ];
+    }
+
+    private function applyDirectorLoanOffsetBeforeLock(int $companyId, int $accountingPeriodId, array $checklist, string $changedBy): array {
+        $offsetService = new \eel_accounts\Service\DirectorLoanReconciliationService();
+        $offsetContext = $offsetService->fetchContext($companyId, $accountingPeriodId);
+
+        if (empty($offsetContext['available']) || empty($offsetContext['can_post'])) {
+            return [
+                'success' => true,
+                'skipped' => true,
+                'context' => $offsetContext,
+            ];
+        }
+
+        $review = (array)($checklist['review'] ?? []);
+        if (trim((string)($review['director_loan_closing_acknowledged_at'] ?? '')) === '') {
+            return [
+                'success' => false,
+                'status' => 422,
+                'errors' => ['Save the director loan offset acknowledgement before locking this accounting period.'],
+                'context' => $offsetContext,
+            ];
+        }
+
+        return $offsetService->postOffset($companyId, $accountingPeriodId, $changedBy);
     }
 
     public function saveNotes(int $companyId, int $accountingPeriodId, string $notes, string $changedBy = 'web_app'): array {
@@ -342,6 +380,30 @@ final class YearEndChecklistService
 
         $lock = $this->lockService ?? new \eel_accounts\Service\YearEndLockService();
         $result = $lock->saveNotes($companyId, $accountingPeriodId, $notes, $changedBy);
+        if (empty($result['success'])) {
+            return $result;
+        }
+
+        return $result + [
+            'checklist' => $this->fetchChecklist($companyId, $accountingPeriodId, true),
+        ];
+    }
+
+    public function saveDirectorLoanClosingAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app'): array {
+        if (!$acknowledged) {
+            return [
+                'success' => false,
+                'errors' => ['Tick the director loan offset acknowledgement before saving.'],
+            ];
+        }
+
+        $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId, true);
+        if (empty($checklistResult['success'])) {
+            return $checklistResult;
+        }
+
+        $lock = $this->lockService ?? new \eel_accounts\Service\YearEndLockService();
+        $result = $lock->saveDirectorLoanClosingAcknowledgement($companyId, $accountingPeriodId, $acknowledged, $changedBy);
         if (empty($result['success'])) {
             return $result;
         }
@@ -420,11 +482,21 @@ final class YearEndChecklistService
         $duplicateAudit = $metrics->duplicateImportAudit($companyId, $accountingPeriodId);
         $strandedRows = $metrics->strandedCommittedSourceRowsCount($companyId, $accountingPeriodId);
         $directorLoan = $metrics->directorLoanSummary($companyId, $accountingPeriodId);
-        $unpaidExpenses = $metrics->unpaidExpenseSummary($companyId, $periodEnd);
+        $unpaidExpenses = $metrics->unpaidExpenseSummary($companyId, $accountingPeriodId, $periodEnd);
         $duplicateRepayments = $metrics->duplicateRepaymentRiskSummary($companyId, $periodStart, $periodEnd);
-        $financialStatements = $metrics->financialStatementsSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
-        $taxReadiness = $tax->fetchSummary($companyId, $accountingPeriodId);
-        $chComparison = $comparison->fetchComparison($companyId, $accountingPeriodId);
+        $financialStatements = $metrics->financialStatementsSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd, $trialBalance);
+        $taxReadiness = $tax->fetchCurrentPeriodEstimate(
+            $companyId,
+            $accountingPeriodId,
+            $accountingPeriod,
+            (array)($financialStatements['profit_and_loss'] ?? [])
+        );
+        $chComparison = $comparison->fetchComparison(
+            $companyId,
+            $accountingPeriodId,
+            $accountingPeriod,
+            (array)(($financialStatements['balance_sheet'] ?? [])['metrics'] ?? [])
+        );
 
         $sections = [];
         $checks = [];
@@ -483,7 +555,7 @@ final class YearEndChecklistService
                 ? 'Suspense should clear to nil before locking the period.'
                 : 'No suspense nominal is configured, so this check is advisory only.',
             (string)number_format((float)$suspenseSummary['closing_balance'], 2, '.', ''),
-            '?page=journals&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
+            '?page=journal&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
         );
         $sections['categorisation_suspense'][] = $this->makeCheck(
             'auto_categorisations_pending_review',
@@ -506,7 +578,7 @@ final class YearEndChecklistService
                 ? 'A trial balance can be generated from posted journals in this period.'
                 : 'No posted journal data exists to generate a trial balance for this period.',
             (string)($trialBalance['line_count'] ?? 0),
-            '?page=journals&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
+            '?page=journal&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
         );
         $sections['ledger_integrity'][] = $this->makeCheck(
             'trial_balance_balances',
@@ -517,7 +589,7 @@ final class YearEndChecklistService
                 ? 'Total debits equal total credits.'
                 : 'Total debits and credits do not match for the selected period.',
             (string)number_format((float)($trialBalance['difference'] ?? 0), 2, '.', ''),
-            '?page=journals&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
+            '?page=journal&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
         );
         $journalIntegrityIssues = (int)$journalIntegrity['line_count_failures'] + (int)$journalIntegrity['unbalanced_journals'] + (int)$journalIntegrity['missing_nominal_lines'];
         $sections['ledger_integrity'][] = $this->makeCheck(
@@ -529,7 +601,7 @@ final class YearEndChecklistService
                 ? 'Some journals have structural issues that must be resolved before year end is locked.'
                 : 'Journal structures look valid for this accounting period.',
             (string)$journalIntegrityIssues,
-            '?page=journals&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
+            '?page=journal&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
         );
         $sections['ledger_integrity'][] = $this->makeCheck(
             'posted_only_period_integrity',
@@ -540,7 +612,7 @@ final class YearEndChecklistService
                 ? 'This period is locked and backend mutation guards are enabled.'
                 : 'This period is still open for posting changes.',
             !empty($review['is_locked']) ? 'Locked' : 'Unlocked',
-            '?page=year-end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
+            '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_state'
         );
 
         $continuityWarningCount = (int)$statementContinuity['continuity_warnings'] + (int)$statementContinuity['ledger_warnings'];
@@ -577,16 +649,19 @@ final class YearEndChecklistService
         );
 
         $dlaClosing = (float)($directorLoan['closing_balance'] ?? 0);
+        $directorLoanClosingAcknowledged = trim((string)($review['director_loan_closing_acknowledged_at'] ?? '')) !== '';
         $sections['director_loan_expenses'][] = $this->makeCheck(
             'director_loan_closing_balance',
             'Director loan closing balance',
             'warning',
-            empty($directorLoan['available']) ? 'not_applicable' : ($dlaClosing !== 0.0 ? 'warning' : 'pass'),
+            empty($directorLoan['available']) ? 'not_applicable' : (abs($dlaClosing) >= 0.005 && !$directorLoanClosingAcknowledged ? 'warning' : 'pass'),
             empty($directorLoan['available'])
                 ? (string)($directorLoan['error'] ?? 'Director loan summary unavailable.')
-                : 'Review whether the period-end director loan balance is expected before filing.',
+                : ($directorLoanClosingAcknowledged
+                    ? 'Director loan closing balance has been acknowledged for this period.'
+                    : 'Review whether the period-end director loan balance is expected before filing.'),
             empty($directorLoan['available']) ? '' : (string)number_format($dlaClosing, 2, '.', ''),
-            '?page=director_loans&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
+            '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_director_loan_offset'
         );
         $sections['director_loan_expenses'][] = $this->makeCheck(
             'unpaid_expense_claims',
@@ -597,7 +672,7 @@ final class YearEndChecklistService
                 ? 'Expense claims carried forward at period end should be reviewed.'
                 : 'Expense claim register is not available yet.',
             !empty($unpaidExpenses['available']) ? (string)number_format((float)$unpaidExpenses['outstanding_amount'], 2, '.', '') : '',
-            '?page=expense_claims&company_id=' . $companyId
+            '?page=expense_claims&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
         );
         $sections['director_loan_expenses'][] = $this->makeCheck(
             'duplicate_repayment_protection',
@@ -608,7 +683,7 @@ final class YearEndChecklistService
                 ? 'Potentially duplicated repayment recognition should be checked where the same bank transaction is linked more than once.'
                 : 'Expense repayment links are not available yet.',
             !empty($duplicateRepayments['available']) ? (string)$duplicateRepayments['risk_count'] : '',
-            '?page=expense_claims&company_id=' . $companyId
+            '?page=expense_claims&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
         );
 
         $profitBeforeTax = (float)($financialStatements['profit_and_loss']['profit_before_tax'] ?? 0);
@@ -621,7 +696,7 @@ final class YearEndChecklistService
                 ? 'The app can derive a period P&L from posted journals.'
                 : 'The P&L cannot be generated because no posted journal data exists.',
             (string)number_format($profitBeforeTax, 2, '.', ''),
-            '?page=journals&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
+            '?page=journal&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
         );
         $sections['year_end_accounts_review'][] = $this->makeCheck(
             'balance_sheet_generated',
@@ -632,7 +707,7 @@ final class YearEndChecklistService
                 ? 'The app can derive a balance sheet snapshot from posted journals.'
                 : 'The balance sheet cannot be generated because no posted journals exist.',
             '',
-            '?page=year-end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '#companies-house-comparison'
+            '?page=companies_house&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '#companies-house-comparison'
         );
         $equityMovement = abs((float)($financialStatements['retained_earnings']['unexplained_movement'] ?? 0));
         $sections['year_end_accounts_review'][] = $this->makeCheck(
@@ -644,7 +719,7 @@ final class YearEndChecklistService
                 ? 'Opening equity, profit, and closing equity do not fully reconcile.'
                 : 'Opening equity, profit, and closing equity look internally consistent.',
             (string)number_format((float)($financialStatements['retained_earnings']['unexplained_movement'] ?? 0), 2, '.', ''),
-            '?page=journals&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
+            '?page=journal&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
         );
         $sections['year_end_accounts_review'][] = $this->makeCheck(
             'fixed_asset_review_placeholder',
@@ -664,7 +739,7 @@ final class YearEndChecklistService
             'warning',
             'Manual review reminder: consider year-end accruals, prepayments, and other cut-off journals before filing.',
             '',
-            '?page=journals&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
+            '?page=journal&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
         );
 
         $sections['corporation_tax_readiness'][] = $this->makeCheck(
@@ -689,7 +764,7 @@ final class YearEndChecklistService
             !empty($taxReadiness['available'])
                 ? ('Tax ' . number_format((float)($taxReadiness['estimated_corporation_tax'] ?? 0), 2, '.', ''))
                 : '',
-            '?page=year-end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '#tax-readiness'
+            '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_tax_readiness#tax-readiness'
         );
         $sections['corporation_tax_readiness'][] = $this->makeCheck(
             'losses_carried_forward',
@@ -698,7 +773,7 @@ final class YearEndChecklistService
             !empty($taxReadiness['available']) ? 'pass' : 'not_applicable',
             'Losses brought forward, used, and carried forward are shown on a simple basis ready for later CT engine refinement.',
             !empty($taxReadiness['available']) ? (string)number_format((float)($taxReadiness['losses_carried_forward'] ?? 0), 2, '.', '') : '',
-            '?page=year-end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '#tax-readiness'
+            '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_tax_readiness#tax-readiness'
         );
         $sections['corporation_tax_readiness'][] = $this->makeCheck(
             'filing_basis_reminder',
@@ -707,7 +782,7 @@ final class YearEndChecklistService
             'warning',
             'App numbers remain working figures until final adjustments and filing outputs are finalised.',
             '',
-            '?page=year-end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
+            '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_tax_readiness'
         );
 
         $comparisonFailures = 0;
@@ -738,7 +813,7 @@ final class YearEndChecklistService
                 ? (string)($chComparison['comparison_note'] ?? '')
                 : 'No Companies House comparison is available yet.',
             '',
-            '?page=year-end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '#companies-house-comparison'
+            '?page=companies_house&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '#companies-house-comparison'
         );
         $sections['companies_house_comparison'][] = $this->makeCheck(
             'accounts_comparison_metrics',
@@ -749,7 +824,7 @@ final class YearEndChecklistService
                 ? 'Compare app-computed balance sheet values against the stored filed accounts.'
                 : 'No comparison metrics are available.',
             !empty($chComparison['available']) ? (string)$comparisonFailures : '',
-            '?page=year-end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '#companies-house-comparison'
+            '?page=companies_house&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '#companies-house-comparison'
         );
 
         $blockingChecksPass = $uncategorisedCount === 0
@@ -766,7 +841,7 @@ final class YearEndChecklistService
                 ? 'All blocking year-end checks currently pass.'
                 : 'One or more blocking checks still fail, so this period cannot be locked yet.',
             $blockingChecksPass ? 'Ready to lock' : 'Not ready',
-            '?page=year-end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
+            '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_state'
         );
         $sections['final_review_lock'][] = $this->makeCheck(
             'year_end_notes',
@@ -777,7 +852,7 @@ final class YearEndChecklistService
                 ? 'Review notes are stored for this period.'
                 : 'No year-end notes have been saved for this period yet.',
             trim((string)($review['review_notes'] ?? '')) !== '' ? 'Saved' : 'Blank',
-            '?page=year-end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
+            '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_notes'
         );
 
         foreach ($sections as $sectionChecks) {

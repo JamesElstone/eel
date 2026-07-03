@@ -92,6 +92,39 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
         });
     });
 
+    $harness->check('YearEndAction', 'saves director loan offset acknowledgement', static function () use ($harness): void {
+        yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness): void {
+            $instance = yearEndActionTestInstanceWithDirectorCount(1);
+            if (!InterfaceDB::tableExists('year_end_reviews') || !InterfaceDB::columnExists('year_end_reviews', 'director_loan_closing_acknowledged_at')) {
+                $harness->skip('Director loan year-end acknowledgement schema is not available on the default InterfaceDB connection.');
+            }
+
+            yearEndActionDirectorLoanTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 1000.00, 0.00, 'asset');
+            yearEndActionDirectorLoanTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 0.00, 1500.00, 'liability');
+
+            $result = $instance->handle(
+                yearEndActionDirectorLoanTestRequest((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'save_director_loan_offset_acknowledgement'),
+                createTestPageServiceFramework()
+            );
+
+            $harness->assertSame(true, $result->isSuccess());
+            $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'acknowledgement saved'));
+            $acknowledgedAt = (string)InterfaceDB::fetchColumn(
+                'SELECT COALESCE(director_loan_closing_acknowledged_at, \'\')
+                 FROM year_end_reviews
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id
+                 LIMIT 1',
+                [
+                    'company_id' => (int)$fixture['company_id'],
+                    'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                ]
+            );
+
+            $harness->assertSame(false, $acknowledgedAt === '');
+        });
+    });
+
     $harness->check('YearEndAction', 'guarded year-end intents are blocked when active director count is not one', static function () use ($harness): void {
         yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness): void {
             $instance = yearEndActionTestInstanceWithDirectorCount(2);
@@ -280,6 +313,7 @@ function yearEndActionDirectorLoanTestRequest(int $companyId, int $accountingPer
             'company_id' => (string)$companyId,
             'accounting_period_id' => (string)$accountingPeriodId,
             'review_notes' => 'Notes from director eligibility test.',
+            'director_loan_offset_acknowledgement' => '1',
         ],
         ['REQUEST_METHOD' => 'POST', 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest', 'HTTP_ACCEPT' => 'application/json'],
         [],

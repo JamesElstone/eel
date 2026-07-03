@@ -1878,6 +1878,8 @@ CREATE TABLE `year_end_reviews` (
   `locked_at` datetime DEFAULT NULL,
   `locked_by` varchar(100) DEFAULT NULL,
   `review_notes` text DEFAULT NULL,
+  `director_loan_closing_acknowledged_at` datetime DEFAULT NULL,
+  `director_loan_closing_acknowledged_by` varchar(100) DEFAULT NULL,
   `last_recalculated_at` datetime DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),

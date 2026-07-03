@@ -40,6 +40,55 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
             }
         }
     });
+
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'director loan offset before lock is gated by acknowledgement', static function () use ($harness): void {
+        yearEndChecklistServiceRequireDirectorLoanOffsetLockSchema($harness);
+
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = yearEndChecklistServiceCreateDirectorLoanOffsetFixture();
+            $service = new \eel_accounts\Service\YearEndChecklistService();
+            $method = new ReflectionMethod($service, 'applyDirectorLoanOffsetBeforeLock');
+            $method->setAccessible(true);
+
+            $blocked = $method->invoke(
+                $service,
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                ['review' => []],
+                'test'
+            );
+
+            $harness->assertSame(false, (bool)($blocked['success'] ?? true));
+            $harness->assertSame(true, str_contains((string)(($blocked['errors'] ?? [])[0] ?? ''), 'acknowledgement'));
+            $harness->assertSame(0, InterfaceDB::countWhere('journal_entry_metadata', [
+                'company_id' => (int)$fixture['company_id'],
+                'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                'journal_tag' => \eel_accounts\Service\DirectorLoanReconciliationService::OFFSET_JOURNAL_TAG,
+                'journal_key' => \eel_accounts\Service\DirectorLoanReconciliationService::OFFSET_JOURNAL_KEY,
+            ]));
+
+            $posted = $method->invoke(
+                $service,
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                ['review' => ['director_loan_closing_acknowledged_at' => '2026-07-03 12:00:00']],
+                'test'
+            );
+
+            $harness->assertSame(true, (bool)($posted['success'] ?? false));
+            $harness->assertSame(1, InterfaceDB::countWhere('journal_entry_metadata', [
+                'company_id' => (int)$fixture['company_id'],
+                'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                'journal_tag' => \eel_accounts\Service\DirectorLoanReconciliationService::OFFSET_JOURNAL_TAG,
+                'journal_key' => \eel_accounts\Service\DirectorLoanReconciliationService::OFFSET_JOURNAL_KEY,
+            ]));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
 });
 
 function yearEndChecklistServiceRequireDepreciationLockSchema(GeneratedServiceClassTestHarness $harness): void
@@ -51,6 +100,21 @@ function yearEndChecklistServiceRequireDepreciationLockSchema(GeneratedServiceCl
     }
 
     foreach (['1000', '1300', '1330', '4000', '6200'] as $code) {
+        if (yearEndChecklistServiceNominalId($code) <= 0) {
+            $harness->skip('Nominal ' . $code . ' is not available.');
+        }
+    }
+}
+
+function yearEndChecklistServiceRequireDirectorLoanOffsetLockSchema(GeneratedServiceClassTestHarness $harness): void
+{
+    foreach (['companies', 'accounting_periods', 'journals', 'journal_lines', 'nominal_accounts', 'journal_entry_metadata'] as $table) {
+        if (!InterfaceDB::tableExists($table)) {
+            $harness->skip($table . ' table is not available.');
+        }
+    }
+
+    foreach (['1200', '2100'] as $code) {
         if (yearEndChecklistServiceNominalId($code) <= 0) {
             $harness->skip('Nominal ' . $code . ' is not available.');
         }
@@ -173,6 +237,79 @@ function yearEndChecklistServiceCreateDepreciationLockFixture(): array
         'accounting_period_id' => $accountingPeriodId,
         'asset_id' => $assetId,
     ];
+}
+
+function yearEndChecklistServiceCreateDirectorLoanOffsetFixture(): array
+{
+    $marker = (string)random_int(100000, 999999);
+    $companyId = (int)('64' . $marker);
+    $accountingPeriodId = (int)('65' . $marker);
+    $assetNominalId = yearEndChecklistServiceNominalId('1200');
+    $liabilityNominalId = yearEndChecklistServiceNominalId('2100');
+
+    InterfaceDB::prepareExecute(
+        'INSERT INTO companies (id, company_name, company_number, is_active)
+         VALUES (:id, :company_name, :company_number, 1)',
+        [
+            'id' => $companyId,
+            'company_name' => 'Year End Director Loan Fixture ' . $marker,
+            'company_number' => 'YDL' . substr($marker, 0, 5),
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end)
+         VALUES (:id, :company_id, :label, :period_start, :period_end)',
+        [
+            'id' => $accountingPeriodId,
+            'company_id' => $companyId,
+            'label' => 'YDL FY ' . $marker,
+            'period_start' => '2025-01-01',
+            'period_end' => '2025-12-31',
+        ]
+    );
+
+    yearEndChecklistServiceInsertDirectorLoanLineJournal($companyId, $accountingPeriodId, $assetNominalId, 1000.00, 0.00, 'asset', $marker);
+    yearEndChecklistServiceInsertDirectorLoanLineJournal($companyId, $accountingPeriodId, $liabilityNominalId, 0.00, 1500.00, 'liability', $marker);
+
+    return [
+        'company_id' => $companyId,
+        'accounting_period_id' => $accountingPeriodId,
+    ];
+}
+
+function yearEndChecklistServiceInsertDirectorLoanLineJournal(int $companyId, int $accountingPeriodId, int $nominalId, float $debit, float $credit, string $key, string $marker): void
+{
+    $sourceRef = 'year-end-director-loan-fixture-' . $marker . '-' . $key;
+    InterfaceDB::prepareExecute(
+        'INSERT INTO journals (company_id, accounting_period_id, source_type, source_ref, journal_date, description, is_posted)
+         VALUES (:company_id, :accounting_period_id, :source_type, :source_ref, :journal_date, :description, 1)',
+        [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'source_type' => 'manual',
+            'source_ref' => $sourceRef,
+            'journal_date' => '2025-12-31',
+            'description' => 'Year end director loan fixture ' . $key,
+        ]
+    );
+    $journalId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM journals WHERE company_id = :company_id AND source_ref = :source_ref LIMIT 1',
+        [
+            'company_id' => $companyId,
+            'source_ref' => $sourceRef,
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit, line_description)
+         VALUES (:journal_id, :nominal_account_id, :debit, :credit, :line_description)',
+        [
+            'journal_id' => $journalId,
+            'nominal_account_id' => $nominalId,
+            'debit' => number_format($debit, 2, '.', ''),
+            'credit' => number_format($credit, 2, '.', ''),
+            'line_description' => 'Year end director loan fixture',
+        ]
+    );
 }
 
 function yearEndChecklistServiceNominalId(string $code): int

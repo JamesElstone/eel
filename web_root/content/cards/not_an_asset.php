@@ -109,6 +109,10 @@ final class _not_an_assetCard extends CardBaseFramework
 
     private function table(array $context): TableFramework
     {
+        $company = (array)($context['company'] ?? []);
+        $companyId = (int)($company['id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
+
         return TableFramework::make($this->key(), $this->rows($context))
             ->filename('non-assets-potential-fixed-assets')
             ->exportLimit(5000)
@@ -130,6 +134,13 @@ final class _not_an_assetCard extends CardBaseFramework
                 export: static fn(array $row): string => FormattingFramework::money((float)($row['amount'] ?? 0)),
                 cellClass: 'numeric',
                 exportType: 'number'
+            )
+            ->column(
+                'action',
+                'Action',
+                html: fn(array $row): string => $this->openSourceButton($row, $companyId, $accountingPeriodId),
+                exportable: false,
+                cellClass: 'cell-fit'
             );
     }
 
@@ -162,6 +173,60 @@ final class _not_an_assetCard extends CardBaseFramework
             <select class="select" id="potential_asset_threshold" name="potential_asset_threshold">' . $options . '</select>
             <button class="button primary" type="submit">Save Threshold</button>
         </form>';
+    }
+
+    private function openSourceButton(array $row, int $companyId, int $accountingPeriodId): string
+    {
+        $sourceType = (string)($row['source_type'] ?? '');
+        $sourceId = (int)($row['source_id'] ?? 0);
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || $sourceId <= 0) {
+            return '';
+        }
+
+        if ($sourceType === 'transaction') {
+            $monthKey = $this->monthKey((string)($row['date'] ?? ''));
+            if ($monthKey === '') {
+                return '';
+            }
+
+            return '<form method="get" data-ajax="true">
+                <input type="hidden" name="page" value="transactions">
+                <input type="hidden" name="show_card" value="transactions_imported">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <input type="hidden" name="month_key" value="' . HelperFramework::escape($monthKey) . '">
+                <input type="hidden" name="category_filter" value="all">
+                <button class="button button-inline" type="submit">Open Source</button>
+            </form>';
+        }
+
+        if ($sourceType === 'expense_claim') {
+            $claimId = (int)($row['source_claim_id'] ?? 0);
+            if ($claimId <= 0) {
+                return '';
+            }
+
+            return '<form method="get" data-ajax="true">
+                <input type="hidden" name="page" value="expense_claims">
+                <input type="hidden" name="show_card" value="expense_claim_editor">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <input type="hidden" name="claim_id" value="' . $claimId . '">
+                <button class="button button-inline" type="submit">Open Source</button>
+            </form>';
+        }
+
+        return '';
+    }
+
+    private function monthKey(string $date): string
+    {
+        $date = trim($date);
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            return '';
+        }
+
+        return substr($date, 0, 7) . '-01';
     }
 
     private function displayDate(string $value): string

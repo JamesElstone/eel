@@ -363,6 +363,7 @@ final class AssetService
         return array_map(
             static function (array $row): array {
                 return [
+                    'source_type' => 'transaction',
                     'source_id' => (int)$row['id'],
                     'date' => (string)$row['txn_date'],
                     'source' => 'Transaction',
@@ -408,7 +409,9 @@ final class AssetService
         return array_map(
             static function (array $row): array {
                 return [
+                    'source_type' => 'expense_claim',
                     'source_id' => (int)$row['id'],
+                    'source_claim_id' => (int)$row['expense_claim_id'],
                     'date' => (string)$row['expense_date'],
                     'source' => 'Expense claim',
                     'description' => (string)$row['description'],
@@ -420,6 +423,7 @@ final class AssetService
             },
             \InterfaceDB::fetchAll(
                 'SELECT ecl.id,
+                        ecl.expense_claim_id,
                         ecl.expense_date,
                         ecl.description,
                         ecl.receipt_reference,

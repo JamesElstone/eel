@@ -106,6 +106,59 @@ $harness->run(_not_an_assetCard::class, static function (GeneratedServiceClassTe
         $harness->assertTrue(str_contains($html, '312.50'));
     });
 
+    $harness->check(_not_an_assetCard::class, 'renders open source actions for transactions and expense claims', static function () use ($harness, $card): void {
+        $context = [
+            'company' => [
+                'id' => 7,
+                'accounting_period_id' => 22,
+                'settings' => [
+                    'tools_small_equipment_nominal_id' => 18,
+                    'potential_asset_threshold' => 250,
+                ],
+            ],
+            'services' => [
+                'nonAssetCandidates' => [
+                    'available' => true,
+                    'threshold' => 250,
+                    'rows' => [
+                        [
+                            'source_type' => 'transaction',
+                            'source_id' => 51,
+                            'date' => '2026-07-02',
+                            'source' => 'Transaction',
+                            'description' => 'Cordless drill',
+                            'reference' => 'INV-7',
+                            'amount' => 312.50,
+                        ],
+                        [
+                            'source_type' => 'expense_claim',
+                            'source_id' => 61,
+                            'source_claim_id' => 71,
+                            'date' => '2026-07-03',
+                            'source' => 'Expense claim',
+                            'description' => 'Tool bag',
+                            'reference' => 'EXP-7',
+                            'amount' => 275.00,
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        $html = $card->render($context);
+        $csv = $card->tables($context)[0]->exportCsv();
+
+        $harness->assertSame(2, substr_count($html, '>Open Source</button>'));
+        $harness->assertTrue(str_contains($html, 'name="page" value="transactions"'));
+        $harness->assertTrue(str_contains($html, 'name="show_card" value="transactions_imported"'));
+        $harness->assertTrue(str_contains($html, 'name="month_key" value="2026-07-01"'));
+        $harness->assertTrue(str_contains($html, 'name="category_filter" value="all"'));
+        $harness->assertTrue(str_contains($html, 'name="page" value="expense_claims"'));
+        $harness->assertTrue(str_contains($html, 'name="show_card" value="expense_claim_editor"'));
+        $harness->assertTrue(str_contains($html, 'name="claim_id" value="71"'));
+        $harness->assertFalse(str_contains($csv, 'Open Source'));
+    });
+
     $harness->check(_not_an_assetCard::class, 'renders nominal setup helper when Tools and Small Equipment is unconfigured', static function () use ($harness, $card): void {
         $html = $card->render([
             'company' => [

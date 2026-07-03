@@ -526,6 +526,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $data = $service->fetchNonAssetCandidates($fixture['company_id'], $fixture['accounting_period_id'], $nominalId, 250);
             $rows = (array)($data['rows'] ?? []);
             $descriptions = array_map(static fn(array $row): string => (string)$row['description'], $rows);
+            $candidateTransaction = assetServiceTestFindNonAssetCandidate($rows, 'Candidate transaction ' . $fixture['marker'] . ' 1');
+            $candidateReceipt = assetServiceTestFindNonAssetCandidate($rows, 'Candidate receipt ' . $fixture['marker']);
 
             $harness->assertSame(2, (int)($data['count'] ?? 0));
             $harness->assertTrue(in_array('Candidate transaction ' . $fixture['marker'] . ' 1', $descriptions, true));
@@ -534,9 +536,25 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertFalse(in_array('Linked transaction ' . $fixture['marker'] . ' 3', $descriptions, true));
             $harness->assertFalse(in_array('Equal receipt ' . $fixture['marker'], $descriptions, true));
             $harness->assertFalse(in_array('Linked receipt ' . $fixture['marker'], $descriptions, true));
+            $harness->assertSame('transaction', (string)($candidateTransaction['source_type'] ?? ''));
+            $harness->assertSame($includedTransactionId, (int)($candidateTransaction['source_id'] ?? 0));
+            $harness->assertSame('expense_claim', (string)($candidateReceipt['source_type'] ?? ''));
+            $harness->assertSame($expenseFixture['included_line_id'], (int)($candidateReceipt['source_id'] ?? 0));
+            $harness->assertSame($expenseFixture['claim_id'], (int)($candidateReceipt['source_claim_id'] ?? 0));
         });
     }
 );
+
+function assetServiceTestFindNonAssetCandidate(array $rows, string $description): array
+{
+    foreach ($rows as $row) {
+        if (is_array($row) && (string)($row['description'] ?? '') === $description) {
+            return $row;
+        }
+    }
+
+    throw new RuntimeException('Unable to find non-asset candidate: ' . $description);
+}
 
 function assetServiceTestInsertNominal(string $prefix, string $name, string $accountType, string $subtypeCode = ''): int
 {

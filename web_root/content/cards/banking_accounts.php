@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 final class _banking_accountsCard extends CardBaseFramework
 {
+    private const PAGE_SIZE = 5;
+
     public function key(): string
     {
         return 'banking_accounts';
@@ -71,14 +73,33 @@ final class _banking_accountsCard extends CardBaseFramework
             ';
         }
 
-        return $this->table($context)->render($context, [
+        return $this->configuredTable($context)->render($context, [
             'cards[]' => (array)($context['page']['page_cards'] ?? []),
         ]);
     }
 
     public function tables(array $context): array
     {
-        return [$this->table($context)];
+        return [$this->configuredTable($context)];
+    }
+
+    private function configuredTable(array $context): TableFramework
+    {
+        $pagination = HelperFramework::paginateArray($this->rows($context), $this->paginationPage($context), self::PAGE_SIZE);
+
+        return $this->table($context)
+            ->visibleRows((array)$pagination['items'])
+            ->pagination(
+                $pagination,
+                'Company accounts',
+                $this->paginationPageField(),
+                [
+                    'page' => (string)($context['page']['page_id'] ?? ''),
+                    '_pagination' => '1',
+                    '_invalidate_fact' => $this->tableInvalidationFact(),
+                    'cards[]' => [$this->key()],
+                ]
+            );
     }
 
     private function table(array $context): TableFramework
@@ -210,5 +231,10 @@ final class _banking_accountsCard extends CardBaseFramework
         }
 
         return implode(', ', $parts);
+    }
+
+    private function tableInvalidationFact(): string
+    {
+        return (string)($this->invalidationFacts()[0] ?? $this->key());
     }
 }

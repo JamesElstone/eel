@@ -41,7 +41,7 @@ $harness->run(_year_end_empty_month_confirmationsCard::class, static function (
                     'first_later_statement' => [
                         'chosen_txn_date' => '2022-10-05',
                         'original_filename' => 'october.csv',
-                        'opening_balance' => 0,
+                        'opening_balance' => 12.34,
                     ],
                 ],
             ],
@@ -71,6 +71,7 @@ $harness->run(_year_end_empty_month_confirmationsCard::class, static function (
         $harness->assertSame(true, str_contains($html, 'Confirmed'));
         $harness->assertSame(true, str_contains($html, 'revoke_empty_month'));
         $harness->assertSame(true, str_contains($html, 'Bank account was not open.'));
+        $harness->assertSame(true, str_contains($html, '$12.34'));
     });
 });
 
@@ -81,6 +82,9 @@ function yearEndEmptyMonthConfirmationsCardContext(array $months): array
             'id' => 41,
             'name' => 'Empty Month Fixture Limited',
             'accounting_period_id' => 90,
+            'settings' => [
+                'default_currency_symbol' => '&#36;',
+            ],
         ],
         'services' => [
             'emptyMonthConfirmations' => [

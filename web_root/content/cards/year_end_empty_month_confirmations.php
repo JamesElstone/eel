@@ -62,6 +62,7 @@ final class _year_end_empty_month_confirmationsCard extends CardBaseFramework
         }
 
         $company = (array)($context['company'] ?? []);
+        $companySettings = (array)($company['settings'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $html = '<div class="settings-stack">';
@@ -71,13 +72,13 @@ final class _year_end_empty_month_confirmationsCard extends CardBaseFramework
                 continue;
             }
 
-            $html .= $this->renderMonth($month, $companyId, $accountingPeriodId);
+            $html .= $this->renderMonth($month, $companyId, $accountingPeriodId, $companySettings);
         }
 
         return $html . '</div>';
     }
 
-    private function renderMonth(array $month, int $companyId, int $accountingPeriodId): string
+    private function renderMonth(array $month, int $companyId, int $accountingPeriodId, array $companySettings): string
     {
         $status = (string)($month['status'] ?? 'not_available');
         $confirmation = (array)($month['confirmation'] ?? []);
@@ -91,13 +92,13 @@ final class _year_end_empty_month_confirmationsCard extends CardBaseFramework
                 <span class="badge ' . HelperFramework::escape($this->badgeClass($status, !empty($month['can_confirm']))) . '">' . HelperFramework::escape($badgeLabel) . '</span>
             </div>
             <div class="helper">' . HelperFramework::escape((string)($month['reason'] ?? '')) . '</div>
-            ' . $this->evidenceHtml((array)($month['evidence'] ?? [])) . '
+            ' . $this->evidenceHtml((array)($month['evidence'] ?? []), $companySettings) . '
             ' . ($notes !== '' ? '<div class="helper"><strong>Notes:</strong> ' . HelperFramework::escape($notes) . '</div>' : '') . '
             ' . $action . '
         </section>';
     }
 
-    private function evidenceHtml(array $evidence): string
+    private function evidenceHtml(array $evidence, array $companySettings): string
     {
         $counts = (array)($evidence['activity_counts'] ?? []);
         $statement = (array)($evidence['first_later_statement'] ?? []);
@@ -110,7 +111,7 @@ final class _year_end_empty_month_confirmationsCard extends CardBaseFramework
 
         if ($statement !== []) {
             $rows['First later statement'] = trim((string)($statement['chosen_txn_date'] ?? '') . ' ' . (string)($statement['original_filename'] ?? ''));
-            $rows['Opening balance'] = FormattingFramework::money($statement['opening_balance'] ?? 0);
+            $rows['Opening balance'] = $this->money($companySettings, $statement['opening_balance'] ?? 0);
         }
 
         $html = '<div class="summary-grid">';
@@ -123,6 +124,11 @@ final class _year_end_empty_month_confirmationsCard extends CardBaseFramework
         }
 
         return $html . '</div>';
+    }
+
+    private function money(array $companySettings, float|int|string|null $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 
     private function actionHtml(array $month, array $confirmation, int $companyId, int $accountingPeriodId): string

@@ -358,6 +358,11 @@
                 if (control.dataset.autosaveRequireValue === '1' && String(control.value || '').trim() === '') {
                     return;
                 }
+                if (Object.prototype.hasOwnProperty.call(control.dataset, 'initialValue')
+                    && String(control.value || '') === String(control.dataset.initialValue || '')
+                ) {
+                    return;
+                }
 
                 const form = formForControl(control);
                 if (!(form instanceof HTMLFormElement)) {

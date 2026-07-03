@@ -539,6 +539,35 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         );
     };
 
+    $saveTransactionNote = static function (array $fixture, string $notes) use ($instance): ActionResultFramework {
+        $request = new RequestFramework(
+            [],
+            [
+                'card_action' => 'Transaction',
+                'global_action' => 'save_transaction_note',
+                'company_id' => (string)$fixture['company_id'],
+                'accounting_period_id' => (string)$fixture['accounting_period_id'],
+                'transaction_id' => (string)$fixture['transaction_id'],
+                'month_key' => '2026-03-01',
+                'category_filter' => 'all',
+                'notes' => $notes,
+            ],
+            ['REQUEST_METHOD' => 'POST'],
+            [],
+            [],
+            null
+        );
+
+        return $instance->handle($request, createTestPageServiceFramework());
+    };
+
+    $transactionNotes = static function (int $transactionId): string {
+        return (string)InterfaceDB::fetchColumn(
+            'SELECT COALESCE(notes, \'\') FROM transactions WHERE id = :id',
+            ['id' => $transactionId]
+        );
+    };
+
     $insertDerivedJournal = static function (array $fixture): int {
         InterfaceDB::prepareExecute(
             'INSERT INTO journals (company_id, accounting_period_id, source_type, source_ref, journal_date, description, is_posted)
@@ -562,6 +591,31 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
             ]
         );
     };
+
+    $harness->check('TransactionAction', 'save_transaction_note updates only the transaction note', function () use ($harness, $createDirectorLoanFixture, $saveTransactionNote, $transactionNotes, $transactionNominalId): void {
+        $fixture = $createDirectorLoanFixture(-25.00);
+
+        $result = $saveTransactionNote($fixture, 'Void reason: recategorised to director loan.');
+
+        $harness->assertSame(true, $result->isSuccess());
+        $harness->assertSame(['transactions.imported'], $result->changedFacts());
+        $harness->assertSame('Void reason: recategorised to director loan.', $transactionNotes((int)$fixture['transaction_id']));
+        $harness->assertSame(0, $transactionNominalId((int)$fixture['transaction_id']));
+    });
+
+    $harness->check('TransactionAction', 'save_transaction_note is blocked for locked accounting periods', function () use ($harness, $createDirectorLoanFixture, $saveTransactionNote, $transactionNotes): void {
+        if (!InterfaceDB::tableExists('year_end_reviews')) {
+            $harness->skip('Year end review table is not available on the default InterfaceDB connection.');
+        }
+
+        $fixture = $createDirectorLoanFixture(-25.00, [], [], true);
+
+        $result = $saveTransactionNote($fixture, 'Should not save.');
+
+        $harness->assertSame(false, $result->isSuccess());
+        $harness->assertSame('', $transactionNotes((int)$fixture['transaction_id']));
+        $harness->assertSame(true, str_contains(transactionActionFlashText($result), 'locked'));
+    });
 
     $harness->check('TransactionAction', 'mark_director_loan uses the asset nominal for money leaving the bank', function () use ($harness, $createDirectorLoanFixture, $markDirectorLoan, $transactionNominalId, $transactionCategoryStatus): void {
         $fixture = $createDirectorLoanFixture(-250.00, [
@@ -1498,10 +1552,10 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, '<button class="button" type="button" disabled title="Period locked">Run Auto Rules</button>'));
         $harness->assertSame(true, str_contains($html, '<button class="button primary" type="button" disabled title="Period locked">Post Categorised Transactions</button>'));
         $harness->assertSame(false, str_contains($html, 'name="global_action" value="save_transaction_category"'));
-        $harness->assertSame(true, str_contains($html, '<button class="button primary" type="submit" name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form">Create Rule</button>'));
+        $harness->assertSame(true, str_contains($html, '<button class="button primary" type="submit" name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form">Rule</button>'));
         $harness->assertSame(true, str_contains($html, '<button class="button" type="button" disabled title="Period locked">Director Loan</button>'));
         $harness->assertSame(true, str_contains($html, 'type="button" disabled title="Period locked" name="global_action" value="defer_transaction"'));
-        $harness->assertSame(true, str_contains($html, '<button class="button" type="button" disabled title="Period locked">Create Asset</button>'));
+        $harness->assertSame(true, str_contains($html, '<button class="button" type="button" disabled title="Period locked">Asset</button>'));
         $harness->assertSame(true, str_contains($html, 'View Receipt'));
     });
 

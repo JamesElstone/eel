@@ -29,6 +29,7 @@ final class TransactionAction implements ActionInterfaceFramework
             'select_transaction_month',
             'edit_categorisation_rule',
             'cancel_categorisation_rule' => $this->selectionResult($request, $intent),
+            'save_transaction_note' => $this->saveTransactionNote($request),
             'save_transaction_category',
             'defer_transaction',
             'mark_director_loan' => $this->saveTransactionCategory($request, $services, $intent),
@@ -244,6 +245,59 @@ final class TransactionAction implements ActionInterfaceFramework
         }
 
         return $this->result($errors === [], $errors, $flashMessages, $context);
+    }
+
+    private function saveTransactionNote(RequestFramework $request): ActionResultFramework
+    {
+        $context = $this->filterContext($request);
+        $query = array_merge($this->filterQuery($request, $context), ['show_card' => 'transactions_imported']);
+        $companyId = $this->selectedCompanyId($request);
+        $accountingPeriodId = $this->selectedAccountingPeriodId($request);
+        $transactionId = $this->positiveInt($request->post('transaction_id', 0));
+        $notes = (string)$request->post('notes', '');
+        $errors = [];
+
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || $transactionId <= 0) {
+            $errors[] = 'Select a valid transaction before saving notes.';
+        }
+
+        $transaction = null;
+        if ($errors === []) {
+            $transaction = InterfaceDB::fetchOne(
+                'SELECT id, company_id, accounting_period_id
+                 FROM transactions
+                 WHERE id = :transaction_id
+                 LIMIT 1',
+                ['transaction_id' => $transactionId]
+            );
+
+            if (!is_array($transaction)
+                || (int)($transaction['company_id'] ?? 0) !== $companyId
+                || (int)($transaction['accounting_period_id'] ?? 0) !== $accountingPeriodId
+            ) {
+                $errors[] = 'The selected transaction does not belong to the selected company and accounting period.';
+            }
+        }
+
+        if ($errors === []) {
+            try {
+                (new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'change transaction notes in this period');
+                InterfaceDB::prepareExecute(
+                    'UPDATE transactions
+                     SET notes = :notes,
+                         updated_at = CURRENT_TIMESTAMP
+                     WHERE id = :transaction_id',
+                    [
+                        'notes' => $notes,
+                        'transaction_id' => $transactionId,
+                    ]
+                );
+            } catch (Throwable $exception) {
+                $errors[] = 'The transaction note could not be saved: ' . $exception->getMessage();
+            }
+        }
+
+        return $this->result($errors === [], $errors, [], $context, $query, [self::TRANSACTIONS_IMPORTED_FACT]);
     }
 
     private function draftCategorisationRule(RequestFramework $request, PageServiceFramework $services): ActionResultFramework

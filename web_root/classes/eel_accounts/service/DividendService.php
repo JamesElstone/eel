@@ -267,6 +267,7 @@ final class DividendService
 
             $this->insertJournalLine($journalId, $dividendsPaidNominalId, $amount, 0.0, 'Dividend declared');
             $this->insertJournalLine($journalId, $creditNominalId, 0.0, $amount, $this->settlementLabel($settlementTarget));
+            $voucher = $this->ensureVoucherForJournal($journalId, null);
 
             if ($ownsTransaction) {
                 \InterfaceDB::commit();
@@ -277,6 +278,7 @@ final class DividendService
                 'posted' => false,
                 'journal_id' => $journalId,
                 'source_ref' => $sourceRef,
+                'voucher_id' => (int)($voucher['id'] ?? 0),
             ];
         } catch (\Throwable $exception) {
             if ($ownsTransaction && \InterfaceDB::inTransaction()) {
@@ -331,12 +333,14 @@ final class DividendService
         $sourceRef = $this->transactionDividendSourceRef($transactionId);
         $existingJournalId = $this->findJournalId($companyId, $sourceRef);
         if ($existingJournalId > 0) {
+            $voucher = $this->ensureVoucherForJournal($existingJournalId, $transactionId);
             return [
                 'success' => true,
                 'posted' => true,
                 'already_exists' => true,
                 'journal_id' => $existingJournalId,
                 'source_ref' => $sourceRef,
+                'voucher_id' => (int)($voucher['id'] ?? 0),
             ];
         }
 
@@ -414,6 +418,7 @@ final class DividendService
 
             $this->insertJournalLine($journalId, $dividendsPaidNominalId, $amount, 0.0, 'Dividend declared from imported transaction');
             $this->insertJournalLine($journalId, $dividendsPayableNominalId, 0.0, $amount, 'Dividend payable created from imported transaction');
+            $voucher = $this->ensureVoucherForJournal($journalId, $transactionId);
 
             if ($ownsTransaction) {
                 \InterfaceDB::commit();
@@ -425,6 +430,7 @@ final class DividendService
                 'already_exists' => false,
                 'journal_id' => $journalId,
                 'source_ref' => $sourceRef,
+                'voucher_id' => (int)($voucher['id'] ?? 0),
             ];
         } catch (\Throwable $exception) {
             if ($ownsTransaction && \InterfaceDB::inTransaction()) {
@@ -496,6 +502,23 @@ final class DividendService
             $params[] = $dividendsPaidId;
         }
 
+        $voucherSelect = $this->tableExists('dividend_vouchers')
+            ? ', dv.id AS voucher_id,
+                    dv.transaction_id AS voucher_transaction_id,
+                    dv.reversal_journal_id,
+                    dv.voided_at,
+                    dv.voided_by,
+                    dv.void_reason'
+            : ', NULL AS voucher_id,
+                    NULL AS voucher_transaction_id,
+                    NULL AS reversal_journal_id,
+                    NULL AS voided_at,
+                    NULL AS voided_by,
+                    NULL AS void_reason';
+        $voucherJoin = $this->tableExists('dividend_vouchers')
+            ? ' LEFT JOIN dividend_vouchers dv ON dv.journal_id = j.id'
+            : '';
+
         $stmt = \InterfaceDB::prepare(
             'SELECT j.id,
                     j.journal_date,
@@ -504,14 +527,18 @@ final class DividendService
                     j.is_posted,
                     COALESCE(SUM(jl.debit), 0) AS total_debit,
                     COALESCE(SUM(jl.credit), 0) AS total_credit
+                    ' . $voucherSelect . '
              FROM journals j
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
+             ' . $voucherJoin . '
              WHERE j.company_id = ?
                AND j.accounting_period_id = ?
+               AND COALESCE(j.source_ref, \'\') NOT LIKE \'dividend:void:%\'
                AND (
                     (j.source_type = ? AND j.source_ref LIKE ?)' . $nominalCondition . '
                )
-             GROUP BY j.id, j.journal_date, j.description, j.source_ref, j.is_posted
+             GROUP BY j.id, j.journal_date, j.description, j.source_ref, j.is_posted,
+                      voucher_id, voucher_transaction_id, reversal_journal_id, voided_at, voided_by, void_reason
              ORDER BY j.journal_date DESC, j.id DESC'
         );
         if ($stmt === false) {
@@ -521,13 +548,167 @@ final class DividendService
         $stmt->execute($params);
         $rows = $stmt->fetchAll() ?: [];
         foreach ($rows as &$row) {
+            $transactionId = (int)($row['voucher_transaction_id'] ?? 0);
+            if ($transactionId <= 0) {
+                $transactionId = $this->transactionIdFromDividendSourceRef((string)($row['source_ref'] ?? ''));
+            }
+            if ((int)($row['voucher_id'] ?? 0) <= 0) {
+                $voucher = $this->ensureVoucherForJournal((int)($row['id'] ?? 0), $transactionId > 0 ? $transactionId : null);
+                $row['voucher_id'] = (int)($voucher['id'] ?? 0);
+                $row['voucher_transaction_id'] = (int)($voucher['transaction_id'] ?? 0);
+                $row['voided_at'] = (string)($voucher['voided_at'] ?? '');
+                $row['voided_by'] = (string)($voucher['voided_by'] ?? '');
+                $row['void_reason'] = (string)($voucher['void_reason'] ?? '');
+                $row['reversal_journal_id'] = (int)($voucher['reversal_journal_id'] ?? 0);
+            }
+
+            $paymentLink = $this->paymentLinkState((string)($row['source_ref'] ?? ''), $transactionId);
             $row['amount'] = $this->dividendAmountForJournal((int)$row['id'], $dividendsPaidId);
             $row['settlement_account'] = $this->settlementAccountForJournal((int)$row['id'], $dividendsPaidId);
-            $row['status'] = !empty($row['is_posted']) ? 'posted' : 'draft';
+            $row['payment_link_status'] = $paymentLink['status'];
+            $row['payment_link_label'] = $paymentLink['label'];
+            $row['payment_link_detail'] = $paymentLink['detail'];
+            $row['transaction_notes'] = $paymentLink['notes'];
+            $isVoided = trim((string)($row['voided_at'] ?? '')) !== '';
+            if ($isVoided) {
+                $row['payment_link_status'] = 'voided';
+                $row['payment_link_label'] = 'Voided';
+                $row['payment_link_detail'] = 'This dividend has been voided and retained for audit history.';
+            }
+            $row['status'] = $isVoided ? 'voided' : (!empty($row['is_posted']) ? 'posted' : 'draft');
+            $row['can_void'] = !$isVoided
+                && !$this->isPeriodLocked($companyId, $accountingPeriodId)
+                && (bool)$paymentLink['voidable']
+                && trim((string)$paymentLink['notes']) !== '';
         }
         unset($row);
 
         return $rows;
+    }
+
+    public function listDividendVouchers(int $companyId, int $accountingPeriodId): array
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || !$this->tableExists('dividend_vouchers')) {
+            return [];
+        }
+
+        return \InterfaceDB::fetchAll(
+            'SELECT dv.id,
+                    dv.company_id,
+                    dv.accounting_period_id,
+                    dv.journal_id,
+                    dv.transaction_id,
+                    dv.reversal_journal_id,
+                    dv.company_name,
+                    dv.shareholder_name,
+                    dv.director_name,
+                    dv.declaration_date,
+                    dv.payment_date,
+                    dv.amount,
+                    dv.description,
+                    dv.voucher_text,
+                    dv.minutes_text,
+                    dv.issued_at,
+                    dv.issued_by,
+                    dv.voided_at,
+                    dv.voided_by,
+                    dv.void_reason,
+                    COALESCE(j.source_ref, \'\') AS source_ref
+             FROM dividend_vouchers dv
+             LEFT JOIN journals j ON j.id = dv.journal_id
+             WHERE dv.company_id = :company_id
+               AND dv.accounting_period_id = :accounting_period_id
+             ORDER BY dv.declaration_date DESC, dv.id DESC',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+            ]
+        );
+    }
+
+    public function voidDividend(int $companyId, int $accountingPeriodId, int $journalId, string $changedBy = 'web_app'): array
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || $journalId <= 0) {
+            return ['success' => false, 'errors' => ['Select a valid dividend before voiding it.']];
+        }
+        if (!$this->tableExists('dividend_vouchers')) {
+            return ['success' => false, 'errors' => ['Run the dividend voucher migration before voiding dividend records.']];
+        }
+
+        try {
+            (new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'void dividend records in this period');
+        } catch (\Throwable $exception) {
+            return ['success' => false, 'errors' => [$exception->getMessage()]];
+        }
+
+        $journal = $this->fetchDividendJournal($companyId, $accountingPeriodId, $journalId);
+        if ($journal === null) {
+            return ['success' => false, 'errors' => ['The selected dividend journal could not be found.']];
+        }
+
+        $transactionId = $this->transactionIdFromDividendSourceRef((string)($journal['source_ref'] ?? ''));
+        if ($transactionId <= 0) {
+            return ['success' => false, 'errors' => ['Only dividends created from imported transactions can be voided from this workflow.']];
+        }
+
+        $voucher = $this->ensureVoucherForJournal($journalId, $transactionId, $changedBy);
+        if (trim((string)($voucher['voided_at'] ?? '')) !== '') {
+            return ['success' => false, 'errors' => ['This dividend has already been voided.']];
+        }
+
+        $paymentLink = $this->paymentLinkState((string)($journal['source_ref'] ?? ''), $transactionId);
+        if (empty($paymentLink['voidable'])) {
+            return ['success' => false, 'errors' => ['This dividend still has a valid linked dividend payment.']];
+        }
+
+        $reason = trim((string)($paymentLink['notes'] ?? ''));
+        if ($reason === '') {
+            return ['success' => false, 'errors' => ['Add a transaction note explaining the correction before voiding this dividend.']];
+        }
+
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
+        }
+
+        try {
+            $reversalJournalId = (int)($voucher['reversal_journal_id'] ?? 0);
+            if ($reversalJournalId <= 0 && (int)($journal['is_posted'] ?? 0) === 1) {
+                $reversalJournalId = $this->createDividendReversalJournal($journal, $reason, $changedBy);
+            }
+
+            \InterfaceDB::prepareExecute(
+                'UPDATE dividend_vouchers
+                 SET reversal_journal_id = :reversal_journal_id,
+                     voided_at = CURRENT_TIMESTAMP,
+                     voided_by = :voided_by,
+                     void_reason = :void_reason
+                 WHERE id = :id',
+                [
+                    'reversal_journal_id' => $reversalJournalId > 0 ? $reversalJournalId : null,
+                    'voided_by' => $changedBy,
+                    'void_reason' => $reason,
+                    'id' => (int)$voucher['id'],
+                ]
+            );
+
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
+
+            return [
+                'success' => true,
+                'journal_id' => $journalId,
+                'voucher_id' => (int)$voucher['id'],
+                'reversal_journal_id' => $reversalJournalId,
+            ];
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+
+            return ['success' => false, 'errors' => [$exception->getMessage()]];
+        }
     }
 
     public function getDividendWarnings(int $companyId, int $accountingPeriodId): array
@@ -597,6 +778,393 @@ final class DividendService
         ];
     }
 
+    private function ensureVoucherForJournal(int $journalId, ?int $transactionId = null, string $changedBy = 'web_app'): ?array
+    {
+        if ($journalId <= 0 || !$this->tableExists('dividend_vouchers')) {
+            return null;
+        }
+
+        $existing = \InterfaceDB::fetchOne(
+            'SELECT *
+             FROM dividend_vouchers
+             WHERE journal_id = :journal_id
+             LIMIT 1',
+            ['journal_id' => $journalId]
+        );
+        if (is_array($existing)) {
+            return $existing;
+        }
+
+        $journal = $this->fetchDividendJournal(0, 0, $journalId);
+        if ($journal === null) {
+            return null;
+        }
+
+        $company = $this->fetchCompany((int)$journal['company_id']);
+        $transactionId = $transactionId !== null && $transactionId > 0
+            ? $transactionId
+            : $this->transactionIdFromDividendSourceRef((string)($journal['source_ref'] ?? ''));
+        $transaction = $transactionId > 0 ? $this->fetchDividendPaymentTransaction($transactionId) : null;
+        $amount = abs($this->dividendAmountForJournal($journalId, (int)($this->findNominalByCode(self::DIVIDENDS_PAID_CODE)['id'] ?? 0)));
+        $companyName = trim((string)($company['company_name'] ?? ''));
+        $directorName = $this->directorNameFromCompany($company);
+        $shareholderName = $directorName !== '' ? $directorName : $this->shareholderNameFromTransaction($transaction);
+        if ($shareholderName === '') {
+            $shareholderName = 'Shareholder';
+        }
+        if ($directorName === '') {
+            $directorName = $shareholderName;
+        }
+        $companyNameForRecords = $companyName !== '' ? $companyName : 'Company';
+
+        $declarationDate = (string)($journal['journal_date'] ?? '');
+        $paymentDate = is_array($transaction) && trim((string)($transaction['txn_date'] ?? '')) !== ''
+            ? (string)$transaction['txn_date']
+            : $declarationDate;
+        $description = trim((string)($journal['description'] ?? 'Dividend'));
+        $voucherText = $this->voucherText($companyNameForRecords, $shareholderName, $declarationDate, $amount, $description);
+        $minutesText = $this->minutesText($companyNameForRecords, $directorName, $declarationDate, $amount, $description);
+
+        \InterfaceDB::prepareExecute(
+            'INSERT INTO dividend_vouchers (
+                company_id,
+                accounting_period_id,
+                journal_id,
+                transaction_id,
+                company_name,
+                shareholder_name,
+                director_name,
+                declaration_date,
+                payment_date,
+                amount,
+                description,
+                voucher_text,
+                minutes_text,
+                issued_by
+             ) VALUES (
+                :company_id,
+                :accounting_period_id,
+                :journal_id,
+                :transaction_id,
+                :company_name,
+                :shareholder_name,
+                :director_name,
+                :declaration_date,
+                :payment_date,
+                :amount,
+                :description,
+                :voucher_text,
+                :minutes_text,
+                :issued_by
+             )',
+            [
+                'company_id' => (int)$journal['company_id'],
+                'accounting_period_id' => (int)$journal['accounting_period_id'],
+                'journal_id' => $journalId,
+                'transaction_id' => $transactionId > 0 ? $transactionId : null,
+                'company_name' => $companyNameForRecords,
+                'shareholder_name' => $shareholderName,
+                'director_name' => $directorName,
+                'declaration_date' => $declarationDate,
+                'payment_date' => $paymentDate,
+                'amount' => number_format($amount, 2, '.', ''),
+                'description' => $description,
+                'voucher_text' => $voucherText,
+                'minutes_text' => $minutesText,
+                'issued_by' => $changedBy,
+            ]
+        );
+
+        $row = \InterfaceDB::fetchOne(
+            'SELECT *
+             FROM dividend_vouchers
+             WHERE journal_id = :journal_id
+             LIMIT 1',
+            ['journal_id' => $journalId]
+        );
+
+        return is_array($row) ? $row : null;
+    }
+
+    private function fetchDividendJournal(int $companyId, int $accountingPeriodId, int $journalId): ?array
+    {
+        $where = ['j.id = :journal_id'];
+        $params = ['journal_id' => $journalId];
+        if ($companyId > 0) {
+            $where[] = 'j.company_id = :company_id';
+            $params['company_id'] = $companyId;
+        }
+        if ($accountingPeriodId > 0) {
+            $where[] = 'j.accounting_period_id = :accounting_period_id';
+            $params['accounting_period_id'] = $accountingPeriodId;
+        }
+
+        $row = \InterfaceDB::fetchOne(
+            'SELECT j.id,
+                    j.company_id,
+                    j.accounting_period_id,
+                    j.source_type,
+                    COALESCE(j.source_ref, \'\') AS source_ref,
+                    j.journal_date,
+                    j.description,
+                    j.is_posted
+             FROM journals j
+             WHERE ' . implode(' AND ', $where) . '
+               AND j.source_type = :source_type
+               AND COALESCE(j.source_ref, \'\') LIKE :source_ref
+               AND COALESCE(j.source_ref, \'\') NOT LIKE :void_source_ref
+             LIMIT 1',
+            $params + [
+                'source_type' => 'manual',
+                'source_ref' => 'dividend:%',
+                'void_source_ref' => 'dividend:void:%',
+            ]
+        );
+
+        return is_array($row) ? $row : null;
+    }
+
+    private function createDividendReversalJournal(array $journal, string $reason, string $changedBy): int
+    {
+        $journalId = (int)($journal['id'] ?? 0);
+        $sourceRef = 'dividend:void:' . $journalId;
+        $existingId = $this->findJournalId((int)$journal['company_id'], $sourceRef);
+        if ($existingId > 0) {
+            return $existingId;
+        }
+
+        \InterfaceDB::prepareExecute(
+            'INSERT INTO journals (
+                company_id,
+                accounting_period_id,
+                source_type,
+                source_ref,
+                journal_date,
+                description,
+                is_posted,
+                created_at,
+                updated_at
+             ) VALUES (
+                :company_id,
+                :accounting_period_id,
+                :source_type,
+                :source_ref,
+                :journal_date,
+                :description,
+                1,
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP
+             )',
+            [
+                'company_id' => (int)$journal['company_id'],
+                'accounting_period_id' => (int)$journal['accounting_period_id'],
+                'source_type' => 'manual',
+                'source_ref' => $sourceRef,
+                'journal_date' => (string)$journal['journal_date'],
+                'description' => substr('Void dividend declaration ' . $journalId . ': ' . $reason, 0, 255),
+            ]
+        );
+
+        $reversalJournalId = $this->findJournalId((int)$journal['company_id'], $sourceRef);
+        if ($reversalJournalId <= 0) {
+            throw new \RuntimeException('The dividend reversal journal could not be reloaded after insert.');
+        }
+
+        foreach ($this->fetchJournalLines($journalId) as $line) {
+            \InterfaceDB::prepareExecute(
+                'INSERT INTO journal_lines (
+                    journal_id,
+                    nominal_account_id,
+                    company_account_id,
+                    debit,
+                    credit,
+                    line_description
+                 ) VALUES (
+                    :journal_id,
+                    :nominal_account_id,
+                    :company_account_id,
+                    :debit,
+                    :credit,
+                    :line_description
+                 )',
+                [
+                    'journal_id' => $reversalJournalId,
+                    'nominal_account_id' => (int)$line['nominal_account_id'],
+                    'company_account_id' => $line['company_account_id'] !== null ? (int)$line['company_account_id'] : null,
+                    'debit' => number_format((float)$line['credit'], 2, '.', ''),
+                    'credit' => number_format((float)$line['debit'], 2, '.', ''),
+                    'line_description' => substr('Void: ' . (string)($line['line_description'] ?? ''), 0, 255),
+                ]
+            );
+        }
+
+        return $reversalJournalId;
+    }
+
+    private function fetchJournalLines(int $journalId): array
+    {
+        return \InterfaceDB::fetchAll(
+            'SELECT id,
+                    journal_id,
+                    nominal_account_id,
+                    company_account_id,
+                    debit,
+                    credit,
+                    line_description
+             FROM journal_lines
+             WHERE journal_id = :journal_id
+             ORDER BY id ASC',
+            ['journal_id' => $journalId]
+        );
+    }
+
+    private function paymentLinkState(string $sourceRef, int $transactionId = 0): array
+    {
+        $sourceTransactionId = $transactionId > 0 ? $transactionId : $this->transactionIdFromDividendSourceRef($sourceRef);
+        if ($sourceTransactionId <= 0) {
+            return [
+                'status' => 'manual',
+                'label' => 'Manual / draft',
+                'detail' => 'This dividend is not linked to an imported transaction.',
+                'notes' => '',
+                'voidable' => false,
+            ];
+        }
+
+        $transaction = $this->fetchDividendPaymentTransaction($sourceTransactionId);
+        if ($transaction === null) {
+            return [
+                'status' => 'missing',
+                'label' => 'Missing',
+                'detail' => 'The source payment transaction could not be found.',
+                'notes' => '',
+                'voidable' => false,
+            ];
+        }
+
+        $notes = trim((string)($transaction['notes'] ?? ''));
+        if ($this->transactionIsValidDividendPayment($transaction)) {
+            return [
+                'status' => 'linked',
+                'label' => 'Linked',
+                'detail' => 'The source payment is still categorised to Dividends Payable.',
+                'notes' => $notes,
+                'voidable' => false,
+            ];
+        }
+
+        return [
+            'status' => 'recategorised',
+            'label' => 'Re-categorised',
+            'detail' => 'The source payment is no longer a valid dividend payment.',
+            'notes' => $notes,
+            'voidable' => true,
+        ];
+    }
+
+    private function transactionIsValidDividendPayment(array $transaction): bool
+    {
+        return (int)($transaction['is_internal_transfer'] ?? 0) !== 1
+            && (float)($transaction['amount'] ?? 0) < 0
+            && in_array((string)($transaction['category_status'] ?? ''), ['auto', 'manual'], true)
+            && (string)($transaction['nominal_code'] ?? '') === self::DIVIDENDS_PAYABLE_CODE;
+    }
+
+    private function transactionIdFromDividendSourceRef(string $sourceRef): int
+    {
+        return preg_match('/^dividend:transaction:(\d+)$/', trim($sourceRef), $matches) === 1
+            ? (int)$matches[1]
+            : 0;
+    }
+
+    private function fetchCompany(int $companyId): array
+    {
+        $row = \InterfaceDB::fetchOne(
+            'SELECT id,
+                    company_name,
+                    companies_house_officers_json
+             FROM companies
+             WHERE id = :company_id
+             LIMIT 1',
+            ['company_id' => $companyId]
+        );
+
+        return is_array($row) ? $row : [];
+    }
+
+    private function directorNameFromCompany(array $company): string
+    {
+        $payload = json_decode((string)($company['companies_house_officers_json'] ?? ''), true);
+        foreach ((array)($payload['items'] ?? []) as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            if (strtolower(trim((string)($item['officer_role'] ?? ''))) !== 'director') {
+                continue;
+            }
+            if (trim((string)($item['resigned_on'] ?? '')) !== '') {
+                continue;
+            }
+            $name = trim((string)($item['name'] ?? ''));
+            if ($name !== '') {
+                return $name;
+            }
+        }
+
+        return '';
+    }
+
+    private function shareholderNameFromTransaction(?array $transaction): string
+    {
+        if (!is_array($transaction)) {
+            return '';
+        }
+
+        $counterparty = trim((string)($transaction['counterparty_name'] ?? ''));
+        return $counterparty !== '' ? $counterparty : trim((string)($transaction['description'] ?? ''));
+    }
+
+    private function voucherText(string $companyName, string $shareholderName, string $date, float $amount, string $description): string
+    {
+        return trim($companyName . "\n"
+            . 'Dividend voucher' . "\n"
+            . 'Date: ' . $date . "\n"
+            . 'Shareholder: ' . $shareholderName . "\n"
+            . 'Dividend amount: ' . number_format($amount, 2, '.', '') . "\n"
+            . 'Description: ' . $description);
+    }
+
+    private function minutesText(string $companyName, string $directorName, string $date, float $amount, string $description): string
+    {
+        return trim('Minutes of a meeting of the sole director of ' . $companyName . "\n"
+            . 'Date: ' . $date . "\n\n"
+            . $directorName . ' considered the company records and available distributable reserves. '
+            . 'It was resolved that an interim dividend of ' . number_format($amount, 2, '.', '')
+            . ' be declared and recorded as "' . $description . '". '
+            . 'The director authorised the dividend voucher and company records to be kept.');
+    }
+
+    private function tableExists(string $table): bool
+    {
+        static $cache = [];
+        if (array_key_exists($table, $cache)) {
+            return $cache[$table];
+        }
+
+        try {
+            $cache[$table] = \InterfaceDB::tableExists($table);
+        } catch (\Throwable) {
+            $cache[$table] = false;
+        }
+
+        return $cache[$table];
+    }
+
+    private function isPeriodLocked(int $companyId, int $accountingPeriodId): bool
+    {
+        return (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);
+    }
+
     private function fetchAccountingPeriod(int $companyId, int $accountingPeriodId): ?array
     {
         $row = \InterfaceDB::fetchOne(
@@ -635,7 +1203,9 @@ final class DividendService
                     t.accounting_period_id,
                     t.txn_date,
                     t.description,
+                    t.counterparty_name,
                     t.amount,
+                    COALESCE(t.notes, \'\') AS notes,
                     t.nominal_account_id,
                     t.is_internal_transfer,
                     t.category_status,

@@ -524,6 +524,48 @@ CREATE TABLE `journals` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `dividend_vouchers`
+--
+
+DROP TABLE IF EXISTS `dividend_vouchers`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `dividend_vouchers` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `journal_id` bigint(20) NOT NULL,
+  `transaction_id` int(11) DEFAULT NULL,
+  `reversal_journal_id` bigint(20) DEFAULT NULL,
+  `company_name` varchar(255) NOT NULL,
+  `shareholder_name` varchar(255) NOT NULL,
+  `director_name` varchar(255) NOT NULL,
+  `declaration_date` date NOT NULL,
+  `payment_date` date NOT NULL,
+  `amount` decimal(12,2) NOT NULL,
+  `description` varchar(255) NOT NULL,
+  `voucher_text` text NOT NULL,
+  `minutes_text` text NOT NULL,
+  `issued_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `issued_by` varchar(100) NOT NULL DEFAULT 'web_app',
+  `voided_at` datetime DEFAULT NULL,
+  `voided_by` varchar(100) DEFAULT NULL,
+  `void_reason` text DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_dividend_vouchers_journal` (`journal_id`),
+  KEY `idx_dividend_vouchers_company_period` (`company_id`,`accounting_period_id`),
+  KEY `idx_dividend_vouchers_transaction` (`transaction_id`),
+  KEY `idx_dividend_vouchers_reversal_journal` (`reversal_journal_id`),
+  CONSTRAINT `fk_dividend_vouchers_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_dividend_vouchers_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_dividend_vouchers_journal` FOREIGN KEY (`journal_id`) REFERENCES `journals` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_dividend_vouchers_reversal_journal` FOREIGN KEY (`reversal_journal_id`) REFERENCES `journals` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `hmrc_obligations`
 --
 
@@ -2007,7 +2049,8 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_02_002_expense_statistics_card_permission.sql'),
   ('2026_07_02_003_expense_asset_line_nominals.sql'),
   ('2026_07_02_004_expense_search_card_permission.sql'),
-  ('2026_07_02_005_manual_asset_evidence.sql');
+  ('2026_07_02_005_manual_asset_evidence.sql'),
+  ('2026_07_03_005_dividend_vouchers.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

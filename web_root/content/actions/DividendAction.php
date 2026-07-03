@@ -12,19 +12,25 @@ final class DividendAction implements ActionInterfaceFramework
     public function handle(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
         $intent = trim((string)$request->input('intent', $request->input('global_action', '')));
-        if (!in_array($intent, ['declare_dividend', 'declare_dividend_from_transaction'], true)) {
+        if (!in_array($intent, ['declare_dividend', 'declare_dividend_from_transaction', 'void_dividend'], true)) {
             return ActionResultFramework::none();
         }
 
         try {
             $service = new \eel_accounts\Service\DividendService();
-            $result = $intent === 'declare_dividend_from_transaction'
-                ? $service->declareDividendFromTransaction(
+            $result = match ($intent) {
+                'declare_dividend_from_transaction' => $service->declareDividendFromTransaction(
                     (int)$request->input('transaction_id', 0),
                     (int)$request->input('company_id', 0),
                     (int)$request->input('accounting_period_id', 0)
-                )
-                : $service->declareDividend([
+                ),
+                'void_dividend' => $service->voidDividend(
+                    (int)$request->input('company_id', 0),
+                    (int)$request->input('accounting_period_id', 0),
+                    (int)$request->input('journal_id', 0),
+                    'web_app'
+                ),
+                default => $service->declareDividend([
                     'company_id' => (int)$request->input('company_id', 0),
                     'accounting_period_id' => (int)$request->input('accounting_period_id', 0),
                     'declaration_date' => (string)$request->input('declaration_date', ''),
@@ -32,7 +38,8 @@ final class DividendAction implements ActionInterfaceFramework
                     'reconciliation_transaction_id' => (int)$request->input('reconciliation_transaction_id', 0),
                     'description' => (string)$request->input('description', ''),
                     'settlement_target' => (string)$request->input('settlement_target', ''),
-                ]);
+                ]),
+            };
         } catch (Throwable $exception) {
             $result = ['success' => false, 'errors' => [$exception->getMessage()]];
         }
@@ -42,11 +49,13 @@ final class DividendAction implements ActionInterfaceFramework
         if ($success) {
             $flashMessages[] = [
                 'type' => 'success',
-                'message' => !empty($result['already_exists'])
-                    ? 'Dividend declaration already exists for this transaction.'
-                    : (!empty($result['posted'])
-                        ? 'Dividend declaration posted.'
-                        : 'Dividend declaration saved as draft pending reconciliation.'),
+                'message' => $intent === 'void_dividend'
+                    ? 'Dividend declaration voided and reversal recorded.'
+                    : (!empty($result['already_exists'])
+                        ? 'Dividend declaration already exists for this transaction.'
+                        : (!empty($result['posted'])
+                            ? 'Dividend declaration posted.'
+                            : 'Dividend declaration saved as draft pending reconciliation.')),
             ];
         } else {
             foreach ((array)($result['errors'] ?? ['Dividend declaration could not be posted.']) as $error) {
@@ -67,7 +76,7 @@ final class DividendAction implements ActionInterfaceFramework
 
         return new ActionResultFramework(
             $success,
-            ['transactions.imported', 'page.context', 'dividend.capacity', 'dividend.declare', 'dividend.history', 'dividend.warnings', 'trial.balance.state'],
+            ['transactions.imported', 'page.context', 'dividend.capacity', 'dividend.declare', 'dividend.history', 'dividend.vouchers', 'dividend.warnings', 'trial.balance.state'],
             $flashMessages,
             $query,
             $context

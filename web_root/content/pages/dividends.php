@@ -28,6 +28,7 @@ final class _dividends extends PageContextFramework
     {
         return [
             'dividend_capacity',
+            'dividend_vouchers',
             'dividend_declare',
             'dividend_history',
         ];
@@ -40,6 +41,7 @@ final class _dividends extends PageContextFramework
                 'tab' => 'Overview',
                 'cards' => [
                     'dividend_capacity',
+                    'dividend_vouchers',
                 ],
             ],
             [
@@ -79,6 +81,9 @@ final class _dividends extends PageContextFramework
                     : ['available' => false, 'errors' => ['Select a company and accounting period before reviewing dividends.']],
                 'history' => $companyId > 0 && $accountingPeriodId > 0
                     ? $dividendService->listDividends($companyId, $accountingPeriodId)
+                    : [],
+                'vouchers' => $companyId > 0 && $accountingPeriodId > 0
+                    ? $dividendService->listDividendVouchers($companyId, $accountingPeriodId)
                     : [],
                 'reconciliation_candidates' => $companyId > 0 && $accountingPeriodId > 0
                     ? $dividendService->listDividendReconciliationCandidates($companyId, $accountingPeriodId)

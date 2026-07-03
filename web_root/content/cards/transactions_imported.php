@@ -441,8 +441,14 @@ final class _transactions_importedCard extends CardBaseFramework
                     . '</span>'
             )
             ->column(
+                'notes',
+                'Notes',
+                html: fn(array $row): string => $this->notesHtml($row, $isPeriodLocked),
+                export: static fn(array $row): string => (string)($row['notes'] ?? '')
+            )
+            ->column(
                 'actions',
-                'Actions',
+                'Create / Set',
                 html: fn(array $row): string => $this->actionsHtml($row, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $settings, $isPeriodLocked),
                 exportable: false
             );
@@ -577,8 +583,24 @@ final class _transactions_importedCard extends CardBaseFramework
         if (!$this->transactionIsTransferMode($transaction) && (int)($transaction['auto_rule_id'] ?? 0) > 0) {
             $flagsHtml .= '<span class="badge info">Rule #' . (int)($transaction['auto_rule_id'] ?? 0) . '</span>';
         }
+        if ((int)($transaction['has_dividend_declaration'] ?? 0) === 1) {
+            $flagsHtml .= '<span class="badge success">Dividend created</span>';
+        }
 
         return $flagsHtml . '</div>';
+    }
+
+    private function notesHtml(array $transaction, bool $isPeriodLocked): string
+    {
+        $transactionId = (int)($transaction['id'] ?? 0);
+        $notes = (string)($transaction['notes'] ?? '');
+        $formId = 'transaction-form-' . $transactionId;
+        $disabled = $isPeriodLocked ? ' disabled title="Period locked"' : '';
+        $autosaveAttributes = $isPeriodLocked
+            ? ''
+            : ' form="' . HelperFramework::escape($formId) . '" data-initial-value="' . HelperFramework::escape($notes) . '" data-autosave-submit-target=".js-transaction-note-autosave-submit"';
+
+        return '<input class="input transaction-note-input" type="text" name="notes" value="' . HelperFramework::escape($notes) . '" aria-label="Transaction note"' . $autosaveAttributes . $disabled . '>';
     }
 
     private function autoApprovalHtml(
@@ -657,6 +679,9 @@ final class _transactions_importedCard extends CardBaseFramework
         $autosaveSubmitHtml = $isPeriodLocked
             ? ''
             : '<button class="js-transaction-autosave-submit" type="submit" name="global_action" value="save_transaction_category" hidden' . $journalRebuildAttributes . '>Autosave</button>';
+        $noteAutosaveSubmitHtml = $isPeriodLocked
+            ? ''
+            : '<button class="js-transaction-note-autosave-submit" type="submit" name="global_action" value="save_transaction_note" hidden>Autosave note</button>';
         $createAssetAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit" form="' . HelperFramework::escape($assetFormId) . '" formnovalidate';
         $createRuleHtml = $isTransferRow ? '' : $this->createRuleButtonHtml($transaction, $isPeriodLocked);
         $directorLoanButtonHtml = $this->directorLoanButtonHtml($transaction, $settings, $isPeriodLocked, $journalRebuildAttributes);
@@ -685,12 +710,13 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
                 <input type="hidden" name="confirm_rebuild_journal" value="0">
                 ' . $autosaveSubmitHtml . '
+                ' . $noteAutosaveSubmitHtml . '
                 <div class="actions-row">
                     ' . $createRuleHtml . '
                     ' . $directorLoanButtonHtml . '
                     ' . $dividendButtonHtml . '
                     <button class="button primary"' . $lockedButtonAttributes . ' name="global_action" value="defer_transaction"' . $journalRebuildAttributes . '>Defer</button>
-                    <button class="button"' . $createAssetAttributes . '>Create Asset</button>
+                    <button class="button"' . $createAssetAttributes . '>Asset</button>
                 </div>
             </form>';
     }
@@ -702,12 +728,12 @@ final class _transactions_importedCard extends CardBaseFramework
         }
 
         if ((int)($transaction['has_dividend_declaration'] ?? 0) === 1) {
-            return '<span class="badge success">Dividend created</span>';
+            return '';
         }
 
         $disabledReason = $this->dividendButtonDisabledReason($transaction, $isPeriodLocked);
         if ($disabledReason !== '') {
-            return '<button class="button" type="button" disabled title="' . HelperFramework::escape($disabledReason) . '">Create Dividend</button>';
+            return '<button class="button" type="button" disabled title="' . HelperFramework::escape($disabledReason) . '">Dividend</button>';
         }
 
         $amount = FormattingFramework::money(abs((float)($transaction['amount'] ?? 0)));
@@ -721,7 +747,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 data-chicken-title="Create dividend declaration"
                 data-chicken-message="' . $message . '"
                 data-chicken-confirm-text="Create Dividend"
-                data-chicken-button-class="button primary">Create Dividend</button>';
+                data-chicken-button-class="button primary">Dividend</button>';
     }
 
     private function dividendButtonDisabledReason(array $transaction, bool $isPeriodLocked): string
@@ -800,7 +826,7 @@ final class _transactions_importedCard extends CardBaseFramework
 
         return $nominalInputHtml
             . '<input type="hidden" name="transaction_reference" value="' . HelperFramework::escape((string)($transaction['reference'] ?? '')) . '">'
-            . '<button class="button primary" type="submit" name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form">Create Rule</button>';
+            . '<button class="button primary" type="submit" name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form">Rule</button>';
     }
 
     private function readonlyCategorisationHtml(array $transaction, array $nominalAccounts, array $activeTransferCompanyAccounts): string

@@ -57,6 +57,9 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
             $harness->assertSame(true, (bool)($result['success'] ?? false));
             $harness->assertSame(false, (bool)($result['already_exists'] ?? false));
             $harness->assertSame('dividend:transaction:' . $fixture['transaction_id'], (string)($result['source_ref'] ?? ''));
+            if (InterfaceDB::tableExists('dividend_vouchers')) {
+                $harness->assertTrue((int)($result['voucher_id'] ?? 0) > 0);
+            }
 
             $journalId = (int)($result['journal_id'] ?? 0);
             $harness->assertTrue($journalId > 0);
@@ -100,6 +103,111 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
 
             $history = $service->listDividends($fixture['company_id'], $fixture['accounting_period_id']);
             $harness->assertSame(true, in_array($journalId, array_map(static fn(array $row): int => (int)($row['id'] ?? 0), $history), true));
+            if (InterfaceDB::tableExists('dividend_vouchers')) {
+                $vouchers = $service->listDividendVouchers($fixture['company_id'], $fixture['accounting_period_id']);
+                $harness->assertSame(1, count(array_filter($vouchers, static fn(array $row): bool => (int)($row['journal_id'] ?? 0) === $journalId)));
+            }
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
+    $harness->check(\eel_accounts\Service\DividendService::class, 'voids recategorised transaction dividends with notes and a reversing journal', function () use ($harness, $service): void {
+        if (!InterfaceDB::tableExists('transactions') || !InterfaceDB::tableExists('journals') || !InterfaceDB::tableExists('journal_lines') || !InterfaceDB::tableExists('dividend_vouchers')) {
+            $harness->skip('Dividend voucher, transaction, and journal tables are not available on the default InterfaceDB connection.');
+        }
+
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = dividend_service_transaction_fixture($service, -129.00, '2150');
+            $result = $service->declareDividendFromTransaction($fixture['transaction_id'], $fixture['company_id'], $fixture['accounting_period_id']);
+            $harness->assertSame(true, (bool)($result['success'] ?? false));
+            $journalId = (int)($result['journal_id'] ?? 0);
+
+            $linkedHistory = $service->listDividends($fixture['company_id'], $fixture['accounting_period_id']);
+            $linkedRow = dividend_service_history_row($linkedHistory, $journalId);
+            $harness->assertSame('linked', (string)($linkedRow['payment_link_status'] ?? ''));
+            $harness->assertSame(false, (bool)($linkedRow['can_void'] ?? true));
+
+            $expenseNominalId = dividend_service_fixture_nominal('9' . substr((string)$fixture['transaction_id'], -8), 'Recategorised Dividend Fixture', 'expense');
+            InterfaceDB::prepareExecute(
+                'UPDATE transactions
+                 SET nominal_account_id = :nominal_account_id,
+                     category_status = :category_status
+                 WHERE id = :transaction_id',
+                [
+                    'nominal_account_id' => $expenseNominalId,
+                    'category_status' => 'manual',
+                    'transaction_id' => $fixture['transaction_id'],
+                ]
+            );
+
+            $withoutNotesHistory = $service->listDividends($fixture['company_id'], $fixture['accounting_period_id']);
+            $withoutNotesRow = dividend_service_history_row($withoutNotesHistory, $journalId);
+            $harness->assertSame('recategorised', (string)($withoutNotesRow['payment_link_status'] ?? ''));
+            $harness->assertSame(false, (bool)($withoutNotesRow['can_void'] ?? true));
+
+            $blocked = $service->voidDividend($fixture['company_id'], $fixture['accounting_period_id'], $journalId, 'test');
+            $harness->assertSame(false, (bool)($blocked['success'] ?? true));
+            $harness->assertSame(true, str_contains(implode(' ', (array)($blocked['errors'] ?? [])), 'transaction note'));
+
+            InterfaceDB::prepareExecute(
+                'UPDATE transactions
+                 SET notes = :notes
+                 WHERE id = :transaction_id',
+                [
+                    'notes' => 'Reclassified after review: the payment was a director loan repayment.',
+                    'transaction_id' => $fixture['transaction_id'],
+                ]
+            );
+
+            $voidableHistory = $service->listDividends($fixture['company_id'], $fixture['accounting_period_id']);
+            $voidableRow = dividend_service_history_row($voidableHistory, $journalId);
+            $harness->assertSame(true, (bool)($voidableRow['can_void'] ?? false));
+
+            $voided = $service->voidDividend($fixture['company_id'], $fixture['accounting_period_id'], $journalId, 'test');
+            $harness->assertSame(true, (bool)($voided['success'] ?? false));
+            $reversalJournalId = (int)($voided['reversal_journal_id'] ?? 0);
+            $harness->assertTrue($reversalJournalId > 0);
+
+            $voucher = InterfaceDB::fetchOne(
+                'SELECT voided_at, voided_by, void_reason, reversal_journal_id
+                 FROM dividend_vouchers
+                 WHERE journal_id = :journal_id
+                 LIMIT 1',
+                ['journal_id' => $journalId]
+            );
+            $harness->assertSame('test', (string)($voucher['voided_by'] ?? ''));
+            $harness->assertSame('Reclassified after review: the payment was a director loan repayment.', (string)($voucher['void_reason'] ?? ''));
+            $harness->assertSame($reversalJournalId, (int)($voucher['reversal_journal_id'] ?? 0));
+            $harness->assertSame(true, trim((string)($voucher['voided_at'] ?? '')) !== '');
+
+            $netDividendPaid = (float)InterfaceDB::fetchColumn(
+                'SELECT COALESCE(SUM(jl.debit - jl.credit), 0)
+                 FROM journal_lines jl
+                 WHERE jl.nominal_account_id = :nominal_account_id
+                   AND jl.journal_id IN (:journal_id, :reversal_journal_id)',
+                [
+                    'nominal_account_id' => $fixture['dividends_paid_id'],
+                    'journal_id' => $journalId,
+                    'reversal_journal_id' => $reversalJournalId,
+                ]
+            );
+            $harness->assertSame('0.00', number_format($netDividendPaid, 2, '.', ''));
+
+            $voidedHistory = $service->listDividends($fixture['company_id'], $fixture['accounting_period_id']);
+            $voidedRow = dividend_service_history_row($voidedHistory, $journalId);
+            $harness->assertSame('voided', (string)($voidedRow['status'] ?? ''));
+            $harness->assertSame('voided', (string)($voidedRow['payment_link_status'] ?? ''));
+            $harness->assertSame(false, (bool)($voidedRow['can_void'] ?? true));
+            $harness->assertSame(1, (int)InterfaceDB::fetchColumn(
+                'SELECT COUNT(*)
+                 FROM journals
+                 WHERE id = :journal_id',
+                ['journal_id' => $journalId]
+            ));
         } finally {
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();
@@ -174,6 +282,9 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
 
             $harness->assertSame(true, (bool)($result['success'] ?? false));
             $harness->assertSame(false, (bool)($result['posted'] ?? true));
+            if (InterfaceDB::tableExists('dividend_vouchers')) {
+                $harness->assertTrue((int)($result['voucher_id'] ?? 0) > 0);
+            }
             $harness->assertSame(0, (int)InterfaceDB::fetchColumn(
                 'SELECT is_posted FROM journals WHERE id = :journal_id',
                 ['journal_id' => (int)($result['journal_id'] ?? 0)]
@@ -222,6 +333,17 @@ function dividend_service_effective_as_at_date(\eel_accounts\Service\DividendSer
     $method->setAccessible(true);
 
     return (string)$method->invoke($service, $asAtDate, $periodStart, $periodEnd);
+}
+
+function dividend_service_history_row(array $history, int $journalId): array
+{
+    foreach ($history as $row) {
+        if (is_array($row) && (int)($row['id'] ?? 0) === $journalId) {
+            return $row;
+        }
+    }
+
+    throw new RuntimeException('Dividend history row was not found for journal ' . $journalId . '.');
 }
 
 function dividend_service_manual_fixture(\eel_accounts\Service\DividendService $service, float $profit, string $periodStart = '2022-01-01', string $periodEnd = '2022-12-31', string $profitDate = '2022-11-01'): array

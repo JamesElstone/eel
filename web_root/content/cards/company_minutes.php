@@ -103,7 +103,7 @@ final class _company_minutesCard extends CardBaseFramework
             ->column(
                 'minutes',
                 'Minutes',
-                html: static fn(array $row): string => '<pre class="helper">' . HelperFramework::escape((string)($row['minutes'] ?? '')) . '</pre>',
+                html: static fn(array $row): string => '<pre class="helper">' . HelperFramework::escape(str_replace('. ', ".\n", (string)($row['minutes'] ?? ''))) . '</pre>',
                 export: static fn(array $row): string => (string)($row['minutes'] ?? ''),
                 sort: true
             );

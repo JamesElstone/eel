@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 final class _asset_registerCard extends CardBaseFramework
 {
+    private const PAGE_SIZE = 10;
+
     public function key(): string
     {
         return 'asset_register';
@@ -70,55 +72,139 @@ final class _asset_registerCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $page = (array)($context['page'] ?? []);
+        return $this->configuredTable($context)->render(
+            $context,
+            [
+                'cards[]' => (array)($context['page']['page_cards'] ?? []),
+            ]
+        );
+    }
+
+    public function tables(array $context): array
+    {
+        return [$this->table($context)];
+    }
+
+    private function configuredTable(array $context): TableFramework
+    {
         $company = (array)($context['company'] ?? []);
+        $table = $this->table($context);
+        $pagination = HelperFramework::paginateArray($table->sortedRows(), $this->paginationPage($context), self::PAGE_SIZE);
+
+        return $table
+            ->visibleRows((array)$pagination['items'])
+            ->pagination(
+                $pagination,
+                'Assets',
+                $this->paginationPageField(),
+                [
+                    'page' => (string)($context['page']['page_id'] ?? 'assets'),
+                    '_pagination' => '1',
+                    '_invalidate_fact' => $this->tableInvalidationFact(),
+                    'cards[]' => [$this->key()],
+                    'company_id' => (int)($company['id'] ?? 0),
+                    'accounting_period_id' => (int)($company['accounting_period_id'] ?? 0),
+                ]
+            );
+    }
+
+    private function table(array $context): TableFramework
+    {
+        $company = (array)($context['company'] ?? []);
+        $settings = (array)($company['settings'] ?? []);
         $assetsPageData = (array)($context['services']['assetPageData'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
-        $assets = is_array($assetsPageData['assets'] ?? null) ? $assetsPageData['assets'] : [];
         $defaultBankNominalId = (int)($assetsPageData['default_bank_nominal_id'] ?? 0);
         $disposalSearch = (array)($assetsPageData['disposal_search'] ?? []);
-        $rowsHtml = '';
+        $currencySymbol = $this->defaultCurrencySymbol($settings);
 
-        foreach ($assets as $asset) {
-            $status = (string)($asset['status'] ?? 'active');
-            $assetId = (int)($asset['id'] ?? 0);
-            $rowsHtml .= '<tr>
-                <td>' . HelperFramework::escape((string)($asset['asset_code'] ?? '')) . '</td>
-                <td>
-                    <div>' . HelperFramework::escape((string)($asset['description'] ?? '')) . '</div>
-                    <div class="helper">' . HelperFramework::escape(trim((string)($asset['nominal_code'] ?? '') . ' ' . (string)($asset['nominal_name'] ?? ''))) . '</div>
-                </td>
-                <td>' . HelperFramework::escape(FormattingFramework::money((float)($asset['cost'] ?? 0))) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::money((float)($asset['nbv'] ?? 0))) . '</td>
-                <td><span class="badge ' . HelperFramework::escape($status === 'disposed' ? 'warning' : 'success') . '">' . HelperFramework::escape($status) . '</span></td>
-                <td>' . ($status !== 'disposed'
-                    ? $this->disposalControls($companyId, $accountingPeriodId, $assetId, $defaultBankNominalId, $disposalSearch)
-                    : '<span class="helper">Disposed on ' . HelperFramework::escape($this->displayDate((string)($asset['disposal_date'] ?? ''))) . '</span>') . '</td>
-            </tr>';
+        return TableFramework::make($this->key(), $this->rows($context))
+            ->filename('asset-register')
+            ->exportLimit(5000)
+            ->empty('No assets have been recorded yet.')
+            ->textColumn('asset_code', 'Code')
+            ->column(
+                'description',
+                'Description',
+                html: fn(array $row): string => $this->descriptionHtml($row),
+                export: static fn(array $row): string => trim((string)($row['description'] ?? ''))
+            )
+            ->column(
+                'cost',
+                'Cost',
+                html: static fn(array $row): string => HelperFramework::escape($currencySymbol . FormattingFramework::money((float)($row['cost'] ?? 0))),
+                export: static fn(array $row): string => number_format((float)($row['cost'] ?? 0), 2, '.', ''),
+                cellClass: 'numeric',
+                exportType: 'number'
+            )
+            ->column(
+                'nbv',
+                'NBV',
+                html: static fn(array $row): string => HelperFramework::escape($currencySymbol . FormattingFramework::money((float)($row['nbv'] ?? 0))),
+                export: static fn(array $row): string => number_format((float)($row['nbv'] ?? 0), 2, '.', ''),
+                cellClass: 'numeric',
+                exportType: 'number'
+            )
+            ->column(
+                'status',
+                'Status',
+                html: static function (array $row): string {
+                    $status = (string)($row['status'] ?? 'active');
+
+                    return '<span class="badge ' . HelperFramework::escape($status === 'disposed' ? 'warning' : 'success') . '">'
+                        . HelperFramework::escape($status)
+                        . '</span>';
+                }
+            )
+            ->column(
+                'actions',
+                'Actions',
+                html: fn(array $row): string => $this->actionsHtml($row, $companyId, $accountingPeriodId, $defaultBankNominalId, $disposalSearch, $currencySymbol),
+                exportable: false
+            );
+    }
+
+    private function rows(array $context): array
+    {
+        $assetsPageData = (array)($context['services']['assetPageData'] ?? []);
+
+        return array_values(array_filter(
+            (array)($assetsPageData['assets'] ?? []),
+            static fn(mixed $asset): bool => is_array($asset)
+        ));
+    }
+
+    private function descriptionHtml(array $asset): string
+    {
+        $nominal = trim((string)($asset['nominal_code'] ?? '') . ' ' . (string)($asset['nominal_name'] ?? ''));
+
+        return '<div>' . HelperFramework::escape((string)($asset['description'] ?? '')) . '</div>'
+            . ($nominal !== '' ? '<div class="helper">' . HelperFramework::escape($nominal) . '</div>' : '');
+    }
+
+    private function actionsHtml(
+        array $asset,
+        int $companyId,
+        int $accountingPeriodId,
+        int $defaultBankNominalId,
+        array $disposalSearch,
+        string $currencySymbol
+    ): string {
+        $status = (string)($asset['status'] ?? 'active');
+
+        if ($status === 'disposed') {
+            return '<span class="helper">Disposed on ' . HelperFramework::escape($this->displayDate((string)($asset['disposal_date'] ?? ''))) . '</span>';
         }
 
-        if ($rowsHtml === '') {
-            $rowsHtml = '<tr><td colspan="6">No assets have been recorded yet.</td></tr>';
-        }
-
-        return '
-            <div class="table-scroll">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Code</th>
-                            <th>Description</th>
-                            <th>Cost</th>
-                            <th>NBV</th>
-                            <th>Status</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>' . $rowsHtml . '</tbody>
-                </table>
-            </div>
-        ';
+        return $this->disposalControls(
+            $companyId,
+            $accountingPeriodId,
+            (int)($asset['id'] ?? 0),
+            $defaultBankNominalId,
+            $disposalSearch,
+            $currencySymbol
+        );
     }
 
     private function disposalControls(
@@ -126,14 +212,15 @@ final class _asset_registerCard extends CardBaseFramework
         int $accountingPeriodId,
         int $assetId,
         int $defaultBankNominalId,
-        array $disposalSearch
+        array $disposalSearch,
+        string $currencySymbol
     ): string {
         $selectedAssetId = (int)($disposalSearch['asset_id'] ?? 0);
         $searchDate = $selectedAssetId === $assetId
             ? (string)($disposalSearch['search_date'] ?? date('Y-m-d'))
             : date('Y-m-d');
         $candidateHtml = $selectedAssetId === $assetId
-            ? $this->disposalCandidates($companyId, $accountingPeriodId, $assetId, $defaultBankNominalId, $disposalSearch)
+            ? $this->disposalCandidates($companyId, $accountingPeriodId, $assetId, $defaultBankNominalId, $disposalSearch, $currencySymbol)
             : '';
 
         return '<div class="asset-disposal-panel">
@@ -157,7 +244,8 @@ final class _asset_registerCard extends CardBaseFramework
         int $accountingPeriodId,
         int $assetId,
         int $defaultBankNominalId,
-        array $disposalSearch
+        array $disposalSearch,
+        string $currencySymbol
     ): string {
         $errors = (array)($disposalSearch['errors'] ?? []);
         if ($errors !== []) {
@@ -172,7 +260,7 @@ final class _asset_registerCard extends CardBaseFramework
         foreach ($candidates as $candidate) {
             $candidateRows .= '<div class="asset-disposal-candidate">
                 <div>
-                    <div>' . HelperFramework::escape($this->displayDate((string)($candidate['txn_date'] ?? '')) . ' - ' . FormattingFramework::money((float)($candidate['amount'] ?? 0))) . '</div>
+                    <div>' . HelperFramework::escape($this->displayDate((string)($candidate['txn_date'] ?? '')) . ' - ' . $currencySymbol . FormattingFramework::money((float)($candidate['amount'] ?? 0))) . '</div>
                     <div class="helper">' . HelperFramework::escape((string)($candidate['description'] ?? '')) . '</div>
                 </div>
                 <form method="post" action="?page=assets" data-ajax="true">
@@ -196,6 +284,16 @@ final class _asset_registerCard extends CardBaseFramework
             <div class="helper">Receipts from ' . HelperFramework::escape($windowStart) . ' to ' . HelperFramework::escape($windowEnd) . '</div>
             ' . $candidateRows . '
         </div>';
+    }
+
+    private function defaultCurrencySymbol(array $settings): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->defaultCurrencySymbol($settings);
+    }
+
+    private function tableInvalidationFact(): string
+    {
+        return (string)($this->invalidationFacts()[0] ?? $this->key());
     }
 
     private function displayDate(string $value): string

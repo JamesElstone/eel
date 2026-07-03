@@ -94,6 +94,34 @@
         });
     }
 
+    function initialiseDirectorLoanOffsetAcknowledgements(root = document) {
+        const forms = root.querySelectorAll ? root.querySelectorAll('[data-director-loan-offset-ack-form="true"]') : [];
+
+        forms.forEach((form) => {
+            if (!(form instanceof HTMLFormElement)) {
+                return;
+            }
+
+            const checkbox = form.querySelector('[data-director-loan-offset-ack-checkbox]');
+            const submitButton = form.querySelector('[data-director-loan-offset-ack-submit]');
+
+            if (!(checkbox instanceof HTMLInputElement) || !(submitButton instanceof HTMLButtonElement)) {
+                return;
+            }
+
+            const syncAcknowledgement = () => {
+                submitButton.disabled = !checkbox.checked;
+            };
+
+            if (form.dataset.directorLoanOffsetAckBound !== '1') {
+                checkbox.addEventListener('change', syncAcknowledgement);
+                form.dataset.directorLoanOffsetAckBound = '1';
+            }
+
+            syncAcknowledgement();
+        });
+    }
+
     function setUploadProcessingState(form, isProcessing) {
         if (!(form instanceof HTMLFormElement)) {
             return;
@@ -692,6 +720,7 @@
     });
 
     initialiseManualAssetLegalWarnings(document);
+    initialiseDirectorLoanOffsetAcknowledgements(document);
     initialiseUploadProcessingIndicators(document);
     initialiseVatRegistrationForms(document);
     initialiseStatementMappingForms(document);
@@ -704,6 +733,7 @@
             mutation.addedNodes.forEach((node) => {
                 if (node instanceof HTMLElement) {
                     initialiseManualAssetLegalWarnings(node);
+                    initialiseDirectorLoanOffsetAcknowledgements(node);
                     initialiseUploadProcessingIndicators(node);
                     initialiseVatRegistrationForms(node);
                     initialiseStatementMappingForms(node);

@@ -68,21 +68,22 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
         $acknowledged = !empty($offset['closing_balance_acknowledged']);
         $acknowledgementForm = '';
         if (!empty($offset['can_post'])) {
-            $acknowledgementForm = '<form method="post" data-ajax="true">
+            $acknowledgementForm = '<form method="post" data-ajax="true" class="panel-soft stack" data-director-loan-offset-ack-form="true">
                 <input type="hidden" name="card_action" value="YearEnd">
                 <input type="hidden" name="intent" value="save_director_loan_offset_acknowledgement">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <label class="checkbox-row">
-                    <input type="checkbox" name="director_loan_offset_acknowledgement" value="1"' . ($acknowledged ? ' checked' : '') . ' required>
+                    <input type="checkbox" name="director_loan_offset_acknowledgement" value="1"' . ($acknowledged ? ' checked' : '') . ' required data-director-loan-offset-ack-checkbox>
                     <span>I acknowledge that this offset will be applied on the closing of the Accounting Period</span>
                 </label>
                 <button class="button primary" type="submit"
+                    ' . ($acknowledged ? '' : 'disabled ') . 'data-director-loan-offset-ack-submit
                     data-chicken-check="true"
                     data-chicken-title="Save director loan acknowledgement"
                     data-chicken-message="This records that the director loan offset will be applied when this accounting period closes.<br><br>Continue?"
-                    data-chicken-confirm-text="Save Acknowledgement"
-                    data-chicken-button-class="button danger">Save Acknowledgement</button>
+                    data-chicken-confirm-text="I Agree"
+                    data-chicken-button-class="button danger">I Agree</button>
             </form>';
         }
 

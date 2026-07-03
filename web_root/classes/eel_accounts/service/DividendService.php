@@ -592,7 +592,7 @@ final class DividendService
             return [];
         }
 
-        return \InterfaceDB::fetchAll(
+        $rows = \InterfaceDB::fetchAll(
             'SELECT dv.id,
                     dv.company_id,
                     dv.accounting_period_id,
@@ -624,6 +624,28 @@ final class DividendService
                 'accounting_period_id' => $accountingPeriodId,
             ]
         );
+        foreach ($rows as &$row) {
+            if (!is_array($row) || trim((string)($row['voided_at'] ?? '')) === '') {
+                continue;
+            }
+
+            $reversalJournalId = (int)($row['reversal_journal_id'] ?? 0);
+            $row['voucher_text'] = $this->voidedVoucherText(
+                (string)($row['voucher_text'] ?? ''),
+                (string)($row['voided_at'] ?? ''),
+                (string)($row['void_reason'] ?? ''),
+                $reversalJournalId
+            );
+            $row['minutes_text'] = $this->voidedMinutesText(
+                (string)($row['minutes_text'] ?? ''),
+                (string)($row['voided_at'] ?? ''),
+                (string)($row['void_reason'] ?? ''),
+                $reversalJournalId
+            );
+        }
+        unset($row);
+
+        return $rows;
     }
 
     public function voidDividend(int $companyId, int $accountingPeriodId, int $journalId, string $changedBy = 'web_app'): array
@@ -676,16 +698,34 @@ final class DividendService
             if ($reversalJournalId <= 0 && (int)($journal['is_posted'] ?? 0) === 1) {
                 $reversalJournalId = $this->createDividendReversalJournal($journal, $reason, $changedBy);
             }
+            $voidedAt = (new \DateTimeImmutable())->format('Y-m-d H:i:s');
+            $voucherText = $this->voidedVoucherText(
+                (string)($voucher['voucher_text'] ?? ''),
+                $voidedAt,
+                $reason,
+                $reversalJournalId
+            );
+            $minutesText = $this->voidedMinutesText(
+                (string)($voucher['minutes_text'] ?? ''),
+                $voidedAt,
+                $reason,
+                $reversalJournalId
+            );
 
             \InterfaceDB::prepareExecute(
                 'UPDATE dividend_vouchers
                  SET reversal_journal_id = :reversal_journal_id,
-                     voided_at = CURRENT_TIMESTAMP,
+                     voucher_text = :voucher_text,
+                     minutes_text = :minutes_text,
+                     voided_at = :voided_at,
                      voided_by = :voided_by,
                      void_reason = :void_reason
                  WHERE id = :id',
                 [
                     'reversal_journal_id' => $reversalJournalId > 0 ? $reversalJournalId : null,
+                    'voucher_text' => $voucherText,
+                    'minutes_text' => $minutesText,
+                    'voided_at' => $voidedAt,
                     'voided_by' => $changedBy,
                     'void_reason' => $reason,
                     'id' => (int)$voucher['id'],
@@ -1142,6 +1182,33 @@ final class DividendService
             . 'It was resolved that an interim dividend of ' . number_format($amount, 2, '.', '')
             . ' be declared and recorded as "' . $description . '". '
             . 'The director authorised the dividend voucher and company records to be kept.');
+    }
+
+    private function voidedVoucherText(string $voucherText, string $voidedAt, string $reason, int $reversalJournalId): string
+    {
+        $voucherText = trim($voucherText);
+        if ($voucherText === '' || str_contains($voucherText, 'Status: VOIDED')) {
+            return $voucherText;
+        }
+
+        return trim($voucherText . "\n"
+            . 'Status: VOIDED' . "\n"
+            . 'Voided at: ' . trim($voidedAt) . "\n"
+            . 'Void reason: ' . trim($reason)
+            . ($reversalJournalId > 0 ? "\n" . 'Reversal journal: ' . $reversalJournalId : ''));
+    }
+
+    private function voidedMinutesText(string $minutesText, string $voidedAt, string $reason, int $reversalJournalId): string
+    {
+        $minutesText = trim($minutesText);
+        if ($minutesText === '' || str_contains($minutesText, 'Subsequent record: This dividend voucher was voided')) {
+            return $minutesText;
+        }
+
+        return trim($minutesText . "\n\n"
+            . 'Subsequent record: This dividend voucher was voided on ' . trim($voidedAt) . '. '
+            . 'Reason: ' . trim($reason) . '.'
+            . ($reversalJournalId > 0 ? ' Reversal journal: ' . $reversalJournalId . '.' : ''));
     }
 
     private function tableExists(string $table): bool

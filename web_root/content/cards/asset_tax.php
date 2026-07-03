@@ -14,6 +14,11 @@ final class _asset_taxCard extends CardBaseFramework
         return 'asset_tax';
     }
 
+    public function title(): string
+    {
+        return 'Example Tax Prediction';
+    }
+
     public function services(): array
     {
         return [

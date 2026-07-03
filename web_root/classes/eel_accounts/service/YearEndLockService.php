@@ -17,14 +17,30 @@ final class YearEndLockService
             return null;
         }
 
-        $acknowledgementColumns = $this->hasReviewColumn('director_loan_closing_acknowledged_at')
-            && $this->hasReviewColumn('director_loan_closing_acknowledged_by')
-            ? ',
-                    director_loan_closing_acknowledged_at,
-                    director_loan_closing_acknowledged_by'
-            : ',
-                    NULL AS director_loan_closing_acknowledged_at,
-                    NULL AS director_loan_closing_acknowledged_by';
+        $acknowledgementColumns = [];
+        if ($this->hasReviewColumn('director_loan_closing_acknowledged_at') && $this->hasReviewColumn('director_loan_closing_acknowledged_by')) {
+            $acknowledgementColumns[] = 'director_loan_closing_acknowledged_at';
+            $acknowledgementColumns[] = 'director_loan_closing_acknowledged_by';
+        } else {
+            $acknowledgementColumns[] = 'NULL AS director_loan_closing_acknowledged_at';
+            $acknowledgementColumns[] = 'NULL AS director_loan_closing_acknowledged_by';
+        }
+
+        if ($this->hasReviewColumn('tax_readiness_acknowledged_at') && $this->hasReviewColumn('tax_readiness_acknowledged_by')) {
+            $acknowledgementColumns[] = 'tax_readiness_acknowledged_at';
+            $acknowledgementColumns[] = 'tax_readiness_acknowledged_by';
+        } else {
+            $acknowledgementColumns[] = 'NULL AS tax_readiness_acknowledged_at';
+            $acknowledgementColumns[] = 'NULL AS tax_readiness_acknowledged_by';
+        }
+
+        if ($this->hasReviewColumn('expense_position_acknowledged_at') && $this->hasReviewColumn('expense_position_acknowledged_by')) {
+            $acknowledgementColumns[] = 'expense_position_acknowledged_at';
+            $acknowledgementColumns[] = 'expense_position_acknowledged_by';
+        } else {
+            $acknowledgementColumns[] = 'NULL AS expense_position_acknowledged_at';
+            $acknowledgementColumns[] = 'NULL AS expense_position_acknowledged_by';
+        }
 
         $row = \InterfaceDB::fetchOne( 'SELECT id,
                     company_id,
@@ -34,7 +50,7 @@ final class YearEndLockService
                     locked_at,
                     locked_by,
                     review_notes,
-                    ' . ltrim($acknowledgementColumns, ",\n") . ',
+                    ' . implode(",\n                    ", $acknowledgementColumns) . ',
                     last_recalculated_at,
                     created_at,
                     updated_at
@@ -271,6 +287,104 @@ final class YearEndLockService
 
         $review = $this->fetchReview($companyId, $accountingPeriodId);
         $this->writeAuditLog($companyId, $accountingPeriodId, 'director_loan_closing_acknowledged', $changedBy, $existing, $review);
+
+        return [
+            'success' => true,
+            'review' => $review,
+        ];
+    }
+
+    public function saveTaxReadinessAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app'): array {
+        if (!$this->hasReviewTable()) {
+            return [
+                'success' => false,
+                'errors' => ['Run the Year End review migration before saving tax readiness acknowledgements.'],
+            ];
+        }
+
+        if (!$this->hasReviewColumn('tax_readiness_acknowledged_at') || !$this->hasReviewColumn('tax_readiness_acknowledged_by')) {
+            return [
+                'success' => false,
+                'errors' => ['Run the Tax Readiness year-end acknowledgement migration before saving this acknowledgement.'],
+            ];
+        }
+
+        if (!$acknowledged) {
+            return [
+                'success' => false,
+                'errors' => ['Tick the tax readiness acknowledgement before saving.'],
+            ];
+        }
+
+        $this->ensureReviewRow($companyId, $accountingPeriodId);
+        $existing = $this->fetchReview($companyId, $accountingPeriodId);
+        $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
+
+        \InterfaceDB::execute( 'UPDATE year_end_reviews
+             SET tax_readiness_acknowledged_at = :acknowledged_at,
+                 tax_readiness_acknowledged_by = :acknowledged_by,
+                 updated_at = :updated_at
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id'
+        , [
+            'acknowledged_at' => $now,
+            'acknowledged_by' => $this->actorValue($changedBy),
+            'updated_at' => $now,
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+        ]);
+
+        $review = $this->fetchReview($companyId, $accountingPeriodId);
+        $this->writeAuditLog($companyId, $accountingPeriodId, 'tax_readiness_acknowledged', $changedBy, $existing, $review);
+
+        return [
+            'success' => true,
+            'review' => $review,
+        ];
+    }
+
+    public function saveExpensePositionAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app'): array {
+        if (!$this->hasReviewTable()) {
+            return [
+                'success' => false,
+                'errors' => ['Run the Year End review migration before saving expense position acknowledgements.'],
+            ];
+        }
+
+        if (!$this->hasReviewColumn('expense_position_acknowledged_at') || !$this->hasReviewColumn('expense_position_acknowledged_by')) {
+            return [
+                'success' => false,
+                'errors' => ['Run the Expense Position year-end acknowledgement migration before saving this acknowledgement.'],
+            ];
+        }
+
+        if (!$acknowledged) {
+            return [
+                'success' => false,
+                'errors' => ['Tick the expense position acknowledgement before saving.'],
+            ];
+        }
+
+        $this->ensureReviewRow($companyId, $accountingPeriodId);
+        $existing = $this->fetchReview($companyId, $accountingPeriodId);
+        $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
+
+        \InterfaceDB::execute( 'UPDATE year_end_reviews
+             SET expense_position_acknowledged_at = :acknowledged_at,
+                 expense_position_acknowledged_by = :acknowledged_by,
+                 updated_at = :updated_at
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id'
+        , [
+            'acknowledged_at' => $now,
+            'acknowledged_by' => $this->actorValue($changedBy),
+            'updated_at' => $now,
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+        ]);
+
+        $review = $this->fetchReview($companyId, $accountingPeriodId);
+        $this->writeAuditLog($companyId, $accountingPeriodId, 'expense_position_acknowledged', $changedBy, $existing, $review);
 
         return [
             'success' => true,

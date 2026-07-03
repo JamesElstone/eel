@@ -125,6 +125,66 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
         });
     });
 
+    $harness->check('YearEndAction', 'saves tax readiness acknowledgement', static function () use ($harness): void {
+        yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness): void {
+            $instance = yearEndActionTestInstanceWithDirectorCount(1);
+            if (!InterfaceDB::tableExists('year_end_reviews') || !InterfaceDB::columnExists('year_end_reviews', 'tax_readiness_acknowledged_at')) {
+                $harness->skip('Tax readiness year-end acknowledgement schema is not available on the default InterfaceDB connection.');
+            }
+
+            $result = $instance->handle(
+                yearEndActionDirectorLoanTestRequest((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'save_tax_readiness_acknowledgement'),
+                createTestPageServiceFramework()
+            );
+
+            $harness->assertSame(true, $result->isSuccess());
+            $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'Tax readiness acknowledgement saved'));
+            $acknowledgedAt = (string)InterfaceDB::fetchColumn(
+                'SELECT COALESCE(tax_readiness_acknowledged_at, \'\')
+                 FROM year_end_reviews
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id
+                 LIMIT 1',
+                [
+                    'company_id' => (int)$fixture['company_id'],
+                    'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                ]
+            );
+
+            $harness->assertSame(false, $acknowledgedAt === '');
+        });
+    });
+
+    $harness->check('YearEndAction', 'saves expense position acknowledgement', static function () use ($harness): void {
+        yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness): void {
+            $instance = yearEndActionTestInstanceWithDirectorCount(1);
+            if (!InterfaceDB::tableExists('year_end_reviews') || !InterfaceDB::columnExists('year_end_reviews', 'expense_position_acknowledged_at')) {
+                $harness->skip('Expense position year-end acknowledgement schema is not available on the default InterfaceDB connection.');
+            }
+
+            $result = $instance->handle(
+                yearEndActionDirectorLoanTestRequest((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'save_expense_position_acknowledgement'),
+                createTestPageServiceFramework()
+            );
+
+            $harness->assertSame(true, $result->isSuccess());
+            $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'Expense position acknowledgement saved'));
+            $acknowledgedAt = (string)InterfaceDB::fetchColumn(
+                'SELECT COALESCE(expense_position_acknowledged_at, \'\')
+                 FROM year_end_reviews
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id
+                 LIMIT 1',
+                [
+                    'company_id' => (int)$fixture['company_id'],
+                    'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                ]
+            );
+
+            $harness->assertSame(false, $acknowledgedAt === '');
+        });
+    });
+
     $harness->check('YearEndAction', 'guarded year-end intents are blocked when active director count is not one', static function () use ($harness): void {
         yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness): void {
             $instance = yearEndActionTestInstanceWithDirectorCount(2);
@@ -347,6 +407,8 @@ function yearEndActionDirectorLoanTestRequest(int $companyId, int $accountingPer
             'accounting_period_id' => (string)$accountingPeriodId,
             'review_notes' => 'Notes from director eligibility test.',
             'director_loan_offset_acknowledgement' => '1',
+            'tax_readiness_acknowledgement' => '1',
+            'expense_position_acknowledgement' => '1',
         ],
         ['REQUEST_METHOD' => 'POST', 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest', 'HTTP_ACCEPT' => 'application/json'],
         [],

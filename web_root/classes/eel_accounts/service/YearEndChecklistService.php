@@ -13,7 +13,6 @@ namespace eel_accounts\Service;
 final class YearEndChecklistService
 {
     private const REVIEW_ACKNOWLEDGEABLE_CHECKS = [
-        'unpaid_expense_claims',
         'retained_earnings_movement',
         'fixed_asset_review_placeholder',
         'prepayments_accruals_placeholder',
@@ -131,6 +130,7 @@ final class YearEndChecklistService
         $uncategorisedCount = $this->dashboardCountUncategorisedTransactions($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $trialBalance = $this->dashboardTrialBalanceStatus($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $postedSourceWork = $metrics->postedSourceWorkSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $settings = $metrics->fetchCompanySettings($companyId);
         $unpostedSourceWorkCount = (int)($postedSourceWork['total_unposted'] ?? 0);
         $hasSourceData = ($transactionCount + $postedJournalCount) > 0;
         $isLocked = is_array($review) && (int)($review['is_locked'] ?? 0) === 1;
@@ -177,7 +177,7 @@ final class YearEndChecklistService
             !empty($trialBalance['balances'])
                 ? 'Total debits equal total credits.'
                 : 'Total debits and credits do not match for the selected period.',
-            (string)number_format((float)($trialBalance['difference'] ?? 0), 2, '.', ''),
+            $this->money($settings, $trialBalance['difference'] ?? 0),
             '?page=journal&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
         );
         $checks[] = $this->makeCheck(
@@ -422,6 +422,54 @@ final class YearEndChecklistService
         ];
     }
 
+    public function saveTaxReadinessAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app'): array {
+        if (!$acknowledged) {
+            return [
+                'success' => false,
+                'errors' => ['Tick the tax readiness acknowledgement before saving.'],
+            ];
+        }
+
+        $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId, true);
+        if (empty($checklistResult['success'])) {
+            return $checklistResult;
+        }
+
+        $lock = $this->lockService ?? new \eel_accounts\Service\YearEndLockService();
+        $result = $lock->saveTaxReadinessAcknowledgement($companyId, $accountingPeriodId, $acknowledged, $changedBy);
+        if (empty($result['success'])) {
+            return $result;
+        }
+
+        return $result + [
+            'checklist' => $this->fetchChecklist($companyId, $accountingPeriodId, true),
+        ];
+    }
+
+    public function saveExpensePositionAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app'): array {
+        if (!$acknowledged) {
+            return [
+                'success' => false,
+                'errors' => ['Tick the expense position acknowledgement before saving.'],
+            ];
+        }
+
+        $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId, true);
+        if (empty($checklistResult['success'])) {
+            return $checklistResult;
+        }
+
+        $lock = $this->lockService ?? new \eel_accounts\Service\YearEndLockService();
+        $result = $lock->saveExpensePositionAcknowledgement($companyId, $accountingPeriodId, $acknowledged, $changedBy);
+        if (empty($result['success'])) {
+            return $result;
+        }
+
+        return $result + [
+            'checklist' => $this->fetchChecklist($companyId, $accountingPeriodId, true),
+        ];
+    }
+
     public function acknowledgeReviewCheck(
         int $companyId,
         int $accountingPeriodId,
@@ -612,7 +660,7 @@ final class YearEndChecklistService
         $duplicateAudit = $metrics->duplicateImportAudit($companyId, $accountingPeriodId);
         $strandedRows = $metrics->strandedCommittedSourceRowsCount($companyId, $accountingPeriodId);
         $directorLoan = $metrics->directorLoanSummary($companyId, $accountingPeriodId);
-        $unpaidExpenses = $metrics->unpaidExpenseSummary($companyId, $accountingPeriodId, $periodEnd);
+        $expensePosition = (new \eel_accounts\Service\YearEndExpenseConfirmationService($metrics))->fetchContext($companyId, $accountingPeriodId);
         $duplicateRepayments = $metrics->duplicateRepaymentRiskSummary($companyId, $periodStart, $periodEnd);
         $financialStatements = $metrics->financialStatementsSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd, $trialBalance);
         $taxReadiness = $tax->fetchCurrentPeriodEstimate(
@@ -684,7 +732,7 @@ final class YearEndChecklistService
             (bool)$suspenseSummary['has_nominal']
                 ? 'Suspense should clear to nil before locking the period.'
                 : 'No suspense nominal is configured, so this check is advisory only.',
-            (string)number_format((float)$suspenseSummary['closing_balance'], 2, '.', ''),
+            $this->money($settings, $suspenseSummary['closing_balance'] ?? 0),
             '?page=journal&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
         );
         $sections['categorisation_suspense'][] = $this->makeCheck(
@@ -716,7 +764,7 @@ final class YearEndChecklistService
             !empty($trialBalance['balances'])
                 ? 'Total debits equal total credits.'
                 : 'Total debits and credits do not match for the selected period.',
-            (string)number_format((float)($trialBalance['difference'] ?? 0), 2, '.', ''),
+            $this->money($settings, $trialBalance['difference'] ?? 0),
             '?page=journal&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
         );
         $journalIntegrityIssues = (int)$journalIntegrity['line_count_failures'] + (int)$journalIntegrity['unbalanced_journals'] + (int)$journalIntegrity['missing_nominal_lines'];
@@ -787,20 +835,26 @@ final class YearEndChecklistService
                 : ($directorLoanClosingAcknowledged
                     ? 'Director loan closing balance has been acknowledged for this period.'
                     : 'Review whether the period-end director loan balance is expected before filing.'),
-            empty($directorLoan['available']) ? '' : (string)number_format($dlaClosing, 2, '.', ''),
+            empty($directorLoan['available']) ? '' : $this->money($settings, $dlaClosing),
             '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_director_loan_offset'
         );
-        $sections['director_loan_expenses'][] = $this->applyReviewAcknowledgement($this->makeCheck(
-            'unpaid_expense_claims',
-            'Unpaid expense claims',
+        $expensePositionAcknowledged = trim((string)($review['expense_position_acknowledged_at'] ?? '')) !== '';
+        $expensePositionBalance = (float)((($expensePosition['totals'] ?? [])['carried_forward'] ?? 0));
+        $sections['director_loan_expenses'][] = $this->makeCheck(
+            'expense_position_acknowledgement',
+            'Expense position acknowledgement',
             'warning',
-            !empty($unpaidExpenses['available']) && (int)$unpaidExpenses['unpaid_count'] > 0 ? 'warning' : (!empty($unpaidExpenses['available']) ? 'pass' : 'not_applicable'),
-            !empty($unpaidExpenses['available'])
-                ? 'Expense claims carried forward at period end should be reviewed.'
-                : 'Expense claim register is not available yet.',
-            !empty($unpaidExpenses['available']) ? (string)number_format((float)$unpaidExpenses['outstanding_amount'], 2, '.', '') : '',
-            '?page=expense_claims&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
-        ), $reviewAcknowledgements);
+            empty($expensePosition['available']) ? 'not_applicable' : ($expensePositionAcknowledged ? 'pass' : 'warning'),
+            empty($expensePosition['available'])
+                ? (string)(($expensePosition['errors'] ?? [])[0] ?? 'Expense claim register is not available yet.')
+                : ($expensePositionAcknowledged
+                    ? 'Expense claim position has been acknowledged for this period.'
+                    : 'Review the expense claim balance brought forward, claims, payments, and carried-forward position before closing this accounting period.'),
+            empty($expensePosition['available'])
+                ? ''
+                : $this->expensePositionMetric($settings, $expensePositionBalance),
+            '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_expenses_confirmation'
+        );
         $sections['director_loan_expenses'][] = $this->makeCheck(
             'duplicate_repayment_protection',
             'Duplicate repayment protection',
@@ -822,7 +876,7 @@ final class YearEndChecklistService
             !empty($trialBalance['exists'])
                 ? 'The app can derive a period P&L from posted journals.'
                 : 'The P&L cannot be generated because no posted journal data exists.',
-            (string)number_format($profitBeforeTax, 2, '.', ''),
+            $this->money($settings, $profitBeforeTax),
             '?page=journal&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
         );
         $sections['year_end_accounts_review'][] = $this->makeCheck(
@@ -845,7 +899,7 @@ final class YearEndChecklistService
             $equityMovement > 0.99
                 ? 'Opening equity, profit, and closing equity do not fully reconcile.'
                 : 'Opening equity, profit, and closing equity look internally consistent.',
-            (string)number_format((float)($financialStatements['retained_earnings']['unexplained_movement'] ?? 0), 2, '.', ''),
+            $this->money($settings, $financialStatements['retained_earnings']['unexplained_movement'] ?? 0),
             '?page=journal&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=nominal_closing_balances'
         ), $reviewAcknowledgements);
         $sections['year_end_accounts_review'][] = $this->applyReviewAcknowledgement($this->makeCheck(
@@ -877,7 +931,7 @@ final class YearEndChecklistService
             !empty($taxReadiness['available'])
                 ? 'Nominal tax treatments are being used to estimate the tax-adjusted result.'
                 : 'Tax readiness could not be calculated for this period.',
-            !empty($taxReadiness['available']) ? (string)number_format((float)($taxReadiness['taxable_profit'] ?? 0), 2, '.', '') : '',
+            !empty($taxReadiness['available']) ? $this->money($settings, $taxReadiness['taxable_profit'] ?? 0) : '',
             '?page=nominals&company_id=' . $companyId
         );
         $sections['corporation_tax_readiness'][] = $this->makeCheck(
@@ -889,7 +943,7 @@ final class YearEndChecklistService
                 ? 'Estimated taxable profit/loss and corporation tax have been generated for review.'
                 : 'No tax estimate could be generated for this period.',
             !empty($taxReadiness['available'])
-                ? ('Tax ' . number_format((float)($taxReadiness['estimated_corporation_tax'] ?? 0), 2, '.', ''))
+                ? ('Tax ' . $this->money($settings, $taxReadiness['estimated_corporation_tax'] ?? 0))
                 : '',
             '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_tax_readiness#tax-readiness'
         );
@@ -899,7 +953,21 @@ final class YearEndChecklistService
             'info',
             !empty($taxReadiness['available']) ? 'pass' : 'not_applicable',
             'Losses brought forward, used, and carried forward are shown on a simple basis ready for later CT engine refinement.',
-            !empty($taxReadiness['available']) ? (string)number_format((float)($taxReadiness['losses_carried_forward'] ?? 0), 2, '.', '') : '',
+            !empty($taxReadiness['available']) ? $this->money($settings, $taxReadiness['losses_carried_forward'] ?? 0) : '',
+            '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_tax_readiness#tax-readiness'
+        );
+        $taxReadinessAcknowledged = trim((string)($review['tax_readiness_acknowledged_at'] ?? '')) !== '';
+        $sections['corporation_tax_readiness'][] = $this->makeCheck(
+            'tax_readiness_acknowledgement',
+            'Tax readiness acknowledgement',
+            'warning',
+            empty($taxReadiness['available']) ? 'not_applicable' : ($taxReadinessAcknowledged ? 'pass' : 'warning'),
+            empty($taxReadiness['available'])
+                ? 'Tax readiness must be available before this review can be acknowledged.'
+                : ($taxReadinessAcknowledged
+                    ? 'Tax readiness has been acknowledged for this period.'
+                    : 'Review the corporation tax estimate, computation steps, and loss schedule before closing this accounting period.'),
+            empty($taxReadiness['available']) ? '' : ($taxReadinessAcknowledged ? 'Acknowledged' : 'Pending'),
             '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_tax_readiness#tax-readiness'
         );
         $sections['corporation_tax_readiness'][] = $this->applyReviewAcknowledgement($this->makeCheck(
@@ -1007,6 +1075,7 @@ final class YearEndChecklistService
             'auto_decision_summary' => $autoDecisionSummary,
             'sections' => $sections,
             'checks_flat' => $checks,
+            'expense_position' => $expensePosition,
             'tax_readiness' => $taxReadiness,
             'companies_house_comparison' => $chComparison,
         ];
@@ -1043,6 +1112,27 @@ final class YearEndChecklistService
         $filter = (int)($summary['unreviewed_count'] ?? 0) > 0 ? 'pending' : 'post_pending';
 
         return '?page=transactions&show_card=transaction_search&transaction_search_category_status=auto&transaction_search_auto_approval_filter=' . $filter;
+    }
+
+    private function expensePositionMetric(array $settings, float $carriedForward): string
+    {
+        $carriedForward = round($carriedForward, 2);
+        $amount = $this->money($settings, $carriedForward);
+
+        if ($carriedForward > 0.004) {
+            return 'UNPAID ' . $amount;
+        }
+
+        if ($carriedForward < -0.004) {
+            return 'OWED ' . $amount;
+        }
+
+        return $amount;
+    }
+
+    private function money(array $settings, float|int|string|null $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($settings, $value);
     }
 
     private function postedSourceWorkDetail(array $postedSourceWork): string

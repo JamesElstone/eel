@@ -95,15 +95,15 @@
     }
 
     function initialiseDirectorLoanOffsetAcknowledgements(root = document) {
-        const forms = root.querySelectorAll ? root.querySelectorAll('[data-director-loan-offset-ack-form="true"]') : [];
+        const forms = root.querySelectorAll ? root.querySelectorAll('[data-director-loan-offset-ack-form="true"], [data-year-end-ack-form="true"]') : [];
 
         forms.forEach((form) => {
             if (!(form instanceof HTMLFormElement)) {
                 return;
             }
 
-            const checkbox = form.querySelector('[data-director-loan-offset-ack-checkbox]');
-            const submitButton = form.querySelector('[data-director-loan-offset-ack-submit]');
+            const checkbox = form.querySelector('[data-director-loan-offset-ack-checkbox], [data-year-end-ack-checkbox]');
+            const submitButton = form.querySelector('[data-director-loan-offset-ack-submit], [data-year-end-ack-submit]');
 
             if (!(checkbox instanceof HTMLInputElement) || !(submitButton instanceof HTMLButtonElement)) {
                 return;

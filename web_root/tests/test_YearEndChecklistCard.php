@@ -87,4 +87,74 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
         $harness->assertSame(false, str_contains($html, 'company_id=12'));
         $harness->assertSame(false, str_contains($html, 'accounting_period_id=34'));
     });
+
+    $harness->check(_year_end_checklistCard::class, 'renders tax readiness acknowledgement in corporation tax section', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'year_end' => [
+                'checklist' => [
+                    'company_id' => 12,
+                    'accounting_period' => ['id' => 34],
+                    'overall_status' => 'in_progress',
+                    'sections' => [
+                        'corporation_tax_readiness' => [
+                            [
+                                'check_code' => 'tax_readiness_acknowledgement',
+                                'title' => 'Tax readiness acknowledgement',
+                                'status' => 'warning',
+                                'detail_text' => 'Review the corporation tax estimate, computation steps, and loss schedule before closing this accounting period.',
+                                'metric_value' => 'Pending',
+                                'action_url' => '?page=year_end&company_id=12&accounting_period_id=34&show_card=year_end_tax_readiness#tax-readiness',
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $harness->assertSame(true, str_contains($html, 'G. Corporation tax readiness'));
+        $harness->assertSame(true, str_contains($html, 'Tax readiness acknowledgement'));
+        $harness->assertSame(true, str_contains($html, '?page=year_end&amp;show_card=year_end_tax_readiness#tax-readiness'));
+        $harness->assertSame(false, str_contains($html, 'company_id=12'));
+        $harness->assertSame(false, str_contains($html, 'accounting_period_id=34'));
+    });
+
+    $harness->check(_year_end_checklistCard::class, 'renders expense position acknowledgement in expense section', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'year_end' => [
+                'checklist' => [
+                    'company_id' => 12,
+                    'accounting_period' => ['id' => 34],
+                    'overall_status' => 'in_progress',
+                    'sections' => [
+                        'director_loan_expenses' => [
+                            [
+                                'check_code' => 'expense_position_acknowledgement',
+                                'title' => 'Expense position acknowledgement',
+                                'status' => 'warning',
+                                'detail_text' => 'Review the expense claim balance brought forward, claims, payments, and carried-forward position before closing this accounting period.',
+                                'metric_value' => 'UNPAID £225.00',
+                                'action_url' => '?page=year_end&company_id=12&accounting_period_id=34&show_card=year_end_expenses_confirmation',
+                            ],
+                            [
+                                'check_code' => 'expense_position_acknowledgement',
+                                'title' => 'Expense position acknowledgement',
+                                'status' => 'pass',
+                                'detail_text' => 'Expense claim position has been acknowledged for this period.',
+                                'metric_value' => 'OWED £-42.00',
+                                'action_url' => '?page=year_end&company_id=12&accounting_period_id=34&show_card=year_end_expenses_confirmation',
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $harness->assertSame(true, str_contains($html, 'E. Director loan and expense claims'));
+        $harness->assertSame(true, str_contains($html, 'Expense position acknowledgement'));
+        $harness->assertSame(true, str_contains($html, 'UNPAID £225.00'));
+        $harness->assertSame(true, str_contains($html, 'OWED £-42.00'));
+        $harness->assertSame(true, str_contains($html, '?page=year_end&amp;show_card=year_end_expenses_confirmation'));
+        $harness->assertSame(false, str_contains($html, 'company_id=12'));
+        $harness->assertSame(false, str_contains($html, 'accounting_period_id=34'));
+    });
 });

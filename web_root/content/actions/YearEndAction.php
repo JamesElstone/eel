@@ -67,6 +67,16 @@ final class YearEndAction implements ActionInterfaceFramework
                     $accountingPeriodId,
                     $this->truthy($request->input('director_loan_offset_acknowledgement', '0'))
                 ),
+                'save_tax_readiness_acknowledgement' => (new \eel_accounts\Service\YearEndChecklistService())->saveTaxReadinessAcknowledgement(
+                    $companyId,
+                    $accountingPeriodId,
+                    $this->truthy($request->input('tax_readiness_acknowledgement', '0'))
+                ),
+                'save_expense_position_acknowledgement' => (new \eel_accounts\Service\YearEndChecklistService())->saveExpensePositionAcknowledgement(
+                    $companyId,
+                    $accountingPeriodId,
+                    $this->truthy($request->input('expense_position_acknowledgement', '0'))
+                ),
                 'acknowledge_review_check' => (new \eel_accounts\Service\YearEndChecklistService())->acknowledgeReviewCheck(
                     $companyId,
                     $accountingPeriodId,
@@ -116,7 +126,7 @@ final class YearEndAction implements ActionInterfaceFramework
             }
         }
 
-        return new ActionResultFramework($success, ['page.context', 'year.end.state', 'year.end.checklist', 'year.end.director.loan.offset', 'year.end.tax.readiness', 'year.end.empty.month.confirmations', 'year.end.notes', 'year.end.audit.log', 'trial.balance.state', 'nominal.opening.balances', 'nominal.closing.balances'], $flashMessages);
+        return new ActionResultFramework($success, ['page.context', 'year.end.state', 'year.end.checklist', 'year.end.director.loan.offset', 'year.end.tax.readiness', 'year.end.expenses.confirmation', 'year.end.empty.month.confirmations', 'year.end.notes', 'year.end.audit.log', 'trial.balance.state', 'nominal.opening.balances', 'nominal.closing.balances'], $flashMessages);
     }
 
     private function successMessage(string $intent): string
@@ -131,6 +141,8 @@ final class YearEndAction implements ActionInterfaceFramework
             'save_opening_balance' => 'Opening balance journal saved.',
             'create_adjustment' => 'Year-end adjustment posted.',
             'save_director_loan_offset_acknowledgement' => 'Director loan offset acknowledgement saved.',
+            'save_tax_readiness_acknowledgement' => 'Tax readiness acknowledgement saved.',
+            'save_expense_position_acknowledgement' => 'Expense position acknowledgement saved.',
             'acknowledge_review_check' => 'Year-end review check marked reviewed.',
             'reopen_review_check' => 'Year-end review check reopened.',
             'post_director_loan_offset' => 'Director loan offset journal posted.',
@@ -146,6 +158,8 @@ final class YearEndAction implements ActionInterfaceFramework
             'save_opening_balance',
             'create_adjustment',
             'save_director_loan_offset_acknowledgement',
+            'save_tax_readiness_acknowledgement',
+            'save_expense_position_acknowledgement',
             'post_director_loan_offset',
         ], true);
     }
@@ -158,6 +172,8 @@ final class YearEndAction implements ActionInterfaceFramework
             'save_opening_balance',
             'create_adjustment',
             'save_director_loan_offset_acknowledgement',
+            'save_tax_readiness_acknowledgement',
+            'save_expense_position_acknowledgement',
             'post_director_loan_offset',
         ], true);
     }

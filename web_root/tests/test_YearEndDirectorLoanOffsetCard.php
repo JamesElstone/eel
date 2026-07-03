@@ -35,7 +35,7 @@ $harness->run(_year_end_director_loan_offsetCard::class, static function (Genera
         $harness->assertSame(true, str_contains($html, 'I acknowledge that this offset will be applied on the closing of the Accounting Period'));
         $harness->assertSame(true, str_contains($html, 'data-chicken-check="true"'));
         $harness->assertSame(true, str_contains($html, 'data-chicken-button-class="button danger"'));
-        $harness->assertSame(true, str_contains($html, '>Save Acknowledgement</button>'));
+        $harness->assertSame(true, str_contains($html, '>I Agree</button>'));
         $harness->assertSame(true, str_contains($html, 'checked required'));
         $harness->assertSame(false, str_contains($html, 'Post Offset Journal'));
     });

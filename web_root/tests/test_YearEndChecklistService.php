@@ -127,6 +127,17 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
         $harness->assertSame('fail', (string)$fail['status']);
     });
 
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'expense position metric labels unpaid and owed balances', static function () use ($harness): void {
+        $service = new \eel_accounts\Service\YearEndChecklistService();
+        $method = new ReflectionMethod($service, 'expensePositionMetric');
+        $method->setAccessible(true);
+        $settings = ['default_currency_symbol' => '&#163;'];
+
+        $harness->assertSame('UNPAID £125.00', $method->invoke($service, $settings, 125.0));
+        $harness->assertSame('OWED £-42.50', $method->invoke($service, $settings, -42.5));
+        $harness->assertSame('£0.00', $method->invoke($service, $settings, 0.0));
+    });
+
     $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'workflow URLs omit selected site context ids', static function () use ($harness): void {
         $service = new \eel_accounts\Service\YearEndChecklistService();
         $makeCheck = new ReflectionMethod($service, 'makeCheck');

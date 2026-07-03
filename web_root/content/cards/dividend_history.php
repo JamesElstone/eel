@@ -75,7 +75,7 @@ final class _dividend_historyCard extends CardBaseFramework
                 <button class="button danger" type="submit"
                     data-chicken-check="true"
                     data-chicken-title="Void dividend"
-                    data-chicken-message="This will create a reversing journal and mark the dividend voucher as voided. The original dividend declaration will remain in the audit trail.<br><br>Continue?"
+                    data-chicken-message="This will create a reversing journal, mark the dividend voucher as voided, and add a separate company minutes record for the void. The original voucher and declaration minutes will remain unchanged.<br><br>Continue?"
                     data-chicken-confirm-text="Void Dividend"
                     data-chicken-button-class="button danger">Void</button>
             </form>';

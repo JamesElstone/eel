@@ -183,11 +183,8 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
             $harness->assertSame('Reclassified after review: the payment was a director loan repayment.', (string)($voucher['void_reason'] ?? ''));
             $harness->assertSame($reversalJournalId, (int)($voucher['reversal_journal_id'] ?? 0));
             $harness->assertSame(true, trim((string)($voucher['voided_at'] ?? '')) !== '');
-            $harness->assertSame(true, str_contains((string)($voucher['voucher_text'] ?? ''), 'Status: VOIDED'));
-            $harness->assertSame(true, str_contains((string)($voucher['voucher_text'] ?? ''), 'Void reason: Reclassified after review: the payment was a director loan repayment.'));
-            $harness->assertSame(true, str_contains((string)($voucher['voucher_text'] ?? ''), 'Reversal journal: ' . $reversalJournalId));
-            $harness->assertSame(true, str_contains((string)($voucher['minutes_text'] ?? ''), 'Subsequent record: This dividend voucher was voided'));
-            $harness->assertSame(true, str_contains((string)($voucher['minutes_text'] ?? ''), 'Reason: Reclassified after review: the payment was a director loan repayment.'));
+            $harness->assertSame(false, str_contains((string)($voucher['voucher_text'] ?? ''), 'Status: VOIDED'));
+            $harness->assertSame(false, str_contains((string)($voucher['minutes_text'] ?? ''), 'Subsequent record: This dividend voucher was voided'));
 
             $netDividendPaid = (float)InterfaceDB::fetchColumn(
                 'SELECT COALESCE(SUM(jl.debit - jl.credit), 0)
@@ -210,8 +207,8 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
             $voidedVouchers = $service->listDividendVouchers($fixture['company_id'], $fixture['accounting_period_id']);
             $voidedVoucherRows = array_values(array_filter($voidedVouchers, static fn(array $row): bool => (int)($row['journal_id'] ?? 0) === $journalId));
             $harness->assertSame(1, count($voidedVoucherRows));
-            $harness->assertSame(true, str_contains((string)($voidedVoucherRows[0]['voucher_text'] ?? ''), 'Status: VOIDED'));
-            $harness->assertSame(true, str_contains((string)($voidedVoucherRows[0]['minutes_text'] ?? ''), 'Subsequent record: This dividend voucher was voided'));
+            $harness->assertSame(false, str_contains((string)($voidedVoucherRows[0]['voucher_text'] ?? ''), 'Status: VOIDED'));
+            $harness->assertSame(false, str_contains((string)($voidedVoucherRows[0]['minutes_text'] ?? ''), 'Subsequent record: This dividend voucher was voided'));
             $harness->assertSame(1, (int)InterfaceDB::fetchColumn(
                 'SELECT COUNT(*)
                  FROM journals

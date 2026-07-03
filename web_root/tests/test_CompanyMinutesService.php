@@ -40,6 +40,45 @@ $harness->run(\eel_accounts\Service\CompanyMinutesService::class, static functio
             }
         }
     });
+
+    $harness->check(\eel_accounts\Service\CompanyMinutesService::class, 'lists voided dividends as separate minutes records referencing the declaration date', static function () use ($harness, $service): void {
+        foreach (['companies', 'accounting_periods', 'journals', 'dividend_vouchers'] as $table) {
+            if (!InterfaceDB::tableExists($table)) {
+                $harness->skip('Company minutes fixture tables are not available on the default InterfaceDB connection.');
+            }
+        }
+
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = company_minutes_service_fixture();
+            $voucherId = company_minutes_service_voucher($fixture, '2026-06-30', 'Original declaration minutes.');
+            InterfaceDB::prepareExecute(
+                'UPDATE dividend_vouchers
+                 SET voided_at = :voided_at,
+                     void_reason = :void_reason
+                 WHERE id = :id',
+                [
+                    'voided_at' => '2027-01-05 12:34:56',
+                    'void_reason' => 'Dividend capacity was uncertain.',
+                    'id' => $voucherId,
+                ]
+            );
+
+            $rows = $service->listMinutes($fixture['company_id'], $fixture['accounting_period_id']);
+
+            $harness->assertCount(2, $rows);
+            $harness->assertSame('2027-01-05', (string)($rows[0]['date'] ?? ''));
+            $harness->assertSame('dividend_voucher_void', (string)($rows[0]['source_type'] ?? ''));
+            $harness->assertSame(true, str_contains((string)($rows[0]['minutes'] ?? ''), 'declaration minutes dated 2026-06-30'));
+            $harness->assertSame(true, str_contains((string)($rows[0]['minutes'] ?? ''), 'Reason: Dividend capacity was uncertain.'));
+            $harness->assertSame('2026-06-30', (string)($rows[1]['date'] ?? ''));
+            $harness->assertSame('Original declaration minutes.', (string)($rows[1]['minutes'] ?? ''));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
 });
 
 function company_minutes_service_fixture(): array
@@ -84,7 +123,7 @@ function company_minutes_service_fixture(): array
     ];
 }
 
-function company_minutes_service_voucher(array $fixture, string $date, string $minutes): void
+function company_minutes_service_voucher(array $fixture, string $date, string $minutes): int
 {
     $sourceRef = 'company-minutes-test:' . $fixture['marker'] . ':' . $date;
 
@@ -172,5 +211,10 @@ function company_minutes_service_voucher(array $fixture, string $date, string $m
             'minutes_text' => $minutes,
             'issued_by' => 'test',
         ]
+    );
+
+    return (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM dividend_vouchers WHERE journal_id = :journal_id ORDER BY id DESC LIMIT 1',
+        ['journal_id' => $journalId]
     );
 }

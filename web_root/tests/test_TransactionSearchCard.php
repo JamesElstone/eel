@@ -106,7 +106,7 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         $harness->assertTrue(str_contains($html, '<span class="table-sort-label">FX</span>'));
         $harness->assertSame(false, str_contains($html, '<span class="table-sort-label">Currency</span>'));
         $harness->assertTrue(str_contains($html, '<span class="table-sort-label">Cat.</span>'));
-        $harness->assertTrue(str_contains($html, '<span class="table-sort-label">Auto Approval</span>'));
+        $harness->assertTrue(str_contains($html, '<span class="table-sort-label">Auto Correct?</span>'));
         $harness->assertTrue(str_contains($html, '<span class="table-sort-label">Flags</span>'));
         $harness->assertTrue(str_contains($html, '<span class="table-sort-label">Journal</span>'));
         $harness->assertTrue(str_contains($html, '<span class="table-sort-label">Upload</span>'));
@@ -123,11 +123,11 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         $harness->assertSame(false, str_contains($html, '<span class="table-sort-label">Updated</span>'));
         $harness->assertTrue(str_contains($html, 'Brian Supplies'));
         $harness->assertTrue(str_contains($html, 'Rule #5 | Description: Brian'));
-        $harness->assertTrue(str_contains($html, 'name="global_action" value="sync_auto_approval_state"'));
-        $harness->assertTrue(str_contains($html, 'data-auto-approval-batch-form="true"'));
-        $harness->assertTrue(str_contains($html, 'data-auto-approval-control="true"'));
-        $harness->assertTrue(str_contains($html, 'data-auto-approval-transaction-id="99"'));
-        $harness->assertTrue(str_contains($html, 'data-auto-approval-initial="1" checked'));
+        $harness->assertSame(false, str_contains($html, 'name="global_action" value="sync_auto_approval_state"'));
+        $harness->assertSame(false, str_contains($html, 'data-auto-approval-batch-form="true"'));
+        $harness->assertSame(false, str_contains($html, 'data-auto-approval-control="true"'));
+        $harness->assertSame(false, str_contains($html, 'data-auto-approval-transaction-id="99"'));
+        $harness->assertSame(false, str_contains($html, 'data-auto-approval-initial="1" checked'));
         $harness->assertTrue(str_contains($html, '<span class="badge success">Auto Correct</span>'));
         $harness->assertTrue(str_contains($html, '?page=transactions&amp;show_card=transactions_imported&amp;month_key=2026-04-01&amp;category_filter=all'));
         $harness->assertTrue(str_contains($html, 'transaction-search-amount-total'));

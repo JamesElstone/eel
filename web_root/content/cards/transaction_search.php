@@ -54,15 +54,6 @@ final class _transaction_searchCard extends CardBaseFramework
                 'service' => \eel_accounts\Repository\NominalAccountRepository::class,
                 'method' => 'fetchNominalAccounts',
             ],
-            [
-                'key' => 'year_end_review',
-                'service' => \eel_accounts\Service\YearEndLockService::class,
-                'method' => 'fetchReview',
-                'params' => [
-                    'companyId' => ':company.id',
-                    'accountingPeriodId' => ':company.accounting_period_id',
-                ],
-            ],
         ];
     }
 
@@ -113,8 +104,7 @@ final class _transaction_searchCard extends CardBaseFramework
         $table = $tableState['table'];
         $hiddenFields = (array)$tableState['hidden_fields'];
 
-        return $this->autoApprovalBatchFormHtml($context)
-            . $this->searchForm($context)
+        return $this->searchForm($context)
             . $table->renderToolbar($context, $hiddenFields)
             . $table->renderTable()
             . $this->footerWithAmountTotal(
@@ -216,8 +206,8 @@ final class _transaction_searchCard extends CardBaseFramework
             )
             ->column(
                 'auto_approval',
-                'Auto Approval',
-                html: fn(array $row): string => $this->autoApprovalHtml($row, $context),
+                'Auto Correct?',
+                html: fn(array $row): string => $this->autoApprovalHtml($row),
                 export: fn(array $row): string => $this->autoApprovalExport($row)
             )
             ->column(
@@ -299,7 +289,7 @@ final class _transaction_searchCard extends CardBaseFramework
                     </select>
                 </div>
                 <div class="mini-field">
-                    <label for="transaction_search_auto_approval_filter">Auto Approval</label>
+                    <label for="transaction_search_auto_approval_filter">Auto Correct?</label>
                     <select class="select" id="transaction_search_auto_approval_filter" name="transaction_search_auto_approval_filter">
                         ' . $this->autoApprovalFilterOptions($autoApprovalFilter) . '
                     </select>
@@ -662,47 +652,21 @@ final class _transaction_searchCard extends CardBaseFramework
         return implode(' | ', $parts);
     }
 
-    private function autoApprovalHtml(array $row, array $context): string
+    private function autoApprovalHtml(array $row): string
     {
         if (!$this->isRuleBasedAutoTransaction($row)) {
             return '<span class="helper">-</span>';
         }
 
-        $transactionId = (int)($row['id'] ?? 0);
-        $checked = $this->autoApprovalCheckedCurrent($row) ? ' checked' : '';
-        $disabled = $this->isPeriodLocked($context) ? ' disabled title="Period locked"' : '';
+        if ($this->autoApprovalConfirmedCurrent($row)) {
+            return '<span class="badge success">Auto Correct</span>';
+        }
 
-        return '<label class="checkbox-item" data-auto-approval-item="true">
-                <input type="checkbox" value="1"
-                    data-auto-approval-control="true"
-                    data-auto-approval-transaction-id="' . $transactionId . '"
-                    data-auto-approval-initial="' . ($checked !== '' ? '1' : '0') . '"' . $checked . $disabled . '>
-                <span class="auto-approval-copy">
-                    <span class="helper" data-auto-approval-status data-auto-approval-default-status="Correct?" aria-live="polite">Correct?</span>
-                </span>
-            </label>';
-    }
+        if ($this->autoApprovalCheckedCurrent($row)) {
+            return '<span class="badge info">Checked</span>';
+        }
 
-    private function autoApprovalBatchFormHtml(array $context): string
-    {
-        $company = (array)($context['company'] ?? []);
-
-        return '<form method="post" action="?page=transactions" data-ajax="true" data-auto-approval-batch-form="true" hidden>
-                <input type="hidden" name="card_action" value="Transaction">
-                <input type="hidden" name="global_action" value="sync_auto_approval_state">
-                <input type="hidden" name="company_id" value="' . (int)($company['id'] ?? 0) . '">
-                <input type="hidden" name="accounting_period_id" value="' . (int)($company['accounting_period_id'] ?? 0) . '">
-                <input type="hidden" name="category_filter" value="auto">
-                <input type="hidden" name="show_card" value="transaction_search">
-                <input type="hidden" name="transaction_search_keyword" value="' . HelperFramework::escape($this->keyword($context)) . '">
-                <input type="hidden" name="transaction_search_amount" value="' . HelperFramework::escape($this->amount($context)) . '">
-                <input type="hidden" name="transaction_search_flow" value="' . HelperFramework::escape($this->flow($context)) . '">
-                <input type="hidden" name="transaction_search_source_account_id" value="' . $this->sourceAccountId($context) . '">
-                <input type="hidden" name="transaction_search_nominal_account_ids" value="' . HelperFramework::escape(implode(',', $this->nominalAccountIds($context))) . '">
-                <input type="hidden" name="transaction_search_category_status" value="' . HelperFramework::escape($this->categoryStatus($context)) . '">
-                <input type="hidden" name="transaction_search_auto_approval_filter" value="' . HelperFramework::escape($this->autoApprovalFilter($context)) . '">
-                <button type="submit" data-auto-approval-batch-submit hidden>Save auto approvals</button>
-            </form>';
+        return '<span class="badge warning">Pending</span>';
     }
 
     private function autoApprovalExport(array $row): string
@@ -763,13 +727,6 @@ final class _transaction_searchCard extends CardBaseFramework
     private function autoApprovalConfirmedCurrent(array $row): bool
     {
         return (int)($row['auto_approval_confirmed_current'] ?? 0) === 1;
-    }
-
-    private function isPeriodLocked(array $context): bool
-    {
-        $review = (array)(($context['services'] ?? [])['year_end_review'] ?? []);
-
-        return !empty($review['is_locked']);
     }
 
     private function openMonthLink(array $row): string

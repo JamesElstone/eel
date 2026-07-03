@@ -424,7 +424,7 @@ final class _transactions_importedCard extends CardBaseFramework
             )
             ->column(
                 'auto_approval',
-                'Auto Approval',
+                'Auto Correct?',
                 html: fn(array $row): string => $this->autoApprovalHtml($row, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $isPeriodLocked),
                 export: fn(array $row): string => $this->autoApprovalExport($row)
             )

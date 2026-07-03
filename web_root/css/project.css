@@ -1533,6 +1533,16 @@
   font-size: 0.92rem;
 }
 
+.auto-approval-copy {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.auto-approval-copy [data-auto-approval-status]:empty {
+  display: none;
+}
+
 .settings-fieldset {
   border: 1px solid var(--line);
   border-radius: 8px;

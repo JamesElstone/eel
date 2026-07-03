@@ -677,8 +677,10 @@ final class _transaction_searchCard extends CardBaseFramework
                     data-auto-approval-control="true"
                     data-auto-approval-transaction-id="' . $transactionId . '"
                     data-auto-approval-initial="' . ($checked !== '' ? '1' : '0') . '"' . $checked . $disabled . '>
-                <span>Correct</span>
-                <span class="helper" data-auto-approval-status aria-live="polite"></span>
+                <span class="auto-approval-copy">
+                    <span>Correct</span>
+                    <span class="helper" data-auto-approval-status aria-live="polite"></span>
+                </span>
             </label>';
     }
 

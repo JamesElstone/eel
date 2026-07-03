@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 final class _director_loan_stateCard extends CardBaseFramework
 {
+    private const PAGE_SIZE = 15;
+
     public function key(): string
     {
         return 'director_loan_state';
@@ -39,6 +41,11 @@ final class _director_loan_stateCard extends CardBaseFramework
         return 'Shown below is the Director Loan position. Director Loan entries are categorised on the Transactions page using the row-level Director Loan button.';
     }
 
+    public function tables(array $context): array
+    {
+        return [$this->configuredStatementTable($context)];
+    }
+
     protected function additionalInvalidationFacts(): array
     {
         return [];
@@ -57,31 +64,10 @@ final class _director_loan_stateCard extends CardBaseFramework
             return $this->renderErrors((array)($statement['errors'] ?? ['Director loan statement is not available for the selected period.']));
         }
 
-        $accountingPeriod = (array)($statement['accounting_period'] ?? []);
         $assetNominal = (array)($statement['asset_nominal'] ?? []);
         $liabilityNominal = (array)($statement['liability_nominal'] ?? []);
         $hasMovements = !empty($statement['has_movements_in_period']);
-        $rowsHtml = '';
-
-        foreach ((array)($statement['statement_rows'] ?? []) as $row) {
-            $isOpening = (string)($row['row_type'] ?? '') === 'opening_balance';
-            $accountLabel = (string)($row['account_label'] ?? '');
-            if ($accountLabel === '' && !$isOpening) {
-                $accountLabel = trim((string)($row['nominal_code'] ?? '') . ' - ' . (string)($row['nominal_name'] ?? ''), ' -');
-            }
-            $rowsHtml .= '<tr>
-                <td>' . HelperFramework::escape(HelperFramework::displayDate((string)($row['journal_date'] ?? ''))) . '</td>
-                <td>' . HelperFramework::escape((string)($row['description'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape($isOpening ? 'Combined' : $accountLabel) . '</td>
-                <td>' . ($isOpening ? '<span class="helper">Opening</span>' : HelperFramework::escape(HelperFramework::labelFromKey((string)($row['source_type'] ?? ''), '_'))) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::nullableMoney($row['signed_amount'] ?? null, '')) . '</td>
-                <td>' . HelperFramework::escape($this->money($statement, $row['running_balance'] ?? 0)) . '</td>
-            </tr>';
-        }
-
-        if ($rowsHtml === '') {
-            $rowsHtml = '<tr><td colspan="6">No director loan movements were found for this period.</td></tr>';
-        }
+        $statementTable = $this->configuredStatementTable($context);
 
         return '
             <div class="month-grid">
@@ -93,14 +79,93 @@ final class _director_loan_stateCard extends CardBaseFramework
             <section class="settings-stack director-loan-control-helper">
                 <div class="helper">Using ' . HelperFramework::escape(FormattingFramework::nominalLabel($assetNominal, ' ')) . ' and ' . HelperFramework::escape(FormattingFramework::nominalLabel($liabilityNominal, ' ')) . ' as the Director Loan control accounts.</div>
             </section>
-            <div class="table-scroll">
-                <table>
-                    <thead><tr><th>Date processed / transaction date</th><th>Description</th><th>Account</th><th>Source</th><th>Amount</th><th>Balance</th></tr></thead>
-                    <tbody>' . $rowsHtml . '</tbody>
-                </table>
-            </div>
+            ' . $statementTable->render($context, [
+                'cards[]' => (array)($context['page']['page_cards'] ?? []),
+            ]) . '
             ' . (!$hasMovements ? '<div class="helper">No Director Loan movements were found for this accounting period.</div>' : '') . '
         ';
+    }
+
+    private function configuredStatementTable(array $context): TableFramework
+    {
+        $statement = (array)($context['services']['directorLoanStatement'] ?? []);
+        $table = $this->statementTable((array)($statement['statement_rows'] ?? []), $statement);
+        $pagination = HelperFramework::paginateArray($table->sortedRows(), $this->paginationPage($context), self::PAGE_SIZE);
+
+        return $table
+            ->visibleRows((array)$pagination['items'])
+            ->pagination(
+                $pagination,
+                'Director loan rows',
+                $this->paginationPageField(),
+                [
+                    'page' => (string)($context['page']['page_id'] ?? ''),
+                    '_pagination' => '1',
+                    '_invalidate_fact' => $this->tableInvalidationFact(),
+                    'cards[]' => [$this->key()],
+                ]
+            );
+    }
+
+    private function statementTable(array $rows, array $statement): TableFramework
+    {
+        return TableFramework::make($this->key(), $this->statementTableRows($rows))
+            ->filename('director-loan-statement')
+            ->exportLimit(1000)
+            ->empty('No director loan movements were found for this period.')
+            ->textColumn('date_display', 'Date processed / transaction date')
+            ->textColumn('description', 'Description')
+            ->textColumn('account_display', 'Account')
+            ->column(
+                'source_display',
+                'Source',
+                html: static fn(array $row): string => !empty($row['is_opening'])
+                    ? '<span class="helper">Opening</span>'
+                    : HelperFramework::escape((string)($row['source_display'] ?? '')),
+                export: static fn(array $row): string => (string)($row['source_display'] ?? '')
+            )
+            ->column(
+                'signed_amount',
+                'Amount',
+                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::nullableMoney($row['signed_amount'] ?? null, '')),
+                export: fn(array $row): string => $this->numberExport($row['signed_amount'] ?? null),
+                cellClass: 'numeric',
+                exportType: 'number'
+            )
+            ->column(
+                'running_balance',
+                'Balance',
+                html: fn(array $row): string => HelperFramework::escape($this->money($statement, $row['running_balance'] ?? 0)),
+                export: fn(array $row): string => $this->numberExport($row['running_balance'] ?? null),
+                cellClass: 'numeric',
+                exportType: 'number'
+            );
+    }
+
+    private function statementTableRows(array $rows): array
+    {
+        $tableRows = [];
+
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $isOpening = (string)($row['row_type'] ?? '') === 'opening_balance';
+            $accountLabel = (string)($row['account_label'] ?? '');
+            if ($accountLabel === '' && !$isOpening) {
+                $accountLabel = trim((string)($row['nominal_code'] ?? '') . ' - ' . (string)($row['nominal_name'] ?? ''), ' -');
+            }
+
+            $row['date_display'] = HelperFramework::displayDate((string)($row['journal_date'] ?? ''));
+            $row['description'] = (string)($row['description'] ?? '');
+            $row['account_display'] = $isOpening ? 'Combined' : $accountLabel;
+            $row['source_display'] = $isOpening ? 'Opening' : HelperFramework::labelFromKey((string)($row['source_type'] ?? ''), '_');
+            $row['is_opening'] = $isOpening;
+            $tableRows[] = $row;
+        }
+
+        return $tableRows;
     }
 
     private function statCard(string $label, string $value): string
@@ -115,6 +180,15 @@ final class _director_loan_stateCard extends CardBaseFramework
         return $symbol . FormattingFramework::money($value);
     }
 
+    private function numberExport(mixed $value): string
+    {
+        if ($value === null || $value === '') {
+            return '';
+        }
+
+        return number_format((float)$value, 2, '.', '');
+    }
+
     private function renderErrors(array $errors): string
     {
         $html = '';
@@ -123,5 +197,10 @@ final class _director_loan_stateCard extends CardBaseFramework
         }
 
         return $html;
+    }
+
+    private function tableInvalidationFact(): string
+    {
+        return (string)($this->invalidationFacts()[0] ?? 'director.loan.state');
     }
 }

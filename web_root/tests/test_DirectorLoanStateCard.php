@@ -110,6 +110,52 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
         $harness->assertTrue(str_contains($html, 'Company owes director'));
     });
 
+    $harness->check(_director_loan_stateCard::class, 'exposes exportable paginated statement table', static function () use ($harness, $card): void {
+        $rows = [];
+        for ($i = 1; $i <= 16; $i++) {
+            $rows[] = [
+                'row_type' => 'movement',
+                'journal_date' => sprintf('2025-10-%02d', $i),
+                'description' => 'Director loan movement ' . $i,
+                'account_label' => '1200 - Director Loan Asset',
+                'source_type' => 'manual',
+                'signed_amount' => $i,
+                'running_balance' => $i,
+            ];
+        }
+
+        $context = [
+            'page' => [
+                'page_id' => 'director_loans',
+                'page_cards' => ['director_loan_state'],
+            ],
+            'services' => [
+                'directorLoanStatement' => [
+                    'success' => true,
+                    'asset_nominal' => ['code' => '1200', 'name' => 'Director Loan Asset'],
+                    'liability_nominal' => ['code' => '2100', 'name' => 'Director Loan Liability'],
+                    'asset_receivable' => 16,
+                    'liability_payable' => 0,
+                    'net_position' => 16,
+                    'net_position_label' => 'Company owes director',
+                    'default_currency_symbol' => '£',
+                    'has_movements_in_period' => true,
+                    'statement_rows' => $rows,
+                ],
+            ],
+        ];
+
+        $harness->assertCount(1, $card->tables($context));
+
+        $html = $card->render($context);
+
+        $harness->assertTrue(str_contains($html, '_table_export_prepare'));
+        $harness->assertTrue(str_contains($html, '>CSV<'));
+        $harness->assertTrue(str_contains($html, 'Director loan rows 1-15 of 16'));
+        $harness->assertTrue(str_contains($html, 'Director loan movement 15'));
+        $harness->assertTrue(!str_contains($html, 'Director loan movement 16'));
+    });
+
     $harness->check(_director_loan_stateCard::class, 'renders settled status from combined net position', static function () use ($harness, $card): void {
         $html = $card->render([
             'services' => [

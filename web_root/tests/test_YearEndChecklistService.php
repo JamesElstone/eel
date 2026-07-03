@@ -126,6 +126,28 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
 
         $harness->assertSame('fail', (string)$fail['status']);
     });
+
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'workflow URLs omit selected site context ids', static function () use ($harness): void {
+        $service = new \eel_accounts\Service\YearEndChecklistService();
+        $makeCheck = new ReflectionMethod($service, 'makeCheck');
+        $makeCheck->setAccessible(true);
+        $dashboardActionUrl = new ReflectionMethod($service, 'dashboardActionUrl');
+        $dashboardActionUrl->setAccessible(true);
+
+        $check = $makeCheck->invoke(
+            $service,
+            'prepayments_accruals_placeholder',
+            'Prepayments and accruals review',
+            'warning',
+            'warning',
+            'Manual review reminder.',
+            '',
+            '?page=journal&company_id=12&accounting_period_id=34&show_card=nominal_closing_balances'
+        );
+
+        $harness->assertSame('?page=journal&show_card=nominal_closing_balances', (string)$check['action_url']);
+        $harness->assertSame('?page=year_end&show_card=year_end_checklist', (string)$dashboardActionUrl->invoke($service, 12, 34));
+    });
 });
 
 function yearEndChecklistServiceRequireDepreciationLockSchema(GeneratedServiceClassTestHarness $harness): void

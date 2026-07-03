@@ -60,12 +60,7 @@ final class _year_end_checklistCard extends CardBaseFramework
             return '';
         }
 
-        $accountingPeriod = (array)($checklist['accounting_period'] ?? []);
-        $companyId = (int)($checklist['company_id'] ?? 0);
-        $accountingPeriodId = (int)($accountingPeriod['id'] ?? 0);
-        $transactionsUrl = '?page=transactions'
-            . ($companyId > 0 ? '&company_id=' . $companyId : '')
-            . ($accountingPeriodId > 0 ? '&accounting_period_id=' . $accountingPeriodId : '');
+        $transactionsUrl = '?page=transactions';
         $status = $this->sectionStatus($checks);
         $statusClass = $this->badgeClass($status);
         $monthTiles = (array)($checklist['month_tiles'] ?? []);
@@ -128,7 +123,7 @@ final class _year_end_checklistCard extends CardBaseFramework
 
     private function renderSummaryCheck(array $check, int $companyId, int $accountingPeriodId): string
     {
-        $actionUrl = trim((string)($check['action_url'] ?? ''));
+        $actionUrl = $this->relatedWorkflowUrl((string)($check['action_url'] ?? ''));
         $metricValue = trim((string)($check['metric_value'] ?? ''));
         $status = (string)($check['status'] ?? '');
         $statusClass = $this->badgeClass($status);
@@ -149,6 +144,28 @@ final class _year_end_checklistCard extends CardBaseFramework
             <div class="helper">' . HelperFramework::escape((string)($check['detail_text'] ?? '')) . '</div>
             ' . $actionsHtml . '
         </div>';
+    }
+
+    private function relatedWorkflowUrl(string $actionUrl): string
+    {
+        $actionUrl = trim($actionUrl);
+        if ($actionUrl === '') {
+            return '';
+        }
+
+        $fragment = '';
+        $hashPosition = strpos($actionUrl, '#');
+        if ($hashPosition !== false) {
+            $fragment = substr($actionUrl, $hashPosition);
+            $actionUrl = substr($actionUrl, 0, $hashPosition);
+        }
+
+        $query = str_starts_with($actionUrl, '?') ? substr($actionUrl, 1) : $actionUrl;
+        parse_str($query, $params);
+        unset($params['company_id'], $params['accounting_period_id']);
+
+        $rebuiltQuery = http_build_query($params);
+        return ($rebuiltQuery !== '' ? '?' . $rebuiltQuery : '') . $fragment;
     }
 
     private function reviewActionHtml(array $check, int $companyId, int $accountingPeriodId): string

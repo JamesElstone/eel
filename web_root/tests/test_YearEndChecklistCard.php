@@ -50,9 +50,41 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
         ]);
 
         $harness->assertSame(true, str_contains($html, 'Open Related Workflow'));
+        $harness->assertSame(true, str_contains($html, '?page=journal&amp;show_card=nominal_closing_balances'));
+        $harness->assertSame(true, str_contains($html, '?page=year_end&amp;show_card=year_end_tax_readiness'));
+        $harness->assertSame(false, str_contains($html, 'company_id=12'));
+        $harness->assertSame(false, str_contains($html, 'accounting_period_id=34'));
         $harness->assertSame(true, str_contains($html, 'name="intent" value="acknowledge_review_check"'));
         $harness->assertSame(true, str_contains($html, 'Mark reviewed'));
         $harness->assertSame(true, str_contains($html, 'name="intent" value="reopen_review_check"'));
         $harness->assertSame(true, str_contains($html, 'Reopen review'));
+    });
+
+    $harness->check(_year_end_checklistCard::class, 'bookkeeping workflow link uses selected site context', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'year_end' => [
+                'checklist' => [
+                    'company_id' => 12,
+                    'accounting_period' => ['id' => 34],
+                    'overall_status' => 'in_progress',
+                    'sections' => [
+                        'bookkeeping_completeness' => [
+                            [
+                                'check_code' => 'source_data_present',
+                                'title' => 'Source data present',
+                                'status' => 'pass',
+                                'detail_text' => 'Source data is present.',
+                                'metric_value' => '1',
+                            ],
+                        ],
+                    ],
+                    'month_tiles' => [],
+                ],
+            ],
+        ]);
+
+        $harness->assertSame(true, str_contains($html, 'href="?page=transactions"'));
+        $harness->assertSame(false, str_contains($html, 'company_id=12'));
+        $harness->assertSame(false, str_contains($html, 'accounting_period_id=34'));
     });
 });

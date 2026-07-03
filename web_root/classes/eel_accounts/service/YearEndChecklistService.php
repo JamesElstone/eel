@@ -45,7 +45,7 @@ final class YearEndChecklistService
                 'status' => 'not_started',
                 'period_label' => 'No accounting period selected',
                 'top_issues' => [],
-                'action_url' => '?page=year_end&company_id=' . (int)$companyId,
+                'action_url' => '?page=year_end',
             ];
         }
 
@@ -90,7 +90,7 @@ final class YearEndChecklistService
 
     private function dashboardActionUrl(int $companyId, int $accountingPeriodId): string
     {
-        return '?page=year_end&company_id=' . (int)$companyId . '&accounting_period_id=' . (int)$accountingPeriodId . '&show_card=year_end_checklist';
+        return '?page=year_end&show_card=year_end_checklist';
     }
 
     private function fetchPersistedDashboardTopIssues(int $companyId, int $accountingPeriodId): array
@@ -1018,8 +1018,34 @@ final class YearEndChecklistService
             'status' => $status,
             'detail_text' => $detail,
             'metric_value' => $metricValue,
-            'action_url' => $actionUrl,
+            'action_url' => $this->workflowActionUrl($actionUrl),
         ];
+    }
+
+    private function workflowActionUrl(?string $actionUrl): ?string
+    {
+        if ($actionUrl === null) {
+            return null;
+        }
+
+        $actionUrl = trim($actionUrl);
+        if ($actionUrl === '') {
+            return '';
+        }
+
+        $fragment = '';
+        $hashPosition = strpos($actionUrl, '#');
+        if ($hashPosition !== false) {
+            $fragment = substr($actionUrl, $hashPosition);
+            $actionUrl = substr($actionUrl, 0, $hashPosition);
+        }
+
+        $query = str_starts_with($actionUrl, '?') ? substr($actionUrl, 1) : $actionUrl;
+        parse_str($query, $params);
+        unset($params['company_id'], $params['accounting_period_id']);
+
+        $rebuiltQuery = http_build_query($params);
+        return ($rebuiltQuery !== '' ? '?' . $rebuiltQuery : '') . $fragment;
     }
 
     private function applyReviewAcknowledgement(array $check, array $acknowledgements): array

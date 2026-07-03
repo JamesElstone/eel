@@ -123,12 +123,15 @@ final class YearEndChecklistService
 
     private function buildDashboardBootstrapChecks(int $companyId, int $accountingPeriodId, array $accountingPeriod, ?array $review): array
     {
+        $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
         $periodStart = (string)($accountingPeriod['period_start'] ?? '');
         $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
         $transactionCount = $this->dashboardCountTransactions($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $postedJournalCount = $this->dashboardCountPostedJournals($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $uncategorisedCount = $this->dashboardCountUncategorisedTransactions($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $trialBalance = $this->dashboardTrialBalanceStatus($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $postedSourceWork = $metrics->postedSourceWorkSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $unpostedSourceWorkCount = (int)($postedSourceWork['total_unposted'] ?? 0);
         $hasSourceData = ($transactionCount + $postedJournalCount) > 0;
         $isLocked = is_array($review) && (int)($review['is_locked'] ?? 0) === 1;
         $checks = [];
@@ -180,13 +183,11 @@ final class YearEndChecklistService
         $checks[] = $this->makeCheck(
             'posted_only_period_integrity',
             'Posted-only period integrity',
-            'info',
-            $isLocked ? 'pass' : 'warning',
-            $isLocked
-                ? 'This period is locked and backend mutation guards are enabled.'
-                : 'This period is still open for posting changes.',
-            $isLocked ? 'Locked' : 'Unlocked',
-            $this->dashboardActionUrl($companyId, $accountingPeriodId)
+            'fail',
+            $unpostedSourceWorkCount > 0 ? 'fail' : 'pass',
+            $this->postedSourceWorkDetail($postedSourceWork),
+            $this->postedSourceWorkMetric($postedSourceWork),
+            $this->postedSourceWorkActionUrl($postedSourceWork)
         );
 
         return [
@@ -605,6 +606,7 @@ final class YearEndChecklistService
         $suspenseSummary = $metrics->suspenseSummary($companyId, $accountingPeriodId, $periodEnd);
         $trialBalance = $metrics->trialBalanceSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $journalIntegrity = $metrics->journalIntegritySummary($companyId, $accountingPeriodId);
+        $postedSourceWork = $metrics->postedSourceWorkSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $statementContinuity = $metrics->statementContinuitySummary($companyId, $accountingPeriodId, $bankNominalId);
         $duplicateAudit = $metrics->duplicateImportAudit($companyId, $accountingPeriodId);
         $strandedRows = $metrics->strandedCommittedSourceRowsCount($companyId, $accountingPeriodId);
@@ -719,6 +721,7 @@ final class YearEndChecklistService
             '?page=journal&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
         );
         $journalIntegrityIssues = (int)$journalIntegrity['line_count_failures'] + (int)$journalIntegrity['unbalanced_journals'] + (int)$journalIntegrity['missing_nominal_lines'];
+        $unpostedSourceWorkCount = (int)($postedSourceWork['total_unposted'] ?? 0);
         $sections['ledger_integrity'][] = $this->makeCheck(
             'journal_structural_integrity',
             'Journal structural integrity',
@@ -733,13 +736,11 @@ final class YearEndChecklistService
         $sections['ledger_integrity'][] = $this->makeCheck(
             'posted_only_period_integrity',
             'Posted-only period integrity',
-            'info',
-            !empty($review['is_locked']) ? 'pass' : 'warning',
-            !empty($review['is_locked'])
-                ? 'This period is locked and backend mutation guards are enabled.'
-                : 'This period is still open for posting changes.',
-            !empty($review['is_locked']) ? 'Locked' : 'Unlocked',
-            '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_state'
+            'fail',
+            $unpostedSourceWorkCount > 0 ? 'fail' : 'pass',
+            $this->postedSourceWorkDetail($postedSourceWork),
+            $this->postedSourceWorkMetric($postedSourceWork),
+            $this->postedSourceWorkActionUrl($postedSourceWork)
         );
 
         $continuityWarningCount = (int)$statementContinuity['continuity_warnings'] + (int)$statementContinuity['ledger_warnings'];
@@ -958,7 +959,8 @@ final class YearEndChecklistService
             && abs((float)$suspenseSummary['closing_balance']) < 0.005
             && !empty($trialBalance['balances'])
             && !empty($trialBalance['exists'])
-            && $journalIntegrityIssues === 0;
+            && $journalIntegrityIssues === 0
+            && $unpostedSourceWorkCount === 0;
         $sections['final_review_lock'][] = $this->makeCheck(
             'lock_readiness_checklist',
             'Lock readiness checklist',
@@ -1008,6 +1010,53 @@ final class YearEndChecklistService
             'tax_readiness' => $taxReadiness,
             'companies_house_comparison' => $chComparison,
         ];
+    }
+
+    private function postedSourceWorkDetail(array $postedSourceWork): string
+    {
+        if ((int)($postedSourceWork['total_unposted'] ?? 0) <= 0) {
+            return 'All postable transactions, expense claims, and fixed assets have posted journals for this period.';
+        }
+
+        return 'Post or confirm the remaining source records before locking this period: '
+            . $this->postedSourceWorkBreakdown($postedSourceWork) . '.';
+    }
+
+    private function postedSourceWorkMetric(array $postedSourceWork): string
+    {
+        if ((int)($postedSourceWork['total_unposted'] ?? 0) <= 0) {
+            return 'All posted';
+        }
+
+        return $this->postedSourceWorkBreakdown($postedSourceWork);
+    }
+
+    private function postedSourceWorkBreakdown(array $postedSourceWork): string
+    {
+        $parts = [
+            (int)($postedSourceWork['unposted_transactions'] ?? 0) . ' transaction(s)',
+            (int)($postedSourceWork['unposted_expense_claims'] ?? 0) . ' expense claim(s)',
+            (int)($postedSourceWork['unposted_assets'] ?? 0) . ' asset(s)',
+        ];
+
+        return implode(', ', $parts);
+    }
+
+    private function postedSourceWorkActionUrl(array $postedSourceWork): string
+    {
+        if ((int)($postedSourceWork['unposted_transactions'] ?? 0) > 0) {
+            return '?page=transactions&show_card=transactions_imported&category_filter=not_posted';
+        }
+
+        if ((int)($postedSourceWork['unposted_expense_claims'] ?? 0) > 0) {
+            return '?page=expense_claims';
+        }
+
+        if ((int)($postedSourceWork['unposted_assets'] ?? 0) > 0) {
+            return '?page=assets';
+        }
+
+        return '?page=year_end&show_card=year_end_state';
     }
 
     private function makeCheck(string $code, string $title, string $severity, string $status, string $detail, string $metricValue = '', ?string $actionUrl = null): array {

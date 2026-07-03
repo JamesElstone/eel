@@ -148,6 +148,89 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
         $harness->assertSame('?page=journal&show_card=nominal_closing_balances', (string)$check['action_url']);
         $harness->assertSame('?page=year_end&show_card=year_end_checklist', (string)$dashboardActionUrl->invoke($service, 12, 34));
     });
+
+    $harness->check(\eel_accounts\Service\YearEndMetricsService::class, 'posted source work summary tracks unposted transactions expenses and assets', static function () use ($harness): void {
+        yearEndChecklistServiceRequirePostedSourceWorkSchema($harness);
+
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = yearEndChecklistServiceCreatePostedSourceWorkFixture();
+            $metrics = new \eel_accounts\Service\YearEndMetricsService();
+
+            $summary = $metrics->postedSourceWorkSummary(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                '2026-01-01',
+                '2026-12-31'
+            );
+            $harness->assertSame(1, (int)$summary['unposted_transactions']);
+            $harness->assertSame(1, (int)$summary['unposted_expense_claims']);
+            $harness->assertSame(1, (int)$summary['unposted_assets']);
+            $harness->assertSame(3, (int)$summary['total_unposted']);
+
+            $transactionJournalId = yearEndChecklistServiceInsertPostedJournal(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                'bank_csv',
+                'transaction:' . (int)$fixture['transaction_id'],
+                '2026-03-15',
+                'Posted transaction fixture'
+            );
+            $expenseJournalId = yearEndChecklistServiceInsertPostedJournal(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                'expense_register',
+                (string)$fixture['claim_reference_code'],
+                '2026-03-31',
+                'Posted expense fixture'
+            );
+            $assetJournalId = yearEndChecklistServiceInsertPostedJournal(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                'asset_register',
+                'asset:' . (string)$fixture['asset_code'] . ':opening',
+                '2026-04-01',
+                'Posted asset fixture'
+            );
+
+            InterfaceDB::prepareExecute(
+                'UPDATE expense_claims
+                 SET status = :status,
+                     posted_journal_id = :posted_journal_id
+                 WHERE id = :id',
+                [
+                    'status' => 'posted',
+                    'posted_journal_id' => $expenseJournalId,
+                    'id' => (int)$fixture['expense_claim_id'],
+                ]
+            );
+            InterfaceDB::prepareExecute(
+                'UPDATE asset_register
+                 SET linked_journal_id = :linked_journal_id
+                 WHERE id = :id',
+                [
+                    'linked_journal_id' => $assetJournalId,
+                    'id' => (int)$fixture['asset_id'],
+                ]
+            );
+
+            $postedSummary = $metrics->postedSourceWorkSummary(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                '2026-01-01',
+                '2026-12-31'
+            );
+            $harness->assertSame(0, (int)$postedSummary['unposted_transactions']);
+            $harness->assertSame(0, (int)$postedSummary['unposted_expense_claims']);
+            $harness->assertSame(0, (int)$postedSummary['unposted_assets']);
+            $harness->assertSame(0, (int)$postedSummary['total_unposted']);
+            $harness->assertTrue($transactionJournalId > 0);
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
 });
 
 function yearEndChecklistServiceRequireDepreciationLockSchema(GeneratedServiceClassTestHarness $harness): void
@@ -174,6 +257,21 @@ function yearEndChecklistServiceRequireDirectorLoanOffsetLockSchema(GeneratedSer
     }
 
     foreach (['1200', '2100'] as $code) {
+        if (yearEndChecklistServiceNominalId($code) <= 0) {
+            $harness->skip('Nominal ' . $code . ' is not available.');
+        }
+    }
+}
+
+function yearEndChecklistServiceRequirePostedSourceWorkSchema(GeneratedServiceClassTestHarness $harness): void
+{
+    foreach (['companies', 'accounting_periods', 'statement_uploads', 'transactions', 'expense_claimants', 'expense_claims', 'expense_claim_lines', 'asset_register', 'journals', 'nominal_accounts'] as $table) {
+        if (!InterfaceDB::tableExists($table)) {
+            $harness->skip($table . ' table is not available.');
+        }
+    }
+
+    foreach (['1300', '1330', '6200'] as $code) {
         if (yearEndChecklistServiceNominalId($code) <= 0) {
             $harness->skip('Nominal ' . $code . ' is not available.');
         }
@@ -334,6 +432,276 @@ function yearEndChecklistServiceCreateDirectorLoanOffsetFixture(): array
         'company_id' => $companyId,
         'accounting_period_id' => $accountingPeriodId,
     ];
+}
+
+function yearEndChecklistServiceCreatePostedSourceWorkFixture(): array
+{
+    $marker = (string)random_int(100000, 999999);
+    $companyId = (int)('66' . $marker);
+    $accountingPeriodId = (int)('67' . $marker);
+    $uploadId = (int)('68' . $marker);
+    $transactionId = (int)('69' . $marker);
+    $claimantId = (int)('70' . $marker);
+    $expenseClaimId = (int)('71' . $marker);
+    $expenseLineId = (int)('72' . $marker);
+    $assetId = (int)('73' . $marker);
+    $claimReferenceCode = 'YPS-' . substr($marker, 0, 6);
+    $assetCode = 'YPS-A-' . $marker;
+
+    InterfaceDB::prepareExecute(
+        'INSERT INTO companies (id, company_name, company_number, is_active)
+         VALUES (:id, :company_name, :company_number, 1)',
+        [
+            'id' => $companyId,
+            'company_name' => 'Year End Posted Source Fixture ' . $marker,
+            'company_number' => 'YPS' . substr($marker, 0, 5),
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end)
+         VALUES (:id, :company_id, :label, :period_start, :period_end)',
+        [
+            'id' => $accountingPeriodId,
+            'company_id' => $companyId,
+            'label' => 'YPS FY ' . $marker,
+            'period_start' => '2026-01-01',
+            'period_end' => '2026-12-31',
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO statement_uploads (
+            id,
+            company_id,
+            accounting_period_id,
+            statement_month,
+            original_filename,
+            stored_filename,
+            file_sha256,
+            workflow_status
+         ) VALUES (
+            :id,
+            :company_id,
+            :accounting_period_id,
+            :statement_month,
+            :original_filename,
+            :stored_filename,
+            :file_sha256,
+            :workflow_status
+         )',
+        [
+            'id' => $uploadId,
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'statement_month' => '2026-03-01',
+            'original_filename' => 'posted-source-' . $marker . '.csv',
+            'stored_filename' => 'posted-source-' . $marker . '.csv',
+            'file_sha256' => hash('sha256', 'posted-source-upload-' . $marker),
+            'workflow_status' => 'committed',
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO transactions (
+            id,
+            company_id,
+            accounting_period_id,
+            statement_upload_id,
+            txn_date,
+            description,
+            amount,
+            dedupe_hash,
+            nominal_account_id,
+            category_status
+         ) VALUES (
+            :id,
+            :company_id,
+            :accounting_period_id,
+            :statement_upload_id,
+            :txn_date,
+            :description,
+            :amount,
+            :dedupe_hash,
+            :nominal_account_id,
+            :category_status
+         )',
+        [
+            'id' => $transactionId,
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'statement_upload_id' => $uploadId,
+            'txn_date' => '2026-03-15',
+            'description' => 'Posted source transaction fixture',
+            'amount' => '-25.00',
+            'dedupe_hash' => hash('sha256', 'posted-source-transaction-' . $marker),
+            'nominal_account_id' => yearEndChecklistServiceNominalId('6200'),
+            'category_status' => 'manual',
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO expense_claimants (id, company_id, claimant_name, is_active)
+         VALUES (:id, :company_id, :claimant_name, 1)',
+        [
+            'id' => $claimantId,
+            'company_id' => $companyId,
+            'claimant_name' => 'Posted Source Claimant ' . $marker,
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO expense_claims (
+            id,
+            company_id,
+            accounting_period_id,
+            claimant_id,
+            claim_year,
+            claim_month,
+            period_start,
+            period_end,
+            claim_reference_code,
+            status
+         ) VALUES (
+            :id,
+            :company_id,
+            :accounting_period_id,
+            :claimant_id,
+            :claim_year,
+            :claim_month,
+            :period_start,
+            :period_end,
+            :claim_reference_code,
+            :status
+         )',
+        [
+            'id' => $expenseClaimId,
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'claimant_id' => $claimantId,
+            'claim_year' => 2026,
+            'claim_month' => 3,
+            'period_start' => '2026-03-01',
+            'period_end' => '2026-03-31',
+            'claim_reference_code' => $claimReferenceCode,
+            'status' => 'draft',
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO expense_claim_lines (
+            id,
+            expense_claim_id,
+            line_number,
+            expense_date,
+            description,
+            amount,
+            nominal_account_id
+         ) VALUES (
+            :id,
+            :expense_claim_id,
+            :line_number,
+            :expense_date,
+            :description,
+            :amount,
+            :nominal_account_id
+         )',
+        [
+            'id' => $expenseLineId,
+            'expense_claim_id' => $expenseClaimId,
+            'line_number' => 1,
+            'expense_date' => '2026-03-20',
+            'description' => 'Posted source expense fixture',
+            'amount' => '10.00',
+            'nominal_account_id' => yearEndChecklistServiceNominalId('6200'),
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO asset_register (
+            id,
+            company_id,
+            asset_code,
+            description,
+            category,
+            nominal_account_id,
+            accum_dep_nominal_id,
+            purchase_date,
+            cost,
+            useful_life_years,
+            depreciation_method,
+            residual_value,
+            status
+         ) VALUES (
+            :id,
+            :company_id,
+            :asset_code,
+            :description,
+            :category,
+            :nominal_account_id,
+            :accum_dep_nominal_id,
+            :purchase_date,
+            :cost,
+            :useful_life_years,
+            :depreciation_method,
+            :residual_value,
+            :status
+         )',
+        [
+            'id' => $assetId,
+            'company_id' => $companyId,
+            'asset_code' => $assetCode,
+            'description' => 'Posted source asset fixture',
+            'category' => 'tools_equipment',
+            'nominal_account_id' => yearEndChecklistServiceNominalId('1300'),
+            'accum_dep_nominal_id' => yearEndChecklistServiceNominalId('1330'),
+            'purchase_date' => '2026-04-01',
+            'cost' => '300.00',
+            'useful_life_years' => 3,
+            'depreciation_method' => 'straight_line',
+            'residual_value' => '0.00',
+            'status' => 'active',
+        ]
+    );
+
+    return [
+        'company_id' => $companyId,
+        'accounting_period_id' => $accountingPeriodId,
+        'transaction_id' => $transactionId,
+        'expense_claim_id' => $expenseClaimId,
+        'claim_reference_code' => $claimReferenceCode,
+        'asset_id' => $assetId,
+        'asset_code' => $assetCode,
+    ];
+}
+
+function yearEndChecklistServiceInsertPostedJournal(
+    int $companyId,
+    int $accountingPeriodId,
+    string $sourceType,
+    string $sourceRef,
+    string $journalDate,
+    string $description
+): int {
+    InterfaceDB::prepareExecute(
+        'INSERT INTO journals (company_id, accounting_period_id, source_type, source_ref, journal_date, description, is_posted)
+         VALUES (:company_id, :accounting_period_id, :source_type, :source_ref, :journal_date, :description, 1)',
+        [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'source_type' => $sourceType,
+            'source_ref' => $sourceRef,
+            'journal_date' => $journalDate,
+            'description' => $description,
+        ]
+    );
+
+    return (int)InterfaceDB::fetchColumn(
+        'SELECT id
+         FROM journals
+         WHERE company_id = :company_id
+           AND source_type = :source_type
+           AND source_ref = :source_ref
+         LIMIT 1',
+        [
+            'company_id' => $companyId,
+            'source_type' => $sourceType,
+            'source_ref' => $sourceRef,
+        ]
+    );
 }
 
 function yearEndChecklistServiceInsertDirectorLoanLineJournal(int $companyId, int $accountingPeriodId, int $nominalId, float $debit, float $credit, string $key, string $marker): void

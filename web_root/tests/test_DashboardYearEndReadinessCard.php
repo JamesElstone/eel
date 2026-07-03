@@ -120,9 +120,9 @@ $harness->run(_dashboard_year_end_readinessCard::class, static function (Generat
                         ],
                         [
                             'title' => 'Posted-only period integrity',
-                            'detail' => 'This period is still open for posting changes.',
-                            'metric_value' => 'Unlocked',
-                            'status' => 'warning',
+                            'detail' => 'Post or confirm the remaining source records before locking this period: 2 transaction(s), 1 expense claim(s), 0 asset(s).',
+                            'metric_value' => '2 transaction(s), 1 expense claim(s), 0 asset(s)',
+                            'status' => 'fail',
                         ],
                     ],
                     'action_url' => '?page=year-end&company_id=1&accounting_period_id=2',
@@ -133,7 +133,7 @@ $harness->run(_dashboard_year_end_readinessCard::class, static function (Generat
         $harness->assertSame(true, str_contains($html, 'grid-stats'));
         $harness->assertSame(true, str_contains($html, 'stat-card'));
         $harness->assertSame(true, str_contains($html, 'stat-card-status-bad'));
-        $harness->assertSame(true, str_contains($html, 'stat-card-status-warn'));
+        $harness->assertSame(false, str_contains($html, 'stat-card-status-warn'));
         $harness->assertSame(true, str_contains($html, 'Year end status'));
         $harness->assertSame(true, str_contains($html, 'Missing'));
         $harness->assertSame(false, str_contains($html, 'Needs attention'));
@@ -143,9 +143,9 @@ $harness->run(_dashboard_year_end_readinessCard::class, static function (Generat
         $harness->assertSame(false, str_contains($html, '4 - 4 transactions need review.'));
         $harness->assertSame(true, str_contains($html, 'No committed bank transactions or posted journals were found in this period.'));
         $harness->assertSame(true, str_contains($html, 'Posted-only period integrity'));
-        $harness->assertSame(true, str_contains($html, '<div class="stat-value">Unlocked</div>'));
-        $harness->assertSame(true, str_contains($html, 'This period is still open for posting changes.'));
-        $harness->assertSame(false, str_contains($html, 'Unlocked - This period is still open for posting changes.'));
+        $harness->assertSame(true, str_contains($html, '<div class="stat-value">2 transaction(s), 1 expense claim(s), 0 asset(s)</div>'));
+        $harness->assertSame(true, str_contains($html, 'Post or confirm the remaining source records before locking this period: 2 transaction(s), 1 expense claim(s), 0 asset(s).'));
+        $harness->assertSame(false, str_contains($html, '2 transaction(s), 1 expense claim(s), 0 asset(s) - Post or confirm'));
         $harness->assertSame(false, str_contains($html, '<div class="list">'));
     });
 

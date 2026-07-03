@@ -180,6 +180,20 @@ final class YearEndMetricsService
         ]);
     }
 
+    public function postedSourceWorkSummary(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array
+    {
+        $transactions = $this->unpostedPostableTransactionsCount($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $expenseClaims = $this->unpostedExpenseClaimsCount($companyId, $accountingPeriodId);
+        $assets = $this->unpostedAssetsCount($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+
+        return [
+            'unposted_transactions' => $transactions,
+            'unposted_expense_claims' => $expenseClaims,
+            'unposted_assets' => $assets,
+            'total_unposted' => $transactions + $expenseClaims + $assets,
+        ];
+    }
+
     public function suspenseSummary(int $companyId, int $accountingPeriodId, string $periodEnd): array {
         $nominalId = $this->findSuspenseNominalId($companyId);
         if ($nominalId <= 0) {
@@ -560,6 +574,112 @@ final class YearEndMetricsService
             'period_start' => $periodStart,
             'period_end' => $periodEnd,
         ]);
+    }
+
+    private function unpostedPostableTransactionsCount(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): int
+    {
+        if (!$this->tableExists('transactions') || !$this->tableExists('journals')) {
+            return 0;
+        }
+
+        return (int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*)
+             FROM transactions t
+             WHERE t.company_id = :company_id
+               AND t.accounting_period_id = :accounting_period_id
+               AND t.txn_date BETWEEN :period_start AND :period_end
+               AND (
+                    (t.nominal_account_id IS NOT NULL AND t.category_status IN (:auto_status, :manual_status))
+                    OR (t.transfer_account_id IS NOT NULL AND t.is_internal_transfer = 1 AND t.category_status = :transfer_status)
+               )
+               AND NOT EXISTS (
+                    SELECT 1
+                    FROM journals j
+                    WHERE j.company_id = t.company_id
+                      AND j.accounting_period_id = t.accounting_period_id
+                      AND j.source_type = :source_type
+                      AND j.source_ref = CONCAT(:source_ref_prefix, t.id)
+                      AND j.is_posted = 1
+               )',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
+                'auto_status' => 'auto',
+                'manual_status' => 'manual',
+                'transfer_status' => 'manual',
+                'source_type' => 'bank_csv',
+                'source_ref_prefix' => 'transaction:',
+            ]
+        );
+    }
+
+    private function unpostedExpenseClaimsCount(int $companyId, int $accountingPeriodId): int
+    {
+        if (!$this->tableExists('expense_claims') || !$this->tableExists('expense_claim_lines') || !$this->tableExists('journals')) {
+            return 0;
+        }
+
+        return (int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*)
+             FROM expense_claims ec
+             WHERE ec.company_id = :company_id
+               AND ec.accounting_period_id = :accounting_period_id
+               AND NOT (
+                    ec.status = :posted_status
+                    AND ec.posted_journal_id IS NOT NULL
+                    AND EXISTS (
+                        SELECT 1
+                        FROM journals j
+                        WHERE j.id = ec.posted_journal_id
+                          AND j.company_id = ec.company_id
+                          AND j.accounting_period_id = ec.accounting_period_id
+                          AND j.is_posted = 1
+                    )
+               )
+               AND (
+                    ec.no_lines_confirmed_at IS NULL
+                    OR EXISTS (
+                        SELECT 1
+                        FROM expense_claim_lines ecl
+                        WHERE ecl.expense_claim_id = ec.id
+                    )
+               )',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'posted_status' => 'posted',
+            ]
+        );
+    }
+
+    private function unpostedAssetsCount(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): int
+    {
+        if (!$this->tableExists('asset_register') || !$this->tableExists('journals')) {
+            return 0;
+        }
+
+        return (int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*)
+             FROM asset_register ar
+             WHERE ar.company_id = :company_id
+               AND ar.purchase_date BETWEEN :period_start AND :period_end
+               AND NOT EXISTS (
+                    SELECT 1
+                    FROM journals j
+                    WHERE j.id = ar.linked_journal_id
+                      AND j.company_id = ar.company_id
+                      AND j.accounting_period_id = :accounting_period_id
+                      AND j.is_posted = 1
+               )',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
+            ]
+        );
     }
 
     private function countJournalsBySource(int $companyId, int $accountingPeriodId, array $sourceTypes): int {

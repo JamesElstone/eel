@@ -213,6 +213,12 @@ final class TestCardsHarness
                                 ],
                             ],
                         ],
+                        [
+                            'title' => 'Scalar metric check',
+                            'status' => 'pass',
+                            'detail' => 'Contains a top-level numeric metric.',
+                            'metric_value' => 42.5,
+                        ],
                     ],
                 ],
             ],
@@ -220,6 +226,7 @@ final class TestCardsHarness
 
         $this->assertTrue(str_contains($html, '$0.00'));
         $this->assertTrue(str_contains($html, '$100.00'));
+        $this->assertTrue(str_contains($html, '$42.50'));
 
         test_output_line('Cards: trial_balance_validation renders monetary metrics with company currency.');
     }

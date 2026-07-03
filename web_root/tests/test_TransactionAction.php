@@ -889,6 +889,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, 'name="global_action" value="post_categorised_transactions"'));
         $harness->assertSame(true, str_contains($html, 'name="month_key" value="2026-03-01"'));
         $harness->assertSame(true, str_contains($html, '<th>Date</th>'));
+        $harness->assertSame(true, str_contains($html, '<th>Auto Decision</th>'));
         $harness->assertSame(true, str_contains($html, 'Test transaction'));
         $harness->assertSame(true, str_contains($html, 'Ref: INV-42<br>Matched by rule #3 (Test)'));
         $harness->assertSame(true, str_contains($html, 'Matched by rule #3 (Test)'));

@@ -171,7 +171,7 @@ final class YearEndMetricsService
                AND t.category_status = :category_status
                AND t.auto_rule_id IS NOT NULL
                AND t.auto_rule_id > 0
-               AND NOT (' . \eel_accounts\Service\TransactionAutoApprovalService::currentApprovalSql('taa', 't') . ')', [
+               AND NOT (' . \eel_accounts\Service\TransactionAutoApprovalService::currentCheckedSql('taa', 't') . ')', [
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
             'period_start' => $periodStart,

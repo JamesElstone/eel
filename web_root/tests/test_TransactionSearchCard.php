@@ -95,7 +95,9 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         $harness->assertTrue(str_contains($html, 'name="transaction_search_category_status"'));
         $harness->assertTrue(str_contains($html, '<option value="auto" selected>Auto Categorisation</option>'));
         $harness->assertTrue(str_contains($html, 'name="transaction_search_auto_approval_filter"'));
-        $harness->assertTrue(str_contains($html, '<option value="pending" selected>Pending</option>'));
+        $harness->assertTrue(str_contains($html, '<label for="transaction_search_auto_approval_filter">Auto Decision</label>'));
+        $harness->assertTrue(str_contains($html, '<option value="pending" selected>Unconfirmed</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="confirmed">Correct</option>'));
         $harness->assertTrue(str_contains($html, 'name="_invalidate_fact" value="transaction.search"'));
         $harness->assertTrue(str_contains($html, '<option value="">Any</option>'));
         $harness->assertTrue(str_contains($html, '<option value="31" selected>4000 - Sales</option>'));
@@ -106,7 +108,7 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         $harness->assertTrue(str_contains($html, '<span class="table-sort-label">FX</span>'));
         $harness->assertSame(false, str_contains($html, '<span class="table-sort-label">Currency</span>'));
         $harness->assertTrue(str_contains($html, '<span class="table-sort-label">Cat.</span>'));
-        $harness->assertTrue(str_contains($html, '<span class="table-sort-label">Auto Correct?</span>'));
+        $harness->assertTrue(str_contains($html, '<span class="table-sort-label">Auto Decision</span>'));
         $harness->assertTrue(str_contains($html, '<span class="table-sort-label">Flags</span>'));
         $harness->assertTrue(str_contains($html, '<span class="table-sort-label">Journal</span>'));
         $harness->assertTrue(str_contains($html, '<span class="table-sort-label">Upload</span>'));
@@ -128,6 +130,7 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         $harness->assertSame(false, str_contains($html, 'data-auto-approval-control="true"'));
         $harness->assertSame(false, str_contains($html, 'data-auto-approval-transaction-id="99"'));
         $harness->assertSame(false, str_contains($html, 'data-auto-approval-initial="1" checked'));
+        $harness->assertTrue(str_contains($html, '<span class="badge success">Correct</span>'));
         $harness->assertTrue(str_contains($html, '<span class="badge success">Auto Correct</span>'));
         $harness->assertTrue(str_contains($html, '?page=transactions&amp;show_card=transactions_imported&amp;month_key=2026-04-01&amp;category_filter=all'));
         $harness->assertTrue(str_contains($html, 'transaction-search-amount-total'));

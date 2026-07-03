@@ -94,6 +94,59 @@ $harness->run(\eel_accounts\Service\TransactionAutoApprovalService::class, stati
             }
         }
     });
+
+    $harness->check(\eel_accounts\Service\TransactionAutoApprovalService::class, 'year end pending review count follows current checkbox decision', static function () use ($harness, $service): void {
+        transactionAutoApprovalRequireSchema($harness);
+
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = transactionAutoApprovalCreateFixture();
+            $metrics = new \eel_accounts\Service\YearEndMetricsService();
+
+            $harness->assertSame(1, $metrics->autoCategorisedPendingReviewCount(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                '2026-01-01',
+                '2026-12-31'
+            ));
+
+            $set = $service->setTransactionApprovalState(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                (int)$fixture['transaction_id'],
+                true,
+                null
+            );
+            $harness->assertSame(true, (bool)($set['success'] ?? false));
+            $harness->assertSame(0, $metrics->autoCategorisedPendingReviewCount(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                '2026-01-01',
+                '2026-12-31'
+            ));
+
+            InterfaceDB::prepareExecute(
+                'UPDATE transactions
+                 SET notes = :notes,
+                     updated_at = DATE_ADD(updated_at, INTERVAL 2 SECOND)
+                 WHERE id = :id',
+                [
+                    'id' => (int)$fixture['transaction_id'],
+                    'notes' => 'Changed after checkbox decision',
+                ]
+            );
+            $harness->assertSame(1, $metrics->autoCategorisedPendingReviewCount(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                '2026-01-01',
+                '2026-12-31'
+            ));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
 });
 
 function transactionAutoApprovalRequireSchema(GeneratedServiceClassTestHarness $harness): void

@@ -362,7 +362,7 @@ final class DashboardRepository
 
     public function normaliseTransactionCategoryFilter(?string $filter): string
     {
-        $filter = trim((string)$filter);
+        $filter = strtolower(trim((string)$filter));
 
         return in_array($filter, ['all', 'not_posted', 'uncategorised', 'auto', 'manual'], true) ? $filter : 'all';
     }
@@ -376,7 +376,12 @@ final class DashboardRepository
 
     public function normaliseAutoApprovalFilter(?string $filter): string
     {
-        $filter = trim((string)$filter);
+        $filter = strtolower(trim((string)$filter));
+        $aliases = [
+            'unconfirmed' => 'pending',
+            'correct' => 'confirmed',
+        ];
+        $filter = $aliases[$filter] ?? $filter;
 
         return in_array($filter, ['pending', 'confirmed'], true) ? $filter : '';
     }
@@ -590,10 +595,10 @@ final class DashboardRepository
             $where[] = 't.category_status = :auto_approval_category_status';
             $where[] = 't.auto_rule_id IS NOT NULL';
             $where[] = 't.auto_rule_id > 0';
-            $where[] = 'NOT (' . \eel_accounts\Service\TransactionAutoApprovalService::currentApprovalSql('taa', 't') . ')';
+            $where[] = 'NOT (' . \eel_accounts\Service\TransactionAutoApprovalService::currentCheckedSql('taa', 't') . ')';
             $params['auto_approval_category_status'] = 'auto';
         } elseif ($autoApprovalFilter === 'confirmed') {
-            $where[] = \eel_accounts\Service\TransactionAutoApprovalService::currentApprovalSql('taa', 't');
+            $where[] = \eel_accounts\Service\TransactionAutoApprovalService::currentCheckedSql('taa', 't');
         }
 
         $sql = "SELECT t.id,

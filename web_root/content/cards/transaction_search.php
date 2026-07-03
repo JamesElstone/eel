@@ -206,7 +206,7 @@ final class _transaction_searchCard extends CardBaseFramework
             )
             ->column(
                 'auto_approval',
-                'Auto Correct?',
+                'Auto Decision',
                 html: fn(array $row): string => $this->autoApprovalHtml($row),
                 export: fn(array $row): string => $this->autoApprovalExport($row)
             )
@@ -289,7 +289,7 @@ final class _transaction_searchCard extends CardBaseFramework
                     </select>
                 </div>
                 <div class="mini-field">
-                    <label for="transaction_search_auto_approval_filter">Auto Correct?</label>
+                    <label for="transaction_search_auto_approval_filter">Auto Decision</label>
                     <select class="select" id="transaction_search_auto_approval_filter" name="transaction_search_auto_approval_filter">
                         ' . $this->autoApprovalFilterOptions($autoApprovalFilter) . '
                     </select>
@@ -359,8 +359,8 @@ final class _transaction_searchCard extends CardBaseFramework
     {
         $options = [
             '' => 'Any',
-            'pending' => 'Pending',
-            'confirmed' => 'Confirmed',
+            'pending' => 'Unconfirmed',
+            'confirmed' => 'Correct',
         ];
         $html = '';
 
@@ -560,6 +560,11 @@ final class _transaction_searchCard extends CardBaseFramework
     private function normaliseAutoApprovalFilter(string $value): string
     {
         $value = strtolower(trim($value));
+        $aliases = [
+            'unconfirmed' => 'pending',
+            'correct' => 'confirmed',
+        ];
+        $value = $aliases[$value] ?? $value;
 
         return in_array($value, ['pending', 'confirmed'], true) ? $value : '';
     }
@@ -658,15 +663,11 @@ final class _transaction_searchCard extends CardBaseFramework
             return '<span class="helper">-</span>';
         }
 
-        if ($this->autoApprovalConfirmedCurrent($row)) {
-            return '<span class="badge success">Auto Correct</span>';
-        }
-
         if ($this->autoApprovalCheckedCurrent($row)) {
-            return '<span class="badge info">Checked</span>';
+            return '<span class="badge success">Correct</span>';
         }
 
-        return '<span class="badge warning">Pending</span>';
+        return '<span class="badge warning">Unconfirmed</span>';
     }
 
     private function autoApprovalExport(array $row): string
@@ -675,11 +676,7 @@ final class _transaction_searchCard extends CardBaseFramework
             return '-';
         }
 
-        if ($this->autoApprovalConfirmedCurrent($row)) {
-            return 'Auto Correct';
-        }
-
-        return $this->autoApprovalCheckedCurrent($row) ? 'Checked' : 'Pending';
+        return $this->autoApprovalCheckedCurrent($row) ? 'Correct' : 'Unconfirmed';
     }
 
     private function flagsHtml(array $row): string

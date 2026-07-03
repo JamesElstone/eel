@@ -19,6 +19,9 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
         $harness->assertSame('manual', $repository->normaliseTransactionCategoryFilter('manual'));
         $harness->assertSame('not_posted', $repository->normaliseTransactionCategoryFilter('not_posted'));
         $harness->assertSame('all', $repository->normaliseTransactionCategoryFilter('unexpected'));
+        $harness->assertSame('pending', $repository->normaliseAutoApprovalFilter('pending'));
+        $harness->assertSame('pending', $repository->normaliseAutoApprovalFilter('unconfirmed'));
+        $harness->assertSame('confirmed', $repository->normaliseAutoApprovalFilter('Correct'));
     });
 
     $harness->check(\eel_accounts\Repository\DashboardRepository::class, 'normalises transaction amount filters', function () use ($harness): void {

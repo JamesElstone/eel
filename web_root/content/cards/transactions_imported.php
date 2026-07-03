@@ -424,7 +424,7 @@ final class _transactions_importedCard extends CardBaseFramework
             )
             ->column(
                 'auto_approval',
-                'Auto Correct?',
+                'Auto Decision',
                 html: fn(array $row): string => $this->autoApprovalHtml($row, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $isPeriodLocked),
                 export: fn(array $row): string => $this->autoApprovalExport($row)
             )
@@ -595,6 +595,7 @@ final class _transactions_importedCard extends CardBaseFramework
 
         $transactionId = (int)($transaction['id'] ?? 0);
         $checked = $this->autoApprovalCheckedCurrent($transaction) ? ' checked' : '';
+        $decisionLabel = $checked !== '' ? 'Correct' : 'Unconfirmed';
         $disabled = $isPeriodLocked ? ' disabled title="Period locked"' : '';
 
         return '<label class="checkbox-item" data-auto-approval-item="true">
@@ -603,7 +604,7 @@ final class _transactions_importedCard extends CardBaseFramework
                     data-auto-approval-transaction-id="' . $transactionId . '"
                     data-auto-approval-initial="' . ($checked !== '' ? '1' : '0') . '"' . $checked . $disabled . '>
                 <span class="auto-approval-copy">
-                    <span class="helper" data-auto-approval-status data-auto-approval-default-status="Correct?" aria-live="polite">Correct?</span>
+                    <span class="helper" data-auto-approval-status data-auto-approval-default-status="' . HelperFramework::escape($decisionLabel) . '" aria-live="polite">' . HelperFramework::escape($decisionLabel) . '</span>
                 </span>
             </label>';
     }
@@ -631,11 +632,7 @@ final class _transactions_importedCard extends CardBaseFramework
             return '-';
         }
 
-        if ($this->autoApprovalConfirmedCurrent($transaction)) {
-            return 'Auto Correct';
-        }
-
-        return $this->autoApprovalCheckedCurrent($transaction) ? 'Checked' : 'Pending';
+        return $this->autoApprovalCheckedCurrent($transaction) ? 'Correct' : 'Unconfirmed';
     }
 
     private function actionsHtml(

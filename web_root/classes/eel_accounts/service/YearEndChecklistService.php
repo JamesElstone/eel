@@ -693,7 +693,7 @@ final class YearEndChecklistService
                 ? 'Auto-categorised transactions remain and may need user review before final accounts work.'
                 : 'No auto-categorised transactions are waiting for review.',
             (string)$autoPendingCount,
-            '?page=transactions&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=transaction_search&transaction_search_category_status=auto&transaction_search_auto_approval_filter=pending'
+            '?page=transactions&show_card=transaction_search&transaction_search_category_status=auto&transaction_search_auto_approval_filter=pending'
         );
 
         $sections['ledger_integrity'][] = $this->makeCheck(

@@ -382,13 +382,18 @@
         return status instanceof HTMLElement ? status : null;
     }
 
+    function autoApprovalDecisionLabel(control) {
+        return control.checked ? 'Correct' : 'Unconfirmed';
+    }
+
     function setAutoApprovalStatus(controls, message) {
         controls.forEach((control) => {
             const status = autoApprovalStatusForControl(control);
             if (status instanceof HTMLElement) {
+                status.dataset.autoApprovalDefaultStatus = autoApprovalDecisionLabel(control);
                 status.textContent = message !== ''
                     ? message
-                    : String(status.dataset.autoApprovalDefaultStatus || 'Correct?');
+                    : String(status.dataset.autoApprovalDefaultStatus || 'Unconfirmed');
             }
         });
     }

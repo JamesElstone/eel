@@ -67,7 +67,7 @@ final class _not_an_assetCard extends CardBaseFramework
             return '<div class="helper">Select a company and accounting period before reviewing non-assets.</div>';
         }
 
-        $thresholdForm = $this->thresholdForm($companyId, $accountingPeriodId, $threshold);
+        $thresholdForm = $this->thresholdForm($companyId, $accountingPeriodId, $threshold, $settings);
 
         if ($nominalId <= 0 || empty($data['available'])) {
             return $thresholdForm
@@ -110,8 +110,10 @@ final class _not_an_assetCard extends CardBaseFramework
     private function table(array $context): TableFramework
     {
         $company = (array)($context['company'] ?? []);
+        $settings = (array)($company['settings'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
+        $companySettingsService = new \eel_accounts\Service\CompanySettingsService();
 
         return TableFramework::make($this->key(), $this->rows($context))
             ->filename('non-assets-potential-fixed-assets')
@@ -130,7 +132,7 @@ final class _not_an_assetCard extends CardBaseFramework
             ->column(
                 'amount',
                 'Amount',
-                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::money((float)($row['amount'] ?? 0))),
+                html: static fn(array $row): string => HelperFramework::escape($companySettingsService->money($settings, (float)($row['amount'] ?? 0))),
                 export: static fn(array $row): string => FormattingFramework::money((float)($row['amount'] ?? 0)),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -154,13 +156,14 @@ final class _not_an_assetCard extends CardBaseFramework
         ));
     }
 
-    private function thresholdForm(int $companyId, int $accountingPeriodId, int $threshold): string
+    private function thresholdForm(int $companyId, int $accountingPeriodId, int $threshold, array $settings): string
     {
+        $companySettingsService = new \eel_accounts\Service\CompanySettingsService();
         $options = '';
         foreach (\eel_accounts\Service\AssetService::potentialAssetThresholdOptions() as $option) {
             $optionValue = (string)$option;
             $options .= '<option value="' . HelperFramework::escape($optionValue) . '"' . ($option === $threshold ? ' selected' : '') . '>'
-                . HelperFramework::escape($optionValue)
+                . HelperFramework::escape($companySettingsService->money($settings, $option))
                 . '</option>';
         }
 

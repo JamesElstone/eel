@@ -158,8 +158,8 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
 
         $harness->assertTrue(str_contains($html, '<span>Page</span>'));
         $harness->assertTrue(str_contains($html, '<span>Query</span>'));
-        $harness->assertTrue(str_contains($html, '<strong>' . FormattingFramework::money(120) . '</strong>'));
-        $harness->assertTrue(str_contains($html, '<strong>' . FormattingFramework::money(136) . '</strong>'));
+        $harness->assertTrue(str_contains($html, '<strong>$120.00</strong>'));
+        $harness->assertTrue(str_contains($html, '<strong>$136.00</strong>'));
     });
 
     $harness->check(_transaction_searchCard::class, 'handle normalises selected source account and nominal ids', static function () use ($harness, $card, $context): void {

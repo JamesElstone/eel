@@ -17,6 +17,9 @@ $harness->run(_banking_accountsCard::class, static function (GeneratedServiceCla
         ],
         'company' => [
             'id' => 42,
+            'settings' => [
+                'default_currency_symbol' => '&#36;',
+            ],
         ],
         'services' => [
             'companyAccounts' => [
@@ -28,6 +31,7 @@ $harness->run(_banking_accountsCard::class, static function (GeneratedServiceCla
                     'nominal_code' => '1001',
                     'nominal_name' => 'Main Current Account',
                     'institution_name' => 'Example Bank',
+                    'balance' => 1234.56,
                     'internal_transfer_marker' => 'BANK-MAIN',
                     'phone_number' => '01234 567890',
                     'address_line_1' => '1 High Street',
@@ -48,6 +52,7 @@ $harness->run(_banking_accountsCard::class, static function (GeneratedServiceCla
         $harness->assertTrue(str_contains($html, 'Main Current Account'));
         $harness->assertTrue(str_contains($html, '12345678'));
         $harness->assertTrue(str_contains($html, '1001 Main Current Account'));
+        $harness->assertTrue(str_contains($html, '$1,234.56'));
         $harness->assertTrue(str_contains($html, 'BANK-MAIN'));
         $harness->assertTrue(str_contains($html, 'Field Mappings'));
         $harness->assertTrue(str_contains($html, 'data-chicken-check="true"'));

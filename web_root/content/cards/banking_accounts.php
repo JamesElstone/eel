@@ -104,6 +104,8 @@ final class _banking_accountsCard extends CardBaseFramework
 
     private function table(array $context): TableFramework
     {
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
+
         return TableFramework::make($this->key(), $this->rows($context))
             ->filename('company-accounts')
             ->exportLimit(1000)
@@ -117,6 +119,14 @@ final class _banking_accountsCard extends CardBaseFramework
             ->textColumn('account_type_label', 'Type')
             ->textColumn('nominal_label', 'Nominal')
             ->textColumn('institution_name', 'Institution')
+            ->column(
+                'balance',
+                'Balance',
+                html: fn(array $row): string => HelperFramework::escape($this->nullableMoney($companySettings, $row['balance'] ?? null)),
+                export: static fn(array $row): string => (string)($row['balance'] ?? ''),
+                cellClass: 'numeric',
+                exportType: 'number'
+            )
             ->textColumn('transfer_marker', 'Transfer Marker')
             ->textColumn('phone_number', 'Phone')
             ->textColumn('address_summary', 'Address')
@@ -182,6 +192,15 @@ final class _banking_accountsCard extends CardBaseFramework
                 <button class="button button-inline danger" name="intent" value="delete" data-ajax-link="true" data-chicken-check="true" data-chicken-message="Confirm this logical bank account and all related transactions should be deleted.<br><br>This does not delete data with your bank or any third party." data-chicken-confirm-text="Delete">Delete</button>
             </form>
         </div>';
+    }
+
+    private function nullableMoney(array $companySettings, mixed $value): string
+    {
+        if ($value === null || $value === '') {
+            return '';
+        }
+
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 
     private function rows(array $context): array

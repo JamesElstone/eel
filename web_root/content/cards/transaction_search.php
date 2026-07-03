@@ -110,7 +110,8 @@ final class _transaction_searchCard extends CardBaseFramework
             . $this->footerWithAmountTotal(
                 $table->renderFooter(),
                 (array)$tableState['visible_rows'],
-                (array)$tableState['query_rows']
+                (array)$tableState['query_rows'],
+                (array)($company['settings'] ?? [])
             );
     }
 
@@ -424,7 +425,7 @@ final class _transaction_searchCard extends CardBaseFramework
         return 'No transactions match this search [' . (new DateTimeImmutable())->format('Y-m-d H:i:s') . '].';
     }
 
-    private function footerWithAmountTotal(string $footer, array $visibleRows, array $queryRows): string
+    private function footerWithAmountTotal(string $footer, array $visibleRows, array $queryRows, array $companySettings): string
     {
         if ($footer === '') {
             return '';
@@ -433,9 +434,9 @@ final class _transaction_searchCard extends CardBaseFramework
         $totalHtml = '<div class="transaction-search-amount-total">'
             . '<span>Amount total:</span> '
             . '<span>Page</span> '
-            . '<strong>' . HelperFramework::escape(FormattingFramework::money($this->amountTotal($visibleRows))) . '</strong> '
+            . '<strong>' . HelperFramework::escape($this->money($companySettings, $this->amountTotal($visibleRows))) . '</strong> '
             . '<span>Query</span> '
-            . '<strong>' . HelperFramework::escape(FormattingFramework::money($this->amountTotal($queryRows))) . '</strong>'
+            . '<strong>' . HelperFramework::escape($this->money($companySettings, $this->amountTotal($queryRows))) . '</strong>'
             . '</div>';
 
         $footer = str_replace(

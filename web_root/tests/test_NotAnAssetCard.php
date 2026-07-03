@@ -25,7 +25,56 @@ $harness->run(_not_an_assetCard::class, static function (GeneratedServiceClassTe
         $harness->assertSame(':company.settings.potential_asset_threshold', $params['threshold'] ?? null);
     });
 
-    $harness->check(_not_an_assetCard::class, 'renders threshold select and candidate rows', static function () use ($harness, $card): void {
+    $harness->check(_not_an_assetCard::class, 'renders threshold select paginated table and export controls', static function () use ($harness, $card): void {
+        $rows = [];
+        for ($index = 1; $index <= 16; $index++) {
+            $rows[] = [
+                'date' => '2026-07-' . str_pad((string)$index, 2, '0', STR_PAD_LEFT),
+                'source' => 'Transaction',
+                'description' => 'Cordless drill ' . $index,
+                'reference' => 'INV-' . $index,
+                'amount' => 300 + $index,
+            ];
+        }
+
+        $context = [
+            'page' => [
+                'page_id' => 'assets',
+                'page_cards' => ['not_an_asset'],
+            ],
+            'company' => [
+                'id' => 7,
+                'accounting_period_id' => 22,
+                'settings' => [
+                    'tools_small_equipment_nominal_id' => 18,
+                    'potential_asset_threshold' => 250,
+                ],
+            ],
+            'services' => [
+                'nonAssetCandidates' => [
+                    'available' => true,
+                    'threshold' => 250,
+                    'rows' => $rows,
+                ],
+            ],
+        ];
+
+        $html = $card->render($context);
+        $tables = $card->tables($context);
+        $csv = $tables[0]->exportCsv();
+
+        $harness->assertTrue(str_contains($html, 'name="intent" value="save_potential_asset_threshold"'));
+        $harness->assertTrue(str_contains($html, '<option value="250" selected>250</option>'));
+        $harness->assertTrue(str_contains($html, 'Cordless drill 1'));
+        $harness->assertTrue(str_contains($html, 'Cordless drill 15'));
+        $harness->assertFalse(str_contains($html, 'Cordless drill 16'));
+        $harness->assertTrue(str_contains($html, 'Potential asset items'));
+        $harness->assertTrue(str_contains($html, '_table_export_prepare'));
+        $harness->assertTrue(str_contains($csv, 'Cordless drill 16'));
+        $harness->assertTrue(str_contains($csv, 'INV-16'));
+    });
+
+    $harness->check(_not_an_assetCard::class, 'renders candidate row values', static function () use ($harness, $card): void {
         $html = $card->render([
             'company' => [
                 'id' => 7,

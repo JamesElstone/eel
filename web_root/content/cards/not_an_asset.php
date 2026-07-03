@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 final class _not_an_assetCard extends CardBaseFramework
 {
+    private const PAGE_SIZE = 15;
+
     public function key(): string
     {
         return 'not_an_asset';
@@ -72,42 +74,73 @@ final class _not_an_assetCard extends CardBaseFramework
                 . '<div class="helper">Set the Tools &amp; Small Equipment nominal on Company Nominals before reviewing potential assets.</div>';
         }
 
-        $rows = (array)($data['rows'] ?? []);
-        $rowsHtml = '';
-        foreach ($rows as $row) {
-            if (!is_array($row)) {
-                continue;
-            }
+        return $thresholdForm . $this->configuredTable($context)->render(
+            $context,
+            [
+                'cards[]' => (array)($context['page']['page_cards'] ?? []),
+            ]
+        );
+    }
 
-            $rowsHtml .= '<tr>
-                <td>' . HelperFramework::escape($this->displayDate((string)($row['date'] ?? ''))) . '</td>
-                <td>' . HelperFramework::escape((string)($row['source'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape((string)($row['description'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape((string)($row['reference'] ?? '')) . '</td>
-                <td class="numeric">' . HelperFramework::escape(FormattingFramework::money((float)($row['amount'] ?? 0))) . '</td>
-            </tr>';
-        }
+    public function tables(array $context): array
+    {
+        return [$this->table($context)];
+    }
 
-        if ($rowsHtml === '') {
-            $rowsHtml = '<tr><td colspan="5">No Tools &amp; Small Equipment items are over the selected threshold.</td></tr>';
-        }
+    private function configuredTable(array $context): TableFramework
+    {
+        $rows = $this->rows($context);
+        $pagination = HelperFramework::paginateArray($rows, $this->paginationPage($context), self::PAGE_SIZE);
 
-        return $thresholdForm . '
-            <div class="table-scroll">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Source</th>
-                            <th>Description</th>
-                            <th>Reference</th>
-                            <th>Amount</th>
-                        </tr>
-                    </thead>
-                    <tbody>' . $rowsHtml . '</tbody>
-                </table>
-            </div>
-        ';
+        return $this->table($context)
+            ->visibleRows((array)$pagination['items'])
+            ->pagination(
+                $pagination,
+                'Potential asset items',
+                $this->paginationPageField(),
+                [
+                    'page' => (string)($context['page']['page_id'] ?? 'assets'),
+                    '_pagination' => '1',
+                    '_invalidate_fact' => $this->tableInvalidationFact(),
+                    'cards[]' => [$this->key()],
+                ]
+            );
+    }
+
+    private function table(array $context): TableFramework
+    {
+        return TableFramework::make($this->key(), $this->rows($context))
+            ->filename('non-assets-potential-fixed-assets')
+            ->exportLimit(5000)
+            ->empty('No Tools & Small Equipment items are over the selected threshold.')
+            ->column(
+                'date',
+                'Date',
+                html: fn(array $row): string => HelperFramework::escape($this->displayDate((string)($row['date'] ?? ''))),
+                export: static fn(array $row): string => (string)($row['date'] ?? ''),
+                exportType: 'date'
+            )
+            ->textColumn('source', 'Source')
+            ->textColumn('description', 'Description')
+            ->textColumn('reference', 'Reference')
+            ->column(
+                'amount',
+                'Amount',
+                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::money((float)($row['amount'] ?? 0))),
+                export: static fn(array $row): string => FormattingFramework::money((float)($row['amount'] ?? 0)),
+                cellClass: 'numeric',
+                exportType: 'number'
+            );
+    }
+
+    private function rows(array $context): array
+    {
+        $data = (array)(($context['services'] ?? [])['nonAssetCandidates'] ?? []);
+
+        return array_values(array_filter(
+            (array)($data['rows'] ?? []),
+            static fn(mixed $row): bool => is_array($row)
+        ));
     }
 
     private function thresholdForm(int $companyId, int $accountingPeriodId, int $threshold): string
@@ -136,5 +169,10 @@ final class _not_an_assetCard extends CardBaseFramework
         $value = trim($value);
 
         return $value === '' ? '' : HelperFramework::displayDate($value);
+    }
+
+    private function tableInvalidationFact(): string
+    {
+        return (string)($this->invalidationFacts()[0] ?? $this->key());
     }
 }

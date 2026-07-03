@@ -528,12 +528,17 @@ final class YearEndMetricsService
              FROM journals j
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
              INNER JOIN nominal_accounts na ON na.id = jl.nominal_account_id
+             LEFT JOIN journal_entry_metadata jem_close
+               ON jem_close.journal_id = j.id
+              AND jem_close.journal_tag = :close_journal_tag
              WHERE j.company_id = :company_id
                AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
                AND j.journal_date BETWEEN :period_start AND :period_end
+               AND jem_close.id IS NULL
                AND (na.account_type = :income_type OR na.account_type = :cost_type OR na.account_type = :expense_type)
              GROUP BY na.id, na.code, na.name, na.account_type, na.tax_treatment', [
+            'close_journal_tag' => \eel_accounts\Service\RetainedEarningsCloseService::JOURNAL_TAG,
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
             'period_start' => $periodStart,

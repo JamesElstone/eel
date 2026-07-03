@@ -40,6 +40,10 @@ final class _dividend_capacityCard extends CardBaseFramework
 
         return '<div class="settings-stack">
             ' . $this->summaryCard('Capacity date', (string)($capacity['as_at_date'] ?? ''), 'summary-card-fit') . '
+            <section class="panel-soft settings-stack">
+                <div class="summary-label">Distributable reserves</div>
+                <div class="helper">' . HelperFramework::escape($this->reservesEquation($companySettings, $capacity)) . '</div>
+            </section>
             <div class="summary-grid four">
                 ' . $this->summaryCard('Retained earnings brought forward', $this->money($companySettings, $capacity['retained_earnings_brought_forward'] ?? 0)) . '
                 ' . $this->summaryCard('Current year profit / loss', $this->money($companySettings, $capacity['current_year_profit_loss'] ?? 0)) . '
@@ -74,6 +78,19 @@ final class _dividend_capacityCard extends CardBaseFramework
         }
 
         return $html;
+    }
+
+    private function reservesEquation(array $companySettings, array $capacity): string
+    {
+        return 'Retained profits brought forward ('
+            . $this->money($companySettings, $capacity['retained_earnings_brought_forward'] ?? 0)
+            . ') + current year profit/loss ('
+            . $this->money($companySettings, $capacity['current_year_profit_loss'] ?? 0)
+            . ') - dividends already declared ('
+            . $this->money($companySettings, $capacity['dividends_declared'] ?? 0)
+            . ') = available distributable reserves ('
+            . $this->money($companySettings, $capacity['available_distributable_reserves'] ?? 0)
+            . ')';
     }
 
     private function money(array $companySettings, float|int|string|null $value): string

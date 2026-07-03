@@ -42,6 +42,20 @@ final class YearEndLockService
             $acknowledgementColumns[] = 'NULL AS expense_position_acknowledged_by';
         }
 
+        $retainedEarningsColumns = [
+            'retained_earnings_close_acknowledged_at',
+            'retained_earnings_close_acknowledged_by',
+            'retained_earnings_close_opening_equity',
+            'retained_earnings_close_current_profit_loss',
+            'retained_earnings_close_closing_equity_before',
+            'retained_earnings_close_amount',
+        ];
+        foreach ($retainedEarningsColumns as $column) {
+            $acknowledgementColumns[] = $this->hasReviewColumn($column)
+                ? $column
+                : 'NULL AS ' . $column;
+        }
+
         $row = \InterfaceDB::fetchOne( 'SELECT id,
                     company_id,
                     accounting_period_id,
@@ -392,6 +406,80 @@ final class YearEndLockService
         ];
     }
 
+    public function saveRetainedEarningsCloseAcknowledgement(
+        int $companyId,
+        int $accountingPeriodId,
+        bool $acknowledged,
+        array $summary,
+        string $changedBy = 'web_app'
+    ): array {
+        if (!$this->hasReviewTable()) {
+            return [
+                'success' => false,
+                'errors' => ['Run the Year End review migration before saving retained earnings acknowledgements.'],
+            ];
+        }
+
+        foreach ([
+            'retained_earnings_close_acknowledged_at',
+            'retained_earnings_close_acknowledged_by',
+            'retained_earnings_close_opening_equity',
+            'retained_earnings_close_current_profit_loss',
+            'retained_earnings_close_closing_equity_before',
+            'retained_earnings_close_amount',
+        ] as $column) {
+            if (!$this->hasReviewColumn($column)) {
+                return [
+                    'success' => false,
+                    'errors' => ['Run the Retained Earnings year-end acknowledgement migration before saving this acknowledgement.'],
+                ];
+            }
+        }
+
+        if (!$acknowledged) {
+            return [
+                'success' => false,
+                'errors' => ['Tick the retained earnings acknowledgement before saving.'],
+            ];
+        }
+
+        $this->ensureReviewRow($companyId, $accountingPeriodId);
+        $existing = $this->fetchReview($companyId, $accountingPeriodId);
+        $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
+
+        \InterfaceDB::execute(
+            'UPDATE year_end_reviews
+             SET retained_earnings_close_acknowledged_at = :acknowledged_at,
+                 retained_earnings_close_acknowledged_by = :acknowledged_by,
+                 retained_earnings_close_opening_equity = :opening_equity,
+                 retained_earnings_close_current_profit_loss = :current_profit_loss,
+                 retained_earnings_close_closing_equity_before = :closing_equity_before,
+                 retained_earnings_close_amount = :close_amount,
+                 updated_at = :updated_at
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id',
+            [
+                'acknowledged_at' => $now,
+                'acknowledged_by' => $this->actorValue($changedBy),
+                'opening_equity' => number_format((float)($summary['opening_equity'] ?? 0), 2, '.', ''),
+                'current_profit_loss' => number_format((float)($summary['current_profit_loss'] ?? 0), 2, '.', ''),
+                'closing_equity_before' => number_format((float)($summary['closing_equity_before_close'] ?? 0), 2, '.', ''),
+                'close_amount' => number_format((float)($summary['retained_earnings_movement'] ?? 0), 2, '.', ''),
+                'updated_at' => $now,
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+            ]
+        );
+
+        $review = $this->fetchReview($companyId, $accountingPeriodId);
+        $this->writeAuditLog($companyId, $accountingPeriodId, 'retained_earnings_close_acknowledged', $changedBy, $existing, $review);
+
+        return [
+            'success' => true,
+            'review' => $review,
+        ];
+    }
+
     public function lockPeriod(int $companyId, int $accountingPeriodId, string $lockedBy = 'web_app'): array {
         if (!$this->hasReviewTable()) {
             return [
@@ -463,10 +551,13 @@ final class YearEndLockService
 
         $review = $this->fetchReview($companyId, $accountingPeriodId);
         $this->writeAuditLog($companyId, $accountingPeriodId, 'unlock', $changedBy, $existing, $review, $notes);
+        $retainedEarningsClose = (new \eel_accounts\Service\RetainedEarningsCloseService(lockService: $this))
+            ->removeCloseJournal($companyId, $accountingPeriodId, $changedBy);
 
         return [
             'success' => true,
             'review' => $review,
+            'retained_earnings_close' => $retainedEarningsClose,
         ];
     }
 

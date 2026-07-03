@@ -341,6 +341,60 @@ final class ManualJournalService
         ];
     }
 
+    public function deleteTaggedJournal(
+        int $companyId,
+        int $accountingPeriodId,
+        string $journalTag,
+        string $journalKey = 'primary',
+        string $changedBy = 'web_app'
+    ): array {
+        $existing = $this->fetchJournalByTag($companyId, $accountingPeriodId, $journalTag, $journalKey);
+        if ($existing === null) {
+            return [
+                'success' => true,
+                'deleted' => false,
+            ];
+        }
+
+        ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'remove journals in this period');
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
+        }
+
+        try {
+            $this->deleteJournal((int)$existing['id']);
+            ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->writeAuditLog(
+                $companyId,
+                $accountingPeriodId,
+                'journal_deleted',
+                $changedBy,
+                $existing,
+                [
+                    'journal_tag' => trim($journalTag),
+                    'journal_key' => trim($journalKey) !== '' ? trim($journalKey) : 'primary',
+                    'journal_id' => (int)$existing['id'],
+                ]
+            );
+
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+
+            return ['success' => false, 'errors' => [$exception->getMessage()]];
+        }
+
+        return [
+            'success' => true,
+            'deleted' => true,
+            'journal_id' => (int)$existing['id'],
+        ];
+    }
+
     private function normaliseLines(array $lines): array {
         $errors = [];
         $normalised = [];

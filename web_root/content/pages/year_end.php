@@ -30,6 +30,7 @@ final class _year_end extends PageContextFramework
             'year_end_checklist',
             'year_end_director_loan_offset',
             'year_end_expenses_confirmation',
+            'year_end_retained_earnings',
             'year_end_tax_readiness',
             'year_end_empty_month_confirmations',
             'year_end_notes',
@@ -57,6 +58,12 @@ final class _year_end extends PageContextFramework
                 'tab' => 'Expenses',
                 'cards' => [
                     'year_end_expenses_confirmation',
+                ],
+            ],
+            [
+                'tab' => 'Retained Earnings',
+                'cards' => [
+                    'year_end_retained_earnings',
                 ],
             ],
             [

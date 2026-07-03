@@ -128,6 +128,7 @@ final class _year_end_checklistCard extends CardBaseFramework
         $status = (string)($check['status'] ?? '');
         $statusClass = $this->badgeClass($status);
         $reviewActionHtml = $this->reviewActionHtml($check, $companyId, $accountingPeriodId);
+        $formulaText = trim((string)($check['formula_text'] ?? ''));
         $workflowHtml = $actionUrl !== ''
             ? '<a class="button" href="' . HelperFramework::escape($actionUrl) . '">Open Related Workflow</a>'
             : '';
@@ -142,6 +143,7 @@ final class _year_end_checklistCard extends CardBaseFramework
             </div>
             ' . ($metricValue !== '' ? '<div class="summary-value">' . HelperFramework::escape($metricValue) . '</div>' : '') . '
             <div class="helper">' . HelperFramework::escape((string)($check['detail_text'] ?? '')) . '</div>
+            ' . ($formulaText !== '' ? '<div class="helper">' . HelperFramework::escape($formulaText) . '</div>' : '') . '
             ' . $actionsHtml . '
         </div>';
     }

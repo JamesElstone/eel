@@ -13,7 +13,6 @@ namespace eel_accounts\Service;
 final class YearEndChecklistService
 {
     private const REVIEW_ACKNOWLEDGEABLE_CHECKS = [
-        'retained_earnings_movement',
         'fixed_asset_review_placeholder',
         'prepayments_accruals_placeholder',
         'filing_basis_reminder',
@@ -25,6 +24,7 @@ final class YearEndChecklistService
         private readonly ?\eel_accounts\Service\YearEndCompaniesHouseComparisonService $companiesHouseComparisonService = null,
         private readonly ?\eel_accounts\Service\YearEndLockService $lockService = null,
         private readonly ?\eel_accounts\Service\AssetService $assetService = null,
+        private readonly ?\eel_accounts\Service\RetainedEarningsCloseService $retainedEarningsCloseService = null,
     ) {
     }
 
@@ -343,6 +343,20 @@ final class YearEndChecklistService
             ];
         }
 
+        $retainedEarningsCloseResult = ($this->retainedEarningsCloseService ?? new \eel_accounts\Service\RetainedEarningsCloseService())
+            ->postClose($companyId, $accountingPeriodId, $lockedBy);
+        if (empty($retainedEarningsCloseResult['success'])) {
+            return [
+                'success' => false,
+                'status' => (int)($retainedEarningsCloseResult['status'] ?? 422),
+                'errors' => (array)($retainedEarningsCloseResult['errors'] ?? ['Retained earnings close could not be posted before locking this period.']),
+                'checklist' => $checklist,
+                'director_loan_offset' => $directorLoanOffsetResult,
+                'depreciation' => $depreciationResult,
+                'retained_earnings_close' => $retainedEarningsCloseResult,
+            ];
+        }
+
         $lock = $this->lockService ?? new \eel_accounts\Service\YearEndLockService();
         $result = $lock->lockPeriod($companyId, $accountingPeriodId, $lockedBy);
         if (empty($result['success'])) {
@@ -352,6 +366,7 @@ final class YearEndChecklistService
         return $result + [
             'depreciation' => $depreciationResult,
             'director_loan_offset' => $directorLoanOffsetResult,
+            'retained_earnings_close' => $retainedEarningsCloseResult,
             'checklist' => $this->fetchChecklist($companyId, $accountingPeriodId, true),
         ];
     }
@@ -461,6 +476,30 @@ final class YearEndChecklistService
 
         $lock = $this->lockService ?? new \eel_accounts\Service\YearEndLockService();
         $result = $lock->saveExpensePositionAcknowledgement($companyId, $accountingPeriodId, $acknowledged, $changedBy);
+        if (empty($result['success'])) {
+            return $result;
+        }
+
+        return $result + [
+            'checklist' => $this->fetchChecklist($companyId, $accountingPeriodId, true),
+        ];
+    }
+
+    public function saveRetainedEarningsCloseAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app'): array {
+        if (!$acknowledged) {
+            return [
+                'success' => false,
+                'errors' => ['Tick the retained earnings acknowledgement before saving.'],
+            ];
+        }
+
+        $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId, true);
+        if (empty($checklistResult['success'])) {
+            return $checklistResult;
+        }
+
+        $result = ($this->retainedEarningsCloseService ?? new \eel_accounts\Service\RetainedEarningsCloseService())
+            ->saveAcknowledgement($companyId, $accountingPeriodId, $acknowledged, $changedBy);
         if (empty($result['success'])) {
             return $result;
         }
@@ -663,6 +702,8 @@ final class YearEndChecklistService
         $expensePosition = (new \eel_accounts\Service\YearEndExpenseConfirmationService($metrics))->fetchContext($companyId, $accountingPeriodId);
         $duplicateRepayments = $metrics->duplicateRepaymentRiskSummary($companyId, $periodStart, $periodEnd);
         $financialStatements = $metrics->financialStatementsSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd, $trialBalance);
+        $retainedEarningsClose = ($this->retainedEarningsCloseService ?? new \eel_accounts\Service\RetainedEarningsCloseService())
+            ->fetchContext($companyId, $accountingPeriodId);
         $potentialAssetThreshold = \eel_accounts\Service\AssetService::normalisePotentialAssetThreshold($settings['potential_asset_threshold'] ?? 250);
         $potentialAssetCandidateCount = ($this->assetService ?? new \eel_accounts\Service\AssetService())->potentialAssetCandidateCount(
             $companyId,
@@ -898,17 +939,46 @@ final class YearEndChecklistService
             '?page=companies_house&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '#companies-house-comparison'
         );
         $equityMovement = abs((float)($financialStatements['retained_earnings']['unexplained_movement'] ?? 0));
-        $sections['year_end_accounts_review'][] = $this->applyReviewAcknowledgement($this->makeCheck(
+        $retainedEarningsCloseCurrent = !empty($retainedEarningsClose['available'])
+            && !empty($retainedEarningsClose['acknowledged'])
+            && empty($retainedEarningsClose['acknowledgement_stale']);
+        $retainedEarningsMovementCheck = $this->makeCheck(
             'retained_earnings_movement',
             'Retained earnings movement',
             'warning',
-            $equityMovement > 0.99 ? 'warning' : 'pass',
+            $equityMovement > 0.99 && !$retainedEarningsCloseCurrent ? 'warning' : 'pass',
             $equityMovement > 0.99
-                ? 'Opening equity, profit, and closing equity do not fully reconcile.'
+                ? 'Current profit/loss has not yet been carried into retained earnings for this period.'
                 : 'Opening equity, profit, and closing equity look internally consistent.',
             $this->money($settings, $financialStatements['retained_earnings']['unexplained_movement'] ?? 0),
-            '?page=journal&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=nominal_closing_balances'
-        ), $reviewAcknowledgements);
+            '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_retained_earnings'
+        );
+        $retainedEarningsMovementCheck['formula_text'] = $this->balanceEquationText(
+            $settings,
+            (array)((($retainedEarningsClose['summary'] ?? []) ?: []))
+        );
+        $sections['year_end_accounts_review'][] = $retainedEarningsMovementCheck;
+        $retainedEarningsCloseAvailable = !empty($retainedEarningsClose['available']);
+        $retainedEarningsCloseStatus = !$retainedEarningsCloseAvailable
+            ? 'fail'
+            : ($retainedEarningsCloseCurrent ? 'pass' : 'fail');
+        $sections['year_end_accounts_review'][] = $this->makeCheck(
+            'retained_earnings_close_confirmation',
+            'Retained earnings close confirmation',
+            'fail',
+            $retainedEarningsCloseStatus,
+            !$retainedEarningsCloseAvailable
+                ? (string)(($retainedEarningsClose['errors'] ?? [])[0] ?? 'Retained earnings close preview is not available.')
+                : ($retainedEarningsCloseCurrent
+                    ? 'Retained earnings close has been reviewed and agreed for the current figures.'
+                    : (!empty($retainedEarningsClose['acknowledgement_stale'])
+                        ? 'Retained earnings figures have changed since they were agreed. Review and agree them again before locking.'
+                        : 'Review and agree how current profit/loss will be carried into retained earnings before locking.')),
+            !$retainedEarningsCloseAvailable
+                ? ''
+                : (!empty($retainedEarningsClose['acknowledgement_stale']) ? 'Figures changed' : ($retainedEarningsCloseCurrent ? 'Agreed' : 'Pending')),
+            '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_retained_earnings'
+        );
         $sections['year_end_accounts_review'][] = $this->applyReviewAcknowledgement($this->makeCheck(
             'fixed_asset_review_placeholder',
             'Fixed asset review',
@@ -1034,7 +1104,8 @@ final class YearEndChecklistService
             && !empty($trialBalance['balances'])
             && !empty($trialBalance['exists'])
             && $journalIntegrityIssues === 0
-            && $unpostedSourceWorkCount === 0;
+            && $unpostedSourceWorkCount === 0
+            && $retainedEarningsCloseCurrent;
         $sections['final_review_lock'][] = $this->makeCheck(
             'lock_readiness_checklist',
             'Lock readiness checklist',
@@ -1085,6 +1156,7 @@ final class YearEndChecklistService
             'expense_position' => $expensePosition,
             'tax_readiness' => $taxReadiness,
             'companies_house_comparison' => $chComparison,
+            'retained_earnings_close' => $retainedEarningsClose,
         ];
     }
 
@@ -1140,6 +1212,17 @@ final class YearEndChecklistService
     private function money(array $settings, float|int|string|null $value): string
     {
         return (new \eel_accounts\Service\CompanySettingsService())->money($settings, $value);
+    }
+
+    private function balanceEquationText(array $settings, array $summary): string
+    {
+        if ($summary === []) {
+            return '';
+        }
+
+        return 'Assets (' . $this->money($settings, $summary['assets'] ?? 0) . ') - Liabilities ('
+            . $this->money($settings, $summary['liabilities'] ?? 0) . ') = Equity ('
+            . $this->money($settings, $summary['equity'] ?? 0) . ')';
     }
 
     private function postedSourceWorkDetail(array $postedSourceWork): string

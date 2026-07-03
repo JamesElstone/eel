@@ -59,7 +59,7 @@ $harness->run(_year_end_empty_month_confirmationsCard::class, static function (
                 'evidence' => [
                     'incorporation_date' => '2022-09-14',
                     'activity_counts' => ['transactions' => 0, 'uploads' => 0, 'posted_journals' => 0],
-                    'first_later_statement' => ['opening_balance' => 0],
+                    'first_later_statement' => ['opening_balance' => 56.78],
                 ],
             ],
         ]));
@@ -72,6 +72,7 @@ $harness->run(_year_end_empty_month_confirmationsCard::class, static function (
         $harness->assertSame(true, str_contains($html, 'revoke_empty_month'));
         $harness->assertSame(true, str_contains($html, 'Bank account was not open.'));
         $harness->assertSame(true, str_contains($html, '$12.34'));
+        $harness->assertSame(true, str_contains($html, '$56.78'));
     });
 });
 

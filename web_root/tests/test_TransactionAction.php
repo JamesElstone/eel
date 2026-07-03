@@ -119,6 +119,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(['transactions.imported'], $result->changedFacts());
         $harness->assertSame('2026-03-01', (string)($result->context()['month_key'] ?? ''));
         $harness->assertSame('manual', (string)($result->context()['category_filter'] ?? ''));
+        $harness->assertSame('transactions_imported', (string)($result->query()['show_card'] ?? ''));
     });
 
     $harness->check('TransactionAction', 'auto approval sync does not invalidate cards', function () use ($harness, $instance): void {

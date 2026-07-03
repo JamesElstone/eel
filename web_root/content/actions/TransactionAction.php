@@ -111,12 +111,15 @@ final class TransactionAction implements ActionInterfaceFramework
             $context['editing_rule_id'] = 0;
         }
 
-        $changedFacts = $intent === 'select_transaction_month'
-            && trim((string)$request->input('selection_source', '')) === self::IMPORTED_FILTER_SELECTION_SOURCE
-                ? [self::TRANSACTIONS_IMPORTED_FACT]
-                : ['page.context'];
+        $fromImportedFilters = $intent === 'select_transaction_month'
+            && trim((string)$request->input('selection_source', '')) === self::IMPORTED_FILTER_SELECTION_SOURCE;
+        $changedFacts = $fromImportedFilters ? [self::TRANSACTIONS_IMPORTED_FACT] : ['page.context'];
+        $query = $this->filterQuery($request, $context);
+        if ($fromImportedFilters) {
+            $query['show_card'] = 'transactions_imported';
+        }
 
-        return ActionResultFramework::success($changedFacts, query: $this->filterQuery($request, $context), context: $context);
+        return ActionResultFramework::success($changedFacts, query: $query, context: $context);
     }
 
     private function saveTransactionCategory(

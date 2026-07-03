@@ -121,6 +121,27 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame('manual', (string)($result->context()['category_filter'] ?? ''));
     });
 
+    $harness->check('TransactionAction', 'auto approval sync does not invalidate cards', function () use ($harness, $instance): void {
+        $request = new RequestFramework(
+            [],
+            [
+                'card_action' => 'Transaction',
+                'global_action' => 'sync_auto_approval_state',
+                'company_id' => '0',
+                'accounting_period_id' => '0',
+            ],
+            ['REQUEST_METHOD' => 'POST'],
+            [],
+            [],
+            null
+        );
+
+        $result = $instance->handle($request, createTestPageServiceFramework());
+
+        $harness->assertSame(false, $result->isSuccess());
+        $harness->assertSame([], $result->changedFacts());
+    });
+
     $harness->check('TransactionAction', 'edit_categorisation_rule preserves selected rule id', function () use ($harness, $instance): void {
         $request = new RequestFramework(
             [],

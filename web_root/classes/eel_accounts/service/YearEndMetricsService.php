@@ -163,11 +163,15 @@ final class YearEndMetricsService
 
     public function autoCategorisedPendingReviewCount(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): int {
         return (int)\InterfaceDB::fetchColumn( 'SELECT COUNT(*)
-             FROM transactions
-             WHERE company_id = :company_id
-               AND accounting_period_id = :accounting_period_id
-               AND txn_date BETWEEN :period_start AND :period_end
-               AND category_status = :category_status', [
+             FROM transactions t
+             LEFT JOIN transaction_auto_approvals taa ON taa.transaction_id = t.id
+             WHERE t.company_id = :company_id
+               AND t.accounting_period_id = :accounting_period_id
+               AND t.txn_date BETWEEN :period_start AND :period_end
+               AND t.category_status = :category_status
+               AND t.auto_rule_id IS NOT NULL
+               AND t.auto_rule_id > 0
+               AND NOT (' . \eel_accounts\Service\TransactionAutoApprovalService::currentApprovalSql('taa', 't') . ')', [
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
             'period_start' => $periodStart,

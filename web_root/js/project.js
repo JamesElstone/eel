@@ -351,6 +351,203 @@
         });
     }
 
+    const autoApprovalBatchState = new WeakMap();
+    const autoApprovalDebounceMs = 180;
+    const autoApprovalCompletionTimeoutMs = 5000;
+
+    function autoApprovalFormState(form) {
+        let state = autoApprovalBatchState.get(form);
+        if (!state) {
+            state = {
+                pending: new Map(),
+                timerId: 0,
+                inFlight: false,
+            };
+            autoApprovalBatchState.set(form, state);
+        }
+
+        return state;
+    }
+
+    function autoApprovalControlsForTransaction(transactionId) {
+        return Array.from(document.querySelectorAll('[data-auto-approval-control="true"]'))
+            .filter((control) => control instanceof HTMLInputElement
+                && String(control.dataset.autoApprovalTransactionId || '').trim() === String(transactionId));
+    }
+
+    function autoApprovalStatusForControl(control) {
+        const item = control.closest('[data-auto-approval-item="true"]');
+        const status = item instanceof HTMLElement ? item.querySelector('[data-auto-approval-status]') : null;
+
+        return status instanceof HTMLElement ? status : null;
+    }
+
+    function setAutoApprovalStatus(controls, message) {
+        controls.forEach((control) => {
+            const status = autoApprovalStatusForControl(control);
+            if (status instanceof HTMLElement) {
+                status.textContent = message;
+            }
+        });
+    }
+
+    function syncAutoApprovalDuplicateControls(transactionId, checked) {
+        autoApprovalControlsForTransaction(transactionId).forEach((control) => {
+            control.checked = checked;
+        });
+    }
+
+    function autoApprovalBatchFormForControl(control) {
+        const card = control.closest('.card[data-card-key]');
+        const form = card instanceof HTMLElement
+            ? card.querySelector('form[data-auto-approval-batch-form="true"]')
+            : null;
+
+        return form instanceof HTMLFormElement ? form : null;
+    }
+
+    function replaceAutoApprovalBatchInputs(form, entries) {
+        form.querySelectorAll('[data-auto-approval-batch-dynamic="true"]').forEach((node) => node.remove());
+
+        entries.forEach((entry) => {
+            const idInput = document.createElement('input');
+            idInput.type = 'hidden';
+            idInput.name = 'auto_approval_transaction_ids[]';
+            idInput.value = entry.transactionId;
+            idInput.dataset.autoApprovalBatchDynamic = 'true';
+
+            const valueInput = document.createElement('input');
+            valueInput.type = 'hidden';
+            valueInput.name = 'auto_approval_correct_values[]';
+            valueInput.value = entry.checked ? '1' : '0';
+            valueInput.dataset.autoApprovalBatchDynamic = 'true';
+
+            form.append(idInput, valueInput);
+        });
+    }
+
+    function waitForAutoApprovalAjaxCompletion() {
+        const flash = document.getElementById('flash-messages');
+
+        return new Promise((resolve) => {
+            let resolved = false;
+            let observer = null;
+            const finish = () => {
+                if (resolved) {
+                    return;
+                }
+
+                resolved = true;
+                if (observer) {
+                    observer.disconnect();
+                }
+                resolve();
+            };
+
+            window.setTimeout(finish, autoApprovalCompletionTimeoutMs);
+
+            if (!(flash instanceof HTMLElement)) {
+                return;
+            }
+
+            observer = new MutationObserver(finish);
+            observer.observe(flash, {
+                childList: true,
+                subtree: true,
+            });
+        });
+    }
+
+    function autoApprovalFlashHasError() {
+        const flash = document.getElementById('flash-messages');
+
+        return flash instanceof HTMLElement && Boolean(flash.querySelector('.alert.error'));
+    }
+
+    async function flushAutoApprovalBatch(form) {
+        const state = autoApprovalFormState(form);
+        if (state.inFlight || state.pending.size === 0) {
+            return;
+        }
+
+        const entries = Array.from(state.pending.entries()).map(([transactionId, checked]) => ({
+            transactionId,
+            checked,
+            controls: autoApprovalControlsForTransaction(transactionId),
+        }));
+        state.pending.clear();
+        state.inFlight = true;
+
+        entries.forEach((entry) => setAutoApprovalStatus(entry.controls, 'Saving...'));
+        replaceAutoApprovalBatchInputs(form, entries);
+
+        const submitter = form.querySelector('[data-auto-approval-batch-submit]');
+        try {
+            if (submitter instanceof HTMLButtonElement) {
+                form.requestSubmit(submitter);
+            } else {
+                form.requestSubmit();
+            }
+            await waitForAutoApprovalAjaxCompletion();
+
+            entries.forEach((entry) => {
+                if (state.pending.has(entry.transactionId)) {
+                    return;
+                }
+
+                setAutoApprovalStatus(entry.controls, autoApprovalFlashHasError() ? 'Not saved' : 'Saved');
+                window.setTimeout(() => {
+                    if (!state.pending.has(entry.transactionId)) {
+                        setAutoApprovalStatus(entry.controls, '');
+                    }
+                }, 1800);
+            });
+        } finally {
+            state.inFlight = false;
+            if (state.pending.size > 0) {
+                state.timerId = window.setTimeout(() => flushAutoApprovalBatch(form), autoApprovalDebounceMs);
+            }
+        }
+    }
+
+    function queueAutoApprovalState(control) {
+        const transactionId = String(control.dataset.autoApprovalTransactionId || '').trim();
+        if (transactionId === '') {
+            return;
+        }
+
+        const form = autoApprovalBatchFormForControl(control);
+        if (!(form instanceof HTMLFormElement)) {
+            return;
+        }
+
+        const checked = control.checked;
+        syncAutoApprovalDuplicateControls(transactionId, checked);
+
+        const state = autoApprovalFormState(form);
+        state.pending.set(transactionId, checked);
+        setAutoApprovalStatus(autoApprovalControlsForTransaction(transactionId), 'Saving...');
+
+        if (state.timerId) {
+            window.clearTimeout(state.timerId);
+        }
+
+        state.timerId = window.setTimeout(() => flushAutoApprovalBatch(form), autoApprovalDebounceMs);
+    }
+
+    function initialiseTransactionAutoApprovalControls(root = document) {
+        const controls = root.querySelectorAll ? root.querySelectorAll('[data-auto-approval-control="true"]') : [];
+
+        controls.forEach((control) => {
+            if (!(control instanceof HTMLInputElement) || control.dataset.autoApprovalBound === '1') {
+                return;
+            }
+
+            control.dataset.autoApprovalBound = '1';
+            control.addEventListener('change', () => queueAutoApprovalState(control));
+        });
+    }
+
     const cardMaximizedStoragePrefix = 'eel_accounts:card_maximized:';
 
     function cardMaximizedPageKey() {
@@ -492,6 +689,7 @@
     initialiseVatRegistrationForms(document);
     initialiseStatementMappingForms(document);
     initialiseTransactionCategorisationAutosave(document);
+    initialiseTransactionAutoApprovalControls(document);
     restoreStoredCardMaximizedStates(document);
 
     const observer = new MutationObserver((mutations) => {
@@ -503,6 +701,7 @@
                     initialiseVatRegistrationForms(node);
                     initialiseStatementMappingForms(node);
                     initialiseTransactionCategorisationAutosave(node);
+                    initialiseTransactionAutoApprovalControls(node);
                     restoreStoredCardMaximizedStates(node);
                 }
             });

@@ -62,6 +62,16 @@ final class _transactions_importedCard extends CardBaseFramework
                     'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
+            [
+                'key' => 'pending_auto_approval_count',
+                'service' => \eel_accounts\Service\TransactionAutoApprovalService::class,
+                'method' => 'pendingPostConfirmationCount',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                    'monthKey' => ':page.month_key',
+                ],
+            ],
         ];
     }
 
@@ -108,6 +118,7 @@ final class _transactions_importedCard extends CardBaseFramework
         $selectedTransactionMonth = (string)($page['month_key'] ?? '');
         $selectedTransactionFilter = (string)($page['category_filter'] ?? 'not_posted');
         $selectedMonthSummary = $this->buildSelectedMonthSummary($transactionsByMonth);
+        $pendingAutoApprovalCount = (int)($services['pending_auto_approval_count'] ?? $selectedMonthSummary['pending_auto_approval']);
 
         $monthOptions = '';
         foreach ($monthStatus as $month) {
@@ -137,6 +148,7 @@ final class _transactions_importedCard extends CardBaseFramework
         );
 
         return '
+            ' . $this->autoApprovalBatchFormHtml($companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter) . '
             <div class="card-toolbar transactions-imported-controls">
                 <div class="transactions-imported-primary-controls">
                     ' . $this->monthNavigationButtonHtml('<', (string)($monthNavigation['previous'] ?? ''), $companyId, $accountingPeriodId, $selectedTransactionFilter, 'previous') . '
@@ -153,7 +165,7 @@ final class _transactions_importedCard extends CardBaseFramework
                         </div>
                     </form>
                     ' . $this->monthNavigationButtonHtml('>', (string)($monthNavigation['next'] ?? ''), $companyId, $accountingPeriodId, $selectedTransactionFilter, 'next') . '
-                    ' . $this->bulkToolbarActionsHtml($companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $isPeriodLocked) . '
+                    ' . $this->bulkToolbarActionsHtml($companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $isPeriodLocked, $pendingAutoApprovalCount) . '
                 </div>
                 ' . $this->lockedPeriodNoticeHtml($isPeriodLocked) . '
                 <div class="pill-row transactions-imported-summary">
@@ -239,12 +251,21 @@ final class _transactions_importedCard extends CardBaseFramework
         int $accountingPeriodId,
         string $selectedTransactionMonth,
         string $selectedTransactionFilter,
-        bool $isPeriodLocked
+        bool $isPeriodLocked,
+        int $pendingAutoApprovalCount = 0
     ): string
     {
         $autoButtonAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit"';
-        $approveAutoButtonAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit"';
         $postButtonAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit"';
+        if (!$isPeriodLocked && $pendingAutoApprovalCount > 0) {
+            $postButtonAttributes .= ' data-chicken-check="true"
+                    data-chicken-title="Confirm auto categorisations"
+                    data-chicken-message="This will post auto-categorised transactions. Confirm the auto rules are correct before continuing.<br><br>Continue?"
+                    data-chicken-confirm-text="Post Transactions"
+                    data-chicken-button-class="button primary"
+                    data-submit-field="confirm_auto_categorisations"
+                    data-submit-value="1"';
+        }
 
         return '<form method="post" action="?page=transactions" data-ajax="true">
                 <input type="hidden" name="card_action" value="Transaction">
@@ -255,20 +276,6 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="auto_scope" value="uncategorised">
                 <input type="hidden" name="global_action" value="run_auto_rules">
                 <button class="button"' . $autoButtonAttributes . '>Run Auto Rules</button>
-            </form>
-            <form method="post" action="?page=transactions" data-ajax="true">
-                <input type="hidden" name="card_action" value="Transaction">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
-                <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
-                <input type="hidden" name="global_action" value="approve_auto_categorisations">
-                <button class="button"' . $approveAutoButtonAttributes . '
-                    data-chicken-check="true"
-                    data-chicken-title="Approve auto categorisations"
-                    data-chicken-message="This will mark auto-categorised transactions in the selected month as manually reviewed without changing their nominal account.<br><br>Continue?"
-                    data-chicken-confirm-text="Approve"
-                    data-chicken-button-class="button primary">Approve Auto Categorisations</button>
             </form>
             <form method="post" action="?page=transactions" data-ajax="true">
                 <input type="hidden" name="card_action" value="Transaction">
@@ -416,6 +423,12 @@ final class _transactions_importedCard extends CardBaseFramework
                     . '</span>'
             )
             ->column(
+                'auto_approval',
+                'Auto Approval',
+                html: fn(array $row): string => $this->autoApprovalHtml($row, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $isPeriodLocked),
+                export: fn(array $row): string => $this->autoApprovalExport($row)
+            )
+            ->column(
                 'flags',
                 'Flags',
                 html: fn(array $row): string => $this->flagsHtml($row)
@@ -558,11 +571,70 @@ final class _transactions_importedCard extends CardBaseFramework
         if ((int)($transaction['is_auto_excluded'] ?? 0) === 1) {
             $flagsHtml .= '<span class="badge warning">Deferred</span>';
         }
+        if ($this->autoApprovalConfirmedCurrent($transaction)) {
+            $flagsHtml .= '<span class="badge success">Auto Correct</span>';
+        }
         if (!$this->transactionIsTransferMode($transaction) && (int)($transaction['auto_rule_id'] ?? 0) > 0) {
             $flagsHtml .= '<span class="badge info">Rule #' . (int)($transaction['auto_rule_id'] ?? 0) . '</span>';
         }
 
         return $flagsHtml . '</div>';
+    }
+
+    private function autoApprovalHtml(
+        array $transaction,
+        int $companyId,
+        int $accountingPeriodId,
+        string $selectedTransactionMonth,
+        string $selectedTransactionFilter,
+        bool $isPeriodLocked
+    ): string {
+        if (!$this->isRuleBasedAutoTransaction($transaction)) {
+            return '<span class="helper">-</span>';
+        }
+
+        $transactionId = (int)($transaction['id'] ?? 0);
+        $checked = $this->autoApprovalCheckedCurrent($transaction) ? ' checked' : '';
+        $disabled = $isPeriodLocked ? ' disabled title="Period locked"' : '';
+
+        return '<label class="checkbox-item" data-auto-approval-item="true">
+                <input type="checkbox" value="1"
+                    data-auto-approval-control="true"
+                    data-auto-approval-transaction-id="' . $transactionId . '"
+                    data-auto-approval-initial="' . ($checked !== '' ? '1' : '0') . '"' . $checked . $disabled . '>
+                <span>Correct</span>
+                <span class="helper" data-auto-approval-status aria-live="polite"></span>
+            </label>';
+    }
+
+    private function autoApprovalBatchFormHtml(
+        int $companyId,
+        int $accountingPeriodId,
+        string $selectedTransactionMonth,
+        string $selectedTransactionFilter
+    ): string {
+        return '<form method="post" action="?page=transactions" data-ajax="true" data-auto-approval-batch-form="true" hidden>
+                <input type="hidden" name="card_action" value="Transaction">
+                <input type="hidden" name="global_action" value="sync_auto_approval_state">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
+                <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                <button type="submit" data-auto-approval-batch-submit hidden>Save auto approvals</button>
+            </form>';
+    }
+
+    private function autoApprovalExport(array $transaction): string
+    {
+        if (!$this->isRuleBasedAutoTransaction($transaction)) {
+            return '-';
+        }
+
+        if ($this->autoApprovalConfirmedCurrent($transaction)) {
+            return 'Auto Correct';
+        }
+
+        return $this->autoApprovalCheckedCurrent($transaction) ? 'Checked' : 'Pending';
     }
 
     private function actionsHtml(
@@ -800,6 +872,7 @@ final class _transactions_importedCard extends CardBaseFramework
             'auto' => 0,
             'manual' => 0,
             'deferred' => 0,
+            'pending_auto_approval' => 0,
             'ready_to_post' => 0,
             'posted' => 0,
         ];
@@ -825,9 +898,30 @@ final class _transactions_importedCard extends CardBaseFramework
             } elseif (in_array($status, ['auto', 'manual'], true) && (int)($row['nominal_account_id'] ?? 0) > 0) {
                 $summary['ready_to_post']++;
             }
+
+            if ($this->isRuleBasedAutoTransaction($row) && (int)($row['nominal_account_id'] ?? 0) > 0 && !$this->autoApprovalConfirmedCurrent($row)) {
+                $summary['pending_auto_approval']++;
+            }
         }
 
         return $summary;
+    }
+
+    private function isRuleBasedAutoTransaction(array $transaction): bool
+    {
+        return strtolower(trim((string)($transaction['category_status'] ?? ''))) === 'auto'
+            && !$this->transactionIsTransferMode($transaction)
+            && (int)($transaction['auto_rule_id'] ?? 0) > 0;
+    }
+
+    private function autoApprovalCheckedCurrent(array $transaction): bool
+    {
+        return (int)($transaction['auto_approval_checked_current'] ?? 0) === 1;
+    }
+
+    private function autoApprovalConfirmedCurrent(array $transaction): bool
+    {
+        return (int)($transaction['auto_approval_confirmed_current'] ?? 0) === 1;
     }
 
     private function transactionIsTransferMode(array $transaction): bool
@@ -898,8 +992,8 @@ final class _transactions_importedCard extends CardBaseFramework
         }
 
         return match ($status) {
-            'auto' => 'Auto categorised',
-            'manual' => 'Manually Categorised',
+            'auto' => 'Auto',
+            'manual' => 'Manual',
             default => 'Uncategorised',
         };
     }

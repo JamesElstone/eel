@@ -34,7 +34,9 @@ final class TransactionAction implements ActionInterfaceFramework
             'mark_director_loan' => $this->saveTransactionCategory($request, $services, $intent),
             'auto_create_transaction_rule' => $this->draftCategorisationRule($request, $services),
             'run_auto_rules' => $this->runAutoRules($request, $services),
-            'approve_auto_categorisations' => $this->approveAutoCategorisations($request, $services),
+            'set_auto_approval_state',
+            'sync_auto_approval_state',
+            'toggle_auto_approval' => $this->setAutoApprovalState($request, $services),
             'post_categorised_transactions' => $this->postCategorisedTransactions($request, $services),
             'save_categorisation_rule' => $this->saveCategorisationRule($request, $services),
             'export_categorisation_rules' => $this->exportCategorisationRules($request, $services),
@@ -61,14 +63,15 @@ final class TransactionAction implements ActionInterfaceFramework
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $dashboardRepository = self::service($services, \eel_accounts\Repository\DashboardRepository::class);
-        $monthStatus = $companyId > 0 && $accountingPeriodId > 0
-            ? self::service($services, \eel_accounts\Service\StatementUploadService::class)->buildMonthStatus($companyId, $accountingPeriodId)
-            : [];
         $context = $actionResult->context();
         $monthKey = $dashboardRepository->normaliseTransactionMonthFilter((string)(
             $context['month_key']
             ?? $request->input('month_key', $request->query('month_key', ''))
         ));
+        $monthStatus = [];
+        if ($monthKey === '' && $companyId > 0 && $accountingPeriodId > 0) {
+            $monthStatus = self::service($services, \eel_accounts\Service\StatementUploadService::class)->buildMonthStatus($companyId, $accountingPeriodId);
+        }
         $monthKey = $monthKey !== '' ? $monthKey : $dashboardRepository->defaultTransactionMonth($monthStatus);
         $categoryFilter = $dashboardRepository->normaliseTransactionCategoryFilter((string)(
             $context['category_filter']
@@ -347,44 +350,34 @@ final class TransactionAction implements ActionInterfaceFramework
         return $this->result($errors === [], $errors, $flashMessages, $context);
     }
 
-    private function approveAutoCategorisations(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
+    private function setAutoApprovalState(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
         $context = $this->filterContext($request);
         $companyId = $this->selectedCompanyId($request);
         $accountingPeriodId = $this->selectedAccountingPeriodId($request);
-        $errors = [];
-        $flashMessages = [];
+        $states = $this->autoApprovalStatesFromRequest($request);
 
         try {
-            $result = self::service($services, \eel_accounts\Service\TransactionCategorisationService::class)->approveAutoCategorisationsBatch(
+            $result = self::service($services, \eel_accounts\Service\TransactionAutoApprovalService::class)->setTransactionApprovalStates(
                 $companyId,
                 $accountingPeriodId,
-                $context['month_key'] !== '' ? $context['month_key'] : null,
-                'transactions_page_review'
+                $states,
+                $this->currentUserId()
             );
-
-            $errors = array_merge($errors, array_map('strval', (array)($result['errors'] ?? [])));
-            if (!empty($result['success'])) {
-                $flashMessages[] = sprintf(
-                    'Approved %d auto-categorised transaction(s).',
-                    (int)($result['changed'] ?? 0)
-                );
-
-                if ((int)($result['skipped'] ?? 0) > 0) {
-                    $flashMessages[] = sprintf('%d auto-categorised transaction(s) were skipped because they need manual review.', (int)$result['skipped']);
-                }
-            }
         } catch (Throwable $exception) {
-            $errors[] = 'The auto categorisation review could not be completed: ' . $exception->getMessage();
+            $result = [
+                'success' => false,
+                'errors' => ['The auto approval could not be saved: ' . $exception->getMessage()],
+            ];
         }
 
         return $this->result(
-            $errors === [],
-            $errors,
-            $flashMessages,
+            !empty($result['success']),
+            array_map('strval', (array)($result['errors'] ?? [])),
+            !empty($result['success']) ? ['Auto approval updated.'] : [],
             $context,
             [],
-            ['page.context', self::TRANSACTIONS_IMPORTED_FACT, 'year.end.checklist', 'year.end.state']
+            []
         );
     }
 
@@ -396,17 +389,42 @@ final class TransactionAction implements ActionInterfaceFramework
         $defaultBankNominalId = $this->defaultBankNominalId($companyId);
         $errors = [];
         $flashMessages = [];
+        $approvalService = self::service($services, \eel_accounts\Service\TransactionAutoApprovalService::class);
+        $monthKey = $context['month_key'] !== '' ? $context['month_key'] : null;
+        $pendingAutoApprovalCount = $approvalService->pendingPostConfirmationCount($companyId, $accountingPeriodId, $monthKey);
+
+        if ($pendingAutoApprovalCount > 0 && !$this->checkboxValue($request, 'confirm_auto_categorisations')) {
+            return $this->result(
+                false,
+                [sprintf('Confirm %d auto-categorised transaction(s) are correct before posting.', $pendingAutoApprovalCount)],
+                [],
+                $context
+            );
+        }
 
         $postResult = self::service($services, \eel_accounts\Service\TransactionJournalService::class)->postCategorisedTransactions(
             $companyId,
             $accountingPeriodId,
             $defaultBankNominalId,
-            $context['month_key'] !== '' ? $context['month_key'] : null,
+            $monthKey,
             'transactions_page_post'
         );
 
         $errors = array_merge($errors, array_map('strval', (array)($postResult['errors'] ?? [])));
         if (!empty($postResult['success'])) {
+            if ($pendingAutoApprovalCount > 0) {
+                $confirmResult = $approvalService->confirmPostableAutoTransactions(
+                    $companyId,
+                    $accountingPeriodId,
+                    $monthKey,
+                    $this->currentUserId()
+                );
+                $errors = array_merge($errors, array_map('strval', (array)($confirmResult['errors'] ?? [])));
+                if (!empty($confirmResult['success']) && (int)($confirmResult['confirmed'] ?? 0) > 0) {
+                    $flashMessages[] = sprintf('%d auto categorisation approval(s) confirmed.', (int)$confirmResult['confirmed']);
+                }
+            }
+
             $flashMessages[] = sprintf(
                 'Posting complete: %d created, %d rebuilt, %d unchanged.',
                 (int)($postResult['created'] ?? 0),
@@ -415,7 +433,7 @@ final class TransactionAction implements ActionInterfaceFramework
             );
         }
 
-        return $this->result($errors === [], $errors, $flashMessages, $context);
+        return $this->result($errors === [], $errors, $flashMessages, $context, [], ['page.context', self::TRANSACTIONS_IMPORTED_FACT, 'transaction.search', 'year.end.checklist', 'year.end.state']);
     }
 
     private function saveCategorisationRule(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
@@ -610,6 +628,15 @@ final class TransactionAction implements ActionInterfaceFramework
         return ctype_digit($value) ? (int)$value : 0;
     }
 
+    private function currentUserId(): int
+    {
+        $sessionAuthenticationService = new SessionAuthenticationService();
+        $sessionAuthenticationService->startSession();
+        $currentDeviceId = trim((string)AntiFraudService::instance()->requestValue('Client-Device-ID'));
+
+        return $sessionAuthenticationService->authenticatedUserId($currentDeviceId !== '' ? $currentDeviceId : null);
+    }
+
     private function directorLoanNominalResolution(int $companyId, array $transaction): array
     {
         if ($companyId <= 0) {
@@ -674,6 +701,36 @@ final class TransactionAction implements ActionInterfaceFramework
     private function checkboxValue(RequestFramework $request, string $field): bool
     {
         return in_array(strtolower(trim((string)$request->post($field, ''))), ['1', 'true', 'on', 'yes'], true);
+    }
+
+    private function autoApprovalStatesFromRequest(RequestFramework $request): array
+    {
+        $ids = $request->post('auto_approval_transaction_ids', []);
+        $values = $request->post('auto_approval_correct_values', []);
+
+        if (!is_array($ids) || !is_array($values)) {
+            $transactionId = $this->positiveInt($request->post('transaction_id', 0));
+
+            return $transactionId > 0
+                ? [$transactionId => $this->checkboxValue($request, 'auto_approval_correct')]
+                : [];
+        }
+
+        $states = [];
+        foreach (array_values($ids) as $index => $id) {
+            $transactionId = $this->positiveInt($id);
+            if ($transactionId <= 0) {
+                continue;
+            }
+
+            $states[$transactionId] = in_array(
+                strtolower(trim((string)($values[$index] ?? '0'))),
+                ['1', 'true', 'on', 'yes'],
+                true
+            );
+        }
+
+        return $states;
     }
 
     private static function positiveInt(mixed $value): int

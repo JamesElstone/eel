@@ -367,6 +367,20 @@ final class DashboardRepository
         return in_array($filter, ['all', 'not_posted', 'uncategorised', 'auto', 'manual'], true) ? $filter : 'all';
     }
 
+    public function normaliseSearchCategoryStatus(?string $filter): string
+    {
+        $filter = trim((string)$filter);
+
+        return in_array($filter, ['uncategorised', 'auto', 'manual'], true) ? $filter : '';
+    }
+
+    public function normaliseAutoApprovalFilter(?string $filter): string
+    {
+        $filter = trim((string)$filter);
+
+        return in_array($filter, ['pending', 'confirmed'], true) ? $filter : '';
+    }
+
     public function defaultTransactionMonth(array $monthStatus): string
     {
         $currentMonthKey = (new \DateTimeImmutable('first day of this month'))->format('Y-m-01');
@@ -468,6 +482,13 @@ final class DashboardRepository
                        COALESCE(t.auto_rule_id, 0) AS auto_rule_id,
                        COALESCE(cr.desc_match_value, '') AS auto_rule_match_value,
                        COALESCE(t.is_auto_excluded, 0) AS is_auto_excluded,
+                       COALESCE(taa.state, '') AS auto_approval_state,
+                       taa.state_change_at AS auto_approval_state_change_at,
+                       taa.state_change_transaction_updated_at AS auto_approval_state_change_transaction_updated_at,
+                       taa.confirmed_at AS auto_approval_confirmed_at,
+                       taa.confirmed_transaction_updated_at AS auto_approval_confirmed_transaction_updated_at,
+                       " . \eel_accounts\Service\TransactionAutoApprovalService::currentCheckedSql('taa', 't') . " AS auto_approval_checked_current,
+                       " . \eel_accounts\Service\TransactionAutoApprovalService::currentApprovalSql('taa', 't') . " AS auto_approval_confirmed_current,
                        EXISTS(
                            SELECT 1
                            FROM journals j
@@ -486,6 +507,7 @@ final class DashboardRepository
                 LEFT JOIN company_accounts ta ON ta.id = t.transfer_account_id
                 LEFT JOIN nominal_accounts na ON na.id = t.nominal_account_id
                 LEFT JOIN categorisation_rules cr ON cr.id = t.auto_rule_id
+                LEFT JOIN transaction_auto_approvals taa ON taa.transaction_id = t.id
                 WHERE " . implode(' AND ', $where) . "
                 ORDER BY t.txn_date DESC, t.id DESC
                 LIMIT {$limit}";
@@ -504,14 +526,18 @@ final class DashboardRepository
         array|string $nominalAccountIds = [],
         int $limit = 5000,
         ?string $amount = '',
-        ?string $flow = 'any'
+        ?string $flow = 'any',
+        ?string $categoryStatus = '',
+        ?string $autoApprovalFilter = ''
     ): array {
         $keyword = trim($keyword);
         $flow = $this->normaliseTransactionFlowFilter($flow);
         $amount = $this->normaliseTransactionAmountFilter($amount, $flow);
+        $categoryStatus = $this->normaliseSearchCategoryStatus($categoryStatus);
+        $autoApprovalFilter = $this->normaliseAutoApprovalFilter($autoApprovalFilter);
         $nominalAccountIds = $this->normalisePositiveIntList($nominalAccountIds);
         $sourceAccountId = max(0, $sourceAccountId);
-        if ($companyId <= 0 || $accountingPeriodId <= 0 || ($keyword === '' && $amount === '' && $flow === 'any' && $sourceAccountId <= 0 && $nominalAccountIds === [])) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || ($keyword === '' && $amount === '' && $flow === 'any' && $sourceAccountId <= 0 && $nominalAccountIds === [] && $categoryStatus === '' && $autoApprovalFilter === '')) {
             return [];
         }
 
@@ -555,6 +581,21 @@ final class DashboardRepository
             $where[] = 't.nominal_account_id IN (' . implode(', ', $placeholders) . ')';
         }
 
+        if ($categoryStatus !== '') {
+            $where[] = 't.category_status = :search_category_status';
+            $params['search_category_status'] = $categoryStatus;
+        }
+
+        if ($autoApprovalFilter === 'pending') {
+            $where[] = 't.category_status = :auto_approval_category_status';
+            $where[] = 't.auto_rule_id IS NOT NULL';
+            $where[] = 't.auto_rule_id > 0';
+            $where[] = 'NOT (' . \eel_accounts\Service\TransactionAutoApprovalService::currentApprovalSql('taa', 't') . ')';
+            $params['auto_approval_category_status'] = 'auto';
+        } elseif ($autoApprovalFilter === 'confirmed') {
+            $where[] = \eel_accounts\Service\TransactionAutoApprovalService::currentApprovalSql('taa', 't');
+        }
+
         $sql = "SELECT t.id,
                        t.statement_upload_id,
                        t.account_id,
@@ -585,6 +626,13 @@ final class DashboardRepository
                        COALESCE(t.notes, '') AS notes,
                        t.created_at,
                        t.updated_at,
+                       COALESCE(taa.state, '') AS auto_approval_state,
+                       taa.state_change_at AS auto_approval_state_change_at,
+                       taa.state_change_transaction_updated_at AS auto_approval_state_change_transaction_updated_at,
+                       taa.confirmed_at AS auto_approval_confirmed_at,
+                       taa.confirmed_transaction_updated_at AS auto_approval_confirmed_transaction_updated_at,
+                       " . \eel_accounts\Service\TransactionAutoApprovalService::currentCheckedSql('taa', 't') . " AS auto_approval_checked_current,
+                       " . \eel_accounts\Service\TransactionAutoApprovalService::currentApprovalSql('taa', 't') . " AS auto_approval_confirmed_current,
                        EXISTS(
                            SELECT 1
                            FROM journals j
@@ -603,6 +651,7 @@ final class DashboardRepository
                 LEFT JOIN company_accounts ta ON ta.id = t.transfer_account_id
                 LEFT JOIN nominal_accounts na ON na.id = t.nominal_account_id
                 LEFT JOIN categorisation_rules cr ON cr.id = t.auto_rule_id
+                LEFT JOIN transaction_auto_approvals taa ON taa.transaction_id = t.id
                 WHERE " . implode(' AND ', $where) . "
                 ORDER BY t.txn_date DESC, t.id DESC
                 LIMIT {$limit}";

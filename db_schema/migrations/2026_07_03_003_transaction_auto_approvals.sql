@@ -1,0 +1,22 @@
+CREATE TABLE IF NOT EXISTS transaction_auto_approvals (
+  id bigint(20) NOT NULL AUTO_INCREMENT,
+  transaction_id bigint(20) NOT NULL,
+  state enum('pending','checked','confirmed') NOT NULL DEFAULT 'pending',
+  state_change_user_id int(11) DEFAULT NULL,
+  state_change_at datetime DEFAULT NULL,
+  state_change_transaction_updated_at datetime DEFAULT NULL,
+  confirmed_by_user_id int(11) DEFAULT NULL,
+  confirmed_at datetime DEFAULT NULL,
+  confirmed_transaction_updated_at datetime DEFAULT NULL,
+  created_at datetime NOT NULL DEFAULT current_timestamp(),
+  updated_at datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (id),
+  UNIQUE KEY uniq_transaction_auto_approvals_transaction (transaction_id),
+  KEY idx_transaction_auto_approvals_state (state),
+  KEY idx_transaction_auto_approvals_confirmed (state, confirmed_at, confirmed_transaction_updated_at),
+  KEY fk_transaction_auto_approvals_state_user (state_change_user_id),
+  KEY fk_transaction_auto_approvals_confirmed_user (confirmed_by_user_id),
+  CONSTRAINT fk_transaction_auto_approvals_transaction FOREIGN KEY (transaction_id) REFERENCES transactions (id) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_transaction_auto_approvals_state_user FOREIGN KEY (state_change_user_id) REFERENCES users (id) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT fk_transaction_auto_approvals_confirmed_user FOREIGN KEY (confirmed_by_user_id) REFERENCES users (id) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

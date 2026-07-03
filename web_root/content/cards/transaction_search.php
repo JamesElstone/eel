@@ -36,6 +36,8 @@ final class _transaction_searchCard extends CardBaseFramework
                     'nominalAccountIds' => ':transaction_search.nominal_account_ids',
                     'amount' => ':transaction_search.amount',
                     'flow' => ':transaction_search.flow',
+                    'categoryStatus' => ':transaction_search.category_status',
+                    'autoApprovalFilter' => ':transaction_search.auto_approval_filter',
                 ],
             ],
             [
@@ -51,6 +53,15 @@ final class _transaction_searchCard extends CardBaseFramework
                 'key' => 'nominal_accounts',
                 'service' => \eel_accounts\Repository\NominalAccountRepository::class,
                 'method' => 'fetchNominalAccounts',
+            ],
+            [
+                'key' => 'year_end_review',
+                'service' => \eel_accounts\Service\YearEndLockService::class,
+                'method' => 'fetchReview',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                ],
             ],
         ];
     }
@@ -72,6 +83,8 @@ final class _transaction_searchCard extends CardBaseFramework
                 'nominal_account_ids' => $this->normaliseIds($request->input('transaction_search_nominal_account_ids', [])),
                 'amount' => $this->normaliseAmount((string)$request->input('transaction_search_amount', ''), $flow),
                 'flow' => $flow,
+                'category_status' => $this->normaliseCategoryStatus((string)$request->input('transaction_search_category_status', '')),
+                'auto_approval_filter' => $this->normaliseAutoApprovalFilter((string)$request->input('transaction_search_auto_approval_filter', '')),
             ]
         );
 
@@ -100,7 +113,8 @@ final class _transaction_searchCard extends CardBaseFramework
         $table = $tableState['table'];
         $hiddenFields = (array)$tableState['hidden_fields'];
 
-        return $this->searchForm($context)
+        return $this->autoApprovalBatchFormHtml($context)
+            . $this->searchForm($context)
             . $table->renderToolbar($context, $hiddenFields)
             . $table->renderTable()
             . $this->footerWithAmountTotal(
@@ -201,6 +215,18 @@ final class _transaction_searchCard extends CardBaseFramework
                 export: fn(array $row): string => $this->autoRuleLabel($row)
             )
             ->column(
+                'auto_approval',
+                'Auto Approval',
+                html: fn(array $row): string => $this->autoApprovalHtml($row, $context),
+                export: fn(array $row): string => $this->autoApprovalExport($row)
+            )
+            ->column(
+                'flags',
+                'Flags',
+                html: fn(array $row): string => $this->flagsHtml($row),
+                export: fn(array $row): string => $this->flagsExport($row)
+            )
+            ->column(
                 'has_derived_journal',
                 'Journal',
                 html: fn(array $row): string => '<span class="badge ' . (((int)($row['has_derived_journal'] ?? 0) === 1) ? 'success' : 'warning') . '">'
@@ -231,6 +257,8 @@ final class _transaction_searchCard extends CardBaseFramework
         $flow = $this->flow($context);
         $sourceAccountId = $this->sourceAccountId($context);
         $selectedNominalIds = $this->nominalAccountIds($context);
+        $categoryStatus = $this->categoryStatus($context);
+        $autoApprovalFilter = $this->autoApprovalFilter($context);
 
         return '<form class="card-toolbar" method="post" action="?page=transactions" data-ajax="true">
             <input type="hidden" name="show_card" value=".self">
@@ -264,6 +292,18 @@ final class _transaction_searchCard extends CardBaseFramework
                         ' . $this->nominalOptions($context, $selectedNominalIds) . '
                     </select>
                 </div>
+                <div class="mini-field">
+                    <label for="transaction_search_category_status">Categorisation</label>
+                    <select class="select" id="transaction_search_category_status" name="transaction_search_category_status">
+                        ' . $this->categoryStatusOptions($categoryStatus) . '
+                    </select>
+                </div>
+                <div class="mini-field">
+                    <label for="transaction_search_auto_approval_filter">Auto Approval</label>
+                    <select class="select" id="transaction_search_auto_approval_filter" name="transaction_search_auto_approval_filter">
+                        ' . $this->autoApprovalFilterOptions($autoApprovalFilter) . '
+                    </select>
+                </div>
                 <button class="button primary" type="submit">Search</button>
                 <a class="button" href="?page=transactions&amp;show_card=transaction_search">Clear</a>
             </div>
@@ -283,6 +323,8 @@ final class _transaction_searchCard extends CardBaseFramework
             'transaction_search_flow' => $this->flow($context),
             'transaction_search_source_account_id' => $this->sourceAccountId($context),
             'transaction_search_nominal_account_ids' => implode(',', $this->nominalAccountIds($context)),
+            'transaction_search_category_status' => $this->categoryStatus($context),
+            'transaction_search_auto_approval_filter' => $this->autoApprovalFilter($context),
         ];
     }
 
@@ -297,6 +339,43 @@ final class _transaction_searchCard extends CardBaseFramework
 
         foreach ($options as $value => $label) {
             $html .= '<option value="' . HelperFramework::escape($value) . '"' . ($value === $selectedFlow ? ' selected' : '') . '>'
+                . HelperFramework::escape($label)
+                . '</option>';
+        }
+
+        return $html;
+    }
+
+    private function categoryStatusOptions(string $selectedStatus): string
+    {
+        $options = [
+            '' => 'Any',
+            'uncategorised' => 'Uncategorised',
+            'auto' => 'Auto Categorisation',
+            'manual' => 'Manual',
+        ];
+        $html = '';
+
+        foreach ($options as $value => $label) {
+            $html .= '<option value="' . HelperFramework::escape($value) . '"' . ($value === $selectedStatus ? ' selected' : '') . '>'
+                . HelperFramework::escape($label)
+                . '</option>';
+        }
+
+        return $html;
+    }
+
+    private function autoApprovalFilterOptions(string $selectedFilter): string
+    {
+        $options = [
+            '' => 'Any',
+            'pending' => 'Pending',
+            'confirmed' => 'Confirmed',
+        ];
+        $html = '';
+
+        foreach ($options as $value => $label) {
+            $html .= '<option value="' . HelperFramework::escape($value) . '"' . ($value === $selectedFilter ? ' selected' : '') . '>'
                 . HelperFramework::escape($label)
                 . '</option>';
         }
@@ -430,13 +509,25 @@ final class _transaction_searchCard extends CardBaseFramework
         return $this->normaliseIds(($context[$this->key()] ?? [])['nominal_account_ids'] ?? []);
     }
 
+    private function categoryStatus(array $context): string
+    {
+        return $this->normaliseCategoryStatus((string)(($context[$this->key()] ?? [])['category_status'] ?? ''));
+    }
+
+    private function autoApprovalFilter(array $context): string
+    {
+        return $this->normaliseAutoApprovalFilter((string)(($context[$this->key()] ?? [])['auto_approval_filter'] ?? ''));
+    }
+
     private function hasSearchCriteria(array $context): bool
     {
         return $this->keyword($context) !== ''
             || $this->amount($context) !== ''
             || $this->flow($context) !== 'any'
             || $this->sourceAccountId($context) > 0
-            || $this->nominalAccountIds($context) !== [];
+            || $this->nominalAccountIds($context) !== []
+            || $this->categoryStatus($context) !== ''
+            || $this->autoApprovalFilter($context) !== '';
     }
 
     private function normaliseAmount(string $value, string $flow = 'any'): string
@@ -467,6 +558,20 @@ final class _transaction_searchCard extends CardBaseFramework
         $value = strtolower(trim($value));
 
         return in_array($value, ['in', 'out'], true) ? $value : 'any';
+    }
+
+    private function normaliseCategoryStatus(string $value): string
+    {
+        $value = strtolower(trim($value));
+
+        return in_array($value, ['uncategorised', 'auto', 'manual'], true) ? $value : '';
+    }
+
+    private function normaliseAutoApprovalFilter(string $value): string
+    {
+        $value = strtolower(trim($value));
+
+        return in_array($value, ['pending', 'confirmed'], true) ? $value : '';
     }
 
     private function normaliseIds(mixed $values): array
@@ -557,9 +662,113 @@ final class _transaction_searchCard extends CardBaseFramework
         return implode(' | ', $parts);
     }
 
+    private function autoApprovalHtml(array $row, array $context): string
+    {
+        if (!$this->isRuleBasedAutoTransaction($row)) {
+            return '<span class="helper">-</span>';
+        }
+
+        $transactionId = (int)($row['id'] ?? 0);
+        $checked = $this->autoApprovalCheckedCurrent($row) ? ' checked' : '';
+        $disabled = $this->isPeriodLocked($context) ? ' disabled title="Period locked"' : '';
+
+        return '<label class="checkbox-item" data-auto-approval-item="true">
+                <input type="checkbox" value="1"
+                    data-auto-approval-control="true"
+                    data-auto-approval-transaction-id="' . $transactionId . '"
+                    data-auto-approval-initial="' . ($checked !== '' ? '1' : '0') . '"' . $checked . $disabled . '>
+                <span>Correct</span>
+                <span class="helper" data-auto-approval-status aria-live="polite"></span>
+            </label>';
+    }
+
+    private function autoApprovalBatchFormHtml(array $context): string
+    {
+        $company = (array)($context['company'] ?? []);
+
+        return '<form method="post" action="?page=transactions" data-ajax="true" data-auto-approval-batch-form="true" hidden>
+                <input type="hidden" name="card_action" value="Transaction">
+                <input type="hidden" name="global_action" value="sync_auto_approval_state">
+                <input type="hidden" name="company_id" value="' . (int)($company['id'] ?? 0) . '">
+                <input type="hidden" name="accounting_period_id" value="' . (int)($company['accounting_period_id'] ?? 0) . '">
+                <input type="hidden" name="category_filter" value="auto">
+                <input type="hidden" name="show_card" value="transaction_search">
+                <input type="hidden" name="transaction_search_keyword" value="' . HelperFramework::escape($this->keyword($context)) . '">
+                <input type="hidden" name="transaction_search_amount" value="' . HelperFramework::escape($this->amount($context)) . '">
+                <input type="hidden" name="transaction_search_flow" value="' . HelperFramework::escape($this->flow($context)) . '">
+                <input type="hidden" name="transaction_search_source_account_id" value="' . $this->sourceAccountId($context) . '">
+                <input type="hidden" name="transaction_search_nominal_account_ids" value="' . HelperFramework::escape(implode(',', $this->nominalAccountIds($context))) . '">
+                <input type="hidden" name="transaction_search_category_status" value="' . HelperFramework::escape($this->categoryStatus($context)) . '">
+                <input type="hidden" name="transaction_search_auto_approval_filter" value="' . HelperFramework::escape($this->autoApprovalFilter($context)) . '">
+                <button type="submit" data-auto-approval-batch-submit hidden>Save auto approvals</button>
+            </form>';
+    }
+
+    private function autoApprovalExport(array $row): string
+    {
+        if (!$this->isRuleBasedAutoTransaction($row)) {
+            return '-';
+        }
+
+        if ($this->autoApprovalConfirmedCurrent($row)) {
+            return 'Auto Correct';
+        }
+
+        return $this->autoApprovalCheckedCurrent($row) ? 'Checked' : 'Pending';
+    }
+
+    private function flagsHtml(array $row): string
+    {
+        $html = '<div class="document-stack">';
+        if ($this->autoApprovalConfirmedCurrent($row)) {
+            $html .= '<span class="badge success">Auto Correct</span>';
+        }
+        if ((int)($row['is_auto_excluded'] ?? 0) === 1) {
+            $html .= '<span class="badge warning">Deferred</span>';
+        }
+
+        return $html . '</div>';
+    }
+
+    private function flagsExport(array $row): string
+    {
+        $flags = [];
+        if ($this->autoApprovalConfirmedCurrent($row)) {
+            $flags[] = 'Auto Correct';
+        }
+        if ((int)($row['is_auto_excluded'] ?? 0) === 1) {
+            $flags[] = 'Deferred';
+        }
+
+        return implode(' | ', $flags);
+    }
+
     private function journalStatusLabel(array $row): string
     {
         return (int)($row['has_derived_journal'] ?? 0) === 1 ? 'Journal exists' : 'No journal';
+    }
+
+    private function isRuleBasedAutoTransaction(array $row): bool
+    {
+        return strtolower(trim((string)($row['category_status'] ?? ''))) === 'auto'
+            && (int)($row['auto_rule_id'] ?? 0) > 0;
+    }
+
+    private function autoApprovalCheckedCurrent(array $row): bool
+    {
+        return (int)($row['auto_approval_checked_current'] ?? 0) === 1;
+    }
+
+    private function autoApprovalConfirmedCurrent(array $row): bool
+    {
+        return (int)($row['auto_approval_confirmed_current'] ?? 0) === 1;
+    }
+
+    private function isPeriodLocked(array $context): bool
+    {
+        $review = (array)(($context['services'] ?? [])['year_end_review'] ?? []);
+
+        return !empty($review['is_locked']);
     }
 
     private function openMonthLink(array $row): string

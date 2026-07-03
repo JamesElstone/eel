@@ -27,6 +27,8 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
             'flow' => 'out',
             'source_account_id' => 7,
             'nominal_account_ids' => [31, 32],
+            'category_status' => 'auto',
+            'auto_approval_filter' => 'pending',
         ],
         'services' => [
             'company_accounts' => [[
@@ -68,6 +70,9 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
                 'auto_rule_match_value' => 'Brian',
                 'auto_rule_reference_match_value' => '',
                 'is_auto_excluded' => 0,
+                'auto_approval_state' => 'confirmed',
+                'auto_approval_checked_current' => 1,
+                'auto_approval_confirmed_current' => 1,
                 'has_derived_journal' => 1,
                 'notes' => 'Checked',
                 'created_at' => '2026-04-12 10:00:00',
@@ -87,6 +92,10 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         $harness->assertTrue(str_contains($html, '<option value="in">In (positive)</option>'));
         $harness->assertTrue(str_contains($html, '<option value="out" selected>Out (negative)</option>'));
         $harness->assertTrue(str_contains($html, 'name="transaction_search_nominal_account_ids[]" multiple'));
+        $harness->assertTrue(str_contains($html, 'name="transaction_search_category_status"'));
+        $harness->assertTrue(str_contains($html, '<option value="auto" selected>Auto Categorisation</option>'));
+        $harness->assertTrue(str_contains($html, 'name="transaction_search_auto_approval_filter"'));
+        $harness->assertTrue(str_contains($html, '<option value="pending" selected>Pending</option>'));
         $harness->assertTrue(str_contains($html, 'name="_invalidate_fact" value="transaction.search"'));
         $harness->assertTrue(str_contains($html, '<option value="">Any</option>'));
         $harness->assertTrue(str_contains($html, '<option value="31" selected>4000 - Sales</option>'));
@@ -97,6 +106,8 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         $harness->assertTrue(str_contains($html, '<span class="table-sort-label">FX</span>'));
         $harness->assertSame(false, str_contains($html, '<span class="table-sort-label">Currency</span>'));
         $harness->assertTrue(str_contains($html, '<span class="table-sort-label">Cat.</span>'));
+        $harness->assertTrue(str_contains($html, '<span class="table-sort-label">Auto Approval</span>'));
+        $harness->assertTrue(str_contains($html, '<span class="table-sort-label">Flags</span>'));
         $harness->assertTrue(str_contains($html, '<span class="table-sort-label">Journal</span>'));
         $harness->assertTrue(str_contains($html, '<span class="table-sort-label">Upload</span>'));
         $harness->assertTrue(str_contains($html, '<span class="table-sort-label">Doc.</span>'));
@@ -112,6 +123,12 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         $harness->assertSame(false, str_contains($html, '<span class="table-sort-label">Updated</span>'));
         $harness->assertTrue(str_contains($html, 'Brian Supplies'));
         $harness->assertTrue(str_contains($html, 'Rule #5 | Description: Brian'));
+        $harness->assertTrue(str_contains($html, 'name="global_action" value="sync_auto_approval_state"'));
+        $harness->assertTrue(str_contains($html, 'data-auto-approval-batch-form="true"'));
+        $harness->assertTrue(str_contains($html, 'data-auto-approval-control="true"'));
+        $harness->assertTrue(str_contains($html, 'data-auto-approval-transaction-id="99"'));
+        $harness->assertTrue(str_contains($html, 'data-auto-approval-initial="1" checked'));
+        $harness->assertTrue(str_contains($html, '<span class="badge success">Auto Correct</span>'));
         $harness->assertTrue(str_contains($html, '?page=transactions&amp;show_card=transactions_imported&amp;month_key=2026-04-01&amp;category_filter=all'));
         $harness->assertTrue(str_contains($html, 'transaction-search-amount-total'));
         $harness->assertTrue(str_contains($html, 'Amount total:'));

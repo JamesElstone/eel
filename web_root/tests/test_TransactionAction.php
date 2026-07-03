@@ -495,6 +495,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
             'transaction_id' => $transactionId,
+            'upload_id' => $uploadId,
             'bank_nominal_id' => $bankNominalId,
             'bank_account_id' => $bankAccountId,
             'asset_nominal_id' => $assetNominalId,
@@ -677,6 +678,186 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, $newJournalId > 0);
         $harness->assertSame(false, $newJournalId === $oldJournalId);
         $harness->assertSame(2, $lineCount);
+    });
+
+    $harness->check('TransactionAction', 'post categorised transactions confirms only checked auto decisions', function () use ($harness, $instance, $createDirectorLoanFixture): void {
+        foreach (['categorisation_rules', 'transaction_auto_approvals', 'journals', 'journal_lines'] as $table) {
+            if (!InterfaceDB::tableExists($table)) {
+                $harness->skip($table . ' table is not available.');
+            }
+        }
+
+        $fixture = $createDirectorLoanFixture(-42.50);
+        $checkedTransactionId = (int)$fixture['transaction_id'];
+        $uncheckedTransactionId = $checkedTransactionId + 1;
+        $ruleId = $checkedTransactionId + 100;
+
+        InterfaceDB::prepareExecute(
+            'INSERT INTO categorisation_rules (
+                id,
+                company_id,
+                priority,
+                match_field,
+                desc_match_type,
+                desc_match_value,
+                nominal_account_id,
+                is_active
+             ) VALUES (
+                :id,
+                :company_id,
+                100,
+                :match_field,
+                :desc_match_type,
+                :desc_match_value,
+                :nominal_account_id,
+                1
+             )',
+            [
+                'id' => $ruleId,
+                'company_id' => (int)$fixture['company_id'],
+                'match_field' => 'description',
+                'desc_match_type' => 'contains',
+                'desc_match_value' => 'AUTO POST',
+                'nominal_account_id' => (int)$fixture['asset_nominal_id'],
+            ]
+        );
+        InterfaceDB::prepareExecute(
+            'UPDATE transactions
+             SET nominal_account_id = :nominal_account_id,
+                 category_status = :category_status,
+                 auto_rule_id = :auto_rule_id
+             WHERE id = :id',
+            [
+                'id' => $checkedTransactionId,
+                'nominal_account_id' => (int)$fixture['asset_nominal_id'],
+                'category_status' => 'auto',
+                'auto_rule_id' => $ruleId,
+            ]
+        );
+        InterfaceDB::prepareExecute(
+            'INSERT INTO transactions (
+                id,
+                company_id,
+                accounting_period_id,
+                statement_upload_id,
+                account_id,
+                txn_date,
+                description,
+                reference,
+                amount,
+                source_account_label,
+                source_category,
+                dedupe_hash,
+                nominal_account_id,
+                category_status,
+                auto_rule_id
+             ) VALUES (
+                :id,
+                :company_id,
+                :accounting_period_id,
+                :statement_upload_id,
+                :account_id,
+                :txn_date,
+                :description,
+                :reference,
+                :amount,
+                :source_account_label,
+                :source_category,
+                :dedupe_hash,
+                :nominal_account_id,
+                :category_status,
+                :auto_rule_id
+             )',
+            [
+                'id' => $uncheckedTransactionId,
+                'company_id' => (int)$fixture['company_id'],
+                'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                'statement_upload_id' => (int)$fixture['upload_id'],
+                'account_id' => (int)$fixture['bank_account_id'],
+                'txn_date' => '2026-03-16',
+                'description' => 'AUTO POST UNCHECKED',
+                'reference' => 'APU-' . $uncheckedTransactionId,
+                'amount' => '-36.00',
+                'source_account_label' => 'Main account',
+                'source_category' => 'Auto',
+                'dedupe_hash' => hash('sha256', 'auto-post-unchecked-' . $uncheckedTransactionId),
+                'nominal_account_id' => (int)$fixture['asset_nominal_id'],
+                'category_status' => 'auto',
+                'auto_rule_id' => $ruleId,
+            ]
+        );
+
+        $approvalService = new \eel_accounts\Service\TransactionAutoApprovalService();
+        $checked = $approvalService->setTransactionApprovalState(
+            (int)$fixture['company_id'],
+            (int)$fixture['accounting_period_id'],
+            $checkedTransactionId,
+            true,
+            null
+        );
+        $harness->assertSame(true, (bool)($checked['success'] ?? false));
+
+        $requestWithoutConfirmation = new RequestFramework(
+            [],
+            [
+                'card_action' => 'Transaction',
+                'global_action' => 'post_categorised_transactions',
+                'company_id' => (string)$fixture['company_id'],
+                'accounting_period_id' => (string)$fixture['accounting_period_id'],
+                'month_key' => '2026-03-01',
+                'category_filter' => 'auto',
+            ],
+            ['REQUEST_METHOD' => 'POST'],
+            [],
+            [],
+            null
+        );
+        $blocked = $instance->handle($requestWithoutConfirmation, createTestPageServiceFramework());
+        $harness->assertSame(false, $blocked->isSuccess());
+        $harness->assertSame(true, str_contains((string)($blocked->flashMessages()[0] ?? ''), 'Confirm 1 checked auto decision(s)'));
+        $harness->assertSame(0, InterfaceDB::countWhere('journals', [
+            'company_id' => (int)$fixture['company_id'],
+            'source_type' => 'bank_csv',
+        ]));
+
+        $requestWithConfirmation = new RequestFramework(
+            [],
+            [
+                'card_action' => 'Transaction',
+                'global_action' => 'post_categorised_transactions',
+                'company_id' => (string)$fixture['company_id'],
+                'accounting_period_id' => (string)$fixture['accounting_period_id'],
+                'month_key' => '2026-03-01',
+                'category_filter' => 'auto',
+                'confirm_auto_categorisations' => '1',
+            ],
+            ['REQUEST_METHOD' => 'POST'],
+            [],
+            [],
+            null
+        );
+        $posted = $instance->handle($requestWithConfirmation, createTestPageServiceFramework());
+
+        $harness->assertSame(true, $posted->isSuccess());
+        $harness->assertSame(true, in_array('1 checked auto decision(s) confirmed.', $posted->flashMessages(), true));
+        $harness->assertSame(1, InterfaceDB::countWhere('journals', [
+            'company_id' => (int)$fixture['company_id'],
+            'source_type' => 'bank_csv',
+            'source_ref' => 'transaction:' . $checkedTransactionId,
+        ]));
+        $harness->assertSame(1, InterfaceDB::countWhere('journals', [
+            'company_id' => (int)$fixture['company_id'],
+            'source_type' => 'bank_csv',
+            'source_ref' => 'transaction:' . $uncheckedTransactionId,
+        ]));
+        $harness->assertSame(1, InterfaceDB::countWhere('transaction_auto_approvals', [
+            'transaction_id' => $checkedTransactionId,
+            'state' => \eel_accounts\Service\TransactionAutoApprovalService::STATE_CONFIRMED,
+        ]));
+        $harness->assertSame(0, InterfaceDB::countWhere('transaction_auto_approvals', [
+            'transaction_id' => $uncheckedTransactionId,
+            'state' => \eel_accounts\Service\TransactionAutoApprovalService::STATE_CONFIRMED,
+        ]));
     });
 
     $harness->check('TransactionAction cards', 'transaction cards render Transaction card action forms', function () use ($harness): void {
@@ -903,6 +1084,101 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, 'name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form"'));
         $harness->assertSame(true, str_contains($html, 'name="global_action" value="mark_director_loan"'));
         $harness->assertSame(true, str_contains($html, '<span class="badge success">Manually Categorised</span>'));
+    });
+
+    $harness->check('_transactions_importedCard', 'does not require chicken for unticked auto decisions', function () use ($harness): void {
+        $html = (new _transactions_importedCard())->render([
+            'company' => [
+                'id' => 1,
+                'accounting_period_id' => 2,
+            ],
+            'page' => [
+                'month_key' => '2026-03-01',
+                'category_filter' => 'auto',
+            ],
+            'services' => [
+                'pending_auto_approval_count' => 0,
+                'month_status' => [[
+                    'month_key' => '2026-03-01',
+                    'label' => 'Mar 2026',
+                ]],
+                'transactions_by_month' => [[
+                    'id' => 42,
+                    'txn_date' => '2026-03-15',
+                    'description' => 'Auto rule transaction',
+                    'source_account' => 'Current account',
+                    'amount' => -12.34,
+                    'document_download_status' => 'skipped',
+                    'nominal_account_id' => 7,
+                    'category_status' => 'auto',
+                    'has_derived_journal' => 0,
+                    'auto_rule_id' => 3,
+                    'auto_rule_match_value' => 'Auto',
+                    'auto_approval_checked_current' => 0,
+                    'auto_approval_confirmed_current' => 0,
+                ]],
+                'nominal_accounts' => [[
+                    'id' => 7,
+                    'code' => '5000',
+                    'name' => 'Materials',
+                    'account_type' => 'expense',
+                ]],
+                'company_accounts' => [],
+            ],
+        ]);
+
+        $harness->assertSame(true, str_contains($html, 'Post Categorised Transactions'));
+        $harness->assertSame(false, str_contains($html, 'data-chicken-check="true"'));
+        $harness->assertSame(false, str_contains($html, 'Confirm checked auto decisions'));
+        $harness->assertSame(true, str_contains($html, 'Unconfirmed'));
+    });
+
+    $harness->check('_transactions_importedCard', 'requires chicken for checked auto decisions', function () use ($harness): void {
+        $html = (new _transactions_importedCard())->render([
+            'company' => [
+                'id' => 1,
+                'accounting_period_id' => 2,
+            ],
+            'page' => [
+                'month_key' => '2026-03-01',
+                'category_filter' => 'auto',
+            ],
+            'services' => [
+                'pending_auto_approval_count' => 1,
+                'month_status' => [[
+                    'month_key' => '2026-03-01',
+                    'label' => 'Mar 2026',
+                ]],
+                'transactions_by_month' => [[
+                    'id' => 43,
+                    'txn_date' => '2026-03-16',
+                    'description' => 'Checked auto rule transaction',
+                    'source_account' => 'Current account',
+                    'amount' => -56.78,
+                    'document_download_status' => 'skipped',
+                    'nominal_account_id' => 7,
+                    'category_status' => 'auto',
+                    'has_derived_journal' => 0,
+                    'auto_rule_id' => 3,
+                    'auto_rule_match_value' => 'Auto',
+                    'auto_approval_checked_current' => 1,
+                    'auto_approval_confirmed_current' => 0,
+                ]],
+                'nominal_accounts' => [[
+                    'id' => 7,
+                    'code' => '5000',
+                    'name' => 'Materials',
+                    'account_type' => 'expense',
+                ]],
+                'company_accounts' => [],
+            ],
+        ]);
+
+        $harness->assertSame(true, str_contains($html, 'data-chicken-check="true"'));
+        $harness->assertSame(true, str_contains($html, 'Confirm checked auto decisions'));
+        $harness->assertSame(true, str_contains($html, 'confirm 1 checked auto decision(s)'));
+        $harness->assertSame(true, str_contains($html, 'Unticked auto decisions will post but remain unconfirmed.'));
+        $harness->assertSame(true, str_contains($html, 'Correct'));
     });
 
     $harness->check('_transactions_importedCard', 'renders dividend declaration shortcut for payable transactions', function () use ($harness): void {

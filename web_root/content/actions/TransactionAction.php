@@ -399,7 +399,7 @@ final class TransactionAction implements ActionInterfaceFramework
         if ($pendingAutoApprovalCount > 0 && !$this->checkboxValue($request, 'confirm_auto_categorisations')) {
             return $this->result(
                 false,
-                [sprintf('Confirm %d auto-categorised transaction(s) are correct before posting.', $pendingAutoApprovalCount)],
+                [sprintf('Confirm %d checked auto decision(s) before posting.', $pendingAutoApprovalCount)],
                 [],
                 $context
             );
@@ -424,7 +424,7 @@ final class TransactionAction implements ActionInterfaceFramework
                 );
                 $errors = array_merge($errors, array_map('strval', (array)($confirmResult['errors'] ?? [])));
                 if (!empty($confirmResult['success']) && (int)($confirmResult['confirmed'] ?? 0) > 0) {
-                    $flashMessages[] = sprintf('%d auto categorisation approval(s) confirmed.', (int)$confirmResult['confirmed']);
+                    $flashMessages[] = sprintf('%d checked auto decision(s) confirmed.', (int)$confirmResult['confirmed']);
                 }
             }
 

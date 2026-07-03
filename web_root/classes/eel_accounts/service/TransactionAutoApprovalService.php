@@ -300,12 +300,14 @@ final class TransactionAutoApprovalService
             't.auto_rule_id IS NOT NULL',
             't.auto_rule_id > 0',
             't.nominal_account_id IS NOT NULL',
-            'NOT (' . self::currentApprovalSql('taa', 't') . ')',
+            'taa.state = :checked_state',
+            'taa.state_change_transaction_updated_at = t.updated_at',
         ];
         $params = [
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
             'category_status' => 'auto',
+            'checked_state' => self::STATE_CHECKED,
         ];
 
         $monthKey = trim((string)$monthKey);

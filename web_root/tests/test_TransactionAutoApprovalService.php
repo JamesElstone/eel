@@ -17,6 +17,13 @@ $harness->run(\eel_accounts\Service\TransactionAutoApprovalService::class, stati
         InterfaceDB::beginTransaction();
         try {
             $fixture = transactionAutoApprovalCreateFixture();
+            $uncheckedTransactionId = transactionAutoApprovalInsertFixtureTransaction($fixture, 1, 'AUTO APPROVAL UNCHECKED');
+
+            $harness->assertSame(0, $service->pendingPostConfirmationCount(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                null
+            ));
 
             $set = $service->setTransactionApprovalState(
                 (int)$fixture['company_id'],
@@ -42,6 +49,11 @@ $harness->run(\eel_accounts\Service\TransactionAutoApprovalService::class, stati
             $harness->assertSame('pending', (string)InterfaceDB::fetchColumn(
                 'SELECT state FROM transaction_auto_approvals WHERE transaction_id = :transaction_id',
                 ['transaction_id' => (int)$fixture['transaction_id']]
+            ));
+            $harness->assertSame(0, $service->pendingPostConfirmationCount(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                null
             ));
 
             $set = $service->setTransactionApprovalState(
@@ -72,21 +84,51 @@ $harness->run(\eel_accounts\Service\TransactionAutoApprovalService::class, stati
                 (int)$fixture['accounting_period_id'],
                 null
             ));
+            $harness->assertSame(0, (int)InterfaceDB::fetchColumn(
+                'SELECT COUNT(*)
+                 FROM transaction_auto_approvals
+                 WHERE transaction_id = :transaction_id
+                   AND state = :state',
+                [
+                    'transaction_id' => $uncheckedTransactionId,
+                    'state' => \eel_accounts\Service\TransactionAutoApprovalService::STATE_CONFIRMED,
+                ]
+            ));
 
+            $stale = $service->setTransactionApprovalState(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                $uncheckedTransactionId,
+                true,
+                null
+            );
+            $harness->assertSame(true, (bool)($stale['success'] ?? false));
             InterfaceDB::prepareExecute(
                 'UPDATE transactions
                  SET notes = :notes,
                      updated_at = DATE_ADD(updated_at, INTERVAL 2 SECOND)
                  WHERE id = :id',
                 [
-                    'id' => (int)$fixture['transaction_id'],
-                    'notes' => 'Changed after confirmation',
+                    'id' => $uncheckedTransactionId,
+                    'notes' => 'Changed after checkbox decision',
                 ]
             );
-            $harness->assertSame(1, $service->pendingPostConfirmationCount(
+            $harness->assertSame(0, $service->pendingPostConfirmationCount(
                 (int)$fixture['company_id'],
                 (int)$fixture['accounting_period_id'],
                 null
+            ));
+            $staleConfirmed = $service->confirmPostableAutoTransactions(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                null,
+                null
+            );
+            $harness->assertSame(true, (bool)($staleConfirmed['success'] ?? false));
+            $harness->assertSame(0, (int)($staleConfirmed['confirmed'] ?? 0));
+            $harness->assertSame('checked', (string)InterfaceDB::fetchColumn(
+                'SELECT state FROM transaction_auto_approvals WHERE transaction_id = :transaction_id',
+                ['transaction_id' => $uncheckedTransactionId]
             ));
         } finally {
             if (InterfaceDB::inTransaction()) {
@@ -301,5 +343,56 @@ function transactionAutoApprovalCreateFixture(): array
         'company_id' => $companyId,
         'accounting_period_id' => $accountingPeriodId,
         'transaction_id' => $transactionId,
+        'upload_id' => $uploadId,
+        'rule_id' => $ruleId,
+        'nominal_account_id' => $nominalAccountId,
     ];
+}
+
+function transactionAutoApprovalInsertFixtureTransaction(array $fixture, int $offset, string $description): int
+{
+    $transactionId = (int)$fixture['transaction_id'] + $offset;
+
+    InterfaceDB::prepareExecute(
+        'INSERT INTO transactions (
+            id,
+            company_id,
+            accounting_period_id,
+            statement_upload_id,
+            txn_date,
+            description,
+            amount,
+            dedupe_hash,
+            nominal_account_id,
+            category_status,
+            auto_rule_id
+         ) VALUES (
+            :id,
+            :company_id,
+            :accounting_period_id,
+            :statement_upload_id,
+            :txn_date,
+            :description,
+            :amount,
+            :dedupe_hash,
+            :nominal_account_id,
+            :category_status,
+            :auto_rule_id
+         )',
+        [
+            'id' => $transactionId,
+            'company_id' => (int)$fixture['company_id'],
+            'accounting_period_id' => (int)$fixture['accounting_period_id'],
+            'statement_upload_id' => (int)$fixture['upload_id'],
+            'txn_date' => '2026-03-16',
+            'description' => $description,
+            'amount' => '-36.00',
+            'dedupe_hash' => hash('sha256', $description . '-' . $transactionId),
+            'nominal_account_id' => (int)$fixture['nominal_account_id'],
+            'category_status' => 'auto',
+            'auto_rule_id' => (int)$fixture['rule_id'],
+        ]
+    );
+
+    return $transactionId;
 }

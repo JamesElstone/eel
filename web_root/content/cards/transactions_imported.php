@@ -259,8 +259,8 @@ final class _transactions_importedCard extends CardBaseFramework
         $postButtonAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit"';
         if (!$isPeriodLocked && $pendingAutoApprovalCount > 0) {
             $postButtonAttributes .= ' data-chicken-check="true"
-                    data-chicken-title="Confirm auto categorisations"
-                    data-chicken-message="This will post auto-categorised transactions. Confirm the auto rules are correct before continuing.<br><br>Continue?"
+                    data-chicken-title="Confirm checked auto decisions"
+                    data-chicken-message="This will post categorised transactions and confirm ' . (int)$pendingAutoApprovalCount . ' checked auto decision(s). Unticked auto decisions will post but remain unconfirmed.<br><br>Continue?"
                     data-chicken-confirm-text="Post Transactions"
                     data-chicken-button-class="button primary"
                     data-submit-field="confirm_auto_categorisations"

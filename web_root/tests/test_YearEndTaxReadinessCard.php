@@ -16,19 +16,19 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $html = $card->render(yearEndTaxReadinessCardContext([
             'available' => true,
             'taxable_profit' => 12500,
-            'taxable_loss' => 0,
+            'taxable_loss' => 12.34,
             'estimated_corporation_tax' => 2375,
-            'losses_carried_forward' => 0,
+            'losses_carried_forward' => 45.67,
             'steps' => [
                 ['label' => 'Accounting profit or loss', 'amount' => 12500],
             ],
             'schedule' => [
                 [
                     'label' => 'FY 2025',
-                    'loss_created' => 0,
-                    'loss_brought_forward' => 0,
-                    'loss_utilised' => 0,
-                    'loss_carried_forward' => 0,
+                    'loss_created' => 100,
+                    'loss_brought_forward' => 200,
+                    'loss_utilised' => 300,
+                    'loss_carried_forward' => 400,
                 ],
             ],
         ], [
@@ -41,6 +41,14 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame(true, str_contains($html, 'data-chicken-button-class="button danger"'));
         $harness->assertSame(true, str_contains($html, '>I Agree</button>'));
         $harness->assertSame(true, str_contains($html, 'checked required'));
+        $harness->assertSame(true, str_contains($html, '$12,500.00'));
+        $harness->assertSame(true, str_contains($html, '$12.34'));
+        $harness->assertSame(true, str_contains($html, '$2,375.00'));
+        $harness->assertSame(true, str_contains($html, '$45.67'));
+        $harness->assertSame(true, str_contains($html, '$100.00'));
+        $harness->assertSame(true, str_contains($html, '$200.00'));
+        $harness->assertSame(true, str_contains($html, '$300.00'));
+        $harness->assertSame(true, str_contains($html, '$400.00'));
     });
 });
 
@@ -51,6 +59,9 @@ function yearEndTaxReadinessCardContext(array $taxReadiness, array $review = [])
             'id' => 33,
             'name' => 'Tax Readiness Fixture Limited',
             'accounting_period_id' => 70,
+            'settings' => [
+                'default_currency_symbol' => '&#36;',
+            ],
         ],
         'year_end' => [
             'checklist' => [

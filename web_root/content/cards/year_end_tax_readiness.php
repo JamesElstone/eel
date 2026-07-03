@@ -48,6 +48,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
     {
         $taxReadiness = (array)($context['services']['yearEndTaxReadiness'] ?? []);
         $company = (array)($context['company'] ?? []);
+        $companySettings = (array)($company['settings'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
 
@@ -57,17 +58,17 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
 
         $stepsHtml = '';
         foreach ((array)($taxReadiness['steps'] ?? []) as $step) {
-            $stepsHtml .= '<tr><td>' . HelperFramework::escape((string)($step['label'] ?? '')) . '</td><td>' . HelperFramework::escape(FormattingFramework::money($step['amount'] ?? 0)) . '</td></tr>';
+            $stepsHtml .= '<tr><td>' . HelperFramework::escape((string)($step['label'] ?? '')) . '</td><td>' . HelperFramework::escape($this->money($companySettings, $step['amount'] ?? 0)) . '</td></tr>';
         }
 
         $scheduleHtml = '';
         foreach ((array)($taxReadiness['schedule'] ?? []) as $row) {
             $scheduleHtml .= '<tr>
                 <td>' . HelperFramework::escape((string)($row['label'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::money($row['loss_created'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::money($row['loss_brought_forward'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::money($row['loss_utilised'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::money($row['loss_carried_forward'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $row['loss_created'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $row['loss_brought_forward'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $row['loss_utilised'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $row['loss_carried_forward'] ?? 0)) . '</td>
             </tr>';
         }
 
@@ -97,10 +98,10 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
         return '<section class="settings-stack" id="tax-readiness">
             <h3 class="card-title">Tax Readiness Snapshot</h3>
             <div class="summary-grid">
-                <div class="summary-card"><div class="summary-label">Taxable profit</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($taxReadiness['taxable_profit'] ?? 0)) . '</div></div>
-                <div class="summary-card"><div class="summary-label">Taxable loss</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($taxReadiness['taxable_loss'] ?? 0)) . '</div></div>
-                <div class="summary-card"><div class="summary-label">Estimated CT</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($taxReadiness['estimated_corporation_tax'] ?? 0)) . '</div></div>
-                <div class="summary-card"><div class="summary-label">Losses c/f</div><div class="summary-value">' . HelperFramework::escape(FormattingFramework::money($taxReadiness['losses_carried_forward'] ?? 0)) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Taxable profit</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $taxReadiness['taxable_profit'] ?? 0)) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Taxable loss</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $taxReadiness['taxable_loss'] ?? 0)) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Estimated CT</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $taxReadiness['estimated_corporation_tax'] ?? 0)) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Losses c/f</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $taxReadiness['losses_carried_forward'] ?? 0)) . '</div></div>
             </div>
             <h3 class="card-title">Corporation Tax Computation</h3>
             <div class="table-scroll"><table><thead><tr><th>Step</th><th>Amount</th></tr></thead><tbody>' . $stepsHtml . '</tbody></table></div>
@@ -108,5 +109,10 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             <div class="table-scroll"><table><thead><tr><th>Period</th><th>Loss created</th><th>Brought forward</th><th>Used</th><th>Carried forward</th></tr></thead><tbody>' . $scheduleHtml . '</tbody></table></div>
             <div class="actions-row">' . $acknowledgementForm . '</div>
         </section>';
+    }
+
+    private function money(array $companySettings, float|int|string|null $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 }

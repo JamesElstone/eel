@@ -2654,17 +2654,22 @@
 }
 
 .actions-stack {
-  display: grid;
+  align-items: end;
+  display: flex;
+  flex-wrap: nowrap;
   gap: 0.5rem;
+  min-width: max-content;
 }
 
 .non-asset-convert-form {
-  max-width: 42rem;
+  flex: 0 0 auto;
 }
 
 .non-asset-convert-form .form-flex-flow {
   align-items: end;
+  flex-wrap: nowrap;
   gap: 0.5rem;
+  min-width: max-content;
 }
 
 .non-asset-convert-form .form-row {

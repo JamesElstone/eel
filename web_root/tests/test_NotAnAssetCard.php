@@ -160,7 +160,7 @@ $harness->run(_not_an_assetCard::class, static function (GeneratedServiceClassTe
         $html = $card->render($context);
         $csv = $card->tables($context)[0]->exportCsv();
 
-        $harness->assertSame(2, substr_count($html, '>Open Source</button>'));
+        $harness->assertSame(2, substr_count($html, '>Open Related Workflow</button>'));
         $harness->assertSame(2, substr_count($html, '>Convert to Asset</button>'));
         $harness->assertSame(2, substr_count($html, 'name="intent" value="convert_non_asset_to_asset"'));
         $harness->assertTrue(str_contains($html, 'name="page" value="transactions"'));
@@ -179,7 +179,7 @@ $harness->run(_not_an_assetCard::class, static function (GeneratedServiceClassTe
         $harness->assertTrue(str_contains($html, '<option value="tools_equipment" selected>Tools &amp; Equipment</option>'));
         $harness->assertTrue(str_contains($html, '<option value="3" selected>3 Years</option>'));
         $harness->assertTrue(str_contains($html, '<option value="straight_line" selected>Straight line</option>'));
-        $harness->assertFalse(str_contains($csv, 'Open Source'));
+        $harness->assertFalse(str_contains($csv, 'Open Related Workflow'));
         $harness->assertFalse(str_contains($csv, 'Convert to Asset'));
     });
 

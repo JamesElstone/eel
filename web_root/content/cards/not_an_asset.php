@@ -230,7 +230,7 @@ final class _not_an_assetCard extends CardBaseFramework
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="month_key" value="' . HelperFramework::escape($monthKey) . '">
                 <input type="hidden" name="category_filter" value="all">
-                <button class="button button-inline" type="submit">Open Source</button>
+                <button class="button button-inline" type="submit">Open Related Workflow</button>
             </form>';
         }
 
@@ -246,7 +246,7 @@ final class _not_an_assetCard extends CardBaseFramework
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="claim_id" value="' . $claimId . '">
-                <button class="button button-inline" type="submit">Open Source</button>
+                <button class="button button-inline" type="submit">Open Related Workflow</button>
             </form>';
         }
 

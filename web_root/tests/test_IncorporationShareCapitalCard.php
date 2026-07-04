@@ -14,29 +14,26 @@ $harness->run(_incorporation_share_capitalCard::class, static function (
     GeneratedServiceClassTestHarness $harness,
     _incorporation_share_capitalCard $card
 ): void {
-    $harness->check(_incorporation_share_capitalCard::class, 'renders Companies House statement of capital fields', static function () use ($harness, $card): void {
-        $html = $card->render([
-            'company' => ['id' => 7],
-            'services' => [
-                'incorporationShares' => [
-                    'available' => true,
-                    'share_classes' => [[
-                        'id' => 12,
-                        'share_class' => 'Ordinary',
-                        'currency' => 'GBP',
-                        'quantity' => 100,
-                        'nominal_value_per_share' => '5.000000',
-                        'paid_value_per_share' => '5.000000',
-                        'unpaid_value_per_share' => '0.000000',
-                        'nominal_total' => 500.00,
-                        'unpaid_total' => 0.00,
-                        'source_note' => 'FULL RIGHTS REGARDING VOTING, PAYMENT OF DIVIDENDS AND DISTRIBUTIONS',
-                        'document_reference' => 'Model articles adopted',
-                    ]],
-                ],
+    $harness->check(_incorporation_share_capitalCard::class, 'renders recorded share classes in a TableFramework table with editable cells', static function () use ($harness, $card): void {
+        $context = incorporationShareCapitalCardContext([
+            [
+                'id' => 12,
+                'share_class' => 'Ordinary',
+                'currency' => 'GBP',
+                'quantity' => 100,
+                'nominal_value_per_share' => '5.000000',
+                'paid_value_per_share' => '5.000000',
+                'unpaid_value_per_share' => '0.000000',
+                'nominal_total' => 500.00,
+                'unpaid_total' => 0.00,
+                'source_note' => 'FULL RIGHTS REGARDING VOTING, PAYMENT OF DIVIDENDS AND DISTRIBUTIONS',
+                'document_reference' => 'Model articles adopted',
             ],
         ]);
+        $html = $card->render($context);
+        $tables = $card->tables($context);
 
+        $harness->assertTrue(($tables[0] ?? null) instanceof TableFramework);
         $harness->assertSame(true, str_contains($html, 'Class of shares'));
         $harness->assertSame(true, str_contains($html, 'Number allotted'));
         $harness->assertSame(true, str_contains($html, 'Aggregate nominal value'));
@@ -45,42 +42,57 @@ $harness->run(_incorporation_share_capitalCard::class, static function (
         $harness->assertSame(true, str_contains($html, 'name="total_aggregate_unpaid" value="0"'));
         $harness->assertSame(true, str_contains($html, 'Prescribed particulars'));
         $harness->assertSame(true, str_contains($html, 'FULL RIGHTS REGARDING VOTING, PAYMENT OF DIVIDENDS AND DISTRIBUTIONS'));
-        $harness->assertSame(false, str_contains($html, 'Paid amount per share'));
-        $harness->assertSame(false, str_contains($html, 'Unpaid amount per share'));
-        $harness->assertSame(false, str_contains($html, 'name="paid_value_per_share"'));
-        $harness->assertSame(false, str_contains($html, 'name="unpaid_value_per_share"'));
+        $harness->assertSame(true, str_contains($html, 'Save Share Class'));
+        $harness->assertSame(false, str_contains($html, 'Pull data from Companies House NEWINC Filled Document'));
+
+        $csv = $tables[0]->exportCsv();
+        $harness->assertSame(true, str_contains($csv, 'Ordinary'));
+        $harness->assertSame(true, str_contains($csv, '500'));
+        $harness->assertSame(false, str_contains($csv, '<input'));
     });
 
-    $harness->check(_incorporation_share_capitalCard::class, 'renders NEWINC PDF draft button and populates the new share form from context', static function () use ($harness, $card): void {
-        $html = $card->render([
-            'company' => ['id' => 7],
-            'incorporation_share_capital' => [
-                'draft_share_class' => [
-                    'share_class' => 'ORDINARY',
-                    'currency' => 'GBP',
-                    'quantity' => '100',
-                    'aggregate_nominal_value' => '500',
-                    'total_aggregate_unpaid' => '0',
-                    'document_reference' => '12344321_newinc_2022-09-05.pdf',
-                    'source_note' => '',
-                ],
-            ],
-            'services' => [
-                'incorporationShares' => [
-                    'available' => true,
-                    'share_classes' => [],
-                ],
-            ],
-        ]);
+    $harness->check(_incorporation_share_capitalCard::class, 'paginates recorded share classes at five rows while export includes all rows', static function () use ($harness, $card): void {
+        $rows = [];
+        for ($i = 1; $i <= 6; $i++) {
+            $rows[] = [
+                'id' => $i,
+                'share_class' => 'Class ' . $i,
+                'currency' => 'GBP',
+                'quantity' => $i,
+                'nominal_value_per_share' => '1.000000',
+                'paid_value_per_share' => '1.000000',
+                'unpaid_value_per_share' => '0.000000',
+                'nominal_total' => $i,
+                'unpaid_total' => 0,
+                'source_note' => '',
+                'document_reference' => 'doc-' . $i,
+            ];
+        }
 
-        $harness->assertSame(true, str_contains($html, 'populate_incorporation_shares_from_newinc'));
-        $harness->assertSame(true, str_contains($html, 'Pull from NEWINC PDF'));
-        $harness->assertSame(true, str_contains($html, 'id="incorporation-share-form-new"'));
-        $harness->assertSame(true, str_contains($html, 'name="share_class" value="ORDINARY"'));
-        $harness->assertSame(true, str_contains($html, 'name="currency" value="GBP"'));
-        $harness->assertSame(true, str_contains($html, 'name="quantity" value="100"'));
-        $harness->assertSame(true, str_contains($html, 'name="aggregate_nominal_value" value="500"'));
-        $harness->assertSame(true, str_contains($html, 'name="total_aggregate_unpaid" value="0"'));
-        $harness->assertSame(true, str_contains($html, 'name="document_reference" value="12344321_newinc_2022-09-05.pdf"'));
+        $context = incorporationShareCapitalCardContext($rows);
+        $html = $card->render($context);
+        $csv = $card->tables($context)[0]->exportCsv();
+
+        $harness->assertSame(true, str_contains($html, 'value="Class 1"'));
+        $harness->assertSame(true, str_contains($html, 'value="Class 5"'));
+        $harness->assertSame(false, str_contains($html, 'value="Class 6"'));
+        $harness->assertSame(true, str_contains($csv, 'Class 6'));
     });
 });
+
+function incorporationShareCapitalCardContext(array $shareClasses): array
+{
+    return [
+        'company' => ['id' => 7],
+        'page' => [
+            'page_id' => 'incorporation',
+            'page_cards' => ['incorporation_share_capital'],
+        ],
+        'services' => [
+            'incorporationShares' => [
+                'available' => true,
+                'share_classes' => $shareClasses,
+            ],
+        ],
+    ];
+}

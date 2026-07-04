@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 final class _incorporation_share_capitalCard extends CardBaseFramework
 {
+    private const PAGE_SIZE = 5;
+
     public function key(): string
     {
         return 'incorporation_share_capital';
@@ -36,6 +38,17 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
         return ['incorporation.status', 'incorporation.payment.matching', 'year.end.checklist'];
     }
 
+    public function handle(
+        RequestFramework $request,
+        PageServiceFramework $services,
+        array $pageContext,
+        ActionResultFramework $actionResult
+    ): array {
+        $pageContext = parent::handle($request, $services, $pageContext, $actionResult);
+
+        return $this->applyTableSortContext($request, $pageContext, $this->key());
+    }
+
     public function handleError(string $serviceKey, array $error, array $context): string
     {
         return '';
@@ -43,10 +56,9 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $company = (array)($context['company'] ?? []);
-        $companyId = (int)($company['id'] ?? 0);
+        $companyId = (int)($context['company']['id'] ?? 0);
         if ($companyId <= 0) {
-            return '<div class="helper">Select or add a company before recording formation shares.</div>';
+            return '<div class="helper">Select or add a company before reviewing formation shares.</div>';
         }
 
         $summary = (array)($context['services']['incorporationShares'] ?? []);
@@ -54,90 +66,160 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
             return '<section class="settings-stack"><div class="helper">' . HelperFramework::escape((string)(($summary['errors'] ?? [])[0] ?? 'Formation share capital is not available.')) . '</div></section>';
         }
 
-        $shareClasses = (array)($summary['share_classes'] ?? []);
-        $draftShareClass = (array)($context['incorporation_share_capital']['draft_share_class'] ?? []);
-        $existingHtml = '';
-        foreach ($shareClasses as $shareClass) {
-            if (is_array($shareClass)) {
-                $existingHtml .= $this->shareForm($companyId, $shareClass);
-            }
+        return '<section class="settings-stack" id="incorporation-share-capital">'
+            . $this->configuredTable($context)->render($context, [
+                'cards[]' => (array)($context['page']['page_cards'] ?? []),
+            ])
+            . '</section>';
+    }
+
+    public function tables(array $context): array
+    {
+        if ((int)($context['company']['id'] ?? 0) <= 0 || empty($context['services']['incorporationShares']['available'])) {
+            return [];
         }
 
-        return '<section class="settings-stack" id="incorporation-share-capital">
-            ' . ($shareClasses === [] ? '<div class="helper">Enter the statement of capital from the incorporation filing. Companies House exposes this in the document, not as structured API fields.</div>' : '') . '
-            ' . $existingHtml . '
-            ' . $this->newincDraftButton($companyId) . '
-            ' . $this->shareForm($companyId, null, $draftShareClass) . '
-        </section>';
+        return [$this->configuredTable($context)];
     }
 
-    private function shareForm(int $companyId, ?array $shareClass, array $draftShareClass = []): string
+    private function configuredTable(array $context): TableFramework
     {
-        $isExisting = is_array($shareClass);
-        $id = $isExisting ? (int)($shareClass['id'] ?? 0) : 0;
-        $formId = 'incorporation-share-form-' . ($id > 0 ? $id : 'new');
-        $title = $isExisting ? 'Recorded share class' : 'Add share class';
-        $values = $isExisting ? (array)$shareClass : $draftShareClass;
-        $aggregateNominalValue = $isExisting ? $this->aggregateNominalValue($shareClass) : $this->decimalValue($values['aggregate_nominal_value'] ?? '');
-        $totalAggregateUnpaid = $isExisting ? $this->totalAggregateUnpaid($shareClass) : $this->decimalValue($values['total_aggregate_unpaid'] ?? '0');
+        $hiddenFields = [
+            'page' => (string)($context['page']['page_id'] ?? ''),
+            '_pagination' => '1',
+            '_invalidate_fact' => $this->tableInvalidationFact(),
+            'cards[]' => [$this->key()],
+        ];
+        $table = $this->configureTableSorting($this->table($context), $context, $hiddenFields);
+        $pagination = HelperFramework::paginateArray($table->sortedRows(), $this->paginationPage($context), self::PAGE_SIZE);
 
-        return '<div class="panel-soft stack">
-            <h3 class="card-title">' . HelperFramework::escape($title) . '</h3>
-            <div class="helper">Copy the Statement of Capital figures from the incorporation filing. The per-share values used by the ledger are calculated from these aggregate filing values.</div>
-            <form id="' . HelperFramework::escape($formId) . '" method="post" data-ajax="true">
-                <input type="hidden" name="card_action" value="Incorporation">
-                <input type="hidden" name="intent" value="save_incorporation_shares">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="share_class_id" value="' . $id . '">
-                <div class="form-grid">
-                    <div class="form-row">
-                        <label for="' . HelperFramework::escape($formId) . '-share-class">Class of shares</label>
-                        <input class="input" id="' . HelperFramework::escape($formId) . '-share-class" name="share_class" value="' . HelperFramework::escape((string)($values['share_class'] ?? 'Ordinary')) . '">
-                    </div>
-                    <div class="form-row">
-                        <label for="' . HelperFramework::escape($formId) . '-currency">Currency</label>
-                        <input class="input" id="' . HelperFramework::escape($formId) . '-currency" name="currency" value="' . HelperFramework::escape((string)($values['currency'] ?? 'GBP')) . '">
-                    </div>
-                    <div class="form-row">
-                        <label for="' . HelperFramework::escape($formId) . '-quantity">Number allotted</label>
-                        <input class="input" type="number" min="1" step="1" id="' . HelperFramework::escape($formId) . '-quantity" name="quantity" value="' . HelperFramework::escape((string)($values['quantity'] ?? '')) . '">
-                    </div>
-                    <div class="form-row">
-                        <label for="' . HelperFramework::escape($formId) . '-aggregate-nominal">Aggregate nominal value</label>
-                        <input class="input" type="number" min="0" step="0.01" id="' . HelperFramework::escape($formId) . '-aggregate-nominal" name="aggregate_nominal_value" value="' . HelperFramework::escape($aggregateNominalValue) . '">
-                    </div>
-                    <div class="form-row">
-                        <label for="' . HelperFramework::escape($formId) . '-aggregate-unpaid">Total aggregate unpaid</label>
-                        <input class="input" type="number" min="0" step="0.01" id="' . HelperFramework::escape($formId) . '-aggregate-unpaid" name="total_aggregate_unpaid" value="' . HelperFramework::escape($totalAggregateUnpaid) . '">
-                    </div>
-                    <div class="form-row">
-                        <label for="' . HelperFramework::escape($formId) . '-document">Source document/reference</label>
-                        <input class="input" id="' . HelperFramework::escape($formId) . '-document" name="document_reference" value="' . HelperFramework::escape((string)($values['document_reference'] ?? '')) . '">
-                    </div>
-                    <div class="form-row">
-                        <label for="' . HelperFramework::escape($formId) . '-particulars">Prescribed particulars</label>
-                        <textarea class="input" rows="3" id="' . HelperFramework::escape($formId) . '-particulars" name="source_note">' . HelperFramework::escape((string)($values['source_note'] ?? '')) . '</textarea>
-                    </div>
-                </div>
-                <div class="actions-row"><button class="button primary" type="submit">' . ($isExisting ? 'Save Share Class' : 'Add Share Class') . '</button></div>
-            </form>
-            ' . ($isExisting ? $this->unpaidForm($companyId, $id) : '') . '
-        </div>';
+        return $table
+            ->visibleRows((array)$pagination['items'])
+            ->pagination($pagination, 'Share classes', $this->paginationPageField(), $hiddenFields);
     }
 
-    private function newincDraftButton(int $companyId): string
+    private function table(array $context): TableFramework
     {
-        return '<form method="post" data-ajax="true" class="actions-row">
-            <input type="hidden" name="card_action" value="Incorporation">
-            <input type="hidden" name="intent" value="populate_incorporation_shares_from_newinc">
-            <input type="hidden" name="company_id" value="' . $companyId . '">
-            <button class="button secondary" type="submit">Pull from NEWINC PDF</button>
-        </form>';
+        return TableFramework::make($this->key(), $this->rows($context))
+            ->filename('incorporation-share-classes')
+            ->exportLimit(5000)
+            ->empty('No share classes have been recorded yet.')
+            ->column(
+                'share_class',
+                'Class of shares',
+                html: fn(array $row): string => $this->inputCell($row, 'share_class', 'text', 'Ordinary'),
+                export: static fn(array $row): string => (string)($row['share_class'] ?? ''),
+                sort: true
+            )
+            ->column(
+                'currency',
+                'Currency',
+                html: fn(array $row): string => $this->inputCell($row, 'currency', 'text', 'GBP'),
+                export: static fn(array $row): string => (string)($row['currency'] ?? ''),
+                sort: true
+            )
+            ->column(
+                'quantity',
+                'Number allotted',
+                html: fn(array $row): string => $this->inputCell($row, 'quantity', 'number', '', '1', '1'),
+                export: static fn(array $row): string => (string)(int)($row['quantity'] ?? 0),
+                exportType: 'number',
+                sort: static fn(array $row): int => (int)($row['quantity'] ?? 0)
+            )
+            ->column(
+                'aggregate_nominal_value',
+                'Aggregate nominal value',
+                html: fn(array $row): string => $this->inputCell($row, 'aggregate_nominal_value', 'number', $this->aggregateNominalValue($row), '0', '0.01'),
+                export: fn(array $row): string => $this->aggregateNominalValue($row),
+                exportType: 'number',
+                sort: fn(array $row): float => (float)$this->aggregateNominalValue($row)
+            )
+            ->column(
+                'total_aggregate_unpaid',
+                'Total aggregate unpaid',
+                html: fn(array $row): string => $this->inputCell($row, 'total_aggregate_unpaid', 'number', $this->totalAggregateUnpaid($row), '0', '0.01'),
+                export: fn(array $row): string => $this->totalAggregateUnpaid($row),
+                exportType: 'number',
+                sort: fn(array $row): float => (float)$this->totalAggregateUnpaid($row)
+            )
+            ->column(
+                'document_reference',
+                'Source document/reference',
+                html: fn(array $row): string => $this->inputCell($row, 'document_reference', 'text', ''),
+                export: static fn(array $row): string => (string)($row['document_reference'] ?? ''),
+                sort: true
+            )
+            ->column(
+                'source_note',
+                'Prescribed particulars',
+                html: fn(array $row): string => $this->textareaCell($row, 'source_note'),
+                export: static fn(array $row): string => (string)($row['source_note'] ?? ''),
+                sort: true
+            )
+            ->column(
+                'actions',
+                '',
+                html: fn(array $row): string => $this->actionsCell($row, (int)($context['company']['id'] ?? 0)),
+                exportable: false,
+                sort: false,
+                cellClass: 'cell-fit'
+            );
+    }
+
+    private function rows(array $context): array
+    {
+        return array_values(array_filter(
+            (array)($context['services']['incorporationShares']['share_classes'] ?? []),
+            static fn(mixed $row): bool => is_array($row)
+        ));
+    }
+
+    private function inputCell(array $row, string $name, string $type, string $default = '', string $min = '', string $step = ''): string
+    {
+        $id = (int)($row['id'] ?? 0);
+        $formId = $this->rowFormId($id);
+        $value = (string)($row[$name] ?? $default);
+        $attributes = $type === 'number'
+            ? ' type="number"' . ($min !== '' ? ' min="' . HelperFramework::escape($min) . '"' : '') . ($step !== '' ? ' step="' . HelperFramework::escape($step) . '"' : '')
+            : '';
+
+        return '<input class="input" form="' . HelperFramework::escape($formId) . '" name="' . HelperFramework::escape($name) . '" value="' . HelperFramework::escape($value) . '"' . $attributes . '>';
+    }
+
+    private function textareaCell(array $row, string $name): string
+    {
+        $id = (int)($row['id'] ?? 0);
+
+        return '<textarea class="input" rows="3" form="' . HelperFramework::escape($this->rowFormId($id)) . '" name="' . HelperFramework::escape($name) . '">' . HelperFramework::escape((string)($row[$name] ?? '')) . '</textarea>';
+    }
+
+    private function actionsCell(array $row, int $companyId): string
+    {
+        $id = (int)($row['id'] ?? 0);
+        if ($id <= 0 || $companyId <= 0) {
+            return '';
+        }
+
+        return '<div class="actions-row">'
+            . '<form id="' . HelperFramework::escape($this->rowFormId($id)) . '" method="post" data-ajax="true">'
+            . '<input type="hidden" name="card_action" value="Incorporation">'
+            . '<input type="hidden" name="intent" value="save_incorporation_shares">'
+            . '<input type="hidden" name="company_id" value="' . $companyId . '">'
+            . '<input type="hidden" name="share_class_id" value="' . $id . '">'
+            . '<button class="button primary" type="submit">Save Share Class</button>'
+            . '</form>'
+            . $this->unpaidForm($companyId, $id)
+            . '</div>';
+    }
+
+    private function rowFormId(int $id): string
+    {
+        return 'incorporation-share-form-' . max(0, $id);
     }
 
     private function unpaidForm(int $companyId, int $shareClassId): string
     {
-        return '<form method="post" data-ajax="true" class="actions-row">
+        return '<form method="post" data-ajax="true">
             <input type="hidden" name="card_action" value="Incorporation">
             <input type="hidden" name="intent" value="mark_shares_unpaid">
             <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -179,5 +261,10 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
         }
 
         return $this->decimalValue((int)($shareClass['quantity'] ?? 0) * (float)($shareClass['unpaid_value_per_share'] ?? 0));
+    }
+
+    private function tableInvalidationFact(): string
+    {
+        return (string)($this->invalidationFacts()[0] ?? $this->key());
     }
 }

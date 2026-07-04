@@ -106,7 +106,7 @@ final class IncorporationAction implements ActionInterfaceFramework
             $messages,
             [],
             $success ? [
-                'incorporation_share_capital' => [
+                'incorporation_add_shares' => [
                     'draft_share_class' => (array)($result['draft'] ?? []),
                 ],
             ] : []

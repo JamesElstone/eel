@@ -87,6 +87,8 @@ final class _companies_company_settingsCard extends CardBaseFramework
         $utr = $utrMissing ? '' : (string)($context['company']['settings']['utr'] ?? '');
         $associatedCompanyCount = max(0, (int)($context['company']['settings']['associated_company_count'] ?? 0));
         $defaultCurrency = (string)($context['company']['settings']['default_currency'] ?? '');
+        $defaultCurrencySymbol = (new \eel_accounts\Service\CompanySettingsService())->defaultCurrencySymbol($settings);
+        $defaultCurrencyLabel = 'GBP - ' . $defaultCurrencySymbol;
         $dateFormat = (string)($context['company']['settings']['date_format'] ?? '');
         $companyDetail = (array)($context['services']['company_detail'] ?? []);
         $activeDirectorCount = $companyDetail['companies_house_active_director_count'] ?? null;
@@ -133,7 +135,7 @@ final class _companies_company_settingsCard extends CardBaseFramework
                         <label for="default_currency">Currency</label>
                         <input type="hidden" id="company_default_currency_state" value="' . HelperFramework::escape($defaultCurrency) . '" data-state-default="' . HelperFramework::escape($defaultCurrency) . '">
                         <select class="select" id="default_currency" name="default_currency">
-                            <option value="GBP"' . ($defaultCurrency === 'GBP' ? ' selected' : '') . '>GBP</option>
+                            <option value="GBP"' . ($defaultCurrency === 'GBP' ? ' selected' : '') . '>' . HelperFramework::escape($defaultCurrencyLabel) . '</option>
                         </select>
                     </div>
                     <div class="form-row">

@@ -21,6 +21,7 @@ $harness->run(_companies_company_settingsCard::class, static function (Generated
                 'utr' => '1234567890',
                 'associated_company_count' => 0,
                 'default_currency' => 'GBP',
+                'default_currency_symbol' => '&#163;',
                 'date_format' => 'Y-m-d',
             ],
         ],
@@ -35,5 +36,9 @@ $harness->run(_companies_company_settingsCard::class, static function (Generated
     $harness->check(_companies_company_settingsCard::class, 'renders stored Companies House active director count', static function () use ($harness, $html): void {
         $harness->assertTrue(str_contains($html, 'Companies House active directors'));
         $harness->assertTrue(str_contains($html, 'value="1" readonly'));
+    });
+
+    $harness->check(_companies_company_settingsCard::class, 'renders currency abbreviation with symbol', static function () use ($harness, $html): void {
+        $harness->assertTrue(str_contains($html, '<option value="GBP" selected>GBP - £</option>'));
     });
 });

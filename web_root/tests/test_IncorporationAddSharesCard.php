@@ -16,7 +16,13 @@ $harness->run(_incorporation_add_sharesCard::class, static function (
 ): void {
     $harness->check(_incorporation_add_sharesCard::class, 'renders NEWINC PDF draft button and populates the new share form from context', static function () use ($harness, $card): void {
         $html = $card->render([
-            'company' => ['id' => 7],
+            'company' => [
+                'id' => 7,
+                'settings' => [
+                    'default_currency' => 'GBP',
+                    'default_currency_symbol' => '&#163;',
+                ],
+            ],
             'incorporation_add_shares' => [
                 'draft_share_class' => [
                     'share_class' => 'ORDINARY',
@@ -42,7 +48,8 @@ $harness->run(_incorporation_add_sharesCard::class, static function (
         $harness->assertSame(true, str_contains($html, 'class="incorporation-share-add-form"'));
         $harness->assertSame(true, str_contains($html, 'class="incorporation-share-fields"'));
         $harness->assertSame(true, str_contains($html, 'name="share_class" value="ORDINARY"'));
-        $harness->assertSame(true, str_contains($html, 'name="currency" value="GBP"'));
+        $harness->assertSame(true, str_contains($html, 'name="currency"'));
+        $harness->assertSame(true, str_contains($html, '<option value="GBP" selected>GBP - £</option>'));
         $harness->assertSame(true, str_contains($html, 'name="quantity" value="100"'));
         $harness->assertSame(true, str_contains($html, 'name="aggregate_nominal_value" value="500"'));
         $harness->assertSame(true, str_contains($html, 'name="total_aggregate_unpaid" value="0"'));

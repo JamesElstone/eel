@@ -58,15 +58,16 @@ final class _incorporation_add_sharesCard extends CardBaseFramework
         return '<section class="settings-stack" id="incorporation-add-shares">
             <div class="helper">Enter the Statement of Capital totals from the Companies House incorporation filing. These are to be taken from the original incorporation filing document and the ledger will calculate the per-share values from the totals entered.</div>
             ' . $this->newincDraftButton($companyId) . '
-            ' . $this->shareForm($companyId, $draftShareClass) . '
+            ' . $this->shareForm($companyId, $draftShareClass, (array)(($context['company'] ?? [])['settings'] ?? [])) . '
         </section>';
     }
 
-    private function shareForm(int $companyId, array $draftShareClass = []): string
+    private function shareForm(int $companyId, array $draftShareClass = [], array $companySettings = []): string
     {
         $formId = 'incorporation-share-form-new';
         $aggregateNominalValue = $this->decimalValue($draftShareClass['aggregate_nominal_value'] ?? '');
         $totalAggregateUnpaid = $this->decimalValue($draftShareClass['total_aggregate_unpaid'] ?? '0');
+        $currency = strtoupper(trim((string)($draftShareClass['currency'] ?? 'GBP'))) ?: 'GBP';
 
         return '
             <form class="incorporation-share-add-form" id="' . HelperFramework::escape($formId) . '" method="post" data-ajax="true">
@@ -81,7 +82,9 @@ final class _incorporation_add_sharesCard extends CardBaseFramework
                     </div>
                     <div class="field">
                         <label for="' . HelperFramework::escape($formId) . '-currency">Currency</label>
-                        <input class="input" id="' . HelperFramework::escape($formId) . '-currency" name="currency" value="' . HelperFramework::escape((string)($draftShareClass['currency'] ?? 'GBP')) . '">
+                        <select class="select" id="' . HelperFramework::escape($formId) . '-currency" name="currency">
+                            ' . $this->currencyOptions($currency, $companySettings) . '
+                        </select>
                     </div>
                     <div class="field">
                         <label for="' . HelperFramework::escape($formId) . '-quantity">Number allotted</label>
@@ -119,6 +122,14 @@ final class _incorporation_add_sharesCard extends CardBaseFramework
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <button class="button secondary" type="submit">Pull data from Companies House NEWINC Filled Document</button>
         </form>';
+    }
+
+    private function currencyOptions(string $selectedCurrency, array $companySettings): string
+    {
+        $defaultCurrencySymbol = (new \eel_accounts\Service\CompanySettingsService())->defaultCurrencySymbol($companySettings);
+        $defaultCurrencyLabel = 'GBP - ' . $defaultCurrencySymbol;
+
+        return '<option value="GBP"' . ($selectedCurrency === 'GBP' ? ' selected' : '') . '>' . HelperFramework::escape($defaultCurrencyLabel) . '</option>';
     }
 
     private function decimalValue(mixed $value): string

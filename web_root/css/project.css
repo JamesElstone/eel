@@ -2554,7 +2554,8 @@
   min-width: 0;
 }
 
-.incorporation-share-fields .input {
+.incorporation-share-fields .input,
+.incorporation-share-fields .select {
   max-width: 100%;
   width: fit-content;
 }

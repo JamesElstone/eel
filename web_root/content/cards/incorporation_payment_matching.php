@@ -9,6 +9,9 @@ declare(strict_types=1);
 
 final class _incorporation_payment_matchingCard extends CardBaseFramework
 {
+    private const CANDIDATE_PAGE_SIZE = 10;
+    private const CANDIDATE_TABLE_SCOPE = 'candidate_payments';
+
     public function key(): string
     {
         return 'incorporation_payment_matching';
@@ -36,6 +39,17 @@ final class _incorporation_payment_matchingCard extends CardBaseFramework
         return ['incorporation.status', 'incorporation.share.capital', 'year.end.checklist'];
     }
 
+    public function handle(
+        RequestFramework $request,
+        PageServiceFramework $services,
+        array $pageContext,
+        ActionResultFramework $actionResult
+    ): array {
+        $pageContext = parent::handle($request, $services, $pageContext, $actionResult);
+
+        return $this->applyPaginationContext($request, $pageContext, self::CANDIDATE_TABLE_SCOPE);
+    }
+
     public function handleError(string $serviceKey, array $error, array $context): string
     {
         return '';
@@ -57,7 +71,7 @@ final class _incorporation_payment_matchingCard extends CardBaseFramework
         $blocks = '';
         foreach ((array)($summary['share_classes'] ?? []) as $shareClass) {
             if (is_array($shareClass)) {
-                $blocks .= $this->shareClassBlock($companyId, $settings, $shareClass);
+                $blocks .= $this->shareClassBlock($companyId, $settings, $shareClass, $context);
             }
         }
 
@@ -68,28 +82,34 @@ final class _incorporation_payment_matchingCard extends CardBaseFramework
         return '<section class="settings-stack" id="incorporation-payment-matching">' . $blocks . '</section>';
     }
 
-    private function shareClassBlock(int $companyId, array $settings, array $shareClass): string
+    public function tables(array $context): array
+    {
+        $company = (array)($context['company'] ?? []);
+        $companyId = (int)($company['id'] ?? 0);
+        $settings = (array)($company['settings'] ?? []);
+        $summary = (array)($context['services']['incorporationShares'] ?? []);
+        if ($companyId <= 0 || empty($summary['available'])) {
+            return [];
+        }
+
+        $tables = [];
+        foreach ((array)($summary['share_classes'] ?? []) as $shareClass) {
+            if (!is_array($shareClass) || $this->hasValidMatch($shareClass)) {
+                continue;
+            }
+
+            $tables[] = $this->configuredCandidateTable($companyId, $settings, $shareClass, $context);
+        }
+
+        return $tables;
+    }
+
+    private function shareClassBlock(int $companyId, array $settings, array $shareClass, array $context): string
     {
         $shareClassId = (int)($shareClass['id'] ?? 0);
         $currentMatch = $shareClass['current_match'] ?? null;
-        $candidates = (array)($shareClass['payment_candidates'] ?? []);
         $status = (string)($shareClass['payment_status'] ?? '');
-        $hasValidMatch = is_array($currentMatch) && !empty($currentMatch['match_valid']);
-        $candidateRows = '';
-
-        foreach ($candidates as $candidate) {
-            if (!is_array($candidate)) {
-                continue;
-            }
-            $candidateRows .= '<tr>
-                <td>' . HelperFramework::escape(HelperFramework::displayDate((string)($candidate['txn_date'] ?? ''))) . '</td>
-                <td>' . HelperFramework::escape((string)($candidate['description'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape((string)($candidate['reference'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape($this->money($settings, $candidate['amount'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape((string)($candidate['category_status'] ?? '')) . '</td>
-                <td>' . $this->matchForm($companyId, $shareClassId, (int)($candidate['id'] ?? 0)) . '</td>
-            </tr>';
-        }
+        $hasValidMatch = $this->hasValidMatch($shareClass);
 
         $matchWarning = is_array($currentMatch) && empty($currentMatch['match_valid'])
             ? '<div class="helper warning">' . HelperFramework::escape($this->invalidMatchMessage((string)($currentMatch['match_invalid_reason'] ?? ''))) . '</div>'
@@ -114,11 +134,95 @@ final class _incorporation_payment_matchingCard extends CardBaseFramework
                 <div class="summary-card"><div class="summary-label">Unpaid share capital</div><div class="summary-value">' . HelperFramework::escape($this->money($settings, $shareClass['paid_up_unpaid_total'] ?? ($shareClass['unpaid_total'] ?? 0))) . '</div></div>
             </div>
             ' . $matchHtml . '
-            ' . ($hasValidMatch ? '' : '<h3 class="card-title">Candidate receipts</h3>'
-                . ($candidateRows === ''
-                    ? '<div class="helper">No exact incoming payment candidates were found.</div>'
-                    : '<div class="table-scroll"><table><thead><tr><th>Date</th><th>Description</th><th>Reference</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead><tbody>' . $candidateRows . '</tbody></table></div>')) . '
+            ' . ($hasValidMatch ? '' : '<h3 class="card-title">Candidate Payments</h3>'
+                . $this->configuredCandidateTable($companyId, $settings, $shareClass, $context)->render($context, $this->tableHiddenFields($context))) . '
         </div>';
+    }
+
+    private function configuredCandidateTable(int $companyId, array $settings, array $shareClass, array $context): TableFramework
+    {
+        $table = $this->candidateTable($companyId, $settings, $shareClass);
+        $pagination = HelperFramework::paginateArray($table->sortedRows(), $this->paginationPage($context, self::CANDIDATE_TABLE_SCOPE), self::CANDIDATE_PAGE_SIZE);
+
+        return $table
+            ->visibleRows((array)$pagination['items'])
+            ->pagination(
+                $pagination,
+                'Candidate Payments',
+                $this->paginationPageField(self::CANDIDATE_TABLE_SCOPE),
+                $this->tableHiddenFields($context)
+            );
+    }
+
+    private function candidateTable(int $companyId, array $settings, array $shareClass): TableFramework
+    {
+        $shareClassId = (int)($shareClass['id'] ?? 0);
+        $shareClassLabel = HelperFramework::normaliseCardKey((string)($shareClass['share_class'] ?? 'share_class'));
+
+        return TableFramework::make($this->candidateTableKey($shareClass), $this->candidateRows($shareClass))
+            ->filename('incorporation-candidate-payments-' . $shareClassLabel)
+            ->exportLimit(5000)
+            ->empty('No exact incoming payment candidates were found.')
+            ->column('txn_date_display', 'Date')
+            ->primarySecondaryColumn('description', 'Transaction', 'reference')
+            ->column(
+                'amount',
+                'Amount',
+                html: fn(array $row): string => HelperFramework::escape($this->money($settings, $row['amount'] ?? 0)),
+                export: static fn(array $row): string => number_format((float)($row['amount'] ?? 0), 2, '.', ''),
+                exportType: 'number',
+                cellClass: 'numeric'
+            )
+            ->column('category_status', 'Status')
+            ->column(
+                'actions',
+                '',
+                html: fn(array $row): string => $this->matchForm($companyId, $shareClassId, (int)($row['id'] ?? 0)),
+                exportable: false,
+                cellClass: 'cell-fit'
+            );
+    }
+
+    private function candidateRows(array $shareClass): array
+    {
+        $rows = [];
+        foreach ((array)($shareClass['payment_candidates'] ?? []) as $candidate) {
+            if (!is_array($candidate)) {
+                continue;
+            }
+
+            $candidate['txn_date_display'] = HelperFramework::displayDate((string)($candidate['txn_date'] ?? ''));
+            $rows[] = $candidate;
+        }
+
+        return $rows;
+    }
+
+    private function candidateTableKey(array $shareClass): string
+    {
+        return self::CANDIDATE_TABLE_SCOPE . '_' . max(0, (int)($shareClass['id'] ?? 0));
+    }
+
+    private function hasValidMatch(array $shareClass): bool
+    {
+        $currentMatch = $shareClass['current_match'] ?? null;
+
+        return is_array($currentMatch) && !empty($currentMatch['match_valid']);
+    }
+
+    private function tableHiddenFields(array $context): array
+    {
+        return [
+            'page' => (string)(($context['page'] ?? [])['page_id'] ?? 'incorporation'),
+            '_pagination' => '1',
+            '_invalidate_fact' => $this->tableInvalidationFact(),
+            'cards[]' => [$this->key()],
+        ];
+    }
+
+    private function tableInvalidationFact(): string
+    {
+        return (string)($this->invalidationFacts()[0] ?? $this->key());
     }
 
     private function matchForm(int $companyId, int $shareClassId, int $transactionId): string

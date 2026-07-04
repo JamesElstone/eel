@@ -41,13 +41,13 @@ final class _incorporation extends PageContextFramework
                 'tab' => 'Status',
                 'cards' => [
                     'incorporation_status',
+                    'incorporation_share_capital',
                 ],
             ],
             [
                 'tab' => 'Shares',
                 'cards' => [
                     'incorporation_add_shares',
-                    'incorporation_share_capital',
                 ],
             ],
             [

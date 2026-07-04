@@ -63,6 +63,28 @@ foreach ($cardClasses as $className) {
 
             $harness->assertTrue(str_contains($html, 'Select a company and accounting period'));
         });
+
+        if ($className === _tax_capital_allowances_summaryCard::class) {
+            $harness->check($className, 'renders capital allowances calculation workings', static function () use ($harness, $card): void {
+                $context = taxWorkingsCardsContext();
+                $context['services']['taxWorkings']['capital_allowances_summary']['aia_claimed'] = 500;
+                $context['services']['taxWorkings']['capital_allowances_summary']['fya_claimed'] = 0;
+                $context['services']['taxWorkings']['capital_allowances_summary']['wda_claimed'] = 56.90;
+                $context['services']['taxWorkings']['capital_allowances_summary']['balancing_charge'] = 0;
+                $context['services']['taxWorkings']['capital_allowances_summary']['balancing_allowance'] = 0;
+                $context['services']['taxWorkings']['capital_allowances_summary']['net_capital_allowances'] = 556.90;
+                $context['services']['taxWorkings']['aia_allocation'] = [
+                    ['purchase_date' => '2026-04-20', 'asset_code' => 'FA-1', 'description' => 'Tooling', 'addition_amount' => 500, 'allowance_amount' => 500],
+                ];
+
+                $html = $card->render($context);
+
+                $harness->assertTrue(str_contains($html, 'Calculation'));
+                $harness->assertTrue(str_contains($html, 'FA-1 Tooling bought 2026-04-20 from addition $ 500.00'));
+                $harness->assertTrue(str_contains($html, 'capital_allowances_summary.wda_claimed'));
+                $harness->assertTrue(str_contains($html, '$ 556.90'));
+            });
+        }
     });
 }
 

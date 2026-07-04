@@ -72,7 +72,8 @@ final class _asset_registerCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        return $this->configuredTable($context)->render(
+        return $this->capitalAllowanceEligibilityHelperHtml()
+            . $this->configuredTable($context)->render(
             $context,
             [
                 'cards[]' => (array)($context['page']['page_cards'] ?? []),
@@ -121,6 +122,7 @@ final class _asset_registerCard extends CardBaseFramework
         return TableFramework::make($this->key(), $this->rows($context))
             ->filename('asset-register')
             ->exportLimit(5000)
+            ->classes(wrapperClass: 'table-scroll asset-register-table')
             ->empty('No assets have been recorded yet.')
             ->textColumn('asset_code', 'Code')
             ->column(
@@ -160,6 +162,8 @@ final class _asset_registerCard extends CardBaseFramework
                 'actions',
                 'Actions',
                 html: fn(array $row): string => $this->actionsHtml($row, $companyId, $accountingPeriodId, $defaultBankNominalId, $disposalSearch, $settings),
+                headerClass: 'asset-register-actions-heading',
+                cellClass: 'asset-register-actions-cell',
                 exportable: false
             );
     }
@@ -172,6 +176,11 @@ final class _asset_registerCard extends CardBaseFramework
             (array)($assetsPageData['assets'] ?? []),
             static fn(mixed $asset): bool => is_array($asset)
         ));
+    }
+
+    private function capitalAllowanceEligibilityHelperHtml(): string
+    {
+        return '<div class="helper">AIA eligibility check: owned by the business, used for the business, bought in the period claimed, and not a car, gift, leased item, land, building, or structure.</div>';
     }
 
     private function descriptionHtml(array $asset): string
@@ -232,11 +241,15 @@ final class _asset_registerCard extends CardBaseFramework
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="asset_id" value="' . $assetId . '">
                 <div class="asset-disposal-controls">
-                    <input class="input" type="date" name="disposal_search_date" value="' . HelperFramework::escape($searchDate) . '">
-                    <button class="button button-inline primary" type="submit" name="intent" value="search_asset_disposal_receipts">Search Incoming Payments</button>
-                    <select class="select" name="disposal_event_type" aria-label="Nil value disposal reason">' . $nilReasonOptions . '</select>
-                    <input class="input" type="text" name="disposal_reason" placeholder="Nil value note if needed">
-                    <button class="button button-inline primary" type="submit" name="intent" value="dispose_asset_nil">Dispose of at Nil Value</button>
+                    <div class="asset-disposal-row">
+                        <input class="input" type="date" name="disposal_search_date" value="' . HelperFramework::escape($searchDate) . '">
+                        <button class="button button-inline primary" type="submit" name="intent" value="search_asset_disposal_receipts">Search Incoming Payments</button>
+                    </div>
+                    <div class="asset-disposal-row">
+                        <select class="select" name="disposal_event_type" aria-label="Nil value disposal reason">' . $nilReasonOptions . '</select>
+                        <input class="input" type="text" name="disposal_reason" placeholder="Nil value note" maxlength="20" size="20">
+                        <button class="button button-inline primary" type="submit" name="intent" value="dispose_asset_nil">Dispose of at Nil Value</button>
+                    </div>
                 </div>
             </form>
             ' . $candidateHtml . '

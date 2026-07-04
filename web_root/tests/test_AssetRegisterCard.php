@@ -63,6 +63,8 @@ $harness->run(_asset_registerCard::class, static function (GeneratedServiceClass
 
         $harness->assertTrue(str_contains($html, 'class="asset-disposal-form"'));
         $harness->assertTrue(str_contains($html, 'class="asset-disposal-controls"'));
+        $harness->assertTrue(str_contains($html, 'class="table-scroll asset-register-table"'));
+        $harness->assertTrue(str_contains($html, 'AIA eligibility check'));
         $harness->assertTrue(str_contains($html, 'FA-7-1'));
         $harness->assertTrue(str_contains($html, 'Test asset'));
         $harness->assertTrue(str_contains($html, '$ 100.00'));
@@ -74,6 +76,8 @@ $harness->run(_asset_registerCard::class, static function (GeneratedServiceClass
         $harness->assertTrue(str_contains($html, 'name="disposal_event_type"'));
         $harness->assertTrue(str_contains($html, 'value="scrapped_no_proceeds"'));
         $harness->assertTrue(str_contains($html, 'name="disposal_reason"'));
+        $harness->assertTrue(str_contains($html, 'maxlength="20"'));
+        $harness->assertTrue(str_contains($html, 'size="20"'));
         $harness->assertTrue(str_contains($html, 'Dispose of at Nil Value'));
         $harness->assertSame(false, str_contains($html, 'name="intent" value="run_asset_depreciation"'));
         $harness->assertSame(false, str_contains($html, 'Run Depreciation'));

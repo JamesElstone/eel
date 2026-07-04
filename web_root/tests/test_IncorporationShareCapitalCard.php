@@ -50,4 +50,37 @@ $harness->run(_incorporation_share_capitalCard::class, static function (
         $harness->assertSame(false, str_contains($html, 'name="paid_value_per_share"'));
         $harness->assertSame(false, str_contains($html, 'name="unpaid_value_per_share"'));
     });
+
+    $harness->check(_incorporation_share_capitalCard::class, 'renders NEWINC PDF draft button and populates the new share form from context', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => ['id' => 7],
+            'incorporation_share_capital' => [
+                'draft_share_class' => [
+                    'share_class' => 'ORDINARY',
+                    'currency' => 'GBP',
+                    'quantity' => '100',
+                    'aggregate_nominal_value' => '500',
+                    'total_aggregate_unpaid' => '0',
+                    'document_reference' => '12344321_newinc_2022-09-05.pdf',
+                    'source_note' => '',
+                ],
+            ],
+            'services' => [
+                'incorporationShares' => [
+                    'available' => true,
+                    'share_classes' => [],
+                ],
+            ],
+        ]);
+
+        $harness->assertSame(true, str_contains($html, 'populate_incorporation_shares_from_newinc'));
+        $harness->assertSame(true, str_contains($html, 'Pull from NEWINC PDF'));
+        $harness->assertSame(true, str_contains($html, 'id="incorporation-share-form-new"'));
+        $harness->assertSame(true, str_contains($html, 'name="share_class" value="ORDINARY"'));
+        $harness->assertSame(true, str_contains($html, 'name="currency" value="GBP"'));
+        $harness->assertSame(true, str_contains($html, 'name="quantity" value="100"'));
+        $harness->assertSame(true, str_contains($html, 'name="aggregate_nominal_value" value="500"'));
+        $harness->assertSame(true, str_contains($html, 'name="total_aggregate_unpaid" value="0"'));
+        $harness->assertSame(true, str_contains($html, 'name="document_reference" value="12344321_newinc_2022-09-05.pdf"'));
+    });
 });

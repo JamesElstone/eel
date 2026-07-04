@@ -55,6 +55,7 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
         }
 
         $shareClasses = (array)($summary['share_classes'] ?? []);
+        $draftShareClass = (array)($context['incorporation_share_capital']['draft_share_class'] ?? []);
         $existingHtml = '';
         foreach ($shareClasses as $shareClass) {
             if (is_array($shareClass)) {
@@ -65,18 +66,20 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
         return '<section class="settings-stack" id="incorporation-share-capital">
             ' . ($shareClasses === [] ? '<div class="helper">Enter the statement of capital from the incorporation filing. Companies House exposes this in the document, not as structured API fields.</div>' : '') . '
             ' . $existingHtml . '
-            ' . $this->shareForm($companyId, null) . '
+            ' . $this->newincDraftButton($companyId) . '
+            ' . $this->shareForm($companyId, null, $draftShareClass) . '
         </section>';
     }
 
-    private function shareForm(int $companyId, ?array $shareClass): string
+    private function shareForm(int $companyId, ?array $shareClass, array $draftShareClass = []): string
     {
         $isExisting = is_array($shareClass);
         $id = $isExisting ? (int)($shareClass['id'] ?? 0) : 0;
         $formId = 'incorporation-share-form-' . ($id > 0 ? $id : 'new');
         $title = $isExisting ? 'Recorded share class' : 'Add share class';
-        $aggregateNominalValue = $this->aggregateNominalValue($shareClass);
-        $totalAggregateUnpaid = $this->totalAggregateUnpaid($shareClass);
+        $values = $isExisting ? (array)$shareClass : $draftShareClass;
+        $aggregateNominalValue = $isExisting ? $this->aggregateNominalValue($shareClass) : $this->decimalValue($values['aggregate_nominal_value'] ?? '');
+        $totalAggregateUnpaid = $isExisting ? $this->totalAggregateUnpaid($shareClass) : $this->decimalValue($values['total_aggregate_unpaid'] ?? '0');
 
         return '<div class="panel-soft stack">
             <h3 class="card-title">' . HelperFramework::escape($title) . '</h3>
@@ -89,15 +92,15 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
                 <div class="form-grid">
                     <div class="form-row">
                         <label for="' . HelperFramework::escape($formId) . '-share-class">Class of shares</label>
-                        <input class="input" id="' . HelperFramework::escape($formId) . '-share-class" name="share_class" value="' . HelperFramework::escape((string)($shareClass['share_class'] ?? 'Ordinary')) . '">
+                        <input class="input" id="' . HelperFramework::escape($formId) . '-share-class" name="share_class" value="' . HelperFramework::escape((string)($values['share_class'] ?? 'Ordinary')) . '">
                     </div>
                     <div class="form-row">
                         <label for="' . HelperFramework::escape($formId) . '-currency">Currency</label>
-                        <input class="input" id="' . HelperFramework::escape($formId) . '-currency" name="currency" value="' . HelperFramework::escape((string)($shareClass['currency'] ?? 'GBP')) . '">
+                        <input class="input" id="' . HelperFramework::escape($formId) . '-currency" name="currency" value="' . HelperFramework::escape((string)($values['currency'] ?? 'GBP')) . '">
                     </div>
                     <div class="form-row">
                         <label for="' . HelperFramework::escape($formId) . '-quantity">Number allotted</label>
-                        <input class="input" type="number" min="1" step="1" id="' . HelperFramework::escape($formId) . '-quantity" name="quantity" value="' . HelperFramework::escape((string)($shareClass['quantity'] ?? '')) . '">
+                        <input class="input" type="number" min="1" step="1" id="' . HelperFramework::escape($formId) . '-quantity" name="quantity" value="' . HelperFramework::escape((string)($values['quantity'] ?? '')) . '">
                     </div>
                     <div class="form-row">
                         <label for="' . HelperFramework::escape($formId) . '-aggregate-nominal">Aggregate nominal value</label>
@@ -109,17 +112,27 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
                     </div>
                     <div class="form-row">
                         <label for="' . HelperFramework::escape($formId) . '-document">Source document/reference</label>
-                        <input class="input" id="' . HelperFramework::escape($formId) . '-document" name="document_reference" value="' . HelperFramework::escape((string)($shareClass['document_reference'] ?? '')) . '">
+                        <input class="input" id="' . HelperFramework::escape($formId) . '-document" name="document_reference" value="' . HelperFramework::escape((string)($values['document_reference'] ?? '')) . '">
                     </div>
                     <div class="form-row">
                         <label for="' . HelperFramework::escape($formId) . '-particulars">Prescribed particulars</label>
-                        <textarea class="input" rows="3" id="' . HelperFramework::escape($formId) . '-particulars" name="source_note">' . HelperFramework::escape((string)($shareClass['source_note'] ?? '')) . '</textarea>
+                        <textarea class="input" rows="3" id="' . HelperFramework::escape($formId) . '-particulars" name="source_note">' . HelperFramework::escape((string)($values['source_note'] ?? '')) . '</textarea>
                     </div>
                 </div>
                 <div class="actions-row"><button class="button primary" type="submit">' . ($isExisting ? 'Save Share Class' : 'Add Share Class') . '</button></div>
             </form>
             ' . ($isExisting ? $this->unpaidForm($companyId, $id) : '') . '
         </div>';
+    }
+
+    private function newincDraftButton(int $companyId): string
+    {
+        return '<form method="post" data-ajax="true" class="actions-row">
+            <input type="hidden" name="card_action" value="Incorporation">
+            <input type="hidden" name="intent" value="populate_incorporation_shares_from_newinc">
+            <input type="hidden" name="company_id" value="' . $companyId . '">
+            <button class="button secondary" type="submit">Pull from NEWINC PDF</button>
+        </form>';
     }
 
     private function unpaidForm(int $companyId, int $shareClassId): string

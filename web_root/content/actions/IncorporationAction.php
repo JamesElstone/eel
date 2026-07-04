@@ -14,6 +14,11 @@ final class IncorporationAction implements ActionInterfaceFramework
         $intent = trim((string)$request->input('intent', ''));
         $companyId = (int)$request->input('company_id', 0);
         $shareClassId = (int)$request->input('share_class_id', 0);
+
+        if ($intent === 'populate_incorporation_shares_from_newinc') {
+            return $this->populateShareDraftFromNewinc($companyId);
+        }
+
         $service = new \eel_accounts\Service\IncorporationShareCapitalService();
 
         $result = match ($intent) {
@@ -73,5 +78,38 @@ final class IncorporationAction implements ActionInterfaceFramework
             'clear_share_payment_match' => 'Share payment match cleared.',
             default => 'Incorporation details updated.',
         };
+    }
+
+    private function populateShareDraftFromNewinc(int $companyId): ActionResultFramework
+    {
+        $result = (new \eel_accounts\Service\CompaniesHouseInitialShareholdingExtractionService())->draftForCompany($companyId);
+        $success = !empty($result['success']);
+        $messages = [];
+
+        foreach ((array)($result['errors'] ?? []) as $error) {
+            $messages[] = [
+                'type' => 'error',
+                'message' => (string)$error,
+            ];
+        }
+
+        if ($success) {
+            $messages[] = [
+                'type' => 'success',
+                'message' => 'Initial shareholdings loaded from the downloaded incorporation PDF. Review the values, then press Add Share Class to save them.',
+            ];
+        }
+
+        return new ActionResultFramework(
+            $success,
+            ['page.context', 'incorporation.share.capital'],
+            $messages,
+            [],
+            $success ? [
+                'incorporation_share_capital' => [
+                    'draft_share_class' => (array)($result['draft'] ?? []),
+                ],
+            ] : []
+        );
     }
 }

@@ -43,6 +43,7 @@ final class CompaniesHouseIncorporationDocumentStatusService
             'downloaded' => true,
             'downloaded_at' => date('Y-m-d H:i:s', (int)$document['mtime']),
             'filename' => (string)$document['filename'],
+            'path' => (string)$document['path'],
         ];
     }
 
@@ -73,6 +74,7 @@ final class CompaniesHouseIncorporationDocumentStatusService
             $matches[] = [
                 'filename' => $item,
                 'mtime' => $mtime,
+                'path' => $path,
             ];
         }
 
@@ -107,6 +109,7 @@ final class CompaniesHouseIncorporationDocumentStatusService
             'downloaded' => false,
             'downloaded_at' => '',
             'filename' => '',
+            'path' => '',
         ];
     }
 

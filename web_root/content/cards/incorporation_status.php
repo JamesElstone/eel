@@ -54,7 +54,7 @@ final class _incorporation_statusCard extends CardBaseFramework
 
         return '<section class="settings-stack" id="incorporation-status">
             <div class="status-head"><span class="badge ' . HelperFramework::escape($this->badgeClass($status)) . '">' . HelperFramework::escape($this->statusLabel($status)) . '</span></div>
-            <div class="summary-grid">
+            <div class="summary-grid four">
                 ' . $this->summaryCard('Issued nominal capital', $this->money($settings, $totals['issued_nominal_total'] ?? 0)) . '
                 ' . $this->summaryCard('Expected paid total', $this->money($settings, $totals['expected_paid_total'] ?? 0)) . '
                 ' . $this->summaryCard('Matched receipts', $this->money($settings, $totals['matched_total'] ?? 0)) . '

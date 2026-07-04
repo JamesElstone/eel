@@ -370,6 +370,7 @@ final class CorporationTaxComputationService
         if (!$this->tableExists('accounting_period_adjustments')) {
             return ['depreciation_add_back' => 0.0, 'capital_allowances' => 0.0, 'warning' => ''];
         }
+        $this->ensureAssetTaxDataRefreshed($companyId);
 
         $rows = \InterfaceDB::fetchAll( 'SELECT type,
                     direction,
@@ -397,15 +398,15 @@ final class CorporationTaxComputationService
             }
         }
 
-        $warning = '';
+        $warnings = (new \eel_accounts\Service\CapitalAllowanceService())->periodWarnings($companyId, $accountingPeriodId);
         if ($this->tableExists('asset_register') && $this->countCompanyAssets($companyId) > 0 && abs($depreciation) < 0.005 && abs($allowances) < 0.005) {
-            $warning = 'Fixed assets exist, but no current accounting-period adjustments were found. Refresh the Assets tax view if capital allowances are expected.';
+            $warnings[] = 'Fixed assets exist, but no current accounting-period adjustments were found. Refresh the Assets tax view if capital allowances are expected.';
         }
 
         return [
             'depreciation_add_back' => round(max(0.0, $depreciation), 2),
-            'capital_allowances' => round(max(0.0, $allowances), 2),
-            'warning' => $warning,
+            'capital_allowances' => round($allowances, 2),
+            'warning' => implode(' ', array_values(array_unique(array_filter($warnings)))),
         ];
     }
 
@@ -413,6 +414,7 @@ final class CorporationTaxComputationService
         if (!$this->tableExists('accounting_period_adjustments')) {
             return ['depreciation_add_back' => 0.0, 'capital_allowances' => 0.0, 'warning' => ''];
         }
+        $this->ensureAssetTaxDataRefreshed($companyId);
 
         $ctPeriodId = (int)($ctPeriod['id'] ?? 0);
         if ($ctPeriodId > 0 && \InterfaceDB::columnExists('accounting_period_adjustments', 'ct_period_id')) {
@@ -475,9 +477,22 @@ final class CorporationTaxComputationService
 
         return [
             'depreciation_add_back' => round(max(0.0, $depreciation), 2),
-            'capital_allowances' => round(max(0.0, $allowances), 2),
+            'capital_allowances' => round($allowances, 2),
             'warning' => $warning,
         ];
+    }
+
+    private function ensureAssetTaxDataRefreshed(int $companyId): void
+    {
+        static $refreshed = [];
+        if ($companyId <= 0 || isset($refreshed[$companyId])) {
+            return;
+        }
+
+        if (\InterfaceDB::tableExists('asset_register') && \InterfaceDB::tableExists('capital_allowance_pool_runs')) {
+            (new \eel_accounts\Service\AssetService())->refreshTaxData($companyId);
+        }
+        $refreshed[$companyId] = true;
     }
 
     private function insertLossHistory(int $companyId, int $accountingPeriodId, ?int $ctPeriodId, string $computationHash, array $row): void {
@@ -695,7 +710,6 @@ final class CorporationTaxComputationService
         if (!empty($assetAdjustments['warning'])) {
             $warnings[] = (string)$assetAdjustments['warning'];
         }
-        $warnings[] = 'Capital allowances are based on recorded adjustment rows, not a full capital allowance pool, AIA, disposal, or balancing charge regime.';
         foreach ((array)($rateCalculation['warnings'] ?? []) as $warning) {
             $warnings[] = (string)$warning;
         }
@@ -733,6 +747,7 @@ final class CorporationTaxComputationService
             'other_treatment_count' => (int)($profitAndLoss['other_treatment_count'] ?? 0),
             'unknown_treatment_count' => (int)($profitAndLoss['unknown_treatment_count'] ?? 0),
             'warnings' => $warnings,
+            'capital_allowance_breakdown' => (new \eel_accounts\Service\CapitalAllowanceService())->fetchPeriodBreakdown($companyId, $accountingPeriodId),
             'calculation_status' => 'estimate',
             'confidence_status' => $confidenceStatus,
             'confidence_label' => $confidenceStatus === 'ready_for_review' ? 'Ready for review' : 'Review required',

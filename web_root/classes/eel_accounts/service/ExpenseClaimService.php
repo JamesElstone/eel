@@ -1568,6 +1568,7 @@ final class ExpenseClaimService
             'id' => $lineId,
             'expense_claim_id' => $claimId,
         ]);
+        (new \eel_accounts\Service\VehicleService())->cleanupVehicleDetailsForExpenseClaimLine($lineId);
 
         return [
             'success' => true,
@@ -1621,6 +1622,7 @@ final class ExpenseClaimService
                 'id' => $lineId,
                 'expense_claim_id' => $claimId,
             ]);
+            (new \eel_accounts\Service\VehicleService())->cleanupVehicleDetailsForExpenseClaimLine($lineId);
         } else {
             \InterfaceDB::prepare(
                 'DELETE FROM expense_claim_line_assets
@@ -1636,6 +1638,7 @@ final class ExpenseClaimService
                 'id' => $lineId,
                 'expense_claim_id' => $claimId,
             ]);
+            (new \eel_accounts\Service\VehicleService())->cleanupVehicleDetailsForExpenseClaimLine($lineId);
         }
 
         return [
@@ -1678,6 +1681,7 @@ final class ExpenseClaimService
             'id' => $lineId,
             'expense_claim_id' => $claimId,
         ]);
+        (new \eel_accounts\Service\VehicleService())->cleanupVehicleDetailsForExpenseClaimLine($lineId);
 
         return [
             'success' => true,

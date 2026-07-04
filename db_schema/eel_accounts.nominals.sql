@@ -62,6 +62,8 @@ INSERT INTO `nominal_accounts` (`id`,`code`,`name`,`account_type`,`account_subty
 (32,'1300','Tools & Equipment (FA)','asset',11,'capital',1,130,'2026-04-09 12:48:13'),
 (33,'1310','Plant & Machinery','asset',11,'capital',1,131,'2026-04-09 12:48:13'),
 (34,'1320','Motor Vehicles','asset',11,'capital',1,132,'2026-04-09 12:48:13'),
+(50,'1321','Motor Vehicles - Cars','asset',11,'capital',1,1321,'2026-07-04 00:00:00'),
+(51,'1322','Motor Vehicles - Vans','asset',11,'capital',1,1322,'2026-07-04 00:00:00'),
 (35,'1330','Accum Dep - Tools','asset',11,'capital',1,133,'2026-04-09 12:48:13'),
 (36,'1340','Accum Dep - Plant','asset',11,'capital',1,134,'2026-04-09 12:48:13'),
 (37,'1350','Accum Dep - Vehicles','asset',11,'capital',1,135,'2026-04-09 12:48:13'),

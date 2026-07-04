@@ -1030,6 +1030,18 @@ final class YearEndChecklistService
             (string)$potentialAssetCandidateCount,
             '?page=assets&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=not_an_asset'
         ), $reviewAcknowledgements);
+        $vehicleReviewWarnings = (new \eel_accounts\Service\VehicleService())->periodReviewWarnings($companyId, $accountingPeriodId);
+        $sections['year_end_accounts_review'][] = $this->makeCheck(
+            'vehicle_tax_review',
+            'Vehicle tax review',
+            'warning',
+            $vehicleReviewWarnings === [] ? 'pass' : 'warning',
+            $vehicleReviewWarnings === []
+                ? 'Motor vehicle assets have no outstanding vehicle tax review warnings for this period.'
+                : 'Review vehicle type, CO2 emissions, and car/van nominal classification before relying on capital allowances.',
+            $vehicleReviewWarnings === [] ? '' : (count($vehicleReviewWarnings) . ' warning' . (count($vehicleReviewWarnings) === 1 ? '' : 's')),
+            '?page=vehicles&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
+        );
         $sections['year_end_accounts_review'][] = $this->applyReviewAcknowledgement($this->makeCheck(
             'prepayments_accruals_placeholder',
             'Prepayments and accruals review',

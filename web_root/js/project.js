@@ -384,6 +384,32 @@
         });
     }
 
+    function initialiseVehicleRows(root = document) {
+        const forms = root.querySelectorAll ? root.querySelectorAll('[data-vehicle-row="true"]') : [];
+
+        forms.forEach((form) => {
+            if (!(form instanceof HTMLFormElement) || form.dataset.vehicleRowBound === '1') {
+                return;
+            }
+
+            form.dataset.vehicleRowBound = '1';
+            const formId = form.id;
+            const saveButton = document.querySelector(`[data-vehicle-save][form="${CSS.escape(formId)}"]`);
+            const controls = Array.from(document.querySelectorAll(`[data-vehicle-watch][form="${CSS.escape(formId)}"], #${CSS.escape(formId)} [data-vehicle-watch]`));
+
+            const markDirty = () => {
+                if (saveButton instanceof HTMLButtonElement) {
+                    saveButton.disabled = false;
+                }
+            };
+
+            controls.forEach((control) => {
+                control.addEventListener('change', markDirty);
+                control.addEventListener('input', markDirty);
+            });
+        });
+    }
+
     const autoApprovalBatchState = new WeakMap();
     const autoApprovalDebounceMs = 180;
     const autoApprovalCompletionTimeoutMs = 5000;
@@ -727,6 +753,7 @@
     initialiseManualAssetLegalWarnings(document);
     initialiseDirectorLoanOffsetAcknowledgements(document);
     initialiseUploadProcessingIndicators(document);
+    initialiseVehicleRows(document);
     initialiseVatRegistrationForms(document);
     initialiseStatementMappingForms(document);
     initialiseTransactionCategorisationAutosave(document);
@@ -740,6 +767,7 @@
                     initialiseManualAssetLegalWarnings(node);
                     initialiseDirectorLoanOffsetAcknowledgements(node);
                     initialiseUploadProcessingIndicators(node);
+                    initialiseVehicleRows(node);
                     initialiseVatRegistrationForms(node);
                     initialiseStatementMappingForms(node);
                     initialiseTransactionCategorisationAutosave(node);

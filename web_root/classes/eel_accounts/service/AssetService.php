@@ -50,6 +50,7 @@ final class AssetService
         return [
             'tools_equipment' => 'Tools & Equipment',
             'plant_machinery' => 'Plant & Machinery',
+            'motor_vehicle' => 'Motor Vehicle',
             'van' => 'Van',
             'car' => 'Car',
         ];
@@ -59,6 +60,8 @@ final class AssetService
         return match ($category) {
             'tools_equipment' => ['cost' => '1300', 'accum' => '1330'],
             'plant_machinery' => ['cost' => '1310', 'accum' => '1340'],
+            'car' => ['cost' => '1321', 'accum' => '1350'],
+            'van' => ['cost' => '1322', 'accum' => '1350'],
             default => ['cost' => '1320', 'accum' => '1350'],
         };
     }
@@ -1265,6 +1268,11 @@ final class AssetService
         ];
     }
 
+    public function refreshTaxData(int $companyId): array
+    {
+        return $this->refreshDerivedTaxData($companyId);
+    }
+
     private function postAssetDisposalJournalAndStatus(
         int $companyId,
         array $asset,
@@ -1405,28 +1413,33 @@ final class AssetService
         }
 
         $this->deleteDerivedTaxRows($companyId);
+        $capitalAllowanceRuns = (new \eel_accounts\Service\CapitalAllowanceService())->rebuildForCompany($companyId);
         $metrics = [];
 
         foreach (array_reverse($accountingPeriods) as $accountingPeriod) {
             $accountingPeriodId = (int)$accountingPeriod['id'];
             $depreciationByAsset = $this->fetchDepreciationByAsset($companyId, $accountingPeriodId);
-            $allowancesByAsset = $this->calculateCapitalAllowancesByAsset($companyId, $accountingPeriod);
+            $allowanceRun = (array)($capitalAllowanceRuns[$accountingPeriodId] ?? []);
 
             foreach ($depreciationByAsset as $assetId => $amount) {
                 $this->insertAccountingPeriodAdjustment($companyId, $accountingPeriodId, 'add_back_depreciation', 'add', $amount, $assetId);
             }
-            foreach ($allowancesByAsset as $assetId => $amount) {
-                $this->insertAccountingPeriodAdjustment($companyId, $accountingPeriodId, 'capital_allowances', 'deduct', $amount, $assetId);
+            $capitalAllowances = round((float)($allowanceRun['allowance'] ?? 0), 2);
+            $balancingCharges = round((float)($allowanceRun['charge'] ?? 0), 2);
+            if ($capitalAllowances > 0) {
+                $this->insertAccountingPeriodAdjustment($companyId, $accountingPeriodId, 'capital_allowances', 'deduct', $capitalAllowances, null);
+            }
+            if ($balancingCharges > 0) {
+                $this->insertAccountingPeriodAdjustment($companyId, $accountingPeriodId, 'capital_allowances', 'add', $balancingCharges, null);
             }
 
             $accountingProfit = $this->calculateAccountingProfit($companyId, $accountingPeriodId);
             $depreciationAddBack = round(array_sum($depreciationByAsset), 2);
-            $capitalAllowances = round(array_sum($allowancesByAsset), 2);
             $metrics[$accountingPeriodId] = [
                 'accounting_period' => $accountingPeriod,
                 'accounting_profit' => round($accountingProfit, 2),
                 'depreciation_add_back' => $depreciationAddBack,
-                'capital_allowances' => $capitalAllowances,
+                'capital_allowances' => round($capitalAllowances - $balancingCharges, 2),
             ];
         }
 
@@ -1437,7 +1450,6 @@ final class AssetService
         \InterfaceDB::prepare(
             'DELETE FROM accounting_period_adjustments
              WHERE company_id = :company_id
-               AND source_asset_id IS NOT NULL
                AND type IN (:depreciation_type, :allowance_type)'
         )
             ->execute([
@@ -1467,35 +1479,6 @@ final class AssetService
         }
 
         return $rows;
-    }
-
-    private function calculateCapitalAllowancesByAsset(int $companyId, array $accountingPeriod): array {
-        $stmt = \InterfaceDB::prepare(
-            'SELECT id, category, cost
-             FROM asset_register
-             WHERE company_id = :company_id
-               AND purchase_date BETWEEN :period_start AND :period_end'
-        );
-        $stmt->execute([
-            'company_id' => $companyId,
-            'period_start' => (string)$accountingPeriod['period_start'],
-            'period_end' => (string)$accountingPeriod['period_end'],
-        ]);
-
-        $allowances = [];
-        foreach ($stmt->fetchAll() ?: [] as $row) {
-            $category = (string)($row['category'] ?? '');
-            $amount = match ($category) {
-                'tools_equipment', 'plant_machinery', 'van' => round((float)$row['cost'], 2),
-                default => 0.0,
-            };
-
-            if ($amount > 0) {
-                $allowances[(int)$row['id']] = $amount;
-            }
-        }
-
-        return $allowances;
     }
 
     private function calculateAccountingProfit(int $companyId, int $accountingPeriodId): float {
@@ -1531,7 +1514,7 @@ final class AssetService
         return round($profit, 2);
     }
 
-    private function insertAccountingPeriodAdjustment(int $companyId, int $accountingPeriodId, string $type, string $direction, float $amount, int $assetId): void {
+    private function insertAccountingPeriodAdjustment(int $companyId, int $accountingPeriodId, string $type, string $direction, float $amount, ?int $assetId): void {
         $stmt = \InterfaceDB::prepare(
             'INSERT INTO accounting_period_adjustments (
                 company_id,

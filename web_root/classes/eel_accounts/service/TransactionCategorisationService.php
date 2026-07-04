@@ -653,6 +653,10 @@ final class TransactionCategorisationService
             'changed_by' => $this->changedByValue($changedBy),
             'reason' => $reason !== null && trim($reason) !== '' ? trim($reason) : null,
         ]);
+
+        if (class_exists(\eel_accounts\Service\VehicleService::class)) {
+            (new \eel_accounts\Service\VehicleService())->cleanupVehicleDetailsForTransaction((int)$transaction['id']);
+        }
     }
 
     private function isEligibleForAuto(array $transaction, bool $reapplyExistingAuto): bool {

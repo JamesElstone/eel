@@ -1599,6 +1599,101 @@ CREATE TABLE `asset_register` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `asset_vehicle_details`
+--
+
+DROP TABLE IF EXISTS `asset_vehicle_details`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `asset_vehicle_details` (
+  `asset_id` bigint(20) NOT NULL,
+  `company_id` int(11) NOT NULL,
+  `vehicle_type` varchar(32) NOT NULL DEFAULT 'unreviewed',
+  `registration_mark` varchar(32) DEFAULT NULL,
+  `make_model` varchar(255) DEFAULT NULL,
+  `colour` varchar(64) DEFAULT NULL,
+  `engine_capacity_cc` int(11) DEFAULT NULL,
+  `first_registered_date` date DEFAULT NULL,
+  `acquisition_condition` varchar(32) DEFAULT NULL,
+  `is_zero_emission` tinyint(1) NOT NULL DEFAULT 0,
+  `co2_emissions_g_km` int(11) DEFAULT NULL,
+  `payload_kg` decimal(10,2) DEFAULT NULL,
+  `contract_date` date DEFAULT NULL,
+  `tax_review_status` varchar(32) NOT NULL DEFAULT 'unreviewed',
+  `reviewed_at` datetime DEFAULT NULL,
+  `reviewed_by` varchar(128) DEFAULT NULL,
+  `notes` varchar(512) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`asset_id`),
+  KEY `idx_asset_vehicle_company_type` (`company_id`,`vehicle_type`),
+  KEY `idx_asset_vehicle_registration` (`company_id`,`registration_mark`),
+  CONSTRAINT `fk_asset_vehicle_asset` FOREIGN KEY (`asset_id`) REFERENCES `asset_register` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_asset_vehicle_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `capital_allowance_pool_runs`
+--
+
+DROP TABLE IF EXISTS `capital_allowance_pool_runs`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `capital_allowance_pool_runs` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `pool_type` varchar(32) NOT NULL,
+  `opening_wdv` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `additions` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `aia_claimed` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `fya_claimed` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `disposal_value` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `wda_claimed` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `balancing_charge` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `balancing_allowance` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `closing_wdv` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `warnings_json` longtext DEFAULT NULL,
+  `run_hash` char(64) NOT NULL,
+  `computed_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_capital_allowance_pool_period` (`company_id`,`accounting_period_id`,`pool_type`),
+  KEY `idx_capital_allowance_pool_period` (`company_id`,`accounting_period_id`),
+  CONSTRAINT `fk_capital_allowance_pool_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_capital_allowance_pool_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `capital_allowance_asset_calculations`
+--
+
+DROP TABLE IF EXISTS `capital_allowance_asset_calculations`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `capital_allowance_asset_calculations` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `asset_id` bigint(20) NOT NULL,
+  `pool_type` varchar(32) NOT NULL,
+  `allowance_type` varchar(32) NOT NULL,
+  `addition_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `allowance_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `disposal_value` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `warning` varchar(512) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_capital_allowance_asset_period` (`company_id`,`accounting_period_id`),
+  KEY `idx_capital_allowance_asset_asset` (`asset_id`),
+  CONSTRAINT `fk_capital_allowance_asset_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_capital_allowance_asset_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_capital_allowance_asset_asset` FOREIGN KEY (`asset_id`) REFERENCES `asset_register` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `asset_disposal_transaction_links`
 --
 
@@ -2187,7 +2282,8 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_04_001_incorporation_share_capital.sql'),
   ('2026_07_04_002_dividend_reserve_classification.sql'),
   ('2026_07_04_003_dividend_reserve_snapshot_roll_forward.sql'),
-  ('2026_07_04_004_asset_disposal_metadata.sql');
+  ('2026_07_04_004_asset_disposal_metadata.sql'),
+  ('2026_07_04_005_vehicle_register_capital_allowances.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

@@ -23,6 +23,7 @@ final class TestPageArchitectureHarness
         $this->runTest('logs page resolves all configured log cards', [$this, 'testLogsPageResolvesAllCards']);
         $this->runTest('assets page resolves all configured asset cards', [$this, 'testAssetsPageResolvesAllCards']);
         $this->runTest('assets page groups cards into asset tabs', [$this, 'testAssetsPageCardLayout']);
+        $this->runTest('vehicles page resolves the vehicle register card', [$this, 'testVehiclesPageResolvesVehicleRegisterCard']);
         $this->runTest('AJAX delta responses include only stale cards', [$this, 'testAjaxDeltaResponseReturnsOnlyStaleCards']);
         $this->runTest('AJAX delta responses expose a nonce refresh slot', [$this, 'testAjaxDeltaResponseIncludesAjaxNonceField']);
         $this->runTest('selector ajax responses include compact selector UI data', [$this, 'testSelectorAjaxResponseIncludesSelectorUi']);
@@ -118,6 +119,16 @@ final class TestPageArchitectureHarness
             ],
             $page->cardLayout()
         );
+    }
+
+    private function testVehiclesPageResolvesVehicleRegisterCard(): void
+    {
+        $page = $this->loadPageCards('vehicles');
+
+        $this->assertSame(_vehicles::class, $page::class);
+        $this->assertSame('vehicles', $page->id());
+        $this->assertSame('Vehicles', $page->title());
+        $this->assertSame(['vehicle_register'], $page->cards());
     }
 
     private function testAjaxDeltaResponseReturnsOnlyStaleCards(): void

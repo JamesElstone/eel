@@ -71,6 +71,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
                 <td>' . HelperFramework::escape($this->money($companySettings, $row['loss_carried_forward'] ?? 0)) . '</td>
             </tr>';
         }
+        $capitalAllowanceHtml = $this->capitalAllowanceBreakdownHtml((array)($taxReadiness['capital_allowance_breakdown'] ?? []), $companySettings);
         $warningHtml = '';
         foreach ((array)($taxReadiness['warnings'] ?? []) as $warning) {
             $warningHtml .= '<div class="helper">' . HelperFramework::escape((string)$warning) . '</div>';
@@ -116,10 +117,46 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             </div>
             <h3 class="card-title">Corporation Tax Computation</h3>
             <div class="table-scroll"><table><thead><tr><th>Step</th><th>Amount</th></tr></thead><tbody>' . $stepsHtml . '</tbody></table></div>
+            ' . $capitalAllowanceHtml . '
             <h3 class="card-title">Loss schedule</h3>
             <div class="table-scroll"><table><thead><tr><th>Period</th><th>Loss created</th><th>Brought forward</th><th>Used</th><th>Carried forward</th></tr></thead><tbody>' . $scheduleHtml . '</tbody></table></div>
             <div class="actions-row">' . $acknowledgementForm . '</div>
         </section>';
+    }
+
+    private function capitalAllowanceBreakdownHtml(array $breakdown, array $companySettings): string
+    {
+        if (empty($breakdown['available'])) {
+            return '';
+        }
+
+        $rowsHtml = '';
+        foreach ((array)($breakdown['rows'] ?? []) as $row) {
+            $rowsHtml .= '<tr>
+                <td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($row['pool_type'] ?? ''), '_')) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $row['opening_wdv'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $row['additions'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $row['aia_claimed'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $row['fya_claimed'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $row['wda_claimed'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $row['disposal_value'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $row['balancing_charge'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $row['closing_wdv'] ?? 0)) . '</td>
+            </tr>';
+        }
+
+        return '<h3 class="card-title">Capital Allowances</h3>
+            <div class="table-scroll"><table><thead><tr>
+                <th>Pool</th>
+                <th>Opening WDV</th>
+                <th>Additions</th>
+                <th>AIA</th>
+                <th>FYA</th>
+                <th>WDA</th>
+                <th>Disposals</th>
+                <th>Balancing charge</th>
+                <th>Closing WDV</th>
+            </tr></thead><tbody>' . $rowsHtml . '</tbody></table></div>';
     }
 
     private function money(array $companySettings, float|int|string|null $value): string

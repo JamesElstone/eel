@@ -162,6 +162,7 @@ final class CompaniesHouseInitialShareholdingExtractionService
         $candidates = array_values(array_filter([
             $configured,
             'C:\\Program Files\\Git\\mingw64\\bin\\pdftotext.exe',
+            '/usr/local/libexec/xpdf/pdftotext',
             'pdftotext',
         ], static fn(string $path): bool => trim($path) !== ''));
 

@@ -28,6 +28,7 @@ final class _dividends extends PageContextFramework
     {
         return [
             'dividend_capacity',
+            'dividend_reserve_review',
             'dividend_vouchers',
             'dividend_declare',
             'dividend_history',
@@ -41,6 +42,7 @@ final class _dividends extends PageContextFramework
                 'tab' => 'Overview',
                 'cards' => [
                     'dividend_capacity',
+                    'dividend_reserve_review',
                     'dividend_vouchers',
                 ],
             ],
@@ -69,6 +71,7 @@ final class _dividends extends PageContextFramework
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $dividendService = new \eel_accounts\Service\DividendService();
+        $reserveService = new \eel_accounts\Service\DividendReserveClassificationService();
 
         $nominals = $companyId > 0
             ? $dividendService->ensureDividendNominals($companyId)
@@ -89,6 +92,9 @@ final class _dividends extends PageContextFramework
                     ? $dividendService->listDividendReconciliationCandidates($companyId, $accountingPeriodId)
                     : [],
                 'warnings' => $dividendService->getDividendWarnings($companyId, $accountingPeriodId),
+                'reserve_review' => $companyId > 0 && $accountingPeriodId > 0
+                    ? $reserveService->fetchReviewContext($companyId, $accountingPeriodId)
+                    : ['available' => false, 'errors' => ['Select a company and accounting period before reviewing dividend reserves.']],
                 'nominals' => (array)($nominals['accounts'] ?? []),
                 'nominal_errors' => (array)($nominals['errors'] ?? []),
             ],

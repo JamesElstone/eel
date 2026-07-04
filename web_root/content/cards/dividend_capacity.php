@@ -44,13 +44,19 @@ final class _dividend_capacityCard extends CardBaseFramework
                 <div class="summary-label">Distributable reserves</div>
                 <div class="helper">' . HelperFramework::escape($this->reservesEquation($companySettings, $capacity)) . '</div>
                 <div><span class="badge ' . HelperFramework::escape(!empty($capacity['reserves_reliable']) ? 'success' : 'danger') . '">' . HelperFramework::escape(!empty($capacity['reserves_reliable']) ? 'Reserve basis verified' : 'Reserve basis blocked') . '</span></div>
-                <div class="helper">' . HelperFramework::escape((string)($capacity['retained_earnings_detail'] ?? '')) . '</div>
+                <div class="helper">' . HelperFramework::escape((string)($capacity['reserve_basis_detail'] ?? $capacity['retained_earnings_detail'] ?? '')) . '</div>
             </section>
             <div class="summary-grid four">
                 ' . $this->summaryCard('Retained earnings brought forward', $this->money($companySettings, $capacity['retained_earnings_brought_forward'] ?? 0)) . '
-                ' . $this->summaryCard('Current year profit / loss', $this->money($companySettings, $capacity['current_year_profit_loss'] ?? 0)) . '
+                ' . $this->summaryCard('Reviewed current profit after CT', $this->money($companySettings, $capacity['current_year_profit_loss_after_tax'] ?? $capacity['current_year_profit_loss'] ?? 0)) . '
                 ' . $this->summaryCard('Dividends already declared', $this->money($companySettings, $capacity['dividends_declared'] ?? 0)) . '
                 ' . $this->summaryCard('Available distributable reserves', $this->money($companySettings, $capacity['available_distributable_reserves'] ?? 0)) . '
+            </div>
+            <div class="summary-grid four">
+                ' . $this->summaryCard('Ledger profit / loss', $this->money($companySettings, $capacity['ledger_current_year_profit_loss'] ?? 0)) . '
+                ' . $this->summaryCard('Classified realised profit', $this->money($companySettings, $capacity['classified_current_year_profit_loss'] ?? 0)) . '
+                ' . $this->summaryCard('Estimated CT', $this->money($companySettings, $capacity['estimated_corporation_tax'] ?? 0)) . '
+                ' . $this->summaryCard('Unposted CT deducted', $this->money($companySettings, $capacity['unposted_corporation_tax_adjustment'] ?? 0)) . '
             </div>
             <div class="summary-grid four">' . $this->warningCards($warnings) . '</div>
         </div>';
@@ -86,8 +92,8 @@ final class _dividend_capacityCard extends CardBaseFramework
     {
         return 'Retained profits brought forward ('
             . $this->money($companySettings, $capacity['retained_earnings_brought_forward'] ?? 0)
-            . ') + current year profit/loss ('
-            . $this->money($companySettings, $capacity['current_year_profit_loss'] ?? 0)
+            . ') + reviewed current-year realised profit after CT ('
+            . $this->money($companySettings, $capacity['current_year_profit_loss_after_tax'] ?? $capacity['current_year_profit_loss'] ?? 0)
             . ') - dividends already declared ('
             . $this->money($companySettings, $capacity['dividends_declared'] ?? 0)
             . ') = available distributable reserves ('

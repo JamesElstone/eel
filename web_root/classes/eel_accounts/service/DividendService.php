@@ -113,12 +113,24 @@ final class DividendService
         $periodStart = (string)$accountingPeriod['period_start'];
         $periodEnd = (string)$accountingPeriod['period_end'];
         $effectiveDate = $this->effectiveAsAtDate($asAtDate, $periodStart, $periodEnd);
-        $profit = $this->profitForPeriod($companyId, $accountingPeriodId, $periodStart, $effectiveDate);
+        $ledgerProfit = $this->profitForPeriod($companyId, $accountingPeriodId, $periodStart, $effectiveDate);
         $dividendsDeclared = $this->dividendsDeclaredForPeriod($companyId, $accountingPeriodId, $periodStart, $effectiveDate);
         $retainedEarningsPosition = $this->retainedEarningsBroughtForward($companyId, $accountingPeriodId, $periodStart);
         $retainedEarningsBroughtForward = (float)($retainedEarningsPosition['amount'] ?? 0.0);
-        $availableReserves = round($retainedEarningsBroughtForward + $profit - $dividendsDeclared, 2);
-        $reservesReliable = !empty($retainedEarningsPosition['reliable']);
+        $reserveReview = (new \eel_accounts\Service\DividendReserveClassificationService())->fetchReviewContext($companyId, $accountingPeriodId);
+        $reserveReviewReliable = !empty($reserveReview['available']) && !empty($reserveReview['snapshot_current']);
+        $reserveReviewDetail = $this->reserveReviewDetail($reserveReview);
+        $reserveSnapshot = is_array($reserveReview['snapshot'] ?? null) ? (array)$reserveReview['snapshot'] : [];
+        $classifiedProfit = $reserveReviewReliable
+            ? round((float)($reserveSnapshot['distributable_current_profit'] ?? 0), 2)
+            : 0.0;
+        $taxPosition = $this->corporationTaxCapacityPosition($companyId, $accountingPeriodId, $accountingPeriod, $ledgerProfit);
+        $currentYearProfitAfterTax = round($classifiedProfit - (float)($taxPosition['unposted_corporation_tax_adjustment'] ?? 0), 2);
+        $availableReserves = round($retainedEarningsBroughtForward + $currentYearProfitAfterTax - $dividendsDeclared, 2);
+        $reservesReliable = !empty($retainedEarningsPosition['reliable'])
+            && $reserveReviewReliable
+            && !empty($taxPosition['reliable']);
+        $reserveBasisDetail = $this->reserveBasisDetail($retainedEarningsPosition, $reserveReviewReliable, $reserveReviewDetail, $taxPosition);
 
         return [
             'available' => true,
@@ -130,8 +142,19 @@ final class DividendService
             'retained_earnings_brought_forward' => $retainedEarningsBroughtForward,
             'retained_earnings_status' => (string)($retainedEarningsPosition['status'] ?? 'unknown'),
             'retained_earnings_detail' => (string)($retainedEarningsPosition['detail'] ?? ''),
+            'reserve_basis_detail' => $reserveBasisDetail,
+            'reserve_review_status' => (string)($reserveReview['status'] ?? 'unavailable'),
+            'reserve_review_detail' => $reserveReviewDetail,
             'reserves_reliable' => $reservesReliable,
-            'current_year_profit_loss' => $profit,
+            'ledger_current_year_profit_loss' => $ledgerProfit,
+            'classified_current_year_profit_loss' => $classifiedProfit,
+            'posted_corporation_tax_charge' => (float)($taxPosition['posted_corporation_tax_charge'] ?? 0),
+            'estimated_corporation_tax' => (float)($taxPosition['estimated_corporation_tax'] ?? 0),
+            'unposted_corporation_tax_adjustment' => (float)($taxPosition['unposted_corporation_tax_adjustment'] ?? 0),
+            'current_year_profit_loss_after_tax' => $currentYearProfitAfterTax,
+            'current_year_profit_loss' => $currentYearProfitAfterTax,
+            'corporation_tax_status' => (string)($taxPosition['status'] ?? 'unknown'),
+            'corporation_tax_detail' => (string)($taxPosition['detail'] ?? ''),
             'dividends_declared' => $dividendsDeclared,
             'available_distributable_reserves' => $availableReserves,
             'status' => $reservesReliable && $availableReserves > 0 ? 'available' : 'blocked',
@@ -749,9 +772,16 @@ final class DividendService
 
         if ($companyId > 0 && $accountingPeriodId > 0) {
             $capacity = $this->getDividendCapacity($companyId, $accountingPeriodId);
-            $profit = (float)($capacity['current_year_profit_loss'] ?? 0);
+            $profit = (float)($capacity['ledger_current_year_profit_loss'] ?? $capacity['current_year_profit_loss'] ?? 0);
             $reserves = (float)($capacity['available_distributable_reserves'] ?? 0);
 
+            if (empty($capacity['reserves_reliable'])) {
+                $warnings[] = [
+                    'severity' => 'danger',
+                    'title' => 'Reserve basis blocked',
+                    'detail' => (string)($capacity['reserve_basis_detail'] ?? 'Dividend declaration is blocked until the reserve basis has been reviewed.'),
+                ];
+            }
             if ($reserves <= 0) {
                 $warnings[] = [
                     'severity' => 'danger',
@@ -766,17 +796,18 @@ final class DividendService
                     'detail' => 'The selected period currently shows a loss up to the capacity date.',
                 ];
             }
+            if ((float)($capacity['unposted_corporation_tax_adjustment'] ?? 0) > 0.0) {
+                $warnings[] = [
+                    'severity' => 'warning',
+                    'title' => 'Corporation Tax estimate deducted',
+                    'detail' => 'Dividend capacity deducts the estimated Corporation Tax not yet posted into the ledger.',
+                ];
+            }
         }
-
-        $warnings[] = [
-            'severity' => 'warning',
-            'title' => 'Retained earnings pending close',
-            'detail' => 'Retained earnings brought forward is currently estimated as zero until prior-period close is implemented.',
-        ];
         $warnings[] = [
             'severity' => 'info',
-            'title' => 'Bookkeeping workflow only',
-            'detail' => 'This tool is conservative and does not replace formal legal or accounting advice.',
+            'title' => 'Dividend review scope',
+            'detail' => 'Capacity is based on retained earnings close data, reviewed reserve classifications, posted ledgers, and CT estimates. It is not legal advice and does not by itself prove every Companies Act capital maintenance condition.',
         ];
 
         return $warnings;
@@ -789,6 +820,136 @@ final class DividendService
             'dividends_paid' => $this->findNominalByCode(self::DIVIDENDS_PAID_CODE) ?? [],
             'dividends_payable' => $this->findNominalByCode(self::DIVIDENDS_PAYABLE_CODE) ?? [],
         ];
+    }
+
+    private function reserveReviewDetail(array $reserveReview): string
+    {
+        if (empty($reserveReview['available'])) {
+            $errors = (array)($reserveReview['errors'] ?? []);
+            return (string)($errors[0] ?? 'Dividend reserve classification review is not available.');
+        }
+        if (!empty($reserveReview['snapshot_current'])) {
+            return 'Current-year reserve movements are based on a current dividend reserve classification review.';
+        }
+
+        $status = (string)($reserveReview['status'] ?? 'missing');
+        return $status === 'stale'
+            ? 'Dividend declaration is blocked because the dividend reserve classification review is stale.'
+            : 'Dividend declaration is blocked until current-year reserve movements are classified and reviewed.';
+    }
+
+    private function reserveBasisDetail(array $retainedEarningsPosition, bool $reserveReviewReliable, string $reserveReviewDetail, array $taxPosition): string
+    {
+        if (empty($retainedEarningsPosition['reliable'])) {
+            return (string)($retainedEarningsPosition['detail'] ?? 'Dividend declaration is blocked until retained earnings brought forward can be verified.');
+        }
+        if (!$reserveReviewReliable) {
+            return $reserveReviewDetail;
+        }
+        if (empty($taxPosition['reliable'])) {
+            return (string)($taxPosition['detail'] ?? 'Dividend declaration is blocked until Corporation Tax capacity can be reviewed.');
+        }
+
+        return 'Reserve basis is based on locked retained earnings, reviewed current-year reserve classifications, and Corporation Tax capacity checks.';
+    }
+
+    private function corporationTaxCapacityPosition(int $companyId, int $accountingPeriodId, array $accountingPeriod, float $ledgerProfit): array
+    {
+        $postedCharge = $this->postedCorporationTaxChargeForPeriod(
+            $companyId,
+            $accountingPeriodId,
+            (string)($accountingPeriod['period_start'] ?? ''),
+            (string)($accountingPeriod['period_end'] ?? '')
+        );
+        $estimate = 0.0;
+        $estimateAvailable = false;
+        $errors = [];
+
+        try {
+            $result = (new \eel_accounts\Service\YearEndTaxReadinessService())->fetchCurrentPeriodEstimate(
+                $companyId,
+                $accountingPeriodId,
+                $accountingPeriod
+            );
+            $estimateAvailable = !empty($result['available']);
+            if ($estimateAvailable) {
+                $estimate = max(0.0, round((float)($result['estimated_corporation_tax'] ?? 0), 2));
+            } else {
+                $errors = (array)($result['errors'] ?? []);
+            }
+        } catch (\Throwable $exception) {
+            $errors = [$exception->getMessage()];
+        }
+
+        if (!$estimateAvailable && $ledgerProfit > 0.0) {
+            return [
+                'reliable' => false,
+                'status' => 'ct_estimate_unavailable',
+                'posted_corporation_tax_charge' => $postedCharge,
+                'estimated_corporation_tax' => 0.0,
+                'unposted_corporation_tax_adjustment' => 0.0,
+                'detail' => (string)($errors[0] ?? 'Dividend declaration is blocked until a Corporation Tax estimate is available for the selected period.'),
+            ];
+        }
+
+        $unpostedAdjustment = max(0.0, round($estimate - $postedCharge, 2));
+
+        return [
+            'reliable' => true,
+            'status' => $unpostedAdjustment > 0.0 ? 'ct_estimate_adjusted' : 'ct_posted_or_nil',
+            'posted_corporation_tax_charge' => $postedCharge,
+            'estimated_corporation_tax' => $estimate,
+            'unposted_corporation_tax_adjustment' => $unpostedAdjustment,
+            'detail' => $unpostedAdjustment > 0.0
+                ? 'Dividend capacity deducts estimated Corporation Tax that has not yet been posted into the ledger.'
+                : 'Corporation Tax is either nil by estimate or already reflected by posted ledger entries.',
+        ];
+    }
+
+    private function postedCorporationTaxChargeForPeriod(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): float
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || $periodStart === '' || $periodEnd === '') {
+            return 0.0;
+        }
+
+        return max(0.0, round((float)\InterfaceDB::fetchColumn(
+            'SELECT COALESCE(SUM(pjl.debit - pjl.credit), 0)
+             FROM journals j
+             INNER JOIN journal_lines pjl ON pjl.journal_id = j.id
+             INNER JOIN nominal_accounts pna ON pna.id = pjl.nominal_account_id
+             WHERE j.company_id = :company_id
+               AND j.accounting_period_id = :accounting_period_id
+               AND j.is_posted = 1
+               AND j.journal_date BETWEEN :period_start AND :period_end
+               AND pna.account_type IN (:expense_type, :cost_type)
+               AND (
+                    LOWER(pna.name) LIKE :corporation_tax_name
+                    OR EXISTS (
+                        SELECT 1
+                        FROM journal_lines ctl
+                        INNER JOIN nominal_accounts ctna ON ctna.id = ctl.nominal_account_id
+                        LEFT JOIN nominal_account_subtypes cts ON cts.id = ctna.account_subtype_id
+                        WHERE ctl.journal_id = j.id
+                          AND (
+                            ctna.code = :corporation_tax_code
+                            OR LOWER(ctna.name) LIKE :corporation_tax_name_exists
+                            OR cts.code = :corporation_tax_subtype
+                          )
+                    )
+               )',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
+                'expense_type' => 'expense',
+                'cost_type' => 'cost_of_sales',
+                'corporation_tax_name' => '%corporation tax%',
+                'corporation_tax_name_exists' => '%corporation tax%',
+                'corporation_tax_code' => '2200',
+                'corporation_tax_subtype' => 'corp_tax',
+            ]
+        ), 2));
     }
 
     private function ensureVoucherForJournal(int $journalId, ?int $transactionId = null, string $changedBy = 'web_app'): ?array
@@ -1230,6 +1391,39 @@ final class DividendService
                 'amount' => 0.0,
                 'status' => 'prior_close_missing',
                 'detail' => 'Dividend declaration is blocked until the prior period retained earnings close journal exists.',
+            ];
+        }
+
+        $closeContext = (new \eel_accounts\Service\RetainedEarningsCloseService())->fetchContext($companyId, $previousPeriodId);
+        if (!empty($closeContext['available'])) {
+            if (empty($closeContext['acknowledged'])) {
+                return [
+                    'reliable' => false,
+                    'amount' => 0.0,
+                    'status' => 'prior_close_unacknowledged',
+                    'detail' => 'Dividend declaration is blocked until the prior period retained earnings close is acknowledged.',
+                ];
+            }
+            if (!empty($closeContext['acknowledgement_stale'])) {
+                return [
+                    'reliable' => false,
+                    'amount' => 0.0,
+                    'status' => 'prior_close_stale',
+                    'detail' => 'Dividend declaration is blocked because the prior period retained earnings close is stale.',
+                ];
+            }
+        }
+
+        $priorReserveReview = (new \eel_accounts\Service\DividendReserveClassificationService())->fetchReviewContext($companyId, $previousPeriodId);
+        if (empty($priorReserveReview['available']) || empty($priorReserveReview['snapshot_current'])) {
+            $status = empty($priorReserveReview['available']) ? 'prior_classification_unavailable' : (string)($priorReserveReview['status'] ?? 'missing');
+            return [
+                'reliable' => false,
+                'amount' => 0.0,
+                'status' => $status === 'stale' ? 'prior_classification_stale' : 'prior_close_unclassified',
+                'detail' => $status === 'stale'
+                    ? 'Dividend declaration is blocked because the prior period dividend reserve classification review is stale.'
+                    : 'Dividend declaration is blocked until the prior period dividend reserve classification review is current.',
             ];
         }
 

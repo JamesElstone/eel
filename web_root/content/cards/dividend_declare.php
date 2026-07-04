@@ -45,6 +45,8 @@ final class _dividend_declareCard extends CardBaseFramework
         } elseif (empty($capacity['available'])) {
             $capacityErrors = (array)($capacity['errors'] ?? []);
             $disabledReason = (string)($capacityErrors[0] ?? 'Dividend capacity is not available.');
+        } elseif (empty($capacity['reserves_reliable'])) {
+            $disabledReason = (string)($capacity['reserve_basis_detail'] ?? $capacity['retained_earnings_detail'] ?? 'Reserve basis is not ready for dividend declarations.');
         } elseif ($periodEnd !== '' && $periodEnd > $today) {
             $disabledReason = 'The selected accounting period has not ended yet.';
         } elseif ($availableReserves < 0) {

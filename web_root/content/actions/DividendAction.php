@@ -12,13 +12,19 @@ final class DividendAction implements ActionInterfaceFramework
     public function handle(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
         $intent = trim((string)$request->input('intent', $request->input('global_action', '')));
-        if (!in_array($intent, ['declare_dividend', 'declare_dividend_from_transaction', 'void_dividend'], true)) {
+        if (!in_array($intent, ['declare_dividend', 'declare_dividend_from_transaction', 'void_dividend', 'save_dividend_reserve_review'], true)) {
             return ActionResultFramework::none();
         }
 
         try {
             $service = new \eel_accounts\Service\DividendService();
             $result = match ($intent) {
+                'save_dividend_reserve_review' => (new \eel_accounts\Service\DividendReserveClassificationService())->saveReview(
+                    (int)$request->input('company_id', 0),
+                    (int)$request->input('accounting_period_id', 0),
+                    (array)$request->post('treatment', []),
+                    'web_app'
+                ),
                 'declare_dividend_from_transaction' => $service->declareDividendFromTransaction(
                     (int)$request->input('transaction_id', 0),
                     (int)$request->input('company_id', 0),
@@ -49,13 +55,15 @@ final class DividendAction implements ActionInterfaceFramework
         if ($success) {
             $flashMessages[] = [
                 'type' => 'success',
-                'message' => $intent === 'void_dividend'
-                    ? 'Dividend declaration voided and reversal recorded.'
-                    : (!empty($result['already_exists'])
+                'message' => $intent === 'save_dividend_reserve_review'
+                    ? 'Dividend reserve review saved.'
+                    : ($intent === 'void_dividend'
+                        ? 'Dividend declaration voided and reversal recorded.'
+                        : (!empty($result['already_exists'])
                         ? 'Dividend declaration already exists for this transaction.'
                         : (!empty($result['posted'])
                             ? 'Dividend declaration posted.'
-                            : 'Dividend declaration saved as draft pending reconciliation.')),
+                            : 'Dividend declaration saved as draft pending reconciliation.'))),
             ];
         } else {
             foreach ((array)($result['errors'] ?? ['Dividend declaration could not be posted.']) as $error) {
@@ -76,7 +84,7 @@ final class DividendAction implements ActionInterfaceFramework
 
         return new ActionResultFramework(
             $success,
-            ['transactions.imported', 'page.context', 'dividend.capacity', 'dividend.declare', 'dividend.history', 'dividend.vouchers', 'dividend.warnings', 'trial.balance.state'],
+            ['transactions.imported', 'page.context', 'dividend.capacity', 'dividend.reserve_review', 'dividend.declare', 'dividend.history', 'dividend.vouchers', 'dividend.warnings', 'trial.balance.state'],
             $flashMessages,
             $query,
             $context

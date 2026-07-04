@@ -20,6 +20,7 @@ $harness->run(_dividend_declareCard::class, static function (GeneratedServiceCla
         'dividends' => [
             'capacity' => [
                 'available' => true,
+                'reserves_reliable' => true,
                 'as_at_date' => '2026-06-30',
                 'available_distributable_reserves' => 250.00,
                 'accounting_period' => [
@@ -52,6 +53,21 @@ $harness->run(_dividend_declareCard::class, static function (GeneratedServiceCla
 
         $harness->assertTrue(str_contains($html, 'Form Disabled - Reason: Available distributable reserves are negative.'));
         $harness->assertTrue(str_contains($html, 'id="dividend_amount" type="number" name="amount" step="0.01" min="0.01" max="0.00" disabled'));
+        $harness->assertTrue(str_contains($html, '<button class="button primary" type="submit" disabled>Declare Dividend</button>'));
+    });
+
+    $harness->check(_dividend_declareCard::class, 'disables declaration controls when reserve basis is unreliable', static function () use ($harness, $card, $baseContext): void {
+        $context = $baseContext;
+        $context['dividends']['capacity']['reserves_reliable'] = false;
+        $context['dividends']['capacity']['reserve_basis_detail'] = 'Dividend declaration is blocked until current-year reserve movements are classified and reviewed.';
+        $html = $card->render($context);
+
+        $harness->assertTrue(str_contains($html, 'Form Disabled - Reason: Dividend declaration is blocked until current-year reserve movements are classified and reviewed.'));
+        $harness->assertTrue(str_contains($html, 'id="dividend_declaration_date" type="date" name="declaration_date" value="2026-06-30" min="2026-01-01" max="2026-06-30" disabled'));
+        $harness->assertTrue(str_contains($html, 'id="dividend_amount" type="number" name="amount" step="0.01" min="0.01" max="250.00" disabled'));
+        $harness->assertTrue(str_contains($html, 'id="dividend_reconciliation_transaction_id" name="reconciliation_transaction_id" disabled'));
+        $harness->assertTrue(str_contains($html, 'id="dividend_description" name="description" value="Interim dividend" disabled'));
+        $harness->assertTrue(str_contains($html, 'id="dividend_settlement_target" name="settlement_target" disabled'));
         $harness->assertTrue(str_contains($html, '<button class="button primary" type="submit" disabled>Declare Dividend</button>'));
     });
 

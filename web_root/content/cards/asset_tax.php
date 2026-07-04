@@ -82,7 +82,7 @@ final class _asset_taxCard extends CardBaseFramework
             $rowsHtml .= '<tr><td>' . HelperFramework::escape($label) . '</td><td>' . HelperFramework::escape($this->money($settings, $amount)) . '</td></tr>';
         }
 
-        return '<div class="table-scroll"><table><thead><tr><th>Calculation</th><th>Amount</th></tr></thead><tbody>' . $rowsHtml . '</tbody></table></div>';
+        return '<div class="table-scroll asset-tax-table"><table><thead><tr><th>Calculation</th><th>Amount</th></tr></thead><tbody>' . $rowsHtml . '</tbody></table></div>';
     }
 
     private function money(array $settings, float|int|string|null $value): string

@@ -563,6 +563,81 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
         });
     });
 
+    $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'converts posted expense claim line to asset and rebuilds journal', function () use ($harness, $instance): void {
+        if (!\InterfaceDB::tableExists('expense_claim_line_assets')) {
+            $harness->skip('Expense claim line asset table is not available.');
+        }
+
+        expenseClaimServiceWithFixture(static function (array $fixture) use ($harness, $instance): void {
+            $lineId = (int)($fixture['claim_id'] * 10 + 3);
+            \InterfaceDB::prepareExecute(
+                'INSERT INTO expense_claim_lines (id, expense_claim_id, line_number, expense_date, description, amount, nominal_account_id)
+                 VALUES (:id, :expense_claim_id, 1, :expense_date, :description, :amount, :nominal_account_id)',
+                [
+                    'id' => $lineId,
+                    'expense_claim_id' => (int)$fixture['claim_id'],
+                    'expense_date' => '2026-05-10',
+                    'description' => 'Posted pliers',
+                    'amount' => 116.24,
+                    'nominal_account_id' => (int)$fixture['line_nominal_id'],
+                ]
+            );
+
+            $posted = $instance->postClaim((int)$fixture['company_id'], (int)$fixture['claim_id'], [
+                'default_expense_nominal_id' => (int)$fixture['expense_nominal_id'],
+            ]);
+            $harness->assertSame(true, (bool)($posted['success'] ?? false));
+            $journalId = (int)\InterfaceDB::fetchColumn(
+                'SELECT posted_journal_id FROM expense_claims WHERE id = :id',
+                ['id' => (int)$fixture['claim_id']]
+            );
+            $harness->assertSame(1, (int)\InterfaceDB::fetchColumn(
+                'SELECT COUNT(*) FROM journal_lines WHERE journal_id = :journal_id AND nominal_account_id = :nominal_account_id AND debit = 116.24',
+                ['journal_id' => $journalId, 'nominal_account_id' => (int)$fixture['line_nominal_id']]
+            ));
+
+            $converted = $instance->convertPostedLineToAsset((int)$fixture['company_id'], $lineId, [
+                'category' => 'tools_equipment',
+                'useful_life_years' => 3,
+                'depreciation_method' => 'straight_line',
+                'residual_value' => '0.00',
+            ]);
+
+            $harness->assertSame(true, (bool)($converted['success'] ?? false));
+            $harness->assertSame('posted', (string)\InterfaceDB::fetchColumn(
+                'SELECT status FROM expense_claims WHERE id = :id',
+                ['id' => (int)$fixture['claim_id']]
+            ));
+            $harness->assertSame($journalId, (int)\InterfaceDB::fetchColumn(
+                'SELECT posted_journal_id FROM expense_claims WHERE id = :id',
+                ['id' => (int)$fixture['claim_id']]
+            ));
+            $harness->assertSame(0, (int)\InterfaceDB::fetchColumn(
+                'SELECT COUNT(*) FROM journal_lines WHERE journal_id = :journal_id AND nominal_account_id = :nominal_account_id AND debit = 116.24',
+                ['journal_id' => $journalId, 'nominal_account_id' => (int)$fixture['line_nominal_id']]
+            ));
+            $harness->assertSame(1, (int)\InterfaceDB::fetchColumn(
+                'SELECT COUNT(*) FROM journal_lines WHERE journal_id = :journal_id AND nominal_account_id = :nominal_account_id AND debit = 116.24',
+                ['journal_id' => $journalId, 'nominal_account_id' => (int)$fixture['asset_cost_nominal_id']]
+            ));
+            $asset = \InterfaceDB::fetchOne(
+                'SELECT id, linked_journal_id, linked_expense_claim_line_id, category, cost
+                 FROM asset_register
+                 WHERE linked_expense_claim_line_id = :line_id
+                 LIMIT 1',
+                ['line_id' => $lineId]
+            );
+            $harness->assertSame($journalId, (int)($asset['linked_journal_id'] ?? 0));
+            $harness->assertSame($lineId, (int)($asset['linked_expense_claim_line_id'] ?? 0));
+            $harness->assertSame('tools_equipment', (string)($asset['category'] ?? ''));
+            $harness->assertSame(116.24, (float)($asset['cost'] ?? 0));
+            $harness->assertSame((int)($asset['id'] ?? 0), (int)\InterfaceDB::fetchColumn(
+                'SELECT generated_asset_id FROM expense_claim_line_assets WHERE expense_claim_line_id = :line_id',
+                ['line_id' => $lineId]
+            ));
+        });
+    });
+
     $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'rejects claim creation outside valid date bounds', function () use ($harness, $instance): void {
         expenseClaimServiceWithFixture(static function (array $fixture) use ($harness, $instance): void {
             $outsidePeriod = $instance->createClaim((int)$fixture['company_id'], [

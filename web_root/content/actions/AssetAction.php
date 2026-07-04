@@ -28,6 +28,13 @@ final class AssetAction implements ActionInterfaceFramework
                     $request->postValues(),
                     (int)$request->input('default_bank_nominal_id', 0)
                 ),
+                'convert_non_asset_to_asset' => $service->convertNonAssetToAsset(
+                    $companyId,
+                    (string)$request->input('source_type', ''),
+                    (int)$request->input('source_id', 0),
+                    $request->postValues(),
+                    (int)$request->input('default_bank_nominal_id', 0)
+                ),
                 'create_manual_asset' => $service->createManualAsset(
                     $companyId,
                     (int)$request->input('accounting_period_id', 0),
@@ -76,7 +83,7 @@ final class AssetAction implements ActionInterfaceFramework
 
         return new ActionResultFramework(
             !empty($result['success']),
-            ['asset.create', 'asset.reconcile_manual', 'asset.register', 'asset.tax', 'asset.not_an_asset', 'page.context', 'year.end.checklist'],
+            ['asset.create', 'asset.reconcile_manual', 'asset.register', 'asset.tax', 'asset.not_an_asset', 'expense.claim.editor', 'expenses.state', 'transactions.imported', 'page.context', 'year.end.checklist'],
             $this->flashMessages($intent, $result),
             $searchContext,
             $searchContext
@@ -111,6 +118,7 @@ final class AssetAction implements ActionInterfaceFramework
             $messages[] = match ($intent) {
                 'run_asset_depreciation' => 'Depreciation posted.',
                 'save_potential_asset_threshold' => 'Potential asset threshold saved.',
+                'convert_non_asset_to_asset' => 'Non-asset converted to an asset.',
                 default => '',
             };
         }

@@ -185,32 +185,57 @@
   margin-bottom: 0;
 }
 
-.asset-disposal-panel {
-  width: fit-content;
-  max-width: 100%;
-  overflow-x: auto;
+.asset-register-table {
+  width: 100%;
 }
 
+.asset-register-table table {
+  min-width: 100%;
+  width: max-content;
+}
+
+.asset-register-actions-heading,
+.asset-register-actions-cell {
+  width: 1%;
+}
+
+.asset-register-actions-cell {
+  min-width: max-content;
+}
+
+.asset-disposal-panel,
 .asset-disposal-form {
-  width: fit-content;
-  max-width: 100%;
+  min-width: max-content;
+  width: max-content;
 }
 
 .asset-disposal-controls {
-  display: flex;
-  flex-flow: row nowrap;
-  align-items: center;
+  display: grid;
   gap: 8px;
   min-width: max-content;
-  width: fit-content;
+  width: max-content;
 }
 
-.asset-disposal-controls .input {
+.asset-disposal-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  min-width: max-content;
+}
+
+.asset-disposal-controls .input,
+.asset-disposal-controls .select {
   flex: 0 0 auto;
   min-width: 0;
 }
 
 .asset-disposal-controls [name="disposal_search_date"] {
+  width: 11rem;
+}
+
+.asset-disposal-controls [name="disposal_reason"] {
+  max-width: 20ch;
   width: 20ch;
 }
 
@@ -224,7 +249,8 @@
   display: grid;
   gap: 8px;
   margin-top: 8px;
-  min-width: min(48rem, 100%);
+  max-width: 100%;
+  min-width: 0;
 }
 
 .asset-disposal-candidate {
@@ -2625,6 +2651,29 @@
   align-items: center;
   margin-bottom: 0;
   white-space: nowrap;
+}
+
+.actions-stack {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.non-asset-convert-form {
+  max-width: 42rem;
+}
+
+.non-asset-convert-form .form-flex-flow {
+  align-items: end;
+  gap: 0.5rem;
+}
+
+.non-asset-convert-form .form-row {
+  margin-bottom: 0;
+  min-width: 8rem;
+}
+
+.non-asset-convert-form .input {
+  width: 8rem;
 }
 
 @media (max-width: 760px) {

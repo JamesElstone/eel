@@ -332,6 +332,47 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame($transactionId, (int)($asset['linked_transaction_id'] ?? 0));
         });
 
+        $harness->check(\eel_accounts\Service\AssetService::class, 'non-asset transaction conversion routes through transaction asset creation', static function () use ($harness, $service): void {
+            assetServiceTestRequireDisposalSchema($harness);
+            $fixture = assetServiceTestCreateDisposalFixture('non-asset-transaction');
+            $transactionId = assetServiceTestInsertTransaction($fixture, 1, '2026-07-03', -181.00, 'Non asset transaction');
+
+            $result = $service->convertNonAssetToAsset(
+                $fixture['company_id'],
+                'transaction',
+                $transactionId,
+                [
+                    'description' => 'Non asset transaction ' . $fixture['marker'],
+                    'asset_category' => 'tools_equipment',
+                    'purchase_date' => '2026-07-03',
+                    'cost' => '181.00',
+                    'asset_useful_life_years' => '3',
+                    'asset_depreciation_method' => 'straight_line',
+                    'asset_residual_value' => '0.00',
+                ],
+                $fixture['bank_nominal_id']
+            );
+
+            $harness->assertSame(true, (bool)($result['success'] ?? false));
+            $asset = InterfaceDB::fetchOne(
+                'SELECT linked_transaction_id, nominal_account_id
+                 FROM asset_register
+                 WHERE id = :id',
+                ['id' => (int)($result['asset']['id'] ?? 0)]
+            );
+            $transaction = InterfaceDB::fetchOne(
+                'SELECT nominal_account_id, category_status
+                 FROM transactions
+                 WHERE id = :id',
+                ['id' => $transactionId]
+            );
+
+            $harness->assertSame($transactionId, (int)($asset['linked_transaction_id'] ?? 0));
+            $harness->assertSame(assetServiceTestNominalId('1300'), (int)($asset['nominal_account_id'] ?? 0));
+            $harness->assertSame(assetServiceTestNominalId('1300'), (int)($transaction['nominal_account_id'] ?? 0));
+            $harness->assertSame('manual', (string)($transaction['category_status'] ?? ''));
+        });
+
         $harness->check(\eel_accounts\Service\AssetService::class, 'disposal receipt search uses one day before and three days after', static function () use ($harness, $service): void {
             assetServiceTestRequireDisposalSchema($harness);
             $fixture = assetServiceTestCreateDisposalFixture('search');

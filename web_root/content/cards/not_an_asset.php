@@ -137,7 +137,7 @@ final class _not_an_assetCard extends CardBaseFramework
             ->column(
                 'action',
                 'Action',
-                html: fn(array $row): string => $this->openSourceButton($row, $companyId, $accountingPeriodId),
+                html: fn(array $row): string => $this->actionButtons($row, $companyId, $accountingPeriodId, (int)($settings['default_bank_nominal_id'] ?? 0)),
                 exportable: false,
                 cellClass: 'cell-fit'
             );
@@ -199,6 +199,16 @@ final class _not_an_assetCard extends CardBaseFramework
         return $toolbar . $table->renderTable() . $table->renderFooter();
     }
 
+    private function actionButtons(array $row, int $companyId, int $accountingPeriodId, int $defaultBankNominalId): string
+    {
+        $buttons = array_filter([
+            $this->openSourceButton($row, $companyId, $accountingPeriodId),
+            $this->convertToAssetForm($row, $companyId, $accountingPeriodId, $defaultBankNominalId),
+        ], static fn(string $html): bool => $html !== '');
+
+        return $buttons === [] ? '' : '<div class="actions-stack">' . implode('', $buttons) . '</div>';
+    }
+
     private function openSourceButton(array $row, int $companyId, int $accountingPeriodId): string
     {
         $sourceType = (string)($row['source_type'] ?? '');
@@ -241,6 +251,90 @@ final class _not_an_assetCard extends CardBaseFramework
         }
 
         return '';
+    }
+
+    private function convertToAssetForm(array $row, int $companyId, int $accountingPeriodId, int $defaultBankNominalId): string
+    {
+        $sourceType = (string)($row['source_type'] ?? '');
+        $sourceId = (int)($row['source_id'] ?? 0);
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || $sourceId <= 0 || !in_array($sourceType, ['transaction', 'expense_claim'], true)) {
+            return '';
+        }
+
+        $formId = 'non-asset-convert-' . preg_replace('/[^a-z0-9_-]+/', '-', strtolower($sourceType)) . '-' . $sourceId;
+        $message = $sourceType === 'transaction'
+            ? 'This will recategorise the transaction and rebuild its journal. Continue?'
+            : 'This will rebuild the posted expense claim journal. The claim will remain posted. Continue?';
+
+        return '<form method="post" action="?page=assets" data-ajax="true" class="non-asset-convert-form">
+            <input type="hidden" name="card_action" value="Asset">
+            <input type="hidden" name="intent" value="convert_non_asset_to_asset">
+            <input type="hidden" name="company_id" value="' . $companyId . '">
+            <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+            <input type="hidden" name="default_bank_nominal_id" value="' . $defaultBankNominalId . '">
+            <input type="hidden" name="source_type" value="' . HelperFramework::escape($sourceType) . '">
+            <input type="hidden" name="source_id" value="' . $sourceId . '">
+            <input type="hidden" name="description" value="' . HelperFramework::escape((string)($row['description'] ?? '')) . '">
+            <input type="hidden" name="purchase_date" value="' . HelperFramework::escape((string)($row['date'] ?? '')) . '">
+            <input type="hidden" name="cost" value="' . HelperFramework::escape(number_format((float)($row['amount'] ?? 0), 2, '.', '')) . '">
+            <div class="form-flex-flow">
+                <div class="form-row">
+                    <label for="' . HelperFramework::escape($formId) . '-category">Asset category</label>
+                    <select class="select" id="' . HelperFramework::escape($formId) . '-category" name="asset_category">' . $this->assetCategoryOptions('tools_equipment') . '</select>
+                </div>
+                <div class="form-row">
+                    <label for="' . HelperFramework::escape($formId) . '-life">Useful life</label>
+                    <select class="select" id="' . HelperFramework::escape($formId) . '-life" name="asset_useful_life_years">' . $this->assetUsefulLifeOptions(3) . '</select>
+                </div>
+                <div class="form-row">
+                    <label for="' . HelperFramework::escape($formId) . '-method" title="None: no depreciation is posted. Straight Line: spreads cost less EOL Value evenly over the useful life. Reducing Balance: depreciates by the same rate each period, using the asset&apos;s remaining value after previous depreciation.">Depreciation</label>
+                    <select class="select" id="' . HelperFramework::escape($formId) . '-method" name="asset_depreciation_method">' . $this->depreciationMethodOptions('straight_line') . '</select>
+                </div>
+                <div class="form-row">
+                    <label for="' . HelperFramework::escape($formId) . '-residual" title="End of Life Value, also known as the Residual Value, is the value the item has after the useful life period has expired.">EOL Value</label>
+                    <input class="input" id="' . HelperFramework::escape($formId) . '-residual" name="asset_residual_value" inputmode="decimal" value="0.00">
+                </div>
+                <button class="button primary" type="submit" data-chicken-check="true" data-chicken-title="Convert to Asset" data-chicken-message="' . HelperFramework::escape($message) . '" data-chicken-confirm-text="Convert to Asset" data-chicken-button-class="button primary">Convert to Asset</button>
+            </div>
+        </form>';
+    }
+
+    private function assetCategoryOptions(string $selectedCategory): string
+    {
+        $html = '';
+        foreach (\eel_accounts\Service\AssetService::assetCategoryOptions() as $value => $label) {
+            $selected = $value === $selectedCategory ? ' selected' : '';
+            $html .= '<option value="' . HelperFramework::escape((string)$value) . '"' . $selected . '>' . HelperFramework::escape((string)$label) . '</option>';
+        }
+
+        return $html;
+    }
+
+    private function assetUsefulLifeOptions(int $selectedYears): string
+    {
+        $html = '';
+        foreach ([1, 2, 3, 5, 10] as $years) {
+            $selected = $years === $selectedYears ? ' selected' : '';
+            $html .= '<option value="' . $years . '"' . $selected . '>' . $years . ' ' . ($years === 1 ? 'Year' : 'Years') . '</option>';
+        }
+
+        return $html;
+    }
+
+    private function depreciationMethodOptions(string $selectedMethod): string
+    {
+        $options = [
+            'straight_line' => 'Straight line',
+            'reducing_balance' => 'Reducing balance',
+            'none' => 'None',
+        ];
+        $html = '';
+        foreach ($options as $value => $label) {
+            $selected = $value === $selectedMethod ? ' selected' : '';
+            $html .= '<option value="' . HelperFramework::escape($value) . '"' . $selected . '>' . HelperFramework::escape($label) . '</option>';
+        }
+
+        return $html;
     }
 
     private function monthKey(string $date): string

@@ -370,6 +370,26 @@ final class AssetService
         ];
     }
 
+    public function convertNonAssetToAsset(int $companyId, string $sourceType, int $sourceId, array $payload, int $defaultBankNominalId = 0): array
+    {
+        $sourceType = strtolower(trim($sourceType));
+        if ($companyId <= 0 || $sourceId <= 0) {
+            return ['success' => false, 'errors' => ['Select a valid non-asset source before converting.']];
+        }
+
+        $assetPayload = $this->normaliseNonAssetConversionPayload($payload);
+
+        if ($sourceType === 'transaction') {
+            return $this->createAssetFromTransaction($companyId, $sourceId, $assetPayload, $defaultBankNominalId);
+        }
+
+        if ($sourceType === 'expense_claim') {
+            return (new \eel_accounts\Service\ExpenseClaimService())->convertPostedLineToAsset($companyId, $sourceId, $assetPayload);
+        }
+
+        return ['success' => false, 'errors' => ['Choose a valid non-asset source type.']];
+    }
+
     private function fetchNonAssetTransactionCandidates(int $companyId, int $accountingPeriodId, int $nominalId, int $threshold): array
     {
         if (!$this->tableExists('transactions')) {
@@ -414,6 +434,36 @@ final class AssetService
                 ]
             ) ?: []
         );
+    }
+
+    private function normaliseNonAssetConversionPayload(array $payload): array
+    {
+        return [
+            'description' => trim((string)($payload['description'] ?? '')),
+            'category' => trim((string)($payload['category'] ?? $payload['asset_category'] ?? 'tools_equipment')),
+            'purchase_date' => trim((string)($payload['purchase_date'] ?? '')),
+            'cost' => $payload['cost'] ?? '',
+            'useful_life_years' => (int)($payload['useful_life_years'] ?? $payload['asset_useful_life_years'] ?? 3),
+            'depreciation_method' => trim((string)($payload['depreciation_method'] ?? $payload['asset_depreciation_method'] ?? 'straight_line')),
+            'residual_value' => $payload['residual_value'] ?? $payload['asset_residual_value'] ?? '0.00',
+            'accounting_period_id' => (int)($payload['accounting_period_id'] ?? 0),
+        ];
+    }
+
+    private function linkedTransactionAssetExists(int $transactionId): bool
+    {
+        if ($transactionId <= 0 || !$this->tableExists('asset_register')) {
+            return false;
+        }
+
+        return (int)\InterfaceDB::fetchColumn(
+            'SELECT EXISTS(
+                SELECT 1
+                FROM asset_register
+                WHERE linked_transaction_id = :transaction_id
+            )',
+            ['transaction_id' => $transactionId]
+        ) === 1;
     }
 
     private function fetchNonAssetExpenseClaimCandidates(int $companyId, int $accountingPeriodId, int $nominalId, int $threshold): array
@@ -608,6 +658,10 @@ final class AssetService
             return ['success' => false, 'errors' => ['The selected transaction could not be found for this company.']];
         }
         (new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, (int)($transaction['accounting_period_id'] ?? 0), 'create assets from transactions in this period');
+
+        if ($this->linkedTransactionAssetExists($transactionId)) {
+            return ['success' => false, 'errors' => ['This transaction is already linked to an asset.']];
+        }
 
         if ($defaultBankNominalId <= 0) {
             return ['success' => false, 'errors' => ['Set the default bank nominal before creating an asset from a transaction.']];

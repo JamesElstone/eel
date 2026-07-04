@@ -161,14 +161,26 @@ $harness->run(_not_an_assetCard::class, static function (GeneratedServiceClassTe
         $csv = $card->tables($context)[0]->exportCsv();
 
         $harness->assertSame(2, substr_count($html, '>Open Source</button>'));
+        $harness->assertSame(2, substr_count($html, '>Convert to Asset</button>'));
+        $harness->assertSame(2, substr_count($html, 'name="intent" value="convert_non_asset_to_asset"'));
         $harness->assertTrue(str_contains($html, 'name="page" value="transactions"'));
         $harness->assertTrue(str_contains($html, 'name="show_card" value="transactions_imported"'));
         $harness->assertTrue(str_contains($html, 'name="month_key" value="2026-07-01"'));
         $harness->assertTrue(str_contains($html, 'name="category_filter" value="all"'));
+        $harness->assertTrue(str_contains($html, 'name="source_type" value="transaction"'));
+        $harness->assertTrue(str_contains($html, 'name="source_id" value="51"'));
+        $harness->assertTrue(str_contains($html, 'This will recategorise the transaction and rebuild its journal'));
         $harness->assertTrue(str_contains($html, 'name="page" value="expense_claims"'));
         $harness->assertTrue(str_contains($html, 'name="show_card" value="expense_claim_editor"'));
         $harness->assertTrue(str_contains($html, 'name="claim_id" value="71"'));
+        $harness->assertTrue(str_contains($html, 'name="source_type" value="expense_claim"'));
+        $harness->assertTrue(str_contains($html, 'name="source_id" value="61"'));
+        $harness->assertTrue(str_contains($html, 'The claim will remain posted'));
+        $harness->assertTrue(str_contains($html, '<option value="tools_equipment" selected>Tools &amp; Equipment</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="3" selected>3 Years</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="straight_line" selected>Straight line</option>'));
         $harness->assertFalse(str_contains($csv, 'Open Source'));
+        $harness->assertFalse(str_contains($csv, 'Convert to Asset'));
     });
 
     $harness->check(_not_an_assetCard::class, 'renders nominal setup helper when Tools and Small Equipment is unconfigured', static function () use ($harness, $card): void {

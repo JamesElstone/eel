@@ -1691,6 +1691,98 @@ final class ExpenseClaimService
         ];
     }
 
+    public function convertPostedLineToAsset(int $companyId, int $lineId, array $payload): array
+    {
+        if (!\InterfaceDB::tableExists('expense_claim_line_assets') || !\InterfaceDB::tableExists('asset_register')) {
+            return ['success' => false, 'errors' => ['Run the fixed asset expense claim migration before converting expense lines to assets.']];
+        }
+
+        $line = $this->fetchLineWithClaim($companyId, $lineId);
+        if ($line === null) {
+            return ['success' => false, 'errors' => ['The selected expense claim line could not be found for this company.']];
+        }
+
+        $claimId = (int)$line['expense_claim_id'];
+        $claim = $this->fetchClaim($companyId, $claimId);
+        if ($claim === null) {
+            return ['success' => false, 'errors' => ['The selected claim could not be found.']];
+        }
+
+        if ((string)($claim['status'] ?? '') !== 'posted') {
+            return ['success' => false, 'errors' => ['Use the expense claim editor to convert draft claim lines to assets.']];
+        }
+
+        $journalId = (int)($claim['posted_journal_id'] ?? 0);
+        if ($journalId <= 0) {
+            return ['success' => false, 'errors' => ['This posted claim does not have a linked journal to rebuild.']];
+        }
+
+        (new \eel_accounts\Service\YearEndLockService())->assertUnlocked(
+            $companyId,
+            (int)($claim['accounting_period_id'] ?? 0),
+            'convert posted expense claim lines to assets in this period'
+        );
+
+        if ($this->linkedExpenseClaimLineAssetExists($lineId)) {
+            return ['success' => false, 'errors' => ['This expense claim line is already linked to an asset.']];
+        }
+
+        $normalised = $this->normaliseLineAssetPayload($line, [
+            'category' => $payload['category'] ?? $payload['asset_category'] ?? 'tools_equipment',
+            'useful_life_years' => $payload['useful_life_years'] ?? $payload['asset_useful_life_years'] ?? 3,
+            'depreciation_method' => $payload['depreciation_method'] ?? $payload['asset_depreciation_method'] ?? 'straight_line',
+            'residual_value' => $payload['residual_value'] ?? $payload['asset_residual_value'] ?? '0.00',
+        ], (int)$claim['accounting_period_id'], $companyId);
+        if ($normalised['errors'] !== []) {
+            return ['success' => false, 'errors' => $normalised['errors']];
+        }
+
+        $payableNominalId = $this->payableNominalIdFromJournal($journalId);
+        if ($payableNominalId <= 0) {
+            return ['success' => false, 'errors' => ['The expense claim payable nominal could not be identified from the posted journal.']];
+        }
+
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
+        }
+
+        try {
+            $this->upsertLineAssetDetails($line, $normalised['values']);
+            \InterfaceDB::prepare(
+                'UPDATE expense_claim_lines
+                 SET nominal_account_id = :nominal_account_id,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = :id
+                   AND expense_claim_id = :expense_claim_id'
+            )->execute([
+                'nominal_account_id' => (int)$normalised['values']['nominal_account_id'],
+                'id' => $lineId,
+                'expense_claim_id' => $claimId,
+            ]);
+            (new \eel_accounts\Service\VehicleService())->cleanupVehicleDetailsForExpenseClaimLine($lineId);
+
+            $this->rebuildPostedClaimJournal($companyId, $claim, $journalId, $payableNominalId);
+
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+
+            return ['success' => false, 'errors' => ['The expense claim line could not be converted to an asset: ' . $exception->getMessage()]];
+        }
+
+        return [
+            'success' => true,
+            'claim' => $this->fetchClaim($companyId, $claimId),
+            'claims' => $this->listClaims($companyId),
+            'messages' => ['Expense claim line converted to an asset and the posted journal rebuilt.'],
+        ];
+    }
+
     public function linkPayment(int $companyId, int $claimId, array $payload): array {
         $claim = $this->fetchClaim($companyId, $claimId);
         if ($claim === null) {
@@ -2107,6 +2199,51 @@ final class ExpenseClaimService
         }
 
         return null;
+    }
+
+    private function fetchLineWithClaim(int $companyId, int $lineId): ?array
+    {
+        if ($companyId <= 0 || $lineId <= 0) {
+            return null;
+        }
+
+        $row = \InterfaceDB::fetchOne(
+            'SELECT l.id,
+                    l.expense_claim_id,
+                    l.line_number,
+                    l.expense_date,
+                    l.description,
+                    l.amount,
+                    l.nominal_account_id,
+                    l.receipt_reference,
+                    l.notes,
+                    la.category AS asset_category,
+                    la.description AS asset_description,
+                    la.useful_life_years AS asset_useful_life_years,
+                    la.depreciation_method AS asset_depreciation_method,
+                    la.residual_value AS asset_residual_value,
+                    la.generated_asset_id
+             FROM expense_claim_lines l
+             INNER JOIN expense_claims ec ON ec.id = l.expense_claim_id
+             LEFT JOIN expense_claim_line_assets la ON la.expense_claim_line_id = l.id
+             WHERE l.id = :line_id
+               AND ec.company_id = :company_id
+             LIMIT 1',
+            ['line_id' => $lineId, 'company_id' => $companyId]
+        );
+
+        if (!is_array($row)) {
+            return null;
+        }
+
+        $row['id'] = (int)$row['id'];
+        $row['expense_claim_id'] = (int)$row['expense_claim_id'];
+        $row['line_number'] = (int)$row['line_number'];
+        $row['amount'] = round((float)$row['amount'], 2);
+        $row['nominal_account_id'] = isset($row['nominal_account_id']) ? (int)$row['nominal_account_id'] : null;
+        $row['generated_asset_id'] = isset($row['generated_asset_id']) ? (int)$row['generated_asset_id'] : null;
+
+        return $row;
     }
 
     public function recalculateClaim(int $claimId): void {
@@ -2933,6 +3070,112 @@ final class ExpenseClaimService
 
         $row = $stmt->fetch();
         return is_array($row) ? $row : null;
+    }
+
+    private function linkedExpenseClaimLineAssetExists(int $lineId): bool
+    {
+        if ($lineId <= 0 || !\InterfaceDB::tableExists('asset_register')) {
+            return false;
+        }
+
+        return (int)\InterfaceDB::fetchColumn(
+            'SELECT EXISTS(
+                SELECT 1
+                FROM asset_register
+                WHERE linked_expense_claim_line_id = :line_id
+            )',
+            ['line_id' => $lineId]
+        ) === 1;
+    }
+
+    private function payableNominalIdFromJournal(int $journalId): int
+    {
+        if ($journalId <= 0) {
+            return 0;
+        }
+
+        return (int)\InterfaceDB::fetchColumn(
+            'SELECT nominal_account_id
+             FROM journal_lines
+             WHERE journal_id = :journal_id
+               AND credit > 0
+             ORDER BY credit DESC, id ASC
+             LIMIT 1',
+            ['journal_id' => $journalId]
+        );
+    }
+
+    private function rebuildPostedClaimJournal(int $companyId, array $claim, int $journalId, int $payableNominalId): void
+    {
+        $claimId = (int)($claim['id'] ?? 0);
+        $lines = $this->fetchClaimLines($claimId);
+        if ($lines === []) {
+            throw new \RuntimeException('The claim has no lines to rebuild.');
+        }
+
+        $assetService = new \eel_accounts\Service\AssetService();
+        \InterfaceDB::prepare('DELETE FROM journal_lines WHERE journal_id = :journal_id')
+            ->execute(['journal_id' => $journalId]);
+
+        foreach ($lines as $line) {
+            if ((string)($line['line_type'] ?? 'expense') === 'asset') {
+                $normalisedAsset = $this->normaliseAssetValuesForPosting($assetService, $companyId, (int)$claim['accounting_period_id'], $line);
+                if ($normalisedAsset['errors'] !== []) {
+                    throw new \RuntimeException(implode(' ', $normalisedAsset['errors']));
+                }
+
+                $values = (array)$normalisedAsset['values'];
+                $this->insertJournalLine(
+                    $journalId,
+                    (int)$values['nominal_account_id'],
+                    round((float)$line['amount'], 2),
+                    0.0,
+                    (string)$line['description']
+                );
+
+                if ((int)($line['generated_asset_id'] ?? 0) <= 0) {
+                    $asset = $assetService->createAssetRecordFromValues($values, [
+                        'linked_journal_id' => $journalId,
+                        'linked_transaction_id' => null,
+                        'linked_expense_claim_line_id' => (int)$line['id'],
+                    ]);
+                    if ($asset === null) {
+                        throw new \RuntimeException('The asset could not be reloaded after save.');
+                    }
+                    \InterfaceDB::prepare(
+                        'UPDATE expense_claim_line_assets
+                         SET generated_asset_id = :generated_asset_id,
+                             updated_at = CURRENT_TIMESTAMP
+                         WHERE expense_claim_line_id = :expense_claim_line_id'
+                    )->execute([
+                        'generated_asset_id' => (int)$asset['id'],
+                        'expense_claim_line_id' => (int)$line['id'],
+                    ]);
+                }
+                continue;
+            }
+
+            $nominalAccountId = (int)($line['nominal_account_id'] ?? 0);
+            if ($nominalAccountId <= 0) {
+                throw new \RuntimeException('Every expense line needs a Charge To value before rebuilding the posted journal.');
+            }
+
+            $this->insertJournalLine(
+                $journalId,
+                $nominalAccountId,
+                round((float)$line['amount'], 2),
+                0.0,
+                (string)$line['description']
+            );
+        }
+
+        $this->insertJournalLine(
+            $journalId,
+            $payableNominalId,
+            0.0,
+            $this->sumClaimLines($claimId),
+            'Expense claim payable'
+        );
     }
 
     private function insertJournalLine(int $journalId, int $nominalAccountId, float $debit, float $credit, string $description): void {

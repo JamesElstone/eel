@@ -35,7 +35,7 @@ $harness->run(AssetAction::class, static function (GeneratedServiceClassTestHarn
         $result = $action->handle($request, createTestPageServiceFramework());
 
         $harness->assertSame(true, $result->isSuccess());
-        $harness->assertSame(['asset.create', 'asset.reconcile_manual', 'asset.register', 'asset.tax', 'asset.not_an_asset', 'page.context', 'year.end.checklist'], $result->changedFacts());
+        $harness->assertSame(['asset.create', 'asset.reconcile_manual', 'asset.register', 'asset.tax', 'asset.not_an_asset', 'expense.claim.editor', 'expenses.state', 'transactions.imported', 'page.context', 'year.end.checklist'], $result->changedFacts());
         $harness->assertSame('2026-07-01', (string)($result->context()['asset_disposal_search_date'] ?? ''));
         $harness->assertSame(12, (int)($result->context()['asset_disposal_search_asset_id'] ?? 0));
     });

@@ -31,6 +31,11 @@ $harness->run(_companies_stored_detailCard::class, static function (GeneratedSer
                     ],
                 ], JSON_UNESCAPED_SLASHES),
             ],
+            'incorporation_document_status' => [
+                'downloaded' => true,
+                'downloaded_at' => '2026-07-04 12:34:56',
+                'filename' => '12344321_newinc_2022-09-05.pdf',
+            ],
         ],
     ]);
 
@@ -41,5 +46,13 @@ $harness->run(_companies_stored_detailCard::class, static function (GeneratedSer
         $harness->assertTrue(str_contains($html, 'Example Director'));
         $harness->assertSame(false, str_contains($html, 'Former Director'));
         $harness->assertSame(false, str_contains($html, 'Example Secretary'));
+    });
+
+    $harness->check(_companies_stored_detailCard::class, 'renders incorporation document download status', static function () use ($harness, $html): void {
+        $harness->assertTrue(str_contains($html, 'Incorporation Document downloaded'));
+        $harness->assertTrue(str_contains($html, '<td>true</td>'));
+        $harness->assertTrue(str_contains($html, 'Incorporation Document last successfully downloaded'));
+        $harness->assertTrue(str_contains($html, 'Incorporation Document filename'));
+        $harness->assertTrue(str_contains($html, '12344321_newinc_2022-09-05.pdf'));
     });
 });

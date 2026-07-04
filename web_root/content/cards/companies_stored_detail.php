@@ -23,6 +23,12 @@ final class _companies_stored_detailCard extends CardBaseFramework
                 'method' => 'fetchCompanyDetails',
                 'params' => ['companyId' => ':company.id'],
             ],
+            [
+                'key' => 'incorporation_document_status',
+                'service' => \eel_accounts\Service\CompaniesHouseIncorporationDocumentStatusService::class,
+                'method' => 'statusForCompany',
+                'params' => ['companyId' => ':company.id'],
+            ],
         ];
     }
 
@@ -61,6 +67,10 @@ final class _companies_stored_detailCard extends CardBaseFramework
             : (string)(int)$activeDirectorCount;
         $officersLastChecked = (string)($serviceResponse['companies_house_officers_last_checked_at'] ?? '');
         $directorNames = $this->directorNames((string)($serviceResponse['companies_house_officers_json'] ?? ''));
+        $incorporationDocumentStatus = (array)($context['services']['incorporation_document_status'] ?? []);
+        $incorporationDocumentDownloaded = !empty($incorporationDocumentStatus['downloaded']);
+        $incorporationDocumentDownloadedAt = (string)($incorporationDocumentStatus['downloaded_at'] ?? '');
+        $incorporationDocumentFilename = (string)($incorporationDocumentStatus['filename'] ?? '');
 
         return '
             <div class="form-grid">
@@ -107,6 +117,9 @@ final class _companies_stored_detailCard extends CardBaseFramework
                         <tr><td scope="row">Undeliverable registered office</th><td>' . HelperFramework::escape($this->companiesHouseFlagLabel($serviceResponse['undeliverable_registered_office_address'] ?? null)) . '</td></tr>
                         <tr><td scope="row">Has super secure PSCs</th><td>' . HelperFramework::escape($this->companiesHouseFlagLabel($serviceResponse['has_super_secure_pscs'] ?? null)) . '</td></tr>
                         <tr><td scope="row">Director names</td><td>' . HelperFramework::escape($directorNames !== '' ? $directorNames : 'Not stored yet') . '</td></tr>
+                        <tr><td scope="row">Incorporation Document downloaded</td><td>' . ($incorporationDocumentDownloaded ? 'true' : 'false') . '</td></tr>
+                        <tr><td scope="row">Incorporation Document last successfully downloaded</td><td>' . HelperFramework::escape($incorporationDocumentDownloadedAt !== '' ? HelperFramework::displayDateTime($incorporationDocumentDownloadedAt) : 'Not downloaded') . '</td></tr>
+                        <tr><td scope="row">Incorporation Document filename</td><td>' . HelperFramework::escape($incorporationDocumentFilename !== '' ? $incorporationDocumentFilename : 'Not downloaded') . '</td></tr>
                     </tbody>
                 </table>
             </div>

@@ -102,6 +102,74 @@ $harness->run(\eel_accounts\Service\IncorporationShareCapitalService::class, sta
             $summary = $service->fetchSummary((int)$fixture['company_id']);
             $harness->assertSame('complete', (string)($summary['status'] ?? ''));
             $harness->assertSame(100.00, (float)(($summary['totals'] ?? [])['matched_total'] ?? 0));
+            $shareClass = (array)(($summary['share_classes'] ?? [])[0] ?? []);
+            $currentMatch = (array)($shareClass['current_match'] ?? []);
+            $harness->assertSame(true, (bool)($currentMatch['match_valid'] ?? false));
+            $harness->assertSame('payment_matched', (string)($shareClass['payment_status'] ?? ''));
+        });
+    });
+
+    $harness->check(\eel_accounts\Service\IncorporationShareCapitalService::class, 'treats recategorised matched transactions as not paid up without clearing audit history', static function () use ($harness, $service): void {
+        incorporation_share_service_with_fixture($harness, static function (array $fixture) use ($harness, $service): void {
+            $saved = $service->saveShareClass([
+                'company_id' => $fixture['company_id'],
+                'share_class' => 'Ordinary',
+                'currency' => 'GBP',
+                'quantity' => 100,
+                'nominal_value_per_share' => '1.00',
+                'paid_value_per_share' => '1.00',
+                'unpaid_value_per_share' => '0.00',
+            ]);
+            $shareClassId = (int)($saved['share_class_id'] ?? 0);
+            $transactionId = incorporation_share_service_insert_transaction($fixture, 100.00, '2026-01-10', 'Ordinary share capital payment');
+            $matched = $service->matchPayment((int)$fixture['company_id'], $shareClassId, $transactionId, 'test');
+            $harness->assertSame(true, (bool)($matched['success'] ?? false));
+
+            $expenseNominalId = incorporation_share_service_nominal('6071', 'Fixture Recategorised Expense ' . $fixture['marker'], 'expense');
+            \InterfaceDB::prepareExecute(
+                'UPDATE transactions
+                 SET nominal_account_id = :nominal_account_id,
+                     category_status = :category_status
+                 WHERE id = :id',
+                [
+                    'nominal_account_id' => $expenseNominalId,
+                    'category_status' => 'manual',
+                    'id' => $transactionId,
+                ]
+            );
+
+            $summary = $service->fetchSummary((int)$fixture['company_id']);
+            $shareClass = (array)(($summary['share_classes'] ?? [])[0] ?? []);
+            $currentMatch = (array)($shareClass['current_match'] ?? []);
+            $harness->assertSame('shares_not_paid_up', (string)($summary['status'] ?? ''));
+            $harness->assertSame(0.00, (float)(($summary['totals'] ?? [])['matched_total'] ?? 1));
+            $harness->assertSame('not_paid_up', (string)($shareClass['payment_status'] ?? ''));
+            $harness->assertSame(false, (bool)($currentMatch['match_valid'] ?? true));
+            $harness->assertSame('transaction_recategorised', (string)($currentMatch['match_invalid_reason'] ?? ''));
+            $harness->assertSame(1, (int)\InterfaceDB::fetchColumn(
+                'SELECT COUNT(*) FROM company_incorporation_share_payment_matches WHERE share_class_id = :share_class_id AND match_status = :status',
+                ['share_class_id' => $shareClassId, 'status' => 'current']
+            ));
+
+            \InterfaceDB::prepareExecute(
+                'UPDATE transactions
+                 SET nominal_account_id = :nominal_account_id,
+                     category_status = :category_status
+                 WHERE id = :id',
+                [
+                    'nominal_account_id' => (int)$fixture['share_capital_nominal_id'],
+                    'category_status' => 'manual',
+                    'id' => $transactionId,
+                ]
+            );
+
+            $restoredSummary = $service->fetchSummary((int)$fixture['company_id']);
+            $restoredShareClass = (array)(($restoredSummary['share_classes'] ?? [])[0] ?? []);
+            $restoredMatch = (array)($restoredShareClass['current_match'] ?? []);
+            $harness->assertSame('complete', (string)($restoredSummary['status'] ?? ''));
+            $harness->assertSame(100.00, (float)(($restoredSummary['totals'] ?? [])['matched_total'] ?? 0));
+            $harness->assertSame('payment_matched', (string)($restoredShareClass['payment_status'] ?? ''));
+            $harness->assertSame(true, (bool)($restoredMatch['match_valid'] ?? false));
         });
     });
 
@@ -129,7 +197,7 @@ $harness->run(\eel_accounts\Service\IncorporationShareCapitalService::class, sta
         });
     });
 
-    $harness->check(\eel_accounts\Service\IncorporationShareCapitalService::class, 'marks shares unpaid and clears matches without deleting audit history', static function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\IncorporationShareCapitalService::class, 'clears payment matches without deleting audit history', static function () use ($harness, $service): void {
         incorporation_share_service_with_fixture($harness, static function (array $fixture) use ($harness, $service): void {
             $saved = $service->saveShareClass([
                 'company_id' => $fixture['company_id'],
@@ -155,13 +223,11 @@ $harness->run(\eel_accounts\Service\IncorporationShareCapitalService::class, sta
                 'SELECT COUNT(*) FROM company_incorporation_share_payment_matches WHERE share_class_id = :share_class_id AND match_status = :status',
                 ['share_class_id' => $shareClassId, 'status' => 'cleared']
             ));
-
-            $unpaid = $service->markSharesUnpaid((int)$fixture['company_id'], $shareClassId, 'test');
-            $harness->assertSame(true, (bool)($unpaid['success'] ?? false));
             $summary = $service->fetchSummary((int)$fixture['company_id']);
-            $harness->assertSame('shares_not_paid_up', (string)($summary['status'] ?? ''));
-            $harness->assertSame(100.00, (float)(($summary['totals'] ?? [])['unpaid_total'] ?? 0));
-            $harness->assertSame(0.00, (float)(($summary['totals'] ?? [])['expected_paid_total'] ?? 1));
+            $shareClass = (array)(($summary['share_classes'] ?? [])[0] ?? []);
+            $harness->assertSame('payment_unmatched', (string)($summary['status'] ?? ''));
+            $harness->assertSame(0.00, (float)(($summary['totals'] ?? [])['matched_total'] ?? 1));
+            $harness->assertSame('payment_not_matched', (string)($shareClass['payment_status'] ?? ''));
         });
     });
 });

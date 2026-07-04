@@ -90,11 +90,15 @@ final class _incorporation_payment_matchingCard extends CardBaseFramework
             </tr>';
         }
 
+        $matchWarning = is_array($currentMatch) && empty($currentMatch['match_valid'])
+            ? '<div class="helper warning">' . HelperFramework::escape($this->invalidMatchMessage((string)($currentMatch['match_invalid_reason'] ?? ''))) . '</div>'
+            : '';
         $matchHtml = is_array($currentMatch)
             ? '<div class="panel-soft">
                 <div class="eyebrow">Current match</div>
                 <div><strong>' . HelperFramework::escape($this->money($settings, $currentMatch['matched_amount'] ?? 0)) . '</strong> from transaction #' . (int)($currentMatch['transaction_id'] ?? 0) . '</div>
                 <div class="helper">' . HelperFramework::escape(HelperFramework::displayDate((string)($currentMatch['txn_date'] ?? '')) . ' ' . (string)($currentMatch['description'] ?? '')) . '</div>
+                ' . $matchWarning . '
                 ' . $this->clearForm($companyId, $shareClassId) . '
             </div>'
             : '<div class="helper">No incoming share payment has been matched yet.</div>';
@@ -159,6 +163,16 @@ final class _incorporation_payment_matchingCard extends CardBaseFramework
             'payment_matched' => 'success',
             'not_paid_up' => 'warning',
             default => 'danger',
+        };
+    }
+
+    private function invalidMatchMessage(string $reason): string
+    {
+        return match ($reason) {
+            'transaction_recategorised' => 'This matched transaction has been re-categorised away from Ordinary Share Capital, so these shares are currently treated as not paid up.',
+            'transaction_amount_changed' => 'This matched transaction no longer matches the expected paid share total, so these shares are currently treated as not paid up.',
+            'transaction_company_mismatch' => 'This matched transaction no longer belongs to this company, so these shares are currently treated as not paid up.',
+            default => 'This matched transaction is no longer valid, so these shares are currently treated as not paid up.',
         };
     }
 

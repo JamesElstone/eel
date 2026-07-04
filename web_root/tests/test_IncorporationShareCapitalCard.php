@@ -14,7 +14,7 @@ $harness->run(_incorporation_share_capitalCard::class, static function (
     GeneratedServiceClassTestHarness $harness,
     _incorporation_share_capitalCard $card
 ): void {
-    $harness->check(_incorporation_share_capitalCard::class, 'renders recorded share classes in a TableFramework table with editable cells', static function () use ($harness, $card): void {
+    $harness->check(_incorporation_share_capitalCard::class, 'renders recorded share classes in a read-only TableFramework table', static function () use ($harness, $card): void {
         $context = incorporationShareCapitalCardContext([
             [
                 'id' => 12,
@@ -26,6 +26,7 @@ $harness->run(_incorporation_share_capitalCard::class, static function (
                 'unpaid_value_per_share' => '0.000000',
                 'nominal_total' => 500.00,
                 'unpaid_total' => 0.00,
+                'payment_status' => 'payment_matched',
                 'source_note' => 'FULL RIGHTS REGARDING VOTING, PAYMENT OF DIVIDENDS AND DISTRIBUTIONS',
                 'document_reference' => 'Model articles adopted',
             ],
@@ -37,12 +38,17 @@ $harness->run(_incorporation_share_capitalCard::class, static function (
         $harness->assertSame(true, str_contains($html, 'Class of shares'));
         $harness->assertSame(true, str_contains($html, 'Number allotted'));
         $harness->assertSame(true, str_contains($html, 'Aggregate nominal value'));
-        $harness->assertSame(true, str_contains($html, 'name="aggregate_nominal_value" value="500"'));
+        $harness->assertSame(true, str_contains($html, '500'));
         $harness->assertSame(true, str_contains($html, 'Total aggregate unpaid'));
-        $harness->assertSame(true, str_contains($html, 'name="total_aggregate_unpaid" value="0"'));
+        $harness->assertSame(true, str_contains($html, 'Payment matched'));
         $harness->assertSame(true, str_contains($html, 'Prescribed particulars'));
         $harness->assertSame(true, str_contains($html, 'FULL RIGHTS REGARDING VOTING, PAYMENT OF DIVIDENDS AND DISTRIBUTIONS'));
-        $harness->assertSame(true, str_contains($html, 'Save Share Class'));
+        $harness->assertSame(true, str_contains($html, 'Review payment'));
+        $harness->assertSame(false, str_contains($html, '<input'));
+        $harness->assertSame(false, str_contains($html, '<textarea'));
+        $harness->assertSame(false, str_contains($html, 'Save Share Class'));
+        $harness->assertSame(false, str_contains($html, 'Mark Not Paid Up'));
+        $harness->assertSame(false, str_contains($html, 'mark_shares_unpaid'));
         $harness->assertSame(false, str_contains($html, 'Pull data from Companies House NEWINC Filled Document'));
 
         $csv = $tables[0]->exportCsv();
@@ -64,6 +70,7 @@ $harness->run(_incorporation_share_capitalCard::class, static function (
                 'unpaid_value_per_share' => '0.000000',
                 'nominal_total' => $i,
                 'unpaid_total' => 0,
+                'payment_status' => 'payment_not_matched',
                 'source_note' => '',
                 'document_reference' => 'doc-' . $i,
             ];
@@ -73,9 +80,9 @@ $harness->run(_incorporation_share_capitalCard::class, static function (
         $html = $card->render($context);
         $csv = $card->tables($context)[0]->exportCsv();
 
-        $harness->assertSame(true, str_contains($html, 'value="Class 1"'));
-        $harness->assertSame(true, str_contains($html, 'value="Class 5"'));
-        $harness->assertSame(false, str_contains($html, 'value="Class 6"'));
+        $harness->assertSame(true, str_contains($html, 'Class 1'));
+        $harness->assertSame(true, str_contains($html, 'Class 5'));
+        $harness->assertSame(false, str_contains($html, 'Class 6'));
         $harness->assertSame(true, str_contains($csv, 'Class 6'));
     });
 });

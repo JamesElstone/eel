@@ -107,21 +107,21 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
             ->column(
                 'share_class',
                 'Class of shares',
-                html: fn(array $row): string => $this->inputCell($row, 'share_class', 'text', 'Ordinary'),
+                html: static fn(array $row): string => HelperFramework::escape((string)($row['share_class'] ?? '')),
                 export: static fn(array $row): string => (string)($row['share_class'] ?? ''),
                 sort: true
             )
             ->column(
                 'currency',
                 'Currency',
-                html: fn(array $row): string => $this->inputCell($row, 'currency', 'text', 'GBP'),
+                html: static fn(array $row): string => HelperFramework::escape((string)($row['currency'] ?? '')),
                 export: static fn(array $row): string => (string)($row['currency'] ?? ''),
                 sort: true
             )
             ->column(
                 'quantity',
                 'Number allotted',
-                html: fn(array $row): string => $this->inputCell($row, 'quantity', 'number', '', '1', '1'),
+                html: static fn(array $row): string => HelperFramework::escape((string)(int)($row['quantity'] ?? 0)),
                 export: static fn(array $row): string => (string)(int)($row['quantity'] ?? 0),
                 exportType: 'number',
                 sort: static fn(array $row): int => (int)($row['quantity'] ?? 0)
@@ -129,7 +129,7 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
             ->column(
                 'aggregate_nominal_value',
                 'Aggregate nominal value',
-                html: fn(array $row): string => $this->inputCell($row, 'aggregate_nominal_value', 'number', $this->aggregateNominalValue($row), '0', '0.01'),
+                html: fn(array $row): string => HelperFramework::escape($this->aggregateNominalValue($row)),
                 export: fn(array $row): string => $this->aggregateNominalValue($row),
                 exportType: 'number',
                 sort: fn(array $row): float => (float)$this->aggregateNominalValue($row)
@@ -137,29 +137,36 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
             ->column(
                 'total_aggregate_unpaid',
                 'Total aggregate unpaid',
-                html: fn(array $row): string => $this->inputCell($row, 'total_aggregate_unpaid', 'number', $this->totalAggregateUnpaid($row), '0', '0.01'),
+                html: fn(array $row): string => HelperFramework::escape($this->totalAggregateUnpaid($row)),
                 export: fn(array $row): string => $this->totalAggregateUnpaid($row),
                 exportType: 'number',
                 sort: fn(array $row): float => (float)$this->totalAggregateUnpaid($row)
             )
             ->column(
+                'payment_status',
+                'Paid-up status',
+                html: fn(array $row): string => $this->paymentStatusBadge($row),
+                export: fn(array $row): string => $this->paymentStatusLabel((string)($row['payment_status'] ?? '')),
+                sort: fn(array $row): string => $this->paymentStatusLabel((string)($row['payment_status'] ?? ''))
+            )
+            ->column(
                 'document_reference',
                 'Source document/reference',
-                html: fn(array $row): string => $this->inputCell($row, 'document_reference', 'text', ''),
+                html: static fn(array $row): string => HelperFramework::escape((string)($row['document_reference'] ?? '')),
                 export: static fn(array $row): string => (string)($row['document_reference'] ?? ''),
                 sort: true
             )
             ->column(
                 'source_note',
                 'Prescribed particulars',
-                html: fn(array $row): string => $this->textareaCell($row, 'source_note'),
+                html: static fn(array $row): string => HelperFramework::escape((string)($row['source_note'] ?? '')),
                 export: static fn(array $row): string => (string)($row['source_note'] ?? ''),
                 sort: true
             )
             ->column(
                 'actions',
                 '',
-                html: fn(array $row): string => $this->actionsCell($row, (int)($context['company']['id'] ?? 0)),
+                html: fn(array $row): string => $this->actionsCell((int)($context['company']['id'] ?? 0)),
                 exportable: false,
                 sort: false,
                 cellClass: 'cell-fit'
@@ -174,58 +181,13 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
         ));
     }
 
-    private function inputCell(array $row, string $name, string $type, string $default = '', string $min = '', string $step = ''): string
+    private function actionsCell(int $companyId): string
     {
-        $id = (int)($row['id'] ?? 0);
-        $formId = $this->rowFormId($id);
-        $value = (string)($row[$name] ?? $default);
-        $attributes = $type === 'number'
-            ? ' type="number"' . ($min !== '' ? ' min="' . HelperFramework::escape($min) . '"' : '') . ($step !== '' ? ' step="' . HelperFramework::escape($step) . '"' : '')
-            : '';
-
-        return '<input class="input" form="' . HelperFramework::escape($formId) . '" name="' . HelperFramework::escape($name) . '" value="' . HelperFramework::escape($value) . '"' . $attributes . '>';
-    }
-
-    private function textareaCell(array $row, string $name): string
-    {
-        $id = (int)($row['id'] ?? 0);
-
-        return '<textarea class="input" rows="3" form="' . HelperFramework::escape($this->rowFormId($id)) . '" name="' . HelperFramework::escape($name) . '">' . HelperFramework::escape((string)($row[$name] ?? '')) . '</textarea>';
-    }
-
-    private function actionsCell(array $row, int $companyId): string
-    {
-        $id = (int)($row['id'] ?? 0);
-        if ($id <= 0 || $companyId <= 0) {
+        if ($companyId <= 0) {
             return '';
         }
 
-        return '<div class="actions-row">'
-            . '<form id="' . HelperFramework::escape($this->rowFormId($id)) . '" method="post" data-ajax="true">'
-            . '<input type="hidden" name="card_action" value="Incorporation">'
-            . '<input type="hidden" name="intent" value="save_incorporation_shares">'
-            . '<input type="hidden" name="company_id" value="' . $companyId . '">'
-            . '<input type="hidden" name="share_class_id" value="' . $id . '">'
-            . '<button class="button primary" type="submit">Save Share Class</button>'
-            . '</form>'
-            . $this->unpaidForm($companyId, $id)
-            . '</div>';
-    }
-
-    private function rowFormId(int $id): string
-    {
-        return 'incorporation-share-form-' . max(0, $id);
-    }
-
-    private function unpaidForm(int $companyId, int $shareClassId): string
-    {
-        return '<form method="post" data-ajax="true">
-            <input type="hidden" name="card_action" value="Incorporation">
-            <input type="hidden" name="intent" value="mark_shares_unpaid">
-            <input type="hidden" name="company_id" value="' . $companyId . '">
-            <input type="hidden" name="share_class_id" value="' . $shareClassId . '">
-            <button class="button secondary" type="submit">Mark Not Paid Up</button>
-        </form>';
+        return '<a class="button secondary" href="?page=incorporation&amp;show_card=incorporation_payment_matching">Review payment</a>';
     }
 
     private function decimalValue(mixed $value): string
@@ -261,6 +223,34 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
         }
 
         return $this->decimalValue((int)($shareClass['quantity'] ?? 0) * (float)($shareClass['unpaid_value_per_share'] ?? 0));
+    }
+
+    private function paymentStatusBadge(array $row): string
+    {
+        $status = (string)($row['payment_status'] ?? '');
+
+        return '<span class="badge ' . HelperFramework::escape($this->paymentStatusBadgeClass($status)) . '">'
+            . HelperFramework::escape($this->paymentStatusLabel($status))
+            . '</span>';
+    }
+
+    private function paymentStatusLabel(string $status): string
+    {
+        return match ($status) {
+            'payment_matched' => 'Payment matched',
+            'payment_mismatch' => 'Payment mismatch',
+            'not_paid_up' => 'Not paid up',
+            default => 'Payment not matched',
+        };
+    }
+
+    private function paymentStatusBadgeClass(string $status): string
+    {
+        return match ($status) {
+            'payment_matched' => 'success',
+            'not_paid_up' => 'warning',
+            default => 'danger',
+        };
     }
 
     private function tableInvalidationFact(): string

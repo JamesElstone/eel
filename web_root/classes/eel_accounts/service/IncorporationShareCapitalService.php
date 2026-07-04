@@ -33,6 +33,7 @@ final class IncorporationShareCapitalService
 
         $company = $this->fetchCompany($companyId);
         $shareClasses = $this->fetchShareClasses($companyId);
+        $shareCapitalNominal = $this->ordinaryShareCapitalNominal();
         $totals = [
             'issued_nominal_total' => 0.0,
             'expected_paid_total' => 0.0,
@@ -45,13 +46,14 @@ final class IncorporationShareCapitalService
             $shareClass['expected_paid_total'] = $this->classPaidTotal($shareClass);
             $shareClass['unpaid_total'] = $this->classUnpaidTotal($shareClass);
             $shareClass['current_match'] = $this->currentMatch((int)$shareClass['id']);
+            $shareClass['current_match'] = $this->validateCurrentMatch($shareClass, $shareCapitalNominal);
             $shareClass['payment_candidates'] = $this->paymentCandidatesForShareClass($shareClass, $company);
             $shareClass['payment_status'] = $this->paymentStatus($shareClass);
 
             $totals['issued_nominal_total'] += (float)$shareClass['nominal_total'];
             $totals['expected_paid_total'] += (float)$shareClass['expected_paid_total'];
             $totals['unpaid_total'] += (float)$shareClass['unpaid_total'];
-            $totals['matched_total'] += is_array($shareClass['current_match'])
+            $totals['matched_total'] += is_array($shareClass['current_match']) && !empty($shareClass['current_match']['match_valid'])
                 ? (float)($shareClass['current_match']['matched_amount'] ?? 0)
                 : 0.0;
         }
@@ -68,7 +70,7 @@ final class IncorporationShareCapitalService
             'share_classes' => $shareClasses,
             'totals' => $totals,
             'status' => $this->summaryStatus($shareClasses),
-            'ordinary_share_capital_nominal' => $this->ordinaryShareCapitalNominal(),
+            'ordinary_share_capital_nominal' => $shareCapitalNominal,
         ];
     }
 
@@ -181,45 +183,6 @@ final class IncorporationShareCapitalService
             'changed_by' => $changedBy,
             'summary' => $this->fetchSummary($companyId),
         ];
-    }
-
-    public function markSharesUnpaid(int $companyId, int $shareClassId, string $changedBy = 'web_app'): array
-    {
-        $shareClass = $this->fetchShareClass($companyId, $shareClassId);
-        if ($shareClass === null) {
-            return ['success' => false, 'errors' => ['The selected share class could not be found.']];
-        }
-
-        $ownsTransaction = !\InterfaceDB::inTransaction();
-        if ($ownsTransaction) {
-            \InterfaceDB::beginTransaction();
-        }
-        try {
-            $this->clearCurrentMatches($companyId, $shareClassId, $changedBy);
-            \InterfaceDB::prepareExecute(
-                'UPDATE company_incorporation_share_classes
-                 SET paid_value_per_share = 0.000000,
-                     unpaid_value_per_share = nominal_value_per_share,
-                     status = :status
-                 WHERE id = :id
-                   AND company_id = :company_id',
-                [
-                    'status' => 'unpaid',
-                    'id' => $shareClassId,
-                    'company_id' => $companyId,
-                ]
-            );
-            if ($ownsTransaction) {
-                \InterfaceDB::commit();
-            }
-        } catch (\Throwable $exception) {
-            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
-                \InterfaceDB::rollBack();
-            }
-            throw $exception;
-        }
-
-        return ['success' => true, 'summary' => $this->fetchSummary($companyId)];
     }
 
     public function clearPaymentMatch(int $companyId, int $shareClassId, string $changedBy = 'web_app'): array
@@ -365,7 +328,9 @@ final class IncorporationShareCapitalService
                     t.description,
                     t.reference,
                     t.amount,
+                    t.company_id AS transaction_company_id,
                     t.category_status,
+                    t.nominal_account_id,
                     na.code AS nominal_code,
                     na.name AS nominal_name
              FROM company_incorporation_share_payment_matches m
@@ -379,6 +344,42 @@ final class IncorporationShareCapitalService
         );
 
         return is_array($row) ? $row : null;
+    }
+
+    private function validateCurrentMatch(array $shareClass, array $shareCapitalNominal): ?array
+    {
+        $match = $shareClass['current_match'] ?? null;
+        if (!is_array($match)) {
+            return null;
+        }
+
+        $match['match_valid'] = true;
+        $match['match_invalid_reason'] = '';
+
+        if ((int)($match['transaction_company_id'] ?? 0) !== (int)($shareClass['company_id'] ?? 0)) {
+            $match['match_valid'] = false;
+            $match['match_invalid_reason'] = 'transaction_company_mismatch';
+
+            return $match;
+        }
+
+        $expectedPaid = $this->classPaidTotal($shareClass);
+        if (abs(round((float)($match['amount'] ?? 0), 2) - $expectedPaid) > 0.01) {
+            $match['match_valid'] = false;
+            $match['match_invalid_reason'] = 'transaction_amount_changed';
+
+            return $match;
+        }
+
+        $shareCapitalNominalId = (int)($shareCapitalNominal['id'] ?? 0);
+        if ($shareCapitalNominalId <= 0 || (int)($match['nominal_account_id'] ?? 0) !== $shareCapitalNominalId) {
+            $match['match_valid'] = false;
+            $match['match_invalid_reason'] = 'transaction_recategorised';
+
+            return $match;
+        }
+
+        return $match;
     }
 
     private function paymentCandidatesForShareClass(array $shareClass, array $company): array
@@ -641,6 +642,9 @@ final class IncorporationShareCapitalService
         if (!is_array($match)) {
             return 'payment_not_matched';
         }
+        if (empty($match['match_valid'])) {
+            return 'not_paid_up';
+        }
 
         return abs(round((float)($match['matched_amount'] ?? 0), 2) - $expectedPaid) <= 0.01
             ? 'payment_matched'
@@ -657,6 +661,9 @@ final class IncorporationShareCapitalService
         $hasUnmatched = false;
         foreach ($shareClasses as $shareClass) {
             if ((float)($shareClass['unpaid_total'] ?? 0) > 0.0) {
+                $hasUnpaid = true;
+            }
+            if ((string)($shareClass['payment_status'] ?? '') === 'not_paid_up') {
                 $hasUnpaid = true;
             }
             if ((string)($shareClass['payment_status'] ?? '') === 'payment_not_matched') {

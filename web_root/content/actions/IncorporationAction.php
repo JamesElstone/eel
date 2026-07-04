@@ -41,7 +41,6 @@ final class IncorporationAction implements ActionInterfaceFramework
                 $shareClassId,
                 (int)$request->input('transaction_id', 0)
             ),
-            'mark_shares_unpaid' => $service->markSharesUnpaid($companyId, $shareClassId),
             'clear_share_payment_match' => $service->clearPaymentMatch($companyId, $shareClassId),
             default => ['success' => false, 'errors' => ['Unknown incorporation action.']],
         };
@@ -74,7 +73,6 @@ final class IncorporationAction implements ActionInterfaceFramework
         return match ($intent) {
             'save_incorporation_shares' => 'Incorporation share capital saved.',
             'match_share_payment' => 'Share payment matched and posted to Ordinary Share Capital.',
-            'mark_shares_unpaid' => 'Shares marked as not paid up.',
             'clear_share_payment_match' => 'Share payment match cleared.',
             default => 'Incorporation details updated.',
         };

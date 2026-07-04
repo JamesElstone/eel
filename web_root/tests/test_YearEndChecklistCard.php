@@ -101,9 +101,9 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
                                 'check_code' => 'tax_readiness_acknowledgement',
                                 'title' => 'Tax readiness acknowledgement',
                                 'status' => 'warning',
-                                'detail_text' => 'Review the corporation tax estimate, computation steps, and loss schedule before closing this accounting period.',
+                                'detail_text' => 'Review the corporation tax workings before closing this accounting period.',
                                 'metric_value' => 'Pending',
-                                'action_url' => '?page=year_end&company_id=12&accounting_period_id=34&show_card=year_end_tax_readiness#tax-readiness',
+                                'action_url' => '?page=tax&company_id=12&accounting_period_id=34',
                             ],
                         ],
                     ],
@@ -113,7 +113,7 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
 
         $harness->assertSame(true, str_contains($html, 'G. Corporation tax readiness'));
         $harness->assertSame(true, str_contains($html, 'Tax readiness acknowledgement'));
-        $harness->assertSame(true, str_contains($html, '?page=year_end&amp;show_card=year_end_tax_readiness#tax-readiness'));
+        $harness->assertSame(true, str_contains($html, '?page=tax'));
         $harness->assertSame(false, str_contains($html, 'company_id=12'));
         $harness->assertSame(false, str_contains($html, 'accounting_period_id=34'));
     });

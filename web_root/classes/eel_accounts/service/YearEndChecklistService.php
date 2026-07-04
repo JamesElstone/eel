@@ -1074,7 +1074,7 @@ final class YearEndChecklistService
             !empty($taxReadiness['available'])
                 ? ('Tax ' . $this->money($settings, $taxReadiness['estimated_corporation_tax'] ?? 0))
                 : '',
-            '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_tax_readiness#tax-readiness'
+            '?page=tax&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
         );
         $taxConfidenceStatus = (string)($taxReadiness['confidence_status'] ?? 'review_required');
         $taxWarningCount = count((array)($taxReadiness['warnings'] ?? []));
@@ -1089,7 +1089,7 @@ final class YearEndChecklistService
                     ? 'No scope warnings are currently attached to the corporation tax estimate.'
                     : 'Review the estimate warnings before relying on the corporation tax number.'),
             empty($taxReadiness['available']) ? '' : ($taxWarningCount . ' warning' . ($taxWarningCount === 1 ? '' : 's')),
-            '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_tax_readiness#tax-readiness'
+            '?page=tax&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
         );
         $sections['corporation_tax_readiness'][] = $this->makeCheck(
             'losses_carried_forward',
@@ -1098,7 +1098,7 @@ final class YearEndChecklistService
             !empty($taxReadiness['available']) ? 'pass' : 'not_applicable',
             'Losses brought forward, used, and carried forward are shown on a simple basis ready for later CT engine refinement.',
             !empty($taxReadiness['available']) ? $this->money($settings, $taxReadiness['losses_carried_forward'] ?? 0) : '',
-            '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_tax_readiness#tax-readiness'
+            '?page=tax&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
         );
         $taxReadinessAcknowledged = trim((string)($review['tax_readiness_acknowledged_at'] ?? '')) !== '';
         $sections['corporation_tax_readiness'][] = $this->makeCheck(
@@ -1110,7 +1110,7 @@ final class YearEndChecklistService
                 ? 'Tax readiness must be available before this review can be acknowledged.'
                 : ($taxReadinessAcknowledged
                     ? 'Tax readiness has been acknowledged for this period.'
-                    : 'Review the corporation tax estimate, computation steps, and loss schedule before closing this accounting period.'),
+                    : 'Review the corporation tax workings before closing this accounting period.'),
             empty($taxReadiness['available']) ? '' : ($taxReadinessAcknowledged ? 'Acknowledged' : 'Pending'),
             '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_tax_readiness#tax-readiness'
         );

@@ -24,6 +24,8 @@ final class TestPageArchitectureHarness
         $this->runTest('assets page resolves all configured asset cards', [$this, 'testAssetsPageResolvesAllCards']);
         $this->runTest('assets page groups cards into asset tabs', [$this, 'testAssetsPageCardLayout']);
         $this->runTest('vehicles page resolves the vehicle register card', [$this, 'testVehiclesPageResolvesVehicleRegisterCard']);
+        $this->runTest('tax page resolves read-only tax workings cards', [$this, 'testTaxPageResolvesTaxWorkingsCards']);
+        $this->runTest('tax rates page remains rate and treatment rule workflow', [$this, 'testTaxRatesPageRemainsRateWorkflow']);
         $this->runTest('AJAX delta responses include only stale cards', [$this, 'testAjaxDeltaResponseReturnsOnlyStaleCards']);
         $this->runTest('AJAX delta responses expose a nonce refresh slot', [$this, 'testAjaxDeltaResponseIncludesAjaxNonceField']);
         $this->runTest('selector ajax responses include compact selector UI data', [$this, 'testSelectorAjaxResponseIncludesSelectorUi']);
@@ -129,6 +131,41 @@ final class TestPageArchitectureHarness
         $this->assertSame('vehicles', $page->id());
         $this->assertSame('Vehicles', $page->title());
         $this->assertSame(['vehicle_register'], $page->cards());
+    }
+
+    private function testTaxPageResolvesTaxWorkingsCards(): void
+    {
+        $page = $this->loadPageCards('tax');
+
+        $this->assertSame(_tax::class, $page::class);
+        $this->assertSame('tax', $page->id());
+        $this->assertSame('Tax', $page->title());
+        $this->assertSame(
+            [
+                'tax_corporation_tax_summary',
+                'tax_taxable_profit_bridge',
+                'tax_disallowable_add_backs',
+                'tax_depreciation_add_back',
+                'tax_capital_allowances_summary',
+                'tax_aia_allocation',
+                'tax_main_rate_pool',
+                'tax_special_rate_pool',
+                'tax_car_co2_treatment',
+                'tax_disposals_balancing',
+                'tax_losses',
+                'tax_rate_bands',
+                'tax_warnings',
+            ],
+            $page->cards()
+        );
+    }
+
+    private function testTaxRatesPageRemainsRateWorkflow(): void
+    {
+        $page = $this->loadPageCards('tax_rates');
+
+        $this->assertSame(_tax_rates::class, $page::class);
+        $this->assertSame(['tax_rates', 'tax_treatment_rules'], $page->cards());
     }
 
     private function testAjaxDeltaResponseReturnsOnlyStaleCards(): void

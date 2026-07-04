@@ -56,28 +56,14 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             return '<section class="settings-stack" id="tax-readiness"><h3 class="card-title">Tax Readiness Snapshot</h3><div class="helper">' . HelperFramework::escape((string)($taxReadiness['errors'][0] ?? 'Tax readiness is not available.')) . '</div></section>';
         }
 
-        $stepsHtml = '';
-        foreach ((array)($taxReadiness['steps'] ?? []) as $step) {
-            $stepsHtml .= '<tr><td>' . HelperFramework::escape((string)($step['label'] ?? '')) . '</td><td>' . HelperFramework::escape($this->money($companySettings, $step['amount'] ?? 0)) . '</td></tr>';
-        }
-
-        $scheduleHtml = '';
-        foreach ((array)($taxReadiness['schedule'] ?? []) as $row) {
-            $scheduleHtml .= '<tr>
-                <td>' . HelperFramework::escape((string)($row['label'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $row['loss_created'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $row['loss_brought_forward'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $row['loss_utilised'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $row['loss_carried_forward'] ?? 0)) . '</td>
-            </tr>';
-        }
-        $capitalAllowanceHtml = $this->capitalAllowanceBreakdownHtml((array)($taxReadiness['capital_allowance_breakdown'] ?? []), $companySettings);
         $warningHtml = '';
         foreach ((array)($taxReadiness['warnings'] ?? []) as $warning) {
             $warningHtml .= '<div class="helper">' . HelperFramework::escape((string)$warning) . '</div>';
         }
+        $warningCount = count((array)($taxReadiness['warnings'] ?? []));
         $confidenceStatus = (string)($taxReadiness['confidence_status'] ?? 'review_required');
         $confidenceLabel = (string)($taxReadiness['confidence_label'] ?? 'Review required');
+        $taxWorkflowUrl = '?page=tax&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId;
 
         $review = (array)((($context['year_end'] ?? [])['checklist'] ?? [])['review'] ?? []);
         $acknowledged = trim((string)($review['tax_readiness_acknowledged_at'] ?? '')) !== '';
@@ -90,7 +76,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <label class="checkbox-row">
                     <input type="checkbox" name="tax_readiness_acknowledgement" value="1"' . ($acknowledged ? ' checked' : '') . ' required data-year-end-ack-checkbox>
-                    <span>I acknowledge that the corporation tax estimate, computation steps, and loss schedule have been reviewed before closing this Accounting Period</span>
+                    <span>I acknowledge that the corporation tax workings have been reviewed before closing this Accounting Period</span>
                 </label>
                 <button class="button primary" type="submit"
                     ' . ($acknowledged ? '' : 'disabled ') . 'data-year-end-ack-submit
@@ -107,56 +93,18 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             <div class="status-head">
                 <span class="badge info">Estimate</span>
                 <span class="badge ' . HelperFramework::escape($confidenceStatus === 'ready_for_review' ? 'success' : 'warning') . '">' . HelperFramework::escape($confidenceLabel) . '</span>
+                <span class="badge ' . HelperFramework::escape($acknowledged ? 'success' : 'warning') . '">' . HelperFramework::escape($acknowledged ? 'Acknowledged' : 'Acknowledgement pending') . '</span>
             </div>
             ' . ($warningHtml !== '' ? '<section class="panel-soft stack"><h3 class="card-title">Review warnings</h3>' . $warningHtml . '</section>' : '') . '
             <div class="summary-grid">
                 <div class="summary-card"><div class="summary-label">Taxable profit</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $taxReadiness['taxable_profit'] ?? 0)) . '</div></div>
-                <div class="summary-card"><div class="summary-label">Taxable loss</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $taxReadiness['taxable_loss'] ?? 0)) . '</div></div>
                 <div class="summary-card"><div class="summary-label">Estimated CT</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $taxReadiness['estimated_corporation_tax'] ?? 0)) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Warnings</div><div class="summary-value">' . $warningCount . '</div></div>
                 <div class="summary-card"><div class="summary-label">Losses c/f</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $taxReadiness['losses_carried_forward'] ?? 0)) . '</div></div>
             </div>
-            <h3 class="card-title">Corporation Tax Computation</h3>
-            <div class="table-scroll"><table><thead><tr><th>Step</th><th>Amount</th></tr></thead><tbody>' . $stepsHtml . '</tbody></table></div>
-            ' . $capitalAllowanceHtml . '
-            <h3 class="card-title">Loss schedule</h3>
-            <div class="table-scroll"><table><thead><tr><th>Period</th><th>Loss created</th><th>Brought forward</th><th>Used</th><th>Carried forward</th></tr></thead><tbody>' . $scheduleHtml . '</tbody></table></div>
+            <div class="actions-row"><a class="button primary" href="' . HelperFramework::escape($taxWorkflowUrl) . '">Open Tax Workflow</a></div>
             <div class="actions-row">' . $acknowledgementForm . '</div>
         </section>';
-    }
-
-    private function capitalAllowanceBreakdownHtml(array $breakdown, array $companySettings): string
-    {
-        if (empty($breakdown['available'])) {
-            return '';
-        }
-
-        $rowsHtml = '';
-        foreach ((array)($breakdown['rows'] ?? []) as $row) {
-            $rowsHtml .= '<tr>
-                <td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($row['pool_type'] ?? ''), '_')) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $row['opening_wdv'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $row['additions'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $row['aia_claimed'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $row['fya_claimed'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $row['wda_claimed'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $row['disposal_value'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $row['balancing_charge'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $row['closing_wdv'] ?? 0)) . '</td>
-            </tr>';
-        }
-
-        return '<h3 class="card-title">Capital Allowances</h3>
-            <div class="table-scroll"><table><thead><tr>
-                <th>Pool</th>
-                <th>Opening WDV</th>
-                <th>Additions</th>
-                <th>AIA</th>
-                <th>FYA</th>
-                <th>WDA</th>
-                <th>Disposals</th>
-                <th>Balancing charge</th>
-                <th>Closing WDV</th>
-            </tr></thead><tbody>' . $rowsHtml . '</tbody></table></div>';
     }
 
     private function money(array $companySettings, float|int|string|null $value): string

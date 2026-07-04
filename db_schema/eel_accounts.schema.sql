@@ -2283,7 +2283,8 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_04_002_dividend_reserve_classification.sql'),
   ('2026_07_04_003_dividend_reserve_snapshot_roll_forward.sql'),
   ('2026_07_04_004_asset_disposal_metadata.sql'),
-  ('2026_07_04_005_vehicle_register_capital_allowances.sql');
+  ('2026_07_04_005_vehicle_register_capital_allowances.sql'),
+  ('2026_07_04_006_read_only_tax_workings_permissions.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

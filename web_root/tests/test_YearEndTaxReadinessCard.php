@@ -12,7 +12,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 $harness = new GeneratedServiceClassTestHarness();
 
 $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServiceClassTestHarness $harness, _year_end_tax_readinessCard $card): void {
-    $harness->check(_year_end_tax_readinessCard::class, 'renders tax readiness acknowledgement control with chicken confirmation', static function () use ($harness, $card): void {
+    $harness->check(_year_end_tax_readinessCard::class, 'renders compact tax readiness status and acknowledgement control', static function () use ($harness, $card): void {
         $html = $card->render(yearEndTaxReadinessCardContext([
             'available' => true,
             'taxable_profit' => 12500,
@@ -36,19 +36,23 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         ]));
 
         $harness->assertSame(true, str_contains($html, 'save_tax_readiness_acknowledgement'));
-        $harness->assertSame(true, str_contains($html, 'I acknowledge that the corporation tax estimate, computation steps, and loss schedule have been reviewed'));
+        $harness->assertSame(true, str_contains($html, 'I acknowledge that the corporation tax workings have been reviewed'));
+        $harness->assertSame(true, str_contains($html, 'Open Tax Workflow'));
+        $harness->assertSame(true, str_contains($html, '?page=tax&amp;company_id=33&amp;accounting_period_id=70'));
         $harness->assertSame(true, str_contains($html, 'data-chicken-check="true"'));
         $harness->assertSame(true, str_contains($html, 'data-chicken-button-class="button danger"'));
         $harness->assertSame(true, str_contains($html, '>I Agree</button>'));
         $harness->assertSame(true, str_contains($html, 'checked required'));
         $harness->assertSame(true, str_contains($html, '$ 12,500.00'));
-        $harness->assertSame(true, str_contains($html, '$ 12.34'));
         $harness->assertSame(true, str_contains($html, '$ 2,375.00'));
         $harness->assertSame(true, str_contains($html, '$ 45.67'));
-        $harness->assertSame(true, str_contains($html, '$ 100.00'));
-        $harness->assertSame(true, str_contains($html, '$ 200.00'));
-        $harness->assertSame(true, str_contains($html, '$ 300.00'));
-        $harness->assertSame(true, str_contains($html, '$ 400.00'));
+        $harness->assertSame(false, str_contains($html, 'Corporation Tax Computation'));
+        $harness->assertSame(false, str_contains($html, 'Loss schedule'));
+        $harness->assertSame(false, str_contains($html, 'Capital Allowances'));
+        $harness->assertSame(false, str_contains($html, '$ 100.00'));
+        $harness->assertSame(false, str_contains($html, '$ 200.00'));
+        $harness->assertSame(false, str_contains($html, '$ 300.00'));
+        $harness->assertSame(false, str_contains($html, '$ 400.00'));
     });
 });
 

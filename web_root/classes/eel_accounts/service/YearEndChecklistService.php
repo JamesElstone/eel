@@ -1016,7 +1016,7 @@ final class YearEndChecklistService
                 },
             empty($incorporationShares['available'])
                 ? ''
-                : $this->money($settings, (($incorporationShares['totals'] ?? [])['unpaid_total'] ?? 0)),
+                : $this->money($settings, (($incorporationShares['totals'] ?? [])['paid_up_unpaid_total'] ?? (($incorporationShares['totals'] ?? [])['unpaid_total'] ?? 0))),
             '?page=incorporation&company_id=' . $companyId
         );
         $sections['year_end_accounts_review'][] = $this->applyReviewAcknowledgement($this->makeCheck(

@@ -38,6 +38,8 @@ final class IncorporationShareCapitalService
             'issued_nominal_total' => 0.0,
             'expected_paid_total' => 0.0,
             'unpaid_total' => 0.0,
+            'unmatched_paid_total' => 0.0,
+            'paid_up_unpaid_total' => 0.0,
             'matched_total' => 0.0,
         ];
 
@@ -47,15 +49,18 @@ final class IncorporationShareCapitalService
             $shareClass['unpaid_total'] = $this->classUnpaidTotal($shareClass);
             $shareClass['current_match'] = $this->currentMatch((int)$shareClass['id']);
             $shareClass['current_match'] = $this->validateCurrentMatch($shareClass, $shareCapitalNominal);
-            $shareClass['payment_candidates'] = $this->paymentCandidatesForShareClass($shareClass, $company);
+            $shareClass['payment_candidates'] = $this->paymentCandidatesForShareClass($shareClass);
             $shareClass['payment_status'] = $this->paymentStatus($shareClass);
+            $shareClass['matched_total'] = $this->validMatchedTotal($shareClass);
+            $shareClass['unmatched_paid_total'] = $this->classUnmatchedPaidTotal($shareClass);
+            $shareClass['paid_up_unpaid_total'] = round((float)$shareClass['unpaid_total'] + (float)$shareClass['unmatched_paid_total'], 2);
 
             $totals['issued_nominal_total'] += (float)$shareClass['nominal_total'];
             $totals['expected_paid_total'] += (float)$shareClass['expected_paid_total'];
             $totals['unpaid_total'] += (float)$shareClass['unpaid_total'];
-            $totals['matched_total'] += is_array($shareClass['current_match']) && !empty($shareClass['current_match']['match_valid'])
-                ? (float)($shareClass['current_match']['matched_amount'] ?? 0)
-                : 0.0;
+            $totals['unmatched_paid_total'] += (float)$shareClass['unmatched_paid_total'];
+            $totals['paid_up_unpaid_total'] += (float)$shareClass['paid_up_unpaid_total'];
+            $totals['matched_total'] += (float)$shareClass['matched_total'];
         }
         unset($shareClass);
 
@@ -288,7 +293,13 @@ final class IncorporationShareCapitalService
             return [];
         }
 
-        return $this->paymentCandidatesForShareClass($shareClass, $this->fetchCompany($companyId));
+        $shareClass['nominal_total'] = $this->classNominalTotal($shareClass);
+        $shareClass['expected_paid_total'] = $this->classPaidTotal($shareClass);
+        $shareClass['unpaid_total'] = $this->classUnpaidTotal($shareClass);
+        $shareClass['current_match'] = $this->currentMatch((int)$shareClass['id']);
+        $shareClass['current_match'] = $this->validateCurrentMatch($shareClass, $this->ordinaryShareCapitalNominal());
+
+        return $this->paymentCandidatesForShareClass($shareClass);
     }
 
     private function fetchShareClasses(int $companyId): array
@@ -382,20 +393,16 @@ final class IncorporationShareCapitalService
         return $match;
     }
 
-    private function paymentCandidatesForShareClass(array $shareClass, array $company): array
+    private function paymentCandidatesForShareClass(array $shareClass): array
     {
         $companyId = (int)($shareClass['company_id'] ?? 0);
         $expectedAmount = $this->classPaidTotal($shareClass);
         if ($companyId <= 0 || $expectedAmount <= 0.0 || !$this->tableExists('transactions')) {
             return [];
         }
-
-        $start = $this->validDate((string)($company['incorporation_date'] ?? ''))
-            ? (string)$company['incorporation_date']
-            : '1900-01-01';
-        $end = $start === '1900-01-01'
-            ? '2999-12-31'
-            : (new \DateTimeImmutable($start))->modify('+90 days')->format('Y-m-d');
+        if (is_array($shareClass['current_match'] ?? null) && !empty($shareClass['current_match']['match_valid'])) {
+            return [];
+        }
 
         return \InterfaceDB::fetchAll(
             'SELECT t.id,
@@ -416,15 +423,12 @@ final class IncorporationShareCapitalService
              LEFT JOIN nominal_accounts na ON na.id = t.nominal_account_id
              WHERE t.company_id = :company_id
                AND t.amount BETWEEN :lower_amount AND :upper_amount
-               AND t.txn_date BETWEEN :start_date AND :end_date
              ORDER BY score DESC, t.txn_date ASC, t.id ASC
              LIMIT 10',
             [
                 'company_id' => $companyId,
                 'lower_amount' => round($expectedAmount - 0.01, 2),
                 'upper_amount' => round($expectedAmount + 0.01, 2),
-                'start_date' => $start,
-                'end_date' => $end,
                 'share_keyword' => '%share%',
                 'capital_keyword' => '%capital%',
             ]
@@ -447,19 +451,12 @@ final class IncorporationShareCapitalService
             $errors[] = 'This share class has no expected paid amount to match.';
         }
 
-        if (abs(round((float)($transaction['amount'] ?? 0), 2) - $expectedAmount) > 0.01) {
-            $errors[] = 'The selected transaction amount does not match the expected paid share total.';
+        if (round((float)($transaction['amount'] ?? 0), 2) <= 0.0) {
+            $errors[] = 'The selected transaction must be an incoming receipt.';
         }
 
-        $incorporationDate = (string)($company['incorporation_date'] ?? '');
-        $transactionDate = (string)($transaction['txn_date'] ?? '');
-        if ($this->validDate($incorporationDate) && $this->validDate($transactionDate)) {
-            $start = new \DateTimeImmutable($incorporationDate);
-            $end = $start->modify('+90 days');
-            $date = new \DateTimeImmutable($transactionDate);
-            if ($date < $start || $date > $end) {
-                $errors[] = 'The selected transaction is outside the incorporation payment matching window.';
-            }
+        if (abs(round((float)($transaction['amount'] ?? 0), 2) - $expectedAmount) > 0.01) {
+            $errors[] = 'The selected transaction amount does not match the expected paid share total.';
         }
 
         return $errors;
@@ -640,7 +637,7 @@ final class IncorporationShareCapitalService
 
         $match = $shareClass['current_match'] ?? null;
         if (!is_array($match)) {
-            return 'payment_not_matched';
+            return 'not_paid_up';
         }
         if (empty($match['match_valid'])) {
             return 'not_paid_up';
@@ -693,16 +690,26 @@ final class IncorporationShareCapitalService
         return round((int)($shareClass['quantity'] ?? 0) * (float)($shareClass['unpaid_value_per_share'] ?? 0), 2);
     }
 
+    private function validMatchedTotal(array $shareClass): float
+    {
+        $match = $shareClass['current_match'] ?? null;
+        if (!is_array($match) || empty($match['match_valid'])) {
+            return 0.0;
+        }
+
+        return round((float)($match['matched_amount'] ?? 0), 2);
+    }
+
+    private function classUnmatchedPaidTotal(array $shareClass): float
+    {
+        return max(0.0, round($this->classPaidTotal($shareClass) - $this->validMatchedTotal($shareClass), 2));
+    }
+
     private function normaliseDecimal(mixed $value): float
     {
         $normalised = (new \eel_accounts\Service\MoneyFormatService())->parseAmount($value);
 
         return $normalised !== null ? round($normalised, 6) : -1.0;
-    }
-
-    private function validDate(string $value): bool
-    {
-        return preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) === 1;
     }
 
     private function actorValue(string $value): string

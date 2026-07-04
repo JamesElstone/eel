@@ -70,7 +70,7 @@ $harness->run(_incorporation_share_capitalCard::class, static function (
                 'unpaid_value_per_share' => '0.000000',
                 'nominal_total' => $i,
                 'unpaid_total' => 0,
-                'payment_status' => 'payment_not_matched',
+                'payment_status' => 'not_paid_up',
                 'source_note' => '',
                 'document_reference' => 'doc-' . $i,
             ];

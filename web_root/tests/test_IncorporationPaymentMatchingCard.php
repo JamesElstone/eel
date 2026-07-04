@@ -29,6 +29,7 @@ $harness->run(_incorporation_payment_matchingCard::class, static function (
                             'share_class' => 'Ordinary',
                             'expected_paid_total' => 500,
                             'unpaid_total' => 0,
+                            'paid_up_unpaid_total' => 500,
                             'payment_status' => 'not_paid_up',
                             'current_match' => [
                                 'transaction_id' => 44,
@@ -55,10 +56,57 @@ $harness->run(_incorporation_payment_matchingCard::class, static function (
         ]);
 
         $harness->assertSame(true, str_contains($html, 'Not paid up'));
+        $harness->assertSame(true, str_contains($html, 'Unpaid share capital'));
         $harness->assertSame(true, str_contains($html, 're-categorised away from Ordinary Share Capital'));
         $harness->assertSame(true, str_contains($html, 'clear_share_payment_match'));
         $harness->assertSame(true, str_contains($html, 'match_share_payment'));
         $harness->assertSame(false, str_contains($html, 'save_incorporation_shares'));
         $harness->assertSame(false, str_contains($html, 'mark_shares_unpaid'));
+    });
+
+    $harness->check(_incorporation_payment_matchingCard::class, 'does not look for candidate receipts once the payment is matched', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => [
+                'id' => 7,
+                'settings' => [],
+            ],
+            'services' => [
+                'incorporationShares' => [
+                    'available' => true,
+                    'share_classes' => [
+                        [
+                            'id' => 12,
+                            'share_class' => 'Ordinary',
+                            'expected_paid_total' => 500,
+                            'unpaid_total' => 0,
+                            'paid_up_unpaid_total' => 0,
+                            'payment_status' => 'payment_matched',
+                            'current_match' => [
+                                'transaction_id' => 44,
+                                'matched_amount' => 500,
+                                'txn_date' => '2026-01-10',
+                                'description' => 'Share capital receipt',
+                                'match_valid' => true,
+                                'match_invalid_reason' => '',
+                            ],
+                            'payment_candidates' => [
+                                [
+                                    'id' => 45,
+                                    'txn_date' => '2026-01-11',
+                                    'description' => 'Replacement share receipt',
+                                    'reference' => 'SHARES',
+                                    'amount' => 500,
+                                    'category_status' => 'uncategorised',
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $harness->assertSame(true, str_contains($html, 'Payment matched'));
+        $harness->assertSame(false, str_contains($html, 'Candidate receipts'));
+        $harness->assertSame(false, str_contains($html, 'match_share_payment'));
     });
 });

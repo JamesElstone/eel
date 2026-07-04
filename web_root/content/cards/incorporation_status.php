@@ -58,7 +58,7 @@ final class _incorporation_statusCard extends CardBaseFramework
                 ' . $this->summaryCard('Issued nominal capital', $this->money($settings, $totals['issued_nominal_total'] ?? 0)) . '
                 ' . $this->summaryCard('Expected paid total', $this->money($settings, $totals['expected_paid_total'] ?? 0)) . '
                 ' . $this->summaryCard('Matched receipts', $this->money($settings, $totals['matched_total'] ?? 0)) . '
-                ' . $this->summaryCard('Unpaid share capital', $this->money($settings, $totals['unpaid_total'] ?? 0)) . '
+                ' . $this->summaryCard('Unpaid share capital', $this->money($settings, $totals['paid_up_unpaid_total'] ?? ($totals['unpaid_total'] ?? 0))) . '
             </div>
         </section>';
     }

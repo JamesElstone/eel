@@ -74,6 +74,7 @@ final class _incorporation_payment_matchingCard extends CardBaseFramework
         $currentMatch = $shareClass['current_match'] ?? null;
         $candidates = (array)($shareClass['payment_candidates'] ?? []);
         $status = (string)($shareClass['payment_status'] ?? '');
+        $hasValidMatch = is_array($currentMatch) && !empty($currentMatch['match_valid']);
         $candidateRows = '';
 
         foreach ($candidates as $candidate) {
@@ -110,13 +111,13 @@ final class _incorporation_payment_matchingCard extends CardBaseFramework
             </div>
             <div class="summary-grid">
                 <div class="summary-card"><div class="summary-label">Expected paid total</div><div class="summary-value">' . HelperFramework::escape($this->money($settings, $shareClass['expected_paid_total'] ?? 0)) . '</div></div>
-                <div class="summary-card"><div class="summary-label">Unpaid total</div><div class="summary-value">' . HelperFramework::escape($this->money($settings, $shareClass['unpaid_total'] ?? 0)) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Unpaid share capital</div><div class="summary-value">' . HelperFramework::escape($this->money($settings, $shareClass['paid_up_unpaid_total'] ?? ($shareClass['unpaid_total'] ?? 0))) . '</div></div>
             </div>
             ' . $matchHtml . '
-            <h3 class="card-title">Candidate receipts</h3>
-            ' . ($candidateRows === ''
-                ? '<div class="helper">No exact incoming payment candidates were found in the incorporation window.</div>'
-                : '<div class="table-scroll"><table><thead><tr><th>Date</th><th>Description</th><th>Reference</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead><tbody>' . $candidateRows . '</tbody></table></div>') . '
+            ' . ($hasValidMatch ? '' : '<h3 class="card-title">Candidate receipts</h3>'
+                . ($candidateRows === ''
+                    ? '<div class="helper">No exact incoming payment candidates were found.</div>'
+                    : '<div class="table-scroll"><table><thead><tr><th>Date</th><th>Description</th><th>Reference</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead><tbody>' . $candidateRows . '</tbody></table></div>')) . '
         </div>';
     }
 

@@ -23,6 +23,8 @@ final class IncorporationAction implements ActionInterfaceFramework
                 'share_class' => (string)$request->input('share_class', 'Ordinary'),
                 'currency' => (string)$request->input('currency', 'GBP'),
                 'quantity' => (string)$request->input('quantity', '0'),
+                'aggregate_nominal_value' => (string)$request->input('aggregate_nominal_value', ''),
+                'total_aggregate_unpaid' => (string)$request->input('total_aggregate_unpaid', ''),
                 'nominal_value_per_share' => (string)$request->input('nominal_value_per_share', '0'),
                 'paid_value_per_share' => (string)$request->input('paid_value_per_share', '0'),
                 'unpaid_value_per_share' => (string)$request->input('unpaid_value_per_share', '0'),

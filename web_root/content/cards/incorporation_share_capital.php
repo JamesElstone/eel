@@ -75,9 +75,12 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
         $id = $isExisting ? (int)($shareClass['id'] ?? 0) : 0;
         $formId = 'incorporation-share-form-' . ($id > 0 ? $id : 'new');
         $title = $isExisting ? 'Recorded share class' : 'Add share class';
+        $aggregateNominalValue = $this->aggregateNominalValue($shareClass);
+        $totalAggregateUnpaid = $this->totalAggregateUnpaid($shareClass);
 
         return '<div class="panel-soft stack">
             <h3 class="card-title">' . HelperFramework::escape($title) . '</h3>
+            <div class="helper">Copy the Statement of Capital figures from the incorporation filing. The per-share values used by the ledger are calculated from these aggregate filing values.</div>
             <form id="' . HelperFramework::escape($formId) . '" method="post" data-ajax="true">
                 <input type="hidden" name="card_action" value="Incorporation">
                 <input type="hidden" name="intent" value="save_incorporation_shares">
@@ -85,7 +88,7 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
                 <input type="hidden" name="share_class_id" value="' . $id . '">
                 <div class="form-grid">
                     <div class="form-row">
-                        <label for="' . HelperFramework::escape($formId) . '-share-class">Share class</label>
+                        <label for="' . HelperFramework::escape($formId) . '-share-class">Class of shares</label>
                         <input class="input" id="' . HelperFramework::escape($formId) . '-share-class" name="share_class" value="' . HelperFramework::escape((string)($shareClass['share_class'] ?? 'Ordinary')) . '">
                     </div>
                     <div class="form-row">
@@ -93,28 +96,24 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
                         <input class="input" id="' . HelperFramework::escape($formId) . '-currency" name="currency" value="' . HelperFramework::escape((string)($shareClass['currency'] ?? 'GBP')) . '">
                     </div>
                     <div class="form-row">
-                        <label for="' . HelperFramework::escape($formId) . '-quantity">Quantity</label>
+                        <label for="' . HelperFramework::escape($formId) . '-quantity">Number allotted</label>
                         <input class="input" type="number" min="1" step="1" id="' . HelperFramework::escape($formId) . '-quantity" name="quantity" value="' . HelperFramework::escape((string)($shareClass['quantity'] ?? '')) . '">
                     </div>
                     <div class="form-row">
-                        <label for="' . HelperFramework::escape($formId) . '-nominal">Nominal value per share</label>
-                        <input class="input" type="number" min="0" step="0.000001" id="' . HelperFramework::escape($formId) . '-nominal" name="nominal_value_per_share" value="' . HelperFramework::escape($this->decimalValue($shareClass['nominal_value_per_share'] ?? '')) . '">
+                        <label for="' . HelperFramework::escape($formId) . '-aggregate-nominal">Aggregate nominal value</label>
+                        <input class="input" type="number" min="0" step="0.01" id="' . HelperFramework::escape($formId) . '-aggregate-nominal" name="aggregate_nominal_value" value="' . HelperFramework::escape($aggregateNominalValue) . '">
                     </div>
                     <div class="form-row">
-                        <label for="' . HelperFramework::escape($formId) . '-paid">Paid amount per share</label>
-                        <input class="input" type="number" min="0" step="0.000001" id="' . HelperFramework::escape($formId) . '-paid" name="paid_value_per_share" value="' . HelperFramework::escape($this->decimalValue($shareClass['paid_value_per_share'] ?? '')) . '">
-                    </div>
-                    <div class="form-row">
-                        <label for="' . HelperFramework::escape($formId) . '-unpaid">Unpaid amount per share</label>
-                        <input class="input" type="number" min="0" step="0.000001" id="' . HelperFramework::escape($formId) . '-unpaid" name="unpaid_value_per_share" value="' . HelperFramework::escape($this->decimalValue($shareClass['unpaid_value_per_share'] ?? '')) . '">
+                        <label for="' . HelperFramework::escape($formId) . '-aggregate-unpaid">Total aggregate unpaid</label>
+                        <input class="input" type="number" min="0" step="0.01" id="' . HelperFramework::escape($formId) . '-aggregate-unpaid" name="total_aggregate_unpaid" value="' . HelperFramework::escape($totalAggregateUnpaid) . '">
                     </div>
                     <div class="form-row">
                         <label for="' . HelperFramework::escape($formId) . '-document">Source document/reference</label>
                         <input class="input" id="' . HelperFramework::escape($formId) . '-document" name="document_reference" value="' . HelperFramework::escape((string)($shareClass['document_reference'] ?? '')) . '">
                     </div>
                     <div class="form-row">
-                        <label for="' . HelperFramework::escape($formId) . '-note">Source note</label>
-                        <input class="input" id="' . HelperFramework::escape($formId) . '-note" name="source_note" value="' . HelperFramework::escape((string)($shareClass['source_note'] ?? '')) . '">
+                        <label for="' . HelperFramework::escape($formId) . '-particulars">Prescribed particulars</label>
+                        <textarea class="input" rows="3" id="' . HelperFramework::escape($formId) . '-particulars" name="source_note">' . HelperFramework::escape((string)($shareClass['source_note'] ?? '')) . '</textarea>
                     </div>
                 </div>
                 <div class="actions-row"><button class="button primary" type="submit">' . ($isExisting ? 'Save Share Class' : 'Add Share Class') . '</button></div>
@@ -141,5 +140,31 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
         }
 
         return rtrim(rtrim(number_format((float)$value, 6, '.', ''), '0'), '.');
+    }
+
+    private function aggregateNominalValue(?array $shareClass): string
+    {
+        if (!is_array($shareClass)) {
+            return '';
+        }
+
+        if (isset($shareClass['nominal_total'])) {
+            return $this->decimalValue($shareClass['nominal_total']);
+        }
+
+        return $this->decimalValue((int)($shareClass['quantity'] ?? 0) * (float)($shareClass['nominal_value_per_share'] ?? 0));
+    }
+
+    private function totalAggregateUnpaid(?array $shareClass): string
+    {
+        if (!is_array($shareClass)) {
+            return '0';
+        }
+
+        if (isset($shareClass['unpaid_total'])) {
+            return $this->decimalValue($shareClass['unpaid_total']);
+        }
+
+        return $this->decimalValue((int)($shareClass['quantity'] ?? 0) * (float)($shareClass['unpaid_value_per_share'] ?? 0));
     }
 }

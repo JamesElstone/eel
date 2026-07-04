@@ -544,13 +544,31 @@ final class IncorporationShareCapitalService
 
     private function normaliseShareInput(array $input): array
     {
+        $quantity = (int)($input['quantity'] ?? 0);
+        $aggregateInput = array_key_exists('aggregate_nominal_value', $input)
+            || array_key_exists('total_aggregate_unpaid', $input);
+        $aggregateNominalValue = $this->normaliseDecimal($input['aggregate_nominal_value'] ?? 0);
+        $totalAggregateUnpaid = $this->normaliseDecimal($input['total_aggregate_unpaid'] ?? 0);
+        $nominalValuePerShare = $this->normaliseDecimal($input['nominal_value_per_share'] ?? 0);
+        $paidValuePerShare = $this->normaliseDecimal($input['paid_value_per_share'] ?? 0);
+        $unpaidValuePerShare = $this->normaliseDecimal($input['unpaid_value_per_share'] ?? 0);
+
+        if ($aggregateInput && $quantity > 0 && $aggregateNominalValue >= 0.0 && $totalAggregateUnpaid >= 0.0) {
+            $nominalValuePerShare = round($aggregateNominalValue / $quantity, 6);
+            $paidValuePerShare = round(($aggregateNominalValue - $totalAggregateUnpaid) / $quantity, 6);
+            $unpaidValuePerShare = round($totalAggregateUnpaid / $quantity, 6);
+        }
+
         return [
             'share_class' => trim((string)($input['share_class'] ?? 'Ordinary')) ?: 'Ordinary',
             'currency' => strtoupper(trim((string)($input['currency'] ?? 'GBP'))) ?: 'GBP',
-            'quantity' => (int)($input['quantity'] ?? 0),
-            'nominal_value_per_share' => $this->normaliseDecimal($input['nominal_value_per_share'] ?? 0),
-            'paid_value_per_share' => $this->normaliseDecimal($input['paid_value_per_share'] ?? 0),
-            'unpaid_value_per_share' => $this->normaliseDecimal($input['unpaid_value_per_share'] ?? 0),
+            'quantity' => $quantity,
+            'nominal_value_per_share' => $nominalValuePerShare,
+            'paid_value_per_share' => $paidValuePerShare,
+            'unpaid_value_per_share' => $unpaidValuePerShare,
+            'aggregate_input' => $aggregateInput,
+            'aggregate_nominal_value' => $aggregateNominalValue,
+            'total_aggregate_unpaid' => $totalAggregateUnpaid,
             'source_note' => trim((string)($input['source_note'] ?? '')),
             'document_reference' => trim((string)($input['document_reference'] ?? '')),
         ];
@@ -566,7 +584,18 @@ final class IncorporationShareCapitalService
             $errors[] = 'Currency must be a 3-letter code.';
         }
         if ((int)$input['quantity'] <= 0) {
-            $errors[] = 'Share quantity must be greater than zero.';
+            $errors[] = 'Number allotted must be greater than zero.';
+        }
+        if (!empty($input['aggregate_input'])) {
+            if ((float)$input['aggregate_nominal_value'] <= 0.0) {
+                $errors[] = 'Aggregate nominal value must be greater than zero.';
+            }
+            if ((float)$input['total_aggregate_unpaid'] < 0.0) {
+                $errors[] = 'Total aggregate unpaid cannot be negative.';
+            }
+            if ((float)$input['total_aggregate_unpaid'] > (float)$input['aggregate_nominal_value']) {
+                $errors[] = 'Total aggregate unpaid cannot exceed aggregate nominal value.';
+            }
         }
         foreach (['nominal_value_per_share', 'paid_value_per_share', 'unpaid_value_per_share'] as $field) {
             if ((float)$input[$field] < 0.0) {

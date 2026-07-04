@@ -39,6 +39,31 @@ $harness->run(\eel_accounts\Service\IncorporationShareCapitalService::class, sta
         });
     });
 
+    $harness->check(\eel_accounts\Service\IncorporationShareCapitalService::class, 'derives per-share values from Companies House aggregate statement fields', static function () use ($harness, $service): void {
+        incorporation_share_service_with_fixture($harness, static function (array $fixture) use ($harness, $service): void {
+            $saved = $service->saveShareClass([
+                'company_id' => $fixture['company_id'],
+                'share_class' => 'Ordinary',
+                'currency' => 'GBP',
+                'quantity' => '100',
+                'aggregate_nominal_value' => '500',
+                'total_aggregate_unpaid' => '0',
+                'source_note' => 'FULL RIGHTS REGARDING VOTING, PAYMENT OF DIVIDENDS AND DISTRIBUTIONS',
+                'document_reference' => 'Model articles adopted',
+            ]);
+
+            $harness->assertSame(true, (bool)($saved['success'] ?? false));
+            $summary = $service->fetchSummary((int)$fixture['company_id']);
+            $shareClass = (array)(($summary['share_classes'] ?? [])[0] ?? []);
+            $harness->assertSame(500.00, (float)(($summary['totals'] ?? [])['issued_nominal_total'] ?? 0));
+            $harness->assertSame(500.00, (float)(($summary['totals'] ?? [])['expected_paid_total'] ?? 0));
+            $harness->assertSame(0.00, (float)(($summary['totals'] ?? [])['unpaid_total'] ?? 0));
+            $harness->assertSame(5.00, (float)($shareClass['nominal_value_per_share'] ?? 0));
+            $harness->assertSame(5.00, (float)($shareClass['paid_value_per_share'] ?? 0));
+            $harness->assertSame(0.00, (float)($shareClass['unpaid_value_per_share'] ?? 1));
+        });
+    });
+
     $harness->check(\eel_accounts\Service\IncorporationShareCapitalService::class, 'finds and posts exact incoming share payment matches', static function () use ($harness, $service): void {
         incorporation_share_service_with_fixture($harness, static function (array $fixture) use ($harness, $service): void {
             $saved = $service->saveShareClass([

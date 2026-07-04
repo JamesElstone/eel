@@ -200,6 +200,11 @@ final class FileCheckService
         return $this->categoryUploadForResolvedPathSegment($this->companyPathSegment($companyId), 'manual_asset_evidence');
     }
 
+    public function getCompaniesHouseDirectory(int $companyId): string
+    {
+        return $this->categoryUploadForResolvedPathSegment($this->companyPathSegment($companyId), 'companies_house');
+    }
+
     public function getStatementRelativePath(int $companyId, string $filename): string
     {
         return $this->categoryRelativePathForResolvedPathSegment($this->companyPathSegment($companyId), 'statements', $filename);
@@ -245,6 +250,11 @@ final class FileCheckService
         return $this->ensureManagedUploadDirectory($this->getManualAssetEvidenceDirectory($companyId));
     }
 
+    public function ensureCompaniesHouseDirectory(int $companyId): string
+    {
+        return $this->ensureManagedUploadDirectory($this->getCompaniesHouseDirectory($companyId));
+    }
+
     public function getCompanyUploadDirectories(int $companyId): array
     {
         $companyPathSegment = $this->companyPathSegment($companyId);
@@ -255,6 +265,7 @@ final class FileCheckService
             'expense' => $this->categoryUploadForResolvedPathSegment($companyPathSegment, 'expense_receipts'),
             'receipt' => $this->categoryUploadForResolvedPathSegment($companyPathSegment, 'transaction_receipts'),
             'manual_asset_evidence' => $this->categoryUploadForResolvedPathSegment($companyPathSegment, 'manual_asset_evidence'),
+            'companies_house' => $this->categoryUploadForResolvedPathSegment($companyPathSegment, 'companies_house'),
         ];
     }
 

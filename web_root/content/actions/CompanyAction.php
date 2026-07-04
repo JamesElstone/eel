@@ -166,6 +166,8 @@ final class CompanyAction implements ActionInterfaceFramework
             }
 
             if ($companyNumber !== '') {
+                $this->appendCompaniesHousePdfDownloadMessages($flashMessages, $companyId, $companyNumber, $environment);
+
                 try {
                     $ingestionResult = (new \eel_accounts\Service\CompaniesHouseAccountsIngestionService(environment: $environment))
                         ->ingestForCompany($companyId, $companyNumber);
@@ -342,6 +344,8 @@ final class CompanyAction implements ActionInterfaceFramework
             }
 
             try {
+                $this->appendCompaniesHousePdfDownloadMessages($flashMessages, $companyId, $companyNumber, $environment);
+
                 $ingestionResult = (new \eel_accounts\Service\CompaniesHouseAccountsIngestionService(environment: $environment))
                     ->ingestForCompany($companyId, $companyNumber);
                 $storedDocumentIdsAfterRefresh = $documentRepository->fetchStoredDocumentIds($companyId, $companyNumber);
@@ -1074,6 +1078,45 @@ final class CompanyAction implements ActionInterfaceFramework
         }
 
         (new \eel_accounts\Service\CompaniesHouseSICService())->ensureLookupDataAvailable();
+    }
+
+    private function appendCompaniesHousePdfDownloadMessages(array &$flashMessages, int $companyId, string $companyNumber, string $environment): void
+    {
+        try {
+            $result = (new \eel_accounts\Service\CompaniesHousePdfDownloadService(environment: $environment))
+                ->downloadForCompany($companyId, $companyNumber);
+
+            $downloaded = (int)($result['downloaded_count'] ?? 0);
+            $skipped = (int)($result['skipped_existing_count'] ?? 0);
+            $failed = (int)($result['failed_count'] ?? 0);
+
+            if ($downloaded > 0 || $skipped > 0) {
+                $message = 'Checked Companies House document PDFs: '
+                    . $downloaded . ' downloaded';
+
+                if ($skipped > 0) {
+                    $message .= ', ' . $skipped . ' already present';
+                }
+
+                $message .= '.';
+                $flashMessages[] = $message;
+            }
+
+            if ($failed > 0) {
+                $flashMessages[] = [
+                    'type' => 'error',
+                    'message' => $failed . ' Companies House PDF'
+                        . ($failed === 1 ? ' could' : 's could')
+                        . ' not be downloaded. Stored company details were still updated successfully.',
+                ];
+            }
+        } catch (Throwable $exception) {
+            $flashMessages[] = [
+                'type' => 'error',
+                'message' => 'Stored company details were updated, but Companies House PDF download failed: '
+                    . $exception->getMessage(),
+            ];
+        }
     }
 
     private function errorResult(array $errors): ActionResultFramework

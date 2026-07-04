@@ -134,6 +134,10 @@ $harness->run('eel_accounts\Service\FileCheckService', function (GeneratedServic
                 $service->getManualAssetEvidenceDirectory($companyId)
             );
             $harness->assertSame(
+                $uploads['upload_base_dir'] . DIRECTORY_SEPARATOR . '12345678' . DIRECTORY_SEPARATOR . 'companies_house' . DIRECTORY_SEPARATOR,
+                $service->getCompaniesHouseDirectory($companyId)
+            );
+            $harness->assertSame(
                 '12345678/statements/statement.csv',
                 $service->getStatementRelativePath($companyId, 'statement.csv')
             );
@@ -163,12 +167,22 @@ $harness->run('eel_accounts\Service\FileCheckService', function (GeneratedServic
             $harness->assertTrue(is_dir($uploads['upload_base_dir'] . DIRECTORY_SEPARATOR . 'ACME123' . DIRECTORY_SEPARATOR . 'expense_receipts'));
             $harness->assertTrue(is_dir($uploads['upload_base_dir'] . DIRECTORY_SEPARATOR . 'ACME123' . DIRECTORY_SEPARATOR . 'transaction_receipts'));
             $harness->assertTrue(is_dir($uploads['upload_base_dir'] . DIRECTORY_SEPARATOR . 'ACME123' . DIRECTORY_SEPARATOR . 'manual_asset_evidence'));
+            $harness->assertTrue(is_dir($uploads['upload_base_dir'] . DIRECTORY_SEPARATOR . 'ACME123' . DIRECTORY_SEPARATOR . 'companies_house'));
         });
 
         $harness->check('eel_accounts\Service\FileCheckService', 'ensureStatementDirectory creates the company statement directory within an existing base upload root', function () use ($harness, $service, $uploads): void {
             $directory = $uploads['upload_base_dir'] . DIRECTORY_SEPARATOR . '12345678' . DIRECTORY_SEPARATOR . 'statements';
 
             $resolved = $service->ensureStatementDirectory(42);
+
+            $harness->assertSame($directory, $resolved);
+            $harness->assertTrue(is_dir($directory));
+        });
+
+        $harness->check('eel_accounts\Service\FileCheckService', 'ensureCompaniesHouseDirectory creates the company Companies House directory within an existing base upload root', function () use ($harness, $service, $uploads): void {
+            $directory = $uploads['upload_base_dir'] . DIRECTORY_SEPARATOR . '12345678' . DIRECTORY_SEPARATOR . 'companies_house';
+
+            $resolved = $service->ensureCompaniesHouseDirectory(42);
 
             $harness->assertSame($directory, $resolved);
             $harness->assertTrue(is_dir($directory));

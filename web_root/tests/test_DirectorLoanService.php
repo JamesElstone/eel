@@ -95,6 +95,26 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
             $harness->assertSame('Settled', (string)($result['net_position_label'] ?? ''));
         });
     });
+
+    $harness->check(\eel_accounts\Service\DirectorLoanService::class, 'flags director loan tax review when director owes company at year end', static function () use ($harness, $service): void {
+        directorLoanStatementTestWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            directorLoanStatementTestInsertSetting($fixture, 'director_loan_asset_nominal_id', (string)$fixture['asset_nominal_id']);
+            directorLoanStatementTestInsertSetting($fixture, 'director_loan_liability_nominal_id', (string)$fixture['liability_nominal_id']);
+            directorLoanStatementTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 500.00, 0.00, '2026-12-31', 'director-owes-company');
+
+            $review = $service->fetchTaxReview((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+
+            $harness->assertSame(true, (bool)($review['available'] ?? false));
+            $harness->assertSame('review_required', (string)($review['status'] ?? ''));
+            $harness->assertSame(true, (bool)($review['s455_review_required'] ?? false));
+            $harness->assertSame(true, (bool)($review['beneficial_loan_interest_review_required'] ?? false));
+            $harness->assertSame(true, (bool)($review['write_off_review_required'] ?? false));
+            $harness->assertSame(true, (bool)($review['ct600_supplementary_review_required'] ?? false));
+            $harness->assertSame(500.00, (float)($review['exposure_amount'] ?? 0));
+            $harness->assertSame('2027-10-01', (string)($review['repayment_review_date'] ?? ''));
+            $harness->assertTrue(count((array)($review['review_items'] ?? [])) >= 4);
+        });
+    });
 });
 
 function directorLoanStatementTestWithFixture(GeneratedServiceClassTestHarness $harness, callable $callback): void

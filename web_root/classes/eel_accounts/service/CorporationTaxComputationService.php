@@ -695,9 +695,12 @@ final class CorporationTaxComputationService
         if (!empty($assetAdjustments['warning'])) {
             $warnings[] = (string)$assetAdjustments['warning'];
         }
+        $warnings[] = 'Capital allowances are based on recorded adjustment rows, not a full capital allowance pool, AIA, disposal, or balancing charge regime.';
         foreach ((array)($rateCalculation['warnings'] ?? []) as $warning) {
             $warnings[] = (string)$warning;
         }
+        $warnings = array_values(array_unique(array_filter($warnings, static fn(string $warning): bool => trim($warning) !== '')));
+        $confidenceStatus = $warnings === [] ? 'ready_for_review' : 'review_required';
 
         $steps = [
             ['label' => 'Accounting profit or loss', 'amount' => round((float)($profitAndLoss['profit_before_tax'] ?? 0), 2)],
@@ -730,6 +733,9 @@ final class CorporationTaxComputationService
             'other_treatment_count' => (int)($profitAndLoss['other_treatment_count'] ?? 0),
             'unknown_treatment_count' => (int)($profitAndLoss['unknown_treatment_count'] ?? 0),
             'warnings' => $warnings,
+            'calculation_status' => 'estimate',
+            'confidence_status' => $confidenceStatus,
+            'confidence_label' => $confidenceStatus === 'ready_for_review' ? 'Ready for review' : 'Review required',
             'steps' => $steps,
             'schedule' => [
                 [

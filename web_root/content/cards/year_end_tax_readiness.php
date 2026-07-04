@@ -71,6 +71,12 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
                 <td>' . HelperFramework::escape($this->money($companySettings, $row['loss_carried_forward'] ?? 0)) . '</td>
             </tr>';
         }
+        $warningHtml = '';
+        foreach ((array)($taxReadiness['warnings'] ?? []) as $warning) {
+            $warningHtml .= '<div class="helper">' . HelperFramework::escape((string)$warning) . '</div>';
+        }
+        $confidenceStatus = (string)($taxReadiness['confidence_status'] ?? 'review_required');
+        $confidenceLabel = (string)($taxReadiness['confidence_label'] ?? 'Review required');
 
         $review = (array)((($context['year_end'] ?? [])['checklist'] ?? [])['review'] ?? []);
         $acknowledged = trim((string)($review['tax_readiness_acknowledged_at'] ?? '')) !== '';
@@ -97,6 +103,11 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
 
         return '<section class="settings-stack" id="tax-readiness">
             <h3 class="card-title">Tax Readiness Snapshot</h3>
+            <div class="status-head">
+                <span class="badge info">Estimate</span>
+                <span class="badge ' . HelperFramework::escape($confidenceStatus === 'ready_for_review' ? 'success' : 'warning') . '">' . HelperFramework::escape($confidenceLabel) . '</span>
+            </div>
+            ' . ($warningHtml !== '' ? '<section class="panel-soft stack"><h3 class="card-title">Review warnings</h3>' . $warningHtml . '</section>' : '') . '
             <div class="summary-grid">
                 <div class="summary-card"><div class="summary-label">Taxable profit</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $taxReadiness['taxable_profit'] ?? 0)) . '</div></div>
                 <div class="summary-card"><div class="summary-label">Taxable loss</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $taxReadiness['taxable_loss'] ?? 0)) . '</div></div>

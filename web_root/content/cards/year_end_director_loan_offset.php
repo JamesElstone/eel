@@ -31,6 +31,15 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
                     'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
+            [
+                'key' => 'directorLoanTaxReview',
+                'service' => \eel_accounts\Service\DirectorLoanService::class,
+                'method' => 'fetchTaxReview',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                ],
+            ],
         ];
     }
 
@@ -47,6 +56,7 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
     public function render(array $context): string
     {
         $offset = (array)($context['services']['directorLoanOffset'] ?? []);
+        $taxReview = (array)($context['services']['directorLoanTaxReview'] ?? []);
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriod = (array)($offset['accounting_period'] ?? []);
@@ -109,6 +119,7 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
                 </table>
             </div>
             ' . $warningsHtml . '
+            ' . $this->taxReviewHtml($taxReview, $companySettings) . '
             ' . (empty($offset['can_post']) ? '<div class="helper">' . HelperFramework::escape((string)($offset['post_blocked_reason'] ?? '')) . '</div>' : '') . '
             <div class="actions-row">' . $acknowledgementForm . '</div>
         </section>';
@@ -122,6 +133,40 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
     private function money(array $companySettings, float|int|string|null $value): string
     {
         return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
+    }
+
+    private function taxReviewHtml(array $taxReview, array $companySettings): string
+    {
+        if (empty($taxReview['available'])) {
+            $errors = (array)($taxReview['errors'] ?? []);
+            return '<div class="panel-soft stack"><div class="eyebrow">Tax Review</div><div class="helper">' . HelperFramework::escape((string)($errors[0] ?? 'Director loan tax review is not available.')) . '</div></div>';
+        }
+
+        $status = (string)($taxReview['status'] ?? '');
+        $itemsHtml = '';
+        foreach ((array)($taxReview['review_items'] ?? []) as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $itemsHtml .= '<li><strong>' . HelperFramework::escape((string)($item['label'] ?? 'Review item')) . '</strong><br><span class="helper">' . HelperFramework::escape((string)($item['detail'] ?? '')) . '</span></li>';
+        }
+
+        if ($itemsHtml === '') {
+            $itemsHtml = '<li><span class="helper">No director receivable tax review flags are currently raised for this period.</span></li>';
+        }
+
+        $repaymentDate = trim((string)($taxReview['repayment_review_date'] ?? ''));
+
+        return '<div class="panel-soft stack">
+            <div class="status-head">
+                <span class="badge ' . HelperFramework::escape($this->badgeClass($status === 'review_required' ? 'warning' : 'pass')) . '">' . HelperFramework::escape((string)($taxReview['status_label'] ?? HelperFramework::labelFromKey($status, '_'))) . '</span>
+            </div>
+            <div class="month-grid">
+                ' . $this->summaryCard('Potential s455 exposure basis', $this->money($companySettings, $taxReview['exposure_amount'] ?? 0)) . '
+                ' . $this->summaryCard('Repayment review date', $repaymentDate !== '' ? HelperFramework::displayDate($repaymentDate) : 'Not applicable') . '
+            </div>
+            <ul class="settings-list">' . $itemsHtml . '</ul>
+        </div>';
     }
 
     private function offsetBadgeStatus(string $status): string

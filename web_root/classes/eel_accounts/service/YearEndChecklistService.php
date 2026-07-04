@@ -16,6 +16,7 @@ final class YearEndChecklistService
         'fixed_asset_review_placeholder',
         'prepayments_accruals_placeholder',
         'filing_basis_reminder',
+        'director_loan_tax_review',
     ];
 
     public function __construct(
@@ -699,11 +700,13 @@ final class YearEndChecklistService
         $duplicateAudit = $metrics->duplicateImportAudit($companyId, $accountingPeriodId);
         $strandedRows = $metrics->strandedCommittedSourceRowsCount($companyId, $accountingPeriodId);
         $directorLoan = $metrics->directorLoanSummary($companyId, $accountingPeriodId);
+        $directorLoanTaxReview = (new \eel_accounts\Service\DirectorLoanService())->fetchTaxReview($companyId, $accountingPeriodId);
         $expensePosition = (new \eel_accounts\Service\YearEndExpenseConfirmationService($metrics))->fetchContext($companyId, $accountingPeriodId);
         $duplicateRepayments = $metrics->duplicateRepaymentRiskSummary($companyId, $periodStart, $periodEnd);
         $financialStatements = $metrics->financialStatementsSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd, $trialBalance);
         $retainedEarningsClose = ($this->retainedEarningsCloseService ?? new \eel_accounts\Service\RetainedEarningsCloseService())
             ->fetchContext($companyId, $accountingPeriodId);
+        $incorporationShares = (new \eel_accounts\Service\IncorporationShareCapitalService())->fetchSummary($companyId);
         $potentialAssetThreshold = \eel_accounts\Service\AssetService::normalisePotentialAssetThreshold($settings['potential_asset_threshold'] ?? 250);
         $potentialAssetCandidateCount = ($this->assetService ?? new \eel_accounts\Service\AssetService())->potentialAssetCandidateCount(
             $companyId,
@@ -886,6 +889,24 @@ final class YearEndChecklistService
             empty($directorLoan['available']) ? '' : $this->money($settings, $dlaClosing),
             '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_director_loan_offset'
         );
+        $directorLoanTaxReviewRequired = !empty($directorLoanTaxReview['available']) && !empty($directorLoanTaxReview['review_required']);
+        $directorLoanTaxReviewAcknowledged = isset($reviewAcknowledgements['director_loan_tax_review']);
+        $directorLoanTaxReviewCleared = !$directorLoanTaxReviewRequired || $directorLoanTaxReviewAcknowledged;
+        $sections['director_loan_expenses'][] = $this->applyReviewAcknowledgement($this->makeCheck(
+            'director_loan_tax_review',
+            'Director loan tax review',
+            'warning',
+            empty($directorLoanTaxReview['available']) ? 'not_applicable' : ($directorLoanTaxReviewRequired ? 'warning' : 'pass'),
+            empty($directorLoanTaxReview['available'])
+                ? (string)(($directorLoanTaxReview['errors'] ?? [])[0] ?? 'Director loan tax review is not available.')
+                : ($directorLoanTaxReviewRequired
+                    ? 'Director owes the company at period end. Review s455, repayment timing, beneficial loan interest/BIK, write-off, and CT600 supplementary treatment before locking.'
+                    : 'No director receivable tax review flags are currently raised for this period.'),
+            empty($directorLoanTaxReview['available'])
+                ? ''
+                : ($directorLoanTaxReviewRequired ? $this->money($settings, $directorLoanTaxReview['exposure_amount'] ?? 0) : 'No exposure flagged'),
+            '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_director_loan_offset'
+        ), $reviewAcknowledgements);
         $expensePositionAcknowledged = trim((string)($review['expense_position_acknowledged_at'] ?? '')) !== '';
         $expensePositionBalance = (float)((($expensePosition['totals'] ?? [])['carried_forward'] ?? 0));
         $sections['director_loan_expenses'][] = $this->makeCheck(
@@ -979,6 +1000,25 @@ final class YearEndChecklistService
                 : (!empty($retainedEarningsClose['acknowledgement_stale']) ? 'Figures changed' : ($retainedEarningsCloseCurrent ? 'Agreed' : 'Pending')),
             '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_retained_earnings'
         );
+        $incorporationShareStatus = (string)($incorporationShares['status'] ?? '');
+        $sections['year_end_accounts_review'][] = $this->makeCheck(
+            'incorporation_share_payment_review',
+            'Incorporation share payment review',
+            'warning',
+            empty($incorporationShares['available']) ? 'not_applicable' : ($incorporationShareStatus === 'complete' ? 'pass' : 'warning'),
+            empty($incorporationShares['available'])
+                ? (string)(($incorporationShares['errors'] ?? [])[0] ?? 'Incorporation share capital summary is not available.')
+                : match ($incorporationShareStatus) {
+                    'shares_not_paid_up' => 'Formation shares include unpaid amounts and should be reviewed before filing.',
+                    'payment_unmatched' => 'Formation share capital is recorded, but the incoming payment has not been matched yet.',
+                    'missing' => 'Formation share capital has not been recorded yet.',
+                    default => 'Formation share capital and payment matching are complete.',
+                },
+            empty($incorporationShares['available'])
+                ? ''
+                : $this->money($settings, (($incorporationShares['totals'] ?? [])['unpaid_total'] ?? 0)),
+            '?page=incorporation&company_id=' . $companyId
+        );
         $sections['year_end_accounts_review'][] = $this->applyReviewAcknowledgement($this->makeCheck(
             'fixed_asset_review_placeholder',
             'Fixed asset review',
@@ -1017,11 +1057,26 @@ final class YearEndChecklistService
             'info',
             !empty($taxReadiness['available']) ? 'pass' : 'fail',
             !empty($taxReadiness['available'])
-                ? 'Estimated taxable profit/loss and corporation tax have been generated for review.'
+                ? 'Estimated taxable profit/loss and corporation tax have been generated for review. This is not final filing-grade tax computation.'
                 : 'No tax estimate could be generated for this period.',
             !empty($taxReadiness['available'])
                 ? ('Tax ' . $this->money($settings, $taxReadiness['estimated_corporation_tax'] ?? 0))
                 : '',
+            '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_tax_readiness#tax-readiness'
+        );
+        $taxConfidenceStatus = (string)($taxReadiness['confidence_status'] ?? 'review_required');
+        $taxWarningCount = count((array)($taxReadiness['warnings'] ?? []));
+        $sections['corporation_tax_readiness'][] = $this->makeCheck(
+            'corporation_tax_estimate_confidence',
+            'Corporation tax estimate confidence',
+            'warning',
+            empty($taxReadiness['available']) ? 'not_applicable' : ($taxConfidenceStatus === 'ready_for_review' ? 'pass' : 'warning'),
+            empty($taxReadiness['available'])
+                ? 'Tax readiness must be available before estimate confidence can be assessed.'
+                : ($taxConfidenceStatus === 'ready_for_review'
+                    ? 'No scope warnings are currently attached to the corporation tax estimate.'
+                    : 'Review the estimate warnings before relying on the corporation tax number.'),
+            empty($taxReadiness['available']) ? '' : ($taxWarningCount . ' warning' . ($taxWarningCount === 1 ? '' : 's')),
             '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_tax_readiness#tax-readiness'
         );
         $sections['corporation_tax_readiness'][] = $this->makeCheck(
@@ -1105,7 +1160,8 @@ final class YearEndChecklistService
             && !empty($trialBalance['exists'])
             && $journalIntegrityIssues === 0
             && $unpostedSourceWorkCount === 0
-            && $retainedEarningsCloseCurrent;
+            && $retainedEarningsCloseCurrent
+            && $directorLoanTaxReviewCleared;
         $sections['final_review_lock'][] = $this->makeCheck(
             'lock_readiness_checklist',
             'Lock readiness checklist',

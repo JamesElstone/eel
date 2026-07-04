@@ -115,8 +115,10 @@ final class DividendService
         $effectiveDate = $this->effectiveAsAtDate($asAtDate, $periodStart, $periodEnd);
         $profit = $this->profitForPeriod($companyId, $accountingPeriodId, $periodStart, $effectiveDate);
         $dividendsDeclared = $this->dividendsDeclaredForPeriod($companyId, $accountingPeriodId, $periodStart, $effectiveDate);
-        $retainedEarningsBroughtForward = 0.0;
+        $retainedEarningsPosition = $this->retainedEarningsBroughtForward($companyId, $accountingPeriodId, $periodStart);
+        $retainedEarningsBroughtForward = (float)($retainedEarningsPosition['amount'] ?? 0.0);
         $availableReserves = round($retainedEarningsBroughtForward + $profit - $dividendsDeclared, 2);
+        $reservesReliable = !empty($retainedEarningsPosition['reliable']);
 
         return [
             'available' => true,
@@ -126,13 +128,15 @@ final class DividendService
             'accounting_period' => $accountingPeriod,
             'as_at_date' => $effectiveDate,
             'retained_earnings_brought_forward' => $retainedEarningsBroughtForward,
-            'retained_earnings_status' => 'Pending prior-period close',
+            'retained_earnings_status' => (string)($retainedEarningsPosition['status'] ?? 'unknown'),
+            'retained_earnings_detail' => (string)($retainedEarningsPosition['detail'] ?? ''),
+            'reserves_reliable' => $reservesReliable,
             'current_year_profit_loss' => $profit,
             'dividends_declared' => $dividendsDeclared,
             'available_distributable_reserves' => $availableReserves,
-            'status' => $availableReserves > 0 ? 'available' : 'blocked',
-            'status_label' => $availableReserves > 0 ? 'Available reserves' : 'No distributable reserves',
-            'status_badge_class' => $availableReserves > 0 ? 'success' : 'danger',
+            'status' => $reservesReliable && $availableReserves > 0 ? 'available' : 'blocked',
+            'status_label' => !$reservesReliable ? 'Reserve basis not ready' : ($availableReserves > 0 ? 'Available reserves' : 'No distributable reserves'),
+            'status_badge_class' => $reservesReliable && $availableReserves > 0 ? 'success' : 'danger',
         ];
     }
 
@@ -213,6 +217,9 @@ final class DividendService
         }
 
         $capacity = $this->getDividendCapacity($companyId, $accountingPeriodId, $declarationDate);
+        if (empty($capacity['reserves_reliable'])) {
+            return ['success' => false, 'errors' => [(string)($capacity['retained_earnings_detail'] ?? 'Dividend declaration is blocked until retained earnings brought forward can be verified from a locked prior close.')]];
+        }
         $availableReserves = round((float)($capacity['available_distributable_reserves'] ?? 0), 2);
         if ($availableReserves < 0) {
             return ['success' => false, 'errors' => ['Dividend declaration is blocked because distributable reserves are negative.']];
@@ -345,6 +352,9 @@ final class DividendService
         }
 
         $capacity = $this->getDividendCapacity($companyId, $accountingPeriodId, $declarationDate);
+        if (empty($capacity['reserves_reliable'])) {
+            return ['success' => false, 'errors' => [(string)($capacity['retained_earnings_detail'] ?? 'Dividend declaration is blocked until retained earnings brought forward can be verified from a locked prior close.')]];
+        }
         $availableReserves = round((float)($capacity['available_distributable_reserves'] ?? 0), 2);
         if ($availableReserves < 0) {
             return ['success' => false, 'errors' => ['Dividend declaration is blocked because distributable reserves are negative.']];
@@ -1183,6 +1193,99 @@ final class DividendService
         );
 
         return is_array($row) ? $row : null;
+    }
+
+    private function retainedEarningsBroughtForward(int $companyId, int $accountingPeriodId, string $periodStart): array
+    {
+        $previousPeriod = $this->fetchPreviousAccountingPeriod($companyId, $periodStart);
+        if ($previousPeriod === null) {
+            return [
+                'reliable' => true,
+                'amount' => 0.0,
+                'status' => 'first_period_zero',
+                'detail' => 'This is the first recorded accounting period, so retained earnings brought forward are treated as zero.',
+            ];
+        }
+
+        $previousPeriodId = (int)($previousPeriod['id'] ?? 0);
+        $review = (new \eel_accounts\Service\YearEndLockService())->fetchReview($companyId, $previousPeriodId);
+        if (!is_array($review) || (int)($review['is_locked'] ?? 0) !== 1) {
+            return [
+                'reliable' => false,
+                'amount' => 0.0,
+                'status' => 'prior_period_not_locked',
+                'detail' => 'Dividend declaration is blocked until the prior accounting period is locked.',
+            ];
+        }
+
+        $closeJournal = (new \eel_accounts\Service\ManualJournalService())->fetchJournalByTag(
+            $companyId,
+            $previousPeriodId,
+            \eel_accounts\Service\RetainedEarningsCloseService::JOURNAL_TAG,
+            \eel_accounts\Service\RetainedEarningsCloseService::JOURNAL_KEY
+        );
+        if (!is_array($closeJournal)) {
+            return [
+                'reliable' => false,
+                'amount' => 0.0,
+                'status' => 'prior_close_missing',
+                'detail' => 'Dividend declaration is blocked until the prior period retained earnings close journal exists.',
+            ];
+        }
+
+        $retainedEarningsNominal = $this->findNominalByCode(\eel_accounts\Service\RetainedEarningsCloseService::RETAINED_EARNINGS_CODE);
+        $retainedEarningsNominalId = (int)($retainedEarningsNominal['id'] ?? 0);
+        if ($retainedEarningsNominalId <= 0) {
+            return [
+                'reliable' => false,
+                'amount' => 0.0,
+                'status' => 'retained_earnings_nominal_missing',
+                'detail' => 'Dividend declaration is blocked because nominal 3000 Retained Earnings is missing.',
+            ];
+        }
+
+        return [
+            'reliable' => true,
+            'amount' => $this->retainedEarningsBalanceBefore($companyId, $retainedEarningsNominalId, $periodStart),
+            'status' => 'locked_prior_close',
+            'detail' => 'Retained earnings brought forward are based on the locked prior-period close.',
+        ];
+    }
+
+    private function fetchPreviousAccountingPeriod(int $companyId, string $periodStart): ?array
+    {
+        $row = \InterfaceDB::fetchOne(
+            'SELECT id, company_id, label, period_start, period_end
+             FROM accounting_periods
+             WHERE company_id = :company_id
+               AND period_end < :period_start
+             ORDER BY period_end DESC, id DESC
+             LIMIT 1',
+            [
+                'company_id' => $companyId,
+                'period_start' => $periodStart,
+            ]
+        );
+
+        return is_array($row) ? $row : null;
+    }
+
+    private function retainedEarningsBalanceBefore(int $companyId, int $retainedEarningsNominalId, string $periodStart): float
+    {
+        return round((float)\InterfaceDB::fetchColumn(
+            'SELECT COALESCE(SUM(jl.credit - jl.debit), 0)
+             FROM journals j
+             INNER JOIN journal_lines jl ON jl.journal_id = j.id
+             WHERE j.company_id = :company_id
+               AND j.is_posted = 1
+               AND j.journal_date < :period_start
+               AND jl.nominal_account_id = :nominal_account_id',
+            [
+                'company_id' => $companyId,
+                'period_start' => $periodStart,
+                'nominal_account_id' => $retainedEarningsNominalId,
+            ]
+        ), 2);
     }
 
     private function findNominalByCode(string $code): ?array

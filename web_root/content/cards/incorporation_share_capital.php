@@ -1,0 +1,145 @@
+<?php
+/**
+ * EEL Accounts
+ * Copyright (c) 2026 James Elstone
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3)
+ * See LICENSE file for details.
+ */
+declare(strict_types=1);
+
+final class _incorporation_share_capitalCard extends CardBaseFramework
+{
+    public function key(): string
+    {
+        return 'incorporation_share_capital';
+    }
+
+    public function title(): string
+    {
+        return 'Formation Share Capital';
+    }
+
+    public function services(): array
+    {
+        return [
+            [
+                'key' => 'incorporationShares',
+                'service' => \eel_accounts\Service\IncorporationShareCapitalService::class,
+                'method' => 'fetchSummary',
+                'params' => ['companyId' => ':company.id'],
+            ],
+        ];
+    }
+
+    protected function additionalInvalidationFacts(): array
+    {
+        return ['incorporation.status', 'incorporation.payment.matching', 'year.end.checklist'];
+    }
+
+    public function handleError(string $serviceKey, array $error, array $context): string
+    {
+        return '';
+    }
+
+    public function render(array $context): string
+    {
+        $company = (array)($context['company'] ?? []);
+        $companyId = (int)($company['id'] ?? 0);
+        if ($companyId <= 0) {
+            return '<div class="helper">Select or add a company before recording formation shares.</div>';
+        }
+
+        $summary = (array)($context['services']['incorporationShares'] ?? []);
+        if (empty($summary['available'])) {
+            return '<section class="settings-stack"><div class="helper">' . HelperFramework::escape((string)(($summary['errors'] ?? [])[0] ?? 'Formation share capital is not available.')) . '</div></section>';
+        }
+
+        $shareClasses = (array)($summary['share_classes'] ?? []);
+        $existingHtml = '';
+        foreach ($shareClasses as $shareClass) {
+            if (is_array($shareClass)) {
+                $existingHtml .= $this->shareForm($companyId, $shareClass);
+            }
+        }
+
+        return '<section class="settings-stack" id="incorporation-share-capital">
+            ' . ($shareClasses === [] ? '<div class="helper">Enter the statement of capital from the incorporation filing. Companies House exposes this in the document, not as structured API fields.</div>' : '') . '
+            ' . $existingHtml . '
+            ' . $this->shareForm($companyId, null) . '
+        </section>';
+    }
+
+    private function shareForm(int $companyId, ?array $shareClass): string
+    {
+        $isExisting = is_array($shareClass);
+        $id = $isExisting ? (int)($shareClass['id'] ?? 0) : 0;
+        $formId = 'incorporation-share-form-' . ($id > 0 ? $id : 'new');
+        $title = $isExisting ? 'Recorded share class' : 'Add share class';
+
+        return '<div class="panel-soft stack">
+            <h3 class="card-title">' . HelperFramework::escape($title) . '</h3>
+            <form id="' . HelperFramework::escape($formId) . '" method="post" data-ajax="true">
+                <input type="hidden" name="card_action" value="Incorporation">
+                <input type="hidden" name="intent" value="save_incorporation_shares">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="share_class_id" value="' . $id . '">
+                <div class="form-grid">
+                    <div class="form-row">
+                        <label for="' . HelperFramework::escape($formId) . '-share-class">Share class</label>
+                        <input class="input" id="' . HelperFramework::escape($formId) . '-share-class" name="share_class" value="' . HelperFramework::escape((string)($shareClass['share_class'] ?? 'Ordinary')) . '">
+                    </div>
+                    <div class="form-row">
+                        <label for="' . HelperFramework::escape($formId) . '-currency">Currency</label>
+                        <input class="input" id="' . HelperFramework::escape($formId) . '-currency" name="currency" value="' . HelperFramework::escape((string)($shareClass['currency'] ?? 'GBP')) . '">
+                    </div>
+                    <div class="form-row">
+                        <label for="' . HelperFramework::escape($formId) . '-quantity">Quantity</label>
+                        <input class="input" type="number" min="1" step="1" id="' . HelperFramework::escape($formId) . '-quantity" name="quantity" value="' . HelperFramework::escape((string)($shareClass['quantity'] ?? '')) . '">
+                    </div>
+                    <div class="form-row">
+                        <label for="' . HelperFramework::escape($formId) . '-nominal">Nominal value per share</label>
+                        <input class="input" type="number" min="0" step="0.000001" id="' . HelperFramework::escape($formId) . '-nominal" name="nominal_value_per_share" value="' . HelperFramework::escape($this->decimalValue($shareClass['nominal_value_per_share'] ?? '')) . '">
+                    </div>
+                    <div class="form-row">
+                        <label for="' . HelperFramework::escape($formId) . '-paid">Paid amount per share</label>
+                        <input class="input" type="number" min="0" step="0.000001" id="' . HelperFramework::escape($formId) . '-paid" name="paid_value_per_share" value="' . HelperFramework::escape($this->decimalValue($shareClass['paid_value_per_share'] ?? '')) . '">
+                    </div>
+                    <div class="form-row">
+                        <label for="' . HelperFramework::escape($formId) . '-unpaid">Unpaid amount per share</label>
+                        <input class="input" type="number" min="0" step="0.000001" id="' . HelperFramework::escape($formId) . '-unpaid" name="unpaid_value_per_share" value="' . HelperFramework::escape($this->decimalValue($shareClass['unpaid_value_per_share'] ?? '')) . '">
+                    </div>
+                    <div class="form-row">
+                        <label for="' . HelperFramework::escape($formId) . '-document">Source document/reference</label>
+                        <input class="input" id="' . HelperFramework::escape($formId) . '-document" name="document_reference" value="' . HelperFramework::escape((string)($shareClass['document_reference'] ?? '')) . '">
+                    </div>
+                    <div class="form-row">
+                        <label for="' . HelperFramework::escape($formId) . '-note">Source note</label>
+                        <input class="input" id="' . HelperFramework::escape($formId) . '-note" name="source_note" value="' . HelperFramework::escape((string)($shareClass['source_note'] ?? '')) . '">
+                    </div>
+                </div>
+                <div class="actions-row"><button class="button primary" type="submit">' . ($isExisting ? 'Save Share Class' : 'Add Share Class') . '</button></div>
+            </form>
+            ' . ($isExisting ? $this->unpaidForm($companyId, $id) : '') . '
+        </div>';
+    }
+
+    private function unpaidForm(int $companyId, int $shareClassId): string
+    {
+        return '<form method="post" data-ajax="true" class="actions-row">
+            <input type="hidden" name="card_action" value="Incorporation">
+            <input type="hidden" name="intent" value="mark_shares_unpaid">
+            <input type="hidden" name="company_id" value="' . $companyId . '">
+            <input type="hidden" name="share_class_id" value="' . $shareClassId . '">
+            <button class="button secondary" type="submit">Mark Not Paid Up</button>
+        </form>';
+    }
+
+    private function decimalValue(mixed $value): string
+    {
+        if ($value === null || $value === '') {
+            return '';
+        }
+
+        return rtrim(rtrim(number_format((float)$value, 6, '.', ''), '0'), '.');
+    }
+}

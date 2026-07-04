@@ -43,6 +43,8 @@ final class _dividend_capacityCard extends CardBaseFramework
             <section class="panel-soft settings-stack">
                 <div class="summary-label">Distributable reserves</div>
                 <div class="helper">' . HelperFramework::escape($this->reservesEquation($companySettings, $capacity)) . '</div>
+                <div><span class="badge ' . HelperFramework::escape(!empty($capacity['reserves_reliable']) ? 'success' : 'danger') . '">' . HelperFramework::escape(!empty($capacity['reserves_reliable']) ? 'Reserve basis verified' : 'Reserve basis blocked') . '</span></div>
+                <div class="helper">' . HelperFramework::escape((string)($capacity['retained_earnings_detail'] ?? '')) . '</div>
             </section>
             <div class="summary-grid four">
                 ' . $this->summaryCard('Retained earnings brought forward', $this->money($companySettings, $capacity['retained_earnings_brought_forward'] ?? 0)) . '

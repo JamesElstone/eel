@@ -298,6 +298,34 @@ CREATE TABLE `company_accounts` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `company_incorporation_share_classes`
+--
+
+DROP TABLE IF EXISTS `company_incorporation_share_classes`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `company_incorporation_share_classes` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `share_class` varchar(100) NOT NULL DEFAULT 'Ordinary',
+  `currency` varchar(10) NOT NULL DEFAULT 'GBP',
+  `quantity` int(11) NOT NULL,
+  `nominal_value_per_share` decimal(18,6) NOT NULL DEFAULT 0.000000,
+  `paid_value_per_share` decimal(18,6) NOT NULL DEFAULT 0.000000,
+  `unpaid_value_per_share` decimal(18,6) NOT NULL DEFAULT 0.000000,
+  `source_note` text DEFAULT NULL,
+  `document_reference` varchar(255) DEFAULT NULL,
+  `status` enum('unresolved','paid','part_paid','unpaid') NOT NULL DEFAULT 'unresolved',
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_incorporation_shares_company` (`company_id`),
+  CONSTRAINT `fk_incorporation_shares_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `chk_incorporation_shares_quantity_positive` CHECK (`quantity` > 0),
+  CONSTRAINT `chk_incorporation_shares_values_nonnegative` CHECK (`nominal_value_per_share` >= 0 and `paid_value_per_share` >= 0 and `unpaid_value_per_share` >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
 -- Table structure for table `company_settings`
 --
 
@@ -1408,8 +1436,38 @@ CREATE TABLE `transactions` (
   CONSTRAINT `fk_transactions_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_transactions_transfer_account` FOREIGN KEY (`transfer_account_id`) REFERENCES `company_accounts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_transactions_upload` FOREIGN KEY (`statement_upload_id`) REFERENCES `statement_uploads` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `chk_transactions_amount_nonzero` CHECK (`amount` <> 0)
+CONSTRAINT `chk_transactions_amount_nonzero` CHECK (`amount` <> 0)
 ) ENGINE=InnoDB AUTO_INCREMENT=4099 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `company_incorporation_share_payment_matches`
+--
+
+DROP TABLE IF EXISTS `company_incorporation_share_payment_matches`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `company_incorporation_share_payment_matches` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `share_class_id` int(11) NOT NULL,
+  `transaction_id` bigint(20) NOT NULL,
+  `matched_amount` decimal(12,2) NOT NULL,
+  `match_status` enum('current','cleared') NOT NULL DEFAULT 'current',
+  `matched_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `matched_by` varchar(100) NOT NULL DEFAULT 'web_app',
+  `cleared_at` datetime DEFAULT NULL,
+  `cleared_by` varchar(100) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_share_payment_company` (`company_id`),
+  KEY `idx_share_payment_share_class` (`share_class_id`),
+  KEY `idx_share_payment_transaction` (`transaction_id`),
+  KEY `idx_share_payment_status` (`share_class_id`,`match_status`),
+  CONSTRAINT `fk_share_payment_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_share_payment_share_class` FOREIGN KEY (`share_class_id`) REFERENCES `company_incorporation_share_classes` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_share_payment_transaction` FOREIGN KEY (`transaction_id`) REFERENCES `transactions` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `chk_share_payment_amount_positive` CHECK (`matched_amount` > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -2058,7 +2116,8 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_02_005_manual_asset_evidence.sql'),
   ('2026_07_03_005_dividend_vouchers.sql'),
   ('2026_07_03_006_company_minutes_card_permission.sql'),
-  ('2026_07_03_007_non_assets_card_permission.sql');
+  ('2026_07_03_007_non_assets_card_permission.sql'),
+  ('2026_07_04_001_incorporation_share_capital.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

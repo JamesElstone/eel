@@ -52,6 +52,7 @@ final class _companies_house_snapshotCard extends CardBaseFramework
     {
         $snapshot = (array)($context['services']['companiesHouseSnapshot'] ?? []);
         $comparison = (array)($context['services']['yearEndCompaniesHouseComparison'] ?? []);
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
         if (empty($snapshot['available'])) {
             return $this->panel('Companies House Snapshot', $this->renderErrors((array)($snapshot['errors'] ?? ['Companies House snapshot is not available.'])));
         }
@@ -64,7 +65,7 @@ final class _companies_house_snapshotCard extends CardBaseFramework
         $fieldsHtml = '';
         foreach ((array)($snapshot['fields'] ?? []) as $field) {
             $value = !empty($field['is_money'])
-                ? FormattingFramework::money($field['value'] ?? 0)
+                ? $this->money($companySettings, $field['value'] ?? 0)
                 : (string)($field['value'] ?? '');
             $note = trim((string)($field['note'] ?? ''));
             $fieldsHtml .= '<tr>
@@ -77,7 +78,7 @@ final class _companies_house_snapshotCard extends CardBaseFramework
         foreach ((array)($snapshot['checks'] ?? []) as $check) {
             $checksHtml .= '<tr>
                 <td>' . HelperFramework::escape((string)($check['label'] ?? '')) . '</td>
-                <td><strong>' . HelperFramework::escape($this->displayValue($check['value'] ?? '')) . '</strong><div class="helper">' . HelperFramework::escape((string)($check['detail'] ?? '')) . '</div></td>
+                <td><strong>' . HelperFramework::escape($this->displayValue($check['value'] ?? '', $companySettings)) . '</strong><div class="helper">' . HelperFramework::escape((string)($check['detail'] ?? '')) . '</div></td>
             </tr>';
         }
 
@@ -86,7 +87,7 @@ final class _companies_house_snapshotCard extends CardBaseFramework
             $sourceHtml .= '<tr>
                 <td>' . HelperFramework::escape((string)($source['label'] ?? '')) . '</td>
                 <td>' . (int)($source['count'] ?? 0) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::money($source['amount'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $source['amount'] ?? 0)) . '</td>
             </tr>';
         }
 
@@ -121,13 +122,13 @@ final class _companies_house_snapshotCard extends CardBaseFramework
                 ' . ($assumptionsHtml !== '' ? '<div class="helper"><ul>' . $assumptionsHtml . '</ul></div>' : '') . '
                 <div class="helper">Current assets exclude fixed assets. Bank balances are current assets; asset register values should flow through fixed-asset and depreciation ledger postings.</div>
             </section>
-            ' . $this->renderComparisonPanel($comparison) . '
+            ' . $this->renderComparisonPanel($comparison, $companySettings) . '
         </div>';
     }
 
-    private function displayValue(mixed $value): string
+    private function displayValue(mixed $value, array $companySettings): string
     {
-        return is_numeric($value) ? FormattingFramework::money($value) : (string)$value;
+        return is_numeric($value) ? $this->money($companySettings, $value) : (string)$value;
     }
 
     private function panel(string $title, string $body): string
@@ -135,7 +136,7 @@ final class _companies_house_snapshotCard extends CardBaseFramework
         return '<section class="panel-soft"><div class="status-head"><h3 class="card-title">' . HelperFramework::escape($title) . '</h3></div>' . $body . '</section>';
     }
 
-    private function renderComparisonPanel(array $comparison): string
+    private function renderComparisonPanel(array $comparison, array $companySettings): string
     {
         if (empty($comparison['available'])) {
             return $this->panel('Companies House Comparison', $this->renderErrors((array)($comparison['errors'] ?? [])));
@@ -146,9 +147,9 @@ final class _companies_house_snapshotCard extends CardBaseFramework
             $status = (string)($row['status'] ?? '');
             $rowsHtml .= '<tr>
                 <td>' . HelperFramework::escape((string)($row['label'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape($this->nullableMoney($row['app_value'] ?? null)) . '</td>
-                <td>' . HelperFramework::escape($this->nullableMoney($row['filed_value'] ?? null)) . '</td>
-                <td>' . HelperFramework::escape($this->nullableMoney($row['variance'] ?? null)) . '</td>
+                <td>' . HelperFramework::escape($this->nullableMoney($companySettings, $row['app_value'] ?? null)) . '</td>
+                <td>' . HelperFramework::escape($this->nullableMoney($companySettings, $row['filed_value'] ?? null)) . '</td>
+                <td>' . HelperFramework::escape($this->nullableMoney($companySettings, $row['variance'] ?? null)) . '</td>
                 <td><span class="badge ' . $this->badgeClass($status) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($status, '_')) . '</span></td>
             </tr>';
         }
@@ -176,9 +177,14 @@ final class _companies_house_snapshotCard extends CardBaseFramework
         };
     }
 
-    private function nullableMoney(mixed $value): string
+    private function nullableMoney(array $companySettings, mixed $value): string
     {
-        return $value === null || $value === '' ? '-' : FormattingFramework::money($value);
+        return $value === null || $value === '' ? '-' : $this->money($companySettings, $value);
+    }
+
+    private function money(array $companySettings, mixed $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 
     private function renderErrors(array $errors): string

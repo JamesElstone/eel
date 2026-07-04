@@ -26,7 +26,7 @@ final class _pl_summaryCard extends CardBaseFramework
         $hasJournals = !empty($summary['has_journals']);
         $hasTransactions = !empty($summary['has_transactions']);
         $netProfit = (float)($summary['net_profit'] ?? 0);
-        $chart = $this->incomeFlowChart((array)($context['profit_loss']['breakdown'] ?? []));
+        $chart = $this->incomeFlowChart((array)($context['profit_loss']['breakdown'] ?? []), $companySettings);
         $notice = '';
         if (!$hasJournals && $hasTransactions) {
             $notice = '<div class="helper">Transactions exist but no posted journals were found for this period.</div>';
@@ -52,7 +52,7 @@ final class _pl_summaryCard extends CardBaseFramework
         </div>';
     }
 
-    private function incomeFlowChart(array $breakdown): string
+    private function incomeFlowChart(array $breakdown, array $companySettings): string
     {
         $nodes = [[
             'id' => 'income_flow_total',
@@ -184,7 +184,7 @@ final class _pl_summaryCard extends CardBaseFramework
 
         return (new ChartService())->sankey($nodes, $links, [
             'title' => 'Income flow by nominal',
-            'value_prefix' => '£',
+            'value_prefix' => (new \eel_accounts\Service\CompanySettingsService())->defaultCurrencySymbol($companySettings),
             'balance_node' => 'income_flow_total',
             'width' => 900,
             'height' => max(360, min(400, count($nodes) * 44)),

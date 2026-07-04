@@ -32,4 +32,15 @@ $harness->run(\eel_accounts\Service\MoneyFormatService::class, static function (
         $harness->assertSame('<span class="amount-zero">£ 0.00</span>', $service->formatHtml(['default_currency_symbol' => '&#163;'], 0));
         $harness->assertSame('-', $service->formatHtml(['default_currency_symbol' => '&#163;'], 'not money'));
     });
+
+    $harness->check(\eel_accounts\Service\MoneyFormatService::class, 'parses money input with currency symbols and separators', static function () use ($harness, $service): void {
+        $harness->assertSame(1234.56, $service->parseAmount('£ 1,234.56'));
+        $harness->assertSame(1234.56, $service->parseAmount('$1,234.56'));
+        $harness->assertSame(1234.56, $service->parseAmount('€ 1,234.56'));
+        $harness->assertSame(12.34, $service->parseAmount('&#163; 12.34'));
+        $harness->assertSame(123.45, $service->parseAmount('123.45'));
+        $harness->assertSame(null, $service->parseAmount(''));
+        $harness->assertSame(null, $service->parseAmount(null));
+        $harness->assertSame(null, $service->parseAmount('not money'));
+    });
 });

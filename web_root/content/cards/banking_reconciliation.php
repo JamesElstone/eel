@@ -96,7 +96,7 @@ final class _banking_reconciliationCard extends CardBaseFramework
                         </header>
                         <div class="indexed-section-body">'
                             . ($accountType === \eel_accounts\Service\CompanyAccountService::TYPE_TRADE
-                                ? $this->renderTradePanel($panel, $accountingPeriodLabel)
+                                ? $this->renderTradePanel($panel, $accountingPeriodLabel, $context)
                                 : $this->renderBankPanel($panel, $accountingPeriodLabel, $index, $context))
                         . '</div>
                     </div>
@@ -129,6 +129,7 @@ final class _banking_reconciliationCard extends CardBaseFramework
     {
         $account = is_array($panel['account'] ?? null) ? $panel['account'] : [];
         $ledgerSummary = is_array($panel['ledger_summary'] ?? null) ? $panel['ledger_summary'] : [];
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
 
         return '
             <div class="summary-grid four">
@@ -157,15 +158,15 @@ final class _banking_reconciliationCard extends CardBaseFramework
                 <div class="summary-grid">
                     <div class="summary-card">
                         <div class="summary-label">Latest statement closing balance</div>
-                        <div class="summary-value">' . HelperFramework::escape(FormattingFramework::nullableMoney($ledgerSummary['statement_closing_balance'] ?? null)) . '</div>
+                        <div class="summary-value">' . HelperFramework::escape($this->nullableMoney($companySettings, $ledgerSummary['statement_closing_balance'] ?? null)) . '</div>
                     </div>
                     <div class="summary-card">
                         <div class="summary-label">Ledger bank balance</div>
-                        <div class="summary-value">' . HelperFramework::escape(FormattingFramework::nullableMoney($ledgerSummary['ledger_balance'] ?? null)) . '</div>
+                        <div class="summary-value">' . HelperFramework::escape($this->nullableMoney($companySettings, $ledgerSummary['ledger_balance'] ?? null)) . '</div>
                     </div>
                     <div class="summary-card">
                         <div class="summary-label">Difference</div>
-                        <div class="summary-value">' . HelperFramework::escape(FormattingFramework::nullableMoney($ledgerSummary['difference'] ?? null)) . '</div>
+                        <div class="summary-value">' . HelperFramework::escape($this->nullableMoney($companySettings, $ledgerSummary['difference'] ?? null)) . '</div>
                     </div>
                 </div>
             </div>
@@ -181,9 +182,10 @@ final class _banking_reconciliationCard extends CardBaseFramework
             </div>';
     }
 
-    private function renderTradePanel(array $panel, string $accountingPeriodLabel): string
+    private function renderTradePanel(array $panel, string $accountingPeriodLabel, array $context): string
     {
         $summary = is_array($panel['trade_summary'] ?? null) ? $panel['trade_summary'] : [];
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
 
         return '
             <div class="summary-grid four">
@@ -197,11 +199,11 @@ final class _banking_reconciliationCard extends CardBaseFramework
                 </div>
                 <div class="summary-card">
                     <div class="summary-label">Debits</div>
-                    <div class="summary-value">' . HelperFramework::escape(FormattingFramework::nullableMoney($summary['debit_total'] ?? null)) . '</div>
+                    <div class="summary-value">' . HelperFramework::escape($this->nullableMoney($companySettings, $summary['debit_total'] ?? null)) . '</div>
                 </div>
                 <div class="summary-card">
                     <div class="summary-label">Credits</div>
-                    <div class="summary-value">' . HelperFramework::escape(FormattingFramework::nullableMoney($summary['credit_total'] ?? null)) . '</div>
+                    <div class="summary-value">' . HelperFramework::escape($this->nullableMoney($companySettings, $summary['credit_total'] ?? null)) . '</div>
                 </div>
             </div>
             <h4 class="card-title">Trade Ledger Check</h4>
@@ -209,7 +211,7 @@ final class _banking_reconciliationCard extends CardBaseFramework
                 <div class="summary-grid">
                     <div class="summary-card">
                         <div class="summary-label">Closing balance</div>
-                        <div class="summary-value">' . HelperFramework::escape(FormattingFramework::nullableMoney($summary['net_balance'] ?? null)) . '</div>
+                        <div class="summary-value">' . HelperFramework::escape($this->nullableMoney($companySettings, $summary['net_balance'] ?? null)) . '</div>
                     </div>
                     <div class="summary-card">
                         <div class="summary-label">Balance side</div>
@@ -232,7 +234,7 @@ final class _banking_reconciliationCard extends CardBaseFramework
             </div>';
     }
 
-    private function bankUploadsTable(array $panel, int $index): TableFramework
+    private function bankUploadsTable(array $panel, int $index, array $companySettings = []): TableFramework
     {
         $account = is_array($panel['account'] ?? null) ? $panel['account'] : [];
         $accountName = trim((string)($account['account_name'] ?? 'Bank account'));
@@ -252,20 +254,20 @@ final class _banking_reconciliationCard extends CardBaseFramework
             ->column(
                 'opening_balance',
                 'Opening',
-                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::nullableMoney($row['opening_balance'] ?? null)),
-                export: static fn(array $row): string => FormattingFramework::nullableMoney($row['opening_balance'] ?? null)
+                html: fn(array $row): string => HelperFramework::escape($this->nullableMoney($companySettings, $row['opening_balance'] ?? null)),
+                export: static fn(array $row): string => ($row['opening_balance'] ?? null) === null || ($row['opening_balance'] ?? '') === '' ? '' : number_format((float)$row['opening_balance'], 2, '.', '')
             )
             ->column(
                 'closing_balance',
                 'Closing',
-                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::nullableMoney($row['closing_balance'] ?? null)),
-                export: static fn(array $row): string => FormattingFramework::nullableMoney($row['closing_balance'] ?? null)
+                html: fn(array $row): string => HelperFramework::escape($this->nullableMoney($companySettings, $row['closing_balance'] ?? null)),
+                export: static fn(array $row): string => ($row['closing_balance'] ?? null) === null || ($row['closing_balance'] ?? '') === '' ? '' : number_format((float)$row['closing_balance'], 2, '.', '')
             )
             ->column(
                 'previous_statement_closing_balance',
                 'Previous closing',
-                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::nullableMoney($row['previous_statement_closing_balance'] ?? null)),
-                export: static fn(array $row): string => FormattingFramework::nullableMoney($row['previous_statement_closing_balance'] ?? null)
+                html: fn(array $row): string => HelperFramework::escape($this->nullableMoney($companySettings, $row['previous_statement_closing_balance'] ?? null)),
+                export: static fn(array $row): string => ($row['previous_statement_closing_balance'] ?? null) === null || ($row['previous_statement_closing_balance'] ?? '') === '' ? '' : number_format((float)$row['previous_statement_closing_balance'], 2, '.', '')
             )
             ->column(
                 'continuity_label',
@@ -306,7 +308,7 @@ final class _banking_reconciliationCard extends CardBaseFramework
         $rows = $this->bankUploadRows($panel);
         $pagination = HelperFramework::paginateArray($rows, $this->paginationPage($context), self::PAGE_SIZE);
 
-        return $this->bankUploadsTable($panel, $index)
+        return $this->bankUploadsTable($panel, $index, (array)(($context['company'] ?? [])['settings'] ?? []))
             ->visibleRows((array)$pagination['items'])
             ->pagination(
                 $pagination,
@@ -319,6 +321,11 @@ final class _banking_reconciliationCard extends CardBaseFramework
                     'cards[]' => [$this->key()],
                 ]
             );
+    }
+
+    private function nullableMoney(array $companySettings, mixed $value, string $fallback = '-'): string
+    {
+        return (new \eel_accounts\Service\MoneyFormatService())->format($companySettings, $value, $fallback);
     }
 
     private function bankUploadRows(array $panel): array

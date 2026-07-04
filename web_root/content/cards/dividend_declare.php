@@ -27,6 +27,7 @@ final class _dividend_declareCard extends CardBaseFramework
     public function render(array $context): string
     {
         $company = (array)($context['company'] ?? []);
+        $companySettings = (array)($company['settings'] ?? []);
         $capacity = (array)($context['dividends']['capacity'] ?? []);
         $accountingPeriod = (array)($capacity['accounting_period'] ?? []);
         $candidates = (array)($context['dividends']['reconciliation_candidates'] ?? []);
@@ -58,7 +59,7 @@ final class _dividend_declareCard extends CardBaseFramework
             ? ''
             : '<div class="helper">Form Disabled - Reason: ' . HelperFramework::escape($disabledReason) . '</div>';
         $helper = $canDeclare
-            ? 'Maximum currently available: ' . FormattingFramework::money($availableReserves) . '.'
+            ? 'Maximum currently available: ' . $this->money($companySettings, $availableReserves) . '.'
             : 'Dividend declarations can be saved only once the form is enabled.';
 
         $candidateOptions = '<option value="0">Not reconciled yet - save as draft</option>';
@@ -68,7 +69,7 @@ final class _dividend_declareCard extends CardBaseFramework
                 continue;
             }
             $label = trim((string)($candidate['txn_date'] ?? '')
-                . ' - ' . FormattingFramework::money(abs((float)($candidate['amount'] ?? 0)))
+                . ' - ' . $this->money($companySettings, abs((float)($candidate['amount'] ?? 0)))
                 . ' - ' . (string)($candidate['description'] ?? ''));
             $candidateOptions .= '<option value="' . $candidateId . '">' . HelperFramework::escape($label) . '</option>';
         }
@@ -111,5 +112,10 @@ final class _dividend_declareCard extends CardBaseFramework
                 </div>
             </form>
         </div>';
+    }
+
+    private function money(array $companySettings, mixed $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 }

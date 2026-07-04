@@ -130,7 +130,7 @@ final class _not_an_assetCard extends CardBaseFramework
                 'amount',
                 'Amount',
                 html: static fn(array $row): string => HelperFramework::escape($companySettingsService->money($settings, (float)($row['amount'] ?? 0))),
-                export: static fn(array $row): string => FormattingFramework::money((float)($row['amount'] ?? 0)),
+                export: static fn(array $row): string => number_format((float)($row['amount'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
             )

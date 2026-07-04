@@ -2671,8 +2671,10 @@ final class ExpenseClaimService
     }
 
     private function bulkLineLooksLikeData(string $line): bool {
+        $decodedLine = html_entity_decode($line, \ENT_QUOTES | \ENT_HTML5, 'UTF-8');
+
         return preg_match('/\d{1,4}[\/\-]\d{1,2}[\/\-]\d{1,4}/', $line) === 1
-            || str_contains($line, '£');
+            || preg_match('/\p{Sc}/u', $decodedLine) === 1;
     }
 
     private function parseBulkLineDate(string $value): ?\DateTimeImmutable {
@@ -2689,12 +2691,7 @@ final class ExpenseClaimService
     }
 
     private function parseBulkLineAmount(string $value): float {
-        $normalised = str_replace([',', '£', ' '], '', trim($value));
-        if ($normalised === '' || !is_numeric($normalised)) {
-            return 0.0;
-        }
-
-        return round((float)$normalised, 2);
+        return (new \eel_accounts\Service\MoneyFormatService())->parseAmount($value) ?? 0.0;
     }
 
     private function normaliseDisplayDateFormat(string $format): string {

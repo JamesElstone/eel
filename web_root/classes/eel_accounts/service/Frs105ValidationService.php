@@ -71,6 +71,7 @@ final class Frs105ValidationService
 
         $count = count($rows);
         $netMovement = round($totalDebit - $totalCredit, 2);
+        $settings = $companyId > 0 ? (new \eel_accounts\Store\CompanySettingsStore($companyId))->all() : [];
 
         return [
             'exists' => $count > 0,
@@ -80,7 +81,7 @@ final class Frs105ValidationService
             'total_credit' => round($totalCredit, 2),
             'net_movement' => $netMovement,
             'detail' => $count > 0
-                ? 'FRS 105 prohibits recognising deferred tax. ' . $count . ' active deferred tax nominal(s) exist; remove or reclassify them before relying on the accounts/iXBRL output. Net period exposure: ' . \FormattingFramework::money($netMovement) . '.'
+                ? 'FRS 105 prohibits recognising deferred tax. ' . $count . ' active deferred tax nominal(s) exist; remove or reclassify them before relying on the accounts/iXBRL output. Net period exposure: ' . (new \eel_accounts\Service\CompanySettingsService())->money($settings, $netMovement) . '.'
                 : 'No active deferred tax nominal was found for this FRS 105 accounts period.',
         ];
     }

@@ -18,6 +18,7 @@ final class _ixbrl_accounts_mappingCard extends CardBaseFramework
     public function render(array $context): string
     {
         $mapping = (array)($context['ixbrl']['accounts_mapping'] ?? []);
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
         $buckets = (array)($mapping['buckets'] ?? []);
         $sources = (array)($mapping['sources'] ?? []);
         $labels = [
@@ -35,7 +36,7 @@ final class _ixbrl_accounts_mappingCard extends CardBaseFramework
         foreach ($labels as $key => $label) {
             $rows .= '<tr>
                 <td>' . HelperFramework::escape($label) . '</td>
-                <td class="amount">' . HelperFramework::escape(FormattingFramework::money($buckets[$key] ?? 0)) . '</td>
+                <td class="amount">' . HelperFramework::escape($this->money($companySettings, $buckets[$key] ?? 0)) . '</td>
                 <td>' . HelperFramework::escape($this->sourceSummary((array)($sources[$key] ?? []))) . '</td>
             </tr>';
         }
@@ -61,5 +62,10 @@ final class _ixbrl_accounts_mappingCard extends CardBaseFramework
         }
 
         return implode('; ', array_slice(array_map(static fn(array $row): string => (string)($row['label'] ?? ''), $sources), 0, 4));
+    }
+
+    private function money(array $companySettings, mixed $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 }

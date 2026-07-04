@@ -434,7 +434,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
                 $gbpValue = \eel_accounts\Service\StatementUploadService::CURRENCY_DEFAULT_OPTION_GBP;
                 $options .= '<option value="' . HelperFramework::escape($gbpValue) . '"'
                     . ($selectedHeader === $gbpValue ? ' selected' : '')
-                    . '>£ GBP</option>';
+                    . '>GBP</option>';
             }
 
             foreach ($sourceHeaders as $header) {

@@ -21,6 +21,7 @@ final class _hmrc_obligations_action_panelCard extends CardBaseFramework
         $messages = (array)($guidance['messages'] ?? []);
         $matches = (array)($guidance['suggested_matches'] ?? []);
         $companyId = (int)($context['company']['id'] ?? 0);
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
 
         $html = '';
         foreach ($messages as $message) {
@@ -34,7 +35,7 @@ final class _hmrc_obligations_action_panelCard extends CardBaseFramework
                     <td>#' . (int)($match['obligation_id'] ?? 0) . '</td>
                     <td>' . HelperFramework::escape((string)($match['txn_date'] ?? '')) . '</td>
                     <td>' . HelperFramework::escape((string)($match['description'] ?? $match['reference'] ?? '')) . '</td>
-                    <td>' . HelperFramework::escape(FormattingFramework::money($match['amount'] ?? 0)) . '</td>
+                    <td>' . HelperFramework::escape($this->money($companySettings, $match['amount'] ?? 0)) . '</td>
                     <td><span class="badge warning">Suggested only</span></td>
                 </tr>';
             }
@@ -49,5 +50,10 @@ final class _hmrc_obligations_action_panelCard extends CardBaseFramework
         </form>';
 
         return '<div class="settings-stack">' . ($html !== '' ? $html : '<div class="helper">No HMRC guidance is available yet.</div>') . $syncForm . '</div>';
+    }
+
+    private function money(array $companySettings, mixed $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 }

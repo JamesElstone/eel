@@ -51,6 +51,7 @@ final class _trial_balance_lossesCard extends CardBaseFramework
 
         $summary = (array)($trialBalance['summary'] ?? []);
         $taxComputation = (array)($summary['tax_computation'] ?? []);
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
 
         if (empty($taxComputation['available'])) {
             return $this->renderErrors((array)($taxComputation['errors'] ?? ['Tax computation is not available for this period yet.']));
@@ -58,15 +59,15 @@ final class _trial_balance_lossesCard extends CardBaseFramework
 
         $stepsHtml = '';
         foreach ((array)($taxComputation['steps'] ?? []) as $step) {
-            $stepsHtml .= '<tr><td>' . HelperFramework::escape((string)($step['label'] ?? '')) . '</td><td>' . HelperFramework::escape(FormattingFramework::money($step['amount'] ?? 0)) . '</td></tr>';
+            $stepsHtml .= '<tr><td>' . HelperFramework::escape((string)($step['label'] ?? '')) . '</td><td>' . HelperFramework::escape($this->money($companySettings, $step['amount'] ?? 0)) . '</td></tr>';
         }
 
         return '<div>
             <div class="summary-grid four">
-                ' . $this->summaryCard('Loss created', FormattingFramework::money($taxComputation['loss_created_in_period'] ?? 0)) . '
-                ' . $this->summaryCard('Brought forward', FormattingFramework::money($taxComputation['losses_brought_forward'] ?? 0)) . '
-                ' . $this->summaryCard('Utilised', FormattingFramework::money($taxComputation['losses_used'] ?? 0)) . '
-                ' . $this->summaryCard('Carried forward', FormattingFramework::money($taxComputation['losses_carried_forward'] ?? 0)) . '
+                ' . $this->summaryCard('Loss created', $this->money($companySettings, $taxComputation['loss_created_in_period'] ?? 0)) . '
+                ' . $this->summaryCard('Brought forward', $this->money($companySettings, $taxComputation['losses_brought_forward'] ?? 0)) . '
+                ' . $this->summaryCard('Utilised', $this->money($companySettings, $taxComputation['losses_used'] ?? 0)) . '
+                ' . $this->summaryCard('Carried forward', $this->money($companySettings, $taxComputation['losses_carried_forward'] ?? 0)) . '
             </div>
             <section class="panel-soft">
                 <h3 class="card-title">Tax computation steps</h3>
@@ -80,6 +81,11 @@ final class _trial_balance_lossesCard extends CardBaseFramework
     private function summaryCard(string $label, string $value): string
     {
         return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+    }
+
+    private function money(array $companySettings, mixed $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 
     private function renderErrors(array $errors): string

@@ -417,7 +417,7 @@ final class StatementUploadService
             if ($fieldName === 'currency' && $postedValue === self::CURRENCY_DEFAULT_OPTION_GBP) {
                 $mapping[$fieldName] = [
                     'default_value' => 'GBP',
-                    'label' => '£ GBP',
+                    'label' => 'GBP',
                 ];
                 continue;
             }
@@ -741,7 +741,7 @@ final class StatementUploadService
         if ($mapping['currency'] === null) {
             $mapping['currency'] = [
                 'default_value' => 'GBP',
-                'label' => '£ GBP',
+                'label' => 'GBP',
             ];
         }
 
@@ -778,17 +778,16 @@ final class StatementUploadService
             $value = substr($value, 1, -1);
         }
 
-        $value = str_replace([',', '£', ' '], '', $value);
-
-        if ($value === '' || !preg_match('/^[+-]?\d+(?:\.\d{1,2})?$/', $value)) {
+        $amount = (new \eel_accounts\Service\MoneyFormatService())->parseAmount($value);
+        if ($amount === null) {
             return null;
         }
 
-        if ($negative && $value[0] !== '-') {
-            $value = '-' . ltrim($value, '+');
+        if ($negative && $amount > 0.0) {
+            $amount *= -1;
         }
 
-        return number_format((float)$value, 2, '.', '');
+        return number_format($amount, 2, '.', '');
     }
 
     public static function normaliseText(?string $value): ?string {

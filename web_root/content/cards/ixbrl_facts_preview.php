@@ -20,6 +20,7 @@ final class _ixbrl_facts_previewCard extends CardBaseFramework
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
+        $companySettings = (array)($company['settings'] ?? []);
         $readiness = (array)($context['ixbrl']['readiness'] ?? []);
         $facts = (array)($context['ixbrl']['facts'] ?? []);
         $disabled = !empty($readiness['can_build_facts']) ? '' : ' disabled';
@@ -31,7 +32,7 @@ final class _ixbrl_facts_previewCard extends CardBaseFramework
                 <td>' . HelperFramework::escape((string)($fact['taxonomy_concept'] ?? '')) . '</td>
                 <td>' . HelperFramework::escape((string)($fact['label'] ?? '')) . '</td>
                 <td>' . HelperFramework::escape((string)($fact['context_ref'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape($this->value($fact)) . '</td>
+                <td>' . HelperFramework::escape($this->value($fact, $companySettings)) . '</td>
                 <td>' . HelperFramework::escape((string)($fact['source_json'] ?? '')) . '</td>
             </tr>';
         }
@@ -52,10 +53,10 @@ final class _ixbrl_facts_previewCard extends CardBaseFramework
         </div>';
     }
 
-    private function value(array $fact): string
+    private function value(array $fact, array $companySettings): string
     {
         return match ((string)($fact['value_type'] ?? 'text')) {
-            'numeric' => FormattingFramework::money($fact['numeric_value'] ?? 0),
+            'numeric' => (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $fact['numeric_value'] ?? 0),
             'date' => (string)($fact['date_value'] ?? ''),
             default => (string)($fact['text_value'] ?? ''),
         };

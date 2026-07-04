@@ -18,6 +18,7 @@ final class _pl_income_breakdownCard extends CardBaseFramework
     public function render(array $context): string
     {
         $breakdown = (array)($context['profit_loss']['breakdown'] ?? []);
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
         $incomeRows = (array)($breakdown['income'] ?? []);
         $positiveNonIncomeReceipts = (array)($breakdown['positive_non_income_receipts'] ?? []);
         $salesRows = [];
@@ -32,21 +33,26 @@ final class _pl_income_breakdownCard extends CardBaseFramework
         }
 
         return '<div class="settings-stack">
-            ' . $this->group('Sales', $salesRows, 'No sales income journals have been posted for this period.') . '
-            ' . $this->group('Other income sources', $otherIncomeRows, 'No other income journals have been posted for this period.', $this->nonIncomeReceiptNote($positiveNonIncomeReceipts)) . '
+            ' . $this->group('Sales', $salesRows, 'No sales income journals have been posted for this period.', $companySettings) . '
+            ' . $this->group('Other income sources', $otherIncomeRows, 'No other income journals have been posted for this period.', $companySettings, $this->nonIncomeReceiptNote($positiveNonIncomeReceipts)) . '
         </div>';
     }
 
-    private function group(string $title, array $rows, string $empty, string $emptyNote = ''): string
+    private function group(string $title, array $rows, string $empty, array $companySettings, string $emptyNote = ''): string
     {
         if ($rows === []) {
             return '<section class="panel-soft"><h3 class="card-title">' . HelperFramework::escape($title) . '</h3><div class="helper">' . HelperFramework::escape($empty) . '</div>' . $emptyNote . '</section>';
         }
         $html = '';
         foreach ($rows as $row) {
-            $html .= '<tr><td>' . HelperFramework::escape((string)($row['code'] ?? '')) . '</td><td>' . HelperFramework::escape((string)($row['name'] ?? '')) . '</td><td>' . HelperFramework::escape(FormattingFramework::money($row['amount'] ?? 0)) . '</td></tr>';
+            $html .= '<tr><td>' . HelperFramework::escape((string)($row['code'] ?? '')) . '</td><td>' . HelperFramework::escape((string)($row['name'] ?? '')) . '</td><td>' . HelperFramework::escape($this->money($companySettings, $row['amount'] ?? 0)) . '</td></tr>';
         }
         return '<section class="panel-soft"><h3 class="card-title">' . HelperFramework::escape($title) . '</h3><div class="table-scroll"><table><thead><tr><th>Code</th><th>Nominal</th><th>Amount</th></tr></thead><tbody>' . $html . '</tbody></table></div></section>';
+    }
+
+    private function money(array $companySettings, mixed $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 
     private function isSalesIncomeRow(array $row): bool

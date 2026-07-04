@@ -20,7 +20,7 @@ final class MoneyFormatService
 
     public function format(array $settings, mixed $value, string $fallback = '-'): string
     {
-        $amount = $this->normaliseAmount($value);
+        $amount = $this->parseAmount($value);
         if ($amount === null) {
             return $fallback;
         }
@@ -32,7 +32,7 @@ final class MoneyFormatService
 
     public function formatHtml(array $settings, mixed $value, string $fallback = '-'): string
     {
-        $amount = $this->normaliseAmount($value);
+        $amount = $this->parseAmount($value);
         if ($amount === null) {
             return \HelperFramework::escape($fallback);
         }
@@ -42,14 +42,16 @@ final class MoneyFormatService
         return '<span class="' . $class . '">' . \HelperFramework::escape($this->format($settings, $amount, $fallback)) . '</span>';
     }
 
-    private function normaliseAmount(mixed $value): ?float
+    public function parseAmount(mixed $value): ?float
     {
         if ($value === null || $value === '') {
             return null;
         }
 
         if (is_string($value)) {
-            $value = str_replace(',', '', trim($value));
+            $value = html_entity_decode(trim($value), \ENT_QUOTES | \ENT_HTML5, 'UTF-8');
+            $value = str_replace([',', "\u{00a0}"], ['', ''], $value);
+            $value = preg_replace('/[\p{Sc}\s]/u', '', $value) ?? '';
             if ($value === '') {
                 return null;
             }

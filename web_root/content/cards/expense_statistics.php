@@ -53,10 +53,10 @@ final class _expense_statisticsCard extends CardBaseFramework
         return '<div class="settings-stack expense-statistics">
             ' . $this->renderHealthPanel((array)($statistics['health_checks'] ?? []), $companySettings) . '
             ' . $this->renderClaimantPanel((array)($statistics['claimants'] ?? []), $companySettings) . '
-            ' . $this->renderUnassignedEntriesPanel((array)($statistics['unassigned_entries'] ?? [])) . '
+            ' . $this->renderUnassignedEntriesPanel((array)($statistics['unassigned_entries'] ?? []), $companySettings) . '
             ' . $this->renderUnconfirmedNoLineClaimsPanel((array)($statistics['unconfirmed_no_line_claims'] ?? [])) . '
             ' . $this->renderTrendPanel((array)($statistics['monthly_trend'] ?? [])) . '
-            ' . $this->renderNominalPanel((array)($statistics['nominals'] ?? [])) . '
+            ' . $this->renderNominalPanel((array)($statistics['nominals'] ?? []), $companySettings) . '
         </div>';
     }
 
@@ -92,7 +92,7 @@ final class _expense_statisticsCard extends CardBaseFramework
         </section>';
     }
 
-    private function renderUnassignedEntriesPanel(array $rows): string
+    private function renderUnassignedEntriesPanel(array $rows, array $companySettings): string
     {
         if ($rows === []) {
             return $this->emptyPanel('Unassigned Claim Entries', 'No unassigned expense claim entries were found for the selected accounting period.');
@@ -110,7 +110,7 @@ final class _expense_statisticsCard extends CardBaseFramework
                 <td>' . HelperFramework::escape($claimReference) . '</td>
                 <td>' . HelperFramework::escape((string)($row['month'] ?? '')) . '</td>
                 <td>' . HelperFramework::escape($this->displayDate((string)($row['expense_date'] ?? ''))) . '</td>
-                <td class="numeric">' . HelperFramework::escape(FormattingFramework::money((float)($row['amount'] ?? 0))) . '</td>
+                <td class="numeric">' . HelperFramework::escape($this->money($companySettings, $row['amount'] ?? 0)) . '</td>
             </tr>';
         }
 
@@ -162,7 +162,7 @@ final class _expense_statisticsCard extends CardBaseFramework
         </section>';
     }
 
-    private function renderNominalPanel(array $rows): string
+    private function renderNominalPanel(array $rows, array $companySettings): string
     {
         if ($rows === []) {
             return $this->emptyPanel('Claims By Nominal', 'No expense claim lines were found for the selected accounting period.');
@@ -186,7 +186,7 @@ final class _expense_statisticsCard extends CardBaseFramework
                 <td class="expense-statistics-colour-column">' . $this->colourSwatch($colour) . '</td>
                 <td>' . HelperFramework::escape($label) . '</td>
                 <td class="numeric">' . (int)($row['line_count'] ?? 0) . '</td>
-                <td class="numeric">' . HelperFramework::escape(FormattingFramework::money($value)) . '</td>
+                <td class="numeric">' . HelperFramework::escape($this->money($companySettings, $value)) . '</td>
             </tr>';
         }
 
@@ -323,5 +323,10 @@ final class _expense_statisticsCard extends CardBaseFramework
     private function emptyPanel(string $title, string $message): string
     {
         return '<section class="panel-soft"><h3 class="card-title">' . HelperFramework::escape($title) . '</h3><div class="helper">' . HelperFramework::escape($message) . '</div></section>';
+    }
+
+    private function money(array $companySettings, mixed $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 }

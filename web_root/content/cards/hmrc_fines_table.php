@@ -19,6 +19,7 @@ final class _hmrc_fines_tableCard extends CardBaseFramework
     {
         $companyId = (int)($context['company']['id'] ?? 0);
         $accountingPeriodId = (int)($context['company']['accounting_period_id'] ?? 0);
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
         $items = array_values(array_filter(
             (array)($context['hmrc_obligations']['all_obligations'] ?? []),
             static fn(array $item): bool => in_array((string)($item['obligation_type'] ?? ''), ['hmrc_penalty', 'hmrc_interest'], true)
@@ -51,8 +52,8 @@ final class _hmrc_fines_tableCard extends CardBaseFramework
                 <td>' . HelperFramework::escape((string)($item['accounting_period_label'] ?? '')) . '</td>
                 <td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($item['obligation_type'] ?? ''), '_')) . '</td>
                 <td>' . HelperFramework::escape((string)($item['due_date'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape($item['amount_due'] === null ? 'Not set' : FormattingFramework::money($item['amount_due'])) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::money($item['amount_paid'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape($item['amount_due'] === null ? 'Not set' : $this->money($companySettings, $item['amount_due'])) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $item['amount_paid'] ?? 0)) . '</td>
                 <td><span class="badge ' . HelperFramework::escape($this->badgeClass((string)($item['effective_status'] ?? ''))) . '">' . HelperFramework::escape(HelperFramework::labelFromKey((string)($item['effective_status'] ?? ''), '_')) . '</span></td>
                 <td>' . HelperFramework::escape((string)($item['source_reference'] ?? '')) . '</td>
             </tr>';
@@ -70,5 +71,10 @@ final class _hmrc_fines_tableCard extends CardBaseFramework
             'not_applicable' => 'muted',
             default => 'warning',
         };
+    }
+
+    private function money(array $companySettings, mixed $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 }

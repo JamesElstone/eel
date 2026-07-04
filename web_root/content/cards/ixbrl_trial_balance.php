@@ -19,6 +19,7 @@ final class _ixbrl_trial_balanceCard extends CardBaseFramework
     {
         $rows = (array)($context['ixbrl']['trial_balance'] ?? []);
         $totals = (array)($context['ixbrl']['trial_balance_totals'] ?? []);
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
         if ($rows === []) {
             return '<div class="helper">No posted journal lines were found for this accounting period.</div>';
         }
@@ -30,21 +31,26 @@ final class _ixbrl_trial_balanceCard extends CardBaseFramework
                 <td>' . HelperFramework::escape((string)($row['name'] ?? '')) . '</td>
                 <td>' . HelperFramework::escape((string)($row['subtype_code'] ?? '')) . '</td>
                 <td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($row['account_type'] ?? ''), '_')) . '</td>
-                <td class="amount">' . HelperFramework::escape(FormattingFramework::money($row['total_debit'] ?? 0)) . '</td>
-                <td class="amount">' . HelperFramework::escape(FormattingFramework::money($row['total_credit'] ?? 0)) . '</td>
-                <td class="amount">' . HelperFramework::escape(FormattingFramework::money($row['net_movement'] ?? 0)) . '</td>
+                <td class="amount">' . HelperFramework::escape($this->money($companySettings, $row['total_debit'] ?? 0)) . '</td>
+                <td class="amount">' . HelperFramework::escape($this->money($companySettings, $row['total_credit'] ?? 0)) . '</td>
+                <td class="amount">' . HelperFramework::escape($this->money($companySettings, $row['net_movement'] ?? 0)) . '</td>
             </tr>';
         }
 
         $badge = !empty($totals['is_balanced']) ? '<span class="badge success">Balanced</span>' : '<span class="badge danger">Unbalanced</span>';
 
         return '<div class="settings-stack">
-            <div class="status-head">' . $badge . '<span class="helper">Difference: ' . HelperFramework::escape(FormattingFramework::money($totals['difference'] ?? 0)) . '</span></div>
+            <div class="status-head">' . $badge . '<span class="helper">Difference: ' . HelperFramework::escape($this->money($companySettings, $totals['difference'] ?? 0)) . '</span></div>
             <div class="table-scroll"><table class="data-table">
                 <thead><tr><th>Code</th><th>Account</th><th>Subtype</th><th>Type</th><th>Debit</th><th>Credit</th><th>Net</th></tr></thead>
                 <tbody>' . $body . '</tbody>
-                <tfoot><tr><th colspan="4">Totals</th><th>' . HelperFramework::escape(FormattingFramework::money($totals['total_debit'] ?? 0)) . '</th><th>' . HelperFramework::escape(FormattingFramework::money($totals['total_credit'] ?? 0)) . '</th><th>' . HelperFramework::escape(FormattingFramework::money($totals['difference'] ?? 0)) . '</th></tr></tfoot>
+                <tfoot><tr><th colspan="4">Totals</th><th>' . HelperFramework::escape($this->money($companySettings, $totals['total_debit'] ?? 0)) . '</th><th>' . HelperFramework::escape($this->money($companySettings, $totals['total_credit'] ?? 0)) . '</th><th>' . HelperFramework::escape($this->money($companySettings, $totals['difference'] ?? 0)) . '</th></tr></tfoot>
             </table></div>
         </div>';
+    }
+
+    private function money(array $companySettings, mixed $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 }

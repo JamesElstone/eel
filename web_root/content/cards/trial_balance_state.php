@@ -60,13 +60,14 @@ final class _trial_balance_stateCard extends CardBaseFramework
 
         $validation = (array)($context['services']['trialBalanceValidation'] ?? []);
         $summary = (array)($trialBalance['summary'] ?? []);
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
 
         return '<div id="trial-balance-app" class="settings-stack">
-            ' . $this->renderSummaryPanel($summary, $validation) . '
+            ' . $this->renderSummaryPanel($summary, $validation, $companySettings) . '
         </div>';
     }
 
-    private function renderSummaryPanel(array $summary, array $validation): string
+    private function renderSummaryPanel(array $summary, array $validation, array $companySettings): string
     {
         $status = (array)($summary['trial_balance_status'] ?? []);
 
@@ -74,14 +75,14 @@ final class _trial_balance_stateCard extends CardBaseFramework
             <div>' . $this->readinessGaugeCard($validation) . '</div>
             <div class="summary-grid trial-balance-summary-grid">
                 ' . $this->summaryCard('Trial Balance status', '<span class="badge ' . (!empty($status['is_balanced']) ? 'success' : 'danger') . '">' . HelperFramework::escape((string)($status['label'] ?? 'Not balanced')) . '</span>', true) . '
-                ' . $this->summaryCard('Profit before tax', FormattingFramework::money($summary['profit_before_tax'] ?? 0)) . '
-                ' . $this->summaryCard('Net assets', FormattingFramework::money($summary['net_assets'] ?? 0)) . '
+                ' . $this->summaryCard('Profit before tax', $this->money($companySettings, $summary['profit_before_tax'] ?? 0)) . '
+                ' . $this->summaryCard('Net assets', $this->money($companySettings, $summary['net_assets'] ?? 0)) . '
                 ' . $this->summaryCard('Solvency flag', $this->solvencyFlag($summary['net_assets'] ?? 0), true) . '
-                ' . $this->summaryCard('Bank balance total', FormattingFramework::money($summary['bank_balance_total'] ?? 0)) . '
-                ' . $this->summaryCard('Director loan balance', FormattingFramework::money($summary['director_loan_balance'] ?? 0)) . '
-                ' . $this->summaryCard('VAT control balance', FormattingFramework::money($summary['vat_control_balance'] ?? 0)) . '
-                ' . $this->summaryCard('Uncategorised / suspense', FormattingFramework::money($summary['uncategorised_exposure'] ?? 0)) . '
-                ' . $this->summaryCard('Corporation tax nominal', FormattingFramework::money($summary['corporation_tax_balance'] ?? 0)) . '
+                ' . $this->summaryCard('Bank balance total', $this->money($companySettings, $summary['bank_balance_total'] ?? 0)) . '
+                ' . $this->summaryCard('Director loan balance', $this->money($companySettings, $summary['director_loan_balance'] ?? 0)) . '
+                ' . $this->summaryCard('VAT control balance', $this->money($companySettings, $summary['vat_control_balance'] ?? 0)) . '
+                ' . $this->summaryCard('Uncategorised / suspense', $this->money($companySettings, $summary['uncategorised_exposure'] ?? 0)) . '
+                ' . $this->summaryCard('Corporation tax nominal', $this->money($companySettings, $summary['corporation_tax_balance'] ?? 0)) . '
             </div>
         </div>';
     }
@@ -155,6 +156,11 @@ final class _trial_balance_stateCard extends CardBaseFramework
     private function summaryCard(string $label, string $value, bool $trustedValue = false): string
     {
         return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . ($trustedValue ? $value : HelperFramework::escape($value)) . '</div></div>';
+    }
+
+    private function money(array $companySettings, mixed $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 
     private function solvencyFlag(mixed $netAssets): string

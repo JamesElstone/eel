@@ -89,6 +89,8 @@ final class _journals_listCard extends CardBaseFramework
     {
         $companyId = (int)($context['company']['id'] ?? 0);
         $accountingPeriodId = (int)($context['company']['accounting_period_id'] ?? 0);
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
+        $settingsService = new \eel_accounts\Service\CompanySettingsService();
 
         return TableFramework::make($this->key(), $this->journalLineRows($this->journalRows($context)))
             ->filename('journals-list')
@@ -123,8 +125,8 @@ final class _journals_listCard extends CardBaseFramework
             ->column(
                 'total_debit',
                 'Total',
-                html: fn(array $row): string => $this->journalCell($row, FormattingFramework::money((float)($row['total_debit'] ?? 0))),
-                export: fn(array $row): string => $this->journalExportValue($row, FormattingFramework::money((float)($row['total_debit'] ?? 0))),
+                html: fn(array $row): string => $this->journalCell($row, $settingsService->money($companySettings, $row['total_debit'] ?? 0)),
+                export: fn(array $row): string => $this->journalExportValue($row, number_format((float)($row['total_debit'] ?? 0), 2, '.', '')),
                 cellClass: 'numeric',
                 exportType: 'number'
             )
@@ -134,10 +136,10 @@ final class _journals_listCard extends CardBaseFramework
                 'credit',
                 'CR',
                 html: static fn(array $row): string => (float)($row['credit'] ?? 0) > 0
-                    ? HelperFramework::escape(FormattingFramework::money((float)($row['credit'] ?? 0)))
+                    ? HelperFramework::escape($settingsService->money($companySettings, $row['credit'] ?? 0))
                     : '',
                 export: static fn(array $row): string => (float)($row['credit'] ?? 0) > 0
-                    ? FormattingFramework::money((float)($row['credit'] ?? 0))
+                    ? number_format((float)($row['credit'] ?? 0), 2, '.', '')
                     : '',
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -146,10 +148,10 @@ final class _journals_listCard extends CardBaseFramework
                 'debit',
                 'DR',
                 html: static fn(array $row): string => (float)($row['debit'] ?? 0) > 0
-                    ? HelperFramework::escape(FormattingFramework::money((float)($row['debit'] ?? 0)))
+                    ? HelperFramework::escape($settingsService->money($companySettings, $row['debit'] ?? 0))
                     : '',
                 export: static fn(array $row): string => (float)($row['debit'] ?? 0) > 0
-                    ? FormattingFramework::money((float)($row['debit'] ?? 0))
+                    ? number_format((float)($row['debit'] ?? 0), 2, '.', '')
                     : '',
                 cellClass: 'numeric',
                 exportType: 'number'

@@ -68,9 +68,9 @@ final class _asset_reconcile_manualCard extends CardBaseFramework
                     <div class="helper">' . HelperFramework::escape((string)($asset['manual_addition_reason_label'] ?? '')) . '</div>
                 </td>
                 <td>' . HelperFramework::escape($this->displayDate((string)($asset['purchase_date'] ?? ''))) . '</td>
-                <td class="numeric">' . HelperFramework::escape(FormattingFramework::money((float)($asset['cost'] ?? 0))) . '</td>
+                <td class="numeric">' . HelperFramework::escape($this->money($settings, $asset['cost'] ?? 0)) . '</td>
                 <td>' . HelperFramework::escape((string)($asset['manual_offset_nominal_label'] ?? '')) . '</td>
-                <td>' . $this->candidateRows($companyId, $accountingPeriodId, (int)($asset['id'] ?? 0), $defaultBankNominalId, (array)($asset['candidates'] ?? [])) . '</td>
+                <td>' . $this->candidateRows($companyId, $accountingPeriodId, (int)($asset['id'] ?? 0), $defaultBankNominalId, (array)($asset['candidates'] ?? []), $settings) . '</td>
             </tr>';
         }
 
@@ -103,7 +103,8 @@ final class _asset_reconcile_manualCard extends CardBaseFramework
         int $accountingPeriodId,
         int $assetId,
         int $defaultBankNominalId,
-        array $candidates
+        array $candidates,
+        array $settings
     ): string {
         $candidateRows = '';
         foreach ($candidates as $candidate) {
@@ -113,7 +114,7 @@ final class _asset_reconcile_manualCard extends CardBaseFramework
 
             $candidateRows .= '<div class="asset-reconcile-candidate">
                 <div>
-                    <div>' . HelperFramework::escape($this->displayDate((string)($candidate['txn_date'] ?? '')) . ' - ' . FormattingFramework::money((float)($candidate['amount'] ?? 0))) . '</div>
+                    <div>' . HelperFramework::escape($this->displayDate((string)($candidate['txn_date'] ?? '')) . ' - ' . $this->money($settings, $candidate['amount'] ?? 0)) . '</div>
                     <div class="helper">' . HelperFramework::escape((string)($candidate['description'] ?? '')) . '</div>
                     <div class="helper">' . HelperFramework::escape((string)($candidate['nominal_label'] ?? 'Unassigned')) . '</div>
                 </div>
@@ -152,5 +153,10 @@ final class _asset_reconcile_manualCard extends CardBaseFramework
         }
 
         return HelperFramework::displayDate($value);
+    }
+
+    private function money(array $settings, mixed $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($settings, $value);
     }
 }

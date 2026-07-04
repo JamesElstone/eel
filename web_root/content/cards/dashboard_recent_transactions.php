@@ -78,6 +78,9 @@ final class _dashboard_recent_transactionsCard extends CardBaseFramework
 
     private function table(array $context): TableFramework
     {
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
+        $settingsService = new \eel_accounts\Service\CompanySettingsService();
+
         return TableFramework::make($this->key(), $this->rows($context))
             ->filename('dashboard-recent-transactions')
             ->exportLimit(100)
@@ -89,12 +92,8 @@ final class _dashboard_recent_transactionsCard extends CardBaseFramework
             ->column(
                 'amount',
                 'Amount',
-                html: static function (array $row): string {
-                    $amount = (float)($row['amount'] ?? 0);
-
-                    return HelperFramework::escape(FormattingFramework::money($amount));
-                },
-                export: static fn(array $row): string => FormattingFramework::money((float)($row['amount'] ?? 0)),
+                html: static fn(array $row): string => HelperFramework::escape($settingsService->money($companySettings, $row['amount'] ?? 0)),
+                export: static fn(array $row): string => number_format((float)($row['amount'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric'
             )
             ->badgeColumn(

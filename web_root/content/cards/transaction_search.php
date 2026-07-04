@@ -174,7 +174,7 @@ final class _transaction_searchCard extends CardBaseFramework
                 'amount',
                 'Amount',
                 html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['amount'] ?? 0)),
-                export: static fn(array $row): string => FormattingFramework::money($row['amount'] ?? 0),
+                export: static fn(array $row): string => number_format((float)($row['amount'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
             )
@@ -182,8 +182,8 @@ final class _transaction_searchCard extends CardBaseFramework
             ->column(
                 'balance',
                 'Balance',
-                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::nullableMoney($row['balance'] ?? null, '')),
-                export: static fn(array $row): string => FormattingFramework::nullableMoney($row['balance'] ?? null, ''),
+                html: static fn(array $row): string => HelperFramework::escape((new \eel_accounts\Service\MoneyFormatService())->format($companySettings, $row['balance'] ?? null, '')),
+                export: static fn(array $row): string => ($row['balance'] ?? null) === null || ($row['balance'] ?? '') === '' ? '' : number_format((float)$row['balance'], 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
             )

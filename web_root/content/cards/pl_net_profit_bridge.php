@@ -21,6 +21,7 @@ final class _pl_net_profit_bridgeCard extends CardBaseFramework
         if (empty($summary['available'])) {
             return '<div class="helper">Profit bridge is not available for the selected period.</div>';
         }
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
         $rows = [
             ['Income', $summary['income_total'] ?? 0, ''],
             ['Less cost of sales', -1 * (float)($summary['cost_of_sales_total'] ?? 0), ''],
@@ -30,8 +31,13 @@ final class _pl_net_profit_bridgeCard extends CardBaseFramework
         ];
         $html = '';
         foreach ($rows as $row) {
-            $html .= '<tr><td>' . ($row[2] === 'strong' ? '<strong>' : '') . HelperFramework::escape((string)$row[0]) . ($row[2] === 'strong' ? '</strong>' : '') . '</td><td>' . HelperFramework::escape(FormattingFramework::money($row[1])) . '</td></tr>';
+            $html .= '<tr><td>' . ($row[2] === 'strong' ? '<strong>' : '') . HelperFramework::escape((string)$row[0]) . ($row[2] === 'strong' ? '</strong>' : '') . '</td><td>' . HelperFramework::escape($this->money($companySettings, $row[1])) . '</td></tr>';
         }
         return '<div class="table-scroll"><table><tbody>' . $html . '</tbody></table></div>';
+    }
+
+    private function money(array $companySettings, mixed $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 }

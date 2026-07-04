@@ -22,6 +22,7 @@ final class _ixbrl_readinessCard extends CardBaseFramework
         $accountingPeriod = (array)($readiness['accounting_period'] ?? []);
         $checks = (array)($readiness['checks'] ?? []);
         $comparison = (array)($readiness['companies_house_comparison'] ?? []);
+        $companySettings = (array)($company['settings'] ?? ($context['company']['settings'] ?? []));
 
         $items = '';
         foreach ($checks as $check) {
@@ -42,11 +43,11 @@ final class _ixbrl_readinessCard extends CardBaseFramework
                 <div class="helper">This builder creates a generated FRS 105 micro-entity accounts iXBRL export for review and validation before filing.</div>
             </section>
             <section class="summary-grid">' . $items . '</section>
-            ' . $this->renderCompaniesHouseComparison($comparison) . '
+            ' . $this->renderCompaniesHouseComparison($comparison, $companySettings) . '
         </div>';
     }
 
-    private function renderCompaniesHouseComparison(array $comparison): string
+    private function renderCompaniesHouseComparison(array $comparison, array $companySettings): string
     {
         if (empty($comparison['available'])) {
             return '<section class="panel-soft"><h3 class="card-title">Companies House Comparison</h3><div class="helper">' . HelperFramework::escape((string)($comparison['errors'][0] ?? 'No Companies House comparison is available.')) . '</div></section>';
@@ -56,9 +57,9 @@ final class _ixbrl_readinessCard extends CardBaseFramework
         foreach ((array)($comparison['rows'] ?? []) as $row) {
             $rows .= '<tr>
                 <td>' . HelperFramework::escape((string)($row['label'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::nullableMoney($row['app_value'] ?? null, '-')) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::nullableMoney($row['filed_value'] ?? null, '-')) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::nullableMoney($row['variance'] ?? null, '-')) . '</td>
+                <td>' . HelperFramework::escape($this->nullableMoney($companySettings, $row['app_value'] ?? null)) . '</td>
+                <td>' . HelperFramework::escape($this->nullableMoney($companySettings, $row['filed_value'] ?? null)) . '</td>
+                <td>' . HelperFramework::escape($this->nullableMoney($companySettings, $row['variance'] ?? null)) . '</td>
                 <td>' . HelperFramework::escape((string)($row['source_concept'] ?? '')) . '</td>
                 <td><span class="badge ' . HelperFramework::escape($this->badgeClass((string)($row['status'] ?? ''))) . '">' . HelperFramework::escape(HelperFramework::labelFromKey((string)($row['status'] ?? ''), '_')) . '</span></td>
             </tr>';
@@ -82,5 +83,10 @@ final class _ixbrl_readinessCard extends CardBaseFramework
             'warning' => 'warning',
             default => 'info',
         };
+    }
+
+    private function nullableMoney(array $companySettings, mixed $value): string
+    {
+        return (new \eel_accounts\Service\MoneyFormatService())->format($companySettings, $value, '-');
     }
 }

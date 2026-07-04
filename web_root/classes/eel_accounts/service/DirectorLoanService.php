@@ -168,7 +168,7 @@ final class DirectorLoanService
         $assetReceivable = round($assetOpeningReceivable + $assetMovementReceivable, 2);
         $liabilityPayable = round($liabilityOpeningPayable + $liabilityMovementPayable, 2);
         $closingBalance = round($liabilityPayable - $assetReceivable, 2);
-        $currencySymbol = html_entity_decode((string)($settings['default_currency_symbol'] ?? '&#163;'), \ENT_QUOTES | \ENT_HTML5, 'UTF-8');
+        $currencySymbol = (new \eel_accounts\Service\CompanySettingsService())->defaultCurrencySymbol($settings);
 
         return [
             'success' => true,
@@ -203,7 +203,80 @@ final class DirectorLoanService
             'has_movements_in_period' => count($movementRows) > 0,
             'date_format' => (string)($settings['date_format'] ?? 'd/m/Y'),
             'default_currency' => (string)($settings['default_currency'] ?? 'GBP'),
-            'default_currency_symbol' => $currencySymbol !== '' ? $currencySymbol : '£',
+            'default_currency_symbol' => $currencySymbol,
+        ];
+    }
+
+    public function fetchTaxReview(int $companyId, int $accountingPeriodId): array {
+        $statement = $this->fetchStatement($companyId, $accountingPeriodId);
+        if (empty($statement['success'])) {
+            return [
+                'available' => false,
+                'success' => false,
+                'errors' => (array)($statement['errors'] ?? ['Director loan statement is not available.']),
+                'statement' => $statement,
+            ];
+        }
+
+        $closingBalance = round((float)($statement['closing_balance'] ?? 0), 2);
+        $directorOwesCompany = $closingBalance < -0.004;
+        $exposureAmount = $directorOwesCompany ? abs($closingBalance) : 0.0;
+        $periodEnd = (string)(($statement['accounting_period'] ?? [])['period_end'] ?? '');
+        $repaymentReviewDate = $this->repaymentReviewDate($periodEnd);
+        $reviewItems = [];
+
+        if ($directorOwesCompany) {
+            $reviewItems[] = [
+                'key' => 's455',
+                'label' => 's455 corporation tax review',
+                'detail' => 'Director owes the company at period end. Review whether s455 tax is due and how any later repayment affects the position.',
+                'severity' => 'warning',
+            ];
+            $reviewItems[] = [
+                'key' => 'repayment_timing',
+                'label' => 'Repayment timing',
+                'detail' => $repaymentReviewDate !== ''
+                    ? 'Check whether the loan is repaid or released by ' . $repaymentReviewDate . '.'
+                    : 'Check repayment timing before relying on the closing position.',
+                'severity' => 'warning',
+            ];
+            $reviewItems[] = [
+                'key' => 'beneficial_loan_interest',
+                'label' => 'Beneficial loan interest / BIK review',
+                'detail' => 'Review whether the balance creates a taxable benefit or interest reporting issue.',
+                'severity' => 'warning',
+            ];
+            $reviewItems[] = [
+                'key' => 'write_off',
+                'label' => 'Write-off or waiver review',
+                'detail' => 'If any balance is written off or waived, review payroll, dividend, and corporation tax treatment before filing.',
+                'severity' => 'warning',
+            ];
+            $reviewItems[] = [
+                'key' => 'ct600_supplementary',
+                'label' => 'CT600 supplementary review',
+                'detail' => 'Review whether supplementary CT600 director loan disclosures are required.',
+                'severity' => 'warning',
+            ];
+        }
+
+        return [
+            'available' => true,
+            'success' => true,
+            'status' => $directorOwesCompany ? 'review_required' : 'no_director_receivable',
+            'status_label' => $directorOwesCompany ? 'Review required' : 'No director receivable',
+            'review_required' => $directorOwesCompany,
+            'director_owes_company' => $directorOwesCompany,
+            'closing_balance' => $closingBalance,
+            'exposure_amount' => round($exposureAmount, 2),
+            'repayment_review_date' => $repaymentReviewDate,
+            's455_review_required' => $directorOwesCompany,
+            'repayment_timing_review_required' => $directorOwesCompany,
+            'beneficial_loan_interest_review_required' => $directorOwesCompany,
+            'write_off_review_required' => $directorOwesCompany,
+            'ct600_supplementary_review_required' => $directorOwesCompany,
+            'review_items' => $reviewItems,
+            'statement' => $statement,
         ];
     }
 
@@ -538,6 +611,20 @@ final class DirectorLoanService
             'director_owes_company' => 'Director owes company',
             default => 'Settled',
         };
+    }
+
+    private function repaymentReviewDate(string $periodEnd): string {
+        if (trim($periodEnd) === '') {
+            return '';
+        }
+
+        try {
+            return (new \DateTimeImmutable($periodEnd))
+                ->modify('+9 months +1 day')
+                ->format('Y-m-d');
+        } catch (\Throwable) {
+            return '';
+        }
     }
 
     private function errorResult(string $message, string $code, int $status): array {

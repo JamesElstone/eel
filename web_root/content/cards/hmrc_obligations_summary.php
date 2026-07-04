@@ -18,6 +18,7 @@ final class _hmrc_obligations_summaryCard extends CardBaseFramework
     public function render(array $context): string
     {
         $summary = (array)($context['hmrc_obligations']['summary'] ?? []);
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
         $next = is_array($summary['next_deadline'] ?? null) ? (array)$summary['next_deadline'] : null;
         $nextLabel = $next !== null
             ? HelperFramework::labelFromKey((string)$next['obligation_type'], '_') . ' due ' . (string)$next['due_date']
@@ -26,8 +27,8 @@ final class _hmrc_obligations_summaryCard extends CardBaseFramework
         return '<div class="settings-stack">
             <section class="panel-soft">
                 <div class="summary-grid">
-                    ' . $this->metric('Total currently owed', FormattingFramework::money($summary['total_owed'] ?? 0)) . '
-                    ' . $this->metric('Total overdue', FormattingFramework::money($summary['total_overdue'] ?? 0)) . '
+                    ' . $this->metric('Total currently owed', $this->money($companySettings, $summary['total_owed'] ?? 0)) . '
+                    ' . $this->metric('Total overdue', $this->money($companySettings, $summary['total_overdue'] ?? 0)) . '
                     ' . $this->metric('Next HMRC deadline', $nextLabel) . '
                     ' . $this->metric('Overdue items', (string)(int)($summary['overdue_count'] ?? 0)) . '
                     ' . $this->metric('Unresolved previous periods', (string)(int)($summary['unresolved_previous_periods'] ?? 0)) . '
@@ -44,5 +45,10 @@ final class _hmrc_obligations_summaryCard extends CardBaseFramework
     private function metric(string $label, string $value): string
     {
         return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
+    }
+
+    private function money(array $companySettings, mixed $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 }

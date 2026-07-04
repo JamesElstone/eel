@@ -18,6 +18,7 @@ final class _pl_source_coverageCard extends CardBaseFramework
     public function render(array $context): string
     {
         $sources = (array)($context['profit_loss']['source_coverage'] ?? []);
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
         if ($sources === []) {
             return '<div class="helper">No source coverage data is available.</div>';
         }
@@ -28,10 +29,15 @@ final class _pl_source_coverageCard extends CardBaseFramework
                 <td>' . HelperFramework::escape((string)($source['label'] ?? $source['source_type'] ?? '')) . '</td>
                 <td><span class="badge ' . ($present ? 'success' : 'info') . '">' . ($present ? 'Present' : 'None') . '</span></td>
                 <td>' . (int)($source['journal_count'] ?? 0) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::money($source['debit_total'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape(FormattingFramework::money($source['credit_total'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $source['debit_total'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $source['credit_total'] ?? 0)) . '</td>
             </tr>';
         }
         return '<div class="table-scroll"><table><thead><tr><th>Source</th><th>Status</th><th>Journals</th><th>Debits</th><th>Credits</th></tr></thead><tbody>' . $html . '</tbody></table></div>';
+    }
+
+    private function money(array $companySettings, mixed $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 }

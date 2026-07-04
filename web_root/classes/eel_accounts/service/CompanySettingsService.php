@@ -291,6 +291,11 @@ final class CompanySettingsService
         return (new \eel_accounts\Service\MoneyFormatService())->formatHtml($settings, $value);
     }
 
+    public function parseMoney(mixed $value): ?float
+    {
+        return (new \eel_accounts\Service\MoneyFormatService())->parseAmount($value);
+    }
+
     private function defaultSettings(): array
     {
         return array_merge(\eel_accounts\Store\CompanySettingsStore::defaults(), [

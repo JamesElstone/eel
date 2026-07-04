@@ -681,7 +681,7 @@ final class _transactions_importedCard extends CardBaseFramework
         $createAssetAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit" form="' . HelperFramework::escape($assetFormId) . '" formnovalidate';
         $createRuleHtml = $isTransferRow ? '' : $this->createRuleButtonHtml($transaction, $isPeriodLocked);
         $directorLoanButtonHtml = $this->directorLoanButtonHtml($transaction, $settings, $isPeriodLocked, $journalRebuildAttributes);
-        $dividendButtonHtml = $this->dividendButtonHtml($transaction, $dividendFormId, $isPeriodLocked);
+        $dividendButtonHtml = $this->dividendButtonHtml($transaction, $dividendFormId, $settings, $isPeriodLocked);
 
         return '<form method="post" action="?page=assets&amp;show_card=asset_create" id="' . HelperFramework::escape($assetFormId) . '">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -717,7 +717,7 @@ final class _transactions_importedCard extends CardBaseFramework
             </form>';
     }
 
-    private function dividendButtonHtml(array $transaction, string $dividendFormId, bool $isPeriodLocked): string
+    private function dividendButtonHtml(array $transaction, string $dividendFormId, array $settings, bool $isPeriodLocked): string
     {
         if ($this->transactionIsTransferMode($transaction)) {
             return '';
@@ -732,7 +732,7 @@ final class _transactions_importedCard extends CardBaseFramework
             return '<button class="button" type="button" disabled title="' . HelperFramework::escape($disabledReason) . '">Dividend</button>';
         }
 
-        $amount = FormattingFramework::money(abs((float)($transaction['amount'] ?? 0)));
+        $amount = $this->money($settings, abs((float)($transaction['amount'] ?? 0)));
         $date = $this->displayDate((string)($transaction['txn_date'] ?? ''));
         $message = 'Create a dividend declaration journal for ' . HelperFramework::escape($amount)
             . ' dated ' . HelperFramework::escape($date)

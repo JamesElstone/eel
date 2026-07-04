@@ -98,6 +98,9 @@ final class _table_export_demoCard extends CardBaseFramework
 
     private function table(array $context): TableFramework
     {
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
+        $settingsService = new \eel_accounts\Service\CompanySettingsService();
+
         return TableFramework::make('test_table_export_demo', $this->filteredRows($context, $this->selectedStatusFilter($context)))
             ->filename('test-table-export-demo')
             ->exportLimit(1000)
@@ -114,8 +117,8 @@ final class _table_export_demoCard extends CardBaseFramework
             ->column(
                 'amount',
                 'Amount',
-                html: fn(array $row): string => '&pound;' . HelperFramework::escape(FormattingFramework::money($row['amount'] ?? 0)),
-                export: fn(array $row): string => FormattingFramework::money($row['amount'] ?? 0),
+                html: static fn(array $row): string => HelperFramework::escape($settingsService->money($companySettings, $row['amount'] ?? 0)),
+                export: static fn(array $row): string => number_format((float)($row['amount'] ?? 0), 2, '.', ''),
                 cellClass: 'cell-fit',
                 exportType: 'number'
             )

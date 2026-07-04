@@ -53,6 +53,7 @@ final class _nominal_opening_balancesCard extends CardBaseFramework
         }
 
         $company = (array)($context['company'] ?? []);
+        $companySettings = (array)($company['settings'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriod = (array)($openingBalances['accounting_period'] ?? []);
         $accountingPeriodId = (int)($accountingPeriod['id'] ?? ($company['accounting_period_id'] ?? 0));
@@ -77,7 +78,7 @@ final class _nominal_opening_balancesCard extends CardBaseFramework
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
             </form>
             ' . $this->lineEditorTable('opening_balance', $formId, (array)($openingBalances['nominals'] ?? []), $defaultRows, 8) . '
-            ' . $this->balanceSummary($defaultRows) . '
+            ' . $this->balanceSummary($defaultRows, $companySettings) . '
             <div class="form-grid">
                 <div class="form-row">
                     <label for="opening-balance-description">Description</label>
@@ -133,10 +134,10 @@ final class _nominal_opening_balancesCard extends CardBaseFramework
             return '';
         }
 
-        return FormattingFramework::money($value);
+        return number_format((float)$value, 2, '.', '');
     }
 
-    private function balanceSummary(array $rows): string
+    private function balanceSummary(array $rows, array $companySettings): string
     {
         $debitTotal = 0.0;
         $creditTotal = 0.0;
@@ -154,9 +155,14 @@ final class _nominal_opening_balancesCard extends CardBaseFramework
         $balanced = abs($difference) < 0.005;
 
         return '<div class="status-head">
-            <div class="helper">Debits ' . HelperFramework::escape(FormattingFramework::money($debitTotal)) . ' | Credits ' . HelperFramework::escape(FormattingFramework::money($creditTotal)) . ' | Difference ' . HelperFramework::escape(FormattingFramework::money($difference)) . '</div>
+            <div class="helper">Debits ' . HelperFramework::escape($this->money($companySettings, $debitTotal)) . ' | Credits ' . HelperFramework::escape($this->money($companySettings, $creditTotal)) . ' | Difference ' . HelperFramework::escape($this->money($companySettings, $difference)) . '</div>
             <span class="badge ' . ($balanced ? 'success' : 'warning') . '">' . ($balanced ? 'Balanced' : 'Out of balance') . '</span>
         </div>';
+    }
+
+    private function money(array $companySettings, mixed $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 
     private function renderErrors(array $errors): string

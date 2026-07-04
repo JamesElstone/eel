@@ -149,7 +149,7 @@ final class _nominal_closing_balancesCard extends CardBaseFramework
             return '';
         }
 
-        return FormattingFramework::money($value);
+        return number_format((float)$value, 2, '.', '');
     }
 
     private function renderErrors(array $errors): string

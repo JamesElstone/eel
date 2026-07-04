@@ -17,6 +17,8 @@ final class IxbrlReadinessService
         (new \eel_accounts\Service\IxbrlFactBuilderService())->ensureSchema();
         $company = $this->fetchCompany($companyId);
         $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        $settings = $companyId > 0 ? (new \eel_accounts\Store\CompanySettingsStore($companyId))->all() : [];
+        $settingsService = new \eel_accounts\Service\CompanySettingsService();
         $checks = [];
 
         $this->addCheck($checks, 'period_selected', 'Period selected', $company !== null && $accountingPeriod !== null, true, $accountingPeriod === null ? 'Select a company and accounting period.' : 'Accounting period is available.');
@@ -26,7 +28,7 @@ final class IxbrlReadinessService
         $this->addCheck($checks, 'journal_lines_balance', 'Journal lines balance', $unbalancedJournals === 0, true, $unbalancedJournals === 0 ? 'No unbalanced posted journals detected.' : $unbalancedJournals . ' unbalanced posted journals detected.');
 
         $totals = (new \eel_accounts\Service\IxbrlTrialBalanceService())->getTotals($companyId, $accountingPeriodId);
-        $this->addCheck($checks, 'trial_balance_balanced', 'Trial balance balanced', !empty($totals['is_balanced']), true, 'Difference: ' . \FormattingFramework::money($totals['difference'] ?? 0));
+        $this->addCheck($checks, 'trial_balance_balanced', 'Trial balance balanced', !empty($totals['is_balanced']), true, 'Difference: ' . $settingsService->money($settings, $totals['difference'] ?? 0));
 
         $balanceMetrics = (new \eel_accounts\Service\IxbrlBalanceSheetMetricsService())->fetchClosingMetrics($companyId, $accountingPeriodId);
         $balanceDifference = (float)($balanceMetrics['balance_equation_difference'] ?? 0);
@@ -36,7 +38,7 @@ final class IxbrlReadinessService
             'Closing balance sheet balances',
             !empty($balanceMetrics['is_balance_sheet_balanced']),
             true,
-            'Net assets less capital and reserves difference: ' . \FormattingFramework::money($balanceDifference)
+            'Net assets less capital and reserves difference: ' . $settingsService->money($settings, $balanceDifference)
         );
 
         $uncategorised = $this->uncategorisedTransactionCount($companyId, $accountingPeriodId);
@@ -45,7 +47,6 @@ final class IxbrlReadinessService
         $unposted = $this->unpostedJournalCount($companyId, $accountingPeriodId);
         $this->addCheck($checks, 'journals_posted', 'Journals posted', $unposted === 0, true, $unposted === 0 ? 'All journals are posted.' : $unposted . ' unposted journals found.');
 
-        $settings = $companyId > 0 ? (new \eel_accounts\Store\CompanySettingsStore($companyId))->all() : [];
         $missingSettings = $this->missingSettings($settings);
         $this->addCheck($checks, 'required_settings', 'Required company settings present', $missingSettings === [], false, $missingSettings === [] ? 'Core company settings are present.' : 'Missing: ' . implode(', ', $missingSettings));
 

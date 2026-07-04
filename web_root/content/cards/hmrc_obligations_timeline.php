@@ -21,6 +21,7 @@ final class _hmrc_obligations_timelineCard extends CardBaseFramework
         $filters = (array)($context['hmrc_obligations']['filters'] ?? []);
         $selected = (string)($context['hmrc_obligations']['filter'] ?? 'all');
         $companyId = (int)($context['company']['id'] ?? 0);
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
         $pageId = (string)(($context['page'] ?? [])['page_id'] ?? 'hmrc_obligations');
 
         $filterOptions = '';
@@ -45,7 +46,7 @@ final class _hmrc_obligations_timelineCard extends CardBaseFramework
                 <td>' . HelperFramework::escape((string)($item['accounting_period_label'] ?? '')) . '<div class="helper">' . HelperFramework::escape((string)($item['period_start'] ?? '') . ' to ' . (string)($item['period_end'] ?? '')) . '</div></td>
                 <td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($item['obligation_type'] ?? ''), '_')) . $this->chHint((array)($item['companies_house'] ?? [])) . '</td>
                 <td>' . HelperFramework::escape((string)($item['due_date'] ?? '')) . '<div class="helper">' . HelperFramework::escape($this->daysLabel((int)($item['days_delta'] ?? 0))) . '</div></td>
-                <td>' . HelperFramework::escape($this->amountLabel($item)) . '</td>
+                <td>' . HelperFramework::escape($this->amountLabel($item, $companySettings)) . '</td>
                 <td><span class="badge ' . HelperFramework::escape($this->badgeClass((string)($item['effective_status'] ?? ''))) . '">' . HelperFramework::escape(HelperFramework::labelFromKey((string)($item['effective_status'] ?? ''), '_')) . '</span></td>
                 <td>' . HelperFramework::escape((string)($item['action_needed'] ?? '')) . '</td>
                 <td>' . $this->actionForms($item, $companyId, $selected) . '</td>
@@ -91,12 +92,17 @@ final class _hmrc_obligations_timelineCard extends CardBaseFramework
         return !empty($ch['filed']) ? '<div class="helper">CH accounts filed ' . HelperFramework::escape((string)($ch['filing_date'] ?? '')) . '</div>' : '';
     }
 
-    private function amountLabel(array $item): string
+    private function amountLabel(array $item, array $companySettings): string
     {
         if (($item['amount_due'] ?? null) === null) {
             return 'Not set';
         }
-        return FormattingFramework::money($item['amount_due']) . ' due / ' . FormattingFramework::money($item['amount_paid'] ?? 0) . ' paid';
+        return $this->money($companySettings, $item['amount_due']) . ' due / ' . $this->money($companySettings, $item['amount_paid'] ?? 0) . ' paid';
+    }
+
+    private function money(array $companySettings, mixed $value): string
+    {
+        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 
     private function daysLabel(int $days): string

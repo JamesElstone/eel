@@ -40,7 +40,7 @@ $harness->run(_incorporation_share_capitalCard::class, static function (
         $harness->assertSame(true, str_contains($html, 'Aggregate nominal value'));
         $harness->assertSame(true, str_contains($html, '500'));
         $harness->assertSame(true, str_contains($html, 'Total aggregate unpaid'));
-        $harness->assertSame(true, str_contains($html, 'Payment matched'));
+        $harness->assertSame(true, str_contains($html, 'Paid-Up'));
         $harness->assertSame(true, str_contains($html, 'Prescribed particulars'));
         $harness->assertSame(true, str_contains($html, 'FULL RIGHTS REGARDING VOTING, PAYMENT OF DIVIDENDS AND DISTRIBUTIONS'));
         $harness->assertSame(true, str_contains($html, 'Review payment'));

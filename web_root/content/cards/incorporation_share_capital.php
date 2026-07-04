@@ -237,7 +237,7 @@ final class _incorporation_share_capitalCard extends CardBaseFramework
     private function paymentStatusLabel(string $status): string
     {
         return match ($status) {
-            'payment_matched' => 'Payment matched',
+            'payment_matched' => 'Paid-Up',
             'payment_mismatch' => 'Payment mismatch',
             'not_paid_up' => 'Not paid up',
             default => 'Payment not matched',

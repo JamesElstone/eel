@@ -88,22 +88,22 @@ final class _incorporation_add_sharesCard extends CardBaseFramework
                     </div>
                     <div class="field">
                         <label for="' . HelperFramework::escape($formId) . '-quantity">Number allotted</label>
-                        <input class="input" type="number" min="1" step="1" id="' . HelperFramework::escape($formId) . '-quantity" name="quantity" value="' . HelperFramework::escape((string)($draftShareClass['quantity'] ?? '')) . '">
+                        <input class="input" inputmode="numeric" pattern="[0-9,]*" id="' . HelperFramework::escape($formId) . '-quantity" name="quantity" value="' . HelperFramework::escape((string)($draftShareClass['quantity'] ?? '')) . '">
                     </div>
                     <div class="field">
                         <label for="' . HelperFramework::escape($formId) . '-aggregate-nominal">Aggregate nominal value</label>
-                        <input class="input" type="number" min="0" step="0.01" id="' . HelperFramework::escape($formId) . '-aggregate-nominal" name="aggregate_nominal_value" value="' . HelperFramework::escape($aggregateNominalValue) . '">
+                        <input class="input" inputmode="numeric" pattern="[0-9,]*" id="' . HelperFramework::escape($formId) . '-aggregate-nominal" name="aggregate_nominal_value" value="' . HelperFramework::escape($aggregateNominalValue) . '">
                     </div>
                     <div class="field">
                         <label for="' . HelperFramework::escape($formId) . '-aggregate-unpaid">Total aggregate unpaid</label>
-                        <input class="input" type="number" min="0" step="0.01" id="' . HelperFramework::escape($formId) . '-aggregate-unpaid" name="total_aggregate_unpaid" value="' . HelperFramework::escape($totalAggregateUnpaid) . '">
+                        <input class="input" inputmode="numeric" pattern="[0-9,]*" id="' . HelperFramework::escape($formId) . '-aggregate-unpaid" name="total_aggregate_unpaid" value="' . HelperFramework::escape($totalAggregateUnpaid) . '">
                     </div>
                     <div class="field">
                         <label for="' . HelperFramework::escape($formId) . '-document">Source document/reference</label>
                         <input class="input" id="' . HelperFramework::escape($formId) . '-document" name="document_reference" value="' . HelperFramework::escape((string)($draftShareClass['document_reference'] ?? '')) . '">
                     </div>
                     <div class="field">
-                        <label for="' . HelperFramework::escape($formId) . '-particulars">Prescribed particulars</label>
+                        <label for="' . HelperFramework::escape($formId) . '-particulars">Prescribed particulars (text note)</label>
                         <textarea class="input" rows="1" id="' . HelperFramework::escape($formId) . '-particulars" name="source_note">' . HelperFramework::escape((string)($draftShareClass['source_note'] ?? '')) . '</textarea>
                     </div>
                     <div class="field incorporation-share-actions">

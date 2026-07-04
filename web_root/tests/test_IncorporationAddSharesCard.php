@@ -51,8 +51,11 @@ $harness->run(_incorporation_add_sharesCard::class, static function (
         $harness->assertSame(true, str_contains($html, 'name="currency"'));
         $harness->assertSame(true, str_contains($html, '<option value="GBP" selected>GBP - £</option>'));
         $harness->assertSame(true, str_contains($html, 'name="quantity" value="100"'));
+        $harness->assertSame(true, str_contains($html, 'id="incorporation-share-form-new-quantity" name="quantity" value="100"'));
+        $harness->assertSame(true, str_contains($html, 'inputmode="numeric" pattern="[0-9,]*"'));
         $harness->assertSame(true, str_contains($html, 'name="aggregate_nominal_value" value="500"'));
         $harness->assertSame(true, str_contains($html, 'name="total_aggregate_unpaid" value="0"'));
         $harness->assertSame(true, str_contains($html, 'name="document_reference" value="12344321_newinc_2022-09-05.pdf"'));
+        $harness->assertSame(true, str_contains($html, 'Prescribed particulars (text note)'));
     });
 });

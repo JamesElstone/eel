@@ -49,8 +49,8 @@ $harness->run(\eel_accounts\Service\IncorporationShareCapitalService::class, sta
                 'company_id' => $fixture['company_id'],
                 'share_class' => 'Ordinary',
                 'currency' => 'GBP',
-                'quantity' => '100',
-                'aggregate_nominal_value' => '500',
+                'quantity' => '10,000',
+                'aggregate_nominal_value' => '50,000',
                 'total_aggregate_unpaid' => '0',
                 'source_note' => 'FULL RIGHTS REGARDING VOTING, PAYMENT OF DIVIDENDS AND DISTRIBUTIONS',
                 'document_reference' => 'Model articles adopted',
@@ -59,10 +59,11 @@ $harness->run(\eel_accounts\Service\IncorporationShareCapitalService::class, sta
             $harness->assertSame(true, (bool)($saved['success'] ?? false));
             $summary = $service->fetchSummary((int)$fixture['company_id']);
             $shareClass = (array)(($summary['share_classes'] ?? [])[0] ?? []);
-            $harness->assertSame(500.00, (float)(($summary['totals'] ?? [])['issued_nominal_total'] ?? 0));
-            $harness->assertSame(500.00, (float)(($summary['totals'] ?? [])['expected_paid_total'] ?? 0));
+            $harness->assertSame(50000.00, (float)(($summary['totals'] ?? [])['issued_nominal_total'] ?? 0));
+            $harness->assertSame(50000.00, (float)(($summary['totals'] ?? [])['expected_paid_total'] ?? 0));
             $harness->assertSame(0.00, (float)(($summary['totals'] ?? [])['unpaid_total'] ?? 0));
-            $harness->assertSame(500.00, (float)(($summary['totals'] ?? [])['paid_up_unpaid_total'] ?? 0));
+            $harness->assertSame(50000.00, (float)(($summary['totals'] ?? [])['paid_up_unpaid_total'] ?? 0));
+            $harness->assertSame(10000, (int)($shareClass['quantity'] ?? 0));
             $harness->assertSame(5.00, (float)($shareClass['nominal_value_per_share'] ?? 0));
             $harness->assertSame(5.00, (float)($shareClass['paid_value_per_share'] ?? 0));
             $harness->assertSame(0.00, (float)($shareClass['unpaid_value_per_share'] ?? 1));

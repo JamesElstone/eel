@@ -542,11 +542,11 @@ final class IncorporationShareCapitalService
 
     private function normaliseShareInput(array $input): array
     {
-        $quantity = (int)($input['quantity'] ?? 0);
+        $quantity = (int)$this->normaliseWholeNumber($input['quantity'] ?? 0);
         $aggregateInput = array_key_exists('aggregate_nominal_value', $input)
             || array_key_exists('total_aggregate_unpaid', $input);
-        $aggregateNominalValue = $this->normaliseDecimal($input['aggregate_nominal_value'] ?? 0);
-        $totalAggregateUnpaid = $this->normaliseDecimal($input['total_aggregate_unpaid'] ?? 0);
+        $aggregateNominalValue = $this->normaliseWholeNumber($input['aggregate_nominal_value'] ?? 0);
+        $totalAggregateUnpaid = $this->normaliseWholeNumber($input['total_aggregate_unpaid'] ?? 0);
         $nominalValuePerShare = $this->normaliseDecimal($input['nominal_value_per_share'] ?? 0);
         $paidValuePerShare = $this->normaliseDecimal($input['paid_value_per_share'] ?? 0);
         $unpaidValuePerShare = $this->normaliseDecimal($input['unpaid_value_per_share'] ?? 0);
@@ -710,6 +710,20 @@ final class IncorporationShareCapitalService
         $normalised = (new \eel_accounts\Service\MoneyFormatService())->parseAmount($value);
 
         return $normalised !== null ? round($normalised, 6) : -1.0;
+    }
+
+    private function normaliseWholeNumber(mixed $value): float
+    {
+        if (!is_scalar($value) && $value !== null) {
+            return -1.0;
+        }
+
+        $normalised = str_replace(',', '', trim((string)$value));
+        if ($normalised === '' || preg_match('/^\d+$/', $normalised) !== 1) {
+            return -1.0;
+        }
+
+        return (float)$normalised;
     }
 
     private function actorValue(string $value): string

@@ -71,8 +71,8 @@ $harness->run(_year_end_empty_month_confirmationsCard::class, static function (
         $harness->assertSame(true, str_contains($html, 'Confirmed'));
         $harness->assertSame(true, str_contains($html, 'revoke_empty_month'));
         $harness->assertSame(true, str_contains($html, 'Bank account was not open.'));
-        $harness->assertSame(true, str_contains($html, '$12.34'));
-        $harness->assertSame(true, str_contains($html, '$56.78'));
+        $harness->assertSame(true, str_contains($html, '$ 12.34'));
+        $harness->assertSame(true, str_contains($html, '$ 56.78'));
     });
 });
 

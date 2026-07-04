@@ -132,7 +132,7 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
                                 'title' => 'Expense position acknowledgement',
                                 'status' => 'warning',
                                 'detail_text' => 'Review the expense claim balance brought forward, claims, payments, and carried-forward position before closing this accounting period.',
-                                'metric_value' => 'UNPAID £225.00',
+                                'metric_value' => 'UNPAID £ 225.00',
                                 'action_url' => '?page=year_end&company_id=12&accounting_period_id=34&show_card=year_end_expenses_confirmation',
                             ],
                             [
@@ -140,7 +140,7 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
                                 'title' => 'Expense position acknowledgement',
                                 'status' => 'pass',
                                 'detail_text' => 'Expense claim position has been acknowledged for this period.',
-                                'metric_value' => 'OWED £-42.00',
+                                'metric_value' => 'OWED -£ 42.00',
                                 'action_url' => '?page=year_end&company_id=12&accounting_period_id=34&show_card=year_end_expenses_confirmation',
                             ],
                         ],
@@ -151,8 +151,8 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
 
         $harness->assertSame(true, str_contains($html, 'E. Director loan and expense claims'));
         $harness->assertSame(true, str_contains($html, 'Expense position acknowledgement'));
-        $harness->assertSame(true, str_contains($html, 'UNPAID £225.00'));
-        $harness->assertSame(true, str_contains($html, 'OWED £-42.00'));
+        $harness->assertSame(true, str_contains($html, 'UNPAID £ 225.00'));
+        $harness->assertSame(true, str_contains($html, 'OWED -£ 42.00'));
         $harness->assertSame(true, str_contains($html, '?page=year_end&amp;show_card=year_end_expenses_confirmation'));
         $harness->assertSame(false, str_contains($html, 'company_id=12'));
         $harness->assertSame(false, str_contains($html, 'accounting_period_id=34'));

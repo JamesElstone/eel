@@ -397,11 +397,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 'amount',
                 'Amount',
                 html: function (array $row) use ($settings): string {
-                    $amount = (float)($row['amount'] ?? 0);
-
-                    return '<span class="' . ($amount >= 0 ? 'amount-positive' : 'amount-negative') . '">'
-                        . HelperFramework::escape($this->money($settings, $amount))
-                        . '</span>';
+                    return (new \eel_accounts\Service\CompanySettingsService())->moneyHtml($settings, $row['amount'] ?? null);
                 },
                 cellClass: 'numeric'
             )

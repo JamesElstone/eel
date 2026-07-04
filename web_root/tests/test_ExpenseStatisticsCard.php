@@ -37,7 +37,7 @@ $harness->run(_expense_statisticsCard::class, function (GeneratedServiceClassTes
         $harness->assertTrue(str_contains($html, '<td class="numeric">2</td>'));
         $claimantSection = expenseStatisticsCardSection($html, 'Claimant Balances');
         $harness->assertSame(8, substr_count($claimantSection, '<td class="numeric">$'));
-        foreach (['$500.00', '$175.00', '$40.00', '$635.00', '$0.00', '$80.00', '$20.00', '$60.00'] as $amount) {
+        foreach (['$ 500.00', '$ 175.00', '$ 40.00', '$ 635.00', '$ 0.00', '$ 80.00', '$ 20.00', '$ 60.00'] as $amount) {
             $harness->assertTrue(str_contains($claimantSection, '<td class="numeric">' . $amount . '</td>'));
         }
         $harness->assertTrue(str_contains($html, 'Unassigned Claim Entries'));
@@ -61,8 +61,8 @@ $harness->run(_expense_statisticsCard::class, function (GeneratedServiceClassTes
         $harness->assertSame(1, substr_count($html, 'class="chart chart-pie"'));
         $harness->assertTrue(str_contains($html, 'chart-line'));
         $harness->assertTrue(str_contains($html, 'Missing receipts'));
-        $harness->assertTrue(str_contains($html, '<div class="stat-foot">$230.00</div>'));
-        $harness->assertTrue(str_contains($html, '<div class="stat-foot">$25.00</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="stat-foot">$ 230.00</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="stat-foot">$ 25.00</div>'));
         $harness->assertTrue(!str_contains($html, 'Oldest outstanding'));
         $harness->assertTrue(!str_contains($html, 'Largest balance'));
         $harness->assertTrue(str_contains($html, 'EXP-2605-001'));

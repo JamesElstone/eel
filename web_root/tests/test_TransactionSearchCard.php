@@ -128,7 +128,7 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         $harness->assertSame(false, str_contains($html, '<span class="table-sort-label">Created</span>'));
         $harness->assertSame(false, str_contains($html, '<span class="table-sort-label">Updated</span>'));
         $harness->assertTrue(str_contains($html, 'Brian Supplies'));
-        $harness->assertTrue(str_contains($html, '$42.50'));
+        $harness->assertTrue(str_contains($html, '$ 42.50'));
         $harness->assertTrue(str_contains($html, 'Rule #5 | Description: Brian'));
         $harness->assertSame(false, str_contains($html, 'name="global_action" value="sync_auto_approval_state"'));
         $harness->assertSame(false, str_contains($html, 'data-auto-approval-batch-form="true"'));
@@ -158,8 +158,8 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
 
         $harness->assertTrue(str_contains($html, '<span>Page</span>'));
         $harness->assertTrue(str_contains($html, '<span>Query</span>'));
-        $harness->assertTrue(str_contains($html, '<strong>$120.00</strong>'));
-        $harness->assertTrue(str_contains($html, '<strong>$136.00</strong>'));
+        $harness->assertTrue(str_contains($html, '<strong>$ 120.00</strong>'));
+        $harness->assertTrue(str_contains($html, '<strong>$ 136.00</strong>'));
     });
 
     $harness->check(_transaction_searchCard::class, 'handle normalises selected source account and nominal ids', static function () use ($harness, $card, $context): void {

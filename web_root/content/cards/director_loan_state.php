@@ -127,7 +127,7 @@ final class _director_loan_stateCard extends CardBaseFramework
             ->column(
                 'signed_amount',
                 'Amount',
-                html: static fn(array $row): string => HelperFramework::escape(FormattingFramework::nullableMoney($row['signed_amount'] ?? null, '')),
+                html: fn(array $row): string => HelperFramework::escape($this->nullableMoney($statement, $row['signed_amount'] ?? null)),
                 export: fn(array $row): string => $this->numberExport($row['signed_amount'] ?? null),
                 cellClass: 'numeric',
                 exportType: 'number'
@@ -175,9 +175,21 @@ final class _director_loan_stateCard extends CardBaseFramework
 
     private function money(array $statement, mixed $value): string
     {
-        $symbol = (string)($statement['default_currency_symbol'] ?? '£');
+        return (new \eel_accounts\Service\MoneyFormatService())->format($this->moneySettings($statement), $value);
+    }
 
-        return $symbol . FormattingFramework::money($value);
+    private function nullableMoney(array $statement, mixed $value): string
+    {
+        if ($value === null || $value === '') {
+            return '';
+        }
+
+        return $this->money($statement, $value);
+    }
+
+    private function moneySettings(array $statement): array
+    {
+        return ['default_currency_symbol' => (string)($statement['default_currency_symbol'] ?? '&#163;')];
     }
 
     private function numberExport(mixed $value): string

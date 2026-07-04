@@ -100,16 +100,15 @@ final class _expense_claim_editorCard extends CardBaseFramework
         $claimantName = (string)($claim['claimant_name'] ?? '');
         $claimMonthLabel = $this->monthLabel((int)($claim['claim_month'] ?? 0), (int)($claim['claim_year'] ?? 0));
         $displayTotals = $this->displayControlTotals($claim);
-        $defaultCurrencySymbol = $this->defaultCurrencySymbol($companySettings);
 
         return '<div class="summary-grid expense-claim-summary-grid">
                 <div class="summary-card"><div class="summary-label">Claim Reference</div><div class="summary-value">' . HelperFramework::escape($claimReference) . '</div></div>
                 <div class="summary-card"><div class="summary-label">Claimant</div><div class="summary-value">' . HelperFramework::escape($claimantName) . '</div></div>
                 <div class="summary-card"><div class="summary-label">Claim Month</div><div class="summary-value">' . HelperFramework::escape($claimMonthLabel) . '</div></div>
-                <div class="summary-card"><div class="summary-label">Brought Forwards (A)</div><div class="summary-value">' . HelperFramework::escape($defaultCurrencySymbol . FormattingFramework::money($displayTotals['A'])) . '</div></div>
-                <div class="summary-card"><div class="summary-label">In this claim (B)</div><div class="summary-value">' . HelperFramework::escape($defaultCurrencySymbol . FormattingFramework::money($displayTotals['B'])) . '</div></div>
-                <div class="summary-card"><div class="summary-label">Paid in this period (C)</div><div class="summary-value">' . HelperFramework::escape($defaultCurrencySymbol . FormattingFramework::money($displayTotals['C'])) . '</div></div>
-                <div class="summary-card"><div class="summary-label">Carried Forward (D=A+B-C)</div><div class="summary-value">' . HelperFramework::escape($defaultCurrencySymbol . FormattingFramework::money($displayTotals['D'])) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Brought Forwards (A)</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $displayTotals['A'])) . '</div></div>
+                <div class="summary-card"><div class="summary-label">In this claim (B)</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $displayTotals['B'])) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Paid in this period (C)</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $displayTotals['C'])) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Carried Forward (D=A+B-C)</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $displayTotals['D'])) . '</div></div>
             </div>
             ' . ($isPosted ? '' : $this->renderBulkPastePanel($claimId, $companyId, $dateFormat)) . '
             ' . ($isPosted ? '<div class="helper">Posted claim lines are locked. Repayments can still be linked from bank transactions.</div>' : $this->renderLineForm($claim, $nominals, $claimId, $companySettings, $companyId)) . '
@@ -290,8 +289,6 @@ final class _expense_claim_editorCard extends CardBaseFramework
 
     private function linesTable(array $lines, array $nominals, array $assetCategories, int $claimId, bool $isPosted, int $companyId, string $dateFormat, array $companySettings, array $context): TableFramework
     {
-        $defaultCurrencySymbol = $this->defaultCurrencySymbol($companySettings);
-
         return TableFramework::make(self::TABLE_LINES, $this->lineRows($lines, $dateFormat))
             ->filename('expense-claim-lines')
             ->exportLimit(1000)
@@ -318,7 +315,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
             ->column(
                 'amount',
                 'Amount',
-                html: static fn(array $row): string => HelperFramework::escape($defaultCurrencySymbol . FormattingFramework::money($row['amount'] ?? 0)),
+                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['amount'] ?? 0)),
                 export: static fn(array $row): string => number_format((float)($row['amount'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'

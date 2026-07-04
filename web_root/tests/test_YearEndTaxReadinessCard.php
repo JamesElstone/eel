@@ -41,14 +41,14 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame(true, str_contains($html, 'data-chicken-button-class="button danger"'));
         $harness->assertSame(true, str_contains($html, '>I Agree</button>'));
         $harness->assertSame(true, str_contains($html, 'checked required'));
-        $harness->assertSame(true, str_contains($html, '$12,500.00'));
-        $harness->assertSame(true, str_contains($html, '$12.34'));
-        $harness->assertSame(true, str_contains($html, '$2,375.00'));
-        $harness->assertSame(true, str_contains($html, '$45.67'));
-        $harness->assertSame(true, str_contains($html, '$100.00'));
-        $harness->assertSame(true, str_contains($html, '$200.00'));
-        $harness->assertSame(true, str_contains($html, '$300.00'));
-        $harness->assertSame(true, str_contains($html, '$400.00'));
+        $harness->assertSame(true, str_contains($html, '$ 12,500.00'));
+        $harness->assertSame(true, str_contains($html, '$ 12.34'));
+        $harness->assertSame(true, str_contains($html, '$ 2,375.00'));
+        $harness->assertSame(true, str_contains($html, '$ 45.67'));
+        $harness->assertSame(true, str_contains($html, '$ 100.00'));
+        $harness->assertSame(true, str_contains($html, '$ 200.00'));
+        $harness->assertSame(true, str_contains($html, '$ 300.00'));
+        $harness->assertSame(true, str_contains($html, '$ 400.00'));
     });
 });
 

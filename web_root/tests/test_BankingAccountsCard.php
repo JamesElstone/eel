@@ -52,7 +52,7 @@ $harness->run(_banking_accountsCard::class, static function (GeneratedServiceCla
         $harness->assertTrue(str_contains($html, 'Main Current Account'));
         $harness->assertTrue(str_contains($html, '12345678'));
         $harness->assertTrue(str_contains($html, '1001 Main Current Account'));
-        $harness->assertTrue(str_contains($html, '$1,234.56'));
+        $harness->assertTrue(str_contains($html, '$ 1,234.56'));
         $harness->assertTrue(str_contains($html, 'BANK-MAIN'));
         $harness->assertTrue(str_contains($html, 'Field Mappings'));
         $harness->assertTrue(str_contains($html, 'data-chicken-check="true"'));

@@ -278,14 +278,17 @@ final class CompanySettingsService
 
     public function defaultCurrencySymbol(array $settings): string
     {
-        $symbol = html_entity_decode((string)($settings['default_currency_symbol'] ?? '&#163;'), \ENT_QUOTES | \ENT_HTML5, 'UTF-8');
-
-        return $symbol !== '' ? $symbol : html_entity_decode('&#163;', \ENT_QUOTES | \ENT_HTML5, 'UTF-8');
+        return (new \eel_accounts\Service\MoneyFormatService())->defaultCurrencySymbol($settings);
     }
 
-    public function money(array $settings, float|int|string|null $value): string
+    public function money(array $settings, mixed $value): string
     {
-        return $this->defaultCurrencySymbol($settings) . \FormattingFramework::money($value);
+        return (new \eel_accounts\Service\MoneyFormatService())->format($settings, $value);
+    }
+
+    public function moneyHtml(array $settings, mixed $value): string
+    {
+        return (new \eel_accounts\Service\MoneyFormatService())->formatHtml($settings, $value);
     }
 
     private function defaultSettings(): array

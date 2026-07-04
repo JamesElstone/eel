@@ -135,10 +135,10 @@ $harness->run(_expenses_stateCard::class, function (GeneratedServiceClassTestHar
         $harness->assertTrue(str_contains($html, 'Expense claims 1-13 of 14'));
         $harness->assertTrue(str_contains($html, 'EXP-2605-013'));
         $harness->assertSame(false, str_contains($html, 'EXP-2605-014'));
-        $harness->assertTrue(str_contains($html, '$0.00'));
-        $harness->assertTrue(str_contains($html, '$95.99'));
-        $harness->assertTrue(str_contains($html, '$50.00'));
-        $harness->assertTrue(str_contains($html, '$-50.00'));
+        $harness->assertTrue(str_contains($html, '$ 0.00'));
+        $harness->assertTrue(str_contains($html, '$ 95.99'));
+        $harness->assertTrue(str_contains($html, '$ 50.00'));
+        $harness->assertTrue(str_contains($html, '-$ 50.00'));
 
         $table = $instance->tables($context)[0] ?? null;
         $harness->assertTrue($table instanceof TableFramework);

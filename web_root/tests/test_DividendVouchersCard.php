@@ -34,7 +34,7 @@ $harness->run(_dividend_vouchersCard::class, static function (GeneratedServiceCl
         ]);
 
         $harness->assertTrue(str_contains($html, 'Alex Example'));
-        $harness->assertTrue(str_contains($html, '$125.50'));
+        $harness->assertTrue(str_contains($html, '$ 125.50'));
         $harness->assertTrue(str_contains($html, 'Voucher text.'));
         $harness->assertTrue(str_contains($html, 'DIV-1'));
     });

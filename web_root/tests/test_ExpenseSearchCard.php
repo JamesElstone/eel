@@ -46,7 +46,7 @@ $harness->run(_expense_searchCard::class, static function (GeneratedServiceClass
         $harness->assertTrue(str_contains($html, '<span class="table-sort-label">Charge To</span>'));
         $harness->assertTrue(str_contains($html, 'Electric materials'));
         $harness->assertTrue(str_contains($html, 'receipt note'));
-        $harness->assertTrue(str_contains($html, '$42.50'));
+        $harness->assertTrue(str_contains($html, '$ 42.50'));
         $harness->assertTrue(str_contains($html, 'expense-search-amount-total'));
         $harness->assertTrue(str_contains($html, '<button class="button button-inline" type="submit" data-show-card="expense_claim_editor">Open</button>'));
     });
@@ -110,8 +110,8 @@ $harness->run(_expense_searchCard::class, static function (GeneratedServiceClass
 
         $harness->assertTrue(str_contains($html, '<span>Page</span>'));
         $harness->assertTrue(str_contains($html, '<span>Query</span>'));
-        $harness->assertTrue(str_contains($html, '<strong>$120.00</strong>'));
-        $harness->assertTrue(str_contains($html, '<strong>$136.00</strong>'));
+        $harness->assertTrue(str_contains($html, '<strong>$ 120.00</strong>'));
+        $harness->assertTrue(str_contains($html, '<strong>$ 136.00</strong>'));
 
         $tables = $card->tables($totalContext);
         $harness->assertTrue(isset($tables[0]) && $tables[0] instanceof TableFramework);

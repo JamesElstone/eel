@@ -119,8 +119,8 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         ];
 
         $html = $instance->render($context);
-        $inClaimPosition = strpos($html, '<div class="summary-label">In this claim (B)</div><div class="summary-value">$114.99</div>');
-        $carriedForwardPosition = strpos($html, '<div class="summary-label">Carried Forward (D=A+B-C)</div><div class="summary-value">$119.99</div>');
+        $inClaimPosition = strpos($html, '<div class="summary-label">In this claim (B)</div><div class="summary-value">$ 114.99</div>');
+        $carriedForwardPosition = strpos($html, '<div class="summary-label">Carried Forward (D=A+B-C)</div><div class="summary-value">$ 119.99</div>');
 
         $harness->assertTrue($inClaimPosition !== false);
         $harness->assertTrue($carriedForwardPosition !== false);
@@ -133,10 +133,10 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
 
         $html = $instance->render($context);
 
-        $harness->assertTrue(str_contains($html, '<div class="summary-label">Brought Forwards (A)</div><div class="summary-value">€0.00</div>'));
-        $harness->assertTrue(str_contains($html, '<div class="summary-label">In this claim (B)</div><div class="summary-value">€94.99</div>'));
-        $harness->assertTrue(str_contains($html, '<div class="summary-label">Paid in this period (C)</div><div class="summary-value">€75.00</div>'));
-        $harness->assertTrue(str_contains($html, '<div class="summary-label">Carried Forward (D=A+B-C)</div><div class="summary-value">€19.99</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">Brought Forwards (A)</div><div class="summary-value">€ 0.00</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">In this claim (B)</div><div class="summary-value">€ 94.99</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">Paid in this period (C)</div><div class="summary-value">€ 75.00</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">Carried Forward (D=A+B-C)</div><div class="summary-value">€ 19.99</div>'));
     });
 
     $harness->check(_expense_claim_editorCard::class, 'uses exportable builder tables with 20 row pagination', function () use ($harness, $instance): void {
@@ -227,7 +227,7 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $harness->assertTrue(str_contains($html, '<label for="expense-line-amount">Amount ($)</label>'));
         $harness->assertSame(false, str_contains($html, 'for="expense-line-notes"'));
         $harness->assertSame(false, str_contains($html, 'name="notes"'));
-        $harness->assertTrue(str_contains($html, '$94.99'));
+        $harness->assertTrue(str_contains($html, '$ 94.99'));
     });
 
     $harness->check(_expense_claim_editorCard::class, 'renders asset charge details for asset lines', function () use ($harness, $instance): void {
@@ -304,8 +304,8 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $repaymentsHtml = substr($html, (int)$repaymentsPosition, (int)$candidateRepaymentsPosition - (int)$repaymentsPosition);
         $candidateRepaymentsHtml = substr($html, (int)$candidateRepaymentsPosition);
         $harness->assertSame(0, preg_match('/<div class="actions-row">\s*<\/div>/', $repaymentsHtml));
-        $harness->assertTrue(str_contains($repaymentsHtml, '$75.00'));
-        $harness->assertSame(2, substr_count($candidateRepaymentsHtml, '$75.00'));
+        $harness->assertTrue(str_contains($repaymentsHtml, '$ 75.00'));
+        $harness->assertSame(2, substr_count($candidateRepaymentsHtml, '$ 75.00'));
         $harness->assertTrue(str_contains($html, 'name="default_expense_nominal_id" value="5000"'));
         $harness->assertSame(false, str_contains($html, 'name="director_loan_nominal_id"'));
         $harness->assertSame(false, str_contains($html, 'name="linked_amount" inputmode="decimal"'));

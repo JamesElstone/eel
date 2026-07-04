@@ -37,7 +37,7 @@ $harness->run(_dividend_historyCard::class, static function (GeneratedServiceCla
         ]);
 
         $harness->assertTrue(str_contains($html, 'Interim dividend'));
-        $harness->assertTrue(str_contains($html, '$125.50'));
+        $harness->assertTrue(str_contains($html, '$ 125.50'));
         $harness->assertTrue(str_contains($html, 'Dividends payable'));
         $harness->assertTrue(str_contains($html, 'DIV-1'));
     });

@@ -94,8 +94,8 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
         $harness->assertTrue(!str_contains($html, '<input class="input"'));
         $harness->assertTrue(!str_contains($html, '01/10/2025 to 30/09/2026'));
         $harness->assertTrue(!str_contains($html, '<select'));
-        $harness->assertTrue(str_contains($html, '£100.00'));
-        $harness->assertTrue(str_contains($html, '£74.50'));
+        $harness->assertTrue(str_contains($html, '£ 100.00'));
+        $harness->assertTrue(str_contains($html, '£ 74.50'));
         $harness->assertTrue(str_contains($html, 'Director repayment'));
         $harness->assertTrue(str_contains($html, 'Director Loan Asset balance'));
         $harness->assertTrue(str_contains($html, 'Director Loan Liability balance'));

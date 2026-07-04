@@ -65,8 +65,8 @@ $harness->run(_asset_registerCard::class, static function (GeneratedServiceClass
         $harness->assertTrue(str_contains($html, 'class="asset-disposal-controls"'));
         $harness->assertTrue(str_contains($html, 'FA-7-1'));
         $harness->assertTrue(str_contains($html, 'Test asset'));
-        $harness->assertTrue(str_contains($html, '$100.00'));
-        $harness->assertTrue(str_contains($html, '$80.00'));
+        $harness->assertTrue(str_contains($html, '$ 100.00'));
+        $harness->assertTrue(str_contains($html, '$ 80.00'));
         $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="csv"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="search_asset_disposal_receipts"'));
         $harness->assertTrue(str_contains($html, 'Dispose of at Nil Value'));
@@ -153,7 +153,7 @@ $harness->run(_asset_registerCard::class, static function (GeneratedServiceClass
 
         $harness->assertTrue(str_contains($html, 'Receipts from'));
         $harness->assertTrue(str_contains($html, 'Asset sale receipt'));
-        $harness->assertTrue(str_contains($html, '$150.00'));
+        $harness->assertTrue(str_contains($html, '$ 150.00'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="dispose_asset_with_transaction"'));
         $harness->assertTrue(str_contains($html, 'Link &amp; Dispose'));
     });

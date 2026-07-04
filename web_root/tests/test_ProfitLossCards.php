@@ -186,8 +186,8 @@ $harness->run(_pl_summaryCard::class, static function (GeneratedServiceClassTest
         $harness->assertSame(false, str_contains($html, 'class="badge'));
         $harness->assertSame(false, str_contains($html, 'panel-soft'));
         $harness->assertTrue(str_contains($html, 'Net profit / loss'));
-        $harness->assertTrue(str_contains($html, '<div class="summary-label">Income</div><div class="summary-value">$1,200.00</div>'));
-        $harness->assertTrue(str_contains($html, '<div class="summary-label">Net profit / loss</div><div class="summary-value">$700.00</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">Income</div><div class="summary-value">$ 1,200.00</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">Net profit / loss</div><div class="summary-value">$ 700.00</div>'));
         $harness->assertTrue(str_contains($html, 'Missing months'));
         $harness->assertTrue(str_contains($html, 'Uncategorised transactions'));
         $harness->assertSame(false, str_contains($html, 'Books health score'));
@@ -332,10 +332,10 @@ $harness->run(_pl_monthly_trendCard::class, static function (GeneratedServiceCla
         $harness->assertTrue(str_contains($html, 'pl-monthly-trend-chart'));
         $harness->assertTrue(str_contains($html, 'chart chart-line'));
         $harness->assertTrue(str_contains($html, '>January 2026</td>'));
-        $harness->assertTrue(str_contains($html, '<td>$1,200.00</td>'));
-        $harness->assertTrue(str_contains($html, '<td>$300.00</td>'));
-        $harness->assertTrue(str_contains($html, '<td>$200.00</td>'));
-        $harness->assertTrue(str_contains($html, '<span class="badge success">$700.00</span>'));
+        $harness->assertTrue(str_contains($html, '<td>$ 1,200.00</td>'));
+        $harness->assertTrue(str_contains($html, '<td>$ 300.00</td>'));
+        $harness->assertTrue(str_contains($html, '<td>$ 200.00</td>'));
+        $harness->assertTrue(str_contains($html, '<span class="badge success">$ 700.00</span>'));
         $harness->assertTrue(str_contains($html, 'Income - 1'));
         $harness->assertTrue(str_contains($html, 'Cost of sales - 1'));
         $harness->assertTrue(str_contains($html, 'Expenses - 1'));

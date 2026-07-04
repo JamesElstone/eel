@@ -65,7 +65,7 @@ $harness->run(_not_an_assetCard::class, static function (GeneratedServiceClassTe
         $csv = $tables[0]->exportCsv();
 
         $harness->assertTrue(str_contains($html, 'name="intent" value="save_potential_asset_threshold"'));
-        $harness->assertTrue(str_contains($html, '<option value="250" selected>$250.00</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="250" selected>$ 250.00</option>'));
         $harness->assertFalse(str_contains($html, '>Save Threshold</button>'));
         $harness->assertSame(
             1,
@@ -74,7 +74,7 @@ $harness->run(_not_an_assetCard::class, static function (GeneratedServiceClassTe
                 $html
             )
         );
-        $harness->assertTrue(str_contains($html, '$301.00'));
+        $harness->assertTrue(str_contains($html, '$ 301.00'));
         $harness->assertTrue(str_contains($html, 'Cordless drill 1'));
         $harness->assertTrue(str_contains($html, 'Cordless drill 15'));
         $harness->assertFalse(str_contains($html, 'Cordless drill 16'));
@@ -111,10 +111,10 @@ $harness->run(_not_an_assetCard::class, static function (GeneratedServiceClassTe
         ]);
 
         $harness->assertTrue(str_contains($html, 'name="intent" value="save_potential_asset_threshold"'));
-        $harness->assertTrue(str_contains($html, '<option value="250" selected>$250.00</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="250" selected>$ 250.00</option>'));
         $harness->assertTrue(str_contains($html, 'Cordless drill'));
         $harness->assertTrue(str_contains($html, 'INV-7'));
-        $harness->assertTrue(str_contains($html, '$312.50'));
+        $harness->assertTrue(str_contains($html, '$ 312.50'));
     });
 
     $harness->check(_not_an_assetCard::class, 'renders open source actions for transactions and expense claims', static function () use ($harness, $card): void {
@@ -190,7 +190,7 @@ $harness->run(_not_an_assetCard::class, static function (GeneratedServiceClassTe
             ],
         ]);
 
-        $harness->assertTrue(str_contains($html, '<option value="500" selected>$500.00</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="500" selected>$ 500.00</option>'));
         $harness->assertTrue(str_contains($html, 'Set the Tools &amp; Small Equipment nominal on Company Nominals'));
     });
 });

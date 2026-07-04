@@ -117,14 +117,14 @@ final class DividendService
         $dividendsDeclared = $this->dividendsDeclaredForPeriod($companyId, $accountingPeriodId, $periodStart, $effectiveDate);
         $retainedEarningsPosition = $this->retainedEarningsBroughtForward($companyId, $accountingPeriodId, $periodStart);
         $retainedEarningsBroughtForward = (float)($retainedEarningsPosition['amount'] ?? 0.0);
-        $reserveReview = (new \eel_accounts\Service\DividendReserveClassificationService())->fetchReviewContext($companyId, $accountingPeriodId);
+        $reserveReview = (new \eel_accounts\Service\DividendReserveClassificationService())->fetchReviewContext($companyId, $accountingPeriodId, $effectiveDate);
         $reserveReviewReliable = !empty($reserveReview['available']) && !empty($reserveReview['snapshot_current']);
         $reserveReviewDetail = $this->reserveReviewDetail($reserveReview);
         $reserveSnapshot = is_array($reserveReview['snapshot'] ?? null) ? (array)$reserveReview['snapshot'] : [];
         $classifiedProfit = $reserveReviewReliable
             ? round((float)($reserveSnapshot['distributable_current_profit'] ?? 0), 2)
             : 0.0;
-        $taxPosition = $this->corporationTaxCapacityPosition($companyId, $accountingPeriodId, $accountingPeriod, $ledgerProfit);
+        $taxPosition = $this->corporationTaxCapacityPosition($companyId, $accountingPeriodId, $accountingPeriod, $ledgerProfit, $effectiveDate);
         $currentYearProfitAfterTax = round($classifiedProfit - (float)($taxPosition['unposted_corporation_tax_adjustment'] ?? 0), 2);
         $availableReserves = round($retainedEarningsBroughtForward + $currentYearProfitAfterTax - $dividendsDeclared, 2);
         $reservesReliable = !empty($retainedEarningsPosition['reliable'])
@@ -140,6 +140,7 @@ final class DividendService
             'accounting_period' => $accountingPeriod,
             'as_at_date' => $effectiveDate,
             'retained_earnings_brought_forward' => $retainedEarningsBroughtForward,
+            'distributable_reserves_brought_forward' => $retainedEarningsBroughtForward,
             'retained_earnings_status' => (string)($retainedEarningsPosition['status'] ?? 'unknown'),
             'retained_earnings_detail' => (string)($retainedEarningsPosition['detail'] ?? ''),
             'reserve_basis_detail' => $reserveBasisDetail,
@@ -157,6 +158,7 @@ final class DividendService
             'corporation_tax_detail' => (string)($taxPosition['detail'] ?? ''),
             'dividends_declared' => $dividendsDeclared,
             'available_distributable_reserves' => $availableReserves,
+            'reliability_warnings' => $this->dividendReliabilityWarnings($companyId, $accountingPeriodId, $periodStart, $effectiveDate),
             'status' => $reservesReliable && $availableReserves > 0 ? 'available' : 'blocked',
             'status_label' => !$reservesReliable ? 'Reserve basis not ready' : ($availableReserves > 0 ? 'Available reserves' : 'No distributable reserves'),
             'status_badge_class' => $reservesReliable && $availableReserves > 0 ? 'success' : 'danger',
@@ -170,6 +172,7 @@ final class DividendService
         $declarationDate = trim((string)($input['declaration_date'] ?? ''));
         $description = trim((string)($input['description'] ?? ''));
         $settlementTarget = trim((string)($input['settlement_target'] ?? ''));
+        $changedBy = $this->actorValue((string)($input['changed_by'] ?? 'web_app'));
         $amount = round((float)($input['amount'] ?? 0), 2);
         $reconciliationTransactionId = (int)($input['reconciliation_transaction_id'] ?? 0);
 
@@ -195,8 +198,8 @@ final class DividendService
         if ($accountingPeriod === null && $companyId > 0 && $accountingPeriodId > 0) {
             $errors[] = 'The selected accounting period could not be found.';
         }
-        if ($accountingPeriod !== null && $this->accountingPeriodEndsAfterToday($accountingPeriod)) {
-            $errors[] = 'Dividend declarations are disabled until the selected accounting period has ended.';
+        if ($this->isValidDate($declarationDate) && $declarationDate > (new \DateTimeImmutable('today'))->format('Y-m-d')) {
+            $errors[] = 'Declaration date cannot be in the future.';
         }
         if ($accountingPeriod !== null && $this->dateInsidePeriod($declarationDate, (string)$accountingPeriod['period_start'], (string)$accountingPeriod['period_end']) === false) {
             $errors[] = 'Declaration date must fall inside the selected accounting period.';
@@ -207,7 +210,7 @@ final class DividendService
         }
 
         if ($reconciliationTransactionId > 0) {
-            return $this->declareDividendFromTransaction($reconciliationTransactionId, $companyId, $accountingPeriodId);
+            return $this->declareDividendFromTransaction($reconciliationTransactionId, $companyId, $accountingPeriodId, $changedBy);
         }
 
         $nominalResult = $this->ensureDividendNominals($companyId);
@@ -241,7 +244,7 @@ final class DividendService
 
         $capacity = $this->getDividendCapacity($companyId, $accountingPeriodId, $declarationDate);
         if (empty($capacity['reserves_reliable'])) {
-            return ['success' => false, 'errors' => [(string)($capacity['retained_earnings_detail'] ?? 'Dividend declaration is blocked until retained earnings brought forward can be verified from a locked prior close.')]];
+            return ['success' => false, 'errors' => [(string)($capacity['reserve_basis_detail'] ?? $capacity['retained_earnings_detail'] ?? 'Dividend declaration is blocked until distributable reserves can be verified.')]];
         }
         $availableReserves = round((float)($capacity['available_distributable_reserves'] ?? 0), 2);
         if ($availableReserves < 0) {
@@ -297,7 +300,7 @@ final class DividendService
 
             $this->insertJournalLine($journalId, $dividendsPaidNominalId, $amount, 0.0, 'Dividend declared');
             $this->insertJournalLine($journalId, $creditNominalId, 0.0, $amount, $this->settlementLabel($settlementTarget));
-            $voucher = $this->ensureVoucherForJournal($journalId, null);
+            $voucher = $this->ensureVoucherForJournal($journalId, null, $changedBy);
 
             if ($ownsTransaction) {
                 \InterfaceDB::commit();
@@ -319,8 +322,9 @@ final class DividendService
         }
     }
 
-    public function declareDividendFromTransaction(int $transactionId, int $companyId, int $accountingPeriodId): array
+    public function declareDividendFromTransaction(int $transactionId, int $companyId, int $accountingPeriodId, string $changedBy = 'web_app'): array
     {
+        $changedBy = $this->actorValue($changedBy);
         if ($transactionId <= 0 || $companyId <= 0 || $accountingPeriodId <= 0) {
             return ['success' => false, 'errors' => ['Select a valid dividend payment transaction.']];
         }
@@ -353,8 +357,8 @@ final class DividendService
         if ($accountingPeriod === null) {
             return ['success' => false, 'errors' => ['The selected accounting period could not be found.']];
         }
-        if ($this->accountingPeriodEndsAfterToday($accountingPeriod)) {
-            return ['success' => false, 'errors' => ['Dividend declarations are disabled until the selected accounting period has ended.']];
+        if ($declarationDate > (new \DateTimeImmutable('today'))->format('Y-m-d')) {
+            return ['success' => false, 'errors' => ['Declaration date cannot be in the future.']];
         }
         if (!$this->dateInsidePeriod($declarationDate, (string)$accountingPeriod['period_start'], (string)$accountingPeriod['period_end'])) {
             return ['success' => false, 'errors' => ['The transaction date must fall inside the selected accounting period.']];
@@ -363,7 +367,7 @@ final class DividendService
         $sourceRef = $this->transactionDividendSourceRef($transactionId);
         $existingJournalId = $this->findJournalId($companyId, $sourceRef);
         if ($existingJournalId > 0) {
-            $voucher = $this->ensureVoucherForJournal($existingJournalId, $transactionId);
+            $voucher = $this->ensureVoucherForJournal($existingJournalId, $transactionId, $changedBy);
             return [
                 'success' => true,
                 'posted' => true,
@@ -376,7 +380,7 @@ final class DividendService
 
         $capacity = $this->getDividendCapacity($companyId, $accountingPeriodId, $declarationDate);
         if (empty($capacity['reserves_reliable'])) {
-            return ['success' => false, 'errors' => [(string)($capacity['retained_earnings_detail'] ?? 'Dividend declaration is blocked until retained earnings brought forward can be verified from a locked prior close.')]];
+            return ['success' => false, 'errors' => [(string)($capacity['reserve_basis_detail'] ?? $capacity['retained_earnings_detail'] ?? 'Dividend declaration is blocked until distributable reserves can be verified.')]];
         }
         $availableReserves = round((float)($capacity['available_distributable_reserves'] ?? 0), 2);
         if ($availableReserves < 0) {
@@ -451,7 +455,7 @@ final class DividendService
 
             $this->insertJournalLine($journalId, $dividendsPaidNominalId, $amount, 0.0, 'Dividend declared from imported transaction');
             $this->insertJournalLine($journalId, $dividendsPayableNominalId, 0.0, $amount, 'Dividend payable created from imported transaction');
-            $voucher = $this->ensureVoucherForJournal($journalId, $transactionId);
+            $voucher = $this->ensureVoucherForJournal($journalId, $transactionId, $changedBy);
 
             if ($ownsTransaction) {
                 \InterfaceDB::commit();
@@ -807,10 +811,28 @@ final class DividendService
         $warnings[] = [
             'severity' => 'info',
             'title' => 'Dividend review scope',
-            'detail' => 'Capacity is based on retained earnings close data, reviewed reserve classifications, posted ledgers, and CT estimates. It is not legal advice and does not by itself prove every Companies Act capital maintenance condition.',
+            'detail' => 'Capacity is based on reviewed as-at distributable reserve snapshots, posted ledgers, and CT estimates. It is not legal advice and does not by itself prove every Companies Act capital maintenance condition.',
         ];
 
         return $warnings;
+    }
+
+    public function getDividendReliabilityWarnings(int $companyId, int $accountingPeriodId, ?string $asAtDate = null): array
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return [];
+        }
+
+        $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null) {
+            return [];
+        }
+
+        $periodStart = (string)$accountingPeriod['period_start'];
+        $periodEnd = (string)$accountingPeriod['period_end'];
+        $effectiveDate = $this->effectiveAsAtDate($asAtDate, $periodStart, $periodEnd);
+
+        return $this->dividendReliabilityWarnings($companyId, $accountingPeriodId, $periodStart, $effectiveDate);
     }
 
     public function dividendNominals(): array
@@ -822,6 +844,128 @@ final class DividendService
         ];
     }
 
+    private function dividendReliabilityWarnings(int $companyId, int $accountingPeriodId, string $periodStart, string $asAtDate): array
+    {
+        $warnings = [];
+        $uploadUrl = '?page=uploads&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId;
+        $transactionUrl = '?page=transactions&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&category_filter=uncategorised';
+        $latestBankDate = $this->latestBankSourceDate($companyId, $accountingPeriodId, $periodStart, $asAtDate);
+        if ($latestBankDate === '' || $latestBankDate < $asAtDate) {
+            $warnings[] = [
+                'severity' => 'warning',
+                'title' => 'Bank CSV coverage may be incomplete',
+                'detail' => $latestBankDate === ''
+                    ? 'No uploaded or committed bank transaction source data was found up to the capacity date. Upload the latest bank CSV before relying on the dividend figure.'
+                    : 'The latest uploaded or committed bank transaction source date is ' . $latestBankDate . ', before the capacity date ' . $asAtDate . '. Upload the latest bank CSV before relying on the dividend figure.',
+                'action_label' => 'Open Related Workflow',
+                'action_url' => $uploadUrl,
+                'code' => 'bank_csv_coverage',
+            ];
+        }
+
+        $uncategorisedCount = $this->uncategorisedTransactionsCount($companyId, $accountingPeriodId, $periodStart, $asAtDate);
+        if ($uncategorisedCount > 0) {
+            $warnings[] = [
+                'severity' => 'warning',
+                'title' => 'Uncategorised transactions affect capacity',
+                'detail' => $uncategorisedCount . ' transaction(s) dated on or before the capacity date are uncategorised or missing a nominal account.',
+                'action_label' => 'Open Related Workflow',
+                'action_url' => $transactionUrl,
+                'code' => 'uncategorised_transactions',
+            ];
+        }
+
+        return $warnings;
+    }
+
+    private function latestBankSourceDate(int $companyId, int $accountingPeriodId, string $periodStart, string $asAtDate): string
+    {
+        $dates = [];
+        if ($this->tableExists('transactions')) {
+            $transactionDate = trim((string)(\InterfaceDB::fetchColumn(
+                'SELECT MAX(txn_date)
+                 FROM transactions
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id
+                   AND txn_date BETWEEN :period_start AND :as_at_date',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'period_start' => $periodStart,
+                    'as_at_date' => $asAtDate,
+                ]
+            ) ?: ''));
+            if ($transactionDate !== '') {
+                $dates[] = $transactionDate;
+            }
+        }
+
+        if ($this->tableExists('statement_import_rows')) {
+            $importDate = trim((string)(\InterfaceDB::fetchColumn(
+                'SELECT MAX(chosen_txn_date)
+                 FROM statement_import_rows
+                 WHERE accounting_period_id = :accounting_period_id
+                   AND chosen_txn_date BETWEEN :period_start AND :as_at_date',
+                [
+                    'accounting_period_id' => $accountingPeriodId,
+                    'period_start' => $periodStart,
+                    'as_at_date' => $asAtDate,
+                ]
+            ) ?: ''));
+            if ($importDate !== '') {
+                $dates[] = $importDate;
+            }
+        }
+
+        if ($this->tableExists('statement_uploads')) {
+            $uploadDate = trim((string)(\InterfaceDB::fetchColumn(
+                'SELECT MAX(COALESCE(date_range_end, statement_month, date_range_start))
+                 FROM statement_uploads
+                 WHERE company_id = :company_id
+                   AND (
+                        accounting_period_id = :accounting_period_id
+                        OR accounting_period_id IS NULL
+                   )
+                   AND COALESCE(date_range_end, statement_month, date_range_start) BETWEEN :period_start AND :as_at_date',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'period_start' => $periodStart,
+                    'as_at_date' => $asAtDate,
+                ]
+            ) ?: ''));
+            if ($uploadDate !== '') {
+                $dates[] = $uploadDate;
+            }
+        }
+
+        sort($dates);
+        return (string)($dates[array_key_last($dates)] ?? '');
+    }
+
+    private function uncategorisedTransactionsCount(int $companyId, int $accountingPeriodId, string $periodStart, string $asAtDate): int
+    {
+        if (!$this->tableExists('transactions')) {
+            return 0;
+        }
+
+        return (int)(\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*)
+             FROM transactions
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+               AND txn_date BETWEEN :period_start AND :as_at_date
+               AND (category_status = :category_status OR nominal_account_id IS NULL)',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'period_start' => $periodStart,
+                'as_at_date' => $asAtDate,
+                'category_status' => 'uncategorised',
+            ]
+        ) ?: 0);
+    }
+
     private function reserveReviewDetail(array $reserveReview): string
     {
         if (empty($reserveReview['available'])) {
@@ -829,7 +973,7 @@ final class DividendService
             return (string)($errors[0] ?? 'Dividend reserve classification review is not available.');
         }
         if (!empty($reserveReview['snapshot_current'])) {
-            return 'Current-year reserve movements are based on a current dividend reserve classification review.';
+            return 'Current-year reserve movements are based on a current as-at dividend reserve classification review.';
         }
 
         $status = (string)($reserveReview['status'] ?? 'missing');
@@ -850,16 +994,16 @@ final class DividendService
             return (string)($taxPosition['detail'] ?? 'Dividend declaration is blocked until Corporation Tax capacity can be reviewed.');
         }
 
-        return 'Reserve basis is based on locked retained earnings, reviewed current-year reserve classifications, and Corporation Tax capacity checks.';
+        return 'Reserve basis is based on locked prior distributable reserves, reviewed current-year reserve classifications, and Corporation Tax capacity checks.';
     }
 
-    private function corporationTaxCapacityPosition(int $companyId, int $accountingPeriodId, array $accountingPeriod, float $ledgerProfit): array
+    private function corporationTaxCapacityPosition(int $companyId, int $accountingPeriodId, array $accountingPeriod, float $ledgerProfit, string $asAtDate): array
     {
         $postedCharge = $this->postedCorporationTaxChargeForPeriod(
             $companyId,
             $accountingPeriodId,
             (string)($accountingPeriod['period_start'] ?? ''),
-            (string)($accountingPeriod['period_end'] ?? '')
+            $asAtDate
         );
         $estimate = 0.0;
         $estimateAvailable = false;
@@ -1414,7 +1558,11 @@ final class DividendService
             }
         }
 
-        $priorReserveReview = (new \eel_accounts\Service\DividendReserveClassificationService())->fetchReviewContext($companyId, $previousPeriodId);
+        $priorReserveReview = (new \eel_accounts\Service\DividendReserveClassificationService())->fetchReviewContext(
+            $companyId,
+            $previousPeriodId,
+            (string)($previousPeriod['period_end'] ?? '')
+        );
         if (empty($priorReserveReview['available']) || empty($priorReserveReview['snapshot_current'])) {
             $status = empty($priorReserveReview['available']) ? 'prior_classification_unavailable' : (string)($priorReserveReview['status'] ?? 'missing');
             return [
@@ -1422,27 +1570,26 @@ final class DividendService
                 'amount' => 0.0,
                 'status' => $status === 'stale' ? 'prior_classification_stale' : 'prior_close_unclassified',
                 'detail' => $status === 'stale'
-                    ? 'Dividend declaration is blocked because the prior period dividend reserve classification review is stale.'
-                    : 'Dividend declaration is blocked until the prior period dividend reserve classification review is current.',
+                    ? 'Dividend declaration is blocked because the prior period distributable reserve review is stale.'
+                    : 'Dividend declaration is blocked until the prior period distributable reserve review is current.',
             ];
         }
 
-        $retainedEarningsNominal = $this->findNominalByCode(\eel_accounts\Service\RetainedEarningsCloseService::RETAINED_EARNINGS_CODE);
-        $retainedEarningsNominalId = (int)($retainedEarningsNominal['id'] ?? 0);
-        if ($retainedEarningsNominalId <= 0) {
+        $priorSnapshot = (array)($priorReserveReview['snapshot'] ?? []);
+        if (!array_key_exists('closing_distributable_reserves', $priorSnapshot)) {
             return [
                 'reliable' => false,
                 'amount' => 0.0,
-                'status' => 'retained_earnings_nominal_missing',
-                'detail' => 'Dividend declaration is blocked because nominal 3000 Retained Earnings is missing.',
+                'status' => 'prior_distributable_snapshot_legacy',
+                'detail' => 'Dividend declaration is blocked until the prior period distributable reserve review is resaved with roll-forward values.',
             ];
         }
 
         return [
             'reliable' => true,
-            'amount' => $this->retainedEarningsBalanceBefore($companyId, $retainedEarningsNominalId, $periodStart),
-            'status' => 'locked_prior_close',
-            'detail' => 'Retained earnings brought forward are based on the locked prior-period close.',
+            'amount' => round((float)($priorSnapshot['closing_distributable_reserves'] ?? 0), 2),
+            'status' => 'locked_prior_distributable_snapshot',
+            'detail' => 'Distributable reserves brought forward are based on the locked prior-period reserve review.',
         ];
     }
 
@@ -1717,6 +1864,12 @@ final class DividendService
     private function transactionDividendSourceRef(int $transactionId): string
     {
         return 'dividend:transaction:' . $transactionId;
+    }
+
+    private function actorValue(string $changedBy): string
+    {
+        $changedBy = trim($changedBy);
+        return $changedBy !== '' ? substr($changedBy, 0, 100) : 'web_app';
     }
 
     private function effectiveAsAtDate(?string $asAtDate, string $periodStart, string $periodEnd): string

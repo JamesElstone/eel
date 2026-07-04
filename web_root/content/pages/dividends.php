@@ -72,6 +72,10 @@ final class _dividends extends PageContextFramework
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $dividendService = new \eel_accounts\Service\DividendService();
         $reserveService = new \eel_accounts\Service\DividendReserveClassificationService();
+        $capacity = $companyId > 0 && $accountingPeriodId > 0
+            ? $dividendService->getDividendCapacity($companyId, $accountingPeriodId)
+            : ['available' => false, 'errors' => ['Select a company and accounting period before reviewing dividends.']];
+        $asAtDate = (string)($capacity['as_at_date'] ?? '');
 
         $nominals = $companyId > 0
             ? $dividendService->ensureDividendNominals($companyId)
@@ -79,9 +83,7 @@ final class _dividends extends PageContextFramework
 
         return [
             'dividends' => [
-                'capacity' => $companyId > 0 && $accountingPeriodId > 0
-                    ? $dividendService->getDividendCapacity($companyId, $accountingPeriodId)
-                    : ['available' => false, 'errors' => ['Select a company and accounting period before reviewing dividends.']],
+                'capacity' => $capacity,
                 'history' => $companyId > 0 && $accountingPeriodId > 0
                     ? $dividendService->listDividends($companyId, $accountingPeriodId)
                     : [],
@@ -93,7 +95,7 @@ final class _dividends extends PageContextFramework
                     : [],
                 'warnings' => $dividendService->getDividendWarnings($companyId, $accountingPeriodId),
                 'reserve_review' => $companyId > 0 && $accountingPeriodId > 0
-                    ? $reserveService->fetchReviewContext($companyId, $accountingPeriodId)
+                    ? $reserveService->fetchReviewContext($companyId, $accountingPeriodId, $asAtDate)
                     : ['available' => false, 'errors' => ['Select a company and accounting period before reviewing dividend reserves.']],
                 'nominals' => (array)($nominals['accounts'] ?? []),
                 'nominal_errors' => (array)($nominals['errors'] ?? []),

@@ -628,7 +628,9 @@ CREATE TABLE `dividend_reserve_review_snapshots` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
   `accounting_period_id` int(11) NOT NULL,
+  `as_at_date` date DEFAULT NULL,
   `source_hash` char(64) NOT NULL,
+  `brought_forward_distributable_reserves` decimal(12,2) NOT NULL DEFAULT 0.00,
   `ledger_profit_loss` decimal(12,2) NOT NULL DEFAULT 0.00,
   `realised_profit_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
   `realised_loss_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
@@ -640,6 +642,8 @@ CREATE TABLE `dividend_reserve_review_snapshots` (
   `dividend_distribution_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
   `unknown_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
   `distributable_current_profit` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `dividends_declared` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `closing_distributable_reserves` decimal(12,2) NOT NULL DEFAULT 0.00,
   `reviewed_at` datetime NOT NULL DEFAULT current_timestamp(),
   `reviewed_by` varchar(100) NOT NULL DEFAULT 'web_app',
   `summary_json` longtext DEFAULT NULL,
@@ -648,6 +652,7 @@ CREATE TABLE `dividend_reserve_review_snapshots` (
   PRIMARY KEY (`id`),
   KEY `idx_dividend_reserve_snapshot_company_period` (`company_id`,`accounting_period_id`),
   KEY `idx_dividend_reserve_snapshot_hash` (`company_id`,`accounting_period_id`,`source_hash`),
+  KEY `idx_dividend_reserve_snapshot_as_at` (`company_id`,`accounting_period_id`,`as_at_date`),
   CONSTRAINT `fk_dividend_reserve_snapshot_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_dividend_reserve_snapshot_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -2178,7 +2183,8 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_03_006_company_minutes_card_permission.sql'),
   ('2026_07_03_007_non_assets_card_permission.sql'),
   ('2026_07_04_001_incorporation_share_capital.sql'),
-  ('2026_07_04_002_dividend_reserve_classification.sql');
+  ('2026_07_04_002_dividend_reserve_classification.sql'),
+  ('2026_07_04_003_dividend_reserve_snapshot_roll_forward.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

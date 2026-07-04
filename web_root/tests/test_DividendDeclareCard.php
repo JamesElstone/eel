@@ -71,12 +71,13 @@ $harness->run(_dividend_declareCard::class, static function (GeneratedServiceCla
         $harness->assertTrue(str_contains($html, '<button class="button primary" type="submit" disabled>Declare Dividend</button>'));
     });
 
-    $harness->check(_dividend_declareCard::class, 'disables declaration controls when the period ends in the future', static function () use ($harness, $card, $baseContext): void {
+    $harness->check(_dividend_declareCard::class, 'keeps declaration controls enabled when the period ends in the future and reserves are reliable', static function () use ($harness, $card, $baseContext): void {
         $context = $baseContext;
         $context['dividends']['capacity']['accounting_period']['period_end'] = (new DateTimeImmutable('today'))->modify('+1 day')->format('Y-m-d');
+        $context['dividends']['capacity']['as_at_date'] = (new DateTimeImmutable('today'))->format('Y-m-d');
         $html = $card->render($context);
 
-        $harness->assertTrue(str_contains($html, 'Form Disabled - Reason: The selected accounting period has not ended yet.'));
-        $harness->assertTrue(str_contains($html, 'id="dividend_reconciliation_transaction_id" name="reconciliation_transaction_id" disabled'));
+        $harness->assertFalse(str_contains($html, 'Form Disabled - Reason:'));
+        $harness->assertFalse(str_contains($html, 'id="dividend_reconciliation_transaction_id" name="reconciliation_transaction_id" disabled'));
     });
 });

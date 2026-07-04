@@ -12,6 +12,7 @@ namespace eel_accounts\Service;
 
 final class DividendReserveClassificationService
 {
+    private const DIVIDENDS_PAID_CODE = '3100';
     public const TREATMENT_REALISED_PROFIT = 'realised_profit';
     public const TREATMENT_REALISED_LOSS = 'realised_loss';
     public const TREATMENT_UNREALISED_GAIN = 'unrealised_gain';
@@ -38,7 +39,7 @@ final class DividendReserveClassificationService
         ];
     }
 
-    public function fetchReviewContext(int $companyId, int $accountingPeriodId): array
+    public function fetchReviewContext(int $companyId, int $accountingPeriodId, ?string $asAtDate = null): array
     {
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return [
@@ -61,11 +62,26 @@ final class DividendReserveClassificationService
             ];
         }
 
-        $rows = $this->classifiedRows($companyId, $accountingPeriodId, $accountingPeriod);
+        $periodStart = (string)$accountingPeriod['period_start'];
+        $periodEnd = (string)$accountingPeriod['period_end'];
+        $effectiveDate = $this->effectiveAsAtDate($asAtDate, $periodStart, $periodEnd);
+        $broughtForward = $this->distributableReservesBroughtForward($companyId, $periodStart);
+        $dividendsDeclared = $this->dividendsDeclaredForPeriod($companyId, $accountingPeriodId, $periodStart, $effectiveDate);
+        $rows = $this->classifiedRows($companyId, $accountingPeriodId, $accountingPeriod, $effectiveDate);
         $summary = $this->summaryFromRows($rows);
-        $sourceHash = $this->sourceHash($companyId, $accountingPeriodId, $rows);
-        $snapshot = $this->latestSnapshot($companyId, $accountingPeriodId);
-        $snapshotCurrent = is_array($snapshot) && hash_equals((string)($snapshot['source_hash'] ?? ''), $sourceHash);
+        $summary['brought_forward_distributable_reserves'] = round((float)($broughtForward['amount'] ?? 0), 2);
+        $summary['dividends_declared'] = round($dividendsDeclared, 2);
+        $summary['closing_distributable_reserves'] = round(
+            (float)$summary['brought_forward_distributable_reserves']
+            + (float)$summary['distributable_current_profit']
+            - (float)$summary['dividends_declared'],
+            2
+        );
+        $sourceHash = $this->sourceHash($companyId, $accountingPeriodId, $effectiveDate, $summary, $rows);
+        $snapshot = $this->latestSnapshot($companyId, $accountingPeriodId, $effectiveDate);
+        $snapshotCurrent = is_array($snapshot)
+            && trim((string)($snapshot['as_at_date'] ?? '')) === $effectiveDate
+            && hash_equals((string)($snapshot['source_hash'] ?? ''), $sourceHash);
 
         return [
             'available' => true,
@@ -73,6 +89,8 @@ final class DividendReserveClassificationService
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
             'accounting_period' => $accountingPeriod,
+            'as_at_date' => $effectiveDate,
+            'brought_forward' => $broughtForward,
             'rows' => $rows,
             'summary' => $summary,
             'source_hash' => $sourceHash,
@@ -84,9 +102,9 @@ final class DividendReserveClassificationService
         ];
     }
 
-    public function saveReview(int $companyId, int $accountingPeriodId, array $treatments, string $reviewedBy = 'web_app'): array
+    public function saveReview(int $companyId, int $accountingPeriodId, array $treatments, string $reviewedBy = 'web_app', ?string $asAtDate = null): array
     {
-        $context = $this->fetchReviewContext($companyId, $accountingPeriodId);
+        $context = $this->fetchReviewContext($companyId, $accountingPeriodId, $asAtDate);
         if (empty($context['available'])) {
             return $context + ['success' => false];
         }
@@ -110,12 +128,20 @@ final class DividendReserveClassificationService
             $this->upsertRule($companyId, $nominalAccountId, $treatment, $reviewedBy);
         }
 
-        $context = $this->fetchReviewContext($companyId, $accountingPeriodId);
+        $context = $this->fetchReviewContext($companyId, $accountingPeriodId, $asAtDate);
         $summary = (array)($context['summary'] ?? []);
         if ((float)($summary['unknown_amount'] ?? 0) > 0.0) {
             return [
                 'success' => false,
                 'errors' => ['Classify all unknown reserve movements before saving the dividend reserve review.'],
+                'context' => $context,
+            ];
+        }
+        $broughtForward = (array)($context['brought_forward'] ?? []);
+        if (empty($broughtForward['reliable'])) {
+            return [
+                'success' => false,
+                'errors' => [(string)($broughtForward['detail'] ?? 'Distributable reserves brought forward are not reliable.')],
                 'context' => $context,
             ];
         }
@@ -129,7 +155,9 @@ final class DividendReserveClassificationService
             'INSERT INTO dividend_reserve_review_snapshots (
                 company_id,
                 accounting_period_id,
+                as_at_date,
                 source_hash,
+                brought_forward_distributable_reserves,
                 ledger_profit_loss,
                 realised_profit_amount,
                 realised_loss_amount,
@@ -141,6 +169,8 @@ final class DividendReserveClassificationService
                 dividend_distribution_amount,
                 unknown_amount,
                 distributable_current_profit,
+                dividends_declared,
+                closing_distributable_reserves,
                 reviewed_at,
                 reviewed_by,
                 summary_json,
@@ -149,7 +179,9 @@ final class DividendReserveClassificationService
              ) VALUES (
                 :company_id,
                 :accounting_period_id,
+                :as_at_date,
                 :source_hash,
+                :brought_forward_distributable_reserves,
                 :ledger_profit_loss,
                 :realised_profit_amount,
                 :realised_loss_amount,
@@ -161,6 +193,8 @@ final class DividendReserveClassificationService
                 :dividend_distribution_amount,
                 :unknown_amount,
                 :distributable_current_profit,
+                :dividends_declared,
+                :closing_distributable_reserves,
                 CURRENT_TIMESTAMP,
                 :reviewed_by,
                 :summary_json,
@@ -170,7 +204,9 @@ final class DividendReserveClassificationService
             [
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
+                'as_at_date' => (string)($context['as_at_date'] ?? ''),
                 'source_hash' => (string)($context['source_hash'] ?? ''),
+                'brought_forward_distributable_reserves' => number_format((float)($summary['brought_forward_distributable_reserves'] ?? 0), 2, '.', ''),
                 'ledger_profit_loss' => number_format((float)($summary['ledger_profit_loss'] ?? 0), 2, '.', ''),
                 'realised_profit_amount' => number_format((float)($summary['realised_profit_amount'] ?? 0), 2, '.', ''),
                 'realised_loss_amount' => number_format((float)($summary['realised_loss_amount'] ?? 0), 2, '.', ''),
@@ -182,6 +218,8 @@ final class DividendReserveClassificationService
                 'dividend_distribution_amount' => number_format((float)($summary['dividend_distribution_amount'] ?? 0), 2, '.', ''),
                 'unknown_amount' => number_format((float)($summary['unknown_amount'] ?? 0), 2, '.', ''),
                 'distributable_current_profit' => number_format((float)($summary['distributable_current_profit'] ?? 0), 2, '.', ''),
+                'dividends_declared' => number_format((float)($summary['dividends_declared'] ?? 0), 2, '.', ''),
+                'closing_distributable_reserves' => number_format((float)($summary['closing_distributable_reserves'] ?? 0), 2, '.', ''),
                 'reviewed_by' => trim($reviewedBy) !== '' ? trim($reviewedBy) : 'web_app',
                 'summary_json' => $summaryJson,
             ]
@@ -189,13 +227,13 @@ final class DividendReserveClassificationService
 
         return [
             'success' => true,
-            'context' => $this->fetchReviewContext($companyId, $accountingPeriodId),
+            'context' => $this->fetchReviewContext($companyId, $accountingPeriodId, $asAtDate),
         ];
     }
 
-    public function currentSnapshot(int $companyId, int $accountingPeriodId): ?array
+    public function currentSnapshot(int $companyId, int $accountingPeriodId, ?string $asAtDate = null): ?array
     {
-        $context = $this->fetchReviewContext($companyId, $accountingPeriodId);
+        $context = $this->fetchReviewContext($companyId, $accountingPeriodId, $asAtDate);
         if (empty($context['available']) || empty($context['snapshot_current'])) {
             return null;
         }
@@ -203,10 +241,20 @@ final class DividendReserveClassificationService
         return is_array($context['snapshot'] ?? null) ? (array)$context['snapshot'] : null;
     }
 
-    public function latestSnapshot(int $companyId, int $accountingPeriodId): ?array
+    public function latestSnapshot(int $companyId, int $accountingPeriodId, ?string $asAtDate = null): ?array
     {
         if (!$this->hasSchema()) {
             return null;
+        }
+
+        $dateFilter = '';
+        $params = [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+        ];
+        if ($asAtDate !== null && trim($asAtDate) !== '') {
+            $dateFilter = ' AND as_at_date = :as_at_date';
+            $params['as_at_date'] = trim($asAtDate);
         }
 
         $row = \InterfaceDB::fetchOne(
@@ -214,12 +262,10 @@ final class DividendReserveClassificationService
              FROM dividend_reserve_review_snapshots
              WHERE company_id = :company_id
                AND accounting_period_id = :accounting_period_id
+               ' . $dateFilter . '
              ORDER BY reviewed_at DESC, id DESC
              LIMIT 1',
-            [
-                'company_id' => $companyId,
-                'accounting_period_id' => $accountingPeriodId,
-            ]
+            $params
         );
 
         return is_array($row) ? $row : null;
@@ -280,14 +326,14 @@ final class DividendReserveClassificationService
         );
     }
 
-    private function classifiedRows(int $companyId, int $accountingPeriodId, array $accountingPeriod): array
+    private function classifiedRows(int $companyId, int $accountingPeriodId, array $accountingPeriod, string $asAtDate): array
     {
         $rules = $this->rulesByNominal($companyId);
         $rows = $this->ledgerRows(
             $companyId,
             $accountingPeriodId,
             (string)($accountingPeriod['period_start'] ?? ''),
-            (string)($accountingPeriod['period_end'] ?? '')
+            $asAtDate
         );
 
         foreach ($rows as &$row) {
@@ -483,11 +529,14 @@ final class DividendReserveClassificationService
         return $summary;
     }
 
-    private function sourceHash(int $companyId, int $accountingPeriodId, array $rows): string
+    private function sourceHash(int $companyId, int $accountingPeriodId, string $asAtDate, array $summary, array $rows): string
     {
         $payload = [
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
+            'as_at_date' => $asAtDate,
+            'brought_forward_distributable_reserves' => number_format((float)($summary['brought_forward_distributable_reserves'] ?? 0), 2, '.', ''),
+            'dividends_declared' => number_format((float)($summary['dividends_declared'] ?? 0), 2, '.', ''),
             'rows' => array_map(
                 static fn(array $row): array => [
                     'nominal_account_id' => (int)($row['nominal_account_id'] ?? 0),
@@ -499,6 +548,99 @@ final class DividendReserveClassificationService
         ];
 
         return hash('sha256', json_encode($payload, \JSON_UNESCAPED_SLASHES) ?: '');
+    }
+
+    private function distributableReservesBroughtForward(int $companyId, string $periodStart): array
+    {
+        $previousPeriod = $this->fetchPreviousAccountingPeriod($companyId, $periodStart);
+        if ($previousPeriod === null) {
+            return [
+                'reliable' => true,
+                'amount' => 0.0,
+                'status' => 'first_period_zero',
+                'detail' => 'This is the first recorded accounting period, so distributable reserves brought forward are treated as zero.',
+            ];
+        }
+
+        $previousPeriodId = (int)($previousPeriod['id'] ?? 0);
+        $previousPeriodEnd = (string)($previousPeriod['period_end'] ?? '');
+        $previousContext = $this->fetchReviewContext($companyId, $previousPeriodId, $previousPeriodEnd);
+        if (empty($previousContext['available']) || empty($previousContext['snapshot_current'])) {
+            return [
+                'reliable' => false,
+                'amount' => 0.0,
+                'status' => 'prior_distributable_snapshot_missing',
+                'detail' => 'Dividend declaration is blocked until the prior period distributable reserve snapshot is current.',
+            ];
+        }
+
+        $snapshot = (array)($previousContext['snapshot'] ?? []);
+        return [
+            'reliable' => true,
+            'amount' => round((float)($snapshot['closing_distributable_reserves'] ?? 0), 2),
+            'status' => 'prior_distributable_snapshot',
+            'detail' => 'Distributable reserves brought forward are based on the prior period reviewed distributable reserve snapshot.',
+        ];
+    }
+
+    private function fetchPreviousAccountingPeriod(int $companyId, string $periodStart): ?array
+    {
+        $row = \InterfaceDB::fetchOne(
+            'SELECT id, company_id, label, period_start, period_end
+             FROM accounting_periods
+             WHERE company_id = :company_id
+               AND period_end < :period_start
+             ORDER BY period_end DESC, id DESC
+             LIMIT 1',
+            [
+                'company_id' => $companyId,
+                'period_start' => $periodStart,
+            ]
+        );
+
+        return is_array($row) ? $row : null;
+    }
+
+    private function dividendsDeclaredForPeriod(int $companyId, int $accountingPeriodId, string $periodStart, string $asAtDate): float
+    {
+        $nominal = $this->findNominalByCode(self::DIVIDENDS_PAID_CODE);
+        $nominalId = (int)($nominal['id'] ?? 0);
+        if ($nominalId <= 0) {
+            return 0.0;
+        }
+
+        return round((float)\InterfaceDB::fetchColumn(
+            'SELECT COALESCE(SUM(COALESCE(jl.debit, 0) - COALESCE(jl.credit, 0)), 0)
+             FROM journals j
+             INNER JOIN journal_lines jl ON jl.journal_id = j.id
+             WHERE j.company_id = :company_id
+               AND j.accounting_period_id = :accounting_period_id
+               AND (j.is_posted = 1 OR (j.source_type = :draft_source_type AND j.source_ref LIKE :draft_source_ref))
+               AND j.journal_date BETWEEN :period_start AND :as_at_date
+               AND jl.nominal_account_id = :nominal_account_id',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'period_start' => $periodStart,
+                'as_at_date' => $asAtDate,
+                'nominal_account_id' => $nominalId,
+                'draft_source_type' => 'manual',
+                'draft_source_ref' => 'dividend:%',
+            ]
+        ), 2);
+    }
+
+    private function findNominalByCode(string $code): ?array
+    {
+        $row = \InterfaceDB::fetchOne(
+            'SELECT id, code, name, account_type, is_active
+             FROM nominal_accounts
+             WHERE code = :code
+             LIMIT 1',
+            ['code' => $code]
+        );
+
+        return is_array($row) ? $row : null;
     }
 
     private function fetchAccountingPeriod(int $companyId, int $accountingPeriodId): ?array
@@ -521,7 +663,38 @@ final class DividendReserveClassificationService
     private function hasSchema(): bool
     {
         return $this->tableExists('dividend_reserve_classification_rules')
-            && $this->tableExists('dividend_reserve_review_snapshots');
+            && $this->tableExists('dividend_reserve_review_snapshots')
+            && \InterfaceDB::columnExists('dividend_reserve_review_snapshots', 'as_at_date')
+            && \InterfaceDB::columnExists('dividend_reserve_review_snapshots', 'brought_forward_distributable_reserves')
+            && \InterfaceDB::columnExists('dividend_reserve_review_snapshots', 'dividends_declared')
+            && \InterfaceDB::columnExists('dividend_reserve_review_snapshots', 'closing_distributable_reserves');
+    }
+
+    private function effectiveAsAtDate(?string $asAtDate, string $periodStart, string $periodEnd): string
+    {
+        $value = trim((string)($asAtDate ?? ''));
+        if (!$this->isValidDate($value)) {
+            $today = (new \DateTimeImmutable('today'))->format('Y-m-d');
+            return $today > $periodEnd ? $periodEnd : $today;
+        }
+        if ($value < $periodStart) {
+            return $periodStart;
+        }
+        if ($value > $periodEnd) {
+            return $periodEnd;
+        }
+
+        return $value;
+    }
+
+    private function isValidDate(string $value): bool
+    {
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+            return false;
+        }
+
+        $date = \DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+        return $date instanceof \DateTimeImmutable && $date->format('Y-m-d') === $value;
     }
 
     private function tableExists(string $table): bool

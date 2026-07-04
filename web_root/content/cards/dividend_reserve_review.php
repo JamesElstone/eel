@@ -42,6 +42,7 @@ final class _dividend_reserve_reviewCard extends CardBaseFramework
         $statusClass = $status === 'current' ? 'success' : ($status === 'stale' ? 'warning' : 'danger');
         $statusLabel = (string)($review['status_label'] ?? 'Reserve review missing');
         $reviewedAt = trim((string)($snapshot['reviewed_at'] ?? ''));
+        $asAtDate = (string)($review['as_at_date'] ?? '');
 
         $rowsHtml = '';
         foreach ((array)($review['rows'] ?? []) as $row) {
@@ -68,19 +69,27 @@ final class _dividend_reserve_reviewCard extends CardBaseFramework
         return '<div class="settings-stack">
             <div class="status-head">
                 <span class="badge ' . HelperFramework::escape($statusClass) . '">' . HelperFramework::escape($statusLabel) . '</span>
+                <span class="helper">As at ' . HelperFramework::escape($asAtDate !== '' ? $asAtDate : '-') . '</span>
                 ' . ($reviewedAt !== '' ? '<span class="helper">Last reviewed ' . HelperFramework::escape(HelperFramework::displayDate($reviewedAt)) . '</span>' : '') . '
+            </div>
+            <div class="summary-grid four">
+                ' . $this->summaryCard('Brought forward reserves', $this->money($companySettings, $summary['brought_forward_distributable_reserves'] ?? 0)) . '
+                ' . $this->summaryCard('Distributable current profit', $this->money($companySettings, $summary['distributable_current_profit'] ?? 0)) . '
+                ' . $this->summaryCard('Dividends declared', $this->money($companySettings, $summary['dividends_declared'] ?? 0)) . '
+                ' . $this->summaryCard('Closing distributable reserves', $this->money($companySettings, $summary['closing_distributable_reserves'] ?? 0)) . '
             </div>
             <div class="summary-grid four">
                 ' . $this->summaryCard('Ledger profit / loss', $this->money($companySettings, $summary['ledger_profit_loss'] ?? 0)) . '
                 ' . $this->summaryCard('Reviewed realised profit', $this->money($companySettings, $summary['realised_profit_amount'] ?? 0)) . '
                 ' . $this->summaryCard('Reviewed reductions', $this->money($companySettings, $this->reviewedReductions($summary))) . '
-                ' . $this->summaryCard('Distributable current profit', $this->money($companySettings, $summary['distributable_current_profit'] ?? 0)) . '
+                ' . $this->summaryCard('Unknown', $this->money($companySettings, $summary['unknown_amount'] ?? 0)) . '
             </div>
             <form method="post" action="?page=dividends" data-ajax="true" class="settings-stack">
                 <input type="hidden" name="card_action" value="Dividend">
                 <input type="hidden" name="intent" value="save_dividend_reserve_review">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <input type="hidden" name="as_at_date" value="' . HelperFramework::escape($asAtDate) . '">
                 <div class="table-scroll">
                     <table>
                         <thead><tr><th>Code</th><th>Nominal</th><th>Profit effect</th><th>Reserve treatment</th></tr></thead>

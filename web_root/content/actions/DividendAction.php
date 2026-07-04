@@ -18,23 +18,26 @@ final class DividendAction implements ActionInterfaceFramework
 
         try {
             $service = new \eel_accounts\Service\DividendService();
+            $actor = $this->actor();
             $result = match ($intent) {
                 'save_dividend_reserve_review' => (new \eel_accounts\Service\DividendReserveClassificationService())->saveReview(
                     (int)$request->input('company_id', 0),
                     (int)$request->input('accounting_period_id', 0),
                     (array)$request->post('treatment', []),
-                    'web_app'
+                    $actor,
+                    (string)$request->input('as_at_date', '')
                 ),
                 'declare_dividend_from_transaction' => $service->declareDividendFromTransaction(
                     (int)$request->input('transaction_id', 0),
                     (int)$request->input('company_id', 0),
-                    (int)$request->input('accounting_period_id', 0)
+                    (int)$request->input('accounting_period_id', 0),
+                    $actor
                 ),
                 'void_dividend' => $service->voidDividend(
                     (int)$request->input('company_id', 0),
                     (int)$request->input('accounting_period_id', 0),
                     (int)$request->input('journal_id', 0),
-                    'web_app'
+                    $actor
                 ),
                 default => $service->declareDividend([
                     'company_id' => (int)$request->input('company_id', 0),
@@ -44,6 +47,7 @@ final class DividendAction implements ActionInterfaceFramework
                     'reconciliation_transaction_id' => (int)$request->input('reconciliation_transaction_id', 0),
                     'description' => (string)$request->input('description', ''),
                     'settlement_target' => (string)$request->input('settlement_target', ''),
+                    'changed_by' => $actor,
                 ]),
             };
         } catch (Throwable $exception) {
@@ -89,5 +93,21 @@ final class DividendAction implements ActionInterfaceFramework
             $query,
             $context
         );
+    }
+
+    private function actor(): string
+    {
+        try {
+            $session = new SessionAuthenticationService();
+            $session->startSession();
+            $deviceId = trim((string)AntiFraudService::instance()->requestValue('Client-Device-ID'));
+            $userId = $session->authenticatedUserId($deviceId !== '' ? $deviceId : null);
+            if ($userId > 0) {
+                return 'user:' . $userId;
+            }
+        } catch (Throwable) {
+        }
+
+        return 'web_app';
     }
 }

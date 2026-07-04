@@ -29,6 +29,7 @@ final class _dividend_capacityCard extends CardBaseFramework
         $company = (array)($context['company'] ?? []);
         $capacity = (array)($context['dividends']['capacity'] ?? []);
         $warnings = (array)($context['dividends']['warnings'] ?? []);
+        $reliabilityWarnings = (array)($capacity['reliability_warnings'] ?? []);
         if (empty($capacity['available'])) {
             return '<div class="settings-stack">
                 ' . $this->renderErrors((array)($capacity['errors'] ?? ['Dividend capacity is not available.'])) . '
@@ -40,6 +41,7 @@ final class _dividend_capacityCard extends CardBaseFramework
 
         return '<div class="settings-stack">
             ' . $this->summaryCard('Capacity date', (string)($capacity['as_at_date'] ?? ''), 'summary-card-fit') . '
+            ' . $this->reliabilityWarningPanels($reliabilityWarnings) . '
             <section class="panel-soft settings-stack">
                 <div class="summary-label">Distributable reserves</div>
                 <div class="helper">' . HelperFramework::escape($this->reservesEquation($companySettings, $capacity)) . '</div>
@@ -47,7 +49,7 @@ final class _dividend_capacityCard extends CardBaseFramework
                 <div class="helper">' . HelperFramework::escape((string)($capacity['reserve_basis_detail'] ?? $capacity['retained_earnings_detail'] ?? '')) . '</div>
             </section>
             <div class="summary-grid four">
-                ' . $this->summaryCard('Retained earnings brought forward', $this->money($companySettings, $capacity['retained_earnings_brought_forward'] ?? 0)) . '
+                ' . $this->summaryCard('Distributable reserves brought forward', $this->money($companySettings, $capacity['distributable_reserves_brought_forward'] ?? $capacity['retained_earnings_brought_forward'] ?? 0)) . '
                 ' . $this->summaryCard('Reviewed current profit after CT', $this->money($companySettings, $capacity['current_year_profit_loss_after_tax'] ?? $capacity['current_year_profit_loss'] ?? 0)) . '
                 ' . $this->summaryCard('Dividends already declared', $this->money($companySettings, $capacity['dividends_declared'] ?? 0)) . '
                 ' . $this->summaryCard('Available distributable reserves', $this->money($companySettings, $capacity['available_distributable_reserves'] ?? 0)) . '
@@ -90,8 +92,8 @@ final class _dividend_capacityCard extends CardBaseFramework
 
     private function reservesEquation(array $companySettings, array $capacity): string
     {
-        return 'Retained profits brought forward ('
-            . $this->money($companySettings, $capacity['retained_earnings_brought_forward'] ?? 0)
+        return 'Distributable reserves brought forward ('
+            . $this->money($companySettings, $capacity['distributable_reserves_brought_forward'] ?? $capacity['retained_earnings_brought_forward'] ?? 0)
             . ') + reviewed current-year realised profit after CT ('
             . $this->money($companySettings, $capacity['current_year_profit_loss_after_tax'] ?? $capacity['current_year_profit_loss'] ?? 0)
             . ') - dividends already declared ('
@@ -99,6 +101,30 @@ final class _dividend_capacityCard extends CardBaseFramework
             . ') = available distributable reserves ('
             . $this->money($companySettings, $capacity['available_distributable_reserves'] ?? 0)
             . ')';
+    }
+
+    private function reliabilityWarningPanels(array $warnings): string
+    {
+        if ($warnings === []) {
+            return '';
+        }
+
+        $html = '<div class="settings-stack">';
+        foreach ($warnings as $warning) {
+            if (!is_array($warning)) {
+                continue;
+            }
+            $actionUrl = trim((string)($warning['action_url'] ?? ''));
+            $actionLabel = trim((string)($warning['action_label'] ?? 'Open Related Workflow'));
+            $html .= '<section class="panel-soft settings-stack">
+                <div><span class="badge warning">Warning</span></div>
+                <div class="summary-label">' . HelperFramework::escape((string)($warning['title'] ?? 'Dividend reliability warning')) . '</div>
+                <div class="helper">' . HelperFramework::escape((string)($warning['detail'] ?? '')) . '</div>
+                ' . ($actionUrl !== '' ? '<div class="actions-row"><a class="button" href="' . HelperFramework::escape($actionUrl) . '">' . HelperFramework::escape($actionLabel) . '</a></div>' : '') . '
+            </section>';
+        }
+
+        return $html . '</div>';
     }
 
     private function money(array $companySettings, float|int|string|null $value): string

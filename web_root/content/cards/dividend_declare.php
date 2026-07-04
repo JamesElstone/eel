@@ -35,7 +35,6 @@ final class _dividend_declareCard extends CardBaseFramework
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $periodStart = (string)($accountingPeriod['period_start'] ?? '');
         $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
-        $today = date('Y-m-d');
         $defaultDate = (string)($capacity['as_at_date'] ?? date('Y-m-d'));
         $availableReserves = round((float)($capacity['available_distributable_reserves'] ?? 0), 2);
 
@@ -47,8 +46,6 @@ final class _dividend_declareCard extends CardBaseFramework
             $disabledReason = (string)($capacityErrors[0] ?? 'Dividend capacity is not available.');
         } elseif (empty($capacity['reserves_reliable'])) {
             $disabledReason = (string)($capacity['reserve_basis_detail'] ?? $capacity['retained_earnings_detail'] ?? 'Reserve basis is not ready for dividend declarations.');
-        } elseif ($periodEnd !== '' && $periodEnd > $today) {
-            $disabledReason = 'The selected accounting period has not ended yet.';
         } elseif ($availableReserves < 0) {
             $disabledReason = 'Available distributable reserves are negative.';
         } elseif ($availableReserves <= 0) {
@@ -86,7 +83,7 @@ final class _dividend_declareCard extends CardBaseFramework
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <div class="form-row">
                     <label for="dividend_declaration_date">Declaration date</label>
-                    <input class="input" id="dividend_declaration_date" type="date" name="declaration_date" value="' . HelperFramework::escape($defaultDate) . '" min="' . HelperFramework::escape($periodStart) . '" max="' . HelperFramework::escape($periodEnd) . '"' . $disabled . '>
+                    <input class="input" id="dividend_declaration_date" type="date" name="declaration_date" value="' . HelperFramework::escape($defaultDate) . '" min="' . HelperFramework::escape($periodStart) . '" max="' . HelperFramework::escape($defaultDate !== '' ? $defaultDate : $periodEnd) . '"' . $disabled . '>
                 </div>
                 <div class="form-row">
                     <label for="dividend_amount">Amount</label>

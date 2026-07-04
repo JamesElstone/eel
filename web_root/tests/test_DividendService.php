@@ -311,7 +311,7 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
         }
     });
 
-    $harness->check(\eel_accounts\Service\DividendService::class, 'rejects declarations while the accounting period ends in the future', function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\DividendService::class, 'rejects future declaration dates', function () use ($harness, $service): void {
         if (!InterfaceDB::tableExists('companies') || !InterfaceDB::tableExists('accounting_periods')) {
             $harness->skip('Company and period tables are not available on the default InterfaceDB connection.');
         }
@@ -324,14 +324,14 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
             $result = $service->declareDividend([
                 'company_id' => $fixture['company_id'],
                 'accounting_period_id' => $fixture['accounting_period_id'],
-                'declaration_date' => (new DateTimeImmutable('today'))->format('Y-m-d'),
+                'declaration_date' => (new DateTimeImmutable('today'))->modify('+1 day')->format('Y-m-d'),
                 'amount' => '10.00',
                 'description' => 'Future-period dividend',
                 'settlement_target' => 'unpaid_dividend_liability',
             ]);
 
             $harness->assertSame(false, (bool)($result['success'] ?? true));
-            $harness->assertTrue(in_array('Dividend declarations are disabled until the selected accounting period has ended.', (array)($result['errors'] ?? []), true));
+            $harness->assertTrue(in_array('Declaration date cannot be in the future.', (array)($result['errors'] ?? []), true));
         } finally {
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();
@@ -388,7 +388,7 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
             $capacity = $service->getDividendCapacity($fixture['company_id'], $fixture['current_period_id'], '2022-11-30');
 
             $harness->assertSame(true, (bool)($capacity['reserves_reliable'] ?? false));
-            $harness->assertSame('locked_prior_close', (string)($capacity['retained_earnings_status'] ?? ''));
+            $harness->assertSame('locked_prior_distributable_snapshot', (string)($capacity['retained_earnings_status'] ?? ''));
             $harness->assertSame('current', (string)($capacity['reserve_review_status'] ?? ''));
             $harness->assertTrue((float)($capacity['available_distributable_reserves'] ?? 0) > 0.0);
         } finally {
@@ -454,6 +454,7 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
         InterfaceDB::beginTransaction();
         try {
             $fixture = dividend_service_manual_fixture($service, 100.00, '1900-01-01', '1900-12-31', '1900-11-01');
+            dividend_service_save_reserve_review($fixture['company_id'], $fixture['accounting_period_id'], [], '1900-11-30');
             $capacity = $service->getDividendCapacity($fixture['company_id'], $fixture['accounting_period_id'], '1900-11-30');
 
             $harness->assertSame(false, (bool)($capacity['reserves_reliable'] ?? true));
@@ -486,6 +487,60 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
             }
         }
     });
+
+    $harness->check(\eel_accounts\Service\DividendService::class, 'prior unrealised gains are excluded from brought-forward distributable reserves', function () use ($harness, $service): void {
+        dividend_service_require_reserve_schema($harness);
+        dividend_service_require_year_end_schema($harness);
+
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = dividend_service_two_period_fixture($service);
+            $priorIncomeNominalId = dividend_service_fixture_income_nominal_for_marker((string)$fixture['marker'] . 'P');
+            dividend_service_save_reserve_review($fixture['company_id'], $fixture['prior_period_id'], [
+                (string)$priorIncomeNominalId => \eel_accounts\Service\DividendReserveClassificationService::TREATMENT_UNREALISED_GAIN,
+            ], '2021-12-31');
+            dividend_service_lock_prior_close($fixture);
+
+            $capacity = $service->getDividendCapacity($fixture['company_id'], $fixture['current_period_id'], '2022-11-30');
+
+            $harness->assertSame('0.00', number_format((float)($capacity['distributable_reserves_brought_forward'] ?? -1), 2, '.', ''));
+            $harness->assertTrue((float)($capacity['available_distributable_reserves'] ?? 0) < 100.00);
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
+    $harness->check(\eel_accounts\Service\DividendService::class, 'reliability warnings link to upload and transaction workflows', function () use ($harness, $service): void {
+        dividend_service_require_reserve_schema($harness);
+        if (!InterfaceDB::tableExists('transactions') || !InterfaceDB::tableExists('statement_uploads')) {
+            $harness->skip('Transaction and upload tables are not available.');
+        }
+
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = dividend_service_manual_fixture($service, 100.00);
+            dividend_service_add_uncategorised_transaction($fixture['company_id'], $fixture['accounting_period_id'], $fixture['marker'], '2022-11-15');
+
+            $warnings = $service->getDividendReliabilityWarnings($fixture['company_id'], $fixture['accounting_period_id'], '2022-11-30');
+            $byCode = [];
+            foreach ($warnings as $warning) {
+                $byCode[(string)($warning['code'] ?? '')] = $warning;
+            }
+
+            $harness->assertTrue(isset($byCode['bank_csv_coverage']));
+            $harness->assertSame('Open Related Workflow', (string)($byCode['bank_csv_coverage']['action_label'] ?? ''));
+            $harness->assertTrue(str_contains((string)($byCode['bank_csv_coverage']['action_url'] ?? ''), '?page=uploads'));
+            $harness->assertTrue(isset($byCode['uncategorised_transactions']));
+            $harness->assertSame('Open Related Workflow', (string)($byCode['uncategorised_transactions']['action_label'] ?? ''));
+            $harness->assertTrue(str_contains((string)($byCode['uncategorised_transactions']['action_url'] ?? ''), '?page=transactions'));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
 });
 
 function dividend_service_effective_as_at_date(\eel_accounts\Service\DividendService $service, ?string $asAtDate, string $periodStart, string $periodEnd): string
@@ -512,6 +567,11 @@ function dividend_service_require_reserve_schema(GeneratedServiceClassTestHarnes
     foreach (['dividend_reserve_classification_rules', 'dividend_reserve_review_snapshots'] as $table) {
         if (!InterfaceDB::tableExists($table)) {
             $harness->skip($table . ' table is not available.');
+        }
+    }
+    foreach (['as_at_date', 'brought_forward_distributable_reserves', 'dividends_declared', 'closing_distributable_reserves'] as $column) {
+        if (!InterfaceDB::columnExists('dividend_reserve_review_snapshots', $column)) {
+            $harness->skip($column . ' column is not available.');
         }
     }
 }
@@ -573,7 +633,7 @@ function dividend_service_manual_fixture(\eel_accounts\Service\DividendService $
 
     $service->ensureDividendNominals($companyId);
     dividend_service_add_profit_journal($companyId, $accountingPeriodId, $marker, $profit, $profitDate);
-    dividend_service_save_reserve_review($companyId, $accountingPeriodId);
+    dividend_service_save_reserve_review($companyId, $accountingPeriodId, [], dividend_service_default_review_date($periodStart, $periodEnd));
 
     return [
         'company_id' => $companyId,
@@ -706,7 +766,7 @@ function dividend_service_transaction_fixture(\eel_accounts\Service\DividendServ
 
     dividend_service_add_profit_journal($companyId, $accountingPeriodId, $marker, max(0.0, abs($amount) + 100.00), '2022-11-01');
     // Fixture profit for transaction dividend capacity.
-    dividend_service_save_reserve_review($companyId, $accountingPeriodId);
+    dividend_service_save_reserve_review($companyId, $accountingPeriodId, [], '2022-11-30');
 
     return [
         'company_id' => $companyId,
@@ -778,7 +838,6 @@ function dividend_service_two_period_fixture(\eel_accounts\Service\DividendServi
     $service->ensureDividendNominals($companyId);
     dividend_service_add_profit_journal($companyId, $priorPeriodId, $marker . 'P', 100.00, '2021-11-01');
     dividend_service_add_profit_journal($companyId, $currentPeriodId, $marker . 'C', 100.00, '2022-11-01');
-    dividend_service_save_reserve_review($companyId, $currentPeriodId);
 
     return [
         'marker' => $marker,
@@ -790,7 +849,7 @@ function dividend_service_two_period_fixture(\eel_accounts\Service\DividendServi
 
 function dividend_service_lock_prior_close(array $fixture): void
 {
-    dividend_service_save_reserve_review((int)$fixture['company_id'], (int)$fixture['prior_period_id']);
+    dividend_service_save_reserve_review((int)$fixture['company_id'], (int)$fixture['prior_period_id'], [], '2021-12-31');
     $closeService = new \eel_accounts\Service\RetainedEarningsCloseService();
     $acknowledged = $closeService->saveAcknowledgement((int)$fixture['company_id'], (int)$fixture['prior_period_id'], true, 'test');
     if (empty($acknowledged['success'])) {
@@ -801,18 +860,30 @@ function dividend_service_lock_prior_close(array $fixture): void
         throw new RuntimeException('Unable to post retained earnings close: ' . implode(' ', (array)($posted['errors'] ?? [])));
     }
     (new \eel_accounts\Service\YearEndLockService())->lockPeriod((int)$fixture['company_id'], (int)$fixture['prior_period_id'], 'test');
+    if ((int)($fixture['current_period_id'] ?? 0) > 0) {
+        dividend_service_save_reserve_review((int)$fixture['company_id'], (int)$fixture['current_period_id'], [], '2022-11-30');
+    }
 }
 
-function dividend_service_save_reserve_review(int $companyId, int $accountingPeriodId, array $treatments = []): void
+function dividend_service_save_reserve_review(int $companyId, int $accountingPeriodId, array $treatments = [], ?string $asAtDate = '2022-11-30'): void
 {
     if (!InterfaceDB::tableExists('dividend_reserve_review_snapshots')) {
         return;
     }
 
-    $result = (new \eel_accounts\Service\DividendReserveClassificationService())->saveReview($companyId, $accountingPeriodId, $treatments, 'test');
+    $result = (new \eel_accounts\Service\DividendReserveClassificationService())->saveReview($companyId, $accountingPeriodId, $treatments, 'test', $asAtDate);
     if (empty($result['success'])) {
         throw new RuntimeException('Unable to save dividend reserve review: ' . implode(' ', (array)($result['errors'] ?? [])));
     }
+}
+
+function dividend_service_default_review_date(string $periodStart, string $periodEnd): string
+{
+    if ($periodStart <= '2022-11-30' && $periodEnd >= '2022-11-30') {
+        return '2022-11-30';
+    }
+
+    return $periodEnd;
 }
 
 function dividend_service_add_profit_journal(int $companyId, int $accountingPeriodId, string $marker, float $profit, string $journalDate): void
@@ -957,6 +1028,88 @@ function dividend_service_add_corporation_tax_provision(int $companyId, int $acc
             'debit' => '0.00',
             'credit' => number_format($amount, 2, '.', ''),
             'line_description' => 'Fixture CT liability',
+        ]
+    );
+}
+
+function dividend_service_add_uncategorised_transaction(int $companyId, int $accountingPeriodId, string $marker, string $date): void
+{
+    InterfaceDB::prepareExecute(
+        'INSERT INTO statement_uploads (
+            company_id,
+            accounting_period_id,
+            statement_month,
+            original_filename,
+            stored_filename,
+            file_sha256,
+            workflow_status
+         ) VALUES (
+            :company_id,
+            :accounting_period_id,
+            :statement_month,
+            :original_filename,
+            :stored_filename,
+            :file_sha256,
+            :workflow_status
+         )',
+        [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'statement_month' => substr($date, 0, 7) . '-01',
+            'original_filename' => $marker . '-uncategorised.csv',
+            'stored_filename' => $marker . '-uncategorised.csv',
+            'file_sha256' => hash('sha256', $marker . '-uncategorised'),
+            'workflow_status' => 'committed',
+        ]
+    );
+    $uploadId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM statement_uploads WHERE company_id = :company_id AND original_filename = :filename ORDER BY id DESC LIMIT 1',
+        [
+            'company_id' => $companyId,
+            'filename' => $marker . '-uncategorised.csv',
+        ]
+    );
+
+    InterfaceDB::prepareExecute(
+        'INSERT INTO transactions (
+            company_id,
+            accounting_period_id,
+            statement_upload_id,
+            txn_date,
+            txn_type,
+            description,
+            amount,
+            currency,
+            source_account_label,
+            dedupe_hash,
+            nominal_account_id,
+            category_status
+         ) VALUES (
+            :company_id,
+            :accounting_period_id,
+            :statement_upload_id,
+            :txn_date,
+            :txn_type,
+            :description,
+            :amount,
+            :currency,
+            :source_account_label,
+            :dedupe_hash,
+            NULL,
+            :category_status
+         )',
+        [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'statement_upload_id' => $uploadId,
+            'txn_date' => $date,
+            'txn_type' => 'FP',
+            'description' => 'Uncategorised dividend warning fixture',
+            'amount' => '-12.34',
+            'currency' => 'GBP',
+            'source_account_label' => 'Fixture Current Account',
+            'dedupe_hash' => hash('sha256', $marker . '-uncategorised-transaction'),
+            'category_status' => 'uncategorised',
         ]
     );
 }

@@ -56,7 +56,7 @@ final class _incorporation_add_sharesCard extends CardBaseFramework
         $draftShareClass = (array)($context['incorporation_add_shares']['draft_share_class'] ?? []);
 
         return '<section class="settings-stack" id="incorporation-add-shares">
-            <div class="helper">Enter the statement of capital from the incorporation filing. Companies House exposes this in the document, not as structured API fields.</div>
+            <div class="helper">Enter the Statement of Capital totals from the Companies House incorporation filing. These are to be taken from the original incorporation filing document and the ledger will calculate the per-share values from the totals entered.</div>
             ' . $this->newincDraftButton($companyId) . '
             ' . $this->shareForm($companyId, $draftShareClass) . '
         </section>';
@@ -68,47 +68,47 @@ final class _incorporation_add_sharesCard extends CardBaseFramework
         $aggregateNominalValue = $this->decimalValue($draftShareClass['aggregate_nominal_value'] ?? '');
         $totalAggregateUnpaid = $this->decimalValue($draftShareClass['total_aggregate_unpaid'] ?? '0');
 
-        return '<div class="panel-soft stack">
-            <h3 class="card-title">Add share class</h3>
-            <div class="helper">Copy the Statement of Capital figures from the incorporation filing. The per-share values used by the ledger are calculated from these aggregate filing values.</div>
-            <form id="' . HelperFramework::escape($formId) . '" method="post" data-ajax="true">
+        return '
+            <form class="incorporation-share-add-form" id="' . HelperFramework::escape($formId) . '" method="post" data-ajax="true">
                 <input type="hidden" name="card_action" value="Incorporation">
                 <input type="hidden" name="intent" value="save_incorporation_shares">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="share_class_id" value="0">
-                <div class="form-grid">
-                    <div class="form-row">
+                <div class="incorporation-share-fields">
+                    <div class="field">
                         <label for="' . HelperFramework::escape($formId) . '-share-class">Class of shares</label>
                         <input class="input" id="' . HelperFramework::escape($formId) . '-share-class" name="share_class" value="' . HelperFramework::escape((string)($draftShareClass['share_class'] ?? 'Ordinary')) . '">
                     </div>
-                    <div class="form-row">
+                    <div class="field">
                         <label for="' . HelperFramework::escape($formId) . '-currency">Currency</label>
                         <input class="input" id="' . HelperFramework::escape($formId) . '-currency" name="currency" value="' . HelperFramework::escape((string)($draftShareClass['currency'] ?? 'GBP')) . '">
                     </div>
-                    <div class="form-row">
+                    <div class="field">
                         <label for="' . HelperFramework::escape($formId) . '-quantity">Number allotted</label>
                         <input class="input" type="number" min="1" step="1" id="' . HelperFramework::escape($formId) . '-quantity" name="quantity" value="' . HelperFramework::escape((string)($draftShareClass['quantity'] ?? '')) . '">
                     </div>
-                    <div class="form-row">
+                    <div class="field">
                         <label for="' . HelperFramework::escape($formId) . '-aggregate-nominal">Aggregate nominal value</label>
                         <input class="input" type="number" min="0" step="0.01" id="' . HelperFramework::escape($formId) . '-aggregate-nominal" name="aggregate_nominal_value" value="' . HelperFramework::escape($aggregateNominalValue) . '">
                     </div>
-                    <div class="form-row">
+                    <div class="field">
                         <label for="' . HelperFramework::escape($formId) . '-aggregate-unpaid">Total aggregate unpaid</label>
                         <input class="input" type="number" min="0" step="0.01" id="' . HelperFramework::escape($formId) . '-aggregate-unpaid" name="total_aggregate_unpaid" value="' . HelperFramework::escape($totalAggregateUnpaid) . '">
                     </div>
-                    <div class="form-row">
+                    <div class="field">
                         <label for="' . HelperFramework::escape($formId) . '-document">Source document/reference</label>
                         <input class="input" id="' . HelperFramework::escape($formId) . '-document" name="document_reference" value="' . HelperFramework::escape((string)($draftShareClass['document_reference'] ?? '')) . '">
                     </div>
-                    <div class="form-row">
+                    <div class="field">
                         <label for="' . HelperFramework::escape($formId) . '-particulars">Prescribed particulars</label>
-                        <textarea class="input" rows="3" id="' . HelperFramework::escape($formId) . '-particulars" name="source_note">' . HelperFramework::escape((string)($draftShareClass['source_note'] ?? '')) . '</textarea>
+                        <textarea class="input" rows="1" id="' . HelperFramework::escape($formId) . '-particulars" name="source_note">' . HelperFramework::escape((string)($draftShareClass['source_note'] ?? '')) . '</textarea>
+                    </div>
+                    <div class="field incorporation-share-actions">
+                        <button class="button primary" type="submit">Add Share Class</button>
                     </div>
                 </div>
-                <div class="actions-row"><button class="button primary" type="submit">Add Share Class</button></div>
             </form>
-        </div>';
+        ';
     }
 
     private function newincDraftButton(int $companyId): string

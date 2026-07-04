@@ -39,6 +39,8 @@ $harness->run(_incorporation_add_sharesCard::class, static function (
         $harness->assertSame(true, str_contains($html, 'populate_incorporation_shares_from_newinc'));
         $harness->assertSame(true, str_contains($html, 'Pull data from Companies House NEWINC Filled Document'));
         $harness->assertSame(true, str_contains($html, 'id="incorporation-share-form-new"'));
+        $harness->assertSame(true, str_contains($html, 'class="incorporation-share-add-form"'));
+        $harness->assertSame(true, str_contains($html, 'class="incorporation-share-fields"'));
         $harness->assertSame(true, str_contains($html, 'name="share_class" value="ORDINARY"'));
         $harness->assertSame(true, str_contains($html, 'name="currency" value="GBP"'));
         $harness->assertSame(true, str_contains($html, 'name="quantity" value="100"'));

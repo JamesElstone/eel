@@ -2533,6 +2533,64 @@
   white-space: nowrap;
 }
 
+.incorporation-share-add-form {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.incorporation-share-fields {
+  align-items: flex-end;
+  display: flex;
+  flex-flow: row nowrap;
+  gap: 10px;
+  padding-bottom: 0;
+}
+
+.incorporation-share-fields > .field {
+  display: grid;
+  flex: 0 1 fit-content;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.incorporation-share-fields .input {
+  max-width: 100%;
+  width: fit-content;
+}
+
+#incorporation-share-form-new-share-class {
+  width: 14ch;
+}
+
+#incorporation-share-form-new-currency,
+#incorporation-share-form-new-quantity {
+  width: 8ch;
+}
+
+#incorporation-share-form-new-aggregate-nominal,
+#incorporation-share-form-new-aggregate-unpaid {
+  width: 12ch;
+}
+
+#incorporation-share-form-new-document {
+  width: 28ch;
+}
+
+#incorporation-share-form-new-particulars {
+  min-height: 2.5rem;
+  width: 36ch;
+}
+
+.incorporation-share-actions {
+  flex: 0 0 auto;
+}
+
+.incorporation-share-actions .button {
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
 .transaction-search-amount-total span {
   color: var(--muted);
 }

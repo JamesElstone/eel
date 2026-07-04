@@ -371,7 +371,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
             $harness->assertSame(true, (bool)($result['success'] ?? false));
             $asset = InterfaceDB::fetchOne(
-                'SELECT status, disposal_date, disposal_proceeds
+                'SELECT status, disposal_date, disposal_proceeds, disposal_event_type, disposal_reason
                  FROM asset_register
                  WHERE id = :id',
                 ['id' => $fixture['asset_id']]
@@ -379,6 +379,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame('disposed', (string)($asset['status'] ?? ''));
             $harness->assertSame('2026-07-02', (string)($asset['disposal_date'] ?? ''));
             $harness->assertSame(300.0, round((float)($asset['disposal_proceeds'] ?? 0), 2));
+            $harness->assertSame('sale_receipt', (string)($asset['disposal_event_type'] ?? ''));
+            $harness->assertSame('Disposed on receipt of linked sale proceeds transaction #' . $transactionId, (string)($asset['disposal_reason'] ?? ''));
 
             $linkCount = (int)InterfaceDB::fetchColumn(
                 'SELECT COUNT(*)
@@ -399,15 +401,41 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(0.0, assetServiceTestJournalLineAmount($assetJournalId, $fixture['bank_nominal_id'], 'debit'));
         });
 
-        $harness->check(\eel_accounts\Service\AssetService::class, 'nil disposal posts without transaction link', static function () use ($harness, $service): void {
+        $harness->check(\eel_accounts\Service\AssetService::class, 'nil disposal requires a recorded reason', static function () use ($harness, $service): void {
             assetServiceTestRequireDisposalSchema($harness);
             $fixture = assetServiceTestCreateDisposalFixture('nil');
 
             $result = $service->disposeAssetAtNilValue($fixture['company_id'], $fixture['asset_id'], '2026-07-03');
 
+            $harness->assertSame(false, (bool)($result['success'] ?? false));
+            $harness->assertTrue(in_array('Select a nil-value disposal reason.', (array)($result['errors'] ?? []), true));
+        });
+
+        $harness->check(\eel_accounts\Service\AssetService::class, 'other nil disposal requires free text detail', static function () use ($harness, $service): void {
+            assetServiceTestRequireDisposalSchema($harness);
+            $fixture = assetServiceTestCreateDisposalFixture('nil-other');
+
+            $result = $service->disposeAssetAtNilValue($fixture['company_id'], $fixture['asset_id'], '2026-07-03', 'other_nil_value', '');
+
+            $harness->assertSame(false, (bool)($result['success'] ?? false));
+            $harness->assertTrue(in_array('Enter the reason for the other nil-value disposal.', (array)($result['errors'] ?? []), true));
+        });
+
+        $harness->check(\eel_accounts\Service\AssetService::class, 'nil disposal posts reason metadata without transaction link', static function () use ($harness, $service): void {
+            assetServiceTestRequireDisposalSchema($harness);
+            $fixture = assetServiceTestCreateDisposalFixture('nil-reason');
+
+            $result = $service->disposeAssetAtNilValue(
+                $fixture['company_id'],
+                $fixture['asset_id'],
+                '2026-07-03',
+                'scrapped_no_proceeds',
+                'Scrapped after inspection; no resale value'
+            );
+
             $harness->assertSame(true, (bool)($result['success'] ?? false));
             $asset = InterfaceDB::fetchOne(
-                'SELECT status, disposal_date, disposal_proceeds
+                'SELECT status, disposal_date, disposal_proceeds, disposal_event_type, disposal_reason
                  FROM asset_register
                  WHERE id = :id',
                 ['id' => $fixture['asset_id']]
@@ -415,6 +443,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame('disposed', (string)($asset['status'] ?? ''));
             $harness->assertSame('2026-07-03', (string)($asset['disposal_date'] ?? ''));
             $harness->assertSame(0.0, round((float)($asset['disposal_proceeds'] ?? 0), 2));
+            $harness->assertSame('scrapped_no_proceeds', (string)($asset['disposal_event_type'] ?? ''));
+            $harness->assertSame('Scrapped after inspection; no resale value', (string)($asset['disposal_reason'] ?? ''));
             $harness->assertSame(0, (int)InterfaceDB::fetchColumn(
                 'SELECT COUNT(*)
                  FROM asset_disposal_transaction_links
@@ -824,7 +854,7 @@ function assetServiceTestRequireDisposalSchema(GeneratedServiceClassTestHarness 
         }
     }
 
-    foreach (['manual_addition_reason', 'manual_offset_nominal_id'] as $column) {
+    foreach (['manual_addition_reason', 'manual_offset_nominal_id', 'disposal_event_type', 'disposal_reason'] as $column) {
         if (!InterfaceDB::columnExists('asset_register', $column)) {
             $harness->skip('asset_register.' . $column . ' column is not available.');
         }

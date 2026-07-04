@@ -69,6 +69,11 @@ $harness->run(_asset_registerCard::class, static function (GeneratedServiceClass
         $harness->assertTrue(str_contains($html, '$ 80.00'));
         $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="csv"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="search_asset_disposal_receipts"'));
+        $harness->assertTrue(str_contains($html, 'Search Incoming Payments'));
+        $harness->assertSame(false, str_contains($html, 'Search Incomming Payments'));
+        $harness->assertTrue(str_contains($html, 'name="disposal_event_type"'));
+        $harness->assertTrue(str_contains($html, 'value="scrapped_no_proceeds"'));
+        $harness->assertTrue(str_contains($html, 'name="disposal_reason"'));
         $harness->assertTrue(str_contains($html, 'Dispose of at Nil Value'));
         $harness->assertSame(false, str_contains($html, 'name="intent" value="run_asset_depreciation"'));
         $harness->assertSame(false, str_contains($html, 'Run Depreciation'));

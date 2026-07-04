@@ -52,7 +52,9 @@ final class AssetAction implements ActionInterfaceFramework
                 'dispose_asset_nil' => $service->disposeAssetAtNilValue(
                     $companyId,
                     (int)$request->input('asset_id', 0),
-                    (string)$request->input('disposal_search_date', $request->input('disposal_date', ''))
+                    (string)$request->input('disposal_search_date', $request->input('disposal_date', '')),
+                    (string)$request->input('disposal_event_type', ''),
+                    (string)$request->input('disposal_reason', '')
                 ),
                 'run_asset_depreciation' => $service->runDepreciation(
                     $companyId,

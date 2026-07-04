@@ -1570,6 +1570,8 @@ CREATE TABLE `asset_register` (
   `manual_legal_acknowledged_at` datetime DEFAULT NULL,
   `disposal_date` date DEFAULT NULL,
   `disposal_proceeds` decimal(12,2) DEFAULT NULL,
+  `disposal_event_type` varchar(64) DEFAULT NULL,
+  `disposal_reason` varchar(255) DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
@@ -2184,7 +2186,8 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_03_007_non_assets_card_permission.sql'),
   ('2026_07_04_001_incorporation_share_capital.sql'),
   ('2026_07_04_002_dividend_reserve_classification.sql'),
-  ('2026_07_04_003_dividend_reserve_snapshot_roll_forward.sql');
+  ('2026_07_04_003_dividend_reserve_snapshot_roll_forward.sql'),
+  ('2026_07_04_004_asset_disposal_metadata.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

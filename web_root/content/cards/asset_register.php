@@ -193,7 +193,9 @@ final class _asset_registerCard extends CardBaseFramework
         $status = (string)($asset['status'] ?? 'active');
 
         if ($status === 'disposed') {
-            return '<span class="helper">Disposed on ' . HelperFramework::escape($this->displayDate((string)($asset['disposal_date'] ?? ''))) . '</span>';
+            $reason = trim((string)($asset['disposal_reason'] ?? ''));
+            return '<span class="helper">Disposed on ' . HelperFramework::escape($this->displayDate((string)($asset['disposal_date'] ?? ''))) . '</span>'
+                . ($reason !== '' ? '<div class="helper">Reason: ' . HelperFramework::escape($reason) . '</div>' : '');
         }
 
         return $this->disposalControls(
@@ -221,6 +223,7 @@ final class _asset_registerCard extends CardBaseFramework
         $candidateHtml = $selectedAssetId === $assetId
             ? $this->disposalCandidates($companyId, $accountingPeriodId, $assetId, $defaultBankNominalId, $disposalSearch, $settings)
             : '';
+        $nilReasonOptions = $this->nilReasonOptionsHtml();
 
         return '<div class="asset-disposal-panel">
             <form class="asset-disposal-form" method="post" action="?page=assets" data-ajax="true">
@@ -230,7 +233,9 @@ final class _asset_registerCard extends CardBaseFramework
                 <input type="hidden" name="asset_id" value="' . $assetId . '">
                 <div class="asset-disposal-controls">
                     <input class="input" type="date" name="disposal_search_date" value="' . HelperFramework::escape($searchDate) . '">
-                    <button class="button button-inline primary" type="submit" name="intent" value="search_asset_disposal_receipts">Search Incomming Payments</button>
+                    <button class="button button-inline primary" type="submit" name="intent" value="search_asset_disposal_receipts">Search Incoming Payments</button>
+                    <select class="select" name="disposal_event_type" aria-label="Nil value disposal reason">' . $nilReasonOptions . '</select>
+                    <input class="input" type="text" name="disposal_reason" placeholder="Nil value note if needed">
                     <button class="button button-inline primary" type="submit" name="intent" value="dispose_asset_nil">Dispose of at Nil Value</button>
                 </div>
             </form>
@@ -283,6 +288,19 @@ final class _asset_registerCard extends CardBaseFramework
             <div class="helper">Receipts from ' . HelperFramework::escape($windowStart) . ' to ' . HelperFramework::escape($windowEnd) . '</div>
             ' . $candidateRows . '
         </div>';
+    }
+
+    private function nilReasonOptionsHtml(): string
+    {
+        $html = '';
+
+        foreach (\eel_accounts\Service\AssetService::nilDisposalEventOptions() as $value => $label) {
+            $html .= '<option value="' . HelperFramework::escape((string)$value) . '">'
+                . HelperFramework::escape((string)$label)
+                . '</option>';
+        }
+
+        return $html;
     }
 
     private function money(array $settings, float|int|string|null $value): string

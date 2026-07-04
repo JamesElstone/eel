@@ -27,6 +27,8 @@ final class AssetService
     private const MANUAL_ASSET_RECONCILE_DAYS_AFTER = 45;
     private const MANUAL_ASSET_LEGAL_WARNING_VERSION = 'manual-asset-phantom-warning-2026-07-02';
     private const DISPOSAL_CLEARING_NOMINAL_CODE = '1490';
+    private const DISPOSAL_EVENT_SALE_RECEIPT = 'sale_receipt';
+    private const DISPOSAL_EVENT_OTHER_NIL_VALUE = 'other_nil_value';
     private const DISPOSAL_SEARCH_DAYS_BEFORE = 1;
     private const DISPOSAL_SEARCH_DAYS_AFTER = 3;
     private const POTENTIAL_ASSET_THRESHOLD_OPTIONS = [50, 100, 250, 500, 750, 1000];
@@ -68,6 +70,17 @@ final class AssetService
             self::MANUAL_ASSET_REASON_PERSONAL_PENDING => 'Personal payment / expense claim pending',
             self::MANUAL_ASSET_REASON_DELAYED_BANK_CSV => 'Delayed bank CSV',
             self::MANUAL_ASSET_REASON_OPENING_HISTORICAL => 'Opening / historical asset',
+        ];
+    }
+
+    public static function nilDisposalEventOptions(): array
+    {
+        return [
+            'scrapped_no_proceeds' => 'Scrapped with no proceeds',
+            'abandoned_no_value' => 'Abandoned with no value',
+            'lost_or_destroyed_no_compensation' => 'Lost or destroyed with no compensation',
+            'ceased_use_no_value' => 'Ceased qualifying use with no value',
+            self::DISPOSAL_EVENT_OTHER_NIL_VALUE => 'Other nil-value disposal',
         ];
     }
 
@@ -991,10 +1004,10 @@ final class AssetService
             return ['success' => false, 'errors' => ['Select a receipt transaction before disposing an asset with proceeds.']];
         }
 
-        return $this->disposeAssetAtNilValue($companyId, $assetId, $disposalDate);
+        return $this->disposeAssetAtNilValue($companyId, $assetId, $disposalDate, '', '');
     }
 
-    public function disposeAssetAtNilValue(int $companyId, int $assetId, string $disposalDate): array {
+    public function disposeAssetAtNilValue(int $companyId, int $assetId, string $disposalDate, string $disposalEventType = '', string $disposalReason = ''): array {
         if (!$this->hasRequiredSchema()) {
             return ['success' => false, 'errors' => ['Run the fixed asset migration before posting disposals.']];
         }
@@ -1003,6 +1016,10 @@ final class AssetService
         $validation = $this->validateDisposalAssetAndDate($asset, $disposalDate);
         if ($validation !== []) {
             return ['success' => false, 'errors' => $validation];
+        }
+        $metadata = $this->validateNilDisposalMetadata($disposalEventType, $disposalReason);
+        if ($metadata['errors'] !== []) {
+            return ['success' => false, 'errors' => $metadata['errors']];
         }
 
         $accountingPeriodId = $this->resolveAccountingPeriodIdForDate($companyId, $disposalDate);
@@ -1017,7 +1034,16 @@ final class AssetService
         }
 
         try {
-            $summary = $this->postAssetDisposalJournalAndStatus($companyId, $asset, $accountingPeriodId, $disposalDate, 0.0, null);
+            $summary = $this->postAssetDisposalJournalAndStatus(
+                $companyId,
+                $asset,
+                $accountingPeriodId,
+                $disposalDate,
+                0.0,
+                null,
+                (string)$metadata['event_type'],
+                (string)$metadata['reason']
+            );
 
             if ($ownsTransaction) {
                 \InterfaceDB::commit();
@@ -1100,7 +1126,16 @@ final class AssetService
                 throw new \RuntimeException(implode(' ', array_map('strval', $journalResult['errors'] ?? ['The receipt transaction journal could not be posted.'])));
             }
 
-            $summary = $this->postAssetDisposalJournalAndStatus($companyId, $asset, $accountingPeriodId, $disposalDate, $proceeds, $clearingNominalId);
+            $summary = $this->postAssetDisposalJournalAndStatus(
+                $companyId,
+                $asset,
+                $accountingPeriodId,
+                $disposalDate,
+                $proceeds,
+                $clearingNominalId,
+                self::DISPOSAL_EVENT_SALE_RECEIPT,
+                'Disposed on receipt of linked sale proceeds transaction #' . $transactionId
+            );
             $this->insertDisposalTransactionLink($assetId, $transactionId, $proceeds);
 
             if ($ownsTransaction) {
@@ -1209,13 +1244,36 @@ final class AssetService
         return [];
     }
 
+    private function validateNilDisposalMetadata(string $eventType, string $reason): array
+    {
+        $eventType = trim($eventType);
+        $reason = trim($reason);
+        $options = self::nilDisposalEventOptions();
+        $errors = [];
+
+        if (!array_key_exists($eventType, $options)) {
+            $errors[] = 'Select a nil-value disposal reason.';
+        }
+        if ($eventType === self::DISPOSAL_EVENT_OTHER_NIL_VALUE && $reason === '') {
+            $errors[] = 'Enter the reason for the other nil-value disposal.';
+        }
+
+        return [
+            'errors' => $errors,
+            'event_type' => $eventType,
+            'reason' => $reason !== '' ? $reason : (string)($options[$eventType] ?? ''),
+        ];
+    }
+
     private function postAssetDisposalJournalAndStatus(
         int $companyId,
         array $asset,
         int $accountingPeriodId,
         string $disposalDate,
         float $proceeds,
-        ?int $clearingNominalId
+        ?int $clearingNominalId,
+        string $disposalEventType,
+        string $disposalReason
     ): array {
         $assetId = (int)$asset['id'];
         $proceeds = round(max(0.0, $proceeds), 2);
@@ -1251,7 +1309,7 @@ final class AssetService
             $this->insertJournalLine($journalId, $this->findNominalIdByCode('4200'), 0.0, $profit, 'Profit on disposal');
         }
 
-        $this->markAssetDisposed($companyId, $assetId, $disposalDate, $proceeds);
+        $this->markAssetDisposed($companyId, $assetId, $disposalDate, $proceeds, $disposalEventType, $disposalReason);
 
         return [
             'nbv' => $nbv,
@@ -1260,13 +1318,15 @@ final class AssetService
         ];
     }
 
-    private function markAssetDisposed(int $companyId, int $assetId, string $disposalDate, float $proceeds): void
+    private function markAssetDisposed(int $companyId, int $assetId, string $disposalDate, float $proceeds, string $disposalEventType, string $disposalReason): void
     {
         $stmt = \InterfaceDB::prepare(
             'UPDATE asset_register
              SET status = :status,
                  disposal_date = :disposal_date,
                  disposal_proceeds = :disposal_proceeds,
+                 disposal_event_type = :disposal_event_type,
+                 disposal_reason = :disposal_reason,
                  updated_at = CURRENT_TIMESTAMP
              WHERE id = :id
                AND company_id = :company_id'
@@ -1275,6 +1335,8 @@ final class AssetService
             'status' => 'disposed',
             'disposal_date' => $disposalDate,
             'disposal_proceeds' => round($proceeds, 2),
+            'disposal_event_type' => trim($disposalEventType) !== '' ? trim($disposalEventType) : null,
+            'disposal_reason' => trim($disposalReason) !== '' ? trim($disposalReason) : null,
             'id' => $assetId,
             'company_id' => $companyId,
         ]);
@@ -1701,6 +1763,8 @@ final class AssetService
             'linked_expense_claim_line_id',
             'disposal_date',
             'disposal_proceeds',
+            'disposal_event_type',
+            'disposal_reason',
             'created_at',
             'updated_at',
         ];
@@ -1720,6 +1784,8 @@ final class AssetService
             ':linked_journal_id',
             ':linked_transaction_id',
             ':linked_expense_claim_line_id',
+            'NULL',
+            'NULL',
             'NULL',
             'NULL',
             'CURRENT_TIMESTAMP',
@@ -1980,7 +2046,9 @@ final class AssetService
                 && \InterfaceDB::tableExists('asset_depreciation_entries')
                 && \InterfaceDB::tableExists('asset_disposal_transaction_links')
                 && \InterfaceDB::tableExists('accounting_period_adjustments')
-                && \InterfaceDB::tableExists('tax_loss_carryforwards');
+                && \InterfaceDB::tableExists('tax_loss_carryforwards')
+                && \InterfaceDB::columnExists('asset_register', 'disposal_event_type')
+                && \InterfaceDB::columnExists('asset_register', 'disposal_reason');
         } catch (\Throwable) {
             $this->schemaReady = false;
         }

@@ -257,7 +257,9 @@ final class _transactions_importedCard extends CardBaseFramework
     {
         $autoButtonAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit"';
         $postButtonAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit"';
+        $confirmAutoInput = '';
         if (!$isPeriodLocked && $pendingAutoApprovalCount > 0) {
+            $confirmAutoInput = '<input type="hidden" name="confirm_auto_categorisations" value="1">';
             $postButtonAttributes .= ' data-chicken-check="true"
                     data-chicken-title="Confirm checked auto decisions"
                     data-chicken-message="This will post categorised transactions and confirm ' . (int)$pendingAutoApprovalCount . ' checked auto decision(s). Unticked auto decisions will post but remain unconfirmed.<br><br>Continue?"
@@ -284,6 +286,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
                 <input type="hidden" name="global_action" value="post_categorised_transactions">
+                ' . $confirmAutoInput . '
                 <button class="button primary"' . $postButtonAttributes . '>Post Categorised Transactions</button>
             </form>';
     }

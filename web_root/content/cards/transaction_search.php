@@ -105,6 +105,7 @@ final class _transaction_searchCard extends CardBaseFramework
         $hiddenFields = (array)$tableState['hidden_fields'];
 
         return $this->searchForm($context)
+            . $this->periodPostConfirmationForm($context, (array)$tableState['query_rows'])
             . $table->renderToolbar($context, $hiddenFields)
             . $table->renderTable()
             . $this->footerWithAmountTotal(
@@ -312,6 +313,41 @@ final class _transaction_searchCard extends CardBaseFramework
                 </div>
                 <button class="button primary" type="submit">Search</button>
                 <a class="button" href="?page=transactions&amp;show_card=transaction_search">Clear</a>
+            </div>
+        </form>';
+    }
+
+    private function periodPostConfirmationForm(array $context, array $queryRows): string
+    {
+        if ($this->categoryStatus($context) !== 'auto' || $this->autoApprovalFilter($context) !== 'post_pending' || $queryRows === []) {
+            return '';
+        }
+
+        $company = (array)($context['company'] ?? []);
+        $companyId = (int)($company['id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return '';
+        }
+
+        return '<form class="card-toolbar" method="post" action="?page=transactions" data-ajax="true">
+            <input type="hidden" name="card_action" value="Transaction">
+            <input type="hidden" name="global_action" value="post_categorised_transactions">
+            <input type="hidden" name="post_scope" value="period">
+            <input type="hidden" name="confirm_auto_categorisations" value="1">
+            <input type="hidden" name="company_id" value="' . $companyId . '">
+            <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+            <input type="hidden" name="show_card" value="transaction_search">
+            <input type="hidden" name="transaction_search_category_status" value="auto">
+            <input type="hidden" name="transaction_search_auto_approval_filter" value="post_pending">
+            <div class="actions-row">
+                <button class="button primary" type="submit"
+                    data-chicken-check="true"
+                    data-chicken-title="Post all checked auto decisions"
+                    data-chicken-message="This will post categorised transactions and confirm all checked auto decision(s) awaiting post confirmation for this accounting period.<br><br>Continue?"
+                    data-chicken-confirm-text="Post All Checked Auto Decisions"
+                    data-chicken-button-class="button primary">Post All Checked Auto Decisions</button>
+                <span class="pill">' . count($queryRows) . ' awaiting post confirmation</span>
             </div>
         </form>';
     }

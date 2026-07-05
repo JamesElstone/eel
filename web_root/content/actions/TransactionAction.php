@@ -447,7 +447,9 @@ final class TransactionAction implements ActionInterfaceFramework
         $errors = [];
         $flashMessages = [];
         $approvalService = self::service($services, \eel_accounts\Service\TransactionAutoApprovalService::class);
-        $monthKey = $context['month_key'] !== '' ? $context['month_key'] : null;
+        $postScope = strtolower(trim((string)$request->input('post_scope', 'month')));
+        $isPeriodScope = $postScope === 'period';
+        $monthKey = $isPeriodScope ? null : ($context['month_key'] !== '' ? $context['month_key'] : null);
         $pendingAutoApprovalCount = $approvalService->pendingPostConfirmationCount($companyId, $accountingPeriodId, $monthKey);
 
         if ($pendingAutoApprovalCount > 0 && !$this->checkboxValue($request, 'confirm_auto_categorisations')) {
@@ -478,12 +480,17 @@ final class TransactionAction implements ActionInterfaceFramework
                 );
                 $errors = array_merge($errors, array_map('strval', (array)($confirmResult['errors'] ?? [])));
                 if (!empty($confirmResult['success']) && (int)($confirmResult['confirmed'] ?? 0) > 0) {
-                    $flashMessages[] = sprintf('%d checked auto decision(s) confirmed.', (int)$confirmResult['confirmed']);
+                    $flashMessages[] = sprintf(
+                        '%d checked auto decision(s) confirmed%s.',
+                        (int)$confirmResult['confirmed'],
+                        $isPeriodScope ? ' for the accounting period' : ''
+                    );
                 }
             }
 
             $flashMessages[] = sprintf(
-                'Posting complete: %d created, %d rebuilt, %d unchanged.',
+                'Posting complete%s: %d created, %d rebuilt, %d unchanged.',
+                $isPeriodScope ? ' for the accounting period' : '',
                 (int)($postResult['created'] ?? 0),
                 (int)($postResult['rebuilt'] ?? 0),
                 (int)($postResult['unchanged'] ?? 0)

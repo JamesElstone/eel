@@ -103,6 +103,8 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         $harness->assertTrue(str_contains($html, '<option value="post_pending">Awaiting post confirmation</option>'));
         $harness->assertTrue(str_contains($html, '<option value="confirmed">Correct</option>'));
         $harness->assertTrue(str_contains($html, 'name="_invalidate_fact" value="transaction.search"'));
+        $harness->assertSame(false, str_contains($html, 'Post All Checked Auto Decisions'));
+        $harness->assertSame(false, str_contains($html, 'name="post_scope" value="period"'));
         $harness->assertTrue(str_contains($html, '<option value="">Any</option>'));
         $harness->assertTrue(str_contains($html, '<option value="31" selected>4000 - Sales</option>'));
         $harness->assertTrue(str_contains($html, '<option value="32" selected>5000 - Purchases</option>'));
@@ -208,6 +210,12 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         $harness->assertSame('post_pending', (string)$handled['transaction_search']['auto_approval_filter']);
         $html = $card->render($handled);
         $harness->assertTrue(str_contains($html, '<option value="post_pending" selected>Awaiting post confirmation</option>'));
+        $harness->assertTrue(str_contains($html, 'Post All Checked Auto Decisions'));
+        $harness->assertTrue(str_contains($html, 'name="global_action" value="post_categorised_transactions"'));
+        $harness->assertTrue(str_contains($html, 'name="post_scope" value="period"'));
+        $harness->assertTrue(str_contains($html, 'name="confirm_auto_categorisations" value="1"'));
+        $harness->assertTrue(str_contains($html, 'name="transaction_search_category_status" value="auto"'));
+        $harness->assertTrue(str_contains($html, 'name="transaction_search_auto_approval_filter" value="post_pending"'));
     });
 
     $harness->check(_transaction_searchCard::class, 'handle applies flow to amount sign and keeps flow-only criteria', static function () use ($harness, $card, $context): void {

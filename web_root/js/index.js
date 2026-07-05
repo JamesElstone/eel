@@ -2999,6 +2999,68 @@
         };
     }
 
+    function ajaxPendingBlurTarget(form) {
+        const pageStack = document.querySelector('.page-stack[data-ajax-pending-blur]');
+        if (!(pageStack instanceof HTMLElement)) {
+            return null;
+        }
+
+        const scope = String(pageStack.dataset.ajaxPendingBlur || '').trim().toLowerCase();
+        if (scope === 'page') {
+            return pageStack;
+        }
+
+        if (scope !== 'card' || !(form instanceof HTMLFormElement)) {
+            return null;
+        }
+
+        const card = form.closest('.card[data-card-key]');
+        const cardBody = card instanceof HTMLElement ? card.querySelector('.card-body') : null;
+
+        return cardBody instanceof HTMLElement ? cardBody : null;
+    }
+
+    function beginAjaxPendingBlur(form) {
+        const target = ajaxPendingBlurTarget(form);
+        if (!(target instanceof HTMLElement)) {
+            return () => {};
+        }
+
+        const pendingCount = Math.max(0, Number.parseInt(String(target.dataset.ajaxPendingCount || '0'), 10) || 0);
+        if (pendingCount === 0) {
+            target.dataset.ajaxPendingHadAriaBusy = target.hasAttribute('aria-busy') ? 'true' : 'false';
+            target.dataset.ajaxPendingAriaBusy = target.getAttribute('aria-busy') || '';
+            target.classList.add('is-ajax-pending');
+            target.setAttribute('aria-busy', 'true');
+        }
+
+        target.dataset.ajaxPendingCount = String(pendingCount + 1);
+
+        return () => {
+            if (!(target instanceof HTMLElement)) {
+                return;
+            }
+
+            const nextCount = Math.max(0, (Number.parseInt(String(target.dataset.ajaxPendingCount || '1'), 10) || 1) - 1);
+            if (nextCount > 0) {
+                target.dataset.ajaxPendingCount = String(nextCount);
+                return;
+            }
+
+            target.classList.remove('is-ajax-pending');
+            delete target.dataset.ajaxPendingCount;
+
+            if (target.dataset.ajaxPendingHadAriaBusy === 'true') {
+                target.setAttribute('aria-busy', target.dataset.ajaxPendingAriaBusy || 'false');
+            } else {
+                target.removeAttribute('aria-busy');
+            }
+
+            delete target.dataset.ajaxPendingHadAriaBusy;
+            delete target.dataset.ajaxPendingAriaBusy;
+        };
+    }
+
     function clearChickenCheck(refocus = false) {
         document.querySelectorAll('.chicken-check-backdrop').forEach((node) => node.remove());
         document.querySelectorAll('.chicken-check-window').forEach((node) => node.remove());
@@ -3134,6 +3196,7 @@
         }
 
         const restoreProcessingState = beginButtonProcessingState(event.submitter);
+        const restorePendingBlur = beginAjaxPendingBlur(form);
 
         try {
             const payload = await sendAjax(requestUrl, {
@@ -3183,6 +3246,7 @@
             console.error(error);
         } finally {
             clearTableExportClipboardIntent(event.submitter);
+            restorePendingBlur();
             restoreProcessingState();
         }
     });

@@ -53,6 +53,18 @@ final class PageRendererCardLayoutTestPage extends PageRendererLegacyLayoutTestP
     }
 }
 
+final class PageRendererAjaxPendingBlurTestPage extends PageRendererLegacyLayoutTestPage
+{
+    public function __construct(private readonly string $scope)
+    {
+    }
+
+    public function ajaxPendingBlurScope(): string
+    {
+        return $this->scope;
+    }
+}
+
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestHarness $harness, object $instance): void {
     if (!$instance instanceof PageRendererFramework) {
@@ -87,6 +99,8 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
     $renderDeveloperOptionsStatus->setAccessible(true);
     $renderFlashMessages = new ReflectionMethod(PageRendererFramework::class, 'renderFlashMessages');
     $renderFlashMessages->setAccessible(true);
+    $ajaxPendingBlurScope = new ReflectionMethod(PageRendererFramework::class, 'ajaxPendingBlurScope');
+    $ajaxPendingBlurScope->setAccessible(true);
 
     $harness->check(PageRendererFramework::class, 'normalises legacy cards to one stack layout without tabs', function () use ($harness, $instance, $resolveCardLayout, $shouldRenderTabs): void {
         $layout = $resolveCardLayout->invoke($instance, new PageRendererLegacyLayoutTestPage(), [
@@ -220,6 +234,25 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
             $request,
             ActionResultFramework::success()
         ));
+    });
+
+    $harness->check(PageRendererFramework::class, 'normalises ajax pending blur page scopes', function () use ($harness, $instance, $ajaxPendingBlurScope): void {
+        $harness->assertSame('none', $ajaxPendingBlurScope->invoke($instance, new PageRendererLegacyLayoutTestPage()));
+        $harness->assertSame('none', $ajaxPendingBlurScope->invoke($instance, new PageRendererAjaxPendingBlurTestPage('')));
+        $harness->assertSame('none', $ajaxPendingBlurScope->invoke($instance, new PageRendererAjaxPendingBlurTestPage('sidebar')));
+        $harness->assertSame('card', $ajaxPendingBlurScope->invoke($instance, new PageRendererAjaxPendingBlurTestPage(' CARD ')));
+        $harness->assertSame('page', $ajaxPendingBlurScope->invoke($instance, new PageRendererAjaxPendingBlurTestPage('page')));
+    });
+
+    $harness->check(PageRendererFramework::class, 'renders ajax pending blur scope on page stack', function () use ($harness): void {
+        $source = file_get_contents(APP_CLASSES . 'framework' . DIRECTORY_SEPARATOR . 'PageRendererFramework.php');
+
+        if (!is_string($source)) {
+            throw new RuntimeException('Unable to read page renderer source.');
+        }
+
+        $harness->assertTrue(str_contains($source, 'data-ajax-pending-blur="'));
+        $harness->assertTrue(str_contains($source, '$this->ajaxPendingBlurScope($page)'));
     });
 
     $harness->check(PageRendererFramework::class, 'reads the sidebar brand mark from application config', function () use ($harness, $instance, $brandMark): void {
@@ -424,6 +457,41 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
         $harness->assertTrue(is_int($replaceCardsPosition));
         $harness->assertTrue(is_int($revealCardPosition));
         $harness->assertTrue($replaceCardsPosition < $revealCardPosition);
+    });
+
+    $harness->check(PageRendererFramework::class, 'frontend wraps ajax submit requests in pending blur lifecycle', function () use ($harness): void {
+        $script = file_get_contents(APP_JS . 'index.js');
+
+        if (!is_string($script)) {
+            throw new RuntimeException('Unable to read frontend script.');
+        }
+
+        foreach ([
+            'function ajaxPendingBlurTarget(form)',
+            "document.querySelector('.page-stack[data-ajax-pending-blur]')",
+            "scope === 'page'",
+            "form.closest('.card[data-card-key]')",
+            "card.querySelector('.card-body')",
+            'function beginAjaxPendingBlur(form)',
+            "target.classList.add('is-ajax-pending');",
+            "target.setAttribute('aria-busy', 'true');",
+            "target.classList.remove('is-ajax-pending');",
+            'delete target.dataset.ajaxPendingCount;',
+        ] as $expected) {
+            $harness->assertTrue(str_contains($script, $expected));
+        }
+
+        $beginPosition = strpos($script, 'const restorePendingBlur = beginAjaxPendingBlur(form);');
+        $sendPosition = strpos($script, 'const payload = await sendAjax(requestUrl, {');
+        $finallyPosition = is_int($sendPosition) ? strpos($script, '} finally {', $sendPosition) : false;
+        $restorePosition = strpos($script, 'restorePendingBlur();');
+
+        $harness->assertTrue(is_int($beginPosition));
+        $harness->assertTrue(is_int($sendPosition));
+        $harness->assertTrue(is_int($finallyPosition));
+        $harness->assertTrue(is_int($restorePosition));
+        $harness->assertTrue($beginPosition < $sendPosition);
+        $harness->assertTrue($finallyPosition < $restorePosition);
     });
 
     $harness->check(PageRendererFramework::class, 'frontend reveal helper activates tabs scrolls and focuses requested cards', function () use ($harness): void {

@@ -57,7 +57,7 @@ final class _tax_period_selectorCard extends CardBaseFramework
                     <input type="hidden" name="company_id" value="' . $companyId . '">
                     <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                     <label class="summary-label" for="tax_ct_period_id">CT period</label>
-                    <select class="select" id="tax_ct_period_id" name="ct_period_id">' . $this->options($ctPeriods, $selectedCtPeriodId) . '</select>
+                    <select class="select" id="tax_ct_period_id" name="ct_period_id" data-blur-scope="page">' . $this->options($ctPeriods, $selectedCtPeriodId) . '</select>
                 </form>'
                 . $this->summaryCard('Showing CT Period', 'CT Period ' . (int)($period['sequence_no'] ?? 0))
                 . $this->summaryCard('Start', (string)($period['period_start'] ?? ''))

@@ -455,7 +455,8 @@ final class ManualJournalService
                     jl.credit,
                     COALESCE(jl.line_description, \'\') AS line_description,
                     COALESCE(na.code, \'\') AS nominal_code,
-                    COALESCE(na.name, \'\') AS nominal_name
+                    COALESCE(na.name, \'\') AS nominal_name,
+                    COALESCE(na.account_type, \'\') AS nominal_account_type
              FROM journal_lines jl
              LEFT JOIN nominal_accounts na ON na.id = jl.nominal_account_id
              WHERE jl.journal_id = :journal_id

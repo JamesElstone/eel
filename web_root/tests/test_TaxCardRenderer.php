@@ -18,6 +18,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame('taxWorkings', (string)($definition['key'] ?? ''));
             $harness->assertSame(\eel_accounts\Service\TaxWorkingsService::class, (string)($definition['service'] ?? ''));
             $harness->assertSame('fetchWorkings', (string)($definition['method'] ?? ''));
+            $params = (array)($definition['params'] ?? []);
+            $harness->assertSame(':tax.selected_ct_period_id', $params['ctPeriodId'] ?? null);
         });
 
         $harness->check(\eel_accounts\Ui\TaxCardRenderer::class, 'renders escaped empty state and percent values', static function () use ($harness): void {

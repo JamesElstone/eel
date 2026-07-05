@@ -193,6 +193,7 @@ final class CorporationTaxComputationService
         $summary['ct_period_sequence_no'] = (int)$ctPeriod['sequence_no'];
         $summary['period_start'] = (string)$ctPeriod['period_start'];
         $summary['period_end'] = (string)$ctPeriod['period_end'];
+        $summary['capital_allowance_breakdown'] = (new \eel_accounts\Service\CapitalAllowanceService())->fetchPeriodBreakdown($companyId, $accountingPeriodId, $ctPeriodId);
         $runId = $this->insertComputationRun($companyId, $row, $summary);
         if ($runId > 0) {
             (new \eel_accounts\Service\CorporationTaxPeriodService())->markLatestComputation($ctPeriodId, $runId);
@@ -634,6 +635,9 @@ final class CorporationTaxComputationService
             'other_treatment_count' => (int)$current['other_treatment_count'],
             'unknown_treatment_count' => (int)$current['unknown_treatment_count'],
             'warnings' => $warnings,
+            'calculation_status' => 'estimate',
+            'confidence_status' => $warnings === [] ? 'ready_for_review' : 'review_required',
+            'confidence_label' => $warnings === [] ? 'Ready for review' : 'Review required',
             'steps' => [
                 ['label' => 'Accounting profit or loss', 'amount' => round((float)$current['accounting_profit'], 2)],
                 ['label' => 'Add back disallowable expenses', 'amount' => round((float)$current['disallowable_add_backs'], 2)],

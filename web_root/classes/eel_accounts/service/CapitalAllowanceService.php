@@ -43,11 +43,17 @@ final class CapitalAllowanceService
         $assetPools = [];
         $results = [];
 
+        $ctPeriodService = new \eel_accounts\Service\CorporationTaxPeriodService();
+
         foreach ($periods as $period) {
             $periodId = (int)$period['id'];
-            $periodStart = (string)$period['period_start'];
-            $periodEnd = (string)$period['period_end'];
-            $periodDays = $this->periodDays($periodStart, $periodEnd);
+            $ctPeriods = $this->ctPeriodsForAccountingPeriod($ctPeriodService, $companyId, $period);
+
+            foreach ($ctPeriods as $ctPeriod) {
+                $ctPeriodId = (int)($ctPeriod['id'] ?? 0);
+                $periodStart = (string)$ctPeriod['period_start'];
+                $periodEnd = (string)$ctPeriod['period_end'];
+                $periodDays = $this->periodDays($periodStart, $periodEnd);
             $aiaRemaining = $this->aiaLimitForDays($periodDays);
             $periodRows = [];
             $warnings = [];
@@ -61,7 +67,7 @@ final class CapitalAllowanceService
                 $treatment = $this->additionTreatment($asset);
                 foreach ($treatment['warnings'] as $warning) {
                     $warnings[] = $warning;
-                    $periodRows[] = $this->assetRow($companyId, $periodId, $assetId, 'unreviewed', 'warning', $cost, 0.0, 0.0, $warning);
+                    $periodRows[] = $this->assetRow($companyId, $periodId, $ctPeriodId, $assetId, 'unreviewed', 'warning', $cost, 0.0, 0.0, $warning);
                 }
 
                 if ($treatment['pool'] === 'unreviewed') {
@@ -77,9 +83,9 @@ final class CapitalAllowanceService
                     $main['aia_claimed'] += $aia;
                     $mainWdv += $remaining;
                     $assetPools[$assetId] = 'main_pool';
-                    $periodRows[] = $this->assetRow($companyId, $periodId, $assetId, 'main_pool', 'aia', $cost, $aia);
+                    $periodRows[] = $this->assetRow($companyId, $periodId, $ctPeriodId, $assetId, 'main_pool', 'aia', $cost, $aia);
                     if ($remaining > 0) {
-                        $periodRows[] = $this->assetRow($companyId, $periodId, $assetId, 'main_pool', 'main_pool_addition', $remaining);
+                        $periodRows[] = $this->assetRow($companyId, $periodId, $ctPeriodId, $assetId, 'main_pool', 'main_pool_addition', $remaining);
                     }
                     continue;
                 }
@@ -87,7 +93,7 @@ final class CapitalAllowanceService
                 if ($treatment['allowance_type'] === 'fya') {
                     $main['fya_claimed'] += $cost;
                     $assetPools[$assetId] = 'fya';
-                    $periodRows[] = $this->assetRow($companyId, $periodId, $assetId, 'main_pool', 'fya', $cost, $cost);
+                    $periodRows[] = $this->assetRow($companyId, $periodId, $ctPeriodId, $assetId, 'main_pool', 'fya', $cost, $cost);
                     continue;
                 }
 
@@ -95,14 +101,14 @@ final class CapitalAllowanceService
                     $special['additions'] += $cost;
                     $specialWdv += $cost;
                     $assetPools[$assetId] = 'special_rate_pool';
-                    $periodRows[] = $this->assetRow($companyId, $periodId, $assetId, 'special_rate_pool', 'special_rate_pool_addition', $cost);
+                    $periodRows[] = $this->assetRow($companyId, $periodId, $ctPeriodId, $assetId, 'special_rate_pool', 'special_rate_pool_addition', $cost);
                     continue;
                 }
 
                 $main['additions'] += $cost;
                 $mainWdv += $cost;
                 $assetPools[$assetId] = 'main_pool';
-                $periodRows[] = $this->assetRow($companyId, $periodId, $assetId, 'main_pool', 'main_pool_addition', $cost);
+                $periodRows[] = $this->assetRow($companyId, $periodId, $ctPeriodId, $assetId, 'main_pool', 'main_pool_addition', $cost);
             }
 
             foreach ($this->fetchDisposals($companyId, $periodStart, $periodEnd) as $asset) {
@@ -112,11 +118,11 @@ final class CapitalAllowanceService
                 if ($pool === 'special_rate_pool') {
                     $special['disposal_value'] += $proceeds;
                     $specialWdv = round($specialWdv - $proceeds, 2);
-                    $periodRows[] = $this->assetRow($companyId, $periodId, $assetId, 'special_rate_pool', 'disposal_value', 0.0, 0.0, $proceeds);
+                    $periodRows[] = $this->assetRow($companyId, $periodId, $ctPeriodId, $assetId, 'special_rate_pool', 'disposal_value', 0.0, 0.0, $proceeds);
                 } elseif ($pool === 'main_pool') {
                     $main['disposal_value'] += $proceeds;
                     $mainWdv = round($mainWdv - $proceeds, 2);
-                    $periodRows[] = $this->assetRow($companyId, $periodId, $assetId, 'main_pool', 'disposal_value', 0.0, 0.0, $proceeds);
+                    $periodRows[] = $this->assetRow($companyId, $periodId, $ctPeriodId, $assetId, 'main_pool', 'disposal_value', 0.0, 0.0, $proceeds);
                 }
             }
 
@@ -141,39 +147,60 @@ final class CapitalAllowanceService
             $main['warnings'] = $warnings;
             $special['warnings'] = [];
 
-            $this->insertPoolRun($companyId, $periodId, $main);
-            $this->insertPoolRun($companyId, $periodId, $special);
+            $this->insertPoolRun($companyId, $periodId, $ctPeriodId, $main);
+            $this->insertPoolRun($companyId, $periodId, $ctPeriodId, $special);
             foreach ($periodRows as $row) {
                 $this->insertAssetCalculation($row);
             }
 
             $allowance = round($main['aia_claimed'] + $main['fya_claimed'] + $main['wda_claimed'] + $special['wda_claimed'] + $main['balancing_allowance'] + $special['balancing_allowance'], 2);
             $charge = round($main['balancing_charge'] + $special['balancing_charge'], 2);
-            $results[$periodId] = [
+            $result = [
                 'allowance' => $allowance,
                 'charge' => $charge,
                 'net_capital_allowances' => round($allowance - $charge, 2),
                 'warnings' => array_values(array_unique($warnings)),
                 'pools' => [$main, $special],
             ];
+            $result['ct_period_id'] = $ctPeriodId;
+            $result['period_start'] = $periodStart;
+            $result['period_end'] = $periodEnd;
+
+            $results['ct_periods'][$ctPeriodId] = $result;
+            if (!isset($results[$periodId])) {
+                $results[$periodId] = ['allowance' => 0.0, 'charge' => 0.0, 'net_capital_allowances' => 0.0, 'warnings' => [], 'pools' => []];
+            }
+            $results[$periodId]['allowance'] = round((float)$results[$periodId]['allowance'] + $allowance, 2);
+            $results[$periodId]['charge'] = round((float)$results[$periodId]['charge'] + $charge, 2);
+            $results[$periodId]['net_capital_allowances'] = round((float)$results[$periodId]['allowance'] - (float)$results[$periodId]['charge'], 2);
+            $results[$periodId]['warnings'] = array_values(array_unique(array_merge((array)$results[$periodId]['warnings'], $warnings)));
+            $results[$periodId]['pools'] = array_merge((array)$results[$periodId]['pools'], [$main, $special]);
+            }
         }
 
         return $results;
     }
 
-    public function fetchPeriodBreakdown(int $companyId, int $accountingPeriodId): array
+    public function fetchPeriodBreakdown(int $companyId, int $accountingPeriodId, int $ctPeriodId = 0): array
     {
         if ($companyId <= 0 || $accountingPeriodId <= 0 || !\InterfaceDB::tableExists('capital_allowance_pool_runs')) {
             return ['available' => false, 'rows' => [], 'warnings' => []];
         }
 
-        $rows = \InterfaceDB::fetchAll(
-            'SELECT *
+        $sql = 'SELECT *
              FROM capital_allowance_pool_runs
              WHERE company_id = :company_id
-               AND accounting_period_id = :accounting_period_id
-             ORDER BY pool_type ASC',
-            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+               AND accounting_period_id = :accounting_period_id';
+        $params = ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId];
+        if ($ctPeriodId > 0 && \InterfaceDB::columnExists('capital_allowance_pool_runs', 'ct_period_id')) {
+            $sql .= ' AND ct_period_id = :ct_period_id';
+            $params['ct_period_id'] = $ctPeriodId;
+        }
+        $sql .= ' ORDER BY pool_type ASC';
+
+        $rows = \InterfaceDB::fetchAll(
+            $sql,
+            $params
         ) ?: [];
         $warnings = [];
         foreach ($rows as $row) {
@@ -203,9 +230,40 @@ final class CapitalAllowanceService
         ];
     }
 
-    public function periodWarnings(int $companyId, int $accountingPeriodId): array
+    public function periodWarnings(int $companyId, int $accountingPeriodId, int $ctPeriodId = 0): array
     {
-        return (array)$this->fetchPeriodBreakdown($companyId, $accountingPeriodId)['warnings'];
+        return (array)$this->fetchPeriodBreakdown($companyId, $accountingPeriodId, $ctPeriodId)['warnings'];
+    }
+
+    private function ctPeriodsForAccountingPeriod(\eel_accounts\Service\CorporationTaxPeriodService $service, int $companyId, array $period): array
+    {
+        if (!\InterfaceDB::columnExists('capital_allowance_pool_runs', 'ct_period_id')
+            || !\InterfaceDB::columnExists('capital_allowance_asset_calculations', 'ct_period_id')) {
+            return [[
+                'id' => 0,
+                'accounting_period_id' => (int)($period['id'] ?? 0),
+                'sequence_no' => 1,
+                'period_start' => (string)($period['period_start'] ?? ''),
+                'period_end' => (string)($period['period_end'] ?? ''),
+                'status' => 'pending',
+            ]];
+        }
+
+        $periodId = (int)($period['id'] ?? 0);
+        $sync = $periodId > 0 ? $service->syncForAccountingPeriod($companyId, $periodId) : ['periods' => []];
+        $rows = array_values(array_filter((array)($sync['periods'] ?? []), static fn(array $row): bool => (string)($row['status'] ?? '') !== 'superseded'));
+        if ($rows !== []) {
+            return $rows;
+        }
+
+        return [[
+            'id' => 0,
+            'accounting_period_id' => $periodId,
+            'sequence_no' => 1,
+            'period_start' => (string)($period['period_start'] ?? ''),
+            'period_end' => (string)($period['period_end'] ?? ''),
+            'status' => 'pending',
+        ]];
     }
 
     private function fetchAccountingPeriods(int $companyId): array
@@ -360,6 +418,7 @@ final class CapitalAllowanceService
     private function assetRow(
         int $companyId,
         int $periodId,
+        int $ctPeriodId,
         int $assetId,
         string $pool,
         string $type,
@@ -371,6 +430,7 @@ final class CapitalAllowanceService
         return [
             'company_id' => $companyId,
             'accounting_period_id' => $periodId,
+            'ct_period_id' => $ctPeriodId > 0 ? $ctPeriodId : null,
             'asset_id' => $assetId,
             'pool_type' => $pool,
             'allowance_type' => $type,
@@ -381,7 +441,7 @@ final class CapitalAllowanceService
         ];
     }
 
-    private function insertPoolRun(int $companyId, int $periodId, array $pool): void
+    private function insertPoolRun(int $companyId, int $periodId, int $ctPeriodId, array $pool): void
     {
         $payload = [
             'company_id' => $companyId,
@@ -398,33 +458,37 @@ final class CapitalAllowanceService
             'closing_wdv' => round((float)$pool['closing_wdv'], 2),
             'warnings_json' => json_encode(array_values(array_unique(array_map('strval', (array)($pool['warnings'] ?? [])))), JSON_UNESCAPED_SLASHES),
         ];
+        $hasCtPeriodColumn = \InterfaceDB::columnExists('capital_allowance_pool_runs', 'ct_period_id');
+        if ($hasCtPeriodColumn) {
+            $payload['ct_period_id'] = $ctPeriodId > 0 ? $ctPeriodId : null;
+        }
         $payload['run_hash'] = hash('sha256', json_encode($payload, JSON_UNESCAPED_SLASHES));
 
-        \InterfaceDB::prepareExecute(
-            'INSERT INTO capital_allowance_pool_runs (
-                company_id, accounting_period_id, pool_type, opening_wdv, additions, aia_claimed,
+        $columns = $hasCtPeriodColumn
+            ? 'company_id, accounting_period_id, ct_period_id, pool_type, opening_wdv, additions, aia_claimed,
                 fya_claimed, disposal_value, wda_claimed, balancing_charge, balancing_allowance,
-                closing_wdv, warnings_json, run_hash, computed_at
-             ) VALUES (
-                :company_id, :accounting_period_id, :pool_type, :opening_wdv, :additions, :aia_claimed,
+                closing_wdv, warnings_json, run_hash, computed_at'
+            : 'company_id, accounting_period_id, pool_type, opening_wdv, additions, aia_claimed,
+                fya_claimed, disposal_value, wda_claimed, balancing_charge, balancing_allowance,
+                closing_wdv, warnings_json, run_hash, computed_at';
+        $values = $hasCtPeriodColumn
+            ? ':company_id, :accounting_period_id, :ct_period_id, :pool_type, :opening_wdv, :additions, :aia_claimed,
                 :fya_claimed, :disposal_value, :wda_claimed, :balancing_charge, :balancing_allowance,
-                :closing_wdv, :warnings_json, :run_hash, CURRENT_TIMESTAMP
-             )',
+                :closing_wdv, :warnings_json, :run_hash, CURRENT_TIMESTAMP'
+            : ':company_id, :accounting_period_id, :pool_type, :opening_wdv, :additions, :aia_claimed,
+                :fya_claimed, :disposal_value, :wda_claimed, :balancing_charge, :balancing_allowance,
+                :closing_wdv, :warnings_json, :run_hash, CURRENT_TIMESTAMP';
+
+        \InterfaceDB::prepareExecute(
+            'INSERT INTO capital_allowance_pool_runs (' . $columns . ') VALUES (' . $values . ')',
             $payload
         );
     }
 
     private function insertAssetCalculation(array $row): void
     {
-        \InterfaceDB::prepareExecute(
-            'INSERT INTO capital_allowance_asset_calculations (
-                company_id, accounting_period_id, asset_id, pool_type, allowance_type,
-                addition_amount, allowance_amount, disposal_value, warning, created_at
-             ) VALUES (
-                :company_id, :accounting_period_id, :asset_id, :pool_type, :allowance_type,
-                :addition_amount, :allowance_amount, :disposal_value, :warning, CURRENT_TIMESTAMP
-             )',
-            [
+        $hasCtPeriodColumn = \InterfaceDB::columnExists('capital_allowance_asset_calculations', 'ct_period_id');
+        $params = [
                 'company_id' => (int)$row['company_id'],
                 'accounting_period_id' => (int)$row['accounting_period_id'],
                 'asset_id' => (int)$row['asset_id'],
@@ -434,7 +498,25 @@ final class CapitalAllowanceService
                 'allowance_amount' => round((float)$row['allowance_amount'], 2),
                 'disposal_value' => round((float)$row['disposal_value'], 2),
                 'warning' => trim((string)($row['warning'] ?? '')) !== '' ? trim((string)$row['warning']) : null,
-            ]
+            ];
+        if ($hasCtPeriodColumn) {
+            $params['ct_period_id'] = isset($row['ct_period_id']) ? (int)$row['ct_period_id'] : null;
+        }
+
+        $columns = $hasCtPeriodColumn
+            ? 'company_id, accounting_period_id, ct_period_id, asset_id, pool_type, allowance_type,
+                addition_amount, allowance_amount, disposal_value, warning, created_at'
+            : 'company_id, accounting_period_id, asset_id, pool_type, allowance_type,
+                addition_amount, allowance_amount, disposal_value, warning, created_at';
+        $values = $hasCtPeriodColumn
+            ? ':company_id, :accounting_period_id, :ct_period_id, :asset_id, :pool_type, :allowance_type,
+                :addition_amount, :allowance_amount, :disposal_value, :warning, CURRENT_TIMESTAMP'
+            : ':company_id, :accounting_period_id, :asset_id, :pool_type, :allowance_type,
+                :addition_amount, :allowance_amount, :disposal_value, :warning, CURRENT_TIMESTAMP';
+
+        \InterfaceDB::prepareExecute(
+            'INSERT INTO capital_allowance_asset_calculations (' . $columns . ') VALUES (' . $values . ')',
+            $params
         );
     }
 

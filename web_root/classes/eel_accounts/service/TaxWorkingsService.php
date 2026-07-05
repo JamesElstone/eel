@@ -11,7 +11,7 @@ namespace eel_accounts\Service;
 
 final class TaxWorkingsService
 {
-    public function fetchWorkings(int $companyId, int $accountingPeriodId): array
+    public function fetchWorkings(int $companyId, int $accountingPeriodId, int $ctPeriodId = 0): array
     {
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return ['available' => false, 'errors' => ['Select a company and accounting period to inspect tax workings.']];
@@ -23,7 +23,17 @@ final class TaxWorkingsService
             return ['available' => false, 'errors' => ['The selected accounting period could not be found.']];
         }
 
-        $estimate = (new \eel_accounts\Service\YearEndTaxReadinessService($metrics))->fetchCurrentPeriodEstimate($companyId, $accountingPeriodId);
+        $ctPeriod = null;
+        if ($ctPeriodId > 0) {
+            $ctPeriod = (new \eel_accounts\Service\CorporationTaxPeriodService())->fetch($companyId, $ctPeriodId);
+            if ($ctPeriod === null || (int)($ctPeriod['accounting_period_id'] ?? 0) !== $accountingPeriodId) {
+                return ['available' => false, 'errors' => ['The selected CT period does not belong to this accounting period.']];
+            }
+        }
+
+        $estimate = $ctPeriodId > 0
+            ? (new \eel_accounts\Service\CorporationTaxComputationService())->fetchSummaryForCtPeriodId($companyId, $ctPeriodId)
+            : (new \eel_accounts\Service\YearEndTaxReadinessService($metrics))->fetchCurrentPeriodEstimate($companyId, $accountingPeriodId);
         if (empty($estimate['available'])) {
             return [
                 'available' => false,
@@ -31,27 +41,31 @@ final class TaxWorkingsService
             ];
         }
 
-        $poolRows = $this->poolRows($companyId, $accountingPeriodId, (array)($estimate['capital_allowance_breakdown'] ?? []));
-        $assetCalculations = $this->assetCalculationRows($companyId, $accountingPeriodId);
-        $carRows = $this->carRows($companyId, $accountingPeriodId);
+        $periodStart = $ctPeriod !== null ? (string)$ctPeriod['period_start'] : (string)$period['period_start'];
+        $periodEnd = $ctPeriod !== null ? (string)$ctPeriod['period_end'] : (string)$period['period_end'];
+        $poolRows = $this->poolRows($companyId, $accountingPeriodId, (array)($estimate['capital_allowance_breakdown'] ?? []), $ctPeriodId);
+        $assetCalculations = $this->assetCalculationRows($companyId, $accountingPeriodId, $ctPeriodId);
+        $carRows = $this->carRows($companyId, $accountingPeriodId, $ctPeriodId);
         $warnings = $this->warningRows($estimate, $poolRows, $assetCalculations, $carRows, $companyId, $accountingPeriodId);
 
         return [
             'available' => true,
             'guidance' => \eel_accounts\Service\TaxGuidanceService::all(),
             'period' => $period,
+            'selected_ct_period' => $ctPeriod,
             'summary' => $estimate,
             'bridge' => (array)($estimate['steps'] ?? []),
-            'disallowable_add_backs' => $this->disallowableAddBackRows($companyId, $accountingPeriodId, (string)$period['period_start'], (string)$period['period_end']),
-            'depreciation_add_back' => $this->depreciationRows($companyId, $accountingPeriodId),
+            'disallowable_add_backs' => $this->disallowableAddBackRows($companyId, $accountingPeriodId, $periodStart, $periodEnd),
+            'depreciation_add_back' => $this->depreciationRows($companyId, $accountingPeriodId, $ctPeriodId),
             'capital_allowances_summary' => $this->capitalAllowanceSummary($poolRows),
             'aia_allocation' => array_values(array_filter($assetCalculations, static fn(array $row): bool => (string)$row['allowance_type'] === 'aia')),
             'main_rate_pool' => $this->poolByType($poolRows, 'main_pool'),
             'special_rate_pool' => $this->poolByType($poolRows, 'special_rate_pool'),
             'car_co2_treatment' => $carRows,
-            'disposals_balancing' => $this->disposalRows($assetCalculations, $companyId, $accountingPeriodId),
+            'disposals_balancing' => $this->disposalRows($assetCalculations, $companyId, $accountingPeriodId, $periodStart, $periodEnd),
             'losses' => (array)($estimate['schedule'] ?? []),
             'rate_bands' => (array)($estimate['ct_rate_bands'] ?? []),
+            'provision' => $ctPeriodId > 0 ? (new \eel_accounts\Service\CorporationTaxProvisionService())->fetchPosition($companyId, $accountingPeriodId, $ctPeriodId) : [],
             'warnings' => $warnings,
         ];
     }
@@ -117,14 +131,13 @@ final class TaxWorkingsService
         return $result;
     }
 
-    private function depreciationRows(int $companyId, int $accountingPeriodId): array
+    private function depreciationRows(int $companyId, int $accountingPeriodId, int $ctPeriodId = 0): array
     {
         if (!$this->tableExists('accounting_period_adjustments')) {
             return [];
         }
 
-        return \InterfaceDB::fetchAll(
-            'SELECT apa.amount,
+        $sql = 'SELECT apa.amount,
                     apa.direction,
                     ar.asset_code,
                     ar.description
@@ -132,34 +145,38 @@ final class TaxWorkingsService
              LEFT JOIN asset_register ar ON ar.id = apa.source_asset_id
              WHERE apa.company_id = :company_id
                AND apa.accounting_period_id = :accounting_period_id
-               AND apa.type = :type
-             ORDER BY ar.purchase_date ASC, ar.id ASC, apa.id ASC',
-            [
+               AND apa.type = :type';
+        $params = [
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
                 'type' => 'add_back_depreciation',
-            ]
-        ) ?: [];
+            ];
+        if ($ctPeriodId > 0 && \InterfaceDB::columnExists('accounting_period_adjustments', 'ct_period_id')) {
+            $sql .= ' AND apa.ct_period_id = :ct_period_id';
+            $params['ct_period_id'] = $ctPeriodId;
+        }
+        $sql .= ' ORDER BY ar.purchase_date ASC, ar.id ASC, apa.id ASC';
+
+        return \InterfaceDB::fetchAll($sql, $params) ?: [];
     }
 
-    private function poolRows(int $companyId, int $accountingPeriodId, array $breakdown): array
+    private function poolRows(int $companyId, int $accountingPeriodId, array $breakdown, int $ctPeriodId = 0): array
     {
         $rows = (array)($breakdown['rows'] ?? []);
         if ($rows !== []) {
             return $rows;
         }
 
-        return (array)(new \eel_accounts\Service\CapitalAllowanceService())->fetchPeriodBreakdown($companyId, $accountingPeriodId)['rows'];
+        return (array)(new \eel_accounts\Service\CapitalAllowanceService())->fetchPeriodBreakdown($companyId, $accountingPeriodId, $ctPeriodId)['rows'];
     }
 
-    private function assetCalculationRows(int $companyId, int $accountingPeriodId): array
+    private function assetCalculationRows(int $companyId, int $accountingPeriodId, int $ctPeriodId = 0): array
     {
         if (!$this->tableExists('capital_allowance_asset_calculations')) {
             return [];
         }
 
-        return \InterfaceDB::fetchAll(
-            'SELECT cac.*,
+        $sql = 'SELECT cac.*,
                     ar.asset_code,
                     ar.description,
                     ar.purchase_date,
@@ -179,16 +196,34 @@ final class TaxWorkingsService
              LEFT JOIN nominal_accounts na ON na.id = ar.nominal_account_id
              LEFT JOIN asset_vehicle_details vd ON vd.asset_id = ar.id
              WHERE cac.company_id = :company_id
-               AND cac.accounting_period_id = :accounting_period_id
-             ORDER BY ar.purchase_date ASC, ar.id ASC, cac.id ASC',
-            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
-        ) ?: [];
+               AND cac.accounting_period_id = :accounting_period_id';
+        $params = ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId];
+        if ($ctPeriodId > 0 && \InterfaceDB::columnExists('capital_allowance_asset_calculations', 'ct_period_id')) {
+            $sql .= ' AND cac.ct_period_id = :ct_period_id';
+            $params['ct_period_id'] = $ctPeriodId;
+        }
+        $sql .= ' ORDER BY ar.purchase_date ASC, ar.id ASC, cac.id ASC';
+
+        return \InterfaceDB::fetchAll($sql, $params) ?: [];
     }
 
-    private function carRows(int $companyId, int $accountingPeriodId): array
+    private function carRows(int $companyId, int $accountingPeriodId, int $ctPeriodId = 0): array
     {
         if (!$this->tableExists('asset_register') || !$this->tableExists('nominal_accounts')) {
             return [];
+        }
+
+        $calcFilter = 'WHERE company_id = :company_id_calc
+                  AND accounting_period_id = :accounting_period_id_calc';
+        $params = [
+                'company_id_calc' => $companyId,
+                'accounting_period_id_calc' => $accountingPeriodId,
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+            ];
+        if ($ctPeriodId > 0 && \InterfaceDB::columnExists('capital_allowance_asset_calculations', 'ct_period_id')) {
+            $calcFilter .= ' AND ct_period_id = :ct_period_id_calc';
+            $params['ct_period_id_calc'] = $ctPeriodId;
         }
 
         $rows = \InterfaceDB::fetchAll(
@@ -220,20 +255,14 @@ final class TaxWorkingsService
                        SUM(allowance_amount) AS allowance_amount,
                        GROUP_CONCAT(DISTINCT warning SEPARATOR \' \') AS warning
                 FROM capital_allowance_asset_calculations
-                WHERE company_id = :company_id_calc
-                  AND accounting_period_id = :accounting_period_id_calc
+                ' . $calcFilter . '
                 GROUP BY asset_id
              ) calc ON calc.asset_id = ar.id
              WHERE ar.company_id = :company_id
                AND ar.accounting_period_id = :accounting_period_id
                AND (na.code = \'1321\' OR ar.category = \'car\' OR vd.vehicle_type = \'car\')
              ORDER BY ar.purchase_date ASC, ar.id ASC',
-            [
-                'company_id_calc' => $companyId,
-                'accounting_period_id_calc' => $accountingPeriodId,
-                'company_id' => $companyId,
-                'accounting_period_id' => $accountingPeriodId,
-            ]
+            $params
         ) ?: [];
 
         foreach ($rows as $index => $row) {
@@ -253,7 +282,7 @@ final class TaxWorkingsService
         return $rows;
     }
 
-    private function disposalRows(array $assetCalculations, int $companyId, int $accountingPeriodId): array
+    private function disposalRows(array $assetCalculations, int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array
     {
         $rows = array_values(array_filter($assetCalculations, static fn(array $row): bool => (float)($row['disposal_value'] ?? 0) > 0 || (float)($row['disposal_proceeds'] ?? 0) > 0));
         if ($rows !== []) {
@@ -276,8 +305,9 @@ final class TaxWorkingsService
              WHERE ar.company_id = :company_id
                AND ar.accounting_period_id = :accounting_period_id
                AND ar.disposal_date IS NOT NULL
+               AND ar.disposal_date BETWEEN :period_start AND :period_end
              ORDER BY ar.disposal_date ASC, ar.id ASC',
-            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId, 'period_start' => $periodStart, 'period_end' => $periodEnd]
         ) ?: [];
     }
 

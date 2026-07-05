@@ -39,6 +39,7 @@ foreach ($cardClasses as $className) {
             $harness->assertSame('fetchWorkings', $service['method'] ?? null);
             $harness->assertSame(':company.id', $params['companyId'] ?? null);
             $harness->assertSame(':company.accounting_period_id', $params['accountingPeriodId'] ?? null);
+            $harness->assertSame(':tax.selected_ct_period_id', $params['ctPeriodId'] ?? null);
         });
 
         $harness->check($className, 'renders read-only tax content with HMRC guidance link', static function () use ($harness, $card): void {

@@ -1644,6 +1644,7 @@ CREATE TABLE `capital_allowance_pool_runs` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
   `accounting_period_id` int(11) NOT NULL,
+  `ct_period_id` int(11) DEFAULT NULL,
   `pool_type` varchar(32) NOT NULL,
   `opening_wdv` decimal(12,2) NOT NULL DEFAULT 0.00,
   `additions` decimal(12,2) NOT NULL DEFAULT 0.00,
@@ -1658,10 +1659,12 @@ CREATE TABLE `capital_allowance_pool_runs` (
   `run_hash` char(64) NOT NULL,
   `computed_at` datetime NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_capital_allowance_pool_period` (`company_id`,`accounting_period_id`,`pool_type`),
+  UNIQUE KEY `uq_capital_allowance_pool_ct_period` (`company_id`,`ct_period_id`,`pool_type`),
   KEY `idx_capital_allowance_pool_period` (`company_id`,`accounting_period_id`),
+  KEY `idx_capital_allowance_pool_ct_period` (`ct_period_id`),
   CONSTRAINT `fk_capital_allowance_pool_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_capital_allowance_pool_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+  CONSTRAINT `fk_capital_allowance_pool_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_capital_allowance_pool_ct_period` FOREIGN KEY (`ct_period_id`) REFERENCES `corporation_tax_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -1676,6 +1679,7 @@ CREATE TABLE `capital_allowance_asset_calculations` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
   `accounting_period_id` int(11) NOT NULL,
+  `ct_period_id` int(11) DEFAULT NULL,
   `asset_id` bigint(20) NOT NULL,
   `pool_type` varchar(32) NOT NULL,
   `allowance_type` varchar(32) NOT NULL,
@@ -1686,9 +1690,11 @@ CREATE TABLE `capital_allowance_asset_calculations` (
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
   KEY `idx_capital_allowance_asset_period` (`company_id`,`accounting_period_id`),
+  KEY `idx_capital_allowance_asset_ct_period` (`ct_period_id`),
   KEY `idx_capital_allowance_asset_asset` (`asset_id`),
   CONSTRAINT `fk_capital_allowance_asset_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_capital_allowance_asset_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_capital_allowance_asset_ct_period` FOREIGN KEY (`ct_period_id`) REFERENCES `corporation_tax_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_capital_allowance_asset_asset` FOREIGN KEY (`asset_id`) REFERENCES `asset_register` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;

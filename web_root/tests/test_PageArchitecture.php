@@ -142,6 +142,7 @@ final class TestPageArchitectureHarness
         $this->assertSame('Tax', $page->title());
         $this->assertSame(
             [
+                'tax_period_selector',
                 'tax_corporation_tax_summary',
                 'tax_taxable_profit_bridge',
                 'tax_disallowable_add_backs',

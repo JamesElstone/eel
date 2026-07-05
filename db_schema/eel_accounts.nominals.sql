@@ -75,7 +75,8 @@ INSERT INTO `nominal_accounts` (`id`,`code`,`name`,`account_type`,`account_subty
 (46,'2150','Dividends Payable','liability',17,'other',1,56,'2026-06-30 00:00:00'),
 (47,'3000','Retained Earnings','equity',13,'other',1,66,'2026-06-30 00:00:00'),
 (48,'3100','Dividends Paid','equity',13,'other',1,71,'2026-06-30 00:00:00'),
-(49,'1490','Asset Disposal Clearing','asset',18,'other',1,149,'2026-07-01 00:00:00');
+(49,'1490','Asset Disposal Clearing','asset',18,'other',1,149,'2026-07-01 00:00:00'),
+(52,'8500','Corporation Tax Expense','expense',NULL,'disallowable',1,850,'2026-07-05 00:00:00');
 /*!40000 ALTER TABLE `nominal_accounts` ENABLE KEYS */;
 UNLOCK TABLES;
 

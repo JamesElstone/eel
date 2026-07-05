@@ -20,6 +20,7 @@ final class TaxCardRenderer
             'params' => [
                 'companyId' => ':company.id',
                 'accountingPeriodId' => ':company.accounting_period_id',
+                'ctPeriodId' => ':tax.selected_ct_period_id',
             ],
         ];
     }

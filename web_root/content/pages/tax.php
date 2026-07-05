@@ -27,6 +27,7 @@ final class _tax extends PageContextFramework
     public function cards(): array
     {
         return [
+            'tax_period_selector',
             'tax_corporation_tax_summary',
             'tax_taxable_profit_bridge',
             'tax_disallowable_add_backs',
@@ -41,5 +42,44 @@ final class _tax extends PageContextFramework
             'tax_rate_bands',
             'tax_warnings',
         ];
+    }
+
+    protected function moduleContext(RequestFramework $request, PageServiceFramework $services, ActionResultFramework $actionResult, array $baseContext): array
+    {
+        $company = (array)($baseContext['company'] ?? []);
+        $companyId = (int)($company['id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
+        $ctPeriodService = new \eel_accounts\Service\CorporationTaxPeriodService();
+        $sync = $companyId > 0 && $accountingPeriodId > 0
+            ? $ctPeriodService->syncForAccountingPeriod($companyId, $accountingPeriodId)
+            : ['periods' => []];
+        $ctPeriods = array_values(array_filter((array)($sync['periods'] ?? []), static fn(array $period): bool => (string)($period['status'] ?? '') !== 'superseded'));
+        $requestedCtPeriodId = max(0, (int)$request->input('ct_period_id', 0));
+        $selectedCtPeriodId = $this->selectedCtPeriodId($ctPeriods, $requestedCtPeriodId);
+        if ($selectedCtPeriodId <= 0) {
+            $selectedCtPeriodId = $ctPeriodService->defaultCtPeriodId($companyId, $accountingPeriodId);
+        }
+
+        return [
+            'tax' => [
+                'ct_periods' => $ctPeriods,
+                'selected_ct_period_id' => $selectedCtPeriodId,
+                'sync_errors' => (array)($sync['errors'] ?? []),
+            ],
+        ];
+    }
+
+    private function selectedCtPeriodId(array $ctPeriods, int $requestedCtPeriodId): int
+    {
+        if ($requestedCtPeriodId <= 0) {
+            return 0;
+        }
+        foreach ($ctPeriods as $period) {
+            if ((int)($period['id'] ?? 0) === $requestedCtPeriodId) {
+                return $requestedCtPeriodId;
+            }
+        }
+
+        return 0;
     }
 }

@@ -57,18 +57,18 @@ final class _dividend_capacityCard extends CardBaseFramework
             <div class="summary-grid four">
                 ' . $this->summaryCard('Ledger profit / loss', $this->money($companySettings, $capacity['ledger_current_year_profit_loss'] ?? 0)) . '
                 ' . $this->summaryCard('Classified realised profit', $this->money($companySettings, $capacity['classified_current_year_profit_loss'] ?? 0)) . '
-                ' . $this->summaryCard('Estimated CT', $this->money($companySettings, $capacity['estimated_corporation_tax'] ?? 0)) . '
-                ' . $this->summaryCard('Unposted CT deducted', $this->money($companySettings, $capacity['unposted_corporation_tax_adjustment'] ?? 0)) . '
+                ' . $this->summaryCard('Estimated Corporation Tax', $this->money($companySettings, $capacity['estimated_corporation_tax'] ?? 0), '', $this->estimatedCorporationTaxHelper($companySettings, $capacity)) . '
+                ' . $this->summaryCard('Unposted Corporation Tax deducted', $this->money($companySettings, $capacity['unposted_corporation_tax_adjustment'] ?? 0), '', $this->unpostedCorporationTaxHelper($companySettings, $capacity)) . '
             </div>
             <div class="summary-grid four">' . $this->warningCards($warnings) . '</div>
         </div>';
     }
 
-    private function summaryCard(string $label, string $value, string $extraClass = ''): string
+    private function summaryCard(string $label, string $value, string $extraClass = '', string $helper = ''): string
     {
         $class = trim('summary-card ' . $extraClass);
 
-        return '<div class="' . HelperFramework::escape($class) . '"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value !== '' ? $value : '-') . '</div></div>';
+        return '<div class="' . HelperFramework::escape($class) . '"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($value !== '' ? $value : '-') . '</div>' . ($helper !== '' ? '<div class="helper">' . HelperFramework::escape($helper) . '</div>' : '') . '</div>';
     }
 
     private function warningCards(array $warnings): string
@@ -101,6 +101,36 @@ final class _dividend_capacityCard extends CardBaseFramework
             . ') = available distributable reserves ('
             . $this->money($companySettings, $capacity['available_distributable_reserves'] ?? 0)
             . ')';
+    }
+
+    private function estimatedCorporationTaxHelper(array $companySettings, array $capacity): string
+    {
+        $periods = array_values(array_filter(
+            (array)($capacity['tax_periods'] ?? []),
+            static fn(mixed $period): bool => is_array($period)
+        ));
+        if ($periods === []) {
+            return '';
+        }
+
+        $amounts = array_map(
+            fn(array $period): string => $this->money($companySettings, $period['estimated_corporation_tax'] ?? 0),
+            $periods
+        );
+        if (count($amounts) === 1) {
+            return $amounts[0];
+        }
+
+        return implode(' + ', $amounts) . ' = ' . $this->money($companySettings, $capacity['estimated_corporation_tax'] ?? 0);
+    }
+
+    private function unpostedCorporationTaxHelper(array $companySettings, array $capacity): string
+    {
+        $estimate = $this->money($companySettings, $capacity['estimated_corporation_tax'] ?? 0);
+        $posted = $this->money($companySettings, $capacity['posted_corporation_tax_charge'] ?? 0);
+        $unposted = $this->money($companySettings, $capacity['unposted_corporation_tax_adjustment'] ?? 0);
+
+        return 'Estimated Corporation Tax ' . $estimate . ' - posted Corporation Tax ' . $posted . ' = ' . $unposted;
     }
 
     private function reliabilityWarningPanels(array $warnings): string

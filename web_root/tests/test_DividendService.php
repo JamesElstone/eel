@@ -304,6 +304,7 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
             $harness->assertSame('19.00', number_format((float)($capacity['estimated_corporation_tax'] ?? 0), 2, '.', ''));
             $harness->assertSame('19.00', number_format((float)($capacity['unposted_corporation_tax_adjustment'] ?? 0), 2, '.', ''));
             $harness->assertSame('41.00', number_format((float)($capacity['available_distributable_reserves'] ?? 0), 2, '.', ''));
+            $harness->assertTrue(count((array)($capacity['tax_periods'] ?? [])) > 0);
         } finally {
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();

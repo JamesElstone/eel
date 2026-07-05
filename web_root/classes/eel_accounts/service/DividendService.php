@@ -152,6 +152,8 @@ final class DividendService
             'posted_corporation_tax_charge' => (float)($taxPosition['posted_corporation_tax_charge'] ?? 0),
             'estimated_corporation_tax' => (float)($taxPosition['estimated_corporation_tax'] ?? 0),
             'unposted_corporation_tax_adjustment' => (float)($taxPosition['unposted_corporation_tax_adjustment'] ?? 0),
+            'tax_periods' => (array)($taxPosition['tax_periods'] ?? []),
+            'tax_totals' => (array)($taxPosition['tax_totals'] ?? []),
             'current_year_profit_loss_after_tax' => $currentYearProfitAfterTax,
             'current_year_profit_loss' => $currentYearProfitAfterTax,
             'corporation_tax_status' => (string)($taxPosition['status'] ?? 'unknown'),

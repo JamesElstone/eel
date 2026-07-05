@@ -140,9 +140,7 @@ final class YearEndTaxReadinessService
             'taxable_loss',
             'estimated_corporation_tax',
             'loss_created_in_period',
-            'losses_brought_forward',
             'losses_used',
-            'losses_carried_forward',
         ];
         $totals = [];
         foreach ($fields as $field) {
@@ -151,6 +149,10 @@ final class YearEndTaxReadinessService
                 $periods
             )), 2);
         }
+        $firstPeriod = (array)reset($periods);
+        $lastPeriod = (array)end($periods);
+        $totals['losses_brought_forward'] = round((float)($firstPeriod['losses_brought_forward'] ?? 0), 2);
+        $totals['losses_carried_forward'] = round((float)($lastPeriod['losses_carried_forward'] ?? 0), 2);
 
         $totals['other_treatment_count'] = array_sum(array_map(static fn(array $period): int => (int)($period['other_treatment_count'] ?? 0), $periods));
         $totals['unknown_treatment_count'] = array_sum(array_map(static fn(array $period): int => (int)($period['unknown_treatment_count'] ?? 0), $periods));

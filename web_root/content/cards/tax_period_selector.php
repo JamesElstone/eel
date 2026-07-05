@@ -19,7 +19,7 @@ final class _tax_period_selectorCard extends CardBaseFramework
             return '<div class="helper">No CT periods are available for the selected accounting period.</div>';
         }
 
-        return $this->periodSummary($ctPeriods, $selectedCtPeriodId);
+        return $this->periodSummary($company, $ctPeriods, $selectedCtPeriodId);
     }
 
     private function options(array $ctPeriods, int $selectedCtPeriodId): string
@@ -40,16 +40,22 @@ final class _tax_period_selectorCard extends CardBaseFramework
         return $html;
     }
 
-    private function periodSummary(array $ctPeriods, int $selectedCtPeriodId): string
+    private function periodSummary(array $company, array $ctPeriods, int $selectedCtPeriodId): string
     {
+        $companyId = (int)($company['id'] ?? 0);
+        $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
+
         foreach ($ctPeriods as $period) {
             if ((int)($period['id'] ?? 0) !== $selectedCtPeriodId) {
                 continue;
             }
 
             return '<div class="summary-grid five">'
-                . '<form method="get" action="?page=tax" data-ajax="true" class="summary-card tax-period-selector-summary-card">
-                    <input type="hidden" name="page" value="tax">
+                . '<form method="post" action="?page=tax" data-ajax="true" class="summary-card tax-period-selector-summary-card">
+                    <input type="hidden" name="card_action" value="Tax">
+                    <input type="hidden" name="intent" value="select_ct_period">
+                    <input type="hidden" name="company_id" value="' . $companyId . '">
+                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                     <label class="summary-label" for="tax_ct_period_id">CT period</label>
                     <select class="select" id="tax_ct_period_id" name="ct_period_id">' . $this->options($ctPeriods, $selectedCtPeriodId) . '</select>
                 </form>'

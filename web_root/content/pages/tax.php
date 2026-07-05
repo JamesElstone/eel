@@ -59,11 +59,13 @@ final class _tax extends PageContextFramework
         if ($selectedCtPeriodId <= 0) {
             $selectedCtPeriodId = $ctPeriodService->defaultCtPeriodId($companyId, $accountingPeriodId);
         }
+        $selectedCtPeriod = $this->selectedCtPeriod($ctPeriods, $selectedCtPeriodId);
 
         return [
             'tax' => [
                 'ct_periods' => $ctPeriods,
                 'selected_ct_period_id' => $selectedCtPeriodId,
+                'selected_ct_period' => $selectedCtPeriod,
                 'sync_errors' => (array)($sync['errors'] ?? []),
             ],
         ];
@@ -81,5 +83,20 @@ final class _tax extends PageContextFramework
         }
 
         return 0;
+    }
+
+    private function selectedCtPeriod(array $ctPeriods, int $selectedCtPeriodId): array
+    {
+        if ($selectedCtPeriodId <= 0) {
+            return [];
+        }
+
+        foreach ($ctPeriods as $period) {
+            if ((int)($period['id'] ?? 0) === $selectedCtPeriodId) {
+                return $period;
+            }
+        }
+
+        return [];
     }
 }

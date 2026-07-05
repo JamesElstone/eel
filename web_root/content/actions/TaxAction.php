@@ -20,6 +20,10 @@ final class TaxAction implements ActionInterfaceFramework
             return $this->result(false, ['Select a company, accounting period, and CT period first.'], $ctPeriodId);
         }
 
+        if ($intent === 'select_ct_period') {
+            return ActionResultFramework::success(['page.reload'], query: ['ct_period_id' => (string)$ctPeriodId]);
+        }
+
         try {
             $result = match ($intent) {
                 'post_ct_provision' => (new \eel_accounts\Service\CorporationTaxProvisionService())->postProvision($companyId, $accountingPeriodId, $ctPeriodId),

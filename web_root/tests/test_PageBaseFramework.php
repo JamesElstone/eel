@@ -61,6 +61,17 @@ $harness->check(PageBaseFramework::class, 'provides empty default cards list', f
     $harness->assertSame([], $page->cards());
 });
 
+$harness->check(PageBaseFramework::class, 'defaults ajax pending blur to none', function () use ($harness): void {
+    $page = new class extends PageBaseFramework {
+        public function id(): string { return 'default_ajax_pending_blur_test'; }
+        public function title(): string { return 'Default AJAX Pending Blur Test'; }
+        public function subtitle(): string { return ''; }
+        public function services(): array { return []; }
+    };
+
+    $harness->assertSame('none', $page->ajaxPendingBlurScope());
+});
+
 $harness->check(PageBaseFramework::class, 'injects authenticated user metadata into request context', function () use ($harness): void {
     $page = new PageBaseAuthContextTestPage(123, 2);
     $services = new PageServiceFramework(new AppService(APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp'));

@@ -47,8 +47,13 @@ final class _dividends extends PageContextFramework
                 'tab' => 'Overview',
                 'cards' => [
                     'dividend_capacity',
-                    'dividend_reserve_review',
                     'dividend_vouchers',
+                ],
+            ],
+            [
+                'tab' => 'Reserve Review',
+                'cards' => [
+                    'dividend_reserve_review',
                 ],
             ],
             [

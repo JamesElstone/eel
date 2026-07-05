@@ -16,7 +16,7 @@ final class _dividend_reserve_reviewCard extends CardBaseFramework
 
     public function title(): string
     {
-        return 'Dividend Reserve Review';
+        return 'Distributable Profit Review';
     }
 
     protected function additionalInvalidationFacts(): array
@@ -43,6 +43,7 @@ final class _dividend_reserve_reviewCard extends CardBaseFramework
         $statusLabel = (string)($review['status_label'] ?? 'Reserve review missing');
         $reviewedAt = trim((string)($snapshot['reviewed_at'] ?? ''));
         $asAtDate = (string)($review['as_at_date'] ?? '');
+        $unknownAmount = round((float)($summary['unknown_amount'] ?? 0), 2);
 
         $rowsHtml = '';
         foreach ((array)($review['rows'] ?? []) as $row) {
@@ -50,15 +51,21 @@ final class _dividend_reserve_reviewCard extends CardBaseFramework
             if ($nominalId <= 0) {
                 continue;
             }
+            $treatment = (string)($row['treatment'] ?? 'unknown');
+            $badge = $this->rowBadge($row);
+            $guidance = $this->rowGuidance($row);
 
             $rowsHtml .= '<tr>
                 <td>' . HelperFramework::escape((string)($row['nominal_code'] ?? '')) . '</td>
                 <td>' . HelperFramework::escape((string)($row['nominal_name'] ?? '')) . '</td>
                 <td>' . HelperFramework::escape($this->money($companySettings, $row['profit_effect'] ?? 0)) . '</td>
                 <td>
+                    <span class="badge ' . HelperFramework::escape($badge['class']) . '">' . HelperFramework::escape($badge['label']) . '</span>
                     <select class="select" name="treatment[' . $nominalId . ']">
-                        ' . $this->treatmentOptions((array)($review['treatments'] ?? []), (string)($row['treatment'] ?? 'unknown')) . '
+                        ' . $this->treatmentOptions((array)($review['treatments'] ?? []), $treatment) . '
                     </select>
+                    <div class="helper">' . HelperFramework::escape($this->treatmentExplanation($treatment)) . '</div>
+                    <div class="helper">' . HelperFramework::escape($guidance) . '</div>
                 </td>
             </tr>';
         }
@@ -72,6 +79,14 @@ final class _dividend_reserve_reviewCard extends CardBaseFramework
                 <span class="helper">As at ' . HelperFramework::escape($asAtDate !== '' ? $asAtDate : '-') . '</span>
                 ' . ($reviewedAt !== '' ? '<span class="helper">Last reviewed ' . HelperFramework::escape(HelperFramework::displayDate($reviewedAt)) . '</span>' : '') . '
             </div>
+            <section class="panel-soft settings-stack">
+                <div class="summary-label">What this review is for</div>
+                <div class="helper">This review checks which parts of the company\'s profit can safely support dividends.</div>
+                <div class="helper">Most ordinary sales and expenses are classified automatically.</div>
+                <div class="helper">Only unusual or unknown items normally need attention.</div>
+                <div class="helper">If unsure, leave as Unknown and ask your accountant.</div>
+            </section>
+            ' . $this->treatmentGuide((array)($review['treatments'] ?? [])) . '
             <div class="summary-grid four">
                 ' . $this->summaryCard('Brought forward reserves', $this->money($companySettings, $summary['brought_forward_distributable_reserves'] ?? 0)) . '
                 ' . $this->summaryCard('Distributable current profit', $this->money($companySettings, $summary['distributable_current_profit'] ?? 0)) . '
@@ -84,6 +99,7 @@ final class _dividend_reserve_reviewCard extends CardBaseFramework
                 ' . $this->summaryCard('Reviewed reductions', $this->money($companySettings, $this->reviewedReductions($summary))) . '
                 ' . $this->summaryCard('Unknown', $this->money($companySettings, $summary['unknown_amount'] ?? 0)) . '
             </div>
+            ' . ($unknownAmount > 0.0 ? '<section class="panel-soft warn settings-stack"><span class="badge warning">Needs review</span><div class="helper">You cannot save this review while Unknown amounts remain.</div></section>' : '') . '
             <form method="post" action="?page=dividends" data-ajax="true" class="settings-stack">
                 <input type="hidden" name="card_action" value="Dividend">
                 <input type="hidden" name="intent" value="save_dividend_reserve_review">
@@ -92,7 +108,7 @@ final class _dividend_reserve_reviewCard extends CardBaseFramework
                 <input type="hidden" name="as_at_date" value="' . HelperFramework::escape($asAtDate) . '">
                 <div class="table-scroll">
                     <table>
-                        <thead><tr><th>Code</th><th>Nominal</th><th>Profit effect</th><th>Reserve treatment</th></tr></thead>
+                        <thead><tr><th>Code</th><th>Nominal</th><th>Amount</th><th>Review</th></tr></thead>
                         <tbody>' . $rowsHtml . '</tbody>
                     </table>
                 </div>
@@ -101,7 +117,7 @@ final class _dividend_reserve_reviewCard extends CardBaseFramework
                     <button class="button primary" type="submit"
                         data-chicken-check="true"
                         data-chicken-title="Save dividend reserve review"
-                        data-chicken-message="This records the current reserve classification snapshot for dividend capacity checks.<br><br>Continue?"
+                        data-chicken-message="This records the current distributable profit review used to support dividend capacity. Only save if the classifications look right or have been checked.<br><br>Continue?"
                         data-chicken-confirm-text="Save Review">Save Review</button>
                 </div>
             </form>
@@ -113,10 +129,80 @@ final class _dividend_reserve_reviewCard extends CardBaseFramework
         $html = '';
         foreach ($treatments as $treatment) {
             $value = (string)$treatment;
-            $html .= '<option value="' . HelperFramework::escape($value) . '"' . ($value === $selected ? ' selected' : '') . '>' . HelperFramework::escape(HelperFramework::labelFromKey($value, '_')) . '</option>';
+            $html .= '<option value="' . HelperFramework::escape($value) . '"' . ($value === $selected ? ' selected' : '') . '>' . HelperFramework::escape($this->treatmentLabel($value)) . '</option>';
         }
 
         return $html;
+    }
+
+    private function treatmentGuide(array $treatments): string
+    {
+        $items = '';
+        foreach ($treatments as $treatment) {
+            $value = (string)$treatment;
+            $items .= '<div class="summary-card">
+                <div class="summary-label">' . HelperFramework::escape($this->treatmentLabel($value)) . '</div>
+                <div class="helper">' . HelperFramework::escape($this->treatmentExplanation($value)) . '</div>
+            </div>';
+        }
+
+        return '<section class="panel-soft settings-stack">
+            <div class="summary-label">How to read the options</div>
+            <div class="summary-grid four">' . $items . '</div>
+        </section>';
+    }
+
+    private function treatmentLabel(string $treatment): string
+    {
+        return match ($treatment) {
+            'tax_charge' => 'Corporation Tax Charge',
+            default => HelperFramework::labelFromKey($treatment, '_'),
+        };
+    }
+
+    private function treatmentExplanation(string $treatment): string
+    {
+        return match ($treatment) {
+            'realised_profit' => 'Normal earned income that can usually support dividends.',
+            'realised_loss' => 'Normal business cost that reduces dividend capacity.',
+            'tax_charge' => 'Tax cost that reduces dividend capacity.',
+            'unrealised_gain' => 'Paper gain, usually not counted for dividends.',
+            'unrealised_loss' => 'Paper loss, treated cautiously and reduces dividend capacity.',
+            'non_distributable' => 'Profit not available for dividends.',
+            'capital' => 'Capital, share, or balance-sheet item, not normal dividend profit.',
+            'dividend_distribution' => 'Dividend already paid or declared, reduces reserves.',
+            default => 'Not safe to rely on until reviewed.',
+        };
+    }
+
+    private function rowBadge(array $row): array
+    {
+        $treatment = (string)($row['treatment'] ?? 'unknown');
+        if ($treatment === 'unknown') {
+            return ['label' => 'Ask accountant', 'class' => 'danger'];
+        }
+        if (in_array($treatment, ['unrealised_gain', 'unrealised_loss', 'capital', 'non_distributable'], true)
+            || $treatment !== (string)($row['default_treatment'] ?? $treatment)) {
+            return ['label' => 'Needs review', 'class' => 'warning'];
+        }
+
+        return ['label' => 'Auto-classified', 'class' => 'success'];
+    }
+
+    private function rowGuidance(array $row): string
+    {
+        $treatment = (string)($row['treatment'] ?? 'unknown');
+        if ($treatment === 'unknown') {
+            return 'Leave as Unknown if you are unsure; this amount cannot support dividends until reviewed.';
+        }
+        if (in_array($treatment, ['unrealised_gain', 'unrealised_loss', 'capital', 'non_distributable'], true)) {
+            return 'Check this carefully before relying on it for dividend capacity.';
+        }
+        if ($treatment !== (string)($row['default_treatment'] ?? $treatment)) {
+            return 'This differs from the automatic classification, so check it before saving.';
+        }
+
+        return 'The system has classified this from the nominal account type; you can change it if it is not right.';
     }
 
     private function summaryCard(string $label, string $value): string

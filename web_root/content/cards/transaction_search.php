@@ -123,7 +123,7 @@ final class _transaction_searchCard extends CardBaseFramework
     private function configuredTableState(array $context): array
     {
         $hiddenFields = $this->hiddenFields($context);
-        $table = $this->configureTableSorting($this->table($context), $context, $hiddenFields);
+        $table = $this->configureSearchTableSorting($this->table($context), $context, $hiddenFields);
         $queryRows = $table->sortedRows();
         $pagination = HelperFramework::paginateArray($queryRows, $this->paginationPage($context), self::PAGE_SIZE);
         $visibleRows = (array)$pagination['items'];
@@ -143,6 +143,19 @@ final class _transaction_searchCard extends CardBaseFramework
             'visible_rows' => $visibleRows,
             'query_rows' => $queryRows,
         ];
+    }
+
+    private function configureSearchTableSorting(TableFramework $table, array $context, array $hiddenFields): TableFramework
+    {
+        $sortKey = $this->tableSortKey($context, $table->key());
+        $direction = $this->tableSortDirection($context, $table->key());
+
+        if ($sortKey === '' || $direction === '') {
+            $sortKey = 'txn_date';
+            $direction = 'desc';
+        }
+
+        return $table->sorting($sortKey, $direction, $hiddenFields);
     }
 
     private function table(array $context): TableFramework

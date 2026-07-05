@@ -1178,6 +1178,12 @@ body.card-maximized-active {
   padding: 20px;
   min-width: 0;
   position: relative;
+  transition: filter 0.18s ease, opacity 0.18s ease;
+}
+
+.card-body.is-ajax-pending {
+  filter: blur(2px);
+  opacity: 0.72;
 }
 
 
@@ -2196,6 +2202,19 @@ label {
   min-width: 0;
   overflow-y: auto;
   scrollbar-gutter: stable;
+  transition: filter 0.18s ease, opacity 0.18s ease;
+}
+
+.page-stack.is-ajax-pending {
+  filter: blur(2px);
+  opacity: 0.72;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-stack,
+  .card-body {
+    transition: none;
+  }
 }
 
 .page-stack > * {

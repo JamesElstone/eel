@@ -48,6 +48,21 @@ $harness->check('CssFramework', 'defines target card reveal scroll offset', func
     $css = str_replace("\r\n", "\n", (string)file_get_contents(APP_CSS . 'index.css'));
 
     $harness->assertTrue(str_contains($css, '--page-card-reveal-offset: 96px;'));
-    $harness->assertTrue(str_contains($css, ".page-stack-card,\n.card {"));
+    $harness->assertSame(1, preg_match('/\.page-stack-card\s*,\s*\.card\s*\{/', $css));
     $harness->assertTrue(str_contains($css, 'scroll-margin-top: var(--page-card-reveal-offset, 96px);'));
+});
+
+$harness->check('CssFramework', 'styles ajax pending blur for page stacks and card bodies', function () use ($harness): void {
+    $css = (string)file_get_contents(APP_CSS . 'index.css');
+
+    foreach ([
+        '.page-stack.is-ajax-pending',
+        '.card-body.is-ajax-pending',
+        'filter: blur(2px);',
+        'opacity: 0.72;',
+        '@media (prefers-reduced-motion: reduce)',
+        'transition: filter 0.18s ease, opacity 0.18s ease;',
+    ] as $expected) {
+        $harness->assertTrue(str_contains($css, $expected));
+    }
 });

@@ -19,6 +19,11 @@ abstract class PageBaseFramework implements PageInterfaceFramework
         return '';
     }
 
+    public function ajaxPendingBlurScope(): string
+    {
+        return 'none';
+    }
+
     public function handle(RequestFramework $request, PageServiceFramework $services): ResponseFramework
     {
         $actionResult = $services->siteContextCoordinator()->handleAction($request, $this, $services);

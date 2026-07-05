@@ -197,6 +197,7 @@ final class PageRendererFramework
         $escapedAppName = HelperFramework::escape((string)($appName ?? 'eelKit Framework'));
         $pageStackClass = trim($page->pageStackClass());
         $pageStackClasses = 'page-stack' . ($pageStackClass !== '' ? ' ' . HelperFramework::escape($pageStackClass) : '');
+        $ajaxPendingBlurScope = $this->ajaxPendingBlurScope($page);
         $contentHtml = $this->pageCards($page, $context) !== [] ? $cardsHtml : $this->renderNoAccessState();
 
         return '<!DOCTYPE html>
@@ -214,7 +215,7 @@ final class PageRendererFramework
                     <main class="main" data-current-page="' . HelperFramework::escape($pageId) . '">
                         ' . $this->renderTopbar($page, $siteContextHtml) . '
                         <div id="flash-messages" class="flash-messages">' . $this->renderFlashMessages($actionResult->flashMessages()) . '</div>
-                        <section class="' . $pageStackClasses . '" data-page-id="' . HelperFramework::escape($pageId) . '">' . $contentHtml . '</section>
+                        <section class="' . $pageStackClasses . '" data-page-id="' . HelperFramework::escape($pageId) . '" data-ajax-pending-blur="' . HelperFramework::escape($ajaxPendingBlurScope) . '">' . $contentHtml . '</section>
                         ' . $this->renderPageFooter() . '
                     </main>
                 </div>
@@ -222,6 +223,16 @@ final class PageRendererFramework
                 <script src="js/index.js"></script>
             </body>
         </html>';
+    }
+
+    private function ajaxPendingBlurScope(PageInterfaceFramework $page): string
+    {
+        $scope = method_exists($page, 'ajaxPendingBlurScope')
+            ? (string)$page->ajaxPendingBlurScope()
+            : 'none';
+        $scope = strtolower(trim($scope));
+
+        return in_array($scope, ['none', 'card', 'page'], true) ? $scope : 'none';
     }
 
     private function renderAjaxSecurityBootstrap(RequestFramework $request): string

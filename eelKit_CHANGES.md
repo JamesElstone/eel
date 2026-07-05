@@ -1,5 +1,36 @@
 # eelKit Changes
 
+## AJAX pending blur scopes
+
+Feature name: `ajax_pending_blur_scopes`.
+
+Pages can now opt into a pending blur while an AJAX form submission is in flight. This gives users visible feedback when a card-level control updates other cards, or when a long-running action affects the whole page stack.
+
+Page classes can set the default blur scope with:
+
+```php
+public function ajaxPendingBlurScope(): string
+{
+    return 'page'; // 'none', 'card', or 'page'
+}
+```
+
+Supported scopes are:
+
+- `none`: no blur; this is the default for existing pages.
+- `card`: blur the submitting card's `.card-body`.
+- `page`: blur the page `.page-stack`.
+
+Individual AJAX controls can override the page default for a single submission with CSP-safe `data-blur-scope` attributes:
+
+```html
+<select data-blur-scope="page">...</select>
+<button data-blur-scope="card">Save</button>
+<input data-blur-scope="none">
+```
+
+The override is supported on controls that trigger the existing AJAX form lifecycle, including submit buttons, `data-submit-on-change` inputs, and auto-submitting selects. No inline script is required; eelKit's external `web_root/js/index.js` reads the rendered page and control attributes, so the feature works with CSP policies that block inline JavaScript.
+
 ## Pie and donut legend toggle
 
 Feature name: `pie_donut_legend_toggle`.

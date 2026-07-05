@@ -124,27 +124,29 @@ final class _trial_balance_validationCard extends CardBaseFramework
             return '';
         }
 
-        $html = '';
-        foreach ($this->metricLines($value, $companySettings) as $line) {
-            $html .= '<div><strong>' . HelperFramework::escape($line) . '</strong></div>';
+        if (is_array($value) && !$this->isListArray($value)) {
+            return $this->metricTable($value, $companySettings);
         }
 
-        return $html;
+        return '<div><strong>' . HelperFramework::escape($this->metricText($value, $companySettings)) . '</strong></div>';
     }
 
-    private function metricLines(mixed $value, array $companySettings): array
+    private function metricTable(array $value, array $companySettings): string
     {
-        if (!is_array($value) || $this->isListArray($value)) {
-            return [$this->metricText($value, $companySettings)];
-        }
-
-        $lines = [];
+        $rows = '';
         foreach ($value as $key => $metric) {
             $label = HelperFramework::labelFromKey((string)$key, '_');
-            $lines[] = $label . ': ' . $this->metricText($metric, $companySettings);
+            $rows .= '<tr>
+                <th scope="row">' . HelperFramework::escape($label) . '</th>
+                <td><strong>' . HelperFramework::escape($this->metricText($metric, $companySettings)) . '</strong></td>
+            </tr>';
         }
 
-        return $lines;
+        return '<div class="table-scroll-mini">
+            <table class="table-condensed">
+                <tbody>' . $rows . '</tbody>
+            </table>
+        </div>';
     }
 
     private function metricText(mixed $value, array $companySettings): string

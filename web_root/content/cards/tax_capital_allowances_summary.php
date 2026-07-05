@@ -5,28 +5,28 @@ final class _tax_capital_allowances_summaryCard extends CardBaseFramework
 {
     public function key(): string { return 'tax_capital_allowances_summary'; }
     public function title(): string { return 'Capital Allowances Summary'; }
-    public function helper(array $context): string { return \eel_accounts\Ui\TaxCardRenderer::selectedPeriodHelper($context); }
-    public function services(): array { return [\eel_accounts\Ui\TaxCardRenderer::serviceDefinition()]; }
+    public function helper(array $context): string { return \eel_accounts\Renderer\TaxCardRenderer::selectedPeriodHelper($context); }
+    public function services(): array { return [\eel_accounts\Renderer\TaxCardRenderer::serviceDefinition()]; }
     public function handleError(string $serviceKey, array $error, array $context): string { return ''; }
 
     public function render(array $context): string
     {
-        $workings = \eel_accounts\Ui\TaxCardRenderer::workings($context);
+        $workings = \eel_accounts\Renderer\TaxCardRenderer::workings($context);
         if (empty($workings['available'])) {
-            return \eel_accounts\Ui\TaxCardRenderer::emptyState($workings);
+            return \eel_accounts\Renderer\TaxCardRenderer::emptyState($workings);
         }
         $summary = (array)($workings['capital_allowances_summary'] ?? []);
-        return \eel_accounts\Ui\TaxCardRenderer::header('capital_allowances')
-            . \eel_accounts\Ui\TaxCardRenderer::summaryGrid([
-                ['Annual Investment Allowance (AIA)', \eel_accounts\Ui\TaxCardRenderer::money($context, $summary['aia_claimed'] ?? 0)],
-                ['First Year Allowance (FYA)', \eel_accounts\Ui\TaxCardRenderer::money($context, $summary['fya_claimed'] ?? 0)],
-                ['Writing Down Allowance (WDA)', \eel_accounts\Ui\TaxCardRenderer::money($context, $summary['wda_claimed'] ?? 0)],
-                ['Balancing charges', \eel_accounts\Ui\TaxCardRenderer::money($context, $summary['balancing_charge'] ?? 0)],
-                ['Balancing allowances', \eel_accounts\Ui\TaxCardRenderer::money($context, $summary['balancing_allowance'] ?? 0)],
-                ['Net capital allowances', \eel_accounts\Ui\TaxCardRenderer::money($context, $summary['net_capital_allowances'] ?? 0)],
+        return \eel_accounts\Renderer\TaxCardRenderer::header('capital_allowances')
+            . \eel_accounts\Renderer\TaxCardRenderer::summaryGrid([
+                ['Annual Investment Allowance (AIA)', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['aia_claimed'] ?? 0)],
+                ['First Year Allowance (FYA)', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['fya_claimed'] ?? 0)],
+                ['Writing Down Allowance (WDA)', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['wda_claimed'] ?? 0)],
+                ['Balancing charges', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['balancing_charge'] ?? 0)],
+                ['Balancing allowances', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['balancing_allowance'] ?? 0)],
+                ['Net capital allowances', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['net_capital_allowances'] ?? 0)],
             ])
             . '<h3>Calculation</h3>'
-            . \eel_accounts\Ui\TaxCardRenderer::table(
+            . \eel_accounts\Renderer\TaxCardRenderer::table(
                 ['Line', 'Source', 'Amount', 'Running total'],
                 $this->calculationRows($context, $summary, (array)($workings['aia_allocation'] ?? [])),
                 'No capital allowance calculation rows were found for this period.'
@@ -47,13 +47,13 @@ final class _tax_capital_allowances_summaryCard extends CardBaseFramework
             $asset = trim((string)($row['asset_code'] ?? '') . ' ' . (string)($row['description'] ?? ''));
             $date = trim((string)($row['purchase_date'] ?? ''));
             $source = trim($asset . ($date !== '' ? ' bought ' . $date : ''));
-            $addition = \eel_accounts\Ui\TaxCardRenderer::money($context, $row['addition_amount'] ?? 0);
+            $addition = \eel_accounts\Renderer\TaxCardRenderer::money($context, $row['addition_amount'] ?? 0);
 
             $rows[] = [
-                \eel_accounts\Ui\TaxCardRenderer::escape('Annual Investment Allowance (AIA) claimed'),
-                \eel_accounts\Ui\TaxCardRenderer::escape($source !== '' ? $source . ' from addition ' . $addition : 'Annual Investment Allowance (AIA) allocation row'),
-                \eel_accounts\Ui\TaxCardRenderer::escape(\eel_accounts\Ui\TaxCardRenderer::money($context, $amount)),
-                \eel_accounts\Ui\TaxCardRenderer::escape(\eel_accounts\Ui\TaxCardRenderer::money($context, $runningTotal)),
+                \eel_accounts\Renderer\TaxCardRenderer::escape('Annual Investment Allowance (AIA) claimed'),
+                \eel_accounts\Renderer\TaxCardRenderer::escape($source !== '' ? $source . ' from addition ' . $addition : 'Annual Investment Allowance (AIA) allocation row'),
+                \eel_accounts\Renderer\TaxCardRenderer::escape(\eel_accounts\Renderer\TaxCardRenderer::money($context, $amount)),
+                \eel_accounts\Renderer\TaxCardRenderer::escape(\eel_accounts\Renderer\TaxCardRenderer::money($context, $runningTotal)),
             ];
         }
 
@@ -83,10 +83,10 @@ final class _tax_capital_allowances_summaryCard extends CardBaseFramework
         $runningTotal = round($runningTotal + $amount, 2);
 
         $rows[] = [
-            \eel_accounts\Ui\TaxCardRenderer::escape($line),
-            \eel_accounts\Ui\TaxCardRenderer::escape($source),
-            \eel_accounts\Ui\TaxCardRenderer::escape(\eel_accounts\Ui\TaxCardRenderer::money($context, $amount)),
-            \eel_accounts\Ui\TaxCardRenderer::escape(\eel_accounts\Ui\TaxCardRenderer::money($context, $runningTotal)),
+            \eel_accounts\Renderer\TaxCardRenderer::escape($line),
+            \eel_accounts\Renderer\TaxCardRenderer::escape($source),
+            \eel_accounts\Renderer\TaxCardRenderer::escape(\eel_accounts\Renderer\TaxCardRenderer::money($context, $amount)),
+            \eel_accounts\Renderer\TaxCardRenderer::escape(\eel_accounts\Renderer\TaxCardRenderer::money($context, $runningTotal)),
         ];
     }
 }

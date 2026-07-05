@@ -5,25 +5,25 @@ final class _tax_special_rate_poolCard extends CardBaseFramework
 {
     public function key(): string { return 'tax_special_rate_pool'; }
     public function title(): string { return 'Special-Rate Pool'; }
-    public function helper(array $context): string { return \eel_accounts\Ui\TaxCardRenderer::selectedPeriodHelper($context); }
-    public function services(): array { return [\eel_accounts\Ui\TaxCardRenderer::serviceDefinition()]; }
+    public function helper(array $context): string { return \eel_accounts\Renderer\TaxCardRenderer::selectedPeriodHelper($context); }
+    public function services(): array { return [\eel_accounts\Renderer\TaxCardRenderer::serviceDefinition()]; }
     public function handleError(string $serviceKey, array $error, array $context): string { return ''; }
 
     public function render(array $context): string
     {
-        $workings = \eel_accounts\Ui\TaxCardRenderer::workings($context);
+        $workings = \eel_accounts\Renderer\TaxCardRenderer::workings($context);
         if (empty($workings['available'])) {
-            return \eel_accounts\Ui\TaxCardRenderer::emptyState($workings);
+            return \eel_accounts\Renderer\TaxCardRenderer::emptyState($workings);
         }
         $pool = (array)($workings['special_rate_pool'] ?? []);
-        return \eel_accounts\Ui\TaxCardRenderer::header('wda')
-            . \eel_accounts\Ui\TaxCardRenderer::summaryGrid([
-                ['Opening Written Down Value (WDV)', \eel_accounts\Ui\TaxCardRenderer::money($context, $pool['opening_wdv'] ?? 0)],
-                ['Additions', \eel_accounts\Ui\TaxCardRenderer::money($context, $pool['additions'] ?? 0)],
-                ['Disposals', \eel_accounts\Ui\TaxCardRenderer::money($context, $pool['disposal_value'] ?? 0)],
-                ['Writing Down Allowance (WDA)', \eel_accounts\Ui\TaxCardRenderer::money($context, $pool['wda_claimed'] ?? 0)],
-                ['Balancing charge', \eel_accounts\Ui\TaxCardRenderer::money($context, $pool['balancing_charge'] ?? 0)],
-                ['Closing Written Down Value (WDV)', \eel_accounts\Ui\TaxCardRenderer::money($context, $pool['closing_wdv'] ?? 0)],
+        return \eel_accounts\Renderer\TaxCardRenderer::header('wda')
+            . \eel_accounts\Renderer\TaxCardRenderer::summaryGrid([
+                ['Opening Written Down Value (WDV)', \eel_accounts\Renderer\TaxCardRenderer::money($context, $pool['opening_wdv'] ?? 0)],
+                ['Additions', \eel_accounts\Renderer\TaxCardRenderer::money($context, $pool['additions'] ?? 0)],
+                ['Disposals', \eel_accounts\Renderer\TaxCardRenderer::money($context, $pool['disposal_value'] ?? 0)],
+                ['Writing Down Allowance (WDA)', \eel_accounts\Renderer\TaxCardRenderer::money($context, $pool['wda_claimed'] ?? 0)],
+                ['Balancing charge', \eel_accounts\Renderer\TaxCardRenderer::money($context, $pool['balancing_charge'] ?? 0)],
+                ['Closing Written Down Value (WDV)', \eel_accounts\Renderer\TaxCardRenderer::money($context, $pool['closing_wdv'] ?? 0)],
             ]);
     }
 }

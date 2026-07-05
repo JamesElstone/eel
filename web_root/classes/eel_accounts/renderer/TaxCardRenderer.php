@@ -7,7 +7,7 @@
  */
 declare(strict_types=1);
 
-namespace eel_accounts\Ui;
+namespace eel_accounts\Renderer;
 
 final class TaxCardRenderer
 {

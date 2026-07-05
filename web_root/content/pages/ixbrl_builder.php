@@ -24,6 +24,11 @@ final class _ixbrl_builder extends PageContextFramework
         return 'Prepare a traceable FRS 105 micro-entity accounts iXBRL export from journals through trial balance, statutory mapping, facts, validation, and generated XHTML.';
     }
 
+    public function ajaxPendingBlurScope(): string
+    {
+        return 'page';
+    }
+
     public function cards(): array
     {
         return [

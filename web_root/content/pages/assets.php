@@ -24,6 +24,11 @@ final class _assets extends PageContextFramework
         return 'Manage the fixed asset register, additions, and tax view for the selected accounting period.';
     }
 
+    public function ajaxPendingBlurScope(): string
+    {
+        return 'page';
+    }
+
     public function cards(): array
     {
         return ['asset_create', 'asset_reconcile_manual', 'asset_register', 'asset_tax', 'not_an_asset'];

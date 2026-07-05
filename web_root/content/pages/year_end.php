@@ -24,6 +24,11 @@ final class _year_end extends PageContextFramework
         return 'Work through the year-end checklist, review the workspace, and inspect recent year-end audit activity.';
     }
 
+    public function ajaxPendingBlurScope(): string
+    {
+        return 'page';
+    }
+
     public function cards(): array
     {
         return [

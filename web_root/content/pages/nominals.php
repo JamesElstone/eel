@@ -24,6 +24,11 @@ final class _nominals extends PageContextFramework
         return 'Maintain nominal accounts, subtypes, and import or export tools for the shared chart.';
     }
 
+    public function ajaxPendingBlurScope(): string
+    {
+        return 'page';
+    }
+
     public function cards(): array
     {
         return [

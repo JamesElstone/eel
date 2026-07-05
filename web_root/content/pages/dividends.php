@@ -24,6 +24,11 @@ final class _dividends extends PageContextFramework
         return 'Review dividend capacity, declare conservative interim dividends, and inspect posted dividend history.';
     }
 
+    public function ajaxPendingBlurScope(): string
+    {
+        return 'page';
+    }
+
     public function cards(): array
     {
         return [

@@ -24,6 +24,11 @@ final class _dashboard extends PageContextFramework
         return 'At a glance view of your accounts.';
     }
 
+    public function ajaxPendingBlurScope(): string
+    {
+        return 'page';
+    }
+
     public function services(): array
     {
         return [\eel_accounts\Service\CompanyAccountService::class];

@@ -24,6 +24,11 @@ final class _vehicles extends PageContextFramework
         return 'Review motor vehicle assets and the tax facts needed for capital allowances.';
     }
 
+    public function ajaxPendingBlurScope(): string
+    {
+        return 'page';
+    }
+
     public function cards(): array
     {
         return ['vehicle_register'];

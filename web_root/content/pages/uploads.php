@@ -25,6 +25,11 @@ final class _uploads extends PageContextFramework
         return 'Upload bank CSV files, review mapping, and validate staged rows before committing transactions.';
     }
 
+    public function ajaxPendingBlurScope(): string
+    {
+        return 'page';
+    }
+
     public function cards(): array
     {
         return [];

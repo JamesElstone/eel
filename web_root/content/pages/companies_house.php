@@ -24,6 +24,11 @@ final class _companies_house extends PageContextFramework
         return 'Review stored Companies House balance-sheet data and compare it with the selected accounting period.';
     }
 
+    public function ajaxPendingBlurScope(): string
+    {
+        return 'page';
+    }
+
     public function cards(): array
     {
         return ['companies_house_snapshot'];

@@ -24,6 +24,11 @@ final class _director_loans extends PageContextFramework
         return 'Review the director loan statement and supporting workspace for the selected period.';
     }
 
+    public function ajaxPendingBlurScope(): string
+    {
+        return 'page';
+    }
+
     public function cards(): array
     {
         return ['director_loan_state'];

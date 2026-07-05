@@ -24,6 +24,11 @@ final class _expense_claims extends PageContextFramework
         return 'Manage expense claims, supporting receipts, and the expense workspace for the selected company.';
     }
 
+    public function ajaxPendingBlurScope(): string
+    {
+        return 'page';
+    }
+
     public function cards(): array
     {
         return ['expense_statistics', 'expense_claimants', 'expense_add_claimant', 'expense_claim_create', 'expenses_state', 'expense_claim_editor', 'expense_search'];

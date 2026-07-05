@@ -24,6 +24,11 @@ final class _example_graphs extends PageContextFramework
         return 'Standalone SVG chart examples rendered by the internal chart service.';
     }
 
+    public function ajaxPendingBlurScope(): string
+    {
+        return 'page';
+    }
+
     public function services(): array
     {
         return [];

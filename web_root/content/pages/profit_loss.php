@@ -24,6 +24,11 @@ final class _profit_loss extends PageContextFramework
         return 'Review ledger-derived profit and loss, monthly trends, and the data quality behind the numbers.';
     }
 
+    public function ajaxPendingBlurScope(): string
+    {
+        return 'page';
+    }
+
     public function cards(): array
     {
         return [

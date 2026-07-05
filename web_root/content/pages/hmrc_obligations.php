@@ -24,6 +24,11 @@ final class _hmrc_obligations extends PageContextFramework
         return 'Track CT deadlines, HMRC filings, payments, penalties, interest, and historic unresolved periods.';
     }
 
+    public function ajaxPendingBlurScope(): string
+    {
+        return 'page';
+    }
+
     public function cards(): array
     {
         return [

@@ -24,6 +24,11 @@ final class _source_accounts extends PageContextFramework
         return 'Maintain bank and trade account sources, CSV mappings, and reconciliation checks in one place.';
     }
 
+    public function ajaxPendingBlurScope(): string
+    {
+        return 'page';
+    }
+
     public function cards(): array
     {
         return [

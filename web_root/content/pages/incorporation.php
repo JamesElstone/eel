@@ -24,6 +24,11 @@ final class _incorporation extends PageContextFramework
         return 'Record formation share capital and match paid-up shares to the incoming bank receipt.';
     }
 
+    public function ajaxPendingBlurScope(): string
+    {
+        return 'page';
+    }
+
     public function cards(): array
     {
         return [

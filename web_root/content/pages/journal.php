@@ -24,6 +24,11 @@ final class _journal extends PageContextFramework
         return 'Review posted journals for the selected company and accounting period.';
     }
 
+    public function ajaxPendingBlurScope(): string
+    {
+        return 'page';
+    }
+
     public function cards(): array
     {
         return [

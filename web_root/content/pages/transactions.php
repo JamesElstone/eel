@@ -24,6 +24,11 @@ final class _transactions extends PageContextFramework
         return 'Categorise imported transactions, manage rules, and review month-by-month posting readiness.';
     }
 
+    public function ajaxPendingBlurScope(): string
+    {
+        return 'page';
+    }
+
     public function cards(): array
     {
         return [

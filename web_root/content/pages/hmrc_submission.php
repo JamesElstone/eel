@@ -20,6 +20,11 @@ final class _hmrc_submission extends PageContextFramework
         return ['hmrc_submission_overview', 'hmrc_submission_controls', 'hmrc_submission_log', 'hmrc_submission_history'];
     }
 
+    public function ajaxPendingBlurScope(): string
+    {
+        return 'page';
+    }
+
     public function cardLayout(): array
     {
         return [

@@ -45,6 +45,11 @@ final class _test extends PageContextFramework
         return 'A framework demo showing shared page context, card services, and AJAX card updates.';
     }
 
+    public function ajaxPendingBlurScope(): string
+    {
+        return 'page';
+    }
+
     public function services(): array
     {
         return array();

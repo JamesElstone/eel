@@ -24,6 +24,11 @@ final class _minutes extends PageContextFramework
         return 'Review company minutes recorded for the selected accounting period.';
     }
 
+    public function ajaxPendingBlurScope(): string
+    {
+        return 'page';
+    }
+
     public function cards(): array
     {
         return [

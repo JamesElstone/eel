@@ -24,6 +24,11 @@ final class _tax extends PageContextFramework
         return 'Inspect read-only Corporation Tax workings, capital allowance pools, losses, and tax data warnings.';
     }
 
+    public function ajaxPendingBlurScope(): string
+    {
+        return 'page';
+    }
+
     public function cards(): array
     {
         return [

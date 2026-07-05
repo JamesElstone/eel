@@ -24,6 +24,11 @@ final class _trial_balance extends PageContextFramework
         return 'Review the trial balance state and work through the selected company trial balance workspace.';
     }
 
+    public function ajaxPendingBlurScope(): string
+    {
+        return 'page';
+    }
+
     public function cards(): array
     {
         return [

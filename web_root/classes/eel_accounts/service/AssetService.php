@@ -1051,7 +1051,7 @@ final class AssetService
             return ['success' => false, 'errors' => ['Depreciation could not be posted: ' . $exception->getMessage()]];
         }
 
-        $this->refreshDerivedTaxData($companyId);
+        $this->refreshTaxData($companyId);
 
         return $summary;
     }
@@ -1113,7 +1113,7 @@ final class AssetService
             return ['success' => false, 'errors' => ['The asset disposal could not be posted: ' . $exception->getMessage()]];
         }
 
-        $this->refreshDerivedTaxData($companyId);
+        $this->refreshTaxData($companyId);
 
         return $this->disposalSuccessResponse($summary);
     }
@@ -1206,7 +1206,7 @@ final class AssetService
             return ['success' => false, 'errors' => ['The asset disposal could not be posted: ' . $exception->getMessage()]];
         }
 
-        $this->refreshDerivedTaxData($companyId);
+        $this->refreshTaxData($companyId);
 
         return $this->disposalSuccessResponse($summary);
     }
@@ -1221,7 +1221,6 @@ final class AssetService
             return null;
         }
 
-        $this->refreshDerivedTaxData($companyId);
         $summary = (new \eel_accounts\Service\YearEndTaxReadinessService())->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
         if (!empty($summary['available'])) {
             return $summary;
@@ -1324,7 +1323,7 @@ final class AssetService
 
     public function refreshTaxData(int $companyId): array
     {
-        return $this->refreshDerivedTaxData($companyId);
+        return (new \eel_accounts\Service\CapitalAllowanceService())->rebuildForCompany($companyId);
     }
 
     private function postAssetDisposalJournalAndStatus(
@@ -1460,98 +1459,6 @@ final class AssetService
         ];
     }
 
-    private function refreshDerivedTaxData(int $companyId): array {
-        $accountingPeriods = $this->fetchAccountingPeriods($companyId);
-        if ($accountingPeriods === []) {
-            return [];
-        }
-
-        $this->deleteDerivedTaxRows($companyId);
-        $capitalAllowanceRuns = (new \eel_accounts\Service\CapitalAllowanceService())->rebuildForCompany($companyId);
-        $metrics = [];
-
-        foreach (array_reverse($accountingPeriods) as $accountingPeriod) {
-            $accountingPeriodId = (int)$accountingPeriod['id'];
-            $depreciationByAsset = $this->fetchDepreciationByAsset($companyId, $accountingPeriodId);
-            $allowanceRun = (array)($capitalAllowanceRuns[$accountingPeriodId] ?? []);
-            $ctPeriods = $this->ctPeriodsForAccountingPeriod($companyId, $accountingPeriod);
-
-            foreach ($depreciationByAsset as $assetId => $amount) {
-                foreach ($ctPeriods as $ctPeriod) {
-                    $splitAmount = round($amount * (float)$ctPeriod['ratio'], 2);
-                    if ($splitAmount > 0) {
-                        $this->insertAccountingPeriodAdjustment($companyId, $accountingPeriodId, (int)$ctPeriod['id'], 'add_back_depreciation', 'add', $splitAmount, $assetId);
-                    }
-                }
-            }
-            foreach ($ctPeriods as $ctPeriod) {
-                $ctRun = (array)($capitalAllowanceRuns['ct_periods'][(int)$ctPeriod['id']] ?? []);
-                $capitalAllowances = round((float)($ctRun['allowance'] ?? 0), 2);
-                $balancingCharges = round((float)($ctRun['charge'] ?? 0), 2);
-                if ($capitalAllowances > 0) {
-                    $this->insertAccountingPeriodAdjustment($companyId, $accountingPeriodId, (int)$ctPeriod['id'], 'capital_allowances', 'deduct', $capitalAllowances, null);
-                }
-                if ($balancingCharges > 0) {
-                    $this->insertAccountingPeriodAdjustment($companyId, $accountingPeriodId, (int)$ctPeriod['id'], 'capital_allowances', 'add', $balancingCharges, null);
-                }
-            }
-
-            $accountingProfit = $this->calculateAccountingProfit($companyId, $accountingPeriodId);
-            $depreciationAddBack = round(array_sum($depreciationByAsset), 2);
-            $capitalAllowances = round((float)($allowanceRun['allowance'] ?? 0), 2);
-            $balancingCharges = round((float)($allowanceRun['charge'] ?? 0), 2);
-            $metrics[$accountingPeriodId] = [
-                'accounting_period' => $accountingPeriod,
-                'accounting_profit' => round($accountingProfit, 2),
-                'depreciation_add_back' => $depreciationAddBack,
-                'capital_allowances' => round($capitalAllowances - $balancingCharges, 2),
-            ];
-        }
-
-        return $metrics;
-    }
-
-    private function ctPeriodsForAccountingPeriod(int $companyId, array $accountingPeriod): array {
-        $periodId = (int)($accountingPeriod['id'] ?? 0);
-        $periodStart = (string)($accountingPeriod['period_start'] ?? '');
-        $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
-        $accountingDays = $this->periodDays($periodStart, $periodEnd);
-        $sync = $periodId > 0
-            ? (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $periodId)
-            : ['periods' => []];
-        $periods = array_values(array_filter((array)($sync['periods'] ?? []), static fn(array $row): bool => (string)($row['status'] ?? '') !== 'superseded'));
-        if ($periods === []) {
-            $periods = [['id' => 0, 'period_start' => $periodStart, 'period_end' => $periodEnd]];
-        }
-
-        return array_map(function (array $ctPeriod) use ($accountingDays): array {
-            $ctDays = $this->periodDays((string)($ctPeriod['period_start'] ?? ''), (string)($ctPeriod['period_end'] ?? ''));
-            $ctPeriod['ratio'] = $accountingDays > 0 ? $ctDays / $accountingDays : 1.0;
-            return $ctPeriod;
-        }, $periods);
-    }
-
-    private function periodDays(string $start, string $end): int {
-        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $start) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $end)) {
-            return 365;
-        }
-
-        return max(1, (new \DateTimeImmutable($start))->diff(new \DateTimeImmutable($end))->days + 1);
-    }
-
-    private function deleteDerivedTaxRows(int $companyId): void {
-        \InterfaceDB::prepare(
-            'DELETE FROM accounting_period_adjustments
-             WHERE company_id = :company_id
-               AND type IN (:depreciation_type, :allowance_type)'
-        )
-            ->execute([
-                'company_id' => $companyId,
-                'depreciation_type' => 'add_back_depreciation',
-                'allowance_type' => 'capital_allowances',
-            ]);
-    }
-
     private function fetchDepreciationByAsset(int $companyId, int $accountingPeriodId): array {
         $stmt = \InterfaceDB::prepare(
             'SELECT ar.id AS asset_id, COALESCE(SUM(ade.amount), 0) AS amount
@@ -1605,32 +1512,6 @@ final class AssetService
         }
 
         return round($profit, 2);
-    }
-
-    private function insertAccountingPeriodAdjustment(int $companyId, int $accountingPeriodId, int $ctPeriodId, string $type, string $direction, float $amount, ?int $assetId): void {
-        $hasCtPeriodColumn = \InterfaceDB::columnExists('accounting_period_adjustments', 'ct_period_id');
-        $columns = $hasCtPeriodColumn
-            ? 'company_id, accounting_period_id, ct_period_id, type, direction, amount, source_asset_id, created_at, updated_at'
-            : 'company_id, accounting_period_id, type, direction, amount, source_asset_id, created_at, updated_at';
-        $values = $hasCtPeriodColumn
-            ? ':company_id, :accounting_period_id, :ct_period_id, :type, :direction, :amount, :source_asset_id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP'
-            : ':company_id, :accounting_period_id, :type, :direction, :amount, :source_asset_id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP';
-        $params = [
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-            'type' => $type,
-            'direction' => $direction,
-            'amount' => round($amount, 2),
-            'source_asset_id' => $assetId,
-        ];
-        if ($hasCtPeriodColumn) {
-            $params['ct_period_id'] = $ctPeriodId > 0 ? $ctPeriodId : null;
-        }
-
-        $stmt = \InterfaceDB::prepare(
-            'INSERT INTO accounting_period_adjustments (' . $columns . ') VALUES (' . $values . ')'
-        );
-        $stmt->execute($params);
     }
 
     private function fetchDepreciableAssets(int $companyId, string $periodStart, string $periodEnd): array {
@@ -2115,7 +1996,6 @@ final class AssetService
             $this->schemaReady = \InterfaceDB::tableExists('asset_register')
                 && \InterfaceDB::tableExists('asset_depreciation_entries')
                 && \InterfaceDB::tableExists('asset_disposal_transaction_links')
-                && \InterfaceDB::tableExists('accounting_period_adjustments')
                 && \InterfaceDB::tableExists('tax_loss_carryforwards')
                 && \InterfaceDB::columnExists('asset_register', 'disposal_event_type')
                 && \InterfaceDB::columnExists('asset_register', 'disposal_reason');

@@ -359,7 +359,7 @@ function yearEndChecklistServiceFindCheck(array $checklist, string $checkCode): 
 
 function yearEndChecklistServiceRequireDepreciationLockSchema(GeneratedServiceClassTestHarness $harness): void
 {
-    foreach (['companies', 'accounting_periods', 'journals', 'journal_lines', 'nominal_accounts', 'asset_register', 'asset_depreciation_entries', 'year_end_reviews', 'year_end_check_results', 'year_end_audit_log', 'accounting_period_adjustments', 'tax_loss_carryforwards'] as $table) {
+    foreach (['companies', 'accounting_periods', 'journals', 'journal_lines', 'nominal_accounts', 'asset_register', 'asset_depreciation_entries', 'year_end_reviews', 'year_end_check_results', 'year_end_audit_log', 'capital_allowance_pool_runs', 'capital_allowance_asset_calculations', 'tax_loss_carryforwards'] as $table) {
         if (!InterfaceDB::tableExists($table)) {
             $harness->skip($table . ' table is not available.');
         }

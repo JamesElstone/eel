@@ -358,6 +358,21 @@ final class YearEndChecklistService
             ];
         }
 
+        $taxPersistenceResult = (new \eel_accounts\Service\CorporationTaxComputationService())
+            ->persistSummariesForAccountingPeriod($companyId, $accountingPeriodId);
+        if (empty($taxPersistenceResult['success'])) {
+            return [
+                'success' => false,
+                'status' => 422,
+                'errors' => (array)($taxPersistenceResult['errors'] ?? ['Corporation Tax estimates could not be snapshotted before locking this period.']),
+                'checklist' => $checklist,
+                'director_loan_offset' => $directorLoanOffsetResult,
+                'depreciation' => $depreciationResult,
+                'retained_earnings_close' => $retainedEarningsCloseResult,
+                'corporation_tax' => $taxPersistenceResult,
+            ];
+        }
+
         $lock = $this->lockService ?? new \eel_accounts\Service\YearEndLockService();
         $result = $lock->lockPeriod($companyId, $accountingPeriodId, $lockedBy);
         if (empty($result['success'])) {
@@ -368,6 +383,7 @@ final class YearEndChecklistService
             'depreciation' => $depreciationResult,
             'director_loan_offset' => $directorLoanOffsetResult,
             'retained_earnings_close' => $retainedEarningsCloseResult,
+            'corporation_tax' => $taxPersistenceResult,
             'checklist' => $this->fetchChecklist($companyId, $accountingPeriodId, true),
         ];
     }

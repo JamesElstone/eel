@@ -105,6 +105,15 @@ final class CorporationTaxComputationService
     }
 
     public function fetchSummaryForCtPeriodId(int $companyId, int $ctPeriodId): array {
+        $stored = $this->storedLockedSummaryForCtPeriodId($companyId, $ctPeriodId);
+        if ($stored !== null) {
+            return $stored;
+        }
+
+        return $this->calculateSummaryForCtPeriodId($companyId, $ctPeriodId);
+    }
+
+    public function calculateSummaryForCtPeriodId(int $companyId, int $ctPeriodId): array {
         $periodService = new \eel_accounts\Service\CorporationTaxPeriodService();
         $ctPeriod = $periodService->fetch($companyId, $ctPeriodId);
         if ($ctPeriod === null) {
@@ -185,7 +194,6 @@ final class CorporationTaxComputationService
             'asset_adjustment_warning' => (string)($assetAdjustments['warning'] ?? ''),
             'computation_hash' => $computationHash,
         ];
-        $this->insertLossHistory($companyId, $accountingPeriodId, $ctPeriodId, $computationHash, $row);
 
         $summary = $this->summaryFromRows($row, [$row]);
         $summary['ct_period_id'] = $ctPeriodId;
@@ -194,13 +202,69 @@ final class CorporationTaxComputationService
         $summary['period_start'] = (string)$ctPeriod['period_start'];
         $summary['period_end'] = (string)$ctPeriod['period_end'];
         $summary['capital_allowance_breakdown'] = (new \eel_accounts\Service\CapitalAllowanceService())->fetchPeriodBreakdown($companyId, $accountingPeriodId, $ctPeriodId);
+        $summary['computation_hash'] = $computationHash;
+
+        return $summary;
+    }
+
+    public function persistSummaryForCtPeriodId(int $companyId, int $ctPeriodId): array {
+        $summary = $this->calculateSummaryForCtPeriodId($companyId, $ctPeriodId);
+        if (empty($summary['available'])) {
+            return $summary;
+        }
+
+        $row = [
+            'accounting_period_id' => (int)($summary['accounting_period_id'] ?? 0),
+            'ct_period_id' => (int)($summary['ct_period_id'] ?? 0),
+            'period_start' => (string)($summary['period_start'] ?? ''),
+            'period_end' => (string)($summary['period_end'] ?? ''),
+            'taxable_before_losses' => round((float)($summary['taxable_before_losses'] ?? 0), 2),
+            'taxable_profit' => round((float)($summary['taxable_profit'] ?? 0), 2),
+            'loss_created' => round((float)($summary['loss_created_in_period'] ?? $summary['taxable_loss'] ?? 0), 2),
+            'loss_brought_forward' => round((float)($summary['losses_brought_forward'] ?? 0), 2),
+            'loss_utilised' => round((float)($summary['losses_used'] ?? 0), 2),
+            'loss_carried_forward' => round((float)($summary['losses_carried_forward'] ?? 0), 2),
+            'computation_hash' => (string)($summary['computation_hash'] ?? ''),
+        ];
+        $this->insertLossHistory($companyId, (int)$row['accounting_period_id'], (int)$row['ct_period_id'], (string)$row['computation_hash'], $row);
         $runId = $this->insertComputationRun($companyId, $row, $summary);
         if ($runId > 0) {
-            (new \eel_accounts\Service\CorporationTaxPeriodService())->markLatestComputation($ctPeriodId, $runId);
+            (new \eel_accounts\Service\CorporationTaxPeriodService())->markLatestComputation((int)$row['ct_period_id'], $runId);
             $summary['computation_run_id'] = $runId;
         }
 
         return $summary;
+    }
+
+    public function persistSummariesForAccountingPeriod(int $companyId, int $accountingPeriodId): array
+    {
+        $sync = (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $accountingPeriodId);
+        $periods = array_values(array_filter(
+            (array)($sync['periods'] ?? []),
+            static fn(array $period): bool => (string)($period['status'] ?? '') !== 'superseded'
+        ));
+        $summaries = [];
+        $errors = (array)($sync['errors'] ?? []);
+        foreach ($periods as $period) {
+            $ctPeriodId = (int)($period['id'] ?? 0);
+            if ($ctPeriodId <= 0) {
+                continue;
+            }
+            $summary = $this->persistSummaryForCtPeriodId($companyId, $ctPeriodId);
+            if (empty($summary['available'])) {
+                foreach ((array)($summary['errors'] ?? ['CT period summary could not be persisted.']) as $error) {
+                    $errors[] = 'CT Period ' . (int)($period['sequence_no'] ?? 0) . ': ' . (string)$error;
+                }
+                continue;
+            }
+            $summaries[] = $summary;
+        }
+
+        return [
+            'success' => $errors === [],
+            'errors' => $errors,
+            'summaries' => $summaries,
+        ];
     }
 
     private function rebuildLossSchedule(int $companyId): array {
@@ -215,17 +279,7 @@ final class CorporationTaxComputationService
         $associatedCompanyCount = $this->associatedCompanyCount($companyId);
         $rateService = $this->rateService ?? new \eel_accounts\Service\CorporationTaxRateService();
 
-        $ownsTransaction = !\InterfaceDB::inTransaction();
-        if ($ownsTransaction) {
-            \InterfaceDB::beginTransaction();
-        }
-
         try {
-            if ($this->tableExists('tax_loss_carryforwards')) {
-                \InterfaceDB::prepare('DELETE FROM tax_loss_carryforwards WHERE company_id = :company_id')
-                    ->execute(['company_id' => $companyId]);
-            }
-
             foreach ($accountingPeriods as $accountingPeriod) {
                 $accountingPeriodId = (int)($accountingPeriod['id'] ?? 0);
                 $pnl = $metrics->profitAndLossSummary(
@@ -315,52 +369,8 @@ final class CorporationTaxComputationService
                     'asset_adjustment_warning' => (string)($assetAdjustments['warning'] ?? ''),
                     'computation_hash' => $computationHash,
                 ];
-
-                $this->insertLossHistory($companyId, $accountingPeriodId, null, $computationHash, $schedule[$accountingPeriodId]);
-            }
-
-            if ($this->tableExists('tax_loss_carryforwards')) {
-                foreach ($lossPool as $lossRow) {
-                    $stmt = \InterfaceDB::prepare(
-                        'INSERT INTO tax_loss_carryforwards (
-                            company_id,
-                            origin_accounting_period_id,
-                            amount_originated,
-                            amount_used,
-                            amount_remaining,
-                            status,
-                            created_at,
-                            updated_at
-                         ) VALUES (
-                            :company_id,
-                            :origin_accounting_period_id,
-                            :amount_originated,
-                            :amount_used,
-                            :amount_remaining,
-                            :status,
-                            CURRENT_TIMESTAMP,
-                            CURRENT_TIMESTAMP
-                         )'
-                    );
-                    $stmt->execute([
-                        'company_id' => $companyId,
-                        'origin_accounting_period_id' => (int)$lossRow['origin_accounting_period_id'],
-                        'amount_originated' => round((float)$lossRow['amount_originated'], 2),
-                        'amount_used' => round((float)$lossRow['amount_used'], 2),
-                        'amount_remaining' => round((float)$lossRow['amount_remaining'], 2),
-                        'status' => (float)$lossRow['amount_remaining'] > 0 ? 'open' : 'used',
-                    ]);
-                }
-            }
-
-            if ($ownsTransaction) {
-                \InterfaceDB::commit();
             }
         } catch (\Throwable $exception) {
-            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
-                \InterfaceDB::rollBack();
-            }
-
             throw $exception;
         }
 
@@ -368,40 +378,11 @@ final class CorporationTaxComputationService
     }
 
     private function fetchAssetAdjustments(int $companyId, int $accountingPeriodId): array {
-        if (!$this->tableExists('accounting_period_adjustments')) {
-            return ['depreciation_add_back' => 0.0, 'capital_allowances' => 0.0, 'warning' => ''];
-        }
-        $this->ensureAssetTaxDataRefreshed($companyId);
-
-        $rows = \InterfaceDB::fetchAll( 'SELECT type,
-                    direction,
-                    COALESCE(SUM(amount), 0) AS total_amount
-             FROM accounting_period_adjustments
-             WHERE company_id = :company_id
-               AND accounting_period_id = :accounting_period_id
-             GROUP BY type, direction', [
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-        ]);
-
-        $depreciation = 0.0;
-        $allowances = 0.0;
-        foreach ($rows as $row) {
-            $type = (string)($row['type'] ?? '');
-            $direction = (string)($row['direction'] ?? '');
-            $amount = round((float)($row['total_amount'] ?? 0), 2);
-
-            if ($type === 'add_back_depreciation') {
-                $depreciation += $direction === 'deduct' ? 0 - $amount : $amount;
-            }
-            if ($type === 'capital_allowances') {
-                $allowances += $direction === 'add' ? 0 - $amount : $amount;
-            }
-        }
-
-        $warnings = (new \eel_accounts\Service\CapitalAllowanceService())->periodWarnings($companyId, $accountingPeriodId);
+        $depreciation = $this->depreciationAddBack($companyId, $accountingPeriodId, '', '');
+        $allowances = $this->capitalAllowanceAmount($companyId, $accountingPeriodId, 0);
+        $warnings = (new \eel_accounts\Service\CapitalAllowanceService())->periodWarnings($companyId, $accountingPeriodId, 0);
         if ($this->tableExists('asset_register') && $this->countCompanyAssets($companyId) > 0 && abs($depreciation) < 0.005 && abs($allowances) < 0.005) {
-            $warnings[] = 'Fixed assets exist, but no current accounting-period adjustments were found. Refresh the Assets tax view if capital allowances are expected.';
+            $warnings[] = 'Fixed assets exist, but no depreciation entries or capital allowance runs were found.';
         }
 
         return [
@@ -412,88 +393,118 @@ final class CorporationTaxComputationService
     }
 
     private function fetchAssetAdjustmentsForCtPeriod(int $companyId, int $accountingPeriodId, array $ctPeriod): array {
-        if (!$this->tableExists('accounting_period_adjustments')) {
-            return ['depreciation_add_back' => 0.0, 'capital_allowances' => 0.0, 'warning' => ''];
-        }
-        $this->ensureAssetTaxDataRefreshed($companyId);
-
         $ctPeriodId = (int)($ctPeriod['id'] ?? 0);
-        if ($ctPeriodId > 0 && \InterfaceDB::columnExists('accounting_period_adjustments', 'ct_period_id')) {
-            $rows = \InterfaceDB::fetchAll(
-                'SELECT type, direction, COALESCE(SUM(amount), 0) AS total_amount
-                 FROM accounting_period_adjustments
-                 WHERE company_id = :company_id
-                   AND accounting_period_id = :accounting_period_id
-                   AND ct_period_id = :ct_period_id
-                 GROUP BY type, direction',
-                [
-                    'company_id' => $companyId,
-                    'accounting_period_id' => $accountingPeriodId,
-                    'ct_period_id' => $ctPeriodId,
-                ]
-            );
-            if ($rows !== []) {
-                return $this->assetAdjustmentRowsToSummary($rows, '');
-            }
-        }
-
-        $base = $this->fetchAssetAdjustments($companyId, $accountingPeriodId);
-        $accountingPeriod = (new \eel_accounts\Repository\AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId);
-        if ($accountingPeriod === null) {
-            return $base;
-        }
-
-        $accountingStart = new \DateTimeImmutable((string)$accountingPeriod['period_start']);
-        $accountingEnd = new \DateTimeImmutable((string)$accountingPeriod['period_end']);
-        $ctStart = new \DateTimeImmutable((string)$ctPeriod['period_start']);
-        $ctEnd = new \DateTimeImmutable((string)$ctPeriod['period_end']);
-        $accountingDays = max(1, $accountingStart->diff($accountingEnd)->days + 1);
-        $ctDays = max(1, $ctStart->diff($ctEnd)->days + 1);
-        $ratio = $ctDays / $accountingDays;
-
+        $periodStart = (string)($ctPeriod['period_start'] ?? '');
+        $periodEnd = (string)($ctPeriod['period_end'] ?? '');
         return [
-            'depreciation_add_back' => round((float)$base['depreciation_add_back'] * $ratio, 2),
-            'capital_allowances' => round((float)$base['capital_allowances'] * $ratio, 2),
-            'warning' => trim((string)($base['warning'] ?? '')) !== ''
-                ? (string)$base['warning']
-                : 'Accounting-period adjustments were apportioned by CT period day count.',
+            'depreciation_add_back' => $this->depreciationAddBack($companyId, $accountingPeriodId, $periodStart, $periodEnd),
+            'capital_allowances' => $this->capitalAllowanceAmount($companyId, $accountingPeriodId, $ctPeriodId),
+            'warning' => implode(' ', (new \eel_accounts\Service\CapitalAllowanceService())->periodWarnings($companyId, $accountingPeriodId, $ctPeriodId)),
         ];
     }
 
-    private function assetAdjustmentRowsToSummary(array $rows, string $warning): array {
-        $depreciation = 0.0;
-        $allowances = 0.0;
-        foreach ($rows as $row) {
-            $type = (string)($row['type'] ?? '');
-            $direction = (string)($row['direction'] ?? '');
-            $amount = round((float)($row['total_amount'] ?? 0), 2);
-
-            if ($type === 'add_back_depreciation') {
-                $depreciation += $direction === 'deduct' ? 0 - $amount : $amount;
-            }
-            if ($type === 'capital_allowances') {
-                $allowances += $direction === 'add' ? 0 - $amount : $amount;
-            }
-        }
-
-        return [
-            'depreciation_add_back' => round(max(0.0, $depreciation), 2),
-            'capital_allowances' => round($allowances, 2),
-            'warning' => $warning,
-        ];
-    }
-
-    private function ensureAssetTaxDataRefreshed(int $companyId): void
+    private function depreciationAddBack(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): float
     {
-        static $refreshed = [];
-        if ($companyId <= 0 || isset($refreshed[$companyId])) {
-            return;
+        if (!$this->tableExists('asset_depreciation_entries')) {
+            return 0.0;
         }
 
-        if (\InterfaceDB::tableExists('asset_register') && \InterfaceDB::tableExists('capital_allowance_pool_runs')) {
-            (new \eel_accounts\Service\AssetService())->refreshTaxData($companyId);
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT period_start, period_end, amount
+             FROM asset_depreciation_entries
+             WHERE accounting_period_id = :accounting_period_id
+               AND asset_id IN (
+                    SELECT id FROM asset_register WHERE company_id = :company_id
+               )',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+            ]
+        ) ?: [];
+
+        $total = 0.0;
+        foreach ($rows as $row) {
+            $amount = round((float)($row['amount'] ?? 0), 2);
+            if ($periodStart === '' || $periodEnd === '') {
+                $total += $amount;
+                continue;
+            }
+
+            $entryStart = (string)($row['period_start'] ?? '');
+            $entryEnd = (string)($row['period_end'] ?? '');
+            $entryDays = $this->periodDays($entryStart, $entryEnd);
+            $overlapDays = $this->overlapDays($entryStart, $entryEnd, $periodStart, $periodEnd);
+            if ($entryDays <= 0 || $overlapDays <= 0) {
+                continue;
+            }
+            $total += round($amount * ($overlapDays / $entryDays), 2);
         }
-        $refreshed[$companyId] = true;
+
+        return round(max(0.0, $total), 2);
+    }
+
+    private function capitalAllowanceAmount(int $companyId, int $accountingPeriodId, int $ctPeriodId): float
+    {
+        $breakdown = (new \eel_accounts\Service\CapitalAllowanceService())->fetchPeriodBreakdown($companyId, $accountingPeriodId, $ctPeriodId);
+        $allowances = 0.0;
+        $charges = 0.0;
+        foreach ((array)($breakdown['rows'] ?? []) as $row) {
+            $allowances += (float)($row['aia_claimed'] ?? 0)
+                + (float)($row['fya_claimed'] ?? 0)
+                + (float)($row['wda_claimed'] ?? 0)
+                + (float)($row['balancing_allowance'] ?? 0);
+            $charges += (float)($row['balancing_charge'] ?? 0);
+        }
+
+        return round($allowances - $charges, 2);
+    }
+
+    private function storedLockedSummaryForCtPeriodId(int $companyId, int $ctPeriodId): ?array
+    {
+        $period = (new \eel_accounts\Service\CorporationTaxPeriodService())->fetch($companyId, $ctPeriodId);
+        if ($period === null || !(new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, (int)$period['accounting_period_id'])) {
+            return null;
+        }
+
+        $runId = (int)($period['latest_computation_run_id'] ?? 0);
+        if ($runId <= 0 || !$this->tableExists('corporation_tax_computation_runs')) {
+            return null;
+        }
+
+        $row = \InterfaceDB::fetchOne(
+            'SELECT summary_json
+             FROM corporation_tax_computation_runs
+             WHERE id = :id
+               AND company_id = :company_id
+               AND ct_period_id = :ct_period_id
+             LIMIT 1',
+            ['id' => $runId, 'company_id' => $companyId, 'ct_period_id' => $ctPeriodId]
+        );
+        $summary = is_array($row) ? json_decode((string)($row['summary_json'] ?? ''), true) : null;
+        if (!is_array($summary)) {
+            return null;
+        }
+        $summary['computation_run_id'] = $runId;
+        $summary['summary_source'] = 'locked_snapshot';
+
+        return $summary;
+    }
+
+    private function periodDays(string $start, string $end): int
+    {
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $start) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $end) || $end < $start) {
+            return 0;
+        }
+
+        return max(1, (new \DateTimeImmutable($start))->diff(new \DateTimeImmutable($end))->days + 1);
+    }
+
+    private function overlapDays(string $firstStart, string $firstEnd, string $secondStart, string $secondEnd): int
+    {
+        $start = max($firstStart, $secondStart);
+        $end = min($firstEnd, $secondEnd);
+
+        return $this->periodDays($start, $end);
     }
 
     private function insertLossHistory(int $companyId, int $accountingPeriodId, ?int $ctPeriodId, string $computationHash, array $row): void {

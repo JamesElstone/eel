@@ -88,7 +88,7 @@ final class OpeningBalanceService
         return [
             'success' => true,
             'journal' => $result['journal'],
-            'replaced_existing' => !empty($result['replaced_existing']),
+            'appended_to_existing' => !empty($result['appended_to_existing']),
         ];
     }
 

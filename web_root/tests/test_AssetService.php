@@ -27,7 +27,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(0, $pageData['default_bank_nominal_id'] ?? null);
         });
 
-        $harness->check(\eel_accounts\Service\AssetService::class, 'tax view uses corporation tax computation and replaces stale asset adjustments', static function () use ($harness, $service): void {
+        $harness->check(\eel_accounts\Service\AssetService::class, 'tax view uses dynamic corporation tax computation from capital allowance runs', static function () use ($harness, $service): void {
             assetServiceTestRequireTaxViewSchema($harness);
             $fixture = assetServiceTestCreateTaxViewFixture();
 
@@ -39,33 +39,18 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(1000.0, round((float)($taxView['taxable_before_losses'] ?? 0), 2));
             $harness->assertSame(1000.0, round((float)($taxView['taxable_profit'] ?? 0), 2));
 
-            $manualRows = (int)InterfaceDB::fetchColumn(
-                'SELECT COUNT(*)
-                 FROM accounting_period_adjustments
+            $runAllowance = round((float)InterfaceDB::fetchColumn(
+                'SELECT COALESCE(SUM(aia_claimed + fya_claimed + wda_claimed + balancing_allowance - balancing_charge), 0)
+                 FROM capital_allowance_pool_runs
                  WHERE company_id = :company_id
-                   AND type = :type
-                   AND source_asset_id IS NULL',
-                [
-                    'company_id' => $fixture['company_id'],
-                    'type' => 'manual_review_marker',
-                ]
-            );
-            $assetAllowance = round((float)InterfaceDB::fetchColumn(
-                'SELECT COALESCE(SUM(amount), 0)
-                 FROM accounting_period_adjustments
-                 WHERE company_id = :company_id
-                   AND accounting_period_id = :accounting_period_id
-                   AND type = :type
-                   AND source_asset_id IS NULL',
+                   AND accounting_period_id = :accounting_period_id',
                 [
                     'company_id' => $fixture['company_id'],
                     'accounting_period_id' => $fixture['accounting_period_id'],
-                    'type' => 'capital_allowances',
                 ]
             ), 2);
 
-            $harness->assertSame(1, $manualRows);
-            $harness->assertSame(1000.0, $assetAllowance);
+            $harness->assertSame(1000.0, $runAllowance);
         });
 
         $harness->check(\eel_accounts\Service\AssetService::class, 'journal source enum supports asset postings', static function () use ($harness): void {
@@ -689,7 +674,7 @@ function assetServiceTestInsertNominalWithTreatment(string $prefix, string $name
 
 function assetServiceTestRequireTaxViewSchema(GeneratedServiceClassTestHarness $harness): void
 {
-    foreach (['companies', 'accounting_periods', 'nominal_accounts', 'journals', 'journal_lines', 'asset_register', 'asset_depreciation_entries', 'asset_disposal_transaction_links', 'accounting_period_adjustments', 'tax_loss_carryforwards'] as $table) {
+    foreach (['companies', 'accounting_periods', 'nominal_accounts', 'journals', 'journal_lines', 'asset_register', 'asset_depreciation_entries', 'asset_disposal_transaction_links', 'capital_allowance_pool_runs', 'capital_allowance_asset_calculations', 'tax_loss_carryforwards'] as $table) {
         if (!InterfaceDB::tableExists($table)) {
             $harness->skip($table . ' table is not available.');
         }
@@ -829,55 +814,7 @@ function assetServiceTestCreateTaxViewFixture(): array
             'status' => 'active',
         ]
     );
-    InterfaceDB::prepareExecute(
-        'INSERT INTO accounting_period_adjustments (
-            company_id,
-            accounting_period_id,
-            type,
-            direction,
-            amount,
-            source_asset_id
-         ) VALUES (
-            :company_id,
-            :accounting_period_id,
-            :type,
-            :direction,
-            :amount,
-            :source_asset_id
-         )',
-        [
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-            'type' => 'capital_allowances',
-            'direction' => 'deduct',
-            'amount' => 999.00,
-            'source_asset_id' => $assetId,
-        ]
-    );
-    InterfaceDB::prepareExecute(
-        'INSERT INTO accounting_period_adjustments (
-            company_id,
-            accounting_period_id,
-            type,
-            direction,
-            amount,
-            source_asset_id
-         ) VALUES (
-            :company_id,
-            :accounting_period_id,
-            :type,
-            :direction,
-            :amount,
-            NULL
-         )',
-        [
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-            'type' => 'manual_review_marker',
-            'direction' => 'add',
-            'amount' => 123.00,
-        ]
-    );
+    (new \eel_accounts\Service\CapitalAllowanceService())->rebuildForCompany($companyId);
 
     return [
         'company_id' => $companyId,

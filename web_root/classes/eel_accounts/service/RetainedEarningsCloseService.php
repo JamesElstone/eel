@@ -140,19 +140,15 @@ final class RetainedEarningsCloseService
         }
 
         $journalLines = (array)($context['journal_lines'] ?? []);
-        if (count($journalLines) < 2) {
-            $deleteResult = ($this->journalService ?? new \eel_accounts\Service\ManualJournalService())->deleteTaggedJournal(
-                $companyId,
-                $accountingPeriodId,
-                self::JOURNAL_TAG,
-                self::JOURNAL_KEY,
-                $changedBy
-            );
+        $journalLines = $this->deltaJournalLines(
+            $journalLines,
+            ($this->journalService ?? new \eel_accounts\Service\ManualJournalService())->listJournalsByTags($companyId, $accountingPeriodId, [self::JOURNAL_TAG])
+        );
 
+        if (count($journalLines) < 2) {
             return [
                 'success' => true,
                 'skipped' => true,
-                'delete_result' => $deleteResult,
                 'context' => $context,
             ];
         }
@@ -180,13 +176,7 @@ final class RetainedEarningsCloseService
 
     public function removeCloseJournal(int $companyId, int $accountingPeriodId, string $changedBy = 'web_app'): array
     {
-        return ($this->journalService ?? new \eel_accounts\Service\ManualJournalService())->deleteTaggedJournal(
-            $companyId,
-            $accountingPeriodId,
-            self::JOURNAL_TAG,
-            self::JOURNAL_KEY,
-            $changedBy
-        );
+        return ['success' => true, 'deleted' => false, 'skipped' => true];
     }
 
     public function acknowledgementIsCurrent(array $review, array $summary): bool
@@ -362,6 +352,49 @@ final class RetainedEarningsCloseService
         }
 
         return $lines;
+    }
+
+    private function deltaJournalLines(array $targetLines, array $existingJournals): array
+    {
+        $existing = [];
+        foreach ($existingJournals as $journal) {
+            foreach ((array)($journal['lines'] ?? []) as $line) {
+                $nominalId = (int)($line['nominal_account_id'] ?? 0);
+                if ($nominalId <= 0) {
+                    continue;
+                }
+                $existing[$nominalId] = round(
+                    (float)($existing[$nominalId] ?? 0)
+                    + (float)($line['debit'] ?? 0)
+                    - (float)($line['credit'] ?? 0),
+                    2
+                );
+            }
+        }
+
+        $deltaLines = [];
+        foreach ($targetLines as $line) {
+            $nominalId = (int)($line['nominal_account_id'] ?? 0);
+            if ($nominalId <= 0) {
+                continue;
+            }
+            $target = round((float)($line['debit'] ?? 0) - (float)($line['credit'] ?? 0), 2);
+            $delta = round($target - (float)($existing[$nominalId] ?? 0), 2);
+            if (abs($delta) < 0.005) {
+                continue;
+            }
+
+            $deltaLines[] = [
+                'nominal_account_id' => $nominalId,
+                'nominal_code' => (string)($line['nominal_code'] ?? ''),
+                'nominal_name' => (string)($line['nominal_name'] ?? ''),
+                'debit' => $delta > 0 ? number_format($delta, 2, '.', '') : '0.00',
+                'credit' => $delta < 0 ? number_format(abs($delta), 2, '.', '') : '0.00',
+                'line_description' => (string)($line['line_description'] ?? 'Retained earnings close adjustment'),
+            ];
+        }
+
+        return $deltaLines;
     }
 
     private function equityBalanceUntilDate(int $companyId, string $date, bool $exclusive, bool $excludeCloseJournal): float

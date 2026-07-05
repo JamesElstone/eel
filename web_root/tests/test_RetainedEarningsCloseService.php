@@ -63,7 +63,7 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
             (new \eel_accounts\Service\YearEndLockService())->lockPeriod((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'test');
             $unlocked = (new \eel_accounts\Service\YearEndLockService())->unlockPeriod((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'test');
             $harness->assertSame(true, (bool)($unlocked['success'] ?? false));
-            $harness->assertSame(false, (new \eel_accounts\Service\ManualJournalService())->fetchJournalByTag(
+            $harness->assertSame(true, (new \eel_accounts\Service\ManualJournalService())->fetchJournalByTag(
                 (int)$fixture['company_id'],
                 (int)$fixture['accounting_period_id'],
                 \eel_accounts\Service\RetainedEarningsCloseService::JOURNAL_TAG,

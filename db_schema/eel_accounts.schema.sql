@@ -483,7 +483,7 @@ CREATE TABLE `journal_entry_metadata` (
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_journal_entry_metadata_journal` (`journal_id`),
-  UNIQUE KEY `uq_journal_entry_metadata_key` (`company_id`,`accounting_period_id`,`journal_tag`,`journal_key`),
+  KEY `idx_journal_entry_metadata_key` (`company_id`,`accounting_period_id`,`journal_tag`,`journal_key`),
   KEY `idx_journal_entry_metadata_period` (`company_id`,`accounting_period_id`,`journal_tag`),
   KEY `idx_journal_entry_metadata_related` (`related_journal_id`),
   KEY `fk_journal_entry_metadata_accounting_period` (`accounting_period_id`),
@@ -1287,34 +1287,6 @@ CREATE TABLE `tax_loss_movement_history` (
   CONSTRAINT `fk_tax_loss_history_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_tax_loss_history_ct_period` FOREIGN KEY (`ct_period_id`) REFERENCES `corporation_tax_periods` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=1003 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `accounting_period_adjustments`
---
-
-DROP TABLE IF EXISTS `accounting_period_adjustments`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `accounting_period_adjustments` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `company_id` int(11) NOT NULL,
-  `accounting_period_id` int(11) NOT NULL,
-  `ct_period_id` int(11) DEFAULT NULL,
-  `type` varchar(64) NOT NULL,
-  `direction` varchar(16) NOT NULL,
-  `amount` decimal(12,2) NOT NULL,
-  `source_asset_id` int(11) DEFAULT NULL,
-  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
-  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
-  PRIMARY KEY (`id`),
-  KEY `idx_accounting_period_adjustments_company_period` (`company_id`,`accounting_period_id`,`type`),
-  KEY `fk_accounting_period_adjustments_period` (`accounting_period_id`),
-  KEY `idx_accounting_period_adjustments_ct_period` (`ct_period_id`),
-  CONSTRAINT `fk_accounting_period_adjustments_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_accounting_period_adjustments_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_accounting_period_adjustments_ct_period` FOREIGN KEY (`ct_period_id`) REFERENCES `corporation_tax_periods` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -2290,7 +2262,9 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_04_003_dividend_reserve_snapshot_roll_forward.sql'),
   ('2026_07_04_004_asset_disposal_metadata.sql'),
   ('2026_07_04_005_vehicle_register_capital_allowances.sql'),
-  ('2026_07_04_006_read_only_tax_workings_permissions.sql');
+  ('2026_07_04_006_read_only_tax_workings_permissions.sql'),
+  ('2026_07_05_001_ct_period_tax_page_provisions.sql'),
+  ('2026_07_05_002_dynamic_tax_append_only_close.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

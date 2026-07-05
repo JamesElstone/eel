@@ -42,12 +42,14 @@ final class ManualJournalService
                  WHERE jem.company_id = :company_id
                    AND jem.accounting_period_id = :accounting_period_id
                    AND jem.journal_tag = :journal_tag
-                   AND jem.journal_key = :journal_key
+                   AND (jem.journal_key = :journal_key OR jem.journal_key LIKE :journal_key_prefix)
+                 ORDER BY j.id DESC
                  LIMIT 1', [
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
                 'journal_tag' => trim($journalTag),
                 'journal_key' => trim($journalKey),
+                'journal_key_prefix' => trim($journalKey) . ':%',
             ]);
             if (is_array($row)) {
                 $row['lines'] = $this->fetchJournalLines((int)$row['id']);
@@ -222,11 +224,11 @@ final class ManualJournalService
         }
 
         try {
+            $storedJournalKey = $journalKey;
             if ($existing !== null) {
-                $this->deleteJournal((int)$existing['id']);
+                $storedJournalKey .= ':' . date('YmdHis') . ':' . bin2hex(random_bytes(3));
             }
-
-            $sourceRef = $this->sourceRef($journalTag, $journalKey);
+            $sourceRef = $this->sourceRef($journalTag, $storedJournalKey);
             $insert = \InterfaceDB::prepare(
                 'INSERT INTO journals (
                     company_id,
@@ -297,9 +299,9 @@ final class ManualJournalService
                     'company_id' => $companyId,
                     'accounting_period_id' => $accountingPeriodId,
                     'journal_tag' => $journalTag,
-                    'journal_key' => $journalKey,
+                    'journal_key' => $storedJournalKey,
                     'entry_mode' => $entryMode === 'system_generated' ? 'system_generated' : 'manual',
-                    'related_journal_id' => $relatedJournalId !== null && $relatedJournalId > 0 ? $relatedJournalId : null,
+                    'related_journal_id' => $relatedJournalId !== null && $relatedJournalId > 0 ? $relatedJournalId : ($existing !== null ? (int)$existing['id'] : null),
                     'replacement_of_journal_id' => $replacementOfJournalId !== null && $replacementOfJournalId > 0 ? $replacementOfJournalId : null,
                     'notes' => trim((string)$notes) !== '' ? trim((string)$notes) : null,
                 ]);
@@ -308,7 +310,7 @@ final class ManualJournalService
             ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->writeAuditLog(
                 $companyId,
                 $accountingPeriodId,
-                $existing === null ? 'journal_created' : 'journal_replaced',
+                $existing === null ? 'journal_created' : 'journal_appended',
                 $changedBy,
                 $existing,
                 [
@@ -336,8 +338,8 @@ final class ManualJournalService
         return [
             'success' => true,
             'journal' => $this->fetchJournalByTag($companyId, $accountingPeriodId, $journalTag, $journalKey),
-            'replaced_existing' => $existing !== null,
-            'replaced_journal_id' => $existing !== null ? (int)$existing['id'] : null,
+            'appended_to_existing' => $existing !== null,
+            'related_journal_id' => $existing !== null ? (int)$existing['id'] : null,
         ];
     }
 
@@ -348,50 +350,11 @@ final class ManualJournalService
         string $journalKey = 'primary',
         string $changedBy = 'web_app'
     ): array {
-        $existing = $this->fetchJournalByTag($companyId, $accountingPeriodId, $journalTag, $journalKey);
-        if ($existing === null) {
-            return [
-                'success' => true,
-                'deleted' => false,
-            ];
-        }
-
-        ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'remove journals in this period');
-        $ownsTransaction = !\InterfaceDB::inTransaction();
-        if ($ownsTransaction) {
-            \InterfaceDB::beginTransaction();
-        }
-
-        try {
-            $this->deleteJournal((int)$existing['id']);
-            ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->writeAuditLog(
-                $companyId,
-                $accountingPeriodId,
-                'journal_deleted',
-                $changedBy,
-                $existing,
-                [
-                    'journal_tag' => trim($journalTag),
-                    'journal_key' => trim($journalKey) !== '' ? trim($journalKey) : 'primary',
-                    'journal_id' => (int)$existing['id'],
-                ]
-            );
-
-            if ($ownsTransaction) {
-                \InterfaceDB::commit();
-            }
-        } catch (\Throwable $exception) {
-            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
-                \InterfaceDB::rollBack();
-            }
-
-            return ['success' => false, 'errors' => [$exception->getMessage()]];
-        }
-
         return [
             'success' => true,
-            'deleted' => true,
-            'journal_id' => (int)$existing['id'],
+            'deleted' => false,
+            'skipped' => true,
+            'errors' => [],
         ];
     }
 

@@ -551,13 +551,11 @@ final class YearEndLockService
 
         $review = $this->fetchReview($companyId, $accountingPeriodId);
         $this->writeAuditLog($companyId, $accountingPeriodId, 'unlock', $changedBy, $existing, $review, $notes);
-        $retainedEarningsClose = (new \eel_accounts\Service\RetainedEarningsCloseService(lockService: $this))
-            ->removeCloseJournal($companyId, $accountingPeriodId, $changedBy);
 
         return [
             'success' => true,
             'review' => $review,
-            'retained_earnings_close' => $retainedEarningsClose,
+            'retained_earnings_close' => ['success' => true, 'deleted' => false, 'skipped' => true],
         ];
     }
 

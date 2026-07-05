@@ -133,31 +133,68 @@ final class TaxWorkingsService
 
     private function depreciationRows(int $companyId, int $accountingPeriodId, int $ctPeriodId = 0): array
     {
-        if (!$this->tableExists('accounting_period_adjustments')) {
+        if (!$this->tableExists('asset_depreciation_entries')) {
             return [];
         }
 
-        $sql = 'SELECT apa.amount,
-                    apa.direction,
+        $periodFilter = '';
+        $params = [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+        ];
+        if ($ctPeriodId > 0) {
+            $ctPeriod = (new \eel_accounts\Service\CorporationTaxPeriodService())->fetch($companyId, $ctPeriodId);
+            if ($ctPeriod !== null) {
+                $periodFilter = ' AND ade.period_start <= :period_end AND ade.period_end >= :period_start';
+                $params['period_start'] = (string)$ctPeriod['period_start'];
+                $params['period_end'] = (string)$ctPeriod['period_end'];
+            }
+        }
+
+        $sql = 'SELECT ade.amount,
+                    ade.period_start,
+                    ade.period_end,
+                    \'add\' AS direction,
                     ar.asset_code,
                     ar.description
-             FROM accounting_period_adjustments apa
-             LEFT JOIN asset_register ar ON ar.id = apa.source_asset_id
-             WHERE apa.company_id = :company_id
-               AND apa.accounting_period_id = :accounting_period_id
-               AND apa.type = :type';
-        $params = [
-                'company_id' => $companyId,
-                'accounting_period_id' => $accountingPeriodId,
-                'type' => 'add_back_depreciation',
-            ];
-        if ($ctPeriodId > 0 && \InterfaceDB::columnExists('accounting_period_adjustments', 'ct_period_id')) {
-            $sql .= ' AND apa.ct_period_id = :ct_period_id';
-            $params['ct_period_id'] = $ctPeriodId;
-        }
-        $sql .= ' ORDER BY ar.purchase_date ASC, ar.id ASC, apa.id ASC';
+             FROM asset_depreciation_entries ade
+             INNER JOIN asset_register ar ON ar.id = ade.asset_id
+             WHERE ar.company_id = :company_id
+               AND ade.accounting_period_id = :accounting_period_id'
+            . $periodFilter
+            . ' ORDER BY ar.purchase_date ASC, ar.id ASC, ade.id ASC';
 
-        return \InterfaceDB::fetchAll($sql, $params) ?: [];
+        $rows = \InterfaceDB::fetchAll($sql, $params) ?: [];
+        if ($ctPeriodId <= 0 || !isset($params['period_start'], $params['period_end'])) {
+            return $rows;
+        }
+
+        foreach ($rows as &$row) {
+            $entryStart = (string)($row['period_start'] ?? '');
+            $entryEnd = (string)($row['period_end'] ?? '');
+            $entryDays = $this->periodDays($entryStart, $entryEnd);
+            $overlapDays = $this->overlapDays($entryStart, $entryEnd, (string)$params['period_start'], (string)$params['period_end']);
+            $row['amount'] = $entryDays > 0 && $overlapDays > 0
+                ? round((float)($row['amount'] ?? 0) * ($overlapDays / $entryDays), 2)
+                : 0.0;
+        }
+        unset($row);
+
+        return $rows;
+    }
+
+    private function periodDays(string $start, string $end): int
+    {
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $start) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $end) || $end < $start) {
+            return 0;
+        }
+
+        return max(1, (new \DateTimeImmutable($start))->diff(new \DateTimeImmutable($end))->days + 1);
+    }
+
+    private function overlapDays(string $firstStart, string $firstEnd, string $secondStart, string $secondEnd): int
+    {
+        return $this->periodDays(max($firstStart, $secondStart), min($firstEnd, $secondEnd));
     }
 
     private function poolRows(int $companyId, int $accountingPeriodId, array $breakdown, int $ctPeriodId = 0): array

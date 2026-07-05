@@ -21,8 +21,7 @@ final class CapitalAllowanceService
         return \InterfaceDB::tableExists('asset_register')
             && \InterfaceDB::tableExists('asset_vehicle_details')
             && \InterfaceDB::tableExists('capital_allowance_pool_runs')
-            && \InterfaceDB::tableExists('capital_allowance_asset_calculations')
-            && \InterfaceDB::tableExists('accounting_period_adjustments');
+            && \InterfaceDB::tableExists('capital_allowance_asset_calculations');
     }
 
     public function rebuildForCompany(int $companyId): array

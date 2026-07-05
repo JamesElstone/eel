@@ -131,6 +131,8 @@ final class TrialBalanceService
             $runningBalance = round($runningBalance + (float)$entry['debit'] - (float)$entry['credit'], 2);
             $entry['running_balance'] = $runningBalance;
             $entry['link_url'] = $this->sourceLink((string)($entry['source_type'] ?? ''), (string)($entry['source_ref'] ?? ''), $companyId, $accountingPeriodId, (string)($entry['journal_date'] ?? ''));
+            $entry['workflow_page'] = $this->sourceWorkflowPage((string)($entry['source_type'] ?? ''));
+            $entry['workflow_fields'] = $this->sourceWorkflowFields((string)($entry['source_type'] ?? ''), (string)($entry['source_ref'] ?? ''), $companyId, $accountingPeriodId, (string)($entry['journal_date'] ?? ''));
         }
         unset($entry);
 
@@ -517,13 +519,42 @@ final class TrialBalanceService
     private function sourceLink(string $sourceType, string $sourceRef, int $companyId, int $accountingPeriodId, string $journalDate): string {
         return match ($sourceType) {
             'bank_csv' => preg_match('/transaction:(\d+)/', $sourceRef, $matches) === 1
-                ? '?page=transactions&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&month_key=' . urlencode(substr($journalDate, 0, 7) . '-01') . '&category_filter=all#transaction-' . (int)$matches[1]
-                : '?page=transactions&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId,
-            'director_loan_register' => '?page=director_loans&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId,
-            'expense_register', 'expense_claim_post', 'expense_claim_payment_link' => '?page=expense_claims&company_id=' . $companyId,
-            'manual' => '?page=journals&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId,
-            default => '?page=journals&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId,
+                ? '?page=transactions'
+                : '?page=transactions',
+            'director_loan_register' => '?page=director_loans',
+            'expense_register', 'expense_claim_post', 'expense_claim_payment_link' => '?page=expense_claims',
+            'manual' => '?page=journals',
+            default => '?page=journals',
         };
+    }
+
+    private function sourceWorkflowPage(string $sourceType): string {
+        return match ($sourceType) {
+            'bank_csv' => 'transactions',
+            'director_loan_register' => 'director_loans',
+            'expense_register', 'expense_claim_post', 'expense_claim_payment_link' => 'expense_claims',
+            default => 'journals',
+        };
+    }
+
+    private function sourceWorkflowFields(string $sourceType, string $sourceRef, int $companyId, int $accountingPeriodId, string $journalDate): array {
+        $fields = [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+        ];
+
+        if ($sourceType === 'bank_csv') {
+            $fields['category_filter'] = 'all';
+            $monthKey = substr($journalDate, 0, 7);
+            if (preg_match('/^\d{4}-\d{2}$/', $monthKey) === 1) {
+                $fields['month_key'] = $monthKey . '-01';
+            }
+            if (preg_match('/transaction:(\d+)/', $sourceRef, $matches) === 1) {
+                $fields['transaction_id'] = (int)$matches[1];
+            }
+        }
+
+        return $fields;
     }
 
     private function buildCsvFileName(string $companyName, string $periodLabel): string {

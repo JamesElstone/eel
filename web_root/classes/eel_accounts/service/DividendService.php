@@ -849,8 +849,6 @@ final class DividendService
     private function dividendReliabilityWarnings(int $companyId, int $accountingPeriodId, string $periodStart, string $asAtDate): array
     {
         $warnings = [];
-        $uploadUrl = '?page=uploads&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId;
-        $transactionUrl = '?page=transactions&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&category_filter=uncategorised';
         $latestBankDate = $this->latestBankSourceDate($companyId, $accountingPeriodId, $periodStart, $asAtDate);
         if ($latestBankDate === '' || $latestBankDate < $asAtDate) {
             $warnings[] = [
@@ -860,7 +858,12 @@ final class DividendService
                     ? 'No uploaded or committed bank transaction source data was found up to the capacity date. Upload the latest bank CSV before relying on the dividend figure.'
                     : 'The latest uploaded or committed bank transaction source date is ' . $latestBankDate . ', before the capacity date ' . $asAtDate . '. Upload the latest bank CSV before relying on the dividend figure.',
                 'action_label' => 'Open Related Workflow',
-                'action_url' => $uploadUrl,
+                'action_url' => '?page=uploads',
+                'workflow_page' => 'uploads',
+                'workflow_fields' => [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                ],
                 'code' => 'bank_csv_coverage',
             ];
         }
@@ -872,7 +875,13 @@ final class DividendService
                 'title' => 'Uncategorised transactions affect capacity',
                 'detail' => $uncategorisedCount . ' transaction(s) dated on or before the capacity date are uncategorised or missing a nominal account.',
                 'action_label' => 'Open Related Workflow',
-                'action_url' => $transactionUrl,
+                'action_url' => '?page=transactions',
+                'workflow_page' => 'transactions',
+                'workflow_fields' => [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'category_filter' => 'uncategorised',
+                ],
                 'code' => 'uncategorised_transactions',
             ];
         }

@@ -157,6 +157,10 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
         );
 
         $harness->assertSame('?page=journal&show_card=nominal_closing_balances', (string)$check['action_url']);
+        $harness->assertSame('journal', (string)($check['workflow_page'] ?? ''));
+        $harness->assertSame('nominal_closing_balances', (string)(($check['workflow_fields'] ?? [])['show_card'] ?? ''));
+        $harness->assertSame(false, str_contains((string)$check['action_url'], 'company_id='));
+        $harness->assertSame(false, str_contains((string)$check['action_url'], 'accounting_period_id='));
         $harness->assertSame('?page=year_end&show_card=year_end_checklist', (string)$dashboardActionUrl->invoke($service, 12, 34));
     });
 
@@ -240,6 +244,8 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
             $harness->assertSame('warning', (string)($warningCheck['status'] ?? ''));
             $harness->assertSame('1', (string)($warningCheck['metric_value'] ?? ''));
             $harness->assertSame('?page=assets&show_card=not_an_asset', (string)($warningCheck['action_url'] ?? ''));
+            $harness->assertSame('assets', (string)($warningCheck['workflow_page'] ?? ''));
+            $harness->assertSame('not_an_asset', (string)(($warningCheck['workflow_fields'] ?? [])['show_card'] ?? ''));
 
             InterfaceDB::prepareExecute(
                 'UPDATE transactions

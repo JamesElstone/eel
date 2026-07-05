@@ -19,6 +19,23 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $harness->assertSame(true, (bool)($taxComputation['available'] ?? false));
         $harness->assertSame('accounting_period_ct_periods', (string)($taxComputation['summary_scope'] ?? ''));
     });
+
+    $harness->check(\eel_accounts\Service\TrialBalanceService::class, 'source workflow routing keeps context out of URLs', static function () use ($harness, $service): void {
+        $sourceLink = new ReflectionMethod($service, 'sourceLink');
+        $sourceLink->setAccessible(true);
+        $sourceWorkflowFields = new ReflectionMethod($service, 'sourceWorkflowFields');
+        $sourceWorkflowFields->setAccessible(true);
+
+        $url = (string)$sourceLink->invoke($service, 'bank_csv', 'transaction:55', 12, 34, '2026-02-14');
+        $fields = (array)$sourceWorkflowFields->invoke($service, 'bank_csv', 'transaction:55', 12, 34, '2026-02-14');
+
+        $harness->assertSame('?page=transactions', $url);
+        $harness->assertSame(false, str_contains($url, 'company_id='));
+        $harness->assertSame(12, (int)($fields['company_id'] ?? 0));
+        $harness->assertSame(34, (int)($fields['accounting_period_id'] ?? 0));
+        $harness->assertSame('2026-02-01', (string)($fields['month_key'] ?? ''));
+        $harness->assertSame(55, (int)($fields['transaction_id'] ?? 0));
+    });
 });
 
 function trialBalanceCtPeriodSummaryFixture(): array

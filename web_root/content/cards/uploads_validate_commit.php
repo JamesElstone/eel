@@ -235,15 +235,15 @@ final class _uploads_validate_commitCard extends CardBaseFramework
                             <input type="hidden" name="required_period_end" value="' . HelperFramework::escape($periodEnd) . '">
                             <button class="button primary" type="submit">Create Required Accounting Periods</button>
                         </form>
-                        <a class="button" href="?page=companies&amp;company_id=' . $companyId . '">Open Companies</a>
+                        ' . \eel_accounts\Renderer\WorkflowHandoffRenderer::button('companies', 'Open Companies', ['company_id' => $companyId]) . '
                     </div>';
                 }
             }
 
             if ($suggestedPeriod === []) {
-                $missingAccountingPeriodHtml .= '<div class="actions-row">
-                    <a class="button" href="?page=companies&amp;company_id=' . $companyId . '">Open Companies</a>
-                </div>';
+                $missingAccountingPeriodHtml .= '<div class="actions-row">'
+                    . \eel_accounts\Renderer\WorkflowHandoffRenderer::button('companies', 'Open Companies', ['company_id' => $companyId])
+                    . '</div>';
             }
 
             $missingAccountingPeriodHtml .= '</div>';

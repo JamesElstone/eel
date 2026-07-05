@@ -74,9 +74,11 @@ $harness->run(_journals_listCard::class, static function (GeneratedServiceClassT
         $harness->assertTrue(str_contains($html, '<td>1200</td>'));
         $harness->assertTrue(str_contains($html, '<td>Bank</td>'));
         $harness->assertTrue(str_contains($html, 'Transaction #55'));
-        $harness->assertTrue(str_contains($html, 'company_id=12'));
-        $harness->assertTrue(str_contains($html, 'accounting_period_id=34'));
-        $harness->assertTrue(str_contains($html, 'month_key=2026-02-01'));
+        $harness->assertTrue(str_contains($html, '<form method="post" action="?page=transactions" data-ajax="true"'));
+        $harness->assertTrue(str_contains($html, '<input type="hidden" name="company_id" value="12">'));
+        $harness->assertTrue(str_contains($html, '<input type="hidden" name="accounting_period_id" value="34">'));
+        $harness->assertTrue(str_contains($html, '<input type="hidden" name="month_key" value="2026-02-01">'));
+        $harness->assertTrue(!str_contains($html, '?page=transactions&amp;company_id=12'));
         $harness->assertTrue(!str_contains($html, 'Posted transaction journals will appear here'));
 
         $tables = $card->tables([

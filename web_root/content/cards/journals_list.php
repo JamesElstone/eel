@@ -284,20 +284,33 @@ final class _journals_listCard extends CardBaseFramework
     {
         $sourceTransactionId = $this->journalSourceTransactionId($journal);
         if ((string)($journal['source_type'] ?? '') === 'bank_csv' && $sourceTransactionId > 0) {
-            return '<a class="button button-inline primary" href="' . HelperFramework::escape($this->buildTransactionsUrl(
-                $companyId,
-                $accountingPeriodId,
-                $this->monthKeyFromDate((string)($journal['journal_date'] ?? ''))
-            )) . '#transaction-' . $sourceTransactionId . '">Review Transaction</a>';
+            return \eel_accounts\Renderer\WorkflowHandoffRenderer::button(
+                'transactions',
+                'Review Transaction',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'month_key' => $this->monthKeyFromDate((string)($journal['journal_date'] ?? '')),
+                    'category_filter' => 'all',
+                    'transaction_id' => $sourceTransactionId,
+                ],
+                'button button-inline primary'
+            );
         }
 
         $sourceRef = trim((string)($journal['source_ref'] ?? ''));
         if ((string)($journal['source_type'] ?? '') === 'expense_register' && $sourceRef !== '') {
-            return '<a class="button button-inline primary" href="' . HelperFramework::escape($this->buildExpenseClaimUrl(
-                $companyId,
-                $accountingPeriodId,
-                $sourceRef
-            )) . '">Review Claim</a>';
+            return \eel_accounts\Renderer\WorkflowHandoffRenderer::button(
+                'expense_claims',
+                'Review Claim',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'show_card' => 'expense_claim_editor',
+                    'claim_reference_code' => $sourceRef,
+                ],
+                'button button-inline primary'
+            );
         }
 
         return '<span class="helper">Review at source</span>';
@@ -331,28 +344,6 @@ final class _journals_listCard extends CardBaseFramework
         }
 
         return substr($value, 0, 7) . '-01';
-    }
-
-    private function buildTransactionsUrl(int $companyId, int $accountingPeriodId, string $monthKey): string
-    {
-        return '?' . http_build_query([
-            'page' => 'transactions',
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-            'month_key' => $monthKey,
-            'category_filter' => 'all',
-        ]);
-    }
-
-    private function buildExpenseClaimUrl(int $companyId, int $accountingPeriodId, string $claimReferenceCode): string
-    {
-        return '?' . http_build_query([
-            'page' => 'expense_claims',
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-            'show_card' => 'expense_claim_editor',
-            'claim_reference_code' => $claimReferenceCode,
-        ]);
     }
 
 }

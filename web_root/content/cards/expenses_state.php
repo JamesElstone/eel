@@ -237,8 +237,7 @@ final class _expenses_stateCard extends CardBaseFramework
 
     private function claimsTableSearchToolbarForm(array $context, array $filters, int $companyId, int $selectedClaimantId): string
     {
-        return '<form id="expense-search-form" method="get" action="?page=expense_claims" data-ajax="true" class="toolbar">
-                <input type="hidden" name="page" value="' . HelperFramework::escape((string)($context['page']['page_id'] ?? 'expenses')) . '">
+        return '<form id="expense-search-form" method="post" action="?page=expense_claims" data-ajax="true" class="toolbar">
                 <input type="hidden" name="card_action" value="Expense">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="intent" value="filter_claims">
@@ -278,8 +277,7 @@ final class _expenses_stateCard extends CardBaseFramework
 
     private function claimantFilterToolbarForm(array $context, array $claimants, array $filters, int $companyId, int $selectedClaimantId): string
     {
-        return '<form method="get" action="?page=expense_claims" data-ajax="true" class="toolbar">
-                <input type="hidden" name="page" value="' . HelperFramework::escape((string)($context['page']['page_id'] ?? 'expenses')) . '">
+        return '<form method="post" action="?page=expense_claims" data-ajax="true" class="toolbar">
                 <input type="hidden" name="card_action" value="Expense">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="intent" value="filter_claims">
@@ -377,8 +375,7 @@ final class _expenses_stateCard extends CardBaseFramework
         }
 
         return '<div class="expense-claim-heatmap">
-            <form id="' . $formId . '" method="get" action="?page=expense_claims" data-ajax="true">
-                <input type="hidden" name="page" value="expense_claims">
+            <form id="' . $formId . '" method="post" action="?page=expense_claims" data-ajax="true">
                 <input type="hidden" name="card_action" value="Expense">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="intent" value="filter_claims">

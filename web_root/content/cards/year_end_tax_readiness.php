@@ -63,7 +63,15 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
         $warningCount = count((array)($taxReadiness['warnings'] ?? []));
         $confidenceStatus = (string)($taxReadiness['confidence_status'] ?? 'review_required');
         $confidenceLabel = (string)($taxReadiness['confidence_label'] ?? 'Review required');
-        $taxWorkflowUrl = '?page=tax&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId;
+        $taxWorkflowButton = \eel_accounts\Renderer\WorkflowHandoffRenderer::button(
+            'tax',
+            'Open Tax Workflow',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+            ],
+            'button primary'
+        );
 
         $review = (array)((($context['year_end'] ?? [])['checklist'] ?? [])['review'] ?? []);
         $acknowledged = trim((string)($review['tax_readiness_acknowledged_at'] ?? '')) !== '';
@@ -103,7 +111,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
                 <div class="summary-card"><div class="summary-label">Warnings</div><div class="summary-value">' . $warningCount . '</div></div>
                 <div class="summary-card"><div class="summary-label">Losses carried forward (c/f)</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $taxReadiness['losses_carried_forward'] ?? 0)) . '</div></div>
             </div>
-            <div class="actions-row"><a class="button primary" href="' . HelperFramework::escape($taxWorkflowUrl) . '">Open Tax Workflow</a></div>
+            <div class="actions-row">' . $taxWorkflowButton . '</div>
             <div class="actions-row">' . $acknowledgementForm . '</div>
         </section>';
     }

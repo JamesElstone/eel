@@ -50,6 +50,16 @@ final class _dashboard_year_end_readinessCard extends CardBaseFramework
         $status = (string)($summary['status'] ?? 'not_started');
         $topIssues = (array)($summary['top_issues'] ?? []);
         $periodLabel = (string)(($summary['period_label'] ?? '') ?: 'No accounting period selected');
+        $company = (array)($context['company'] ?? []);
+        $workflowButton = \eel_accounts\Renderer\WorkflowHandoffRenderer::fromUrl(
+            (string)($summary['action_url'] ?? '?page=year-end'),
+            'Open Year End To Do',
+            [
+                'company_id' => (int)($company['id'] ?? 0),
+                'accounting_period_id' => (int)($company['accounting_period_id'] ?? 0),
+            ],
+            'button primary'
+        );
 
         $statsHtml = $this->statCard(
             'Year end status',
@@ -90,7 +100,7 @@ final class _dashboard_year_end_readinessCard extends CardBaseFramework
             <div class="panel-soft">
                 <div class="grid-stats">' . $statsHtml . '</div>
                 <div class="mini-field">
-                    <a class="button primary" href="' . HelperFramework::escape((string)($summary['action_url'] ?? '?page=year-end')) . '">Open Year End To Do</a>
+                    ' . $workflowButton . '
                 </div>
             </div>
         ';

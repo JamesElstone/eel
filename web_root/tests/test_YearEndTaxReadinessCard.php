@@ -54,7 +54,10 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame(true, str_contains($html, 'save_tax_readiness_acknowledgement'));
         $harness->assertSame(true, str_contains($html, 'I acknowledge that the corporation tax workings have been reviewed'));
         $harness->assertSame(true, str_contains($html, 'Open Tax Workflow'));
-        $harness->assertSame(true, str_contains($html, '?page=tax&amp;company_id=33&amp;accounting_period_id=70'));
+        $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=tax" data-ajax="true"'));
+        $harness->assertSame(true, str_contains($html, '<input type="hidden" name="company_id" value="33">'));
+        $harness->assertSame(true, str_contains($html, '<input type="hidden" name="accounting_period_id" value="70">'));
+        $harness->assertSame(false, str_contains($html, '?page=tax&amp;company_id=33'));
         $harness->assertSame(true, str_contains($html, 'data-chicken-check="true"'));
         $harness->assertSame(true, str_contains($html, 'data-chicken-button-class="button danger"'));
         $harness->assertSame(true, str_contains($html, '>I Agree</button>'));

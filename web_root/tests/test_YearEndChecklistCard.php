@@ -50,8 +50,12 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
         ]);
 
         $harness->assertSame(true, str_contains($html, 'Open Related Workflow'));
-        $harness->assertSame(true, str_contains($html, '?page=journal&amp;show_card=nominal_closing_balances'));
-        $harness->assertSame(true, str_contains($html, '?page=year_end&amp;show_card=year_end_tax_readiness'));
+        $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=journal" data-ajax="true"'));
+        $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=year_end" data-ajax="true"'));
+        $harness->assertSame(true, str_contains($html, '<input type="hidden" name="show_card" value="nominal_closing_balances">'));
+        $harness->assertSame(true, str_contains($html, '<input type="hidden" name="show_card" value="year_end_tax_readiness">'));
+        $harness->assertSame(true, str_contains($html, '<input type="hidden" name="company_id" value="12">'));
+        $harness->assertSame(true, str_contains($html, '<input type="hidden" name="accounting_period_id" value="34">'));
         $harness->assertSame(false, str_contains($html, 'company_id=12'));
         $harness->assertSame(false, str_contains($html, 'accounting_period_id=34'));
         $harness->assertSame(true, str_contains($html, 'name="intent" value="acknowledge_review_check"'));
@@ -83,7 +87,9 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
             ],
         ]);
 
-        $harness->assertSame(true, str_contains($html, 'href="?page=transactions"'));
+        $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=transactions" data-ajax="true"'));
+        $harness->assertSame(true, str_contains($html, '<input type="hidden" name="company_id" value="12">'));
+        $harness->assertSame(true, str_contains($html, '<input type="hidden" name="accounting_period_id" value="34">'));
         $harness->assertSame(false, str_contains($html, 'company_id=12'));
         $harness->assertSame(false, str_contains($html, 'accounting_period_id=34'));
     });
@@ -115,7 +121,9 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
         $harness->assertSame(true, str_contains($html, 'G. Corporation tax readiness'));
         $harness->assertSame(true, str_contains($html, 'Tax readiness acknowledgement'));
         $harness->assertSame(true, str_contains($html, '05/09/2022 to 04/09/2023; 05/09/2023 to 30/09/2023'));
-        $harness->assertSame(true, str_contains($html, '?page=tax'));
+        $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=tax" data-ajax="true"'));
+        $harness->assertSame(true, str_contains($html, '<input type="hidden" name="company_id" value="12">'));
+        $harness->assertSame(true, str_contains($html, '<input type="hidden" name="accounting_period_id" value="34">'));
         $harness->assertSame(false, str_contains($html, 'company_id=12'));
         $harness->assertSame(false, str_contains($html, 'accounting_period_id=34'));
     });
@@ -155,7 +163,10 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
         $harness->assertSame(true, str_contains($html, 'Expense position acknowledgement'));
         $harness->assertSame(true, str_contains($html, 'UNPAID £ 225.00'));
         $harness->assertSame(true, str_contains($html, 'OWED -£ 42.00'));
-        $harness->assertSame(true, str_contains($html, '?page=year_end&amp;show_card=year_end_expenses_confirmation'));
+        $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=year_end" data-ajax="true"'));
+        $harness->assertSame(true, str_contains($html, '<input type="hidden" name="show_card" value="year_end_expenses_confirmation">'));
+        $harness->assertSame(true, str_contains($html, '<input type="hidden" name="company_id" value="12">'));
+        $harness->assertSame(true, str_contains($html, '<input type="hidden" name="accounting_period_id" value="34">'));
         $harness->assertSame(false, str_contains($html, 'company_id=12'));
         $harness->assertSame(false, str_contains($html, 'accounting_period_id=34'));
     });

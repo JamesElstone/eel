@@ -21,6 +21,7 @@ final class HmrcObligationAction implements ActionInterfaceFramework
                 'mark_filed' => $service->markFiled((int)$request->input('obligation_id', 0), (string)$request->input('source_reference', ''), (string)$request->input('notes', '')),
                 'mark_paid' => $service->markPaid((int)$request->input('obligation_id', 0), (float)$request->input('amount_paid', 0), (string)$request->input('source_reference', ''), (string)$request->input('notes', '')),
                 'update_status' => $service->updateObligationStatus((int)$request->input('obligation_id', 0), (string)$request->input('status', ''), (string)$request->input('notes', '')),
+                'filter_obligations' => ['success' => true, 'filter_only' => true],
                 'create_manual_obligation' => $service->createManualObligation([
                     'company_id' => $companyId,
                     'accounting_period_id' => (int)$request->input('accounting_period_id', 0),
@@ -38,12 +39,12 @@ final class HmrcObligationAction implements ActionInterfaceFramework
 
         $success = !empty($result['success']);
         $flashMessages = [];
-        if ($success) {
+        if ($success && empty($result['filter_only'])) {
             $flashMessages[] = ['type' => 'success', 'message' => 'HMRC obligations updated.'];
             foreach ((array)($result['warnings'] ?? []) as $warning) {
                 $flashMessages[] = ['type' => 'warning', 'message' => (string)$warning];
             }
-        } else {
+        } elseif (!$success) {
             foreach ((array)($result['errors'] ?? ['HMRC obligation action failed.']) as $error) {
                 $flashMessages[] = ['type' => 'error', 'message' => (string)$error];
             }

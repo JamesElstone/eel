@@ -41,7 +41,7 @@ final class _dividend_capacityCard extends CardBaseFramework
 
         return '<div class="settings-stack">
             ' . $this->summaryCard('Capacity date', (string)($capacity['as_at_date'] ?? ''), 'summary-card-fit') . '
-            ' . $this->reliabilityWarningPanels($reliabilityWarnings) . '
+            ' . $this->reliabilityWarningPanels($reliabilityWarnings, (int)($company['id'] ?? 0), (int)($company['accounting_period_id'] ?? 0)) . '
             <section class="panel-soft settings-stack">
                 <div class="summary-label">Distributable reserves</div>
                 <div class="helper">' . HelperFramework::escape($this->reservesEquation($companySettings, $capacity)) . '</div>
@@ -133,7 +133,7 @@ final class _dividend_capacityCard extends CardBaseFramework
         return 'Estimated Corporation Tax ' . $estimate . ' - posted Corporation Tax ' . $posted . ' = ' . $unposted;
     }
 
-    private function reliabilityWarningPanels(array $warnings): string
+    private function reliabilityWarningPanels(array $warnings, int $companyId, int $accountingPeriodId): string
     {
         if ($warnings === []) {
             return '';
@@ -144,13 +144,20 @@ final class _dividend_capacityCard extends CardBaseFramework
             if (!is_array($warning)) {
                 continue;
             }
-            $actionUrl = trim((string)($warning['action_url'] ?? ''));
             $actionLabel = trim((string)($warning['action_label'] ?? 'Open Related Workflow'));
+            $actionHtml = \eel_accounts\Renderer\WorkflowHandoffRenderer::fromWorkflow(
+                $warning,
+                $actionLabel,
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                ]
+            );
             $html .= '<section class="panel-soft settings-stack">
                 <div><span class="badge warning">Warning</span></div>
                 <div class="summary-label">' . HelperFramework::escape((string)($warning['title'] ?? 'Dividend reliability warning')) . '</div>
                 <div class="helper">' . HelperFramework::escape((string)($warning['detail'] ?? '')) . '</div>
-                ' . ($actionUrl !== '' ? '<div class="actions-row"><a class="button" href="' . HelperFramework::escape($actionUrl) . '">' . HelperFramework::escape($actionLabel) . '</a></div>' : '') . '
+                ' . ($actionHtml !== '' ? '<div class="actions-row">' . $actionHtml . '</div>' : '') . '
             </section>';
         }
 

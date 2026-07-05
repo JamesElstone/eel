@@ -36,7 +36,12 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
                         'title' => 'Bank CSV coverage may be incomplete',
                         'detail' => 'Upload the latest bank CSV before relying on the dividend figure.',
                         'action_label' => 'Open Related Workflow',
-                        'action_url' => '?page=uploads&company_id=7&accounting_period_id=22',
+                        'action_url' => '?page=uploads',
+                        'workflow_page' => 'uploads',
+                        'workflow_fields' => [
+                            'company_id' => 7,
+                            'accounting_period_id' => 22,
+                        ],
                     ]],
                 ],
                 'warnings' => [],
@@ -47,7 +52,10 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
         $harness->assertTrue(str_contains($html, '<span class="badge warning">Warning</span>'));
         $harness->assertTrue(str_contains($html, 'Bank CSV coverage may be incomplete'));
         $harness->assertTrue(str_contains($html, 'Open Related Workflow'));
-        $harness->assertTrue(str_contains($html, '?page=uploads&amp;company_id=7&amp;accounting_period_id=22'));
+        $harness->assertTrue(str_contains($html, '<form method="post" action="?page=uploads" data-ajax="true"'));
+        $harness->assertTrue(str_contains($html, '<input type="hidden" name="company_id" value="7">'));
+        $harness->assertTrue(str_contains($html, '<input type="hidden" name="accounting_period_id" value="22">'));
+        $harness->assertTrue(!str_contains($html, '?page=uploads&amp;company_id=7'));
     });
 
     $harness->check(_dividend_capacityCard::class, 'renders corporation tax period arithmetic helpers', static function () use ($harness, $card): void {

@@ -223,15 +223,18 @@ final class _not_an_assetCard extends CardBaseFramework
                 return '';
             }
 
-            return '<form method="get" data-ajax="true">
-                <input type="hidden" name="page" value="transactions">
-                <input type="hidden" name="show_card" value="transactions_imported">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <input type="hidden" name="month_key" value="' . HelperFramework::escape($monthKey) . '">
-                <input type="hidden" name="category_filter" value="all">
-                <button class="button button-inline" type="submit">Open Related Workflow</button>
-            </form>';
+            return \eel_accounts\Renderer\WorkflowHandoffRenderer::button(
+                'transactions',
+                'Open Related Workflow',
+                [
+                    'show_card' => 'transactions_imported',
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'month_key' => $monthKey,
+                    'category_filter' => 'all',
+                ],
+                'button button-inline'
+            );
         }
 
         if ($sourceType === 'expense_claim') {
@@ -240,14 +243,17 @@ final class _not_an_assetCard extends CardBaseFramework
                 return '';
             }
 
-            return '<form method="get" data-ajax="true">
-                <input type="hidden" name="page" value="expense_claims">
-                <input type="hidden" name="show_card" value="expense_claim_editor">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <input type="hidden" name="claim_id" value="' . $claimId . '">
-                <button class="button button-inline" type="submit">Open Related Workflow</button>
-            </form>';
+            return \eel_accounts\Renderer\WorkflowHandoffRenderer::button(
+                'expense_claims',
+                'Open Related Workflow',
+                [
+                    'show_card' => 'expense_claim_editor',
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'claim_id' => $claimId,
+                ],
+                'button button-inline'
+            );
         }
 
         return '';

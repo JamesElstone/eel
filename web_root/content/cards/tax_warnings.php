@@ -21,12 +21,19 @@ final class _tax_warningsCard extends CardBaseFramework
                 . '<section class="panel-soft"><span class="badge success">Ready</span><div class="helper">No tax fact warnings were found for this period.</div></section>';
         }
         $html = \eel_accounts\Renderer\TaxCardRenderer::header('company_tax_returns');
+        $company = (array)($context['company'] ?? []);
         foreach ($warnings as $warning) {
-            $url = (string)($warning['workflow_url'] ?? '?page=year_end');
+            $workflowButton = \eel_accounts\Renderer\WorkflowHandoffRenderer::fromWorkflow(
+                (array)$warning,
+                (string)($warning['workflow_label'] ?? 'Open Related Workflow'),
+                [
+                    'company_id' => (int)($company['id'] ?? 0),
+                    'accounting_period_id' => (int)($company['accounting_period_id'] ?? 0),
+                ]
+            );
             $html .= '<section class="panel-soft settings-stack"><span class="badge warning">Warning</span>'
                 . '<div class="helper">' . \eel_accounts\Renderer\TaxCardRenderer::escape($warning['message'] ?? '') . '</div>'
-                . '<div class="year-end-related-workflow"><a class="button" href="' . \eel_accounts\Renderer\TaxCardRenderer::escape($url) . '">'
-                . \eel_accounts\Renderer\TaxCardRenderer::escape($warning['workflow_label'] ?? 'Open Related Workflow') . '</a></div></section>';
+                . '<div class="year-end-related-workflow">' . $workflowButton . '</div></section>';
         }
         return $html;
     }

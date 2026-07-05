@@ -60,7 +60,17 @@ final class _year_end_checklistCard extends CardBaseFramework
             return '';
         }
 
-        $transactionsUrl = '?page=transactions';
+        $companyId = (int)($checklist['company_id'] ?? 0);
+        $accountingPeriod = (array)($checklist['accounting_period'] ?? []);
+        $accountingPeriodId = (int)($accountingPeriod['id'] ?? 0);
+        $transactionsButton = \eel_accounts\Renderer\WorkflowHandoffRenderer::button(
+            'transactions',
+            'Open Related Workflow',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+            ]
+        );
         $status = $this->sectionStatus($checks);
         $statusClass = $this->badgeClass($status);
         $monthTiles = (array)($checklist['month_tiles'] ?? []);
@@ -78,7 +88,7 @@ final class _year_end_checklistCard extends CardBaseFramework
                     </div>
                     ' . ($coverageValue !== '' ? '<div class="summary-value">' . HelperFramework::escape($coverageValue) . '</div>' : '') . '
                     <div class="helper">Review the transaction and monthly coverage detail from the Transactions page.</div>
-                    <div class="year-end-related-workflow"><a class="button" href="' . HelperFramework::escape($transactionsUrl) . '">Open Related Workflow</a></div>
+                    <div class="year-end-related-workflow">' . $transactionsButton . '</div>
                 </div>
             </div>
         </section>';
@@ -123,15 +133,19 @@ final class _year_end_checklistCard extends CardBaseFramework
 
     private function renderSummaryCheck(array $check, int $companyId, int $accountingPeriodId): string
     {
-        $actionUrl = $this->relatedWorkflowUrl((string)($check['action_url'] ?? ''));
         $metricValue = trim((string)($check['metric_value'] ?? ''));
         $status = (string)($check['status'] ?? '');
         $statusClass = $this->badgeClass($status);
         $reviewActionHtml = $this->reviewActionHtml($check, $companyId, $accountingPeriodId);
         $formulaText = trim((string)($check['formula_text'] ?? ''));
-        $workflowHtml = $actionUrl !== ''
-            ? '<a class="button" href="' . HelperFramework::escape($actionUrl) . '">Open Related Workflow</a>'
-            : '';
+        $workflowHtml = \eel_accounts\Renderer\WorkflowHandoffRenderer::fromWorkflow(
+            $check,
+            'Open Related Workflow',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+            ]
+        );
         $actionsHtml = trim($workflowHtml . $reviewActionHtml) !== ''
             ? '<div class="year-end-related-workflow">' . $workflowHtml . $reviewActionHtml . '</div>'
             : '';
@@ -146,28 +160,6 @@ final class _year_end_checklistCard extends CardBaseFramework
             ' . ($formulaText !== '' ? '<div class="helper">' . HelperFramework::escape($formulaText) . '</div>' : '') . '
             ' . $actionsHtml . '
         </div>';
-    }
-
-    private function relatedWorkflowUrl(string $actionUrl): string
-    {
-        $actionUrl = trim($actionUrl);
-        if ($actionUrl === '') {
-            return '';
-        }
-
-        $fragment = '';
-        $hashPosition = strpos($actionUrl, '#');
-        if ($hashPosition !== false) {
-            $fragment = substr($actionUrl, $hashPosition);
-            $actionUrl = substr($actionUrl, 0, $hashPosition);
-        }
-
-        $query = str_starts_with($actionUrl, '?') ? substr($actionUrl, 1) : $actionUrl;
-        parse_str($query, $params);
-        unset($params['company_id'], $params['accounting_period_id']);
-
-        $rebuiltQuery = http_build_query($params);
-        return ($rebuiltQuery !== '' ? '?' . $rebuiltQuery : '') . $fragment;
     }
 
     private function reviewActionHtml(array $check, int $companyId, int $accountingPeriodId): string

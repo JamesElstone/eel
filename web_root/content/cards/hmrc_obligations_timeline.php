@@ -29,8 +29,9 @@ final class _hmrc_obligations_timelineCard extends CardBaseFramework
             $filterOptions .= '<option value="' . HelperFramework::escape((string)$value) . '"' . ((string)$value === $selected ? ' selected' : '') . '>' . HelperFramework::escape((string)$label) . '</option>';
         }
 
-        $filterForm = '<form class="toolbar" method="get" action="?page=hmrc_obligations" data-ajax="true">
-            <input type="hidden" name="page" value="' . HelperFramework::escape($pageId) . '">
+        $filterForm = '<form class="toolbar" method="post" action="?page=hmrc_obligations" data-ajax="true">
+            <input type="hidden" name="card_action" value="HmrcObligation">
+            <input type="hidden" name="intent" value="filter_obligations">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <select class="select" name="hmrc_filter">' . $filterOptions . '</select>
             <button class="button primary" type="submit">Filter</button>

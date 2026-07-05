@@ -532,10 +532,16 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
 
             $harness->assertTrue(isset($byCode['bank_csv_coverage']));
             $harness->assertSame('Open Related Workflow', (string)($byCode['bank_csv_coverage']['action_label'] ?? ''));
-            $harness->assertTrue(str_contains((string)($byCode['bank_csv_coverage']['action_url'] ?? ''), '?page=uploads'));
+            $harness->assertSame('?page=uploads', (string)($byCode['bank_csv_coverage']['action_url'] ?? ''));
+            $harness->assertSame('uploads', (string)($byCode['bank_csv_coverage']['workflow_page'] ?? ''));
+            $harness->assertSame((int)$fixture['company_id'], (int)(($byCode['bank_csv_coverage']['workflow_fields'] ?? [])['company_id'] ?? 0));
+            $harness->assertSame((int)$fixture['accounting_period_id'], (int)(($byCode['bank_csv_coverage']['workflow_fields'] ?? [])['accounting_period_id'] ?? 0));
             $harness->assertTrue(isset($byCode['uncategorised_transactions']));
             $harness->assertSame('Open Related Workflow', (string)($byCode['uncategorised_transactions']['action_label'] ?? ''));
-            $harness->assertTrue(str_contains((string)($byCode['uncategorised_transactions']['action_url'] ?? ''), '?page=transactions'));
+            $harness->assertSame('?page=transactions', (string)($byCode['uncategorised_transactions']['action_url'] ?? ''));
+            $harness->assertSame('transactions', (string)($byCode['uncategorised_transactions']['workflow_page'] ?? ''));
+            $harness->assertSame('uncategorised', (string)(($byCode['uncategorised_transactions']['workflow_fields'] ?? [])['category_filter'] ?? ''));
+            $harness->assertSame(false, str_contains((string)($byCode['uncategorised_transactions']['action_url'] ?? ''), 'company_id='));
         } finally {
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();

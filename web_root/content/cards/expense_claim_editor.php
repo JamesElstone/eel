@@ -418,7 +418,14 @@ final class _expense_claim_editorCard extends CardBaseFramework
         $assetCode = trim((string)($row['asset_code'] ?? ''));
         $assetId = (int)($row['generated_asset_id'] ?? 0);
         $assetLink = $assetCode !== '' && $assetId > 0
-            ? ' <a class="text-link" href="?page=assets&amp;company_id=' . $companyId . '">Asset ' . HelperFramework::escape($assetCode) . '</a>'
+            ? ' ' . \eel_accounts\Renderer\WorkflowHandoffRenderer::button(
+                'assets',
+                'Asset ' . $assetCode,
+                ['company_id' => $companyId],
+                'text-link',
+                true,
+                'inline-form workflow-handoff-form'
+            )
             : '';
 
         return HelperFramework::escape($label) . $assetLink;

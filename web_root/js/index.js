@@ -2999,15 +2999,52 @@
         };
     }
 
-    function ajaxPendingBlurTarget(form) {
-        const pageStack = document.querySelector('.page-stack[data-ajax-pending-blur]');
-        if (!(pageStack instanceof HTMLElement)) {
-            return null;
+    function normaliseAjaxPendingBlurScope(value) {
+        const scope = String(value || '').trim().toLowerCase();
+
+        return ['none', 'card', 'page'].includes(scope) ? scope : '';
+    }
+
+    function controlAjaxPendingBlurScope(control) {
+        return control instanceof HTMLElement
+            ? normaliseAjaxPendingBlurScope(control.dataset.blurScope)
+            : '';
+    }
+
+    function setFormPendingBlurOverride(form, control) {
+        if (!(form instanceof HTMLFormElement)) {
+            return;
         }
 
-        const scope = String(pageStack.dataset.ajaxPendingBlur || '').trim().toLowerCase();
+        const scope = controlAjaxPendingBlurScope(control);
+        if (scope !== '') {
+            form.dataset.ajaxPendingBlurOverride = scope;
+            return;
+        }
+
+        delete form.dataset.ajaxPendingBlurOverride;
+    }
+
+    function ajaxPendingBlurScope(form) {
+        if (form instanceof HTMLFormElement) {
+            const overrideScope = normaliseAjaxPendingBlurScope(form.dataset.ajaxPendingBlurOverride);
+            if (overrideScope !== '') {
+                return overrideScope;
+            }
+        }
+
+        const pageStack = document.querySelector('.page-stack[data-ajax-pending-blur]');
+        return pageStack instanceof HTMLElement
+            ? normaliseAjaxPendingBlurScope(pageStack.dataset.ajaxPendingBlur)
+            : '';
+    }
+
+    function ajaxPendingBlurTarget(form) {
+        const scope = ajaxPendingBlurScope(form);
         if (scope === 'page') {
-            return pageStack;
+            const pageStack = document.querySelector('.page-stack[data-ajax-pending-blur]');
+
+            return pageStack instanceof HTMLElement ? pageStack : null;
         }
 
         if (scope !== 'card' || !(form instanceof HTMLFormElement)) {
@@ -3161,6 +3198,10 @@
             return;
         }
 
+        if (event.submitter instanceof HTMLElement) {
+            setFormPendingBlurOverride(form, event.submitter);
+        }
+
         syncSubmitField(event.submitter);
 
         const formData = new FormData(form);
@@ -3247,6 +3288,7 @@
         } finally {
             clearTableExportClipboardIntent(event.submitter);
             restorePendingBlur();
+            delete form.dataset.ajaxPendingBlurOverride;
             restoreProcessingState();
         }
     });
@@ -3327,6 +3369,7 @@
         if (submitOnChangeControl instanceof HTMLElement) {
             const form = submitOnChangeControl.closest('form[data-ajax="true"]');
             if (form instanceof HTMLFormElement) {
+                setFormPendingBlurOverride(form, submitOnChangeControl);
                 form.requestSubmit();
                 return;
             }
@@ -3346,6 +3389,7 @@
             return;
         }
 
+        setFormPendingBlurOverride(form, select);
         form.requestSubmit();
     });
 

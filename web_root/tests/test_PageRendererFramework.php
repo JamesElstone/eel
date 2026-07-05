@@ -472,11 +472,20 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
             "scope === 'page'",
             "form.closest('.card[data-card-key]')",
             "card.querySelector('.card-body')",
+            'function normaliseAjaxPendingBlurScope(value)',
+            'function controlAjaxPendingBlurScope(control)',
+            'function setFormPendingBlurOverride(form, control)',
+            'control.dataset.blurScope',
+            'form.dataset.ajaxPendingBlurOverride = scope;',
+            'setFormPendingBlurOverride(form, event.submitter);',
+            'setFormPendingBlurOverride(form, submitOnChangeControl);',
+            'setFormPendingBlurOverride(form, select);',
             'function beginAjaxPendingBlur(form)',
             "target.classList.add('is-ajax-pending');",
             "target.setAttribute('aria-busy', 'true');",
             "target.classList.remove('is-ajax-pending');",
             'delete target.dataset.ajaxPendingCount;',
+            'delete form.dataset.ajaxPendingBlurOverride;',
         ] as $expected) {
             $harness->assertTrue(str_contains($script, $expected));
         }

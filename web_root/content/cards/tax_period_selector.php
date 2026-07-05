@@ -4,7 +4,8 @@ declare(strict_types=1);
 final class _tax_period_selectorCard extends CardBaseFramework
 {
     public function key(): string { return 'tax_period_selector'; }
-    public function title(): string { return 'An accounting period can be any length, but a tax period can only be 12 months in length. So multiple tax periods can be within a single accounting period.'; }
+    public function title(): string { return 'Select Tax Period to show'; }
+    public function helper(array $context): string { return 'An accounting period can be any length, but a tax period can only be 12 months in length. So multiple tax periods can be within a single accounting period.'; }
     protected function additionalInvalidationFacts(): array { return ['page.context', 'tax.workings']; }
 
     public function render(array $context): string

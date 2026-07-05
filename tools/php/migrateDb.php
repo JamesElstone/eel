@@ -22,15 +22,6 @@ function eel_migration_log(string $message): void
     echo '[' . date('Y-m-d H:i:s') . '] ' . $message . PHP_EOL;
 }
 
-function eel_migration_notice(string $message): void
-{
-    if (PHP_SAPI !== 'cli') {
-        return;
-    }
-
-    echo '[' . date('Y-m-d H:i:s') . '] ' . $message . PHP_EOL;
-}
-
 function eel_migration_details_requested(array $argv): bool
 {
     foreach (array_slice($argv, 1) as $argument) {
@@ -59,7 +50,7 @@ function eel_migration_execution_timeout_description(): string
 
 $eelMigrationDetails = eel_migration_details_requested($argv ?? []);
 
-eel_migration_notice('PHP SAPI: ' . PHP_SAPI . '; execution timeout: ' . eel_migration_execution_timeout_description() . '.');
+eel_migration_log('PHP SAPI: ' . PHP_SAPI . '; execution timeout: ' . eel_migration_execution_timeout_description() . '.');
 
 if (!defined('APP_ROOT')) {
     eel_migration_log('Loading application bootstrap...');

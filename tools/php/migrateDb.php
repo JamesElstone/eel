@@ -9,11 +9,37 @@ declare(strict_types=1);
 
 function eel_migration_log(string $message): void
 {
+    global $eelMigrationDetails;
+
+    if (PHP_SAPI !== 'cli') {
+        return;
+    }
+
+    if (($eelMigrationDetails ?? false) !== true) {
+        return;
+    }
+
+    echo '[' . date('Y-m-d H:i:s') . '] ' . $message . PHP_EOL;
+}
+
+function eel_migration_notice(string $message): void
+{
     if (PHP_SAPI !== 'cli') {
         return;
     }
 
     echo '[' . date('Y-m-d H:i:s') . '] ' . $message . PHP_EOL;
+}
+
+function eel_migration_details_requested(array $argv): bool
+{
+    foreach (array_slice($argv, 1) as $argument) {
+        if ($argument === '--details' || $argument === '/details') {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 function eel_migration_execution_timeout_description(): string
@@ -31,7 +57,9 @@ function eel_migration_execution_timeout_description(): string
     return $seconds . ' second(s) (max_execution_time=' . (string)$configured . ')';
 }
 
-eel_migration_log('PHP SAPI: ' . PHP_SAPI . '; execution timeout: ' . eel_migration_execution_timeout_description() . '.');
+$eelMigrationDetails = eel_migration_details_requested($argv ?? []);
+
+eel_migration_notice('PHP SAPI: ' . PHP_SAPI . '; execution timeout: ' . eel_migration_execution_timeout_description() . '.');
 
 if (!defined('APP_ROOT')) {
     eel_migration_log('Loading application bootstrap...');
@@ -42,8 +70,14 @@ if (!defined('APP_ROOT')) {
 $schemaFile = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'eel_accounts.schema.sql';
 $migrationsDirectory = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'db_schema' . DIRECTORY_SEPARATOR . 'migrations';
 
-function eel_run_migration_tool(string $schemaFile, string $migrationsDirectory): int
+function eel_run_migration_tool(string $schemaFile, string $migrationsDirectory, ?bool $details = null): int
 {
+    global $eelMigrationDetails;
+
+    if ($details !== null) {
+        $eelMigrationDetails = $details;
+    }
+
     if (PHP_SAPI !== 'cli') {
         fwrite(STDERR, "This migration runner must be run from the command line.\n");
         return 1;
@@ -375,5 +409,5 @@ function splitMigrationSql(string $sql): array
 }
 
 if (realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? '')) === __FILE__) {
-    exit(eel_run_migration_tool($schemaFile, $migrationsDirectory));
+    exit(eel_run_migration_tool($schemaFile, $migrationsDirectory, eel_migration_details_requested($argv ?? [])));
 }

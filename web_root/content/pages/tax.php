@@ -66,6 +66,7 @@ final class _tax extends PageContextFramework
                 'ct_periods' => $ctPeriods,
                 'selected_ct_period_id' => $selectedCtPeriodId,
                 'selected_ct_period' => $selectedCtPeriod,
+                'selected_ct_period_helper' => $this->selectedCtPeriodHelper($selectedCtPeriod),
                 'sync_errors' => (array)($sync['errors'] ?? []),
             ],
         ];
@@ -98,5 +99,17 @@ final class _tax extends PageContextFramework
         }
 
         return [];
+    }
+
+    private function selectedCtPeriodHelper(array $selectedCtPeriod): string
+    {
+        $sequenceNo = (int)($selectedCtPeriod['sequence_no'] ?? 0);
+        $startDate = trim((string)($selectedCtPeriod['period_start'] ?? ''));
+        $endDate = trim((string)($selectedCtPeriod['period_end'] ?? ''));
+        if ($sequenceNo <= 0 || $startDate === '' || $endDate === '') {
+            return '';
+        }
+
+        return 'Showing Tax Period ' . $sequenceNo . ': ' . $startDate . ' to ' . $endDate;
     }
 }

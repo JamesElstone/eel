@@ -5,6 +5,7 @@ final class _tax_car_co2_treatmentCard extends CardBaseFramework
 {
     public function key(): string { return 'tax_car_co2_treatment'; }
     public function title(): string { return 'Car Carbon Dioxide (CO2) Treatment'; }
+    public function helper(array $context): string { return \eel_accounts\Ui\TaxCardRenderer::selectedPeriodHelper($context); }
     public function services(): array { return [\eel_accounts\Ui\TaxCardRenderer::serviceDefinition()]; }
     public function handleError(string $serviceKey, array $error, array $context): string { return ''; }
 

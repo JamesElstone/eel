@@ -5,6 +5,7 @@ final class _tax_aia_allocationCard extends CardBaseFramework
 {
     public function key(): string { return 'tax_aia_allocation'; }
     public function title(): string { return 'Annual Investment Allowance (AIA) Allocation'; }
+    public function helper(array $context): string { return \eel_accounts\Ui\TaxCardRenderer::selectedPeriodHelper($context); }
     public function services(): array { return [\eel_accounts\Ui\TaxCardRenderer::serviceDefinition()]; }
     public function handleError(string $serviceKey, array $error, array $context): string { return ''; }
 

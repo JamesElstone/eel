@@ -5,6 +5,7 @@ final class _tax_rate_bandsCard extends CardBaseFramework
 {
     public function key(): string { return 'tax_rate_bands'; }
     public function title(): string { return 'Tax Rate Bands / Marginal Relief'; }
+    public function helper(array $context): string { return \eel_accounts\Ui\TaxCardRenderer::selectedPeriodHelper($context); }
     public function services(): array { return [\eel_accounts\Ui\TaxCardRenderer::serviceDefinition()]; }
     public function handleError(string $serviceKey, array $error, array $context): string { return ''; }
 

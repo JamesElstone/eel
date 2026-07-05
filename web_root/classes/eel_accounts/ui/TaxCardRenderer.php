@@ -38,6 +38,13 @@ final class TaxCardRenderer
         return '<div class="helper">' . \HelperFramework::escape($message) . '</div>';
     }
 
+    public static function selectedPeriodHelper(array $context): string
+    {
+        $tax = (array)($context['tax'] ?? []);
+
+        return \HelperFramework::escape((string)($tax['selected_ct_period_helper'] ?? ''));
+    }
+
     public static function guidanceLink(string $key): string
     {
         $url = \eel_accounts\Service\TaxGuidanceService::url($key);

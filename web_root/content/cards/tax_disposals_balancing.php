@@ -5,6 +5,7 @@ final class _tax_disposals_balancingCard extends CardBaseFramework
 {
     public function key(): string { return 'tax_disposals_balancing'; }
     public function title(): string { return 'Disposals / Balancing Charges'; }
+    public function helper(array $context): string { return \eel_accounts\Ui\TaxCardRenderer::selectedPeriodHelper($context); }
     public function services(): array { return [\eel_accounts\Ui\TaxCardRenderer::serviceDefinition()]; }
     public function handleError(string $serviceKey, array $error, array $context): string { return ''; }
 

@@ -5,6 +5,7 @@ final class _tax_disallowable_add_backsCard extends CardBaseFramework
 {
     public function key(): string { return 'tax_disallowable_add_backs'; }
     public function title(): string { return 'Disallowable Expenses / Add-Backs'; }
+    public function helper(array $context): string { return \eel_accounts\Ui\TaxCardRenderer::selectedPeriodHelper($context); }
     public function services(): array { return [\eel_accounts\Ui\TaxCardRenderer::serviceDefinition()]; }
     public function handleError(string $serviceKey, array $error, array $context): string { return ''; }
 

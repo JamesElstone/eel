@@ -5,6 +5,7 @@ final class _tax_capital_allowances_summaryCard extends CardBaseFramework
 {
     public function key(): string { return 'tax_capital_allowances_summary'; }
     public function title(): string { return 'Capital Allowances Summary'; }
+    public function helper(array $context): string { return \eel_accounts\Ui\TaxCardRenderer::selectedPeriodHelper($context); }
     public function services(): array { return [\eel_accounts\Ui\TaxCardRenderer::serviceDefinition()]; }
     public function handleError(string $serviceKey, array $error, array $context): string { return ''; }
 

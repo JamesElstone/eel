@@ -5,6 +5,7 @@ final class _tax_corporation_tax_summaryCard extends CardBaseFramework
 {
     public function key(): string { return 'tax_corporation_tax_summary'; }
     public function title(): string { return 'Corporation Tax Summary'; }
+    public function helper(array $context): string { return \eel_accounts\Ui\TaxCardRenderer::selectedPeriodHelper($context); }
     public function services(): array { return [\eel_accounts\Ui\TaxCardRenderer::serviceDefinition()]; }
     public function handleError(string $serviceKey, array $error, array $context): string { return ''; }
 

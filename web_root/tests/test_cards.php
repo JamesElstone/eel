@@ -43,6 +43,7 @@ final class TestCardsHarness
         $this->assertRoleAssignmentCardOwnsDashboardContext();
         $this->assertTrialBalanceStateUsesSelectedCompanyContext();
         $this->assertTrialBalanceStateRendersNestedMetrics();
+        $this->assertTrialBalanceStateDoesNotShowPerfectGaugeBeforeReady();
         $this->assertTrialBalanceValidationUsesCompanyCurrency();
         $this->assertCompaniesHousePageIncludesCompaniesHouseSnapshot();
         $this->assertCompaniesHouseSnapshotUsesSelectedCompanyContext();
@@ -188,6 +189,39 @@ final class TestCardsHarness
         $this->assertSame(false, str_contains($html, 'Array'));
 
         test_output_line('Cards: trial_balance_state renders nested metric values without warnings.');
+    }
+
+    private function assertTrialBalanceStateDoesNotShowPerfectGaugeBeforeReady(): void
+    {
+        $card = new _trial_balance_stateCard();
+        $html = $card->render([
+            'company' => [
+                'settings' => ['default_currency_symbol' => '&pound;'],
+            ],
+            'services' => [
+                'trialBalancePageData' => [
+                    'available' => true,
+                    'summary' => [
+                        'trial_balance_status' => ['is_balanced' => true, 'label' => 'Balanced'],
+                    ],
+                ],
+                'trialBalanceValidation' => [
+                    'available' => true,
+                    'ready_for_ct_working_papers' => 'Nearly ready',
+                    'checks' => [
+                        ['code' => 'trial_balance_equality', 'title' => 'Trial balance equality', 'status' => 'pass'],
+                        ['code' => 'uncategorised_transactions', 'title' => 'Uncategorised and posting route check', 'status' => 'pass'],
+                        ['code' => 'suspense_check', 'title' => 'Suspense and uncategorised exposure', 'status' => 'pass'],
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->assertTrue(str_contains($html, '>70</text>'));
+        $this->assertTrue(!str_contains($html, '>100</text><text class="chart-gauge-label"'));
+        $this->assertTrue(str_contains($html, '>Nearly ready</text>'));
+
+        test_output_line('Cards: trial_balance_state caps the gauge before CT readiness is complete.');
     }
 
     private function assertTrialBalanceValidationUsesCompanyCurrency(): void

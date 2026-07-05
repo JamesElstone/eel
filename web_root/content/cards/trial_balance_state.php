@@ -117,8 +117,13 @@ final class _trial_balance_stateCard extends CardBaseFramework
             $checks,
             static fn(array $check): bool => in_array((string)($check['status'] ?? ''), ['pass', 'success', 'matches'], true)
         ));
+        $score = (int)round(($passed / count($checks)) * 100);
+        $labelScore = $this->readinessLabelScore($readiness);
+        if ($score >= 100 && $labelScore < 100) {
+            return $labelScore;
+        }
 
-        return (int)round(($passed / count($checks)) * 100);
+        return $score;
     }
 
     private function isActionableReadinessCheck(array $check): bool

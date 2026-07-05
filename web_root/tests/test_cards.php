@@ -220,6 +220,17 @@ final class TestCardsHarness
         $this->assertTrue(str_contains($html, '>70</text>'));
         $this->assertTrue(!str_contains($html, '>100</text><text class="chart-gauge-label"'));
         $this->assertTrue(str_contains($html, '>Nearly ready</text>'));
+        $this->assertTrue(str_contains($html, 'Posted ledger'));
+        $this->assertTrue(str_contains($html, 'TB equality'));
+        $this->assertTrue(str_contains($html, 'Uncategorised txns'));
+        $this->assertTrue(str_contains($html, 'Missing posting routes'));
+        $this->assertTrue(str_contains($html, 'Suspense exposure'));
+        $this->assertTrue(str_contains($html, 'Unposted journals'));
+        $this->assertTrue(str_contains($html, 'Bank ledger diff'));
+        $this->assertTrue(str_contains($html, 'Period completeness'));
+        $this->assertTrue(str_contains($html, 'FRS 105 deferred tax'));
+        $this->assertTrue(str_contains($html, 'Review notes'));
+        $this->assertTrue(str_contains($html, 'TB comparison diffs'));
 
         test_output_line('Cards: trial_balance_state caps the gauge before CT readiness is complete.');
     }

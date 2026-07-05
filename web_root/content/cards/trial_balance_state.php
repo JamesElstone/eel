@@ -74,6 +74,7 @@ final class _trial_balance_stateCard extends CardBaseFramework
         return '<div class="trial-balance-summary-layout">
             <div>' . $this->readinessGaugeCard($validation) . '</div>
             <div class="summary-grid trial-balance-summary-grid">
+                ' . $this->readinessDriverCards($validation, $companySettings) . '
                 ' . $this->summaryCard('Trial Balance status', '<span class="badge ' . (!empty($status['is_balanced']) ? 'success' : 'danger') . '">' . HelperFramework::escape((string)($status['label'] ?? 'Not balanced')) . '</span>', true) . '
                 ' . $this->summaryCard('Profit before tax', $this->money($companySettings, $summary['profit_before_tax'] ?? 0)) . '
                 ' . $this->summaryCard('Net assets', $this->money($companySettings, $summary['net_assets'] ?? 0)) . '
@@ -100,6 +101,55 @@ final class _trial_balance_stateCard extends CardBaseFramework
         ]);
 
         return $this->summaryCard('Readiness', $chart, true);
+    }
+
+    private function readinessDriverCards(array $validation, array $companySettings): string
+    {
+        $checks = $this->checksByCode($validation);
+        $uncategorisedMetrics = (array)($checks['uncategorised_transactions']['metric_value'] ?? []);
+        $bankMetrics = (array)($checks['bank_ledger_reasonableness']['metric_value'] ?? []);
+        $periodTiles = (array)($checks['period_completeness']['metric_value'] ?? []);
+        $deferredTaxMetrics = (array)($checks['frs105_deferred_tax_nominal']['metric_value'] ?? []);
+
+        return ''
+            . $this->summaryCard('Posted ledger', $this->yesNoBadge(!empty($validation['has_posted_ledger'])), true)
+            . $this->checkSummaryCard('TB equality', $checks['trial_balance_equality'] ?? [], $this->money($companySettings, $checks['trial_balance_equality']['metric_value'] ?? 0))
+            . $this->checkSummaryCard('Uncategorised txns', $checks['uncategorised_transactions'] ?? [], (string)(int)($uncategorisedMetrics['uncategorised_transactions'] ?? 0))
+            . $this->checkSummaryCard('Missing posting routes', $checks['uncategorised_transactions'] ?? [], (string)(int)($uncategorisedMetrics['missing_posting_routes'] ?? 0))
+            . $this->checkSummaryCard('Suspense exposure', $checks['suspense_check'] ?? [], $this->money($companySettings, $checks['suspense_check']['metric_value'] ?? 0))
+            . $this->checkSummaryCard('Unposted journals', $checks['unposted_journals'] ?? [], (string)(int)($checks['unposted_journals']['metric_value'] ?? 0))
+            . $this->checkSummaryCard('Bank ledger diff', $checks['bank_ledger_reasonableness'] ?? [], $this->money($companySettings, $bankMetrics['difference'] ?? 0))
+            . $this->checkSummaryCard('Period completeness', $checks['period_completeness'] ?? [], $this->greenMonthCount($periodTiles))
+            . $this->checkSummaryCard('FRS 105 deferred tax', $checks['frs105_deferred_tax_nominal'] ?? [], (string)(int)($deferredTaxMetrics['deferred_tax_nominal_count'] ?? 0))
+            . $this->summaryCard('Review notes', $this->yesNoBadge(!empty($validation['review_warnings_acknowledged']), 'Acknowledged', 'Needed'), true)
+            . $this->summaryCard('TB comparison diffs', HelperFramework::escape((string)(int)($validation['comparison_differences'] ?? 0)) . ' ' . $this->statusBadge(((int)($validation['comparison_differences'] ?? 0) === 0) ? 'pass' : 'warning'), true);
+    }
+
+    private function checksByCode(array $validation): array
+    {
+        $byCode = [];
+        foreach ((array)($validation['checks'] ?? []) as $check) {
+            if (!is_array($check)) {
+                continue;
+            }
+
+            $code = (string)($check['code'] ?? '');
+            if ($code !== '') {
+                $byCode[$code] = $check;
+            }
+        }
+
+        return $byCode;
+    }
+
+    private function checkSummaryCard(string $label, array $check, string $value): string
+    {
+        $status = (string)($check['status'] ?? '');
+        if ($status === '') {
+            return $this->summaryCard($label, $value);
+        }
+
+        return $this->summaryCard($label, HelperFramework::escape($value) . ' ' . $this->statusBadge($status), true);
     }
 
     private function readinessScore(array $validation, string $readiness): int
@@ -156,6 +206,34 @@ final class _trial_balance_stateCard extends CardBaseFramework
             $score > 0 => '#d97706',
             default => '#dc2626',
         };
+    }
+
+    private function yesNoBadge(bool $value, string $yes = 'Yes', string $no = 'No'): string
+    {
+        return '<span class="badge ' . ($value ? 'success' : 'warning') . '">' . HelperFramework::escape($value ? $yes : $no) . '</span>';
+    }
+
+    private function statusBadge(string $status): string
+    {
+        $class = match ($status) {
+            'pass', 'success', 'matches' => 'success',
+            'fail', 'danger', 'differs' => 'danger',
+            'warning' => 'warning',
+            default => 'info',
+        };
+
+        return '<span class="badge ' . $class . '">' . HelperFramework::escape($status) . '</span>';
+    }
+
+    private function greenMonthCount(array $monthTiles): string
+    {
+        if ($monthTiles === []) {
+            return '0 / 0';
+        }
+
+        $green = count(array_filter($monthTiles, static fn(array $tile): bool => (string)($tile['status'] ?? '') === 'green'));
+
+        return $green . ' / ' . count($monthTiles);
     }
 
     private function summaryCard(string $label, string $value, bool $trustedValue = false): string

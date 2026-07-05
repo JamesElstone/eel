@@ -139,6 +139,7 @@ final class TrialBalanceValidationService
             'month_tiles' => $monthTiles,
             'ready_for_ct_working_papers' => $readiness,
             'review_warnings_acknowledged' => $reviewWarningsAcknowledged,
+            'comparison_differences' => $comparisonDifferences,
             'has_posted_ledger' => $hasJournals,
         ];
     }

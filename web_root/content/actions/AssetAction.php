@@ -63,10 +63,6 @@ final class AssetAction implements ActionInterfaceFramework
                     (string)$request->input('disposal_event_type', ''),
                     (string)$request->input('disposal_reason', '')
                 ),
-                'run_asset_depreciation' => $service->runDepreciation(
-                    $companyId,
-                    (int)$request->input('accounting_period_id', 0)
-                ),
                 'save_potential_asset_threshold' => $service->savePotentialAssetThreshold(
                     $companyId,
                     $request->input('potential_asset_threshold', 250)
@@ -116,7 +112,6 @@ final class AssetAction implements ActionInterfaceFramework
         $messages = (array)($result['messages'] ?? []);
         if ($messages === []) {
             $messages[] = match ($intent) {
-                'run_asset_depreciation' => 'Depreciation posted.',
                 'save_potential_asset_threshold' => 'Potential asset threshold saved.',
                 'convert_non_asset_to_asset' => 'Non-asset converted to an asset.',
                 default => '',

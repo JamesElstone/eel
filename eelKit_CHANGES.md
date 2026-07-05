@@ -1,5 +1,52 @@
 # eelKit Changes
 
+## Cross-page card action handoff
+
+Feature name: `cross_page_card_action_handoff`.
+
+The approved way for a card on one page to send a user to another page, while carrying button payload for a card on the target page, is to submit the source card form directly to the destination page URL.
+
+For example, a `Source` card on page `one` can send a payload to page `two` like this:
+
+```php
+return '<form method="post" action="?page=two" data-ajax="true">
+    <input type="hidden" name="show_card" value="target">
+    <input type="hidden" name="source_id" value="' . HelperFramework::escape((string)$sourceId) . '">
+    <button type="submit" class="button primary">Open target</button>
+</form>';
+```
+
+When the AJAX response is rendered by page `two`, eelKit's `web_root/js/index.js` sees that the response `page` differs from the current page and navigates the browser to the response `url`. Downstream projects should use this normal page request flow rather than inventing a custom `redirect` property in card action JSON.
+
+If the handoff also needs to run a command, include the target page's shared card action in the submitted payload:
+
+```html
+<form method="post" action="?page=two" data-ajax="true">
+    <input type="hidden" name="card_action" value="Target">
+    <input type="hidden" name="show_card" value="target">
+    <input type="hidden" name="source_id" value="123">
+    <button type="submit" class="button primary">Open target</button>
+</form>
+```
+
+The target card should read request values in `handle()`, place any durable render state under a clear context key, and then render from context:
+
+```php
+public function handle(
+    RequestFramework $request,
+    PageServiceFramework $services,
+    array $context,
+    ActionResultFramework $actionResult
+): array {
+    $context = parent::handle($request, $services, $context, $actionResult);
+    $context['target']['source_id'] = (int)$request->input('source_id', 0);
+
+    return $context;
+}
+```
+
+Use `show_card` when the destination page has multiple cards or tabs and should reveal the target card after navigation. Use normal `ActionResultFramework` changed facts, flash messages, query values, and context for the target page render; `ActionResultFramework` does not provide a first-class cross-page redirect property.
+
 ## AJAX pending blur scopes
 
 Feature name: `ajax_pending_blur_scopes`.

@@ -17,9 +17,9 @@ final class _tax_capital_allowances_summaryCard extends CardBaseFramework
         $summary = (array)($workings['capital_allowances_summary'] ?? []);
         return \eel_accounts\Ui\TaxCardRenderer::header('capital_allowances')
             . \eel_accounts\Ui\TaxCardRenderer::summaryGrid([
-                ['AIA', \eel_accounts\Ui\TaxCardRenderer::money($context, $summary['aia_claimed'] ?? 0)],
-                ['FYA', \eel_accounts\Ui\TaxCardRenderer::money($context, $summary['fya_claimed'] ?? 0)],
-                ['WDA', \eel_accounts\Ui\TaxCardRenderer::money($context, $summary['wda_claimed'] ?? 0)],
+                ['Annual Investment Allowance (AIA)', \eel_accounts\Ui\TaxCardRenderer::money($context, $summary['aia_claimed'] ?? 0)],
+                ['First Year Allowance (FYA)', \eel_accounts\Ui\TaxCardRenderer::money($context, $summary['fya_claimed'] ?? 0)],
+                ['Writing Down Allowance (WDA)', \eel_accounts\Ui\TaxCardRenderer::money($context, $summary['wda_claimed'] ?? 0)],
                 ['Balancing charges', \eel_accounts\Ui\TaxCardRenderer::money($context, $summary['balancing_charge'] ?? 0)],
                 ['Balancing allowances', \eel_accounts\Ui\TaxCardRenderer::money($context, $summary['balancing_allowance'] ?? 0)],
                 ['Net capital allowances', \eel_accounts\Ui\TaxCardRenderer::money($context, $summary['net_capital_allowances'] ?? 0)],
@@ -49,19 +49,19 @@ final class _tax_capital_allowances_summaryCard extends CardBaseFramework
             $addition = \eel_accounts\Ui\TaxCardRenderer::money($context, $row['addition_amount'] ?? 0);
 
             $rows[] = [
-                \eel_accounts\Ui\TaxCardRenderer::escape('AIA claimed'),
-                \eel_accounts\Ui\TaxCardRenderer::escape($source !== '' ? $source . ' from addition ' . $addition : 'AIA allocation row'),
+                \eel_accounts\Ui\TaxCardRenderer::escape('Annual Investment Allowance (AIA) claimed'),
+                \eel_accounts\Ui\TaxCardRenderer::escape($source !== '' ? $source . ' from addition ' . $addition : 'Annual Investment Allowance (AIA) allocation row'),
                 \eel_accounts\Ui\TaxCardRenderer::escape(\eel_accounts\Ui\TaxCardRenderer::money($context, $amount)),
                 \eel_accounts\Ui\TaxCardRenderer::escape(\eel_accounts\Ui\TaxCardRenderer::money($context, $runningTotal)),
             ];
         }
 
         if ($rows === []) {
-            $this->appendCalculationRow($rows, $context, $runningTotal, 'AIA claimed', 'capital_allowances_summary.aia_claimed', (float)($summary['aia_claimed'] ?? 0));
+            $this->appendCalculationRow($rows, $context, $runningTotal, 'Annual Investment Allowance (AIA) claimed', 'capital_allowances_summary.aia_claimed', (float)($summary['aia_claimed'] ?? 0));
         }
 
-        $this->appendCalculationRow($rows, $context, $runningTotal, 'FYA claimed', 'capital_allowances_summary.fya_claimed', (float)($summary['fya_claimed'] ?? 0));
-        $this->appendCalculationRow($rows, $context, $runningTotal, 'WDA claimed', 'capital_allowances_summary.wda_claimed', (float)($summary['wda_claimed'] ?? 0));
+        $this->appendCalculationRow($rows, $context, $runningTotal, 'First Year Allowance (FYA) claimed', 'capital_allowances_summary.fya_claimed', (float)($summary['fya_claimed'] ?? 0));
+        $this->appendCalculationRow($rows, $context, $runningTotal, 'Writing Down Allowance (WDA) claimed', 'capital_allowances_summary.wda_claimed', (float)($summary['wda_claimed'] ?? 0));
         $this->appendCalculationRow($rows, $context, $runningTotal, 'Balancing allowances', 'capital_allowances_summary.balancing_allowance', (float)($summary['balancing_allowance'] ?? 0));
         $this->appendCalculationRow($rows, $context, $runningTotal, 'Less balancing charges', 'capital_allowances_summary.balancing_charge', -1 * (float)($summary['balancing_charge'] ?? 0));
 

@@ -97,14 +97,14 @@ final class _year_end_expenses_confirmationCard extends CardBaseFramework
 
         return '<section class="settings-stack" id="year-end-expenses-confirmation">
             <div class="month-grid">
-                ' . $this->summaryCard('Balance b/f', $this->money($companySettings, $totals['brought_forward'] ?? 0)) . '
+                ' . $this->summaryCard('Balance brought forward (b/f)', $this->money($companySettings, $totals['brought_forward'] ?? 0)) . '
                 ' . $this->summaryCard('Claimed in period', $this->money($companySettings, $totals['claimed_total'] ?? 0)) . '
                 ' . $this->summaryCard('Payments in period', $this->money($companySettings, $totals['payments_made'] ?? 0)) . '
-                ' . $this->summaryCard('Balance c/f', $this->money($companySettings, $totals['carried_forward'] ?? 0)) . '
+                ' . $this->summaryCard('Balance carried forward (c/f)', $this->money($companySettings, $totals['carried_forward'] ?? 0)) . '
             </div>
             <div class="table-scroll">
                 <table>
-                    <thead><tr><th>Claimant</th><th>Balance b/f</th><th>Claimed</th><th>Payments</th><th>Balance c/f</th></tr></thead>
+                    <thead><tr><th>Claimant</th><th>Balance brought forward (b/f)</th><th>Claimed</th><th>Payments</th><th>Balance carried forward (c/f)</th></tr></thead>
                     <tbody>' . $rowsHtml . '</tbody>
                 </table>
             </div>

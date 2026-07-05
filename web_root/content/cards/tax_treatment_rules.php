@@ -164,7 +164,7 @@ final class _tax_treatment_rulesCard extends CardBaseFramework
         $isActive = (int)($rule['is_active'] ?? 0) === 1;
         $buttonText = $isActive ? 'Disable' : 'Enable';
         $chickenAttributes = $isActive
-            ? ' data-chicken-check="true" data-chicken-message="Disable this Corporation Tax treatment rule?<br><br>Future CT estimates will fall back to the next matching rule or nominal default." data-chicken-confirm-text="Disable"'
+            ? ' data-chicken-check="true" data-chicken-message="Disable this Corporation Tax treatment rule?<br><br>Future Corporation Tax (CT) estimates will fall back to the next matching rule or nominal default." data-chicken-confirm-text="Disable"'
             : '';
 
         return '<form method="post" action="?page=tax_rates" data-ajax="true">

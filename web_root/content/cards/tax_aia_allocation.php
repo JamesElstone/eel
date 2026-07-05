@@ -4,7 +4,7 @@ declare(strict_types=1);
 final class _tax_aia_allocationCard extends CardBaseFramework
 {
     public function key(): string { return 'tax_aia_allocation'; }
-    public function title(): string { return 'AIA Allocation'; }
+    public function title(): string { return 'Annual Investment Allowance (AIA) Allocation'; }
     public function services(): array { return [\eel_accounts\Ui\TaxCardRenderer::serviceDefinition()]; }
     public function handleError(string $serviceKey, array $error, array $context): string { return ''; }
 
@@ -27,6 +27,6 @@ final class _tax_aia_allocationCard extends CardBaseFramework
             ];
         }
         return \eel_accounts\Ui\TaxCardRenderer::header('aia')
-            . \eel_accounts\Ui\TaxCardRenderer::table(['Purchase date', 'Asset', 'Addition', 'AIA claimed', 'AIA used'], $rows, 'No AIA allocation rows were found for this period.');
+            . \eel_accounts\Ui\TaxCardRenderer::table(['Purchase date', 'Asset', 'Addition', 'Annual Investment Allowance (AIA) claimed', 'Annual Investment Allowance (AIA) used'], $rows, 'No Annual Investment Allowance (AIA) allocation rows were found for this period.');
     }
 }

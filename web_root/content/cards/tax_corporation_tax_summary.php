@@ -23,7 +23,7 @@ final class _tax_corporation_tax_summaryCard extends CardBaseFramework
             . \eel_accounts\Ui\TaxCardRenderer::summaryGrid([
                 ['Taxable profit', \eel_accounts\Ui\TaxCardRenderer::money($context, $summary['taxable_profit'] ?? 0)],
                 ['Taxable loss', \eel_accounts\Ui\TaxCardRenderer::money($context, $summary['taxable_loss'] ?? 0)],
-                ['Estimated CT', \eel_accounts\Ui\TaxCardRenderer::money($context, $summary['estimated_corporation_tax'] ?? 0)],
+                ['Estimated Corporation Tax (CT)', \eel_accounts\Ui\TaxCardRenderer::money($context, $summary['estimated_corporation_tax'] ?? 0)],
                 ['Effective rate', \eel_accounts\Ui\TaxCardRenderer::percent($summary['estimated_rate'] ?? 0)],
             ]);
     }

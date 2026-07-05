@@ -32,6 +32,6 @@ final class _tax_rate_bandsCard extends CardBaseFramework
         ]);
         return \eel_accounts\Ui\TaxCardRenderer::header('marginal_relief')
             . $prefix
-            . \eel_accounts\Ui\TaxCardRenderer::table(['FY', 'Taxable profit', 'Main rate', 'Small profits', 'Marginal relief', 'Liability', 'Basis'], $rows, 'No rate bands apply because taxable profit is nil.');
+            . \eel_accounts\Ui\TaxCardRenderer::table(['Financial Year (FY)', 'Taxable profit', 'Main rate', 'Small profits', 'Marginal relief', 'Liability', 'Basis'], $rows, 'No rate bands apply because taxable profit is nil.');
     }
 }

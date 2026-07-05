@@ -129,7 +129,7 @@ final class _tax_ratesCard extends CardBaseFramework
             )
             ->column(
                 'marginal_relief_fraction',
-                'MR fraction',
+                'Marginal relief (MR) fraction',
                 html: fn(array $row): string => HelperFramework::escape($this->fraction($row['marginal_relief_fraction'] ?? null)),
                 export: fn(array $row): string => $this->fraction($row['marginal_relief_fraction'] ?? null)
             )
@@ -184,7 +184,7 @@ final class _tax_ratesCard extends CardBaseFramework
     private function refreshRatesAction(string $statusFilter, bool $isEmpty): string
     {
         $buttonClass = $isEmpty ? 'button danger' : 'button primary';
-        $buttonLabel = $isEmpty ? 'Import Live HMRC Rates' : 'Refresh HMRC Rates';
+        $buttonLabel = $isEmpty ? 'Import Live His Majesty\'s Revenue and Customs (HMRC) Rates' : 'Refresh His Majesty\'s Revenue and Customs (HMRC) Rates';
 
         return '<form method="post" action="?page=tax_rates" data-ajax="true">
             <input type="hidden" name="card_action" value="TaxRates">
@@ -215,7 +215,7 @@ final class _tax_ratesCard extends CardBaseFramework
     {
         $start = trim((string)($rule['financial_year_start'] ?? ''));
         if (preg_match('/^(20\d{2})-04-01$/', $start, $matches) === 1) {
-            return 'FY' . $matches[1];
+            return 'Financial Year (FY) ' . $matches[1];
         }
 
         return $start . ' to ' . (string)($rule['financial_year_end'] ?? '');

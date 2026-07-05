@@ -41,7 +41,7 @@ final class TaxCardRenderer
     {
         $url = \eel_accounts\Service\TaxGuidanceService::url($key);
 
-        return '<a class="button button-inline" href="' . \HelperFramework::escape($url) . '" target="_blank" rel="noopener noreferrer">HMRC guidance</a>';
+        return '<a class="button button-inline" href="' . \HelperFramework::escape($url) . '" target="_blank" rel="noopener noreferrer">His Majesty\'s Revenue and Customs (HMRC) guidance</a>';
     }
 
     public static function money(array $context, float|int|string|null $value): string

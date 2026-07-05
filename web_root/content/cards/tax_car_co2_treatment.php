@@ -4,7 +4,7 @@ declare(strict_types=1);
 final class _tax_car_co2_treatmentCard extends CardBaseFramework
 {
     public function key(): string { return 'tax_car_co2_treatment'; }
-    public function title(): string { return 'Car CO2 Treatment'; }
+    public function title(): string { return 'Car Carbon Dioxide (CO2) Treatment'; }
     public function services(): array { return [\eel_accounts\Ui\TaxCardRenderer::serviceDefinition()]; }
     public function handleError(string $serviceKey, array $error, array $context): string { return ''; }
 
@@ -27,6 +27,6 @@ final class _tax_car_co2_treatmentCard extends CardBaseFramework
             ];
         }
         return \eel_accounts\Ui\TaxCardRenderer::header('business_cars')
-            . \eel_accounts\Ui\TaxCardRenderer::table(['Asset', 'Registration', 'CO2 g/km', 'Condition', 'Zero emission', 'Treatment', 'Warnings'], $rows, 'No car CO2 treatment rows were found for this period.');
+            . \eel_accounts\Ui\TaxCardRenderer::table(['Asset', 'Registration', 'Carbon dioxide (CO2) g/km', 'Condition', 'Zero emission', 'Treatment', 'Warnings'], $rows, 'No car Carbon dioxide (CO2) treatment rows were found for this period.');
     }
 }

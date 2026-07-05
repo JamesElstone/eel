@@ -40,6 +40,7 @@ function eel_run_migration_tool(string $schemaFile, string $migrationsDirectory)
 
         foreach ($pending as $file) {
             $currentMigration = basename($file);
+            echo 'Applying ' . $currentMigration . "\n";
             applyMigration($file);
             echo 'Applied ' . $currentMigration . "\n";
             $currentMigration = '';

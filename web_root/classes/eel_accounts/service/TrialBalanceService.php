@@ -336,7 +336,7 @@ final class TrialBalanceService
         $isBalanced = abs($difference) < 0.005;
         $profitAndLoss = $metrics->profitAndLossSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $balanceSheet = $metrics->fetchBalanceSheetMetricValues($companyId, $accountingPeriodId, $periodStart, $periodEnd);
-        $taxComputation = (new \eel_accounts\Service\YearEndTaxReadinessService($metrics))->fetchSummary($companyId, $accountingPeriodId);
+        $taxComputation = (new \eel_accounts\Service\YearEndTaxReadinessService($metrics))->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
         $reviewNotes = trim((string)($context['review']['review_notes'] ?? ''));
 
         return [

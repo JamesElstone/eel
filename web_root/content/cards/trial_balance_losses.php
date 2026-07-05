@@ -57,25 +57,93 @@ final class _trial_balance_lossesCard extends CardBaseFramework
             return $this->renderErrors((array)($taxComputation['errors'] ?? ['Tax computation is not available for this period yet.']));
         }
 
-        $stepsHtml = '';
-        foreach ((array)($taxComputation['steps'] ?? []) as $step) {
-            $stepsHtml .= '<tr><td>' . HelperFramework::escape((string)($step['label'] ?? '')) . '</td><td>' . HelperFramework::escape($this->money($companySettings, $step['amount'] ?? 0)) . '</td></tr>';
-        }
+        $periods = array_values(array_filter(
+            (array)($taxComputation['periods'] ?? []),
+            static fn(mixed $period): bool => is_array($period)
+        ));
 
         return '<div>
-            <div class="summary-grid four">
+            <div class="summary-grid">
+                ' . $this->summaryCard('Estimated corporation tax', $this->money($companySettings, $taxComputation['estimated_corporation_tax'] ?? 0)) . '
+                ' . $this->summaryCard('Taxable profit', $this->money($companySettings, $taxComputation['taxable_profit'] ?? 0)) . '
                 ' . $this->summaryCard('Loss created', $this->money($companySettings, $taxComputation['loss_created_in_period'] ?? 0)) . '
                 ' . $this->summaryCard('Brought forward', $this->money($companySettings, $taxComputation['losses_brought_forward'] ?? 0)) . '
                 ' . $this->summaryCard('Utilised', $this->money($companySettings, $taxComputation['losses_used'] ?? 0)) . '
                 ' . $this->summaryCard('Carried forward', $this->money($companySettings, $taxComputation['losses_carried_forward'] ?? 0)) . '
             </div>
-            <section class="panel-soft">
-                <h3 class="card-title">Tax computation steps</h3>
-                <div class="table-scroll">
-                    <table><thead><tr><th>Step</th><th>Amount</th></tr></thead><tbody>' . $stepsHtml . '</tbody></table>
-                </div>
-            </section>
+            ' . $this->renderTaxDetail($companySettings, $taxComputation, $periods) . '
         </div>';
+    }
+
+    private function renderTaxDetail(array $companySettings, array $taxComputation, array $periods): string
+    {
+        if (count($periods) > 1) {
+            return $this->renderPeriodBreakdown($companySettings, $periods);
+        }
+
+        $steps = (array)($taxComputation['steps'] ?? []);
+        if ($steps === [] && count($periods) === 1) {
+            $steps = (array)($periods[0]['steps'] ?? []);
+        }
+
+        if ($steps === []) {
+            return count($periods) === 1 ? $this->renderPeriodBreakdown($companySettings, $periods) : '';
+        }
+
+        $stepsHtml = '';
+        foreach ($steps as $step) {
+            $stepsHtml .= '<tr><td>' . HelperFramework::escape((string)($step['label'] ?? '')) . '</td><td>' . HelperFramework::escape($this->money($companySettings, $step['amount'] ?? 0)) . '</td></tr>';
+        }
+
+        return '<section class="panel-soft">
+            <h3 class="card-title">Tax computation steps</h3>
+            <div class="table-scroll">
+                <table><thead><tr><th>Step</th><th>Amount</th></tr></thead><tbody>' . $stepsHtml . '</tbody></table>
+            </div>
+        </section>';
+    }
+
+    private function renderPeriodBreakdown(array $companySettings, array $periods): string
+    {
+        $rows = '';
+        foreach ($periods as $period) {
+            $warningCount = count((array)($period['warnings'] ?? []));
+            $rows .= '<tr>
+                <td>' . HelperFramework::escape($this->periodLabel($period)) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $period['taxable_profit'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $period['estimated_corporation_tax'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $period['loss_created_in_period'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $period['losses_used'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $period['losses_carried_forward'] ?? 0)) . '</td>
+                <td>' . $warningCount . '</td>
+            </tr>';
+        }
+
+        return '<section class="panel-soft">
+            <h3 class="card-title">CT period breakdown</h3>
+            <div class="table-scroll">
+                <table>
+                    <thead><tr><th>CT period</th><th>Taxable profit</th><th>Estimated CT</th><th>Loss created</th><th>Loss used</th><th>Losses c/f</th><th>Warnings</th></tr></thead>
+                    <tbody>' . $rows . '</tbody>
+                </table>
+            </div>
+        </section>';
+    }
+
+    private function periodLabel(array $period): string
+    {
+        $label = trim((string)($period['period_label'] ?? $period['label'] ?? ''));
+        if ($label !== '') {
+            return $label;
+        }
+
+        $start = trim((string)($period['period_start'] ?? ''));
+        $end = trim((string)($period['period_end'] ?? ''));
+        if ($start !== '' && $end !== '') {
+            return $start . ' to ' . $end;
+        }
+
+        return 'CT period';
     }
 
     private function summaryCard(string $label, string $value): string

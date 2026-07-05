@@ -45,6 +45,7 @@ final class TestCardsHarness
         $this->assertTrialBalanceStateRendersNestedMetrics();
         $this->assertTrialBalanceStateDoesNotShowPerfectGaugeBeforeReady();
         $this->assertTrialBalanceValidationUsesCompanyCurrency();
+        $this->assertTrialBalanceLossesRendersCtPeriodTotals();
         $this->assertCompaniesHousePageIncludesCompaniesHouseSnapshot();
         $this->assertCompaniesHouseSnapshotUsesSelectedCompanyContext();
     }
@@ -274,6 +275,78 @@ final class TestCardsHarness
         $this->assertTrue(str_contains($html, '$ 42.50'));
 
         test_output_line('Cards: trial_balance_validation renders monetary metrics with company currency.');
+    }
+
+    private function assertTrialBalanceLossesRendersCtPeriodTotals(): void
+    {
+        $card = new _trial_balance_lossesCard();
+        $html = $card->render([
+            'company' => [
+                'settings' => ['default_currency_symbol' => '&#36;'],
+            ],
+            'services' => [
+                'trialBalancePageData' => [
+                    'available' => true,
+                    'summary' => [
+                        'tax_computation' => [
+                            'available' => true,
+                            'summary_scope' => 'accounting_period_ct_periods',
+                            'estimated_corporation_tax' => 300.00,
+                            'taxable_profit' => 1500.00,
+                            'loss_created_in_period' => 50.00,
+                            'losses_brought_forward' => 25.00,
+                            'losses_used' => 10.00,
+                            'losses_carried_forward' => 65.00,
+                            'periods' => [
+                                [
+                                    'period_label' => '1 Jan 2026 to 31 Mar 2026',
+                                    'taxable_profit' => 500.00,
+                                    'estimated_corporation_tax' => 100.00,
+                                    'loss_created_in_period' => 50.00,
+                                    'losses_used' => 0.00,
+                                    'losses_carried_forward' => 75.00,
+                                    'warnings' => ['Review one'],
+                                ],
+                                [
+                                    'period_label' => '1 Apr 2026 to 31 Dec 2026',
+                                    'taxable_profit' => 1000.00,
+                                    'estimated_corporation_tax' => 200.00,
+                                    'loss_created_in_period' => 0.00,
+                                    'losses_used' => 10.00,
+                                    'losses_carried_forward' => 65.00,
+                                    'warnings' => [],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->assertTrue(str_contains($html, 'Estimated corporation tax'));
+        $this->assertTrue(str_contains($html, '$ 300.00'));
+        $this->assertTrue(str_contains($html, 'CT period breakdown'));
+        $this->assertTrue(str_contains($html, '1 Jan 2026 to 31 Mar 2026'));
+        $this->assertTrue(str_contains($html, '1 Apr 2026 to 31 Dec 2026'));
+        $this->assertTrue(str_contains($html, '$ 100.00'));
+        $this->assertTrue(str_contains($html, '$ 200.00'));
+
+        $errorHtml = $card->render([
+            'services' => [
+                'trialBalancePageData' => [
+                    'available' => true,
+                    'summary' => [
+                        'tax_computation' => [
+                            'available' => false,
+                            'errors' => ['No CT period summaries could be generated.'],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+        $this->assertTrue(str_contains($errorHtml, 'No CT period summaries could be generated.'));
+
+        test_output_line('Cards: trial_balance_losses renders CT-period tax totals and unavailable state.');
     }
 
     private function assertCompaniesHousePageIncludesCompaniesHouseSnapshot(): void

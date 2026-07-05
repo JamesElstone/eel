@@ -42,7 +42,7 @@ final class _hmrc_submission_overviewCard extends CardBaseFramework
                 continue;
             }
 
-            return 'CT Period ' . (int)($period['sequence_no'] ?? 0)
+            return (string)($period['display_label'] ?? ('CT Period ' . (int)($period['sequence_no'] ?? 0)))
                 . ' (' . (string)($period['period_start'] ?? '')
                 . ' to ' . (string)($period['period_end'] ?? '') . ')';
         }

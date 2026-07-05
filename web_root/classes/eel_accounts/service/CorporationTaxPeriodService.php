@@ -163,7 +163,7 @@ final class CorporationTaxPeriodService
             return [];
         }
 
-        return \InterfaceDB::fetchAll(
+        $periods = \InterfaceDB::fetchAll(
             'SELECT *
              FROM corporation_tax_periods
              WHERE company_id = :company_id
@@ -171,6 +171,8 @@ final class CorporationTaxPeriodService
              ORDER BY sequence_no ASC, id ASC',
             ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
         );
+
+        return $this->withDisplaySequences($companyId, $periods);
     }
 
     public function fetch(int $companyId, int $ctPeriodId): ?array
@@ -189,7 +191,12 @@ final class CorporationTaxPeriodService
             ['company_id' => $companyId, 'id' => $ctPeriodId]
         );
 
-        return is_array($row) ? $row : null;
+        if (!is_array($row)) {
+            return null;
+        }
+
+        $periods = $this->withDisplaySequences($companyId, [$row]);
+        return $periods[0] ?? $row;
     }
 
     public function defaultCtPeriodId(int $companyId, int $accountingPeriodId): int
@@ -202,6 +209,16 @@ final class CorporationTaxPeriodService
         }
 
         return (int)($periods[0]['id'] ?? 0);
+    }
+
+    public function displaySequenceNo(int $companyId, int $accountingPeriodId, int $sequenceNo): int
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || $sequenceNo <= 0) {
+            return $sequenceNo;
+        }
+
+        $displaySequences = $this->displaySequenceMap($companyId);
+        return (int)($displaySequences[$this->displaySequenceKey($accountingPeriodId, $sequenceNo)] ?? $sequenceNo);
     }
 
     public function canSubmit(int $companyId, int $ctPeriodId): array
@@ -278,5 +295,97 @@ final class CorporationTaxPeriodService
 
         $sql .= ' WHERE id = :id';
         \InterfaceDB::prepareExecute($sql, $params);
+    }
+
+    private function withDisplaySequences(int $companyId, array $periods): array
+    {
+        if ($companyId <= 0 || $periods === []) {
+            return $periods;
+        }
+
+        $displaySequences = $this->displaySequenceMap($companyId);
+        foreach ($periods as &$period) {
+            $key = $this->displaySequenceKey(
+                (int)($period['accounting_period_id'] ?? 0),
+                (int)($period['sequence_no'] ?? 0)
+            );
+            $displaySequence = (int)($displaySequences[$key] ?? ($period['sequence_no'] ?? 0));
+            $period['display_sequence_no'] = $displaySequence;
+            $period['display_label'] = 'CT Period ' . $displaySequence;
+        }
+        unset($period);
+
+        return $periods;
+    }
+
+    private function displaySequenceMap(int $companyId): array
+    {
+        $accountingPeriods = (new \eel_accounts\Repository\AccountingPeriodRepository())->fetchAccountingPeriods($companyId);
+        usort($accountingPeriods, static function (array $a, array $b): int {
+            return [
+                (string)($a['period_start'] ?? ''),
+                (int)($a['id'] ?? 0),
+            ] <=> [
+                (string)($b['period_start'] ?? ''),
+                (int)($b['id'] ?? 0),
+            ];
+        });
+
+        $storedPeriods = \InterfaceDB::fetchAll(
+            'SELECT accounting_period_id, sequence_no, status
+             FROM corporation_tax_periods
+             WHERE company_id = :company_id
+             ORDER BY accounting_period_id ASC, sequence_no ASC, id ASC',
+            ['company_id' => $companyId]
+        );
+        $storedByAccountingPeriod = [];
+        foreach ($storedPeriods as $period) {
+            if ((string)($period['status'] ?? '') === 'superseded') {
+                continue;
+            }
+            $storedByAccountingPeriod[(int)($period['accounting_period_id'] ?? 0)][] = $period;
+        }
+
+        $displaySequences = [];
+        $displaySequence = 1;
+        $taxPeriodService = new \eel_accounts\Service\TaxPeriodService();
+        foreach ($accountingPeriods as $accountingPeriod) {
+            $accountingPeriodId = (int)($accountingPeriod['id'] ?? 0);
+            if ($accountingPeriodId <= 0) {
+                continue;
+            }
+
+            $periods = (array)($storedByAccountingPeriod[$accountingPeriodId] ?? []);
+            if ($periods === []) {
+                $periods = array_map(
+                    static fn(int $index): array => ['sequence_no' => $index + 1],
+                    array_keys(array_values($taxPeriodService->derive(
+                        (string)($accountingPeriod['period_start'] ?? ''),
+                        (string)($accountingPeriod['period_end'] ?? ''),
+                        $companyId
+                    )))
+                );
+            }
+
+            usort($periods, static function (array $a, array $b): int {
+                return (int)($a['sequence_no'] ?? 0) <=> (int)($b['sequence_no'] ?? 0);
+            });
+
+            foreach ($periods as $period) {
+                $sequenceNo = (int)($period['sequence_no'] ?? 0);
+                if ($sequenceNo <= 0) {
+                    continue;
+                }
+                $displaySequences[$this->displaySequenceKey($accountingPeriodId, $sequenceNo)] = $displaySequence;
+                $displaySequence++;
+            }
+        }
+
+        return $displaySequences;
+    }
+
+    private function displaySequenceKey(int $accountingPeriodId, int $sequenceNo): string
+    {
+        return $accountingPeriodId . ':' . $sequenceNo;
     }
 }

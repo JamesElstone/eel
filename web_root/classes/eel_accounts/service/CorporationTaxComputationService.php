@@ -171,7 +171,7 @@ final class CorporationTaxComputationService
         $row = [
             'accounting_period_id' => $accountingPeriodId,
             'ct_period_id' => $ctPeriodId,
-            'label' => 'CT Period ' . (int)$ctPeriod['sequence_no'],
+            'label' => (string)($ctPeriod['display_label'] ?? ('CT Period ' . (int)$ctPeriod['sequence_no'])),
             'period_start' => (string)$ctPeriod['period_start'],
             'period_end' => (string)$ctPeriod['period_end'],
             'accounting_profit' => round((float)($pnl['profit_before_tax'] ?? 0), 2),
@@ -199,6 +199,7 @@ final class CorporationTaxComputationService
         $summary['ct_period_id'] = $ctPeriodId;
         $summary['accounting_period_id'] = $accountingPeriodId;
         $summary['ct_period_sequence_no'] = (int)$ctPeriod['sequence_no'];
+        $summary['ct_period_display_sequence_no'] = (int)($ctPeriod['display_sequence_no'] ?? $ctPeriod['sequence_no']);
         $summary['period_start'] = (string)$ctPeriod['period_start'];
         $summary['period_end'] = (string)$ctPeriod['period_end'];
         $summary['capital_allowance_breakdown'] = (new \eel_accounts\Service\CapitalAllowanceService())->fetchPeriodBreakdown($companyId, $accountingPeriodId, $ctPeriodId);
@@ -253,7 +254,7 @@ final class CorporationTaxComputationService
             $summary = $this->persistSummaryForCtPeriodId($companyId, $ctPeriodId);
             if (empty($summary['available'])) {
                 foreach ((array)($summary['errors'] ?? ['CT period summary could not be persisted.']) as $error) {
-                    $errors[] = 'CT Period ' . (int)($period['sequence_no'] ?? 0) . ': ' . (string)$error;
+                    $errors[] = (string)($period['display_label'] ?? ('CT Period ' . (int)($period['sequence_no'] ?? 0))) . ': ' . (string)$error;
                 }
                 continue;
             }

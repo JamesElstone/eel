@@ -164,8 +164,12 @@ final class AccountingGuidanceService
 
         if ($periodStart !== '' && $periodEnd !== '') {
             $guidance['ct_periods'] = $suggester->derive($periodStart, $periodEnd, $companyId);
+            $ctPeriodService = new \eel_accounts\Service\CorporationTaxPeriodService();
 
-            foreach ($guidance['ct_periods'] as &$period) {
+            foreach ($guidance['ct_periods'] as $index => &$period) {
+                $displaySequenceNo = $ctPeriodService->displaySequenceNo($companyId, $accountingPeriodId, (int)$index + 1);
+                $period['display_sequence_no'] = $displaySequenceNo;
+                $period['display_label'] = 'Corporation Tax Period ' . $displaySequenceNo;
                 $period['display_range'] = \HelperFramework::accountingPeriodLabel(
                     (string)$period['start'],
                     (string)$period['end']

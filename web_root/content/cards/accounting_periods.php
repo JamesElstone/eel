@@ -224,7 +224,7 @@ final class _accounting_periodsCard extends CardBaseFramework
             $guidanceHtml .= '<div class="list">';
             foreach ((array)$accountingGuidance['ct_periods'] as $index => $ctPeriod) {
                 $guidanceHtml .= '<div class="list-item">'
-                    . '<strong>' . $this->escape('Corporation Tax Period ' . ((int)$index + 1)) . '</strong>'
+                    . '<strong>' . $this->escape((string)($ctPeriod['display_label'] ?? ('Corporation Tax Period ' . ((int)$index + 1)))) . '</strong>'
                     . '<span>' . $this->escape($this->periodDisplayRange((array)$ctPeriod)) . '</span>'
                     . '</div>';
             }

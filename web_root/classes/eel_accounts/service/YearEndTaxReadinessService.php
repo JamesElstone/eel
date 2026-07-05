@@ -86,7 +86,7 @@ final class YearEndTaxReadinessService
             $summary = $service->fetchSummaryForCtPeriodId($companyId, $ctPeriodId);
             if (empty($summary['available'])) {
                 foreach ((array)($summary['errors'] ?? ['CT period summary could not be generated.']) as $error) {
-                    $errors[] = 'CT period ' . (int)($ctPeriod['sequence_no'] ?? 0) . ': ' . (string)$error;
+                    $errors[] = (string)($ctPeriod['display_label'] ?? ('CT period ' . (int)($ctPeriod['sequence_no'] ?? 0))) . ': ' . (string)$error;
                 }
                 continue;
             }
@@ -95,6 +95,7 @@ final class YearEndTaxReadinessService
                 'ct_period_id' => $ctPeriodId,
                 'accounting_period_id' => $accountingPeriodId,
                 'ct_period_sequence_no' => (int)($ctPeriod['sequence_no'] ?? 0),
+                'ct_period_display_sequence_no' => (int)($ctPeriod['display_sequence_no'] ?? ($ctPeriod['sequence_no'] ?? 0)),
                 'period_start' => (string)($ctPeriod['period_start'] ?? ($summary['period_start'] ?? '')),
                 'period_end' => (string)($ctPeriod['period_end'] ?? ($summary['period_end'] ?? '')),
                 'period_label' => $this->periodLabel((string)($ctPeriod['period_start'] ?? ''), (string)($ctPeriod['period_end'] ?? '')),

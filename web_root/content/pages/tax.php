@@ -108,7 +108,7 @@ final class _tax extends PageContextFramework
 
     private function selectedCtPeriodHelper(array $selectedCtPeriod): string
     {
-        $sequenceNo = (int)($selectedCtPeriod['sequence_no'] ?? 0);
+        $sequenceNo = (int)($selectedCtPeriod['display_sequence_no'] ?? ($selectedCtPeriod['sequence_no'] ?? 0));
         $startDate = trim((string)($selectedCtPeriod['period_start'] ?? ''));
         $endDate = trim((string)($selectedCtPeriod['period_end'] ?? ''));
         if ($sequenceNo <= 0 || $startDate === '' || $endDate === '') {

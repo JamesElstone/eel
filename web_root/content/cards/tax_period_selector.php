@@ -30,7 +30,7 @@ final class _tax_period_selectorCard extends CardBaseFramework
             if ($id <= 0) {
                 continue;
             }
-            $label = 'CT Period ' . (int)($period['sequence_no'] ?? 0)
+            $label = (string)($period['display_label'] ?? ('CT Period ' . (int)($period['sequence_no'] ?? 0)))
                 . ' - ' . (string)($period['period_start'] ?? '')
                 . ' to ' . (string)($period['period_end'] ?? '')
                 . ' (' . (string)($period['status'] ?? 'pending') . ')';
@@ -59,7 +59,7 @@ final class _tax_period_selectorCard extends CardBaseFramework
                     <label class="summary-label" for="tax_ct_period_id">CT period</label>
                     <select class="select" id="tax_ct_period_id" name="ct_period_id" data-blur-scope="page">' . $this->options($ctPeriods, $selectedCtPeriodId) . '</select>
                 </form>'
-                . $this->summaryCard('Showing CT Period', 'CT Period ' . (int)($period['sequence_no'] ?? 0))
+                . $this->summaryCard('Showing CT Period', (string)($period['display_label'] ?? ('CT Period ' . (int)($period['sequence_no'] ?? 0))))
                 . $this->summaryCard('Start', (string)($period['period_start'] ?? ''))
                 . $this->summaryCard('End', (string)($period['period_end'] ?? ''))
                 . $this->summaryCard('Status', HelperFramework::labelFromKey((string)($period['status'] ?? 'pending'), '_'))

@@ -1008,13 +1008,10 @@ final class DividendService
         $estimate = 0.0;
         $estimateAvailable = false;
         $errors = [];
+        $result = [];
 
         try {
-            $result = (new \eel_accounts\Service\YearEndTaxReadinessService())->fetchCurrentPeriodEstimate(
-                $companyId,
-                $accountingPeriodId,
-                $accountingPeriod
-            );
+            $result = (new \eel_accounts\Service\YearEndTaxReadinessService())->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
             $estimateAvailable = !empty($result['available']);
             if ($estimateAvailable) {
                 $estimate = max(0.0, round((float)($result['estimated_corporation_tax'] ?? 0), 2));
@@ -1044,9 +1041,11 @@ final class DividendService
             'posted_corporation_tax_charge' => $postedCharge,
             'estimated_corporation_tax' => $estimate,
             'unposted_corporation_tax_adjustment' => $unpostedAdjustment,
+            'tax_periods' => (array)($result['periods'] ?? []),
+            'tax_totals' => (array)($result['totals'] ?? []),
             'detail' => $unpostedAdjustment > 0.0
-                ? 'Dividend capacity deducts estimated Corporation Tax that has not yet been posted into the ledger.'
-                : 'Corporation Tax is either nil by estimate or already reflected by posted ledger entries.',
+                ? 'Dividend capacity deducts estimated Corporation Tax across all CT periods that has not yet been posted into the ledger.'
+                : 'Corporation Tax across all CT periods is either nil by estimate or already reflected by posted ledger entries.',
         ];
     }
 

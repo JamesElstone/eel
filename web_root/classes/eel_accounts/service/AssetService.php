@@ -1222,7 +1222,7 @@ final class AssetService
         }
 
         $this->refreshDerivedTaxData($companyId);
-        $summary = (new \eel_accounts\Service\CorporationTaxComputationService())->fetchSummary($companyId, $accountingPeriodId);
+        $summary = (new \eel_accounts\Service\YearEndTaxReadinessService())->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
         if (!empty($summary['available'])) {
             return $summary;
         }

@@ -80,6 +80,73 @@ $harness->run(_asset_taxCard::class, static function (GeneratedServiceClassTestH
         $harness->assertTrue(!str_contains($html, 'name="accounting_period_id"'));
     });
 
+    $harness->check(_asset_taxCard::class, 'renders tax view columns for each CT period and total', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'page' => [
+                'page_id' => 'assets',
+                'accounting_period_id' => 79,
+            ],
+            'company' => [
+                'id' => 7,
+                'accounting_period_id' => 79,
+                'settings' => [
+                    'default_currency_symbol' => '&#36;',
+                ],
+            ],
+            'services' => [
+                'assetPageData' => [
+                    'accounting_period_id' => 79,
+                    'tax_view' => [
+                        'available' => true,
+                        'periods' => [
+                            [
+                                'period_label' => '05/09/2022 to 04/09/2023',
+                                'accounting_profit' => 9000,
+                                'disallowable_add_backs' => 100,
+                                'depreciation_add_back' => 1500,
+                                'capital_allowances' => 2500,
+                                'taxable_before_losses' => 8100,
+                                'losses_brought_forward' => 1000,
+                                'losses_used' => 750,
+                                'losses_carried_forward' => 250,
+                                'taxable_profit' => 7350,
+                            ],
+                            [
+                                'period_label' => '05/09/2023 to 30/09/2023',
+                                'accounting_profit' => 1000,
+                                'disallowable_add_backs' => 25,
+                                'depreciation_add_back' => 0.5,
+                                'capital_allowances' => 0.25,
+                                'taxable_before_losses' => 1025.25,
+                                'losses_brought_forward' => 250,
+                                'losses_used' => 0.75,
+                                'losses_carried_forward' => 249.25,
+                                'taxable_profit' => 1024.5,
+                            ],
+                        ],
+                        'totals' => [
+                            'accounting_profit' => 10000,
+                            'disallowable_add_backs' => 125,
+                            'depreciation_add_back' => 1500.5,
+                            'capital_allowances' => 2500.25,
+                            'taxable_before_losses' => 9125.25,
+                            'losses_brought_forward' => 1250,
+                            'losses_used' => 750.75,
+                            'losses_carried_forward' => 499.25,
+                            'taxable_profit' => 8374.5,
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, '05/09/2022 to 04/09/2023'));
+        $harness->assertTrue(str_contains($html, '05/09/2023 to 30/09/2023'));
+        $harness->assertTrue(str_contains($html, '<th>Total</th>'));
+        $harness->assertTrue(str_contains($html, '$ 8,374.50'));
+        $harness->assertTrue(!str_contains($html, '<select'));
+    });
+
     $harness->check(_asset_taxCard::class, 'renders unavailable tax view empty state without duplicate accounting period controls', static function () use ($harness, $card): void {
         $html = $card->render([
             'accounting_period_id' => 22,

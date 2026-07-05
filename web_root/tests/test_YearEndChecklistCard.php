@@ -103,6 +103,7 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
                                 'status' => 'warning',
                                 'detail_text' => 'Review the corporation tax workings before closing this accounting period.',
                                 'metric_value' => 'Pending',
+                                'formula_text' => 'CT periods: 05/09/2022 to 04/09/2023; 05/09/2023 to 30/09/2023',
                                 'action_url' => '?page=tax&company_id=12&accounting_period_id=34',
                             ],
                         ],
@@ -113,6 +114,7 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
 
         $harness->assertSame(true, str_contains($html, 'G. Corporation tax readiness'));
         $harness->assertSame(true, str_contains($html, 'Tax readiness acknowledgement'));
+        $harness->assertSame(true, str_contains($html, '05/09/2022 to 04/09/2023; 05/09/2023 to 30/09/2023'));
         $harness->assertSame(true, str_contains($html, '?page=tax'));
         $harness->assertSame(false, str_contains($html, 'company_id=12'));
         $harness->assertSame(false, str_contains($html, 'accounting_period_id=34'));

@@ -19,6 +19,22 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
             'taxable_loss' => 12.34,
             'estimated_corporation_tax' => 2375,
             'losses_carried_forward' => 45.67,
+            'periods' => [
+                [
+                    'period_label' => '05/09/2022 to 04/09/2023',
+                    'taxable_profit' => 10000,
+                    'estimated_corporation_tax' => 1900,
+                    'losses_carried_forward' => 20,
+                    'warnings' => [],
+                ],
+                [
+                    'period_label' => '05/09/2023 to 30/09/2023',
+                    'taxable_profit' => 2500,
+                    'estimated_corporation_tax' => 475,
+                    'losses_carried_forward' => 25.67,
+                    'warnings' => ['Review final period'],
+                ],
+            ],
             'steps' => [
                 ['label' => 'Accounting profit or loss', 'amount' => 12500],
             ],
@@ -46,6 +62,10 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame(true, str_contains($html, '$ 12,500.00'));
         $harness->assertSame(true, str_contains($html, '$ 2,375.00'));
         $harness->assertSame(true, str_contains($html, '$ 45.67'));
+        $harness->assertSame(true, str_contains($html, '05/09/2022 to 04/09/2023'));
+        $harness->assertSame(true, str_contains($html, '05/09/2023 to 30/09/2023'));
+        $harness->assertSame(true, str_contains($html, 'Estimated CT: $ 1,900.00'));
+        $harness->assertSame(true, str_contains($html, '1 warning'));
         $harness->assertSame(false, str_contains($html, 'Corporation Tax Computation'));
         $harness->assertSame(false, str_contains($html, 'Loss schedule'));
         $harness->assertSame(false, str_contains($html, 'Capital Allowances'));

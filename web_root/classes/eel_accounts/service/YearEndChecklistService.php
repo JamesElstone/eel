@@ -714,12 +714,7 @@ final class YearEndChecklistService
             (int)($settings['tools_small_equipment_nominal_id'] ?? 0),
             $potentialAssetThreshold
         );
-        $taxReadiness = $tax->fetchCurrentPeriodEstimate(
-            $companyId,
-            $accountingPeriodId,
-            $accountingPeriod,
-            (array)($financialStatements['profit_and_loss'] ?? [])
-        );
+        $taxReadiness = $tax->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
         $chComparison = $comparison->fetchComparison(
             $companyId,
             $accountingPeriodId,
@@ -1052,30 +1047,36 @@ final class YearEndChecklistService
             '?page=journal&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=nominal_closing_balances'
         ), $reviewAcknowledgements);
 
+        $taxPeriodDisplay = $this->taxPeriodDisplay($taxReadiness);
+
         $sections['corporation_tax_readiness'][] = $this->makeCheck(
             'tax_adjusted_profit_basis_available',
             'Tax-adjusted profit basis available',
             'warning',
             !empty($taxReadiness['available']) && ((int)($taxReadiness['unknown_treatment_count'] ?? 0) > 0 || (int)($taxReadiness['other_treatment_count'] ?? 0) > 0) ? 'warning' : (!empty($taxReadiness['available']) ? 'pass' : 'fail'),
             !empty($taxReadiness['available'])
-                ? 'Nominal tax treatments are being used to estimate the tax-adjusted result.'
+                ? 'Nominal tax treatments are being used to estimate the tax-adjusted result across all CT periods in this accounting period.'
                 : 'Tax readiness could not be calculated for this period.',
             !empty($taxReadiness['available']) ? $this->money($settings, $taxReadiness['taxable_profit'] ?? 0) : '',
             '?page=nominals&company_id=' . $companyId
         );
-        $sections['corporation_tax_readiness'][] = $this->makeCheck(
+        $taxEstimateCheck = $this->makeCheck(
             'corporation_tax_estimate_generated',
             'Corporation tax estimate generated',
             'info',
             !empty($taxReadiness['available']) ? 'pass' : 'fail',
             !empty($taxReadiness['available'])
-                ? 'Estimated taxable profit/loss and corporation tax have been generated for review. This is not final filing-grade tax computation.'
+                ? 'Estimated taxable profit/loss and corporation tax have been generated for every CT period in this accounting period. This is not final filing-grade tax computation.'
                 : 'No tax estimate could be generated for this period.',
             !empty($taxReadiness['available'])
                 ? ('Tax ' . $this->money($settings, $taxReadiness['estimated_corporation_tax'] ?? 0))
                 : '',
             '?page=tax&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
         );
+        if ($taxPeriodDisplay !== '') {
+            $taxEstimateCheck['formula_text'] = 'CT periods: ' . $taxPeriodDisplay;
+        }
+        $sections['corporation_tax_readiness'][] = $taxEstimateCheck;
         $taxConfidenceStatus = (string)($taxReadiness['confidence_status'] ?? 'review_required');
         $taxWarningCount = count((array)($taxReadiness['warnings'] ?? []));
         $sections['corporation_tax_readiness'][] = $this->makeCheck(
@@ -1086,8 +1087,8 @@ final class YearEndChecklistService
             empty($taxReadiness['available'])
                 ? 'Tax readiness must be available before estimate confidence can be assessed.'
                 : ($taxConfidenceStatus === 'ready_for_review'
-                    ? 'No scope warnings are currently attached to the corporation tax estimate.'
-                    : 'Review the estimate warnings before relying on the corporation tax number.'),
+                    ? 'No scope warnings are currently attached to the corporation tax estimates for any CT period.'
+                    : 'Review the estimate warnings before relying on the corporation tax numbers.'),
             empty($taxReadiness['available']) ? '' : ($taxWarningCount . ' warning' . ($taxWarningCount === 1 ? '' : 's')),
             '?page=tax&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
         );
@@ -1096,7 +1097,7 @@ final class YearEndChecklistService
             'Losses carried forward',
             'info',
             !empty($taxReadiness['available']) ? 'pass' : 'not_applicable',
-            'Losses brought forward, used, and carried forward are shown on a simple basis ready for later CT engine refinement.',
+            'Losses brought forward, used, and carried forward are shown across all CT periods in this accounting period.',
             !empty($taxReadiness['available']) ? $this->money($settings, $taxReadiness['losses_carried_forward'] ?? 0) : '',
             '?page=tax&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId
         );
@@ -1109,8 +1110,8 @@ final class YearEndChecklistService
             empty($taxReadiness['available'])
                 ? 'Tax readiness must be available before this review can be acknowledged.'
                 : ($taxReadinessAcknowledged
-                    ? 'Tax readiness has been acknowledged for this period.'
-                    : 'Review the corporation tax workings before closing this accounting period.'),
+                    ? 'Tax readiness has been acknowledged for every CT period in this accounting period.'
+                    : 'Review the corporation tax workings for every CT period before closing this accounting period.'),
             empty($taxReadiness['available']) ? '' : ($taxReadinessAcknowledged ? 'Acknowledged' : 'Pending'),
             '?page=year_end&company_id=' . $companyId . '&accounting_period_id=' . $accountingPeriodId . '&show_card=year_end_tax_readiness#tax-readiness'
         );
@@ -1275,6 +1276,32 @@ final class YearEndChecklistService
         }
 
         return $amount;
+    }
+
+    private function taxPeriodDisplay(array $taxReadiness): string
+    {
+        $periods = array_values(array_filter(
+            (array)($taxReadiness['periods'] ?? []),
+            static fn(mixed $period): bool => is_array($period)
+        ));
+        if ($periods === []) {
+            return '';
+        }
+
+        $labels = [];
+        foreach ($periods as $period) {
+            $label = trim((string)($period['period_label'] ?? ''));
+            if ($label === '') {
+                $start = trim((string)($period['period_start'] ?? ''));
+                $end = trim((string)($period['period_end'] ?? ''));
+                $label = trim($start . ' to ' . $end);
+            }
+            if ($label !== '' && $label !== 'to') {
+                $labels[] = $label;
+            }
+        }
+
+        return implode('; ', $labels);
     }
 
     private function money(array $settings, float|int|string|null $value): string

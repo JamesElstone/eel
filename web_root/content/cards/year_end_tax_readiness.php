@@ -25,7 +25,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             [
                 'key' => 'yearEndTaxReadiness',
                 'service' => \eel_accounts\Service\YearEndTaxReadinessService::class,
-                'method' => 'fetchCurrentPeriodEstimate',
+                'method' => 'fetchAccountingPeriodCtSummary',
                 'params' => [
                     'companyId' => ':company.id',
                     'accountingPeriodId' => ':company.accounting_period_id',
@@ -96,6 +96,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
                 <span class="badge ' . HelperFramework::escape($acknowledged ? 'success' : 'warning') . '">' . HelperFramework::escape($acknowledged ? 'Acknowledged' : 'Acknowledgement pending') . '</span>
             </div>
             ' . ($warningHtml !== '' ? '<section class="panel-soft stack"><h3 class="card-title">Review warnings</h3>' . $warningHtml . '</section>' : '') . '
+            ' . $this->periodSnapshots($companySettings, $taxReadiness) . '
             <div class="summary-grid">
                 <div class="summary-card"><div class="summary-label">Taxable profit</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $taxReadiness['taxable_profit'] ?? 0)) . '</div></div>
                 <div class="summary-card"><div class="summary-label">Estimated Corporation Tax (CT)</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $taxReadiness['estimated_corporation_tax'] ?? 0)) . '</div></div>
@@ -110,5 +111,42 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
     private function money(array $companySettings, float|int|string|null $value): string
     {
         return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
+    }
+
+    private function periodSnapshots(array $companySettings, array $taxReadiness): string
+    {
+        $periods = array_values(array_filter(
+            (array)($taxReadiness['periods'] ?? []),
+            static fn(mixed $period): bool => is_array($period)
+        ));
+        if ($periods === []) {
+            return '';
+        }
+
+        $html = '<section class="summary-grid">';
+        foreach ($periods as $period) {
+            $warningCount = count((array)($period['warnings'] ?? []));
+            $html .= '<div class="summary-card">
+                <div class="summary-label">' . HelperFramework::escape($this->periodHeading($period)) . '</div>
+                <div class="helper">Taxable profit: ' . HelperFramework::escape($this->money($companySettings, $period['taxable_profit'] ?? 0)) . '</div>
+                <div class="helper">Estimated CT: ' . HelperFramework::escape($this->money($companySettings, $period['estimated_corporation_tax'] ?? 0)) . '</div>
+                <div class="helper">Losses c/f: ' . HelperFramework::escape($this->money($companySettings, $period['losses_carried_forward'] ?? 0)) . '</div>
+                <div><span class="badge ' . HelperFramework::escape($warningCount === 0 ? 'success' : 'warning') . '">' . HelperFramework::escape($warningCount === 0 ? 'Ready' : ($warningCount . ' warning' . ($warningCount === 1 ? '' : 's'))) . '</span></div>
+            </div>';
+        }
+
+        return $html . '</section>';
+    }
+
+    private function periodHeading(array $period): string
+    {
+        $label = trim((string)($period['period_label'] ?? ''));
+        if ($label !== '') {
+            return $label;
+        }
+
+        $start = trim((string)($period['period_start'] ?? ''));
+        $end = trim((string)($period['period_end'] ?? ''));
+        return trim($start . ' to ' . $end) !== 'to' ? trim($start . ' to ' . $end) : 'CT period';
     }
 }

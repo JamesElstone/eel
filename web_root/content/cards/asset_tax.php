@@ -65,29 +65,70 @@ final class _asset_taxCard extends CardBaseFramework
             return '<div class="helper">' . HelperFramework::escape($this->emptyStateMessage($assetsPageData, $accountingPeriodId)) . '</div>';
         }
 
-        $calculationRows = [
-            ['Accounting Profit', (float)($assetTaxView['accounting_profit'] ?? 0)],
-            ['+ Disallowable Expenses', (float)($assetTaxView['disallowable_add_backs'] ?? 0)],
-            ['+ Depreciation', (float)($assetTaxView['depreciation_add_back'] ?? 0)],
-            ['- Capital Allowances', (float)($assetTaxView['capital_allowances'] ?? 0)],
-            ['= Taxable Profit Before Losses', (float)($assetTaxView['taxable_before_losses'] ?? 0)],
-            ['Losses B/F', (float)($assetTaxView['losses_brought_forward'] ?? 0)],
-            ['Losses Used', (float)($assetTaxView['losses_used'] ?? 0)],
-            ['Losses C/F', (float)($assetTaxView['losses_carried_forward'] ?? 0)],
-            ['Taxable Profit', (float)($assetTaxView['taxable_profit'] ?? 0)],
-        ];
-
-        $rowsHtml = '';
-        foreach ($calculationRows as [$label, $amount]) {
-            $rowsHtml .= '<tr><td>' . HelperFramework::escape($label) . '</td><td>' . HelperFramework::escape($this->money($settings, $amount)) . '</td></tr>';
-        }
-
-        return '<div class="table-scroll asset-tax-table"><table><thead><tr><th>Calculation</th><th>Amount</th></tr></thead><tbody>' . $rowsHtml . '</tbody></table></div>';
+        return $this->taxTable($settings, $assetTaxView);
     }
 
     private function money(array $settings, float|int|string|null $value): string
     {
         return (new \eel_accounts\Service\CompanySettingsService())->money($settings, $value);
+    }
+
+    private function taxTable(array $settings, array $assetTaxView): string
+    {
+        $periods = array_values(array_filter(
+            (array)($assetTaxView['periods'] ?? []),
+            static fn(mixed $period): bool => is_array($period)
+        ));
+        $totals = (array)($assetTaxView['totals'] ?? $assetTaxView);
+        $rows = [
+            ['Accounting Profit', 'accounting_profit'],
+            ['+ Disallowable Expenses', 'disallowable_add_backs'],
+            ['+ Depreciation', 'depreciation_add_back'],
+            ['- Capital Allowances', 'capital_allowances'],
+            ['= Taxable Profit Before Losses', 'taxable_before_losses'],
+            ['Losses B/F', 'losses_brought_forward'],
+            ['Losses Used', 'losses_used'],
+            ['Losses C/F', 'losses_carried_forward'],
+            ['Taxable Profit', 'taxable_profit'],
+        ];
+
+        $head = '<th>Calculation</th>';
+        if ($periods === []) {
+            $head .= '<th>Amount</th>';
+        } else {
+            foreach ($periods as $period) {
+                $head .= '<th>' . HelperFramework::escape($this->periodHeading($period)) . '</th>';
+            }
+            $head .= '<th>Total</th>';
+        }
+
+        $body = '';
+        foreach ($rows as [$label, $key]) {
+            $body .= '<tr><td>' . HelperFramework::escape($label) . '</td>';
+            if ($periods === []) {
+                $body .= '<td>' . HelperFramework::escape($this->money($settings, $assetTaxView[$key] ?? 0)) . '</td>';
+            } else {
+                foreach ($periods as $period) {
+                    $body .= '<td>' . HelperFramework::escape($this->money($settings, $period[$key] ?? 0)) . '</td>';
+                }
+                $body .= '<td>' . HelperFramework::escape($this->money($settings, $totals[$key] ?? 0)) . '</td>';
+            }
+            $body .= '</tr>';
+        }
+
+        return '<div class="table-scroll asset-tax-table"><table><thead><tr>' . $head . '</tr></thead><tbody>' . $body . '</tbody></table></div>';
+    }
+
+    private function periodHeading(array $period): string
+    {
+        $label = trim((string)($period['period_label'] ?? ''));
+        if ($label !== '') {
+            return $label;
+        }
+
+        $start = trim((string)($period['period_start'] ?? ''));
+        $end = trim((string)($period['period_end'] ?? ''));
+        return trim($start . ' to ' . $end) !== 'to' ? trim($start . ' to ' . $end) : 'CT period';
     }
 
     private function emptyStateMessage(array $assetsPageData, int $accountingPeriodId): string

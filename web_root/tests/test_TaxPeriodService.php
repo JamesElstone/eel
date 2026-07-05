@@ -22,6 +22,18 @@ $harness->run(\eel_accounts\Service\TaxPeriodService::class, function (Generated
         $harness->assertSame('2025-03-31', $periods[1]['end']);
     });
 
+    $harness->check(\eel_accounts\Service\TaxPeriodService::class, 'splits the September 2022 to September 2023 accounting period into two CT periods', function () use ($harness, $deriver): void {
+        $periods = $deriver->derive('2022-09-05', '2023-09-30');
+
+        $harness->assertCount(2, $periods);
+        $harness->assertSame('2022-09-05', $periods[0]['start']);
+        $harness->assertSame('2023-09-04', $periods[0]['end']);
+        $harness->assertSame('05/09/2022 to 04/09/2023', $periods[0]['label']);
+        $harness->assertSame('2023-09-05', $periods[1]['start']);
+        $harness->assertSame('2023-09-30', $periods[1]['end']);
+        $harness->assertSame('05/09/2023 to 30/09/2023', $periods[1]['label']);
+    });
+
     $harness->check(\eel_accounts\Service\TaxPeriodService::class, 'suggests the first accounting period', function () use ($harness, $deriver): void {
         $first = $deriver->suggestFirstPeriod(new DateTimeImmutable('2024-01-15'));
 

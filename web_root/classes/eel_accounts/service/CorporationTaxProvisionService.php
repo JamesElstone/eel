@@ -69,7 +69,7 @@ final class CorporationTaxProvisionService
             return ['success' => false, 'errors' => ['Corporation Tax expense and liability nominal accounts are required before posting the provision.']];
         }
 
-        $label = 'CT period ' . (int)($ctPeriod['sequence_no'] ?? 0) . ' ' . (string)$ctPeriod['period_start'] . ' to ' . (string)$ctPeriod['period_end'];
+        $label = 'CT Period ' . (int)($ctPeriod['sequence_no'] ?? 0) . ' ' . (string)$ctPeriod['period_start'] . ' to ' . (string)$ctPeriod['period_end'];
         return (new \eel_accounts\Service\ManualJournalService())->saveTaggedJournal(
             $companyId,
             $accountingPeriodId,

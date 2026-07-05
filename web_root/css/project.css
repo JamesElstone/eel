@@ -713,6 +713,16 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.summary-grid.five {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.tax-period-selector-summary-card {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
 .trial-balance-summary-layout {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) minmax(0, 4fr);

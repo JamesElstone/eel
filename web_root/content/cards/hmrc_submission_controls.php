@@ -65,7 +65,7 @@ final class _hmrc_submission_controlsCard extends CardBaseFramework
                 continue;
             }
             $selected = $id === $selectedCtPeriodId ? ' selected' : '';
-            $label = 'CT period ' . (int)($period['sequence_no'] ?? 0)
+            $label = 'CT Period ' . (int)($period['sequence_no'] ?? 0)
                 . ' - ' . (string)($period['period_start'] ?? '')
                 . ' to ' . (string)($period['period_end'] ?? '')
                 . ' (' . (string)($period['status'] ?? 'pending') . ')';

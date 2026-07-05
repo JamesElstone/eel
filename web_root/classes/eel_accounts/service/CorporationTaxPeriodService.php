@@ -231,7 +231,7 @@ final class CorporationTaxPeriodService
             return [
                 'ok' => false,
                 'errors' => [
-                    'CT period ' . (int)$blocking['sequence_no'] . ' must be accepted or marked filed before this later CT period can be submitted.',
+                    'CT Period ' . (int)$blocking['sequence_no'] . ' must be accepted or marked filed before this later CT period can be submitted.',
                 ],
             ];
         }

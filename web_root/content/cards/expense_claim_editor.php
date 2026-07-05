@@ -67,7 +67,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
 
         return [
             $this->linesTable((array)($claim['lines'] ?? []), (array)($data['nominal_accounts'] ?? []), (array)($data['asset_categories'] ?? []), $claimId, $isPosted, $companyId, $dateFormat, $companySettings, $context),
-            $this->paymentsTable((array)($claim['payment_links'] ?? []), $claimId, $isPosted, $companyId, $dateFormat),
+            $this->paymentsTable((array)($claim['payment_links'] ?? []), $companySettings, $claimId, $isPosted, $companyId, $dateFormat),
             $this->paymentCandidatesTable((array)($data['payment_candidates'] ?? []), $companySettings, $claimId, $companyId, $dateFormat),
         ];
     }

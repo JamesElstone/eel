@@ -417,7 +417,7 @@ final class StatementUploadService
             if ($fieldName === 'currency' && $postedValue === self::CURRENCY_DEFAULT_OPTION_GBP) {
                 $mapping[$fieldName] = [
                     'default_value' => 'GBP',
-                    'label' => 'GBP',
+                    'label' => '£ GBP',
                 ];
                 continue;
             }
@@ -741,7 +741,7 @@ final class StatementUploadService
         if ($mapping['currency'] === null) {
             $mapping['currency'] = [
                 'default_value' => 'GBP',
-                'label' => 'GBP',
+                'label' => '£ GBP',
             ];
         }
 

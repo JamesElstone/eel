@@ -68,7 +68,8 @@ final class VehicleService
             ];
         }
 
-        $periodClause = $accountingPeriodId > 0 ? ' AND ar.accounting_period_id = :accounting_period_id' : '';
+        $periodExpression = 'COALESCE(t.accounting_period_id, ec.accounting_period_id, j.accounting_period_id, 0)';
+        $periodClause = $accountingPeriodId > 0 ? ' AND ' . $periodExpression . ' = :accounting_period_id' : '';
         $params = ['company_id' => $companyId];
         if ($accountingPeriodId > 0) {
             $params['accounting_period_id'] = $accountingPeriodId;
@@ -81,7 +82,7 @@ final class VehicleService
                     ar.description,
                     ar.category,
                     ar.nominal_account_id,
-                    ar.accounting_period_id,
+                    ' . $periodExpression . ' AS accounting_period_id,
                     ar.purchase_date,
                     ar.cost,
                     ar.status,
@@ -111,7 +112,9 @@ final class VehicleService
              LEFT JOIN transactions t ON t.id = ar.linked_transaction_id
              LEFT JOIN nominal_accounts tn ON tn.id = t.nominal_account_id
              LEFT JOIN expense_claim_lines ecl ON ecl.id = ar.linked_expense_claim_line_id
+             LEFT JOIN expense_claims ec ON ec.id = ecl.expense_claim_id
              LEFT JOIN nominal_accounts en ON en.id = ecl.nominal_account_id
+             LEFT JOIN journals j ON j.id = ar.linked_journal_id
              WHERE ar.company_id = :company_id' . $periodClause . '
                AND (
                    na.code IN (\'1320\', \'1321\', \'1322\')
@@ -175,8 +178,11 @@ final class VehicleService
         try {
             $this->upsertVehicleDetails($companyId, $assetId, $normalised['values'], $changedBy);
             $oldNominalId = (int)$asset['nominal_account_id'];
-            if ($oldNominalId !== $targetNominalId) {
+            $targetCategory = $this->assetCategoryForVehicleType((string)$normalised['values']['vehicle_type']);
+            if ($oldNominalId !== $targetNominalId || (string)($asset['category'] ?? '') !== $targetCategory) {
                 $this->updateAssetNominal($assetId, $targetNominalId, $normalised['values']);
+            }
+            if ($oldNominalId !== $targetNominalId) {
                 $this->syncLinkedSourceNominal($asset, $targetNominalId, $oldNominalId, $defaultBankNominalId);
             }
 
@@ -278,10 +284,15 @@ final class VehicleService
     private function fetchAsset(int $companyId, int $assetId): ?array
     {
         $row = \InterfaceDB::fetchOne(
-            'SELECT *
-             FROM asset_register
-             WHERE company_id = :company_id
-               AND id = :id
+            'SELECT ar.*,
+                    COALESCE(t.accounting_period_id, ec.accounting_period_id, j.accounting_period_id, 0) AS accounting_period_id
+             FROM asset_register ar
+             LEFT JOIN transactions t ON t.id = ar.linked_transaction_id
+             LEFT JOIN expense_claim_lines ecl ON ecl.id = ar.linked_expense_claim_line_id
+             LEFT JOIN expense_claims ec ON ec.id = ecl.expense_claim_id
+             LEFT JOIN journals j ON j.id = ar.linked_journal_id
+             WHERE ar.company_id = :company_id
+               AND ar.id = :id
              LIMIT 1',
             ['company_id' => $companyId, 'id' => $assetId]
         );

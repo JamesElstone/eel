@@ -248,6 +248,9 @@ final class TransactionJournalService
     }
 
     private function fetchTransactionForPosting(int $transactionId): ?array {
+        $internalTransferMarkerExpression = \InterfaceDB::columnExists('company_accounts', 'internal_transfer_marker')
+            ? 'COALESCE(ca.internal_transfer_marker, \'\')'
+            : '\'\'';
         $stmt = \InterfaceDB::prepare(
             'SELECT t.id,
                     t.company_id,
@@ -261,7 +264,7 @@ final class TransactionJournalService
                     t.transfer_account_id,
                     t.is_internal_transfer,
                     t.category_status,
-                    COALESCE(ca.internal_transfer_marker, \'\') AS internal_transfer_marker,
+                    ' . $internalTransferMarkerExpression . ' AS internal_transfer_marker,
                     COALESCE(ca.account_name, \'\') AS source_account_name,
                     COALESCE(ca.account_type, \'\') AS source_account_type,
                     COALESCE(ca.nominal_account_id, 0) AS source_account_nominal_id,

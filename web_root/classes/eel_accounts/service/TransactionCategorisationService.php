@@ -315,6 +315,7 @@ final class TransactionCategorisationService
     }
 
     public function fetchTransaction(int $transactionId): ?array {
+        $internalTransferMarkerExpression = $this->internalTransferMarkerExpression('ca.');
         $stmt = \InterfaceDB::prepare(
             'SELECT t.id,
                     t.company_id,
@@ -340,7 +341,7 @@ final class TransactionCategorisationService
                     t.category_status,
                     t.auto_rule_id,
                     t.is_auto_excluded,
-                    COALESCE(ca.internal_transfer_marker, \'\') AS internal_transfer_marker
+                    ' . $internalTransferMarkerExpression . ' AS internal_transfer_marker
              FROM transactions t
              LEFT JOIN company_accounts ca ON ca.id = t.account_id
              WHERE t.id = :id
@@ -420,6 +421,7 @@ final class TransactionCategorisationService
             }
         }
 
+        $internalTransferMarkerExpression = $this->internalTransferMarkerExpression('ca.');
         $stmt = \InterfaceDB::prepare(
             'SELECT t.id,
                     t.company_id,
@@ -431,7 +433,7 @@ final class TransactionCategorisationService
                     t.category_status,
                     t.auto_rule_id,
                     t.is_auto_excluded,
-                    COALESCE(ca.internal_transfer_marker, \'\') AS internal_transfer_marker
+                    ' . $internalTransferMarkerExpression . ' AS internal_transfer_marker
              FROM transactions t
              LEFT JOIN company_accounts ca ON ca.id = t.account_id
              WHERE ' . implode(' AND ', $where) . '
@@ -767,6 +769,7 @@ final class TransactionCategorisationService
             $params['month_end'] = $monthEnd->format('Y-m-d');
         }
 
+        $internalTransferMarkerExpression = $this->internalTransferMarkerExpression('ca.');
         $stmt = \InterfaceDB::prepare(
             'SELECT t.id,
                     t.company_id,
@@ -792,7 +795,7 @@ final class TransactionCategorisationService
                     t.category_status,
                     t.auto_rule_id,
                     t.is_auto_excluded,
-                    COALESCE(ca.internal_transfer_marker, \'\') AS internal_transfer_marker
+                    ' . $internalTransferMarkerExpression . ' AS internal_transfer_marker
              FROM transactions t
              LEFT JOIN company_accounts ca ON ca.id = t.account_id
              WHERE ' . implode(' AND ', $where) . '
@@ -813,6 +816,13 @@ final class TransactionCategorisationService
 
         return (int)($transaction['is_internal_transfer'] ?? 0) === 1
             || (int)($transaction['transfer_account_id'] ?? 0) > 0;
+    }
+
+    private function internalTransferMarkerExpression(string $prefix = ''): string
+    {
+        return \InterfaceDB::columnExists('company_accounts', 'internal_transfer_marker')
+            ? 'COALESCE(' . $prefix . 'internal_transfer_marker, \'\')'
+            : '\'\'';
     }
 
     private function validateTransferAccountId(array $transaction, ?int $transferAccountId, bool $isAutoExcluded): array {

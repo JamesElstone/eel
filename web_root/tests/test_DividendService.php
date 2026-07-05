@@ -631,6 +631,7 @@ function dividend_service_manual_fixture(\eel_accounts\Service\DividendService $
         ]
     );
 
+    dividend_service_ensure_ct_rate_rules();
     $service->ensureDividendNominals($companyId);
     dividend_service_add_profit_journal($companyId, $accountingPeriodId, $marker, $profit, $profitDate);
     dividend_service_save_reserve_review($companyId, $accountingPeriodId, [], dividend_service_default_review_date($periodStart, $periodEnd));
@@ -675,6 +676,7 @@ function dividend_service_transaction_fixture(\eel_accounts\Service\DividendServ
         ]
     );
 
+    dividend_service_ensure_ct_rate_rules();
     $nominalResult = $service->ensureDividendNominals($companyId);
     $nominals = (array)($nominalResult['accounts'] ?? []);
     $dividendsPayableId = (int)($nominals['dividends_payable']['id'] ?? 0);
@@ -766,7 +768,7 @@ function dividend_service_transaction_fixture(\eel_accounts\Service\DividendServ
 
     dividend_service_add_profit_journal($companyId, $accountingPeriodId, $marker, max(0.0, abs($amount) + 100.00), '2022-11-01');
     // Fixture profit for transaction dividend capacity.
-    dividend_service_save_reserve_review($companyId, $accountingPeriodId, [], '2022-11-30');
+    dividend_service_save_reserve_review($companyId, $accountingPeriodId, [], '2022-11-02');
 
     return [
         'company_id' => $companyId,
@@ -836,6 +838,7 @@ function dividend_service_two_period_fixture(\eel_accounts\Service\DividendServi
     );
 
     $service->ensureDividendNominals($companyId);
+    dividend_service_ensure_ct_rate_rules();
     dividend_service_add_profit_journal($companyId, $priorPeriodId, $marker . 'P', 100.00, '2021-11-01');
     dividend_service_add_profit_journal($companyId, $currentPeriodId, $marker . 'C', 100.00, '2022-11-01');
 
@@ -884,6 +887,66 @@ function dividend_service_default_review_date(string $periodStart, string $perio
     }
 
     return $periodEnd;
+}
+
+function dividend_service_ensure_ct_rate_rules(): void
+{
+    if (!InterfaceDB::tableExists('corporation_tax_rate_rules')) {
+        return;
+    }
+
+    foreach ([
+        ['2020-04-01', '2021-03-31', 'test-2020', 0.19],
+        ['2021-04-01', '2022-03-31', 'test-2021', 0.19],
+        ['2022-04-01', '2023-03-31', 'test-2022', 0.19],
+    ] as $rule) {
+        $exists = (int)InterfaceDB::fetchColumn(
+            'SELECT COUNT(*)
+             FROM corporation_tax_rate_rules
+             WHERE regime = :regime
+               AND financial_year_start = :financial_year_start
+               AND rule_version = :rule_version',
+            [
+                'regime' => 'non_ring_fence',
+                'financial_year_start' => $rule[0],
+                'rule_version' => $rule[2],
+            ]
+        );
+        if ($exists > 0) {
+            continue;
+        }
+
+        InterfaceDB::prepareExecute(
+            'INSERT INTO corporation_tax_rate_rules (
+                regime,
+                financial_year_start,
+                financial_year_end,
+                rule_version,
+                main_rate,
+                source_url,
+                source_checked_at,
+                is_active
+             ) VALUES (
+                :regime,
+                :financial_year_start,
+                :financial_year_end,
+                :rule_version,
+                :main_rate,
+                :source_url,
+                :source_checked_at,
+                1
+             )',
+            [
+                'regime' => 'non_ring_fence',
+                'financial_year_start' => $rule[0],
+                'financial_year_end' => $rule[1],
+                'rule_version' => $rule[2],
+                'main_rate' => $rule[3],
+                'source_url' => 'test-fixture',
+                'source_checked_at' => '2026-01-01',
+            ]
+        );
+    }
 }
 
 function dividend_service_add_profit_journal(int $companyId, int $accountingPeriodId, string $marker, float $profit, string $journalDate): void

@@ -536,7 +536,6 @@ final class DividendReserveClassificationService
             'accounting_period_id' => $accountingPeriodId,
             'as_at_date' => $asAtDate,
             'brought_forward_distributable_reserves' => number_format((float)($summary['brought_forward_distributable_reserves'] ?? 0), 2, '.', ''),
-            'dividends_declared' => number_format((float)($summary['dividends_declared'] ?? 0), 2, '.', ''),
             'rows' => array_map(
                 static fn(array $row): array => [
                     'nominal_account_id' => (int)($row['nominal_account_id'] ?? 0),

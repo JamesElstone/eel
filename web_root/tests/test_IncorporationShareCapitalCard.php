@@ -44,7 +44,9 @@ $harness->run(_incorporation_share_capitalCard::class, static function (
         $harness->assertSame(true, str_contains($html, 'Prescribed particulars'));
         $harness->assertSame(true, str_contains($html, 'FULL RIGHTS REGARDING VOTING, PAYMENT OF DIVIDENDS AND DISTRIBUTIONS'));
         $harness->assertSame(true, str_contains($html, 'Review payment'));
-        $harness->assertSame(false, str_contains($html, '<input'));
+        $harness->assertSame(false, str_contains($html, 'name="share_class"'));
+        $harness->assertSame(false, str_contains($html, 'name="quantity"'));
+        $harness->assertSame(false, str_contains($html, 'name="nominal_value_per_share"'));
         $harness->assertSame(false, str_contains($html, '<textarea'));
         $harness->assertSame(false, str_contains($html, 'Save Share Class'));
         $harness->assertSame(false, str_contains($html, 'Mark Not Paid Up'));

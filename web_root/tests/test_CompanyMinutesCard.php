@@ -40,8 +40,8 @@ $harness->run(_company_minutesCard::class, static function (GeneratedServiceClas
 
         $html = $card->render($context);
 
-        $harness->assertTrue(str_contains($html, '<th>Date</th>'));
-        $harness->assertTrue(str_contains($html, '<th>Minutes</th>'));
+        $harness->assertTrue(str_contains($html, '<span class="table-sort-label">Date</span>'));
+        $harness->assertTrue(str_contains($html, '<span class="table-sort-label">Minutes</span>'));
         $harness->assertTrue(str_contains($html, '2026-06-30'));
         $harness->assertTrue(str_contains($html, 'Director approved interim dividend.'));
         $harness->assertTrue(!str_contains($html, '<th>Actions</th>'));

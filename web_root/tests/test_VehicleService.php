@@ -31,15 +31,23 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         'acquisition_condition' => 'second_hand',
                         'co2_emissions_g_km' => '75',
                     ],
-                    0,
+                    vehicleServiceNominalId('1000'),
                     'test'
                 );
 
                 $harness->assertSame(true, (bool)($result['success'] ?? false));
                 $carNominalId = vehicleServiceNominalId('1321');
+                $rebuiltJournalId = (int)\InterfaceDB::fetchColumn(
+                    'SELECT id FROM journals WHERE company_id = :company_id AND source_type = :source_type AND source_ref = :source_ref ORDER BY id DESC LIMIT 1',
+                    [
+                        'company_id' => $fixture['company_id'],
+                        'source_type' => 'bank_csv',
+                        'source_ref' => 'transaction:' . $fixture['transaction_id'],
+                    ]
+                );
                 $harness->assertSame($carNominalId, (int)\InterfaceDB::fetchColumn('SELECT nominal_account_id FROM asset_register WHERE id = :id', ['id' => $fixture['transaction_asset_id']]));
                 $harness->assertSame($carNominalId, (int)\InterfaceDB::fetchColumn('SELECT nominal_account_id FROM transactions WHERE id = :id', ['id' => $fixture['transaction_id']]));
-                $harness->assertSame($carNominalId, (int)\InterfaceDB::fetchColumn('SELECT nominal_account_id FROM journal_lines WHERE journal_id = :id AND debit = 20000.00 LIMIT 1', ['id' => $fixture['transaction_journal_id']]));
+                $harness->assertSame($carNominalId, (int)\InterfaceDB::fetchColumn('SELECT nominal_account_id FROM journal_lines WHERE journal_id = :id AND debit = 20000.00 LIMIT 1', ['id' => $rebuiltJournalId]));
                 $harness->assertSame('AB12 CDE', (string)\InterfaceDB::fetchColumn('SELECT registration_mark FROM asset_vehicle_details WHERE asset_id = :id', ['id' => $fixture['transaction_asset_id']]));
             });
         });
@@ -145,6 +153,8 @@ function vehicleServiceFixture(string $label, callable $callback): void
         $expenseAssetId = (int)('91' . substr($marker, 0, 4));
         $bankNominalId = vehicleServiceNominalId('1000');
         $vehicleNominalId = vehicleServiceNominalId('1320');
+        vehicleServiceNominalId('1321');
+        vehicleServiceNominalId('1322');
         $payableNominalId = vehicleServiceNominalId('2110');
 
         \InterfaceDB::prepareExecute('INSERT INTO companies (id, company_name, company_number, is_active) VALUES (:id, :name, :number, 1)', [
@@ -200,6 +210,7 @@ function vehicleServiceFixture(string $label, callable $callback): void
             'company_id' => $companyId,
             'name' => 'Claimant ' . $marker,
         ]);
+        vehicleServiceInsertJournal($expenseJournalId, $companyId, $periodId, 'expense_register', 'EC-' . $marker, '2026-05-31', 'Expense claim');
         \InterfaceDB::prepareExecute('INSERT INTO expense_claims (id, company_id, accounting_period_id, claimant_id, claim_year, claim_month, period_start, period_end, claim_reference_code, status, posted_journal_id) VALUES (:id, :company_id, :period_id, :claimant_id, 2026, 5, :start, :end, :ref, :status, :journal_id)', [
             'id' => $expenseClaimId,
             'company_id' => $companyId,
@@ -219,7 +230,6 @@ function vehicleServiceFixture(string $label, callable $callback): void
             'amount' => 18000.00,
             'nominal_id' => $vehicleNominalId,
         ]);
-        vehicleServiceInsertJournal($expenseJournalId, $companyId, $periodId, 'expense_register', 'EC-' . $marker, '2026-05-31', 'Expense claim');
         vehicleServiceInsertJournalLine($expenseJournalId, $vehicleNominalId, 18000.00, 0.00, 'Expense vehicle');
         vehicleServiceInsertJournalLine($expenseJournalId, $payableNominalId, 0.00, 18000.00, 'Payable');
         vehicleServiceInsertAssetWithId($expenseAssetId, $companyId, $periodId, 'EX-VEH-' . $marker, 'van', $vehicleNominalId, 18000.00, '2026-05-12', $expenseJournalId, null, $expenseLineId);

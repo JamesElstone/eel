@@ -56,12 +56,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                  WHERE company_id = :company_id
                    AND accounting_period_id = :accounting_period_id
                    AND type = :type
-                   AND source_asset_id = :asset_id',
+                   AND source_asset_id IS NULL',
                 [
                     'company_id' => $fixture['company_id'],
                     'accounting_period_id' => $fixture['accounting_period_id'],
                     'type' => 'capital_allowances',
-                    'asset_id' => $fixture['asset_id'],
                 ]
             ), 2);
 
@@ -922,7 +921,9 @@ function assetServiceTestCreateDisposalFixture(string $suffix): array
     $accountId = (int)('83' . $marker);
     $uploadId = (int)('84' . $marker);
     $assetId = (int)('85' . $marker);
-    $bankNominalId = assetServiceTestNominalId('1000');
+    $bankNominalId = assetServiceTestEnsureNominalId('1000', 'Fixture Bank', 'asset', 'allowable');
+    assetServiceTestEnsureNominalId('1300', 'Fixture Plant and Machinery', 'asset', 'capital');
+    assetServiceTestEnsureNominalId('1330', 'Fixture Accumulated Depreciation', 'asset', 'capital');
 
     InterfaceDB::prepareExecute(
         'INSERT INTO companies (id, company_name, company_number, is_active)
@@ -1208,6 +1209,28 @@ function assetServiceTestNominalId(string $code): int
          LIMIT 1',
         ['code' => $code]
     );
+}
+
+function assetServiceTestEnsureNominalId(string $code, string $name, string $accountType, string $taxTreatment): int
+{
+    $id = assetServiceTestNominalId($code);
+    if ($id > 0) {
+        return $id;
+    }
+
+    InterfaceDB::prepareExecute(
+        'INSERT INTO nominal_accounts (code, name, account_type, tax_treatment, is_active, sort_order)
+         VALUES (:code, :name, :account_type, :tax_treatment, 1, :sort_order)',
+        [
+            'code' => $code,
+            'name' => $name,
+            'account_type' => $accountType,
+            'tax_treatment' => $taxTreatment,
+            'sort_order' => (int)$code,
+        ]
+    );
+
+    return assetServiceTestNominalId($code);
 }
 
 function assetServiceTestJournalId(int $companyId, string $sourceType, string $sourceRef): int

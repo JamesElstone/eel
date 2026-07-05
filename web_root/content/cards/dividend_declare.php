@@ -54,12 +54,14 @@ final class _dividend_declareCard extends CardBaseFramework
 
         $canDeclare = $disabledReason === '';
         $disabled = $canDeclare ? '' : ' disabled';
-        $disabledHelper = $canDeclare
-            ? ''
-            : '<div class="helper">Form Disabled - Reason: ' . HelperFramework::escape($disabledReason) . '</div>';
         $helper = $canDeclare
             ? 'Maximum currently available: ' . $this->money($companySettings, $availableReserves) . '.'
             : 'Dividend declarations can be saved only once the form is enabled.';
+        $statusItems = $canDeclare
+            ? ''
+            : '<div class="helper">Form Disabled - Reason: ' . HelperFramework::escape($disabledReason) . '</div>';
+        $statusItems .= '<div class="helper">' . HelperFramework::escape($helper) . '</div>';
+        $statusPanelClass = 'panel-soft dividend-declare-status ' . ($canDeclare ? 'success' : 'warn');
 
         $candidateOptions = '<option value="0">Not reconciled yet - save as draft</option>';
         foreach ($candidates as $candidate) {
@@ -74,8 +76,7 @@ final class _dividend_declareCard extends CardBaseFramework
         }
 
         return '<div class="settings-stack">
-            ' . $disabledHelper . '
-            <div class="helper">' . HelperFramework::escape($helper) . '</div>
+            <div class="' . $statusPanelClass . '">' . $statusItems . '</div>
             <form method="post" action="?page=dividends" data-ajax="true" class="form-grid">
                 <input type="hidden" name="card_action" value="Dividend">
                 <input type="hidden" name="intent" value="declare_dividend">

@@ -2463,6 +2463,26 @@
   width: 100%;
 }
 
+.panel-soft.success {
+  background: var(--success-soft);
+  border-color: #86efac;
+  color: var(--success);
+  width: fit-content;
+}
+
+.dividend-declare-status {
+  display: grid;
+  gap: 10px;
+}
+
+.dividend-declare-status .helper {
+  color: inherit;
+}
+
+.dividend-declare-status .helper + .helper {
+  margin-top: 0;
+}
+
 .transaction-search-table-footer {
   position: relative;
 }

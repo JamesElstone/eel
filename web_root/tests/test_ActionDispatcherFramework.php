@@ -19,6 +19,9 @@ if (!class_exists('NotAnAction', false)) {
 }
 
 $pageServices = new PageServiceFramework(new AppService(APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp'));
+$sessionAuthenticationService = new SessionAuthenticationService();
+$sessionAuthenticationService->startSession();
+$csrfToken = $sessionAuthenticationService->csrfToken();
 
 $harness->check(ActionDispatcherFramework::class, 'runs page action before card action', function () use ($harness, $pageServices): void {
     $request = new RequestFramework(
@@ -137,6 +140,70 @@ $harness->check(ActionDispatcherFramework::class, 'dispatches valid shared card 
     );
 
     $harness->assertSame(['dump.stack', 'dump.classes', 'dump.context'], $result->changedFacts());
+});
+
+$harness->check(ActionDispatcherFramework::class, 'dispatches shared card actions with valid supplied CSRF tokens', function () use ($harness, $pageServices, $csrfToken): void {
+    $request = new RequestFramework([], [
+        'card_action' => 'Test',
+        'csrf_token' => $csrfToken,
+    ], ['REQUEST_METHOD' => 'POST'], [], []);
+
+    $result = (new ActionDispatcherFramework())->dispatch(
+        $request,
+        $pageServices,
+        static fn(): ActionResultFramework => ActionResultFramework::success(['unexpected'])
+    );
+
+    $harness->assertSame(['dump.stack', 'dump.classes', 'dump.context'], $result->changedFacts());
+});
+
+$harness->check(ActionDispatcherFramework::class, 'rejects invalid supplied CSRF tokens before shared card action logic runs', function () use ($harness, $pageServices): void {
+    $request = new RequestFramework([], [
+        'card_action' => 'Missing',
+        'csrf_token' => 'invalid-token',
+    ], ['REQUEST_METHOD' => 'POST'], [], []);
+
+    $result = (new ActionDispatcherFramework())->dispatch(
+        $request,
+        $pageServices,
+        static fn(): ActionResultFramework => ActionResultFramework::success(['unexpected'])
+    );
+
+    $harness->assertSame(false, $result->isSuccess());
+});
+
+$harness->check(ActionDispatcherFramework::class, 'rejects missing CSRF tokens in required mode before shared card action logic runs', function () use ($harness, $pageServices): void {
+    $request = new RequestFramework([], [
+        'card_action' => 'Missing',
+    ], ['REQUEST_METHOD' => 'POST'], [], []);
+
+    $result = (new ActionDispatcherFramework(new CsrfGuardFramework(null, CsrfGuardFramework::MODE_REQUIRED)))->dispatch(
+        $request,
+        $pageServices,
+        static fn(): ActionResultFramework => ActionResultFramework::success(['unexpected'])
+    );
+
+    $harness->assertSame(false, $result->isSuccess());
+});
+
+$harness->check(ActionDispatcherFramework::class, 'rejects invalid supplied CSRF tokens before page action logic runs', function () use ($harness, $pageServices): void {
+    $called = false;
+    $request = new RequestFramework([], [
+        'action' => 'save-page',
+        'csrf_token' => 'invalid-token',
+    ], ['REQUEST_METHOD' => 'POST'], [], []);
+
+    $result = (new ActionDispatcherFramework())->dispatch(
+        $request,
+        $pageServices,
+        function () use (&$called): ActionResultFramework {
+            $called = true;
+            return ActionResultFramework::success(['unexpected']);
+        }
+    );
+
+    $harness->assertSame(false, $result->isSuccess());
+    $harness->assertSame(false, $called);
 });
 
 $harness->check(ActionDispatcherFramework::class, 'rejects invalid shared card action names', function () use ($harness, $pageServices): void {

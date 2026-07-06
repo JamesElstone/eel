@@ -9,16 +9,25 @@ declare(strict_types=1);
 
 final class ActionDispatcherFramework
 {
+    public function __construct(
+        private readonly ?CsrfGuardFramework $csrfGuard = null
+    ) {
+    }
+
     public function dispatch(
         RequestFramework $request,
         PageServiceFramework $services,
         callable $pageActionHandler
     ): ActionResultFramework
     {
-        
         // Run page action if set
         $action = $request->action();
         if ($action !== '') {
+            $csrfResult = $this->validateCsrf($request);
+            if (!$csrfResult->isSuccess()) {
+                return $csrfResult;
+            }
+
             return $pageActionHandler($request, $services);
         }
 
@@ -35,6 +44,11 @@ final class ActionDispatcherFramework
             return ActionResultFramework::none();
         }
 
+        $csrfResult = $this->validateCsrf($request);
+        if (!$csrfResult->isSuccess()) {
+            return $csrfResult;
+        }
+
         $className = $this->resolveCardActionClassName($cardAction);
         if (!class_exists($className)) {
             throw new RuntimeException('ActionInterfaceFramework: Unable to resolve the requested card action class: ' . $className);
@@ -47,6 +61,11 @@ final class ActionDispatcherFramework
         }
 
         return $actionHandler->handle($request, $services);
+    }
+
+    private function validateCsrf(RequestFramework $request): ActionResultFramework
+    {
+        return ($this->csrfGuard ?? new CsrfGuardFramework())->validateActionRequest($request);
     }
 
     private function resolveCardActionClassName(string $cardAction): string

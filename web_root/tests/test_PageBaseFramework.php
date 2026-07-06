@@ -83,6 +83,18 @@ $harness->check(PageBaseFramework::class, 'injects authenticated user metadata i
     $harness->assertSame(2, $context['auth']['role_id'] ?? null);
 });
 
+$harness->check(PageBaseFramework::class, 'injects CSRF token into page context', function () use ($harness): void {
+    $page = new PageBaseAuthContextTestPage(123, 2);
+    $services = new PageServiceFramework(new AppService(APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp'));
+    $request = new RequestFramework(['page' => $page->id()], [], ['REQUEST_METHOD' => 'GET'], [], []);
+
+    $context = $page->buildContextForRequest($request, $services, ActionResultFramework::none());
+
+    $token = (string)($context['page']['csrf_token'] ?? '');
+    $harness->assertTrue($token !== '');
+    $harness->assertTrue((new SessionAuthenticationService())->isValidCsrfToken($token));
+});
+
 $harness->check(PageBaseFramework::class, 'uses zero auth metadata for unauthenticated request context', function () use ($harness): void {
     $page = new PageBaseAuthContextTestPage(0, 2);
     $services = new PageServiceFramework(new AppService(APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'tmp'));

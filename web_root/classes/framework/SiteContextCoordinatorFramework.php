@@ -55,6 +55,11 @@ final class SiteContextCoordinatorFramework
             return null;
         }
 
+        $csrfResult = (new CsrfGuardFramework())->validateActionRequest($request);
+        if (!$csrfResult->isSuccess()) {
+            return $csrfResult;
+        }
+
         $request = $this->requestWithNormalisedSiteContextValue($request);
         $result = $this->provider->handleSiteContextAction($request, $page, $services);
         $changedFacts = $result->changedFacts();

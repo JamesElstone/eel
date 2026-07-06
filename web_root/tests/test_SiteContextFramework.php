@@ -301,6 +301,7 @@ try {
             'page' => [
                 'page_id' => $page->id(),
                 'page_cards' => [],
+                'csrf_token' => 'site-context-csrf',
             ],
         ]);
 
@@ -314,6 +315,7 @@ try {
         $harness->assertTrue(str_contains($html, 'id="site-context-summary-slot"'));
         $harness->assertTrue(str_contains($html, 'Display Scope'));
         $harness->assertTrue(str_contains($html, 'name="action" value="set-site-context"'));
+        $harness->assertTrue(str_contains($html, 'name="csrf_token" value="site-context-csrf"'));
     });
 
     $harness->check(SiteContextRendererFramework::class, 'renders generic selector field name when input_name is omitted', function () use ($harness, $createSiteContextTestRequest): void {

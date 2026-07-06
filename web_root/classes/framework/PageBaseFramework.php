@@ -72,6 +72,7 @@ abstract class PageBaseFramework implements PageInterfaceFramework
         $context = $services->siteContextCoordinator()->injectContext($request, $this, $services, $context);
 
         $context['auth'] = $this->authContext();
+        $context['page']['csrf_token'] = (new SessionAuthenticationService())->csrfToken();
 
         $context['page']['page_cards'] = $this->allowedPageCards($context, $services);
 

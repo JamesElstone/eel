@@ -179,6 +179,12 @@ abstract class CardBaseFramework implements CardInterfaceFramework
             ],
             $hiddenFields
         );
+        if (strtolower(trim($method)) === 'post') {
+            $hiddenFields = array_merge(
+                [CsrfGuardFramework::tokenField() => (string)($context['page']['csrf_token'] ?? '')],
+                $hiddenFields
+            );
+        }
         $formAttributes = array_merge(['data-ajax' => 'true'], $formAttributes);
         $hiddenFields = array_filter(
             $hiddenFields,

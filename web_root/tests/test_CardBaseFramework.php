@@ -65,6 +65,7 @@ $harness->check(CardBaseFramework::class, 'array pagination controls do not requ
             'page_id' => 'users',
             'page_cards' => ['user_logon_history_log'],
             'user_logon_history_log_page' => 1,
+            'csrf_token' => 'card-pagination-csrf',
         ],
         'services' => [
             'logon_rows' => $rows,
@@ -78,6 +79,7 @@ $harness->check(CardBaseFramework::class, 'array pagination controls do not requ
     $harness->assertSame(false, str_contains($html, 'name="card_action" value="UserLogonHistory"'));
     $harness->assertTrue(str_contains($html, 'name="_pagination" value="1"'));
     $harness->assertTrue(str_contains($html, 'name="user_logon_history_log_page" value="2"'));
+    $harness->assertTrue(str_contains($html, 'name="csrf_token" value="card-pagination-csrf"'));
 });
 
 $harness->check(CardBaseFramework::class, 'renders first last and custom pagination controls', function () use ($harness): void {
@@ -97,4 +99,5 @@ $harness->check(CardBaseFramework::class, 'renders first last and custom paginat
     $harness->assertTrue(str_contains($html, 'method="get"'));
     $harness->assertTrue(str_contains($html, 'name="pagination_controls_test_list" value="6"'));
     $harness->assertTrue(str_contains($html, 'name="filter" value="active"'));
+    $harness->assertSame(false, str_contains($html, 'name="csrf_token"'));
 });

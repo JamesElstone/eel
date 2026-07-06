@@ -290,6 +290,9 @@ final class AppConfigurationStore
             'security_keys' => [
                 'path' => '../secure/security.keys',
             ],
+            'security' => [
+                'csrf_mode' => CsrfGuardFramework::MODE_SUPPLIED,
+            ],
             'session' => [
                 'cookie_secure' => 'auto',
                 'cookie_samesite' => 'Strict',

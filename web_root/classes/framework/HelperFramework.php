@@ -100,6 +100,19 @@ final class HelperFramework
         return ['__html' => $html];
     }
 
+    public static function csrfHiddenInput(array|string $contextOrToken): string
+    {
+        $token = is_array($contextOrToken)
+            ? (string)($contextOrToken['page']['csrf_token'] ?? '')
+            : (string)$contextOrToken;
+
+        if ($token === '') {
+            return '';
+        }
+
+        return (new CsrfGuardFramework())->hiddenInput($token);
+    }
+
     public static function arrayToPre(array $data): string
     {
         return '<pre class="preformatted-panel">' . htmlspecialchars(print_r($data, true)) . '</pre>';

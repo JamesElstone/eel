@@ -60,12 +60,13 @@ final class _year_end_transaction_tailCard extends CardBaseFramework
         $rowsHtml = '';
         foreach ((array)($tail['rows'] ?? []) as $row) {
             $amount = array_key_exists('last_transaction_amount', $row) ? $row['last_transaction_amount'] : null;
+            $amountDisplay = $amount === null || trim((string)$amount) === '' ? '-' : $this->money($companySettings, $amount);
             $rowsHtml .= '<tr>
                 <td>' . HelperFramework::escape((string)($row['account'] ?? '')) . '</td>
                 <td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($row['account_type'] ?? ''), '_')) . '</td>
-                <td>' . HelperFramework::escape($this->displayDate((string)($row['last_transaction_date'] ?? ''))) . '</td>
-                <td>' . HelperFramework::escape((string)($row['last_transaction_desc'] ?? '')) . '</td>
-                <td class="numeric">' . HelperFramework::escape($amount === null ? '' : $this->money($companySettings, $amount)) . '</td>
+                <td>' . HelperFramework::escape($this->blankToDash($this->displayDate((string)($row['last_transaction_date'] ?? '')))) . '</td>
+                <td>' . HelperFramework::escape($this->blankToDash((string)($row['last_transaction_desc'] ?? ''))) . '</td>
+                <td class="numeric">' . HelperFramework::escape($amountDisplay) . '</td>
             </tr>';
         }
 
@@ -148,6 +149,11 @@ final class _year_end_transaction_tailCard extends CardBaseFramework
     private function displayDate(string $date): string
     {
         return trim($date) !== '' ? HelperFramework::displayDate($date) : '';
+    }
+
+    private function blankToDash(string $value): string
+    {
+        return trim($value) !== '' ? $value : '-';
     }
 
     private function renderErrors(array $errors): string

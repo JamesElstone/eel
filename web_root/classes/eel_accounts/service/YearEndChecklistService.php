@@ -431,13 +431,6 @@ final class YearEndChecklistService
     }
 
     public function saveDirectorLoanClosingAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app'): array {
-        if (!$acknowledged) {
-            return [
-                'success' => false,
-                'errors' => ['Tick the director loan offset acknowledgement before saving.'],
-            ];
-        }
-
         $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId, true);
         if (empty($checklistResult['success'])) {
             return $checklistResult;
@@ -455,13 +448,6 @@ final class YearEndChecklistService
     }
 
     public function saveTaxReadinessAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app'): array {
-        if (!$acknowledged) {
-            return [
-                'success' => false,
-                'errors' => ['Tick the tax readiness acknowledgement before saving.'],
-            ];
-        }
-
         $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId, true);
         if (empty($checklistResult['success'])) {
             return $checklistResult;
@@ -479,13 +465,6 @@ final class YearEndChecklistService
     }
 
     public function saveExpensePositionAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app'): array {
-        if (!$acknowledged) {
-            return [
-                'success' => false,
-                'errors' => ['Tick the expense position acknowledgement before saving.'],
-            ];
-        }
-
         $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId, true);
         if (empty($checklistResult['success'])) {
             return $checklistResult;
@@ -503,13 +482,6 @@ final class YearEndChecklistService
     }
 
     public function saveRetainedEarningsCloseAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app'): array {
-        if (!$acknowledged) {
-            return [
-                'success' => false,
-                'errors' => ['Tick the retained earnings acknowledgement before saving.'],
-            ];
-        }
-
         $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId, true);
         if (empty($checklistResult['success'])) {
             return $checklistResult;

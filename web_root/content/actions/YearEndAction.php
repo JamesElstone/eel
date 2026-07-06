@@ -95,7 +95,8 @@ final class YearEndAction implements ActionInterfaceFramework
                     $companyId,
                     $accountingPeriodId,
                     $this->truthy($request->input('transaction_tail_acknowledgement', '0')),
-                    (string)$request->input('transaction_tail_acknowledgement_note', '')
+                    (string)$request->input('transaction_tail_acknowledgement_note', ''),
+                    $actor
                 ),
                 'acknowledge_review_check' => (new \eel_accounts\Service\YearEndChecklistService())->acknowledgeReviewCheck(
                     $companyId,

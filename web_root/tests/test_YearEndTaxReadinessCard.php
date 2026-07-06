@@ -49,19 +49,20 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
             ],
         ], [
             'tax_readiness_acknowledged_at' => '2026-07-03 12:00:00',
+            'tax_readiness_acknowledged_by' => 'Alex Example using the web_app',
         ]));
 
         $harness->assertSame(true, str_contains($html, 'save_tax_readiness_acknowledgement'));
-        $harness->assertSame(true, str_contains($html, 'I acknowledge that the corporation tax workings have been reviewed'));
         $harness->assertSame(true, str_contains($html, 'Open Tax Workflow'));
         $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=tax" data-ajax="true"'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="company_id" value="33">'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="accounting_period_id" value="70">'));
         $harness->assertSame(false, str_contains($html, '?page=tax&amp;company_id=33'));
-        $harness->assertSame(true, str_contains($html, 'data-chicken-check="true"'));
-        $harness->assertSame(true, str_contains($html, 'data-chicken-button-class="button danger"'));
-        $harness->assertSame(true, str_contains($html, '>I Agree</button>'));
-        $harness->assertSame(true, str_contains($html, 'checked required'));
+        $harness->assertSame(true, str_contains($html, 'Confirmed at 2026-07-03 12:00:00 by Alex Example using the web_app.'));
+        $harness->assertSame(true, str_contains($html, 'name="tax_readiness_acknowledgement" value="0"'));
+        $harness->assertSame(true, str_contains($html, 'Revoke acknowledgement'));
+        $harness->assertSame(false, str_contains($html, 'data-chicken-check="true"'));
+        $harness->assertSame(false, str_contains($html, 'checked required'));
         $harness->assertSame(true, str_contains($html, '$ 12,500.00'));
         $harness->assertSame(true, str_contains($html, '$ 2,375.00'));
         $harness->assertSame(true, str_contains($html, '$ 45.67'));

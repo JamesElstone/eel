@@ -76,26 +76,15 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
 
         $status = (string)($offset['offset_status'] ?? '');
         $acknowledged = !empty($offset['closing_balance_acknowledged']);
-        $acknowledgementForm = '';
-        if (!empty($offset['can_post'])) {
-            $acknowledgementForm = '<form method="post" data-ajax="true" class="panel-soft stack" data-director-loan-offset-ack-form="true">
-                <input type="hidden" name="card_action" value="YearEnd">
-                <input type="hidden" name="intent" value="save_director_loan_offset_acknowledgement">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <label class="checkbox-row">
-                    <input type="checkbox" name="director_loan_offset_acknowledgement" value="1"' . ($acknowledged ? ' checked' : '') . ' required data-director-loan-offset-ack-checkbox>
-                    <span>I acknowledge that this offset will be applied on the closing of the Accounting Period</span>
-                </label>
-                <button class="button primary" type="submit"
-                    ' . ($acknowledged ? '' : 'disabled ') . 'data-director-loan-offset-ack-submit
-                    data-chicken-check="true"
-                    data-chicken-title="Save director loan acknowledgement"
-                    data-chicken-message="This records that the director loan offset will be applied when this accounting period closes.<br><br>Continue?"
-                    data-chicken-confirm-text="I Agree"
-                    data-chicken-button-class="button danger">I Agree</button>
-            </form>';
-        }
+        $acknowledgementForm = !empty($offset['can_post'])
+            ? $this->acknowledgementHtml(
+                $acknowledged,
+                (string)($offset['closing_balance_acknowledged_at'] ?? ''),
+                (string)($offset['closing_balance_acknowledged_by'] ?? ''),
+                $companyId,
+                $accountingPeriodId
+            )
+            : '';
 
         return '<section class="settings-stack" id="director-loan-offset">
             <div class="status-head">
@@ -123,6 +112,51 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
             ' . (empty($offset['can_post']) ? '<div class="helper">' . HelperFramework::escape((string)($offset['post_blocked_reason'] ?? '')) . '</div>' : '') . '
             <div class="actions-row">' . $acknowledgementForm . '</div>
         </section>';
+    }
+
+    private function acknowledgementHtml(bool $acknowledged, string $acknowledgedAt, string $acknowledgedBy, int $companyId, int $accountingPeriodId): string
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return '';
+        }
+
+        if ($acknowledged) {
+            return '<section class="panel-soft success settings-stack">
+                <div class="eyebrow">Acknowledgement</div>
+                <div class="stat-foot">' . HelperFramework::escape($this->confirmationFoot($acknowledgedAt, $acknowledgedBy)) . '</div>
+                <form method="post" data-ajax="true">
+                    <input type="hidden" name="card_action" value="YearEnd">
+                    <input type="hidden" name="intent" value="save_director_loan_offset_acknowledgement">
+                    <input type="hidden" name="company_id" value="' . $companyId . '">
+                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                    <input type="hidden" name="director_loan_offset_acknowledgement" value="0">
+                    <button class="button" type="submit">Revoke acknowledgement</button>
+                </form>
+            </section>';
+        }
+
+        return '<section class="panel-soft warn full settings-stack">
+            <div class="eyebrow">Acknowledgement</div>
+            <form method="post" data-ajax="true" class="form-grid" data-year-end-ack-form="true">
+                <input type="hidden" name="card_action" value="YearEnd">
+                <input type="hidden" name="intent" value="save_director_loan_offset_acknowledgement">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <label class="checkbox-row full">
+                    <input type="checkbox" name="director_loan_offset_acknowledgement" value="1" required data-year-end-ack-checkbox>
+                    <span>I acknowledge that this offset will be applied on the closing of the Accounting Period</span>
+                </label>
+                <div class="actions-row"><button class="button primary" type="submit" disabled data-year-end-ack-submit>Save acknowledgement</button></div>
+            </form>
+        </section>';
+    }
+
+    private function confirmationFoot(string $acknowledgedAt, string $acknowledgedBy): string
+    {
+        return 'Confirmed'
+            . (trim($acknowledgedAt) !== '' ? ' at ' . trim($acknowledgedAt) : '')
+            . (trim($acknowledgedBy) !== '' ? ' by ' . trim($acknowledgedBy) : '')
+            . '.';
     }
 
     private function summaryCard(string $label, string $value): string

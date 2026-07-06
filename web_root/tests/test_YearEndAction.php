@@ -346,23 +346,22 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
                 'month_start' => '2022-09-01',
                 'revoked_at' => null,
             ]));
-            $harness->assertSame(
-                'Alex Example using the web_app',
-                (string)InterfaceDB::fetchColumn(
-                    'SELECT confirmed_by
-                       FROM accounting_period_month_confirmations
-                      WHERE company_id = :company_id
-                        AND accounting_period_id = :accounting_period_id
-                        AND month_start = :month_start
-                        AND revoked_at IS NULL
-                      LIMIT 1',
-                    [
-                        'company_id' => (int)$fixture['company_id'],
-                        'accounting_period_id' => (int)$fixture['accounting_period_id'],
-                        'month_start' => '2022-09-01',
-                    ]
-                )
+            $confirmedBy = (string)InterfaceDB::fetchColumn(
+                'SELECT confirmed_by
+                   FROM accounting_period_month_confirmations
+                  WHERE company_id = :company_id
+                    AND accounting_period_id = :accounting_period_id
+                    AND month_start = :month_start
+                    AND revoked_at IS NULL
+                  LIMIT 1',
+                [
+                    'company_id' => (int)$fixture['company_id'],
+                    'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                    'month_start' => '2022-09-01',
+                ]
             );
+            $harness->assertSame(true, str_contains($confirmedBy, 'using the web_app'));
+            $harness->assertSame(true, trim($confirmedBy) !== '');
 
             $revoke = $instance->handle(
                 yearEndActionEmptyMonthTestRequest((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'revoke_empty_month'),

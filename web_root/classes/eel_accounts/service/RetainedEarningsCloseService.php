@@ -94,10 +94,13 @@ final class RetainedEarningsCloseService
     public function saveAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app'): array
     {
         if (!$acknowledged) {
-            return [
-                'success' => false,
-                'errors' => ['Tick the retained earnings acknowledgement before saving.'],
-            ];
+            return ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->saveRetainedEarningsCloseAcknowledgement(
+                $companyId,
+                $accountingPeriodId,
+                false,
+                [],
+                $changedBy
+            );
         }
 
         $context = $this->fetchContext($companyId, $accountingPeriodId);

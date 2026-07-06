@@ -94,26 +94,50 @@ final class _year_end_transaction_tailCard extends CardBaseFramework
         $acknowledged = $acknowledgement !== null;
         $acknowledgedAt = $acknowledged ? trim((string)($acknowledgement['acknowledged_at'] ?? '')) : '';
         $acknowledgedBy = $acknowledged ? trim((string)($acknowledgement['acknowledged_by'] ?? '')) : '';
+        $note = $acknowledged ? trim((string)($acknowledgement['note'] ?? '')) : '';
 
-        return '<div class="actions-row"><form method="post" data-ajax="true" class="panel-soft stack" data-year-end-transaction-tail-ack-form="true">
+        if ($acknowledged) {
+            return '<section class="panel-soft success settings-stack">
+                <div class="eyebrow">Acknowledgement</div>
+                ' . ($note !== '' ? '<div class="summary-value">' . HelperFramework::escape($note) . '</div>' : '') . '
+                <div class="stat-foot">' . HelperFramework::escape($this->confirmationFoot($acknowledgedAt, $acknowledgedBy)) . '</div>
+                <form method="post" data-ajax="true">
+                    <input type="hidden" name="card_action" value="YearEnd">
+                    <input type="hidden" name="intent" value="save_transaction_tail_acknowledgement">
+                    <input type="hidden" name="company_id" value="' . $companyId . '">
+                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                    <input type="hidden" name="transaction_tail_acknowledgement" value="0">
+                    <button class="button" type="submit">Revoke acknowledgement</button>
+                </form>
+            </section>';
+        }
+
+        return '<section class="panel-soft warn full settings-stack">
+            <div class="eyebrow">Acknowledgement</div>
+            <form method="post" data-ajax="true" class="form-grid" data-year-end-ack-form="true">
                 <input type="hidden" name="card_action" value="YearEnd">
                 <input type="hidden" name="intent" value="save_transaction_tail_acknowledgement">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <input type="hidden" name="transaction_tail_acknowledgement" value="0">
-                <label class="checkbox-row">
-                    <input type="checkbox" name="transaction_tail_acknowledgement" value="1"' . ($acknowledged ? ' checked' : '') . ' required data-year-end-transaction-tail-ack-checkbox>
+                <label class="checkbox-row full">
+                    <input type="checkbox" name="transaction_tail_acknowledgement" value="1" required data-year-end-ack-checkbox>
                     <span>I acknowledge that the latest transaction line for each company account has been reviewed before closing this Accounting Period</span>
                 </label>
-                ' . ($acknowledged ? '<div class="helper">Confirmed' . ($acknowledgedAt !== '' ? ' at ' . HelperFramework::escape($acknowledgedAt) : '') . ($acknowledgedBy !== '' ? ' by ' . HelperFramework::escape($acknowledgedBy) : '') . '.</div>' : '') . '
-                <button class="button primary" type="submit"
-                    data-year-end-transaction-tail-ack-submit
-                    data-chicken-check="true"
-                    data-chicken-title="Save transaction cut-off acknowledgement"
-                    data-chicken-message="This records that the latest transaction line for each company account has been reviewed for this accounting period.<br><br>Continue?"
-                    data-chicken-confirm-text="I Agree"
-                    data-chicken-button-class="button danger">I Agree</button>
-            </form></div>';
+                <div class="form-row full">
+                    <label for="transaction-tail-acknowledgement-note">Acknowledgement notes</label>
+                    <textarea class="input" id="transaction-tail-acknowledgement-note" name="transaction_tail_acknowledgement_note" rows="3"></textarea>
+                </div>
+                <div class="actions-row"><button class="button primary" type="submit" disabled data-year-end-ack-submit>Save acknowledgement</button></div>
+            </form>
+        </section>';
+    }
+
+    private function confirmationFoot(string $acknowledgedAt, string $acknowledgedBy): string
+    {
+        return 'Confirmed'
+            . ($acknowledgedAt !== '' ? ' at ' . $acknowledgedAt : '')
+            . ($acknowledgedBy !== '' ? ' by ' . $acknowledgedBy : '')
+            . '.';
     }
 
     private function money(array $companySettings, float|int|string|null $value): string

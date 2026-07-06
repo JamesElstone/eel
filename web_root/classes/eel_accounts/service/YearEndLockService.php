@@ -274,33 +274,26 @@ final class YearEndLockService
             ];
         }
 
-        if (!$acknowledged) {
-            return [
-                'success' => false,
-                'errors' => ['Tick the director loan offset acknowledgement before saving.'],
-            ];
-        }
-
         $this->ensureReviewRow($companyId, $accountingPeriodId);
         $existing = $this->fetchReview($companyId, $accountingPeriodId);
         $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
 
         \InterfaceDB::execute( 'UPDATE year_end_reviews
-             SET director_loan_closing_acknowledged_at = :acknowledged_at,
-                 director_loan_closing_acknowledged_by = :acknowledged_by,
+             SET director_loan_closing_acknowledged_at = ' . ($acknowledged ? ':acknowledged_at' : 'NULL') . ',
+                 director_loan_closing_acknowledged_by = ' . ($acknowledged ? ':acknowledged_by' : 'NULL') . ',
                  updated_at = :updated_at
              WHERE company_id = :company_id
                AND accounting_period_id = :accounting_period_id'
-        , [
-            'acknowledged_at' => $now,
-            'acknowledged_by' => $this->actorValue($changedBy),
+        , array_filter([
+            'acknowledged_at' => $acknowledged ? $now : null,
+            'acknowledged_by' => $acknowledged ? $this->actorValue($changedBy) : null,
             'updated_at' => $now,
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
-        ]);
+        ], static fn(mixed $value): bool => $value !== null));
 
         $review = $this->fetchReview($companyId, $accountingPeriodId);
-        $this->writeAuditLog($companyId, $accountingPeriodId, 'director_loan_closing_acknowledged', $changedBy, $existing, $review);
+        $this->writeAuditLog($companyId, $accountingPeriodId, $acknowledged ? 'director_loan_closing_acknowledged' : 'director_loan_closing_reopened', $changedBy, $existing, $review);
 
         return [
             'success' => true,
@@ -323,33 +316,26 @@ final class YearEndLockService
             ];
         }
 
-        if (!$acknowledged) {
-            return [
-                'success' => false,
-                'errors' => ['Tick the tax readiness acknowledgement before saving.'],
-            ];
-        }
-
         $this->ensureReviewRow($companyId, $accountingPeriodId);
         $existing = $this->fetchReview($companyId, $accountingPeriodId);
         $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
 
         \InterfaceDB::execute( 'UPDATE year_end_reviews
-             SET tax_readiness_acknowledged_at = :acknowledged_at,
-                 tax_readiness_acknowledged_by = :acknowledged_by,
+             SET tax_readiness_acknowledged_at = ' . ($acknowledged ? ':acknowledged_at' : 'NULL') . ',
+                 tax_readiness_acknowledged_by = ' . ($acknowledged ? ':acknowledged_by' : 'NULL') . ',
                  updated_at = :updated_at
              WHERE company_id = :company_id
                AND accounting_period_id = :accounting_period_id'
-        , [
-            'acknowledged_at' => $now,
-            'acknowledged_by' => $this->actorValue($changedBy),
+        , array_filter([
+            'acknowledged_at' => $acknowledged ? $now : null,
+            'acknowledged_by' => $acknowledged ? $this->actorValue($changedBy) : null,
             'updated_at' => $now,
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
-        ]);
+        ], static fn(mixed $value): bool => $value !== null));
 
         $review = $this->fetchReview($companyId, $accountingPeriodId);
-        $this->writeAuditLog($companyId, $accountingPeriodId, 'tax_readiness_acknowledged', $changedBy, $existing, $review);
+        $this->writeAuditLog($companyId, $accountingPeriodId, $acknowledged ? 'tax_readiness_acknowledged' : 'tax_readiness_reopened', $changedBy, $existing, $review);
 
         return [
             'success' => true,
@@ -372,33 +358,26 @@ final class YearEndLockService
             ];
         }
 
-        if (!$acknowledged) {
-            return [
-                'success' => false,
-                'errors' => ['Tick the expense position acknowledgement before saving.'],
-            ];
-        }
-
         $this->ensureReviewRow($companyId, $accountingPeriodId);
         $existing = $this->fetchReview($companyId, $accountingPeriodId);
         $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
 
         \InterfaceDB::execute( 'UPDATE year_end_reviews
-             SET expense_position_acknowledged_at = :acknowledged_at,
-                 expense_position_acknowledged_by = :acknowledged_by,
+             SET expense_position_acknowledged_at = ' . ($acknowledged ? ':acknowledged_at' : 'NULL') . ',
+                 expense_position_acknowledged_by = ' . ($acknowledged ? ':acknowledged_by' : 'NULL') . ',
                  updated_at = :updated_at
              WHERE company_id = :company_id
                AND accounting_period_id = :accounting_period_id'
-        , [
-            'acknowledged_at' => $now,
-            'acknowledged_by' => $this->actorValue($changedBy),
+        , array_filter([
+            'acknowledged_at' => $acknowledged ? $now : null,
+            'acknowledged_by' => $acknowledged ? $this->actorValue($changedBy) : null,
             'updated_at' => $now,
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
-        ]);
+        ], static fn(mixed $value): bool => $value !== null));
 
         $review = $this->fetchReview($companyId, $accountingPeriodId);
-        $this->writeAuditLog($companyId, $accountingPeriodId, 'expense_position_acknowledged', $changedBy, $existing, $review);
+        $this->writeAuditLog($companyId, $accountingPeriodId, $acknowledged ? 'expense_position_acknowledged' : 'expense_position_reopened', $changedBy, $existing, $review);
 
         return [
             'success' => true,
@@ -436,43 +415,36 @@ final class YearEndLockService
             }
         }
 
-        if (!$acknowledged) {
-            return [
-                'success' => false,
-                'errors' => ['Tick the retained earnings acknowledgement before saving.'],
-            ];
-        }
-
         $this->ensureReviewRow($companyId, $accountingPeriodId);
         $existing = $this->fetchReview($companyId, $accountingPeriodId);
         $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
 
         \InterfaceDB::execute(
             'UPDATE year_end_reviews
-             SET retained_earnings_close_acknowledged_at = :acknowledged_at,
-                 retained_earnings_close_acknowledged_by = :acknowledged_by,
-                 retained_earnings_close_opening_equity = :opening_equity,
-                 retained_earnings_close_current_profit_loss = :current_profit_loss,
-                 retained_earnings_close_closing_equity_before = :closing_equity_before,
-                 retained_earnings_close_amount = :close_amount,
+             SET retained_earnings_close_acknowledged_at = ' . ($acknowledged ? ':acknowledged_at' : 'NULL') . ',
+                 retained_earnings_close_acknowledged_by = ' . ($acknowledged ? ':acknowledged_by' : 'NULL') . ',
+                 retained_earnings_close_opening_equity = ' . ($acknowledged ? ':opening_equity' : 'NULL') . ',
+                 retained_earnings_close_current_profit_loss = ' . ($acknowledged ? ':current_profit_loss' : 'NULL') . ',
+                 retained_earnings_close_closing_equity_before = ' . ($acknowledged ? ':closing_equity_before' : 'NULL') . ',
+                 retained_earnings_close_amount = ' . ($acknowledged ? ':close_amount' : 'NULL') . ',
                  updated_at = :updated_at
              WHERE company_id = :company_id
                AND accounting_period_id = :accounting_period_id',
-            [
-                'acknowledged_at' => $now,
-                'acknowledged_by' => $this->actorValue($changedBy),
-                'opening_equity' => number_format((float)($summary['opening_equity'] ?? 0), 2, '.', ''),
-                'current_profit_loss' => number_format((float)($summary['current_profit_loss'] ?? 0), 2, '.', ''),
-                'closing_equity_before' => number_format((float)($summary['closing_equity_before_close'] ?? 0), 2, '.', ''),
-                'close_amount' => number_format((float)($summary['retained_earnings_movement'] ?? 0), 2, '.', ''),
+            array_filter([
+                'acknowledged_at' => $acknowledged ? $now : null,
+                'acknowledged_by' => $acknowledged ? $this->actorValue($changedBy) : null,
+                'opening_equity' => $acknowledged ? number_format((float)($summary['opening_equity'] ?? 0), 2, '.', '') : null,
+                'current_profit_loss' => $acknowledged ? number_format((float)($summary['current_profit_loss'] ?? 0), 2, '.', '') : null,
+                'closing_equity_before' => $acknowledged ? number_format((float)($summary['closing_equity_before_close'] ?? 0), 2, '.', '') : null,
+                'close_amount' => $acknowledged ? number_format((float)($summary['retained_earnings_movement'] ?? 0), 2, '.', '') : null,
                 'updated_at' => $now,
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
-            ]
+            ], static fn(mixed $value): bool => $value !== null)
         );
 
         $review = $this->fetchReview($companyId, $accountingPeriodId);
-        $this->writeAuditLog($companyId, $accountingPeriodId, 'retained_earnings_close_acknowledged', $changedBy, $existing, $review);
+        $this->writeAuditLog($companyId, $accountingPeriodId, $acknowledged ? 'retained_earnings_close_acknowledged' : 'retained_earnings_close_reopened', $changedBy, $existing, $review);
 
         return [
             'success' => true,

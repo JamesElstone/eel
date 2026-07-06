@@ -23,11 +23,13 @@ $harness->run(_year_end_retained_earningsCard::class, static function (Generated
         $harness->assertSame(true, str_contains($html, 'disabled data-year-end-ack-submit'));
     });
 
-    $harness->check(_year_end_retained_earningsCard::class, 'marks agreement checked when current', static function () use ($harness, $card): void {
+    $harness->check(_year_end_retained_earningsCard::class, 'renders agreement details and revoke action when current', static function () use ($harness, $card): void {
         $html = $card->render(yearEndRetainedEarningsCardContext(true, false));
 
-        $harness->assertSame(true, str_contains($html, 'name="retained_earnings_close_acknowledgement" value="1" checked required'));
-        $harness->assertSame(false, str_contains($html, 'disabled data-year-end-ack-submit'));
+        $harness->assertSame(true, str_contains($html, 'Confirmed at 2026-07-06 10:00:00 by Alex Example using the web_app.'));
+        $harness->assertSame(true, str_contains($html, 'name="retained_earnings_close_acknowledgement" value="0"'));
+        $harness->assertSame(true, str_contains($html, 'Revoke agreement'));
+        $harness->assertSame(false, str_contains($html, 'checked required'));
     });
 
     $harness->check(_year_end_retained_earningsCard::class, 'warns when agreement is stale', static function () use ($harness, $card): void {
@@ -56,6 +58,10 @@ function yearEndRetainedEarningsCardContext(bool $acknowledged, bool $stale): ar
                 ],
                 'acknowledged' => $acknowledged,
                 'acknowledgement_stale' => $stale,
+                'review' => [
+                    'retained_earnings_close_acknowledged_at' => $acknowledged ? '2026-07-06 10:00:00' : '',
+                    'retained_earnings_close_acknowledged_by' => $acknowledged ? 'Alex Example using the web_app' : '',
+                ],
                 'summary' => [
                     'opening_equity' => 0,
                     'current_profit_loss' => -396.91,

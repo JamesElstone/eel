@@ -77,26 +77,13 @@ final class _year_end_expenses_confirmationCard extends CardBaseFramework
             $rowsHtml = '<tr><td colspan="8">No expense claim balances were found for this accounting period.</td></tr>';
         }
 
-        $acknowledgementForm = '';
-        if ($companyId > 0 && $accountingPeriodId > 0) {
-            $acknowledgementForm = '<form method="post" data-ajax="true" class="panel-soft stack" data-year-end-ack-form="true">
-                <input type="hidden" name="card_action" value="YearEnd">
-                <input type="hidden" name="intent" value="save_expense_position_acknowledgement">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <label class="checkbox-row">
-                    <input type="checkbox" name="expense_position_acknowledgement" value="1"' . ($acknowledged ? ' checked' : '') . ' required data-year-end-ack-checkbox>
-                    <span>I acknowledge that the year-end expense claim position has been reviewed before closing this Accounting Period</span>
-                </label>
-                <button class="button primary" type="submit"
-                    ' . ($acknowledged ? '' : 'disabled ') . 'data-year-end-ack-submit
-                    data-chicken-check="true"
-                    data-chicken-title="Save expense position acknowledgement"
-                    data-chicken-message="This records that the expense claim position has been reviewed for this accounting period.<br><br>Continue?"
-                    data-chicken-confirm-text="I Agree"
-                    data-chicken-button-class="button danger">I Agree</button>
-            </form>';
-        }
+        $acknowledgementForm = $this->acknowledgementHtml(
+            $acknowledged,
+            (string)($expenses['expense_position_acknowledged_at'] ?? ''),
+            (string)($expenses['expense_position_acknowledged_by'] ?? ''),
+            $companyId,
+            $accountingPeriodId
+        );
 
         return '<section class="settings-stack" id="year-end-expenses-confirmation">
             <div class="month-grid">
@@ -113,6 +100,51 @@ final class _year_end_expenses_confirmationCard extends CardBaseFramework
             </div>
             <div class="actions-row">' . $acknowledgementForm . '</div>
         </section>';
+    }
+
+    private function acknowledgementHtml(bool $acknowledged, string $acknowledgedAt, string $acknowledgedBy, int $companyId, int $accountingPeriodId): string
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return '';
+        }
+
+        if ($acknowledged) {
+            return '<section class="panel-soft success settings-stack">
+                <div class="eyebrow">Acknowledgement</div>
+                <div class="stat-foot">' . HelperFramework::escape($this->confirmationFoot($acknowledgedAt, $acknowledgedBy)) . '</div>
+                <form method="post" data-ajax="true">
+                    <input type="hidden" name="card_action" value="YearEnd">
+                    <input type="hidden" name="intent" value="save_expense_position_acknowledgement">
+                    <input type="hidden" name="company_id" value="' . $companyId . '">
+                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                    <input type="hidden" name="expense_position_acknowledgement" value="0">
+                    <button class="button" type="submit">Revoke acknowledgement</button>
+                </form>
+            </section>';
+        }
+
+        return '<section class="panel-soft warn full settings-stack">
+            <div class="eyebrow">Acknowledgement</div>
+            <form method="post" data-ajax="true" class="form-grid" data-year-end-ack-form="true">
+                <input type="hidden" name="card_action" value="YearEnd">
+                <input type="hidden" name="intent" value="save_expense_position_acknowledgement">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <label class="checkbox-row full">
+                    <input type="checkbox" name="expense_position_acknowledgement" value="1" required data-year-end-ack-checkbox>
+                    <span>I acknowledge that the year-end expense claim position has been reviewed before closing this Accounting Period</span>
+                </label>
+                <div class="actions-row"><button class="button primary" type="submit" disabled data-year-end-ack-submit>Save acknowledgement</button></div>
+            </form>
+        </section>';
+    }
+
+    private function confirmationFoot(string $acknowledgedAt, string $acknowledgedBy): string
+    {
+        return 'Confirmed'
+            . (trim($acknowledgedAt) !== '' ? ' at ' . trim($acknowledgedAt) : '')
+            . (trim($acknowledgedBy) !== '' ? ' by ' . trim($acknowledgedBy) : '')
+            . '.';
     }
 
     private function summaryCard(string $label, string $value): string

@@ -109,51 +109,59 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
 
         $isAcknowledged = is_array($acknowledgement);
         $note = $isAcknowledged ? trim((string)($acknowledgement['note'] ?? '')) : '';
-        $statusHtml = $isAcknowledged
-            ? '<span class="badge success">Acknowledged</span>'
-            : '<span class="badge warning">Pending</span>';
-        $detailHtml = $isAcknowledged
-            ? '<div class="helper">Acknowledged by ' . HelperFramework::escape((string)($acknowledgement['acknowledged_by'] ?? '')) . ' at ' . HelperFramework::escape((string)($acknowledgement['acknowledged_at'] ?? '')) . '.</div>'
-            : '<div class="helper">This acknowledgement clears the Year End checklist only. HMRC/iXBRL submission remains blocked until the Companies House filing is corrected and refreshed.</div>';
-
         $form = $isAcknowledged
-            ? '<form method="post" data-ajax="true" class="actions-row">
+            ? '<section class="panel-soft success settings-stack">
+                <div class="eyebrow">Acknowledgement</div>
+                ' . ($note !== '' ? '<div class="summary-value">' . HelperFramework::escape($note) . '</div>' : '') . '
+                <div class="stat-foot">' . HelperFramework::escape($this->confirmationFoot((string)($acknowledgement['acknowledged_at'] ?? ''), (string)($acknowledgement['acknowledged_by'] ?? ''))) . '</div>
+                <form method="post" data-ajax="true">
                 <input type="hidden" name="card_action" value="YearEnd">
                 <input type="hidden" name="intent" value="reopen_review_check">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="check_code" value="' . HelperFramework::escape(self::CHECK_CODE) . '">
-                <button class="button" type="submit">Reopen review</button>
-            </form>'
-            : '<form method="post" data-ajax="true" class="panel-soft stack" data-year-end-ack-form="true">
+                <button class="button" type="submit">Revoke acknowledgement</button>
+            </form>
+            </section>'
+            : '<section class="panel-soft warn full settings-stack">
+                <div class="eyebrow">Acknowledgement</div>
+                <div class="helper">This acknowledgement clears the Year End checklist only. HMRC/iXBRL submission remains blocked until the Companies House filing is corrected and refreshed.</div>
+                <form method="post" data-ajax="true" class="form-grid" data-year-end-ack-form="true">
                 <input type="hidden" name="card_action" value="YearEnd">
                 <input type="hidden" name="intent" value="acknowledge_review_check">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="check_code" value="' . HelperFramework::escape(self::CHECK_CODE) . '">
-                <label class="checkbox-row">
+                <label class="checkbox-row full">
                     <input type="checkbox" name="companies_house_mismatch_acknowledgement" value="1" required data-year-end-ack-checkbox>
                     <span>I acknowledge the stored Companies House filing differs from the reviewed app figures and will be corrected before HMRC submission.</span>
                 </label>
-                <label for="companies-house-mismatch-note">Correction plan/reference</label>
-                <textarea class="input" id="companies-house-mismatch-note" name="review_acknowledgement_note" rows="3"></textarea>
-                <button class="button primary" type="submit" disabled data-year-end-ack-submit
-                    data-chicken-check="true"
-                    data-chicken-title="Save Companies House acknowledgement"
-                    data-chicken-message="This records that the Companies House mismatch is a known external filing issue for Year End only.<br><br>Continue?"
-                    data-chicken-confirm-text="I Agree"
-                    data-chicken-button-class="button primary">Save acknowledgement</button>
-            </form>';
+                <div class="form-row full">
+                    <label for="companies-house-mismatch-note">Correction plan/reference</label>
+                    <textarea class="input" id="companies-house-mismatch-note" name="review_acknowledgement_note" rows="3"></textarea>
+                </div>
+                <div class="actions-row"><button class="button primary" type="submit" disabled data-year-end-ack-submit>Save acknowledgement</button></div>
+            </form>
+            </section>';
 
-        return '<section class="panel-soft" id="companies-house-mismatch-acknowledgement">
+        return '<section class="settings-stack" id="companies-house-mismatch-acknowledgement">
             <div class="status-head">
                 <h3 class="card-title">Year End Acknowledgement</h3>
-                ' . $statusHtml . '
+                <span class="badge ' . HelperFramework::escape($isAcknowledged ? 'success' : 'warning') . '">' . HelperFramework::escape($isAcknowledged ? 'Acknowledged' : 'Acknowledgement pending') . '</span>
             </div>
-            ' . $detailHtml . '
-            ' . ($note !== '' ? '<div class="helper">Note: ' . HelperFramework::escape($note) . '</div>' : '') . '
-            <div class="actions-row">' . $form . '</div>
+            ' . $form . '
         </section>';
+    }
+
+    private function confirmationFoot(string $acknowledgedAt, string $acknowledgedBy): string
+    {
+        $acknowledgedAt = trim($acknowledgedAt);
+        $acknowledgedBy = trim($acknowledgedBy);
+
+        return 'Confirmed'
+            . ($acknowledgedAt !== '' ? ' at ' . $acknowledgedAt : '')
+            . ($acknowledgedBy !== '' ? ' by ' . $acknowledgedBy : '')
+            . '.';
     }
 
     private function acknowledgement(array $context): ?array

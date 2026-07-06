@@ -84,6 +84,7 @@ final class DatabaseBackupService
             $this->write($handle, "-- EEL Accounts database backup\n");
             $this->write($handle, '-- Created: ' . (new DateTimeImmutable())->format('Y-m-d H:i:s') . "\n");
             $this->write($handle, '-- Database: ' . ($databaseName !== '' ? $databaseName : 'unknown') . "\n\n");
+            $this->write($handle, "SET NAMES utf8mb4;\n");
             $this->write($handle, "SET FOREIGN_KEY_CHECKS=0;\n");
             $this->write($handle, "SET SQL_MODE='NO_AUTO_VALUE_ON_ZERO';\n\n");
 
@@ -119,7 +120,7 @@ final class DatabaseBackupService
             }
 
             $columns = array_map(fn(string $column): string => $this->quoteIdentifier($column), array_keys($row));
-            $values = array_map(fn(mixed $value): string => $this->sqlLiteral($pdo, $value), array_values($row));
+            $values = array_map(fn(mixed $value): string => $this->sqlLiteral($value), array_values($row));
             $this->write(
                 $handle,
                 'INSERT INTO ' . $quotedTable . ' (' . implode(', ', $columns) . ') VALUES (' . implode(', ', $values) . ");\n"
@@ -294,7 +295,7 @@ final class DatabaseBackupService
         }
 
         try {
-            return new PDO(
+            $pdo = new PDO(
                 $dsn,
                 trim((string)($this->dbConfig['user'] ?? '')) !== '' ? (string)$this->dbConfig['user'] : null,
                 trim((string)($this->dbConfig['pass'] ?? '')) !== '' ? (string)$this->dbConfig['pass'] : null,
@@ -303,8 +304,19 @@ final class DatabaseBackupService
                     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                 ]
             );
+            $this->configureDumpConnection($pdo);
+
+            return $pdo;
         } catch (PDOException $exception) {
             throw new RuntimeException('Database backup connection failed: ' . $exception->getMessage(), 0, $exception);
+        }
+    }
+
+    private function configureDumpConnection(PDO $pdo): void
+    {
+        try {
+            $pdo->exec('SET NAMES utf8mb4');
+        } catch (Throwable) {
         }
     }
 
@@ -369,7 +381,7 @@ final class DatabaseBackupService
         }
     }
 
-    private function sqlLiteral(PDO $pdo, mixed $value): string
+    private function sqlLiteral(mixed $value): string
     {
         if ($value === null) {
             return 'NULL';
@@ -379,29 +391,32 @@ final class DatabaseBackupService
             return $value ? '1' : '0';
         }
 
-        try {
-            $quoted = $pdo->quote((string)$value);
-        } catch (Throwable) {
-            $quoted = false;
-        }
-
-        if ($quoted === false) {
-            return $this->fallbackSqlStringLiteral((string)$value);
-        }
-
-        return $quoted;
+        return $this->mysqlStringLiteral((string)$value);
     }
 
-    private function fallbackSqlStringLiteral(string $value): string
+    private function mysqlStringLiteral(string $value): string
     {
+        if (!$this->isValidUtf8($value)) {
+            throw new RuntimeException('Database backup cannot safely export a non-UTF-8 text value.');
+        }
+
         return "'" . strtr($value, [
             "\\" => "\\\\",
             "\0" => "\\0",
             "\n" => "\\n",
             "\r" => "\\r",
-            "'" => "''",
+            "'" => "\\'",
             "\x1a" => "\\Z",
         ]) . "'";
+    }
+
+    private function isValidUtf8(string $value): bool
+    {
+        if (function_exists('mb_check_encoding')) {
+            return mb_check_encoding($value, 'UTF-8');
+        }
+
+        return preg_match('//u', $value) === 1;
     }
 
     private function quoteIdentifier(string $identifier): string

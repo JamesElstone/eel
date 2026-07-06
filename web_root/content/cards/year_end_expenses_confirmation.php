@@ -98,7 +98,7 @@ final class _year_end_expenses_confirmationCard extends CardBaseFramework
                     <tbody>' . $rowsHtml . '</tbody>
                 </table>
             </div>
-            <div class="actions-row">' . $acknowledgementForm . '</div>
+            ' . $acknowledgementForm . '
         </section>';
     }
 
@@ -112,14 +112,18 @@ final class _year_end_expenses_confirmationCard extends CardBaseFramework
             return '<section class="panel-soft success settings-stack">
                 <div class="eyebrow">Acknowledgement</div>
                 <div class="stat-foot">' . HelperFramework::escape($this->confirmationFoot($acknowledgedAt, $acknowledgedBy)) . '</div>
-                <form method="post" data-ajax="true">
-                    <input type="hidden" name="card_action" value="YearEnd">
-                    <input type="hidden" name="intent" value="save_expense_position_acknowledgement">
-                    <input type="hidden" name="company_id" value="' . $companyId . '">
-                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                    <input type="hidden" name="expense_position_acknowledgement" value="0">
-                    <button class="button" type="submit">Revoke acknowledgement</button>
-                </form>
+                <div class="actions-row">
+                    <div class="year-end-related-workflow">
+                        <form method="post" data-ajax="true">
+                            <input type="hidden" name="card_action" value="YearEnd">
+                            <input type="hidden" name="intent" value="save_expense_position_acknowledgement">
+                            <input type="hidden" name="company_id" value="' . $companyId . '">
+                            <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                            <input type="hidden" name="expense_position_acknowledgement" value="0">
+                            <button class="button" type="submit">Revoke acknowledgement</button>
+                        </form>
+                    </div>
+                </div>
             </section>';
         }
 

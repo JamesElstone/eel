@@ -188,14 +188,18 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
                     (string)($acknowledgement['acknowledged_at'] ?? ''),
                     (string)($acknowledgement['acknowledged_by'] ?? '')
                 )) . '</div>
-                <form method="post" data-ajax="true">
-                    <input type="hidden" name="card_action" value="YearEnd">
-                    <input type="hidden" name="intent" value="reopen_review_check">
-                    <input type="hidden" name="company_id" value="' . $companyId . '">
-                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                    <input type="hidden" name="check_code" value="prepayment_approvals">
-                    <button class="button" type="submit">Revoke acknowledgement</button>
-                </form>
+                <div class="actions-row">
+                    <div class="year-end-related-workflow">
+                        <form method="post" data-ajax="true">
+                            <input type="hidden" name="card_action" value="YearEnd">
+                            <input type="hidden" name="intent" value="reopen_review_check">
+                            <input type="hidden" name="company_id" value="' . $companyId . '">
+                            <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                            <input type="hidden" name="check_code" value="prepayment_approvals">
+                            <button class="button" type="submit">Revoke acknowledgement</button>
+                        </form>
+                    </div>
+                </div>
             </section>';
         }
 

@@ -53,7 +53,11 @@ final class _expense_claim_createCard extends CardBaseFramework
         $accountingPeriod = (array)($context['accounting_period'] ?? []);
         $claimants = (array)($data['claimants'] ?? []);
         $activeClaimantCount = (int)($data['active_claimant_count'] ?? 0);
-        $createDisabled = $activeClaimantCount <= 0;
+        $isPeriodLocked = (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, (int)($company['accounting_period_id'] ?? 0));
+        $createDisabled = $activeClaimantCount <= 0 || $isPeriodLocked;
+        $disabledReason = $isPeriodLocked
+            ? 'Period locked. Expense claims can be reviewed but not created or changed.'
+            : 'Create Expense Claim is disabled because there are no active claimants.';
         $createFormId = 'expense-create-claim-form';
         $claimPeriodDefaults = $this->claimPeriodDefaults($accountingPeriod);
 
@@ -62,9 +66,10 @@ final class _expense_claim_createCard extends CardBaseFramework
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="Expense">
             <input type="hidden" name="company_id" value="' . $companyId . '">
+            <input type="hidden" name="accounting_period_id" value="' . (int)($company['accounting_period_id'] ?? 0) . '">
             <input type="hidden" name="intent" value="create_claim">
         </form>
-        ' . ($createDisabled ? '<div class="helper">Create Expense Claim is disabled because there are no active claimants.</div>' : '') . '
+        ' . ($createDisabled ? '<div class="helper">' . HelperFramework::escape($disabledReason) . '</div>' : '') . '
         <div class="create-expense-claim">
                 <div class="mini-field">
                     <label for="expense-create-claimant">Claimant</label>

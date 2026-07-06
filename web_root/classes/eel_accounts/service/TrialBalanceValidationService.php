@@ -47,10 +47,11 @@ final class TrialBalanceValidationService
         $hasJournals = !empty($tb['has_rows']);
         $monthAllGreen = $monthTiles !== [] && count(array_filter($monthTiles, static fn(array $tile): bool => (string)($tile['status'] ?? '') !== 'green')) === 0;
         $reviewWarningsAcknowledged = trim((string)($review['review_notes'] ?? '')) !== '';
-        $comparisonDifferences = count(array_filter(
+        $filingComparisonDifferences = count(array_filter(
             (array)((new \eel_accounts\Service\TrialBalanceComparisonService())->fetchComparison($companyId, $accountingPeriodId)['rows'] ?? []),
             static fn(array $row): bool => (string)($row['status'] ?? '') === 'differs'
         ));
+        $comparisonDifferences = 0;
         $deferredTaxExposure = (new \eel_accounts\Service\Frs105ValidationService())->deferredTaxNominalExposure($companyId, $accountingPeriodId);
 
         $checks = [
@@ -140,6 +141,7 @@ final class TrialBalanceValidationService
             'ready_for_ct_working_papers' => $readiness,
             'review_warnings_acknowledged' => $reviewWarningsAcknowledged,
             'comparison_differences' => $comparisonDifferences,
+            'filing_comparison_differences' => $filingComparisonDifferences,
             'has_posted_ledger' => $hasJournals,
         ];
     }

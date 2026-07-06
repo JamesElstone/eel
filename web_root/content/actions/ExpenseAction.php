@@ -17,7 +17,11 @@ final class ExpenseAction implements ActionInterfaceFramework
         $service = new \eel_accounts\Service\ExpenseClaimService();
 
         try {
-            $result = match ($intent) {
+            $result = $this->requiresUnlockedPeriod($intent)
+                ? $this->lockedPeriodResult($companyId, $context->accountingPeriodId($request))
+                : ['success' => true];
+            if (!empty($result['success'])) {
+                $result = match ($intent) {
                 'add_claimant' => $service->createClaimant($companyId, (string)$request->input('claimant_name', '')),
                 'activate_claimant' => $service->setClaimantActive($companyId, (int)$request->input('claimant_id', 0), true),
                 'deactivate_claimant' => $service->setClaimantActive($companyId, (int)$request->input('claimant_id', 0), false),
@@ -89,7 +93,8 @@ final class ExpenseAction implements ActionInterfaceFramework
                 ),
                 'select_claim', 'filter_claims' => ['success' => true],
                 default => ['success' => false, 'errors' => ['Unknown expense action.']],
-            };
+                };
+            }
         } catch (Throwable $exception) {
             $result = ['success' => false, 'errors' => [$exception->getMessage()]];
         }
@@ -186,6 +191,41 @@ final class ExpenseAction implements ActionInterfaceFramework
             static fn(mixed $message): array => ['type' => 'success', 'message' => (string)$message],
             $messages
         ), static fn(array $message): bool => trim((string)$message['message']) !== ''));
+    }
+
+    private function requiresUnlockedPeriod(string $intent): bool
+    {
+        return in_array($intent, [
+            'create_claim',
+            'save_line',
+            'bulk_save_lines',
+            'confirm_no_lines',
+            'update_line_nominal',
+            'update_line_type',
+            'save_line_asset_details',
+            'delete_line',
+            'delete_claim',
+            'link_payment',
+            'post_claim',
+            'unlink_payment',
+        ], true);
+    }
+
+    private function lockedPeriodResult(int $companyId, int $accountingPeriodId): array
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return ['success' => true];
+        }
+
+        if (!(new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId)) {
+            return ['success' => true];
+        }
+
+        return [
+            'success' => false,
+            'errors' => ['This accounting period is locked. Expense claims can be reviewed but not changed.'],
+            'status' => 423,
+        ];
     }
 
     private function normaliseHeatmapPeriodStart(string $date): string

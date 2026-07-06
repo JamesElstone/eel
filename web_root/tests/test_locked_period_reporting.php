@@ -88,6 +88,37 @@ $notesHtml = (new _year_end_notesCard())->render([
 locked_period_assert(str_contains($notesHtml, 'readonly'), 'locked Year End notes render read only.');
 locked_period_assert(!str_contains($notesHtml, 'Save Notes') && !str_contains($notesHtml, 'Save notes'), 'locked Year End notes omit save button.');
 
+$expenseCreateHtml = (new _expense_claim_createCard())->render([
+    'company' => ['id' => $companyId, 'accounting_period_id' => $accountingPeriodId, 'settings' => []],
+    'accounting_period' => ['id' => $accountingPeriodId, 'period_start' => $periodStart, 'period_end' => $periodEnd],
+    'services' => [
+        'expensesPageData' => [
+            'claimants' => [[
+                'id' => 1,
+                'claimant_name' => 'Test Claimant',
+                'is_active' => 1,
+            ]],
+            'active_claimant_count' => 1,
+        ],
+    ],
+]);
+locked_period_assert(str_contains($expenseCreateHtml, 'Period locked. Expense claims can be reviewed but not created or changed.'), 'locked Expense Claim create card shows locked helper.');
+locked_period_assert(str_contains($expenseCreateHtml, 'disabled>Create Expense Claim</button>'), 'locked Expense Claim create card disables submit.');
+
+$expenseCreateResult = (new ExpenseAction())->handle(
+    new RequestFramework([], [
+        'card_action' => 'Expense',
+        'intent' => 'create_claim',
+        'company_id' => (string)$companyId,
+        'accounting_period_id' => (string)$accountingPeriodId,
+        'claimant_id' => '1',
+        'claim_year' => '2023',
+        'claim_month' => '9',
+    ], ['REQUEST_METHOD' => 'POST'], [], []),
+    locked_period_test_services()
+);
+locked_period_assert(!$expenseCreateResult->isSuccess(), 'locked Expense Claim create action is rejected.');
+
 $profitLoss = new \eel_accounts\Service\ProfitLossService();
 $summary = $profitLoss->getProfitLossSummary($companyId, $accountingPeriodId);
 $expectedProfit = (float)\InterfaceDB::fetchColumn(
@@ -130,6 +161,10 @@ $snapshot = (new \eel_accounts\Service\CompaniesHouseSnapshotService())->fetchSn
 locked_period_assert(!empty($snapshot['available']), 'Companies House snapshot is available for the locked period.');
 locked_period_assert(abs(locked_period_snapshot_field($snapshot, 'creditors_within_one_year') - 1035.63) < 0.005, 'Companies House creditors are not reduced by debit expense payable balances.');
 locked_period_assert(abs(locked_period_snapshot_field($snapshot, 'current_assets') - 1186.54) < 0.005, 'Companies House current assets include debit expense payable balances.');
+
+$trialBalanceValidation = (new \eel_accounts\Service\TrialBalanceValidationService())->fetchValidation($companyId, $accountingPeriodId);
+locked_period_assert((int)($trialBalanceValidation['comparison_differences'] ?? -1) === 0, 'Trial Balance state comparison diffs do not warn for external filing differences.');
+locked_period_assert((int)($trialBalanceValidation['filing_comparison_differences'] ?? 0) > 0, 'Trial Balance validation still exposes external filing differences separately.');
 
 $validationHtml = (new _trial_balance_validationCard())->render([
     'company' => ['settings' => []],

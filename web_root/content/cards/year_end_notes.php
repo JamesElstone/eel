@@ -49,7 +49,7 @@ final class _year_end_notesCard extends CardBaseFramework
 
         return '
             <section class="settings-stack">
-                <form method="post" data-ajax="true">
+                <form method="post" data-ajax="true" class="settings-stack">
                     <input type="hidden" name="card_action" value="YearEnd">
                     <input type="hidden" name="intent" value="save_notes">
                     <input type="hidden" name="company_id" value="' . $companyId . '">

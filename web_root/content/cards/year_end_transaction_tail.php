@@ -19,6 +19,11 @@ final class _year_end_transaction_tailCard extends CardBaseFramework
         return 'Transaction Cut-off Review';
     }
 
+    public function helper(array $context): string
+    {
+        return 'Review the last imported transaction on each company account before closing the accounting period.';
+    }
+
     public function services(): array
     {
         return [
@@ -61,24 +66,26 @@ final class _year_end_transaction_tailCard extends CardBaseFramework
         foreach ((array)($tail['rows'] ?? []) as $row) {
             $amount = array_key_exists('last_transaction_amount', $row) ? $row['last_transaction_amount'] : null;
             $amountDisplay = $amount === null || trim((string)$amount) === '' ? '-' : $this->money($companySettings, $amount);
+            $balance = array_key_exists('balance', $row) ? $row['balance'] : null;
+            $balanceDisplay = $balance === null || trim((string)$balance) === '' ? '-' : $this->money($companySettings, $balance);
             $rowsHtml .= '<tr>
                 <td>' . HelperFramework::escape((string)($row['account'] ?? '')) . '</td>
                 <td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($row['account_type'] ?? ''), '_')) . '</td>
                 <td>' . HelperFramework::escape($this->blankToDash($this->displayDate((string)($row['last_transaction_date'] ?? '')))) . '</td>
                 <td>' . HelperFramework::escape($this->blankToDash((string)($row['last_transaction_desc'] ?? ''))) . '</td>
                 <td class="numeric">' . HelperFramework::escape($amountDisplay) . '</td>
+                <td class="numeric">' . HelperFramework::escape($balanceDisplay) . '</td>
             </tr>';
         }
 
         if ($rowsHtml === '') {
-            $rowsHtml = '<tr><td colspan="5">No company accounts were found for this company.</td></tr>';
+            $rowsHtml = '<tr><td colspan="6">No company accounts were found for this company.</td></tr>';
         }
 
         return '<section class="settings-stack" id="year-end-transaction-tail">
-            <div class="helper">Review the last imported transaction on each company account before closing the accounting period.</div>
             <div class="table-scroll panel-soft">
                 <table>
-                    <thead><tr><th>Account</th><th>Type</th><th>Last transaction date</th><th>Last transaction desc</th><th>Last transaction amount</th></tr></thead>
+                    <thead><tr><th>Account</th><th>Type</th><th>Last transaction date</th><th>Last transaction desc</th><th>Last transaction amount</th><th>Balance</th></tr></thead>
                     <tbody>' . $rowsHtml . '</tbody>
                 </table>
             </div>

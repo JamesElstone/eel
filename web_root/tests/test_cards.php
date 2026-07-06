@@ -50,6 +50,7 @@ final class TestCardsHarness
         $this->assertCompaniesHouseSnapshotUsesSelectedCompanyContext();
         $this->assertYearEndPageIncludesCompaniesHouseComparison();
         $this->assertYearEndCompaniesHouseComparisonRendersMismatchAcknowledgement();
+        $this->assertYearEndTransactionTailRendersBalanceColumn();
     }
 
     private function assertRoleAssignmentCardOwnsDashboardContext(): void
@@ -476,6 +477,50 @@ final class TestCardsHarness
         $this->assertTrue(str_contains($html, 'will be corrected before HMRC submission'));
 
         test_output_line('Cards: year_end_companies_house_comparison renders mismatch data and acknowledgement.');
+    }
+
+    private function assertYearEndTransactionTailRendersBalanceColumn(): void
+    {
+        $card = new _year_end_transaction_tailCard();
+        $html = $card->render([
+            'company' => [
+                'id' => 12,
+                'accounting_period_id' => 34,
+                'settings' => [],
+            ],
+            'services' => [
+                'yearEndTransactionTail' => [
+                    'available' => true,
+                    'accounting_period' => [
+                        'id' => 34,
+                    ],
+                    'rows' => [
+                        [
+                            'account' => 'Example Bank - Current Account',
+                            'account_type' => 'bank',
+                            'last_transaction_date' => '2023-09-29',
+                            'last_transaction_desc' => 'LAURA IRVINE',
+                            'last_transaction_amount' => '379.41',
+                            'balance' => '1234.56',
+                        ],
+                        [
+                            'account' => 'Example Trade Supplier',
+                            'account_type' => 'trade',
+                            'last_transaction_date' => '',
+                            'last_transaction_desc' => '',
+                            'last_transaction_amount' => null,
+                            'balance' => null,
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->assertTrue(str_contains($html, '<th>Balance</th>'));
+        $this->assertTrue(str_contains($html, '1,234.56'));
+        $this->assertTrue(str_contains($html, '<td class="numeric">-</td>'));
+
+        test_output_line('Cards: year_end_transaction_tail renders Balance column and blank placeholders.');
     }
 
     /**

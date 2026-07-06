@@ -90,6 +90,18 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
         }
     });
 
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'lock status gate rejects unresolved warnings', static function () use ($harness): void {
+        $service = new \eel_accounts\Service\YearEndChecklistService();
+        $method = new ReflectionMethod($service, 'canLockOverallStatus');
+        $method->setAccessible(true);
+
+        $harness->assertSame(true, (bool)$method->invoke($service, 'ready_for_review'));
+        $harness->assertSame(false, (bool)$method->invoke($service, 'in_progress'));
+        $harness->assertSame(false, (bool)$method->invoke($service, 'needs_attention'));
+        $harness->assertSame(false, (bool)$method->invoke($service, 'not_started'));
+        $harness->assertSame(false, (bool)$method->invoke($service, 'locked'));
+    });
+
     $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'review acknowledgement clears advisory warning checks only', static function () use ($harness): void {
         $service = new \eel_accounts\Service\YearEndChecklistService();
         $method = new ReflectionMethod($service, 'applyReviewAcknowledgement');

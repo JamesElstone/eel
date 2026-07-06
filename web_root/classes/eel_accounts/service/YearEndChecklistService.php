@@ -312,11 +312,11 @@ final class YearEndChecklistService
 
         $checklist = (array)$checklistResult['checklist'];
         $overallStatus = (string)($checklist['overall_status'] ?? 'not_started');
-        if (in_array($overallStatus, ['needs_attention', 'not_started'], true)) {
+        if (!$this->canLockOverallStatus($overallStatus)) {
             return [
                 'success' => false,
                 'status' => 422,
-                'errors' => ['Resolve the blocking year-end checks before locking this period.'],
+                'errors' => ['Resolve the year-end checklist warnings and blocking checks before locking this period.'],
                 'checklist' => $checklist,
             ];
         }
@@ -386,6 +386,11 @@ final class YearEndChecklistService
             'corporation_tax' => $taxPersistenceResult,
             'checklist' => $this->fetchChecklist($companyId, $accountingPeriodId, true),
         ];
+    }
+
+    private function canLockOverallStatus(string $overallStatus): bool
+    {
+        return $overallStatus === 'ready_for_review';
     }
 
     private function applyDirectorLoanOffsetBeforeLock(int $companyId, int $accountingPeriodId, array $checklist, string $changedBy): array {

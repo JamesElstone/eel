@@ -109,7 +109,7 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
                 ' . $this->summaryCard('Net Flow', (string)($offset['net_position_label'] ?? '')) . '
                 ' . $this->summaryCard('Existing posted offset', $this->money($companySettings, $offset['posted_offset_amount'] ?? 0)) . '
             </div>
-            <div class="table-scroll">
+            <div class="table-scroll panel-soft">
                 <table>
                     <thead><tr><th>Journal line</th><th>Debit</th><th>Credit</th></tr></thead>
                     <tbody>

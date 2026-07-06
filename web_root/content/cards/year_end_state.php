@@ -56,7 +56,7 @@ final class _year_end_stateCard extends CardBaseFramework
         $status = (string)($checklist['overall_status'] ?? '');
 
         return '
-            <section class="panel-soft settings-stack">
+            <section class="panel-soft settings-stack" data-year-end-state-card="true">
                 <div class="form-grid">
                     <div class="form-row">
                         <label>Status</label>
@@ -88,13 +88,23 @@ final class _year_end_stateCard extends CardBaseFramework
         $disabledAttribute = $disabled ? ' disabled' : '';
         $titleAttribute = $title !== '' ? ' title="' . HelperFramework::escape($title) . '"' : '';
 
-        return '<form method="post" data-ajax="true">
+        return '<form method="post" data-ajax="true" data-year-end-state-form="true">
             <input type="hidden" name="card_action" value="YearEnd">
             <input type="hidden" name="intent" value="' . HelperFramework::escape($intent) . '">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-            <button class="button primary" type="submit"' . $disabledAttribute . $titleAttribute . '>' . HelperFramework::escape($label) . '</button>
+            <button class="button primary" type="submit" data-year-end-state-submit="true" data-year-end-state-running-label="' . HelperFramework::escape($this->runningLabel($intent)) . '"' . $disabledAttribute . $titleAttribute . '>' . HelperFramework::escape($label) . '</button>
         </form>';
+    }
+
+    private function runningLabel(string $intent): string
+    {
+        return match ($intent) {
+            'lock_period' => 'Running Year-End Close...',
+            'unlock_period' => 'Unlocking...',
+            'recalculate' => 'Refreshing...',
+            default => 'Working...',
+        };
     }
 
     private function badgeClass(string $status): string

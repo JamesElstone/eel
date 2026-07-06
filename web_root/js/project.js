@@ -614,6 +614,58 @@
         });
     }
 
+    function setYearEndStateCardProcessing(form, submitter) {
+        const card = form.closest('[data-year-end-state-card="true"]');
+        if (!(card instanceof HTMLElement)) {
+            return;
+        }
+
+        card.dataset.yearEndStateProcessing = '1';
+        card.querySelectorAll('button').forEach((button) => {
+            if (!(button instanceof HTMLButtonElement)) {
+                return;
+            }
+
+            button.disabled = true;
+        });
+
+        if (submitter instanceof HTMLButtonElement) {
+            const runningLabel = String(submitter.dataset.yearEndStateRunningLabel || '').trim();
+            if (runningLabel !== '') {
+                submitter.textContent = runningLabel;
+            }
+        }
+    }
+
+    function initialiseYearEndStateForms(root = document) {
+        const forms = root.querySelectorAll ? root.querySelectorAll('[data-year-end-state-form="true"]') : [];
+
+        forms.forEach((form) => {
+            if (!(form instanceof HTMLFormElement) || form.dataset.yearEndStateBound === '1') {
+                return;
+            }
+
+            form.dataset.yearEndStateBound = '1';
+            form.addEventListener('submit', (event) => {
+                if (event.defaultPrevented) {
+                    return;
+                }
+
+                const card = form.closest('[data-year-end-state-card="true"]');
+                if (card instanceof HTMLElement && card.dataset.yearEndStateProcessing === '1') {
+                    event.preventDefault();
+                    return;
+                }
+
+                const submitter = event.submitter instanceof HTMLButtonElement
+                    ? event.submitter
+                    : form.querySelector('[data-year-end-state-submit="true"]');
+
+                setYearEndStateCardProcessing(form, submitter);
+            });
+        });
+    }
+
     const cardMaximizedStoragePrefix = 'eel_accounts:card_maximized:';
 
     function cardMaximizedPageKey() {
@@ -750,6 +802,15 @@
         }
     });
 
+    window.addEventListener('beforeunload', (event) => {
+        if (!document.querySelector('[data-year-end-state-processing="1"]')) {
+            return;
+        }
+
+        event.preventDefault();
+        event.returnValue = '';
+    });
+
     initialiseManualAssetLegalWarnings(document);
     initialiseDirectorLoanOffsetAcknowledgements(document);
     initialiseUploadProcessingIndicators(document);
@@ -758,6 +819,7 @@
     initialiseStatementMappingForms(document);
     initialiseTransactionCategorisationAutosave(document);
     initialiseTransactionAutoApprovalControls(document);
+    initialiseYearEndStateForms(document);
     restoreStoredCardMaximizedStates(document);
 
     const observer = new MutationObserver((mutations) => {
@@ -772,6 +834,7 @@
                     initialiseStatementMappingForms(node);
                     initialiseTransactionCategorisationAutosave(node);
                     initialiseTransactionAutoApprovalControls(node);
+                    initialiseYearEndStateForms(node);
                     restoreStoredCardMaximizedStates(node);
                 }
             });

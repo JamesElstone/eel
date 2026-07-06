@@ -21,6 +21,10 @@ $harness->run(_year_end_stateCard::class, static function (GeneratedServiceClass
         $harness->assertSame(true, str_contains($html, 'All blocking checks are clear. You can now run the year-end close tasks and lock this accounting period.'));
         $harness->assertSame(true, str_contains($html, 'Refresh Year-End Checklist'));
         $harness->assertSame(true, str_contains($html, 'Run Year-End Close and Lock'));
+        $harness->assertSame(true, str_contains($html, 'data-year-end-state-card="true"'));
+        $harness->assertSame(true, str_contains($html, 'data-year-end-state-form="true"'));
+        $harness->assertSame(true, str_contains($html, 'data-year-end-state-submit="true"'));
+        $harness->assertSame(true, str_contains($html, 'data-year-end-state-running-label="Running Year-End Close...'));
         $harness->assertSame(true, str_contains($html, 'intent" value="lock_period"'));
         $harness->assertSame(false, str_contains($html, 'Lock Period'));
         $harness->assertSame(false, str_contains($html, 'disabled title="Resolve year-end checklist warnings'));

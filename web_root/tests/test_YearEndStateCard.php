@@ -23,8 +23,14 @@ $harness->run(_year_end_stateCard::class, static function (GeneratedServiceClass
         $harness->assertSame(true, str_contains($html, 'All blocking checks are clear. You can now run the year-end close tasks and lock this accounting period.'));
         $harness->assertSame(true, str_contains($html, 'Refresh Year-End Checklist'));
         $harness->assertSame(true, str_contains($html, 'Run Year-End Close and Lock'));
+        $harness->assertSame(true, str_contains($html, '<div class="summary-grid">'));
+        $harness->assertSame(true, str_contains($html, '<div class="summary-card">'));
+        $harness->assertSame(true, str_contains($html, '<div class="summary-label">Status</div>'));
+        $harness->assertSame(true, str_contains($html, '<div class="summary-label">Checklist last changed</div>'));
         $harness->assertSame(true, str_contains($html, 'Latest backup'));
         $harness->assertSame(true, str_contains($html, '2026-01-01 10:05:00'));
+        $harness->assertSame(false, str_contains($html, '<div class="summary-card warn">
+                        <div class="summary-label">Latest backup</div>'));
         $harness->assertSame(true, str_contains($html, 'name="card_action" value="Backup"'));
         $harness->assertSame(true, str_contains($html, 'name="intent" value="create_database_backup"'));
         $harness->assertSame(true, str_contains($html, 'Backup'));
@@ -53,6 +59,8 @@ $harness->run(_year_end_stateCard::class, static function (GeneratedServiceClass
 
         $harness->assertSame(true, str_contains($html, 'Latest backup'));
         $harness->assertSame(true, str_contains($html, '2026-01-01 09:59:59'));
+        $harness->assertSame(true, str_contains($html, '<div class="summary-card warn">
+                        <div class="summary-label">Latest backup</div>'));
         $harness->assertSame(true, str_contains($html, 'Create a new database backup because the checklist changed after the latest backup.'));
         $harness->assertSame(true, str_contains($html, 'disabled title="Create a fresh database backup after the latest checklist change before running the year-end close and locking this accounting period."'));
     });
@@ -64,6 +72,8 @@ $harness->run(_year_end_stateCard::class, static function (GeneratedServiceClass
         $html = $card->render($context);
 
         $harness->assertSame(true, str_contains($html, 'No backup available'));
+        $harness->assertSame(true, str_contains($html, '<div class="summary-card warn">
+                        <div class="summary-label">Latest backup</div>'));
         $harness->assertSame(true, str_contains($html, 'Create a database backup before running the year-end close.'));
         $harness->assertSame(true, str_contains($html, 'disabled title="Create a fresh database backup after the latest checklist change before running the year-end close and locking this accounting period."'));
     });

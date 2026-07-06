@@ -800,6 +800,11 @@
   background: var(--panel-soft);
 }
 
+.summary-card.warn {
+  background: var(--warning-soft);
+  border-color: #f5d08a;
+}
+
 .summary-card-fit {
   margin-bottom: 12px;
   width: fit-content;

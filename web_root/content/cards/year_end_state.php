@@ -75,18 +75,18 @@ final class _year_end_stateCard extends CardBaseFramework
 
         return '
             <section class="panel-soft settings-stack" data-year-end-state-card="true">
-                <div class="form-grid">
-                    <div class="form-row">
-                        <label>Status</label>
-                        <div><span class="badge ' . HelperFramework::escape($this->badgeClass($status)) . '">' . HelperFramework::escape($this->statusLabel($status)) . '</span></div>
+                <div class="summary-grid">
+                    <div class="summary-card">
+                        <div class="summary-label">Status</div>
+                        <div class="summary-value"><span class="badge ' . HelperFramework::escape($this->badgeClass($status)) . '">' . HelperFramework::escape($this->statusLabel($status)) . '</span></div>
                     </div>
-                    <div class="form-row">
-                        <label>Checklist last changed</label>
-                        <div>' . HelperFramework::escape($checklistChangedAt) . '</div>
+                    <div class="summary-card">
+                        <div class="summary-label">Checklist last changed</div>
+                        <div class="summary-value">' . HelperFramework::escape($checklistChangedAt) . '</div>
                     </div>
-                    <div class="form-row">
-                        <label>Latest backup</label>
-                        <div>' . HelperFramework::escape($latestBackupAt !== '' ? $latestBackupAt : 'No backup available') . '</div>
+                    <div class="' . HelperFramework::escape($this->backupSummaryCardClass($backupIsCurrent)) . '">
+                        <div class="summary-label">Latest backup</div>
+                        <div class="summary-value">' . HelperFramework::escape($latestBackupAt !== '' ? $latestBackupAt : 'No backup available') . '</div>
                     </div>
                 </div>
                 ' . $this->backupFreshnessHelp($latestBackupAt, $checklistChangedAt, $isLocked) . '
@@ -163,6 +163,11 @@ final class _year_end_stateCard extends CardBaseFramework
         return $latestBackupTime !== false
             && $checklistChangedTime !== false
             && $latestBackupTime >= $checklistChangedTime;
+    }
+
+    private function backupSummaryCardClass(bool $backupIsCurrent): string
+    {
+        return 'summary-card' . ($backupIsCurrent ? '' : ' warn');
     }
 
     private function backupFreshnessHelp(string $latestBackupAt, string $checklistChangedAt, bool $isLocked): string

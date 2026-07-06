@@ -1,5 +1,53 @@
 # eelKit Changes
 
+## Framework CSRF guard
+
+Feature name: `framework_csrf_guard`.
+
+eelKit now provides framework-level CSRF support for page and shared card actions. The framework still uses the existing session-backed token from `SessionAuthenticationService::csrfToken()` and validates it with `SessionAuthenticationService::isValidCsrfToken()`, but downstream projects no longer need to hand-roll the same validation pattern in every action before they can adopt a consistent CSRF policy.
+
+The default mode is compatibility-first:
+
+```php
+'security' => [
+    'csrf_mode' => 'supplied',
+],
+```
+
+Supported modes are:
+
+- `supplied`: validate `csrf_token` when a POST action supplies one, but allow legacy forms without a token. This is the default.
+- `required`: require a valid `csrf_token` for POST requests that submit `action` or `card_action`.
+- `off`: disable framework CSRF enforcement.
+
+Downstream projects that want strict CSRF protection should first make sure their forms render a token, then set `security.csrf_mode` to `required` in their app configuration.
+
+Every page context now includes the current token at:
+
+```php
+$context['page']['csrf_token']
+```
+
+Cards can render the standard hidden input with:
+
+```php
+return '<form method="post" data-ajax="true">
+    ' . HelperFramework::csrfHiddenInput($context) . '
+    <input type="hidden" name="card_action" value="Example">
+    <button class="button primary" type="submit">Save</button>
+</form>';
+```
+
+The helper renders:
+
+```html
+<input type="hidden" name="csrf_token" value="...">
+```
+
+Framework-generated POST forms now include CSRF where the page token is available, including table sorting, table filtering, table pagination, table export preparation, card pagination controls, and site-context selector forms. Existing AJAX nonce checks are unchanged and remain separate from CSRF validation.
+
+If an invalid token is supplied, eelKit stops before page action or shared card action logic runs and returns a standard security-token-expired flash message. Existing downstream manual CSRF checks remain safe; validating the same stable session token twice is harmless.
+
 ## Cross-page card action handoff
 
 Feature name: `cross_page_card_action_handoff`.

@@ -61,10 +61,11 @@ final class _prepayments_reviewCard extends CardBaseFramework
         $accountingPeriod = (array)($review['accounting_period'] ?? []);
         $accountingPeriodId = (int)($accountingPeriod['id'] ?? ($company['accounting_period_id'] ?? 0));
         $companySettings = (array)($company['settings'] ?? []);
+        $isLocked = (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);
         $rowsHtml = '';
 
         foreach ((array)($review['items'] ?? []) as $item) {
-            $rowsHtml .= $this->itemRow((array)$item, $companyId, $accountingPeriodId, $companySettings, $accountingPeriod);
+            $rowsHtml .= $this->itemRow((array)$item, $companyId, $accountingPeriodId, $companySettings, $accountingPeriod, $isLocked);
         }
 
         if ($rowsHtml === '') {
@@ -77,6 +78,7 @@ final class _prepayments_reviewCard extends CardBaseFramework
                 ' . $this->summaryCard('Prepaid', (string)(int)($review['prepaid_count'] ?? 0)) . '
                 ' . $this->summaryCard('Incomplete', (string)(int)($review['pending_count'] ?? 0)) . '
             </div>
+            ' . ($isLocked ? '<div class="helper"><span class="badge warning">Period locked</span> Prepayment decisions are read only.</div>' : '') . '
             <div class="panel-soft">
                 <div class="table-scroll">
                     <table>
@@ -88,7 +90,7 @@ final class _prepayments_reviewCard extends CardBaseFramework
         </section>';
     }
 
-    private function itemRow(array $item, int $companyId, int $accountingPeriodId, array $companySettings, array $accountingPeriod): string
+    private function itemRow(array $item, int $companyId, int $accountingPeriodId, array $companySettings, array $accountingPeriod, bool $isLocked): string
     {
         $review = (array)($item['review'] ?? []);
         $sourceType = (string)($item['source_type'] ?? '');
@@ -119,6 +121,7 @@ final class _prepayments_reviewCard extends CardBaseFramework
             </td>
             <td class="numeric">' . HelperFramework::escape($this->money($companySettings, $item['amount'] ?? 0)) . '</td>
             <td>
+                ' . ($isLocked ? '<span class="badge ' . ($status === 'prepaid' ? 'success' : 'info') . '">' . HelperFramework::escape($this->statusLabel($status)) . '</span>' : '
                 <form id="' . HelperFramework::escape($formId) . '" method="post" data-ajax="true" class="actions-row actions-row-nowrap">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                     <input type="hidden" name="card_action" value="Prepayments">
@@ -134,9 +137,14 @@ final class _prepayments_reviewCard extends CardBaseFramework
                         <input class="input" type="date" name="service_end_date" value="' . HelperFramework::escape($serviceEnd) . '" data-dirty-action-target=".' . HelperFramework::escape($saveButtonClass) . '" data-initial-value="' . HelperFramework::escape($serviceEnd) . '" data-dirty-require-value="1">
                         <button class="button button-inline primary ' . HelperFramework::escape($saveButtonClass) . '" type="submit" data-dirty-enable-mode="changed" disabled>Save</button>
                     </span>
-                </form>
+                </form>') . '
             </td>
         </tr>';
+    }
+
+    private function statusLabel(string $status): string
+    {
+        return $status === 'prepaid' ? 'Prepaid' : 'Not pre-paid';
     }
 
     private function statusOptions(string $selected): string

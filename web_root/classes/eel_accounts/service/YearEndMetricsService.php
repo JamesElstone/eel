@@ -502,7 +502,7 @@ final class YearEndMetricsService
     }
 
     public function fetchBalanceSheetMetricValues(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array {
-        $metrics = (new \eel_accounts\Service\IxbrlBalanceSheetMetricsService())->fetchClosingMetricsForPeriod($companyId, $periodStart, $periodEnd);
+        $metrics = (new \eel_accounts\Service\IxbrlBalanceSheetMetricsService())->fetchClosingMetricsForPeriod($companyId, $periodStart, $periodEnd, $accountingPeriodId);
         $buckets = (array)($metrics['buckets'] ?? []);
 
         return [

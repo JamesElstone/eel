@@ -268,6 +268,9 @@ final class _asset_registerCard extends CardBaseFramework
         if ((string)($asset['status'] ?? 'active') === 'disposed') {
             return '';
         }
+        if ((new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId)) {
+            return '<span class="helper">Period locked</span>';
+        }
 
         $assetId = (int)($asset['id'] ?? 0);
         $currentMethod = $this->disposalMethodForAsset($assetId, $disposalMethodAssetId, $disposalMethod);
@@ -297,6 +300,10 @@ final class _asset_registerCard extends CardBaseFramework
         array $settings,
         string $disposalMethod
     ): string {
+        if ((new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId)) {
+            return '<div class="helper"><span class="badge warning">Period locked</span> Asset disposals are read only.</div>';
+        }
+
         $selectedAssetId = (int)($disposalSearch['asset_id'] ?? 0);
         $searchDate = $selectedAssetId === $assetId
             ? (string)($disposalSearch['search_date'] ?? date('Y-m-d'))

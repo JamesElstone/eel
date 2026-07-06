@@ -824,10 +824,14 @@ final class _transactions_importedCard extends CardBaseFramework
         return ctype_digit($value) ? (int)$value : 0;
     }
 
-    private function createRuleButtonHtml(array $transaction, bool $includeNominalInput): string
+    private function createRuleButtonHtml(array $transaction, bool $isPeriodLocked): string
     {
+        if ($isPeriodLocked) {
+            return '<button class="button primary" type="button" disabled title="Period locked">Rule</button>';
+        }
+
         $nominalAccountId = (int)($transaction['nominal_account_id'] ?? 0);
-        $nominalInputHtml = $includeNominalInput && $nominalAccountId > 0
+        $nominalInputHtml = $nominalAccountId > 0
             ? '<input type="hidden" name="nominal_account_id" value="' . $nominalAccountId . '">'
             : '';
 

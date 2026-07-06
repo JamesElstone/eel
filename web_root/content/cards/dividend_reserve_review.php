@@ -31,6 +31,7 @@ final class _dividend_reserve_reviewCard extends CardBaseFramework
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $review = (array)($context['dividends']['reserve_review'] ?? []);
+        $isLocked = (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);
 
         if (empty($review['available'])) {
             return '<div class="settings-stack">' . $this->renderErrors((array)($review['errors'] ?? ['Dividend reserve review is not available.'])) . '</div>';
@@ -61,7 +62,7 @@ final class _dividend_reserve_reviewCard extends CardBaseFramework
                 <td>' . HelperFramework::escape($this->money($companySettings, $row['profit_effect'] ?? 0)) . '</td>
                 <td>
                     <span class="badge ' . HelperFramework::escape($badge['class']) . '">' . HelperFramework::escape($badge['label']) . '</span>
-                    <select class="select" name="treatment[' . $nominalId . ']">
+                    <select class="select" name="treatment[' . $nominalId . ']"' . ($isLocked ? ' disabled' : '') . '>
                         ' . $this->treatmentOptions((array)($review['treatments'] ?? []), $treatment) . '
                     </select>
                     <div class="helper">' . HelperFramework::escape($this->treatmentExplanation($treatment)) . '</div>
@@ -100,6 +101,7 @@ final class _dividend_reserve_reviewCard extends CardBaseFramework
                 ' . $this->summaryCard('Unknown', $this->money($companySettings, $summary['unknown_amount'] ?? 0)) . '
             </div>
             ' . ($unknownAmount > 0.0 ? '<section class="panel-soft warn settings-stack"><span class="badge warning">Needs review</span><div class="helper">You cannot save this review while Unknown amounts remain.</div></section>' : '') . '
+            ' . ($isLocked ? '<div class="helper"><span class="badge warning">Period locked</span> Distributable profit classifications are read only.</div>' : '') . '
             <form method="post" action="?page=dividends" data-ajax="true" class="settings-stack">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Dividend">
@@ -115,7 +117,7 @@ final class _dividend_reserve_reviewCard extends CardBaseFramework
                 </div>
                 <div class="helper">Unknown amounts and unreviewed snapshots are not treated as distributable for dividend declarations.</div>
                 <div class="actions-row">
-                    <button class="button primary" type="submit"
+                    <button class="button primary" type="submit"' . ($isLocked ? ' disabled title="Period locked"' : '') . '
                         data-chicken-check="true"
                         data-chicken-title="Save dividend reserve review"
                         data-chicken-message="This records the current distributable profit review used to support dividend capacity. Only save if the classifications look right or have been checked.<br><br>Continue?"

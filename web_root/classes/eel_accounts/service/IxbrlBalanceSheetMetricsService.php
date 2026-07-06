@@ -22,14 +22,23 @@ final class IxbrlBalanceSheetMetricsService
         return $this->fetchClosingMetricsForPeriod(
             $companyId,
             (string)$period['period_start'],
-            (string)$period['period_end']
+            (string)$period['period_end'],
+            $accountingPeriodId
         );
     }
 
-    public function fetchClosingMetricsForPeriod(int $companyId, string $periodStart, string $periodEnd): array
+    public function fetchClosingMetricsForPeriod(int $companyId, string $periodStart, string $periodEnd, ?int $accountingPeriodId = null): array
     {
         if ($companyId <= 0 || !$this->validDate($periodEnd)) {
             return $this->emptyResult();
+        }
+
+        $periodPredicate = $accountingPeriodId !== null && $accountingPeriodId > 0
+            ? ' AND j.accounting_period_id = :accounting_period_id'
+            : '';
+        $params = ['company_id' => $companyId, 'period_end' => $periodEnd];
+        if ($periodPredicate !== '') {
+            $params['accounting_period_id'] = $accountingPeriodId;
         }
 
         $rows = \InterfaceDB::fetchAll(
@@ -47,9 +56,10 @@ final class IxbrlBalanceSheetMetricsService
              WHERE j.company_id = :company_id
                AND j.is_posted = 1
                AND j.journal_date <= :period_end
+               ' . $periodPredicate . '
              GROUP BY na.id, na.code, na.name, na.account_type, nas.code
              ORDER BY na.sort_order, na.code',
-            ['company_id' => $companyId, 'period_end' => $periodEnd]
+            $params
         );
 
         $buckets = $this->emptyBuckets();
@@ -71,8 +81,15 @@ final class IxbrlBalanceSheetMetricsService
             }
 
             if ($accountType === 'liability') {
-                $bucket = $this->isLongTermLiabilitySubtype($subtype) ? 'creditors_after_more_than_one_year' : 'creditors_within_one_year';
                 $amount = round(0 - $balance, 2);
+                if ($amount < -0.004) {
+                    $assetAmount = round(abs($amount), 2);
+                    $buckets['current_assets'] += $assetAmount;
+                    $this->addSource($sources, 'current_assets', $label, $assetAmount);
+                    continue;
+                }
+
+                $bucket = $this->isLongTermLiabilitySubtype($subtype) ? 'creditors_after_more_than_one_year' : 'creditors_within_one_year';
                 $buckets[$bucket] += $amount;
                 $this->addSource($sources, $bucket, $label, $amount);
                 continue;

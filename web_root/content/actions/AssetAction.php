@@ -21,6 +21,14 @@ final class AssetAction implements ActionInterfaceFramework
             : [];
 
         try {
+            if ($intent === 'save_potential_asset_threshold') {
+                (new \eel_accounts\Service\YearEndLockService())->assertUnlocked(
+                    $companyId,
+                    (int)$request->input('accounting_period_id', 0),
+                    'change potential asset review settings for this period'
+                );
+            }
+
             $result = match ($intent) {
                 'create_asset_from_transaction' => $service->createAssetFromTransaction(
                     $companyId,

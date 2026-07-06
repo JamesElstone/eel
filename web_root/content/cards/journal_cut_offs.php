@@ -61,6 +61,14 @@ final class _journal_cut_offsCard extends CardBaseFramework
         $accountingPeriod = (array)($data['accounting_period'] ?? []);
         $accountingPeriodId = (int)($accountingPeriod['id'] ?? ($company['accounting_period_id'] ?? 0));
         $formId = 'cut-off-journal-form';
+        $isLocked = (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);
+
+        if ($isLocked) {
+            return '<section class="settings-stack" id="cut-off-journals">
+                <div class="helper"><span class="badge warning">Period locked</span> Cut-off journals are read only.</div>
+                ' . $this->renderPostedAdjustments((array)($data['adjustments'] ?? [])) . '
+            </section>';
+        }
 
         return '<section class="settings-stack" id="cut-off-journals">
             <section class="panel-soft settings-stack">

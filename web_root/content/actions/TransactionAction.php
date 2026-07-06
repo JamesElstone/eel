@@ -25,6 +25,17 @@ final class TransactionAction implements ActionInterfaceFramework
             $intent = 'edit_categorisation_rule';
         }
 
+        if ($this->requiresUnlockedPeriod($intent)
+            && (new \eel_accounts\Service\YearEndLockService())->isLocked($this->selectedCompanyId($request), $this->selectedAccountingPeriodId($request))
+        ) {
+            return $this->result(
+                false,
+                ['This accounting period is locked, so transactions can be reviewed but not changed.'],
+                [],
+                $this->filterContext($request)
+            );
+        }
+
         return match ($intent) {
             'select_transaction_month',
             'edit_categorisation_rule',
@@ -47,6 +58,22 @@ final class TransactionAction implements ActionInterfaceFramework
             'retry_receipt_download' => $this->retryReceiptDownload($request, $services),
             default => ActionResultFramework::none(),
         };
+    }
+
+    private function requiresUnlockedPeriod(string $intent): bool
+    {
+        return in_array($intent, [
+            'save_transaction_note',
+            'save_transaction_category',
+            'defer_transaction',
+            'mark_director_loan',
+            'auto_create_transaction_rule',
+            'run_auto_rules',
+            'set_auto_approval_state',
+            'sync_auto_approval_state',
+            'toggle_auto_approval',
+            'post_categorised_transactions',
+        ], true);
     }
 
     public static function withTransactionCardContext(

@@ -29,6 +29,11 @@ final class UploadsAction implements ActionInterfaceFramework
 
     private function uploadAccountCsv(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
+        $locked = $this->lockedPeriodResultFromRequest($request, 'upload CSV files to this period');
+        if ($locked instanceof ActionResultFramework) {
+            return $locked;
+        }
+
         $result = $this->statementUploadService($services)->importUploadedStatements([
             'company_id' => $request->input('company_id'),
             'accounting_period_id' => $request->input('accounting_period_id'),
@@ -160,8 +165,9 @@ final class UploadsAction implements ActionInterfaceFramework
         $flashErrors = [];
         $mappingStatus = $uploadService->describeUploadAccountMappingStatus($companyId, $uploadId);
         $extraHeaders = is_array($mappingStatus['extra_headers'] ?? null) ? array_values($mappingStatus['extra_headers']) : [];
+        $isLocked = $this->uploadIsLocked($companyId, $uploadService->fetchUpload($companyId, $uploadId));
 
-        if (!empty($mappingStatus['can_preview']) && $extraHeaders === [] && $uploadService->uploadNeedsPreviewRefresh($companyId, $uploadId)) {
+        if (!$isLocked && !empty($mappingStatus['can_preview']) && $extraHeaders === [] && $uploadService->uploadNeedsPreviewRefresh($companyId, $uploadId)) {
             $stageResult = $uploadService->stageUploadRows($companyId, $uploadId, $this->defaultCurrency());
             [$stageMessages, $stageErrors] = $this->messagesFromResult($stageResult);
             $flashMessages = array_merge($flashMessages, $stageMessages);
@@ -178,6 +184,11 @@ final class UploadsAction implements ActionInterfaceFramework
 
     private function saveAccountMapping(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
+        $locked = $this->lockedPeriodResultFromRequest($request, 'change upload field mapping for this period');
+        if ($locked instanceof ActionResultFramework) {
+            return $locked;
+        }
+
         $payload = [
             'company_id' => $request->input('company_id'),
             'accounting_period_id' => $request->input('accounting_period_id'),
@@ -268,6 +279,11 @@ final class UploadsAction implements ActionInterfaceFramework
 
     private function commitAccountUpload(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
+        $locked = $this->lockedUploadResult($request, $services, 'commit upload rows to this period');
+        if ($locked instanceof ActionResultFramework) {
+            return $locked;
+        }
+
         $result = $this->statementUploadService($services)->commitUpload(
             (new \eel_accounts\Service\AccountingContextService())->authCompanyId(),
             max(0, (int)$request->input('upload_id', 0))
@@ -356,6 +372,11 @@ final class UploadsAction implements ActionInterfaceFramework
 
     private function stageUploadAction(RequestFramework $request, PageServiceFramework $services, string $summaryPrefix): ActionResultFramework
     {
+        $locked = $this->lockedUploadResult($request, $services, 'stage upload rows for this period');
+        if ($locked instanceof ActionResultFramework) {
+            return $locked;
+        }
+
         $result = $this->statementUploadService($services)->stageUploadRows(
             (new \eel_accounts\Service\AccountingContextService())->authCompanyId(),
             max(0, (int)$request->input('upload_id', 0)),
@@ -386,6 +407,11 @@ final class UploadsAction implements ActionInterfaceFramework
     ): bool {
         $companyId = (new \eel_accounts\Service\AccountingContextService())->authCompanyId();
         $uploadService = $this->statementUploadService($services);
+        if ($this->uploadIsLocked($companyId, $uploadService->fetchUpload($companyId, $uploadId))) {
+            $flashErrors[] = 'This accounting period is locked, so you cannot stage upload rows for this period.';
+            return false;
+        }
+
         $mappingStatus = $uploadService->describeUploadAccountMappingStatus($companyId, $uploadId);
         $extraHeaders = is_array($mappingStatus['extra_headers'] ?? null) ? $mappingStatus['extra_headers'] : [];
 
@@ -468,6 +494,41 @@ final class UploadsAction implements ActionInterfaceFramework
     private function developerOptionsDisabledResult(RequestFramework $request): ActionResultFramework
     {
         return $this->actionResult($request, false, [], ['Developer options are disabled for this environment.']);
+    }
+
+    private function lockedPeriodResultFromRequest(RequestFramework $request, string $actionLabel): ?ActionResultFramework
+    {
+        $companyId = max(0, (int)$request->input('company_id', (new \eel_accounts\Service\AccountingContextService())->authCompanyId()));
+        $accountingPeriodId = max(0, (int)$request->input('accounting_period_id', 0));
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return null;
+        }
+
+        return (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId)
+            ? $this->actionResult($request, false, [], ['This accounting period is locked, so you cannot ' . $actionLabel . '.'])
+            : null;
+    }
+
+    private function lockedUploadResult(RequestFramework $request, PageServiceFramework $services, string $actionLabel): ?ActionResultFramework
+    {
+        $companyId = (new \eel_accounts\Service\AccountingContextService())->authCompanyId();
+        $uploadId = max(0, (int)$request->input('upload_id', 0));
+        if ($companyId <= 0 || $uploadId <= 0) {
+            return null;
+        }
+
+        return $this->uploadIsLocked($companyId, $this->statementUploadService($services)->fetchUpload($companyId, $uploadId))
+            ? $this->actionResult($request, false, [], ['This accounting period is locked, so you cannot ' . $actionLabel . '.'], ['upload_id' => $uploadId])
+            : null;
+    }
+
+    private function uploadIsLocked(int $companyId, ?array $upload): bool
+    {
+        $accountingPeriodId = max(0, (int)($upload['accounting_period_id'] ?? 0));
+
+        return $companyId > 0
+            && $accountingPeriodId > 0
+            && (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);
     }
 
     private function flashMessages(array $flashMessages = [], array $flashErrors = []): array

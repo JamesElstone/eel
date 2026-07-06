@@ -61,6 +61,10 @@ final class _uploads_bank_transactionsCard extends CardBaseFramework
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
+        $isLocked = (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);
+        if ($isLocked) {
+            return '<div class="helper"><span class="badge warning">Period locked</span> Bank statement uploads are read only for this accounting period.</div>';
+        }
         
         $selectedUploadHistoryFilter = (string)($context['uploads']['filter'] ?? 'all');
         $selectedUploadHistoryPage = (int)($context['uploads']['page'] ?? 1);

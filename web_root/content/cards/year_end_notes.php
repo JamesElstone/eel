@@ -46,6 +46,19 @@ final class _year_end_notesCard extends CardBaseFramework
         $accountingPeriod = (array)($checklist['accounting_period'] ?? []);
         $accountingPeriodId = (int)($accountingPeriod['id'] ?? ($company['accounting_period_id'] ?? 0));
         $review = (array)($checklist['review'] ?? []);
+        $notes = (string)($review['review_notes'] ?? '');
+        $isLocked = !empty($review['is_locked'])
+            || (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);
+
+        if ($isLocked) {
+            return '
+            <section class="settings-stack">
+                <div class="helper"><span class="badge warning">Period locked</span> Year End notes are read only.</div>
+                <div class="form-row full">
+                    <textarea class="input year-end-review-notes" id="year-end-review-notes" aria-label="Year end notes" readonly>' . HelperFramework::escape($notes) . '</textarea>
+                </div>
+            </section>';
+        }
 
         return '
             <section class="settings-stack">
@@ -56,9 +69,9 @@ final class _year_end_notesCard extends CardBaseFramework
                     <input type="hidden" name="company_id" value="' . $companyId . '">
                     <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                     <div class="form-row full">
-                        <textarea class="input year-end-review-notes" id="year-end-review-notes" name="review_notes" aria-label="Year end notes">' . HelperFramework::escape((string)($review['review_notes'] ?? '')) . '</textarea>
+                        <textarea class="input year-end-review-notes" id="year-end-review-notes" name="review_notes" aria-label="Year end notes">' . HelperFramework::escape($notes) . '</textarea>
                     </div>
-                    <div><button class="button primary" type="submit">Save notes</button></div>
+                    <div><button class="button primary" type="submit">Save Notes</button></div>
                 </form>
             </section>';
     }

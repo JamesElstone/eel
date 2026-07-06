@@ -32,8 +32,8 @@ final class ProfitLossService
             'period_label' => (string)($accountingPeriod['label'] ?? ''),
             'period_start' => (string)($accountingPeriod['period_start'] ?? ''),
             'period_end' => (string)($accountingPeriod['period_end'] ?? ''),
-            'journal_count' => $this->journalCount($companyId, $accountingPeriodId),
-            'transaction_count' => $this->transactionCount($companyId, $accountingPeriodId),
+            'journal_count' => $this->journalCount($companyId, $accountingPeriodId, (string)$accountingPeriod['period_start'], (string)$accountingPeriod['period_end']),
+            'transaction_count' => $this->transactionCount($companyId, $accountingPeriodId, (string)$accountingPeriod['period_start'], (string)$accountingPeriod['period_end']),
             'income_total' => $incomeTotal,
             'cost_of_sales_total' => $costOfSalesTotal,
             'gross_profit' => $grossProfit,
@@ -41,8 +41,8 @@ final class ProfitLossService
             'net_profit' => $netProfit,
             'profit_margin_percent' => $incomeTotal > 0 ? round(($netProfit / $incomeTotal) * 100, 1) : 0.0,
             'has_loss' => $netProfit < 0,
-            'has_journals' => $this->journalCount($companyId, $accountingPeriodId) > 0,
-            'has_transactions' => $this->transactionCount($companyId, $accountingPeriodId) > 0,
+            'has_journals' => $this->journalCount($companyId, $accountingPeriodId, (string)$accountingPeriod['period_start'], (string)$accountingPeriod['period_end']) > 0,
+            'has_transactions' => $this->transactionCount($companyId, $accountingPeriodId, (string)$accountingPeriod['period_start'], (string)$accountingPeriod['period_end']) > 0,
         ];
     }
 
@@ -71,14 +71,19 @@ final class ProfitLossService
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
              INNER JOIN nominal_accounts na ON na.id = jl.nominal_account_id
              LEFT JOIN nominal_account_subtypes nas ON nas.id = na.account_subtype_id
+             LEFT JOIN journal_entry_metadata jem_close
+               ON jem_close.journal_id = j.id
+              AND jem_close.journal_tag = :close_journal_tag
              WHERE j.company_id = :company_id
                AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
                AND j.journal_date BETWEEN :period_start AND :period_end
+               AND jem_close.id IS NULL
                AND na.account_type IN (:income_type, :cost_type, :expense_type)
              GROUP BY na.id, na.code, na.name, na.account_type, nas.code, nas.name
              ORDER BY na.account_type ASC, ABS(COALESCE(SUM(jl.debit), 0) - COALESCE(SUM(jl.credit), 0)) DESC, na.code ASC',
             [
+                'close_journal_tag' => \eel_accounts\Service\RetainedEarningsCloseService::JOURNAL_TAG,
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
                 'period_start' => (string)$accountingPeriod['period_start'],
@@ -154,14 +159,19 @@ final class ProfitLossService
              FROM journals j
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
              INNER JOIN nominal_accounts na ON na.id = jl.nominal_account_id
+             LEFT JOIN journal_entry_metadata jem_close
+               ON jem_close.journal_id = j.id
+              AND jem_close.journal_tag = :close_journal_tag
              WHERE j.company_id = :company_id
                AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
                AND j.journal_date BETWEEN :period_start AND :period_end
+               AND jem_close.id IS NULL
                AND na.account_type IN (:income_type, :cost_type, :expense_type)
              GROUP BY DATE_FORMAT(j.journal_date, \'%Y-%m-01\'), na.account_type
              ORDER BY month_start ASC',
             [
+                'close_journal_tag' => \eel_accounts\Service\RetainedEarningsCloseService::JOURNAL_TAG,
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
                 'period_start' => (string)$accountingPeriod['period_start'],
@@ -212,8 +222,10 @@ final class ProfitLossService
             ];
         }
 
-        $totalTransactions = $this->transactionCount($companyId, $accountingPeriodId);
-        $uncategorisedTransactions = $this->uncategorisedTransactionCount($companyId, $accountingPeriodId);
+        $periodStart = (string)$accountingPeriod['period_start'];
+        $periodEnd = (string)$accountingPeriod['period_end'];
+        $totalTransactions = $this->transactionCount($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $uncategorisedTransactions = $this->uncategorisedTransactionCount($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $categorisedTransactions = max(0, $totalTransactions - $uncategorisedTransactions);
         $categorisedPercent = $totalTransactions > 0 ? round(($categorisedTransactions / $totalTransactions) * 100, 1) : 0.0;
         $monthGrid = $this->getMonthStatusGrid($companyId, $accountingPeriodId);
@@ -221,7 +233,7 @@ final class ProfitLossService
         $uploadedMonthCount = count(array_filter($monthGrid, static fn(array $row): bool => (int)($row['upload_count'] ?? 0) > 0));
         $committedMonthCount = count(array_filter($monthGrid, static fn(array $row): bool => (int)($row['committed_count'] ?? 0) > 0));
         $uploadInProgressCount = count(array_filter($monthGrid, static fn(array $row): bool => (string)($row['status'] ?? '') === 'upload_in_progress'));
-        $journalCount = $this->journalCount($companyId, $accountingPeriodId);
+        $journalCount = $this->journalCount($companyId, $accountingPeriodId, $periodStart, $periodEnd);
 
         $score = 100.0;
         if ($journalCount <= 0) {
@@ -289,20 +301,22 @@ final class ProfitLossService
         }
 
         $months = $this->periodMonths((string)$accountingPeriod['period_start'], (string)$accountingPeriod['period_end']);
+        $periodStart = (string)$accountingPeriod['period_start'];
+        $periodEnd = (string)$accountingPeriod['period_end'];
         $emptyMonthConfirmations = $this->emptyMonthConfirmationMonths($companyId, $accountingPeriodId);
-        foreach ($this->transactionMonths($companyId, $accountingPeriodId) as $monthKey => $row) {
+        foreach ($this->transactionMonths($companyId, $accountingPeriodId, $periodStart, $periodEnd) as $monthKey => $row) {
             if (!isset($months[$monthKey])) {
                 continue;
             }
             $months[$monthKey]['transaction_count'] = (int)($row['transaction_count'] ?? 0);
             $months[$monthKey]['uncategorised_count'] = (int)($row['uncategorised_count'] ?? 0);
         }
-        foreach ($this->journalMonths($companyId, $accountingPeriodId) as $monthKey => $count) {
+        foreach ($this->journalMonths($companyId, $accountingPeriodId, $periodStart, $periodEnd) as $monthKey => $count) {
             if (isset($months[$monthKey])) {
                 $months[$monthKey]['journal_count'] = (int)$count;
             }
         }
-        foreach ($this->uploadMonths($companyId, $accountingPeriodId) as $monthKey => $row) {
+        foreach ($this->uploadMonths($companyId, $accountingPeriodId, $periodStart, $periodEnd) as $monthKey => $row) {
             if (!isset($months[$monthKey])) {
                 continue;
             }
@@ -345,10 +359,14 @@ final class ProfitLossService
 
     public function getSourceCoverage(int $companyId, int $accountingPeriodId): array
     {
+        $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        $periodStart = (string)($accountingPeriod['period_start'] ?? '');
+        $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
         $sources = [
             'bank_csv' => ['label' => 'Bank CSV journals'],
-            'director_loan_register' => ['label' => 'Director loan register journals'],
+            'director_loan_offset' => ['label' => 'Director loan offset journals'],
             'expense_register' => ['label' => 'Expense register journals'],
+            'asset_depreciation' => ['label' => 'Asset depreciation journals'],
             'manual' => ['label' => 'Manual journals'],
         ];
 
@@ -361,36 +379,50 @@ final class ProfitLossService
         }
         unset($source);
 
-        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || $periodStart === '' || $periodEnd === '') {
             return $sources;
         }
 
         $rows = \InterfaceDB::fetchAll(
-            'SELECT j.source_type,
-                    COUNT(DISTINCT j.id) AS journal_count,
+            'SELECT j.id,
+                    COALESCE(j.source_type, \'\') AS source_type,
+                    COALESCE(j.source_ref, \'\') AS source_ref,
+                    COALESCE(j.description, \'\') AS description,
                     COALESCE(SUM(jl.debit), 0) AS debit_total,
                     COALESCE(SUM(jl.credit), 0) AS credit_total
              FROM journals j
              LEFT JOIN journal_lines jl ON jl.journal_id = j.id
+             LEFT JOIN journal_entry_metadata jem_close
+               ON jem_close.journal_id = j.id
+              AND jem_close.journal_tag = :close_journal_tag
              WHERE j.company_id = :company_id
                AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
-             GROUP BY j.source_type',
+               AND j.journal_date BETWEEN :period_start AND :period_end
+               AND jem_close.id IS NULL
+             GROUP BY j.id, j.source_type, j.source_ref, j.description',
             [
+                'close_journal_tag' => \eel_accounts\Service\RetainedEarningsCloseService::JOURNAL_TAG,
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
             ]
         );
 
         foreach ($rows as $row) {
-            $sourceType = (string)($row['source_type'] ?? '');
+            $sourceRef = (string)($row['source_ref'] ?? '');
+            $description = strtolower((string)($row['description'] ?? ''));
+            $sourceType = str_starts_with($sourceRef, 'meta:director_loan') || str_contains($description, 'director loan')
+                ? 'director_loan_offset'
+                : (string)($row['source_type'] ?? '');
             if (!isset($sources[$sourceType])) {
                 continue;
             }
-            $sources[$sourceType]['journal_count'] = (int)($row['journal_count'] ?? 0);
-            $sources[$sourceType]['debit_total'] = round((float)($row['debit_total'] ?? 0), 2);
-            $sources[$sourceType]['credit_total'] = round((float)($row['credit_total'] ?? 0), 2);
-            $sources[$sourceType]['present'] = (int)($row['journal_count'] ?? 0) > 0;
+            $sources[$sourceType]['journal_count']++;
+            $sources[$sourceType]['debit_total'] = round((float)$sources[$sourceType]['debit_total'] + (float)($row['debit_total'] ?? 0), 2);
+            $sources[$sourceType]['credit_total'] = round((float)$sources[$sourceType]['credit_total'] + (float)($row['credit_total'] ?? 0), 2);
+            $sources[$sourceType]['present'] = true;
         }
 
         return $sources;
@@ -434,13 +466,18 @@ final class ProfitLossService
              FROM journals j
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
              INNER JOIN nominal_accounts na ON na.id = jl.nominal_account_id
+             LEFT JOIN journal_entry_metadata jem_close
+               ON jem_close.journal_id = j.id
+              AND jem_close.journal_tag = :close_journal_tag
              WHERE j.company_id = :company_id
                AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
                AND j.journal_date BETWEEN :period_start AND :period_end
+               AND jem_close.id IS NULL
                AND na.account_type IN (:income_type, :cost_type, :expense_type)
              GROUP BY na.account_type',
             [
+                'close_journal_tag' => \eel_accounts\Service\RetainedEarningsCloseService::JOURNAL_TAG,
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
                 'period_start' => $periodStart,
@@ -594,7 +631,7 @@ final class ProfitLossService
         return $months;
     }
 
-    private function transactionMonths(int $companyId, int $accountingPeriodId): array
+    private function transactionMonths(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array
     {
         $result = [];
         foreach (\InterfaceDB::fetchAll(
@@ -604,11 +641,14 @@ final class ProfitLossService
              FROM transactions
              WHERE company_id = :company_id
                AND accounting_period_id = :accounting_period_id
+               AND txn_date BETWEEN :period_start AND :period_end
              GROUP BY DATE_FORMAT(txn_date, \'%Y-%m-01\')',
             [
                 'uncategorised' => 'uncategorised',
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
             ]
         ) as $row) {
             $result[(string)$row['month_start']] = $row;
@@ -617,20 +657,28 @@ final class ProfitLossService
         return $result;
     }
 
-    private function journalMonths(int $companyId, int $accountingPeriodId): array
+    private function journalMonths(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array
     {
         $result = [];
         foreach (\InterfaceDB::fetchAll(
             'SELECT DATE_FORMAT(journal_date, \'%Y-%m-01\') AS month_start,
                     COUNT(*) AS journal_count
-             FROM journals
-             WHERE company_id = :company_id
-               AND accounting_period_id = :accounting_period_id
-               AND is_posted = 1
-             GROUP BY DATE_FORMAT(journal_date, \'%Y-%m-01\')',
+             FROM journals j
+             LEFT JOIN journal_entry_metadata jem_close
+               ON jem_close.journal_id = j.id
+              AND jem_close.journal_tag = :close_journal_tag
+             WHERE j.company_id = :company_id
+               AND j.accounting_period_id = :accounting_period_id
+               AND j.is_posted = 1
+               AND j.journal_date BETWEEN :period_start AND :period_end
+               AND jem_close.id IS NULL
+             GROUP BY DATE_FORMAT(j.journal_date, \'%Y-%m-01\')',
             [
+                'close_journal_tag' => \eel_accounts\Service\RetainedEarningsCloseService::JOURNAL_TAG,
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
             ]
         ) as $row) {
             $result[(string)$row['month_start']] = (int)($row['journal_count'] ?? 0);
@@ -639,7 +687,7 @@ final class ProfitLossService
         return $result;
     }
 
-    private function uploadMonths(int $companyId, int $accountingPeriodId): array
+    private function uploadMonths(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array
     {
         $result = [];
         foreach (\InterfaceDB::fetchAll(
@@ -650,12 +698,15 @@ final class ProfitLossService
              FROM statement_uploads
              WHERE company_id = :company_id
                AND accounting_period_id = :accounting_period_id
+               AND COALESCE(date_range_start, statement_month) BETWEEN :period_start AND :period_end
              GROUP BY DATE_FORMAT(COALESCE(date_range_start, statement_month), \'%Y-%m-01\')',
             [
                 'committed' => 'committed',
                 'completed' => 'completed',
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
             ]
         ) as $row) {
             $result[(string)$row['month_start']] = $row;
@@ -664,7 +715,7 @@ final class ProfitLossService
         return $result;
     }
 
-    private function journalCount(int $companyId, int $accountingPeriodId): int
+    private function journalCount(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): int
     {
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return 0;
@@ -672,36 +723,26 @@ final class ProfitLossService
 
         return (int)\InterfaceDB::fetchColumn(
             'SELECT COUNT(*)
-             FROM journals
-             WHERE company_id = :company_id
-               AND accounting_period_id = :accounting_period_id
-               AND is_posted = 1',
+             FROM journals j
+             LEFT JOIN journal_entry_metadata jem_close
+               ON jem_close.journal_id = j.id
+              AND jem_close.journal_tag = :close_journal_tag
+             WHERE j.company_id = :company_id
+               AND j.accounting_period_id = :accounting_period_id
+               AND j.is_posted = 1
+               AND j.journal_date BETWEEN :period_start AND :period_end
+               AND jem_close.id IS NULL',
             [
+                'close_journal_tag' => \eel_accounts\Service\RetainedEarningsCloseService::JOURNAL_TAG,
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
             ]
         );
     }
 
-    private function transactionCount(int $companyId, int $accountingPeriodId): int
-    {
-        if ($companyId <= 0 || $accountingPeriodId <= 0) {
-            return 0;
-        }
-
-        return (int)\InterfaceDB::fetchColumn(
-            'SELECT COUNT(*)
-             FROM transactions
-             WHERE company_id = :company_id
-               AND accounting_period_id = :accounting_period_id',
-            [
-                'company_id' => $companyId,
-                'accounting_period_id' => $accountingPeriodId,
-            ]
-        );
-    }
-
-    private function uncategorisedTransactionCount(int $companyId, int $accountingPeriodId): int
+    private function transactionCount(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): int
     {
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return 0;
@@ -712,10 +753,34 @@ final class ProfitLossService
              FROM transactions
              WHERE company_id = :company_id
                AND accounting_period_id = :accounting_period_id
+               AND txn_date BETWEEN :period_start AND :period_end',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
+            ]
+        );
+    }
+
+    private function uncategorisedTransactionCount(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): int
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return 0;
+        }
+
+        return (int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*)
+             FROM transactions
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+               AND txn_date BETWEEN :period_start AND :period_end
                AND (category_status = :uncategorised OR nominal_account_id IS NULL)',
             [
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
                 'uncategorised' => 'uncategorised',
             ]
         );

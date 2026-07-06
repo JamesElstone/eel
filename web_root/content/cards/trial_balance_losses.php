@@ -62,17 +62,36 @@ final class _trial_balance_lossesCard extends CardBaseFramework
             static fn(mixed $period): bool => is_array($period)
         ));
 
+        $lossCards = $this->lossSummaryCards($companySettings, $taxComputation);
+
         return '<div>
             <div class="summary-grid">
                 ' . $this->summaryCard('Estimated corporation tax', $this->money($companySettings, $taxComputation['estimated_corporation_tax'] ?? 0)) . '
                 ' . $this->summaryCard('Taxable profit', $this->money($companySettings, $taxComputation['taxable_profit'] ?? 0)) . '
-                ' . $this->summaryCard('Loss created', $this->money($companySettings, $taxComputation['loss_created_in_period'] ?? 0)) . '
-                ' . $this->summaryCard('Brought forward', $this->money($companySettings, $taxComputation['losses_brought_forward'] ?? 0)) . '
-                ' . $this->summaryCard('Utilised', $this->money($companySettings, $taxComputation['losses_used'] ?? 0)) . '
-                ' . $this->summaryCard('Carried forward', $this->money($companySettings, $taxComputation['losses_carried_forward'] ?? 0)) . '
+                ' . $lossCards . '
             </div>
+            ' . ($lossCards === '' ? '<div class="helper">No corporation tax losses were created, brought forward, used, or carried forward for this period.</div>' : '') . '
             ' . $this->renderTaxDetail($companySettings, $taxComputation, $periods) . '
         </div>';
+    }
+
+    private function lossSummaryCards(array $companySettings, array $taxComputation): string
+    {
+        $cards = '';
+        foreach ([
+            'loss_created_in_period' => 'Loss created',
+            'losses_brought_forward' => 'Brought forward',
+            'losses_used' => 'Utilised',
+            'losses_carried_forward' => 'Carried forward',
+        ] as $key => $label) {
+            if (abs((float)($taxComputation[$key] ?? 0)) < 0.005) {
+                continue;
+            }
+
+            $cards .= $this->summaryCard($label, $this->money($companySettings, $taxComputation[$key] ?? 0));
+        }
+
+        return $cards;
     }
 
     private function renderTaxDetail(array $companySettings, array $taxComputation, array $periods): string

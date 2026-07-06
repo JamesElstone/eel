@@ -23,6 +23,10 @@ final class YearEndApprovalRenderer
             return (string)($options['missingContextHtml'] ?? '');
         }
 
+        if (!array_key_exists('locked', $options)) {
+            $options['locked'] = (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);
+        }
+
         return !empty($options['acknowledged'])
             ? self::completed($options, $companyId, $accountingPeriodId)
             : self::pending($options, $companyId, $accountingPeriodId);
@@ -43,7 +47,9 @@ final class YearEndApprovalRenderer
                 (string)($options['approvedAt'] ?? $options['acknowledgedAt'] ?? ''),
                 (string)($options['approvedBy'] ?? $options['acknowledgedBy'] ?? '')
             )) . '</div>
-            <div class="actions-row">
+            ' . (!empty($options['locked'])
+                ? '<div class="helper">This accounting period is locked, so this approval cannot be revoked.</div>'
+                : '<div class="actions-row">
                 <div class="year-end-related-workflow">
                     <form method="post" data-ajax="true">
                         ' . self::commonFields($companyId, $accountingPeriodId, $revokeIntent) . '
@@ -51,7 +57,7 @@ final class YearEndApprovalRenderer
                         <button class="button" type="submit">Revoke approval</button>
                     </form>
                 </div>
-            </div>
+            </div>') . '
         </section>';
     }
 
@@ -63,8 +69,12 @@ final class YearEndApprovalRenderer
             return '';
         }
 
-        $disabled = !empty($options['disabled']);
+        $locked = !empty($options['locked']);
+        $disabled = $locked || !empty($options['disabled']);
         $disabledReason = trim((string)($options['disabledReason'] ?? ''));
+        if ($locked && $disabledReason === '') {
+            $disabledReason = 'This accounting period is locked, so this approval cannot be changed.';
+        }
         $noteMode = self::noteMode((string)($options['noteMode'] ?? self::NOTE_OPTIONAL));
         $checkboxName = trim((string)($options['checkboxName'] ?? 'approval_confirmed'));
         $approveFields = (array)($options['approveFields'] ?? []);

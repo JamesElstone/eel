@@ -37,9 +37,12 @@ final class _dividend_declareCard extends CardBaseFramework
         $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
         $defaultDate = (string)($capacity['as_at_date'] ?? date('Y-m-d'));
         $availableReserves = round((float)($capacity['available_distributable_reserves'] ?? 0), 2);
+        $isLocked = (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);
 
         $disabledReason = '';
-        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+        if ($isLocked) {
+            $disabledReason = 'This accounting period is locked.';
+        } elseif ($companyId <= 0 || $accountingPeriodId <= 0) {
             $disabledReason = 'Select a company and accounting period before declaring a dividend.';
         } elseif (empty($capacity['available'])) {
             $capacityErrors = (array)($capacity['errors'] ?? []);

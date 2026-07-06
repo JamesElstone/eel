@@ -62,20 +62,21 @@ final class _not_an_assetCard extends CardBaseFramework
         $data = (array)($context['services']['nonAssetCandidates'] ?? []);
         $threshold = \eel_accounts\Service\AssetService::normalisePotentialAssetThreshold($data['threshold'] ?? ($settings['potential_asset_threshold'] ?? 250));
         $nominalId = (int)($settings['tools_small_equipment_nominal_id'] ?? 0);
+        $isLocked = (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);
 
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return '<div class="helper">Select a company and accounting period before reviewing non-assets.</div>';
         }
 
         if ($nominalId <= 0 || empty($data['available'])) {
-            return $this->thresholdToolbar($companyId, $accountingPeriodId, $threshold, $settings)
+            return ($isLocked ? '' : $this->thresholdToolbar($companyId, $accountingPeriodId, $threshold, $settings))
                 . '<div class="helper">Set the Tools &amp; Small Equipment nominal on Company Nominals before reviewing potential assets.</div>';
         }
 
         return $this->renderTableWithThresholdToolbar(
             $this->configuredTable($context),
             $context,
-            $this->thresholdForm($companyId, $accountingPeriodId, $threshold, $settings)
+            $isLocked ? '<div class="helper"><span class="badge warning">Period locked</span> Non-asset thresholds and conversions are read only.</div>' : $this->thresholdForm($companyId, $accountingPeriodId, $threshold, $settings)
         );
     }
 
@@ -266,6 +267,9 @@ final class _not_an_assetCard extends CardBaseFramework
         $sourceId = (int)($row['source_id'] ?? 0);
         if ($companyId <= 0 || $accountingPeriodId <= 0 || $sourceId <= 0 || !in_array($sourceType, ['transaction', 'expense_claim'], true)) {
             return '';
+        }
+        if ((new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId)) {
+            return '<span class="helper">Period locked</span>';
         }
 
         $formId = 'non-asset-convert-' . preg_replace('/[^a-z0-9_-]+/', '-', strtolower($sourceType)) . '-' . $sourceId;

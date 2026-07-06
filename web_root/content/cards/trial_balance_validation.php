@@ -135,11 +135,19 @@ final class _trial_balance_validationCard extends CardBaseFramework
     {
         $rows = '';
         foreach ($value as $key => $metric) {
+            if ($this->isEmptyMetric($metric)) {
+                continue;
+            }
+
             $label = HelperFramework::labelFromKey((string)$key, '_');
             $rows .= '<tr>
                 <th scope="row">' . HelperFramework::escape($label) . '</th>
                 <td><strong>' . HelperFramework::escape($this->metricText($metric, $companySettings)) . '</strong></td>
             </tr>';
+        }
+
+        if ($rows === '') {
+            return '';
         }
 
         return '<div class="table-scroll-mini">
@@ -184,6 +192,33 @@ final class _trial_balance_validationCard extends CardBaseFramework
     private function isListArray(array $value): bool
     {
         return array_keys($value) === range(0, count($value) - 1);
+    }
+
+    private function isEmptyMetric(mixed $value): bool
+    {
+        if ($value === null || $value === '') {
+            return true;
+        }
+
+        if (is_numeric($value)) {
+            return abs((float)$value) < 0.005;
+        }
+
+        if (!is_array($value)) {
+            return false;
+        }
+
+        if ($this->isListArray($value)) {
+            return $value === [];
+        }
+
+        foreach ($value as $metric) {
+            if (!$this->isEmptyMetric($metric)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function badgeClass(string $status): string

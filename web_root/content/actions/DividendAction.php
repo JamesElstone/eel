@@ -17,6 +17,14 @@ final class DividendAction implements ActionInterfaceFramework
         }
 
         try {
+            if ($intent === 'save_dividend_reserve_review') {
+                (new \eel_accounts\Service\YearEndLockService())->assertUnlocked(
+                    (int)$request->input('company_id', 0),
+                    (int)$request->input('accounting_period_id', 0),
+                    'save the dividend reserve review for this period'
+                );
+            }
+
             $service = new \eel_accounts\Service\DividendService();
             $actor = $this->actor();
             $result = match ($intent) {

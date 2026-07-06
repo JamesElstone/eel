@@ -60,6 +60,11 @@ final class _asset_createCard extends CardBaseFramework
         $assetCategories = is_array($assetsPageData['asset_categories'] ?? null)
             ? $assetsPageData['asset_categories']
             : \eel_accounts\Service\AssetService::assetCategoryOptions();
+        $isLocked = (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);
+        if ($isLocked) {
+            return '<div class="helper"><span class="badge warning">Period locked</span> Assets can be reviewed but not created for this accounting period.</div>';
+        }
+
         $isManualAsset = $prefillTransaction === null;
         $formAttributes = $isManualAsset
             ? 'method="post" enctype="multipart/form-data" action="?page=assets" data-manual-asset-form="true"'

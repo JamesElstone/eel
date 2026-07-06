@@ -63,12 +63,14 @@ final class _expense_claim_editorCard extends CardBaseFramework
         $claim = is_array($data['selected_claim'] ?? null) ? (array)$data['selected_claim'] : [];
         $claimId = (int)($claim['id'] ?? 0);
         $isPosted = !empty($claim['is_posted']);
+        $isPeriodLocked = (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, (int)($company['accounting_period_id'] ?? 0));
+        $isReadOnly = $isPosted || $isPeriodLocked;
         $dateFormat = (string)($companySettings['date_format'] ?? 'd/m/Y');
 
         return [
-            $this->linesTable((array)($claim['lines'] ?? []), (array)($data['nominal_accounts'] ?? []), (array)($data['asset_categories'] ?? []), $claimId, $isPosted, $companyId, $dateFormat, $companySettings, $context),
-            $this->paymentsTable((array)($claim['payment_links'] ?? []), $companySettings, $claimId, $isPosted, $companyId, $dateFormat),
-            $this->paymentCandidatesTable((array)($data['payment_candidates'] ?? []), $companySettings, $claimId, $companyId, $dateFormat),
+            $this->linesTable((array)($claim['lines'] ?? []), (array)($data['nominal_accounts'] ?? []), (array)($data['asset_categories'] ?? []), $claimId, $isReadOnly, $companyId, $dateFormat, $companySettings, $context),
+            $this->paymentsTable((array)($claim['payment_links'] ?? []), $companySettings, $claimId, $isReadOnly, $companyId, $dateFormat),
+            $this->paymentCandidatesTable((array)($data['payment_candidates'] ?? []), $companySettings, $claimId, $companyId, $dateFormat, $isReadOnly),
         ];
     }
 
@@ -95,6 +97,8 @@ final class _expense_claim_editorCard extends CardBaseFramework
 
         $claimId = (int)($claim['id'] ?? 0);
         $isPosted = !empty($claim['is_posted']);
+        $isPeriodLocked = (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, (int)($company['accounting_period_id'] ?? 0));
+        $isReadOnly = $isPosted || $isPeriodLocked;
         $dateFormat = (string)($companySettings['date_format'] ?? 'd/m/Y');
         $claimReference = (string)($claim['claim_reference_code'] ?? '');
         $claimantName = (string)($claim['claimant_name'] ?? '');
@@ -110,21 +114,21 @@ final class _expense_claim_editorCard extends CardBaseFramework
                 <div class="summary-card"><div class="summary-label">Paid in this period (C)</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $displayTotals['C'])) . '</div></div>
                 <div class="summary-card"><div class="summary-label">Carried Forward (D=A+B-C)</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $displayTotals['D'])) . '</div></div>
             </div>
-            ' . ($isPosted ? '' : $this->renderBulkPastePanel($claimId, $companyId, $dateFormat)) . '
-            ' . ($isPosted ? '<div class="helper">Posted claim lines are locked. Repayments can still be linked from bank transactions.</div>' : $this->renderLineForm($claim, $nominals, $claimId, $companySettings, $companyId)) . '
+            ' . ($isReadOnly ? '' : $this->renderBulkPastePanel($claimId, $companyId, $dateFormat)) . '
+            ' . ($isReadOnly ? '<div class="helper">' . HelperFramework::escape($isPeriodLocked ? 'Period locked. Expense claims can be reviewed but not changed.' : 'Posted claim lines are locked. Repayments can still be linked from bank transactions.') . '</div>' : $this->renderLineForm($claim, $nominals, $claimId, $companySettings, $companyId)) . '
             ' . $this->renderExpenseLinesPanel(
                 (array)($claim['lines'] ?? []),
                 $nominals,
                 $assetCategories,
                 $claimId,
-                $isPosted,
+                $isReadOnly,
                 $companyId,
                 $dateFormat,
                 $companySettings,
                 $context,
-                $isPosted ? '' : $this->submitClaimToolbarAction($claim, $companySettings, $companyId)
+                $isReadOnly ? '' : $this->submitClaimToolbarAction($claim, $companySettings, $companyId)
             ) . '
-            ' . $this->renderPaymentsPanel((array)($claim['payment_links'] ?? []), $paymentCandidates, $companySettings, $filters, $claimId, $isPosted, $companyId, $dateFormat, $context) . '
+            ' . $this->renderPaymentsPanel((array)($claim['payment_links'] ?? []), $paymentCandidates, $companySettings, $filters, $claimId, $isReadOnly, $companyId, $dateFormat, $context) . '
         ';
     }
 
@@ -506,7 +510,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
         return $paymentsPanel . '
             <div class="panel-soft">
                 <div class="status-head"><h4 class="card-title">Candidate Repayments</h4></div>
-                ' . $this->withoutEmptyActionRows($this->configuredPaymentCandidatesTable($paymentCandidates, $companySettings, $paymentQuery, $claimId, $companyId, $dateFormat, $context)->render($context, $this->tableExportFields(['claim_id' => $claimId, 'payment_query' => $paymentQuery]))) . '
+                ' . $this->withoutEmptyActionRows($this->configuredPaymentCandidatesTable($paymentCandidates, $companySettings, $paymentQuery, $claimId, $companyId, $dateFormat, $context, $isPosted)->render($context, $this->tableExportFields(['claim_id' => $claimId, 'payment_query' => $paymentQuery]))) . '
             </div>';
     }
 
@@ -588,9 +592,9 @@ final class _expense_claim_editorCard extends CardBaseFramework
         </form>';
     }
 
-    private function configuredPaymentCandidatesTable(array $paymentCandidates, array $companySettings, string $paymentQuery, int $claimId, int $companyId, string $dateFormat, array $context): TableFramework
+    private function configuredPaymentCandidatesTable(array $paymentCandidates, array $companySettings, string $paymentQuery, int $claimId, int $companyId, string $dateFormat, array $context, bool $isReadOnly): TableFramework
     {
-        $table = $this->paymentCandidatesTable($paymentCandidates, $companySettings, $claimId, $companyId, $dateFormat);
+        $table = $this->paymentCandidatesTable($paymentCandidates, $companySettings, $claimId, $companyId, $dateFormat, $isReadOnly);
         $pagination = HelperFramework::paginateArray($table->sortedRows(), $this->paginationPage($context, self::TABLE_PAYMENT_CANDIDATES), self::PAGE_SIZE);
 
         return $table
@@ -604,7 +608,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
             );
     }
 
-    private function paymentCandidatesTable(array $paymentCandidates, array $companySettings, int $claimId, int $companyId, string $dateFormat): TableFramework
+    private function paymentCandidatesTable(array $paymentCandidates, array $companySettings, int $claimId, int $companyId, string $dateFormat, bool $isReadOnly): TableFramework
     {
         return TableFramework::make(self::TABLE_PAYMENT_CANDIDATES, $this->paymentCandidateRows($paymentCandidates, $dateFormat))
             ->filename('expense-claim-candidate-repayments')
@@ -631,7 +635,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
             ->column(
                 'link',
                 'Link',
-                html: fn(array $row): string => $this->linkPaymentForm($row, $companySettings, $claimId, $companyId),
+                html: fn(array $row): string => $isReadOnly ? '' : $this->linkPaymentForm($row, $companySettings, $claimId, $companyId),
                 exportable: false,
                 cellClass: 'cell-fit'
             );

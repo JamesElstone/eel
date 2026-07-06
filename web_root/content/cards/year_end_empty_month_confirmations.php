@@ -139,36 +139,41 @@ final class _year_end_empty_month_confirmationsCard extends CardBaseFramework
         $status = (string)($month['status'] ?? '');
 
         if ($canConfirm) {
-            return '<form method="post" data-ajax="true" class="form-grid">
-                <input type="hidden" name="card_action" value="YearEnd">
-                <input type="hidden" name="intent" value="confirm_empty_month">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <input type="hidden" name="month_start" value="' . HelperFramework::escape($monthStart) . '">
-                <div class="form-row full">
-                    <label for="empty-month-notes-' . HelperFramework::escape(str_replace('-', '', $monthStart)) . '">Confirmation notes</label>
-                    <textarea class="input" id="empty-month-notes-' . HelperFramework::escape(str_replace('-', '', $monthStart)) . '" name="confirmation_notes" rows="3"></textarea>
-                </div>
-                <div class="actions-row"><button class="button primary" type="submit">Confirm no financial activity</button></div>
-            </form>';
+            return '<section class="panel-soft warn full settings-stack">
+                <div class="eyebrow">Acknowledgement</div>
+                <form method="post" data-ajax="true" class="form-grid">
+                    <input type="hidden" name="card_action" value="YearEnd">
+                    <input type="hidden" name="intent" value="confirm_empty_month">
+                    <input type="hidden" name="company_id" value="' . $companyId . '">
+                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                    <input type="hidden" name="month_start" value="' . HelperFramework::escape($monthStart) . '">
+                    <div class="form-row full">
+                        <label for="empty-month-notes-' . HelperFramework::escape(str_replace('-', '', $monthStart)) . '">Confirmation notes</label>
+                        <textarea class="input" id="empty-month-notes-' . HelperFramework::escape(str_replace('-', '', $monthStart)) . '" name="confirmation_notes" rows="3"></textarea>
+                    </div>
+                    <div class="actions-row"><button class="button primary" type="submit">Confirm no financial activity</button></div>
+                </form>
+            </section>';
         }
 
         if ($status === 'confirmed') {
             $confirmationFoot = $this->confirmationFoot($confirmedAt, $confirmedBy);
 
-            return '<section class="panel-soft settings-stack">
+            return '<section class="panel-soft success settings-stack">
                 <div class="eyebrow">Acknowledgement</div>
-                ' . ($notes !== '' ? '<div class="stat-value">' . HelperFramework::escape($notes) . '</div>' : '') . '
+                ' . ($notes !== '' ? '<div class="summary-value">' . HelperFramework::escape($notes) . '</div>' : '') . '
                 ' . ($confirmationFoot !== '' ? '<div class="stat-foot">' . HelperFramework::escape($confirmationFoot) . '</div>' : '') . '
                 <div class="actions-row">
-                    <form method="post" data-ajax="true">
-                        <input type="hidden" name="card_action" value="YearEnd">
-                        <input type="hidden" name="intent" value="revoke_empty_month">
-                        <input type="hidden" name="company_id" value="' . $companyId . '">
-                        <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                        <input type="hidden" name="month_start" value="' . HelperFramework::escape($monthStart) . '">
-                        <button class="button" type="submit">Revoke confirmation</button>
-                    </form>
+                    <div class="year-end-related-workflow">
+                        <form method="post" data-ajax="true">
+                            <input type="hidden" name="card_action" value="YearEnd">
+                            <input type="hidden" name="intent" value="revoke_empty_month">
+                            <input type="hidden" name="company_id" value="' . $companyId . '">
+                            <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                            <input type="hidden" name="month_start" value="' . HelperFramework::escape($monthStart) . '">
+                            <button class="button" type="submit">Revoke confirmation</button>
+                        </form>
+                    </div>
                 </div>
             </section>';
         }

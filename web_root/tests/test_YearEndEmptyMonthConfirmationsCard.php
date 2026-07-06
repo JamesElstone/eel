@@ -66,13 +66,16 @@ $harness->run(_year_end_empty_month_confirmationsCard::class, static function (
 
         $harness->assertSame(true, str_contains($html, 'Empty Month Confirmations') || str_contains($card->title(), 'Empty Month'));
         $harness->assertSame(true, str_contains($html, 'Needs confirmation'));
+        $harness->assertSame(true, str_contains($html, '<section class="panel-soft warn full settings-stack">'));
         $harness->assertSame(true, str_contains($html, 'confirm_empty_month'));
         $harness->assertSame(true, str_contains($html, 'Confirm no financial activity'));
         $harness->assertSame(true, str_contains($html, '<div class="eyebrow">Acknowledgement</div>'));
-        $harness->assertSame(true, str_contains($html, '<div class="stat-value">Bank account was not open.</div>'));
+        $harness->assertSame(true, str_contains($html, '<section class="panel-soft success settings-stack">'));
+        $harness->assertSame(true, str_contains($html, '<div class="summary-value">Bank account was not open.</div>'));
         $harness->assertSame(true, str_contains($html, '<div class="stat-foot">Confirmed at 2026-07-02 10:00:00 by unit_test.</div>'));
         $harness->assertSame(true, str_contains($html, 'Confirmed'));
         $harness->assertSame(true, str_contains($html, 'revoke_empty_month'));
+        $harness->assertSame(true, str_contains($html, '<div class="year-end-related-workflow">'));
         $harness->assertSame(true, str_contains($html, 'Bank account was not open.'));
         $harness->assertSame(true, str_contains($html, '$ 12.34'));
         $harness->assertSame(true, str_contains($html, '$ 56.78'));

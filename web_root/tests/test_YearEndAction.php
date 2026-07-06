@@ -258,7 +258,7 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             $harness->assertSame(1, InterfaceDB::countWhere('year_end_review_acknowledgements', [
                 'company_id' => (int)$fixture['company_id'],
                 'accounting_period_id' => (int)$fixture['accounting_period_id'],
-                'check_code' => 'filing_basis_reminder',
+                'check_code' => 'cut_off_journals_review',
             ]));
 
             $reopen = $instance->handle(
@@ -270,8 +270,28 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             $harness->assertSame(0, InterfaceDB::countWhere('year_end_review_acknowledgements', [
                 'company_id' => (int)$fixture['company_id'],
                 'accounting_period_id' => (int)$fixture['accounting_period_id'],
-                'check_code' => 'filing_basis_reminder',
+                'check_code' => 'cut_off_journals_review',
             ]));
+        });
+    });
+
+    $harness->check('YearEndAction', 'rejects filing basis review acknowledgement', static function () use ($harness): void {
+        yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness): void {
+            $instance = yearEndActionTestInstanceWithDirectorCount(2);
+            $result = $instance->handle(
+                yearEndActionReviewCheckRequest((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'acknowledge_review_check', 'filing_basis_reminder'),
+                createTestPageServiceFramework()
+            );
+
+            $harness->assertSame(false, $result->isSuccess());
+            $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'cannot be cleared by acknowledgement'));
+            if (InterfaceDB::tableExists('year_end_review_acknowledgements')) {
+                $harness->assertSame(0, InterfaceDB::countWhere('year_end_review_acknowledgements', [
+                    'company_id' => (int)$fixture['company_id'],
+                    'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                    'check_code' => 'filing_basis_reminder',
+                ]));
+            }
         });
     });
 
@@ -614,7 +634,7 @@ function yearEndActionEmptyMonthTestRequest(int $companyId, int $accountingPerio
     );
 }
 
-function yearEndActionReviewCheckRequest(int $companyId, int $accountingPeriodId, string $intent): RequestFramework
+function yearEndActionReviewCheckRequest(int $companyId, int $accountingPeriodId, string $intent, string $checkCode = 'cut_off_journals_review'): RequestFramework
 {
     return new RequestFramework(
         [],
@@ -623,7 +643,7 @@ function yearEndActionReviewCheckRequest(int $companyId, int $accountingPeriodId
             'intent' => $intent,
             'company_id' => (string)$companyId,
             'accounting_period_id' => (string)$accountingPeriodId,
-            'check_code' => 'filing_basis_reminder',
+            'check_code' => $checkCode,
             'review_acknowledgement_note' => 'Reviewed for test.',
         ],
         ['REQUEST_METHOD' => 'POST', 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest', 'HTTP_ACCEPT' => 'application/json'],

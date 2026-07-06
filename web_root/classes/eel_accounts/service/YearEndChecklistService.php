@@ -14,8 +14,8 @@ final class YearEndChecklistService
 {
     private const REVIEW_ACKNOWLEDGEABLE_CHECKS = [
         'fixed_asset_review_placeholder',
-        'prepayments_accruals_placeholder',
-        'filing_basis_reminder',
+        'transaction_tail_review',
+        'cut_off_journals_review',
         'director_loan_tax_review',
     ];
 
@@ -718,6 +718,8 @@ final class YearEndChecklistService
         $directorLoan = $metrics->directorLoanSummary($companyId, $accountingPeriodId);
         $directorLoanTaxReview = (new \eel_accounts\Service\DirectorLoanService())->fetchTaxReview($companyId, $accountingPeriodId);
         $expensePosition = (new \eel_accounts\Service\YearEndExpenseConfirmationService($metrics))->fetchContext($companyId, $accountingPeriodId);
+        $transactionTail = (new \eel_accounts\Service\YearEndTransactionTailService($metrics))->fetchContext($companyId, $accountingPeriodId);
+        $prepaymentReview = (new \eel_accounts\Service\PrepaymentReviewService($metrics, $lock))->fetchContext($companyId, $accountingPeriodId);
         $duplicateRepayments = $metrics->duplicateRepaymentRiskSummary($companyId, $periodStart, $periodEnd);
         $financialStatements = $metrics->financialStatementsSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd, $trialBalance);
         $retainedEarningsClose = ($this->retainedEarningsCloseService ?? new \eel_accounts\Service\RetainedEarningsCloseService())
@@ -1053,14 +1055,55 @@ final class YearEndChecklistService
             $vehicleReviewWarnings === [] ? '' : (count($vehicleReviewWarnings) . ' warning' . (count($vehicleReviewWarnings) === 1 ? '' : 's')),
             '?page=vehicles'
         );
+        $transactionTailAcknowledged = isset($reviewAcknowledgements['transaction_tail_review']);
+        $transactionTailStatus = empty($transactionTail['available'])
+            ? 'not_applicable'
+            : ($transactionTailAcknowledged ? 'pass' : 'warning');
         $sections['year_end_accounts_review'][] = $this->applyReviewAcknowledgement($this->makeCheck(
-            'prepayments_accruals_placeholder',
-            'Prepayments and accruals review',
+            'transaction_tail_review',
+            'Bank transaction cut-off review',
             'warning',
+            $transactionTailStatus,
+            empty($transactionTail['available'])
+                ? (string)(($transactionTail['errors'] ?? [])[0] ?? 'Transaction cut-off review is not available.')
+                : ($transactionTailAcknowledged
+                    ? 'Latest transaction lines have been reviewed for each company account.'
+                    : 'Review the latest transaction line on each company account before closing this accounting period.'),
+            empty($transactionTail['available'])
+                ? ''
+                : ((int)($transactionTail['accounts_with_transactions'] ?? 0) . ' of ' . (int)($transactionTail['account_count'] ?? 0)),
+            '?page=year_end&show_card=year_end_transaction_tail'
+        ), $reviewAcknowledgements);
+
+        $prepaymentPendingCount = (int)($prepaymentReview['pending_count'] ?? 0);
+        $prepaymentTotalCount = (int)($prepaymentReview['total_count'] ?? 0);
+        $sections['year_end_accounts_review'][] = $this->makeCheck(
+            'prepayments_review',
+            'Prepayments review',
             'warning',
-            'Manual review reminder: consider year-end accruals, prepayments, and other cut-off journals before filing.',
-            '',
-            '?page=journal&show_card=nominal_closing_balances'
+            empty($prepaymentReview['available']) ? 'not_applicable' : ($prepaymentPendingCount > 0 ? 'warning' : 'pass'),
+            empty($prepaymentReview['available'])
+                ? (string)(($prepaymentReview['errors'] ?? [])[0] ?? 'Prepayment review is not available.')
+                : ($prepaymentPendingCount > 0
+                    ? 'Review all source items posted to nominals marked as prepayment candidates before filing.'
+                    : 'All potential prepayment source items have been reviewed for this accounting period.'),
+            empty($prepaymentReview['available'])
+                ? ''
+                : ((int)($prepaymentReview['reviewed_count'] ?? 0) . ' of ' . $prepaymentTotalCount),
+            '?page=prepayments'
+        );
+
+        $cutOffJournalsAcknowledged = isset($reviewAcknowledgements['cut_off_journals_review']);
+        $sections['year_end_accounts_review'][] = $this->applyReviewAcknowledgement($this->makeCheck(
+            'cut_off_journals_review',
+            'Cut-off journals review',
+            'warning',
+            $cutOffJournalsAcknowledged ? 'pass' : 'warning',
+            $cutOffJournalsAcknowledged
+                ? 'Accruals, deferred income, prepayments, and other cut-off journals have been reviewed for this period.'
+                : 'Review whether any accruals, deferred income, prepayments, or other year-end cut-off journals are required.',
+            $cutOffJournalsAcknowledged ? 'Reviewed' : 'Pending',
+            '?page=cut_off_journals'
         ), $reviewAcknowledgements);
 
         $taxPeriodDisplay = $this->taxPeriodDisplay($taxReadiness);
@@ -1134,9 +1177,9 @@ final class YearEndChecklistService
         $sections['corporation_tax_readiness'][] = $this->applyReviewAcknowledgement($this->makeCheck(
             'filing_basis_reminder',
             'Filing basis reminder',
-            'warning',
-            'warning',
-            'App numbers remain working figures until final adjustments and filing outputs are finalised.',
+            'info',
+            'info',
+            'Year-end lock finalises the app ledger. Statutory accounts, iXBRL, and tax filing outputs should still be reviewed separately before submission.',
             '',
             '?page=year_end&show_card=year_end_tax_readiness'
         ), $reviewAcknowledgements);

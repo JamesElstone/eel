@@ -2129,7 +2129,8 @@
 }
 
 .year-end-check-panel-info {
-  background: var(--panel-soft);
+  background: var(--primary-soft);
+  border-color: #bfdbfe;
 }
 
 .year-end-check-status-label {

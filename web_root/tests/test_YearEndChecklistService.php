@@ -96,13 +96,13 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
         $method->setAccessible(true);
 
         $warning = [
-            'check_code' => 'filing_basis_reminder',
+            'check_code' => 'fixed_asset_review_placeholder',
             'status' => 'warning',
             'metric_value' => '',
-            'detail_text' => 'App numbers remain working figures.',
+            'detail_text' => 'Fixed asset treatment should be reviewed.',
         ];
         $acknowledged = $method->invoke($service, $warning, [
-            'filing_basis_reminder' => [
+            'fixed_asset_review_placeholder' => [
                 'acknowledged_at' => '2026-07-03 12:00:00',
                 'acknowledged_by' => 'test',
                 'note' => null,
@@ -125,6 +125,32 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
         ]);
 
         $harness->assertSame('fail', (string)$fail['status']);
+    });
+
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'filing basis reminder is informational only', static function () use ($harness): void {
+        $service = new \eel_accounts\Service\YearEndChecklistService();
+        $method = new ReflectionMethod($service, 'applyReviewAcknowledgement');
+        $method->setAccessible(true);
+
+        $info = [
+            'check_code' => 'filing_basis_reminder',
+            'status' => 'info',
+            'metric_value' => '',
+            'detail_text' => 'Year-end lock finalises the app ledger.',
+        ];
+        $acknowledged = $method->invoke($service, $info, [
+            'filing_basis_reminder' => [
+                'acknowledged_at' => '2026-07-03 12:00:00',
+                'acknowledged_by' => 'test',
+                'note' => null,
+            ],
+        ]);
+
+        $harness->assertSame('info', (string)$acknowledged['status']);
+        $harness->assertSame(false, isset($acknowledged['review_clearable']));
+        $harness->assertSame(false, isset($acknowledged['review_acknowledgement']));
+        $harness->assertSame('', (string)$acknowledged['metric_value']);
+        $harness->assertSame(false, str_contains((string)$acknowledged['detail_text'], 'Review acknowledged'));
     });
 
     $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'expense position metric labels unpaid and owed balances', static function () use ($harness): void {

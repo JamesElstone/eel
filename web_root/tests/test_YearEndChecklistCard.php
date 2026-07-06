@@ -31,12 +31,12 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
                                 'review_clearable' => true,
                             ],
                             [
-                                'check_code' => 'filing_basis_reminder',
-                                'title' => 'Filing basis reminder',
+                                'check_code' => 'fixed_asset_review_placeholder',
+                                'title' => 'Fixed asset review',
                                 'status' => 'pass',
                                 'detail_text' => 'Review acknowledged for this period.',
                                 'metric_value' => 'Reviewed',
-                                'action_url' => '?page=year_end&company_id=12&accounting_period_id=34&show_card=year_end_tax_readiness',
+                                'action_url' => '?page=assets&company_id=12&accounting_period_id=34&show_card=not_an_asset',
                                 'review_clearable' => true,
                                 'review_acknowledgement' => [
                                     'acknowledged_at' => '2026-07-03 12:00:00',
@@ -51,9 +51,9 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
 
         $harness->assertSame(true, str_contains($html, 'Open Related Workflow'));
         $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=journal" data-ajax="true"'));
-        $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=year_end" data-ajax="true"'));
+        $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=assets" data-ajax="true"'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="show_card" value="nominal_closing_balances">'));
-        $harness->assertSame(true, str_contains($html, '<input type="hidden" name="show_card" value="year_end_tax_readiness">'));
+        $harness->assertSame(true, str_contains($html, '<input type="hidden" name="show_card" value="not_an_asset">'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="company_id" value="12">'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="accounting_period_id" value="34">'));
         $harness->assertSame(false, str_contains($html, 'company_id=12'));
@@ -62,6 +62,40 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
         $harness->assertSame(true, str_contains($html, 'Mark reviewed'));
         $harness->assertSame(true, str_contains($html, 'name="intent" value="reopen_review_check"'));
         $harness->assertSame(true, str_contains($html, 'Reopen review'));
+    });
+
+    $harness->check(_year_end_checklistCard::class, 'renders filing basis reminder as information without review actions', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'year_end' => [
+                'checklist' => [
+                    'company_id' => 12,
+                    'accounting_period' => ['id' => 34],
+                    'overall_status' => 'ready_for_review',
+                    'sections' => [
+                        'corporation_tax_readiness' => [
+                            [
+                                'check_code' => 'filing_basis_reminder',
+                                'title' => 'Filing basis reminder',
+                                'status' => 'info',
+                                'detail_text' => 'Year-end lock finalises the app ledger. Statutory accounts, iXBRL, and tax filing outputs should still be reviewed separately before submission.',
+                                'metric_value' => '',
+                                'action_url' => '?page=year_end&company_id=12&accounting_period_id=34&show_card=year_end_tax_readiness',
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $harness->assertSame(true, str_contains($html, 'Filing basis reminder'));
+        $harness->assertSame(true, str_contains($html, 'year-end-check-panel-info'));
+        $harness->assertSame(true, str_contains($html, 'Year-end lock finalises the app ledger.'));
+        $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=year_end" data-ajax="true"'));
+        $harness->assertSame(true, str_contains($html, '<input type="hidden" name="show_card" value="year_end_tax_readiness">'));
+        $harness->assertSame(false, str_contains($html, 'name="intent" value="acknowledge_review_check"'));
+        $harness->assertSame(false, str_contains($html, 'name="intent" value="reopen_review_check"'));
+        $harness->assertSame(false, str_contains($html, 'Mark reviewed'));
+        $harness->assertSame(false, str_contains($html, 'Reopen review'));
     });
 
     $harness->check(_year_end_checklistCard::class, 'bookkeeping workflow link uses selected site context', static function () use ($harness, $card): void {

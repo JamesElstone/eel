@@ -46,8 +46,8 @@ $harness->run(_year_end_prepayment_approvalsCard::class, static function (Genera
         ]));
 
         $harness->assertSame(true, str_contains($acknowledgedHtml, 'name="intent" value="reopen_review_check"'));
-        $harness->assertSame(true, str_contains($acknowledgedHtml, 'Confirmed at 2026-07-06 10:00:00 by Alex Example using the web_app.'));
-        $harness->assertSame(true, str_contains($acknowledgedHtml, 'Revoke acknowledgement'));
+        $harness->assertSame(true, str_contains($acknowledgedHtml, 'Approved at 2026-07-06 10:00:00 by Alex Example using the web_app.'));
+        $harness->assertSame(true, str_contains($acknowledgedHtml, 'Revoke approval'));
         $harness->assertSame(false, str_contains($acknowledgedHtml, 'name="intent" value="acknowledge_review_check"'));
 
         $blockedHtml = $card->render(yearEndPrepaymentApprovalsCardContext(null, 2));

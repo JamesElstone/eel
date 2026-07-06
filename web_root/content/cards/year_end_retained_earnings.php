@@ -73,6 +73,7 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
             $acknowledged && !$stale,
             (string)($review['retained_earnings_close_acknowledged_at'] ?? ''),
             (string)($review['retained_earnings_close_acknowledged_by'] ?? ''),
+            (string)($review['retained_earnings_close_approval_note'] ?? ''),
             $companyId,
             $accountingPeriodId
         );
@@ -93,53 +94,26 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
                     <tbody>' . $journalLinesHtml . '</tbody>
                 </table>
             </div>
-            <div class="actions-row">' . $acknowledgementForm . '</div>
+            ' . $acknowledgementForm . '
         </section>';
     }
 
-    private function acknowledgementHtml(bool $acknowledged, string $acknowledgedAt, string $acknowledgedBy, int $companyId, int $accountingPeriodId): string
+    private function acknowledgementHtml(bool $acknowledged, string $acknowledgedAt, string $acknowledgedBy, string $note, int $companyId, int $accountingPeriodId): string
     {
-        if ($companyId <= 0 || $accountingPeriodId <= 0) {
-            return '';
-        }
-
-        if ($acknowledged) {
-            return '<section class="panel-soft success settings-stack">
-                <div class="eyebrow">Acknowledgement</div>
-                <div class="stat-foot">' . HelperFramework::escape($this->confirmationFoot($acknowledgedAt, $acknowledgedBy)) . '</div>
-                <form method="post" data-ajax="true">
-                    <input type="hidden" name="card_action" value="YearEnd">
-                    <input type="hidden" name="intent" value="save_retained_earnings_close_acknowledgement">
-                    <input type="hidden" name="company_id" value="' . $companyId . '">
-                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                    <input type="hidden" name="retained_earnings_close_acknowledgement" value="0">
-                    <button class="button" type="submit">Revoke agreement</button>
-                </form>
-            </section>';
-        }
-
-        return '<section class="panel-soft warn full settings-stack">
-            <div class="eyebrow">Acknowledgement</div>
-            <form method="post" data-ajax="true" class="form-grid" data-year-end-ack-form="true">
-                <input type="hidden" name="card_action" value="YearEnd">
-                <input type="hidden" name="intent" value="save_retained_earnings_close_acknowledgement">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <label class="checkbox-row full">
-                    <input type="checkbox" name="retained_earnings_close_acknowledgement" value="1" required data-year-end-ack-checkbox>
-                    <span>I agree that current profit/loss will be carried into retained earnings when this Accounting Period is locked</span>
-                </label>
-                <div class="actions-row"><button class="button primary" type="submit" disabled data-year-end-ack-submit>Save agreement</button></div>
-            </form>
-        </section>';
-    }
-
-    private function confirmationFoot(string $acknowledgedAt, string $acknowledgedBy): string
-    {
-        return 'Confirmed'
-            . (trim($acknowledgedAt) !== '' ? ' at ' . trim($acknowledgedAt) : '')
-            . (trim($acknowledgedBy) !== '' ? ' by ' . trim($acknowledgedBy) : '')
-            . '.';
+        return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
+            'subject' => 'retained earnings close',
+            'companyId' => $companyId,
+            'accountingPeriodId' => $accountingPeriodId,
+            'acknowledged' => $acknowledged,
+            'acknowledgedAt' => $acknowledgedAt,
+            'acknowledgedBy' => $acknowledgedBy,
+            'note' => $note,
+            'intent' => 'save_retained_earnings_close_acknowledgement',
+            'revokeIntent' => 'save_retained_earnings_close_acknowledgement',
+            'checkboxName' => 'retained_earnings_close_acknowledgement',
+            'approveFields' => ['retained_earnings_close_acknowledgement' => '1'],
+            'revokeFields' => ['retained_earnings_close_acknowledgement' => '0'],
+        ]);
     }
 
     private function journalLinesHtml(array $journalLines, array $companySettings): string

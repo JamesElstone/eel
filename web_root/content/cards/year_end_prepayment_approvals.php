@@ -177,51 +177,24 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
 
     private function acknowledgementHtml(?array $acknowledgement, int $companyId, int $accountingPeriodId, bool $reviewUnavailable, int $incompleteCount): string
     {
-        if ($companyId <= 0 || $accountingPeriodId <= 0) {
-            return '';
-        }
-
-        if ($acknowledgement !== null) {
-            return '<section class="panel-soft success settings-stack">
-                <div class="eyebrow">Acknowledgement</div>
-                <div class="stat-foot">' . HelperFramework::escape($this->confirmationFoot(
-                    (string)($acknowledgement['acknowledged_at'] ?? ''),
-                    (string)($acknowledgement['acknowledged_by'] ?? '')
-                )) . '</div>
-                <div class="actions-row">
-                    <div class="year-end-related-workflow">
-                        <form method="post" data-ajax="true">
-                            <input type="hidden" name="card_action" value="YearEnd">
-                            <input type="hidden" name="intent" value="reopen_review_check">
-                            <input type="hidden" name="company_id" value="' . $companyId . '">
-                            <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                            <input type="hidden" name="check_code" value="prepayment_approvals">
-                            <button class="button" type="submit">Revoke acknowledgement</button>
-                        </form>
-                    </div>
-                </div>
-            </section>';
-        }
-
         $disabled = $reviewUnavailable || $incompleteCount > 0;
-        $buttonAttributes = $disabled ? ' disabled title="' . HelperFramework::escape($this->blockedApprovalTitle($reviewUnavailable, $incompleteCount)) . '"' : ' disabled data-year-end-ack-submit';
-
-        return '<section class="panel-soft warn full settings-stack">
-            <div class="eyebrow">Acknowledgement</div>
-            <form method="post" data-ajax="true" class="form-grid" data-year-end-ack-form="true">
-                <input type="hidden" name="card_action" value="YearEnd">
-                <input type="hidden" name="intent" value="acknowledge_review_check">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <input type="hidden" name="check_code" value="prepayment_approvals">
-                <label class="checkbox-row full">
-                    <input type="checkbox" required data-year-end-ack-checkbox' . ($disabled ? ' disabled' : '') . '>
-                    <span>I acknowledge that the year-end prepayment position has been reviewed before closing this Accounting Period</span>
-                </label>
-                ' . ($disabled ? '<div class="helper full">' . HelperFramework::escape($this->blockedApprovalTitle($reviewUnavailable, $incompleteCount)) . '</div>' : '') . '
-                <div class="actions-row"><button class="button primary" type="submit"' . $buttonAttributes . '>Save acknowledgement</button></div>
-            </form>
-        </section>';
+        return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
+            'subject' => 'prepayment position',
+            'companyId' => $companyId,
+            'accountingPeriodId' => $accountingPeriodId,
+            'acknowledged' => $acknowledgement !== null,
+            'acknowledgedAt' => (string)($acknowledgement['acknowledged_at'] ?? ''),
+            'acknowledgedBy' => (string)($acknowledgement['acknowledged_by'] ?? ''),
+            'note' => (string)($acknowledgement['note'] ?? ''),
+            'intent' => 'acknowledge_review_check',
+            'revokeIntent' => 'reopen_review_check',
+            'approveFields' => ['check_code' => 'prepayment_approvals'],
+            'revokeFields' => ['check_code' => 'prepayment_approvals'],
+            'noteName' => 'review_acknowledgement_note',
+            'noteId' => 'prepayment-approvals-note',
+            'disabled' => $disabled,
+            'disabledReason' => $disabled ? $this->blockedApprovalTitle($reviewUnavailable, $incompleteCount) : '',
+        ]);
     }
 
     private function blockedApprovalTitle(bool $reviewUnavailable, int $incompleteCount): string
@@ -231,14 +204,6 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
         }
 
         return 'Complete all pre-paid service dates before saving this approval. Incomplete: ' . $incompleteCount . '.';
-    }
-
-    private function confirmationFoot(string $acknowledgedAt, string $acknowledgedBy): string
-    {
-        return 'Confirmed'
-            . (trim($acknowledgedAt) !== '' ? ' at ' . trim($acknowledgedAt) : '')
-            . (trim($acknowledgedBy) !== '' ? ' by ' . trim($acknowledgedBy) : '')
-            . '.';
     }
 
     private function summaryCard(string $label, string $value): string

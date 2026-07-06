@@ -132,65 +132,45 @@ final class _year_end_empty_month_confirmationsCard extends CardBaseFramework
     private function actionHtml(array $month, array $confirmation, int $companyId, int $accountingPeriodId): string
     {
         $monthStart = (string)($month['month_start'] ?? '');
-        $confirmedAt = trim((string)($confirmation['confirmed_at'] ?? ''));
-        $confirmedBy = trim((string)($confirmation['confirmed_by'] ?? ''));
-        $notes = trim((string)($confirmation['notes'] ?? ''));
         $canConfirm = !empty($month['can_confirm']);
         $status = (string)($month['status'] ?? '');
+        $subject = 'no financial activity for ' . (string)($month['month_label'] ?? 'this month');
+        $noteId = 'empty-month-notes-' . str_replace('-', '', $monthStart);
 
         if ($canConfirm) {
-            return '<section class="panel-soft warn full settings-stack">
-                <div class="eyebrow">Acknowledgement</div>
-                <form method="post" data-ajax="true" class="form-grid">
-                    <input type="hidden" name="card_action" value="YearEnd">
-                    <input type="hidden" name="intent" value="confirm_empty_month">
-                    <input type="hidden" name="company_id" value="' . $companyId . '">
-                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                    <input type="hidden" name="month_start" value="' . HelperFramework::escape($monthStart) . '">
-                    <div class="form-row full">
-                        <label for="empty-month-notes-' . HelperFramework::escape(str_replace('-', '', $monthStart)) . '">Confirmation notes</label>
-                        <textarea class="input" id="empty-month-notes-' . HelperFramework::escape(str_replace('-', '', $monthStart)) . '" name="confirmation_notes" rows="3"></textarea>
-                    </div>
-                    <div class="actions-row"><button class="button primary" type="submit">Confirm no financial activity</button></div>
-                </form>
-            </section>';
+            return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
+                'subject' => $subject,
+                'companyId' => $companyId,
+                'accountingPeriodId' => $accountingPeriodId,
+                'acknowledged' => false,
+                'intent' => 'confirm_empty_month',
+                'revokeIntent' => 'revoke_empty_month',
+                'approveFields' => ['month_start' => $monthStart],
+                'revokeFields' => ['month_start' => $monthStart],
+                'noteName' => 'confirmation_notes',
+                'noteId' => $noteId,
+            ]);
         }
 
         if ($status === 'confirmed') {
-            $confirmationFoot = $this->confirmationFoot($confirmedAt, $confirmedBy);
-
-            return '<section class="panel-soft success settings-stack">
-                <div class="eyebrow">Acknowledgement</div>
-                ' . ($notes !== '' ? '<div class="summary-value">' . HelperFramework::escape($notes) . '</div>' : '') . '
-                ' . ($confirmationFoot !== '' ? '<div class="stat-foot">' . HelperFramework::escape($confirmationFoot) . '</div>' : '') . '
-                <div class="actions-row">
-                    <div class="year-end-related-workflow">
-                        <form method="post" data-ajax="true">
-                            <input type="hidden" name="card_action" value="YearEnd">
-                            <input type="hidden" name="intent" value="revoke_empty_month">
-                            <input type="hidden" name="company_id" value="' . $companyId . '">
-                            <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                            <input type="hidden" name="month_start" value="' . HelperFramework::escape($monthStart) . '">
-                            <button class="button" type="submit">Revoke confirmation</button>
-                        </form>
-                    </div>
-                </div>
-            </section>';
+            return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
+                'subject' => $subject,
+                'companyId' => $companyId,
+                'accountingPeriodId' => $accountingPeriodId,
+                'acknowledged' => true,
+                'acknowledgedAt' => (string)($confirmation['confirmed_at'] ?? ''),
+                'acknowledgedBy' => (string)($confirmation['confirmed_by'] ?? ''),
+                'note' => (string)($confirmation['notes'] ?? ''),
+                'intent' => 'confirm_empty_month',
+                'revokeIntent' => 'revoke_empty_month',
+                'approveFields' => ['month_start' => $monthStart],
+                'revokeFields' => ['month_start' => $monthStart],
+                'noteName' => 'confirmation_notes',
+                'noteId' => $noteId,
+            ]);
         }
 
         return '';
-    }
-
-    private function confirmationFoot(string $confirmedAt, string $confirmedBy): string
-    {
-        if ($confirmedAt === '' && $confirmedBy === '') {
-            return '';
-        }
-
-        return 'Confirmed'
-            . ($confirmedAt !== '' ? ' at ' . $confirmedAt : '')
-            . ($confirmedBy !== '' ? ' by ' . $confirmedBy : '')
-            . '.';
     }
 
     private function statusLabel(string $status, bool $canConfirm): string
@@ -200,7 +180,7 @@ final class _year_end_empty_month_confirmationsCard extends CardBaseFramework
         }
 
         return match ($status) {
-            'confirmed' => 'Confirmed',
+            'confirmed' => 'Approved',
             'superseded' => 'Superseded',
             'revoked' => 'Revoked',
             default => 'Not available',

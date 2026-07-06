@@ -495,7 +495,7 @@ final class TestCardsHarness
         $this->assertTrue(str_contains($html, 'Fixed assets'));
         $this->assertTrue(str_contains($html, 'Current assets'));
         $this->assertTrue(str_contains($html, 'companies_house_mismatch_acknowledgement'));
-        $this->assertTrue(str_contains($html, 'will be corrected before HMRC submission'));
+        $this->assertTrue(str_contains($html, 'I confirm that I have reviewed the Companies House comparison shown above and approve it as accurate for Year End.'));
 
         test_output_line('Cards: year_end_companies_house_comparison renders mismatch data and acknowledgement.');
     }

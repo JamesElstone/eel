@@ -81,6 +81,7 @@ final class _year_end_expenses_confirmationCard extends CardBaseFramework
             $acknowledged,
             (string)($expenses['expense_position_acknowledged_at'] ?? ''),
             (string)($expenses['expense_position_acknowledged_by'] ?? ''),
+            (string)($expenses['expense_position_approval_note'] ?? ''),
             $companyId,
             $accountingPeriodId
         );
@@ -102,53 +103,22 @@ final class _year_end_expenses_confirmationCard extends CardBaseFramework
         </section>';
     }
 
-    private function acknowledgementHtml(bool $acknowledged, string $acknowledgedAt, string $acknowledgedBy, int $companyId, int $accountingPeriodId): string
+    private function acknowledgementHtml(bool $acknowledged, string $acknowledgedAt, string $acknowledgedBy, string $note, int $companyId, int $accountingPeriodId): string
     {
-        if ($companyId <= 0 || $accountingPeriodId <= 0) {
-            return '';
-        }
-
-        if ($acknowledged) {
-            return '<section class="panel-soft success settings-stack">
-                <div class="eyebrow">Acknowledgement</div>
-                <div class="stat-foot">' . HelperFramework::escape($this->confirmationFoot($acknowledgedAt, $acknowledgedBy)) . '</div>
-                <div class="actions-row">
-                    <div class="year-end-related-workflow">
-                        <form method="post" data-ajax="true">
-                            <input type="hidden" name="card_action" value="YearEnd">
-                            <input type="hidden" name="intent" value="save_expense_position_acknowledgement">
-                            <input type="hidden" name="company_id" value="' . $companyId . '">
-                            <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                            <input type="hidden" name="expense_position_acknowledgement" value="0">
-                            <button class="button" type="submit">Revoke acknowledgement</button>
-                        </form>
-                    </div>
-                </div>
-            </section>';
-        }
-
-        return '<section class="panel-soft warn full settings-stack">
-            <div class="eyebrow">Acknowledgement</div>
-            <form method="post" data-ajax="true" class="form-grid" data-year-end-ack-form="true">
-                <input type="hidden" name="card_action" value="YearEnd">
-                <input type="hidden" name="intent" value="save_expense_position_acknowledgement">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <label class="checkbox-row full">
-                    <input type="checkbox" name="expense_position_acknowledgement" value="1" required data-year-end-ack-checkbox>
-                    <span>I acknowledge that the year-end expense claim position has been reviewed before closing this Accounting Period</span>
-                </label>
-                <div class="actions-row"><button class="button primary" type="submit" disabled data-year-end-ack-submit>Save acknowledgement</button></div>
-            </form>
-        </section>';
-    }
-
-    private function confirmationFoot(string $acknowledgedAt, string $acknowledgedBy): string
-    {
-        return 'Confirmed'
-            . (trim($acknowledgedAt) !== '' ? ' at ' . trim($acknowledgedAt) : '')
-            . (trim($acknowledgedBy) !== '' ? ' by ' . trim($acknowledgedBy) : '')
-            . '.';
+        return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
+            'subject' => 'expense position',
+            'companyId' => $companyId,
+            'accountingPeriodId' => $accountingPeriodId,
+            'acknowledged' => $acknowledged,
+            'acknowledgedAt' => $acknowledgedAt,
+            'acknowledgedBy' => $acknowledgedBy,
+            'note' => $note,
+            'intent' => 'save_expense_position_acknowledgement',
+            'revokeIntent' => 'save_expense_position_acknowledgement',
+            'checkboxName' => 'expense_position_acknowledgement',
+            'approveFields' => ['expense_position_acknowledgement' => '1'],
+            'revokeFields' => ['expense_position_acknowledgement' => '0'],
+        ]);
     }
 
     private function summaryCard(string $label, string $value): string

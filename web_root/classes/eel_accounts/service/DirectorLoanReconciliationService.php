@@ -74,6 +74,7 @@ final class DirectorLoanReconciliationService
         $summary['closing_balance_acknowledged'] = $acknowledgedAt !== '';
         $summary['closing_balance_acknowledged_at'] = $acknowledgedAt;
         $summary['closing_balance_acknowledged_by'] = (string)($review['director_loan_closing_acknowledged_by'] ?? '');
+        $summary['director_loan_closing_approval_note'] = (string)($review['director_loan_closing_approval_note'] ?? '');
 
         return $summary;
     }

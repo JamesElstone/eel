@@ -26,9 +26,9 @@ $harness->run(_year_end_retained_earningsCard::class, static function (Generated
     $harness->check(_year_end_retained_earningsCard::class, 'renders agreement details and revoke action when current', static function () use ($harness, $card): void {
         $html = $card->render(yearEndRetainedEarningsCardContext(true, false));
 
-        $harness->assertSame(true, str_contains($html, 'Confirmed at 2026-07-06 10:00:00 by Alex Example using the web_app.'));
+        $harness->assertSame(true, str_contains($html, 'Approved at 2026-07-06 10:00:00 by Alex Example using the web_app.'));
         $harness->assertSame(true, str_contains($html, 'name="retained_earnings_close_acknowledgement" value="0"'));
-        $harness->assertSame(true, str_contains($html, 'Revoke agreement'));
+        $harness->assertSame(true, str_contains($html, 'Revoke approval'));
         $harness->assertSame(false, str_contains($html, 'checked required'));
     });
 

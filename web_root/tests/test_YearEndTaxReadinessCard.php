@@ -58,9 +58,9 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="company_id" value="33">'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="accounting_period_id" value="70">'));
         $harness->assertSame(false, str_contains($html, '?page=tax&amp;company_id=33'));
-        $harness->assertSame(true, str_contains($html, 'Confirmed at 2026-07-03 12:00:00 by Alex Example using the web_app.'));
+        $harness->assertSame(true, str_contains($html, 'Approved at 2026-07-03 12:00:00 by Alex Example using the web_app.'));
         $harness->assertSame(true, str_contains($html, 'name="tax_readiness_acknowledgement" value="0"'));
-        $harness->assertSame(true, str_contains($html, 'Revoke acknowledgement'));
+        $harness->assertSame(true, str_contains($html, 'Revoke approval'));
         $harness->assertSame(false, str_contains($html, 'data-chicken-check="true"'));
         $harness->assertSame(false, str_contains($html, 'checked required'));
         $harness->assertSame(true, str_contains($html, '$ 12,500.00'));

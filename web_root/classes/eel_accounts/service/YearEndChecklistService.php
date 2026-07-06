@@ -436,14 +436,14 @@ final class YearEndChecklistService
         ];
     }
 
-    public function saveDirectorLoanClosingAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app'): array {
+    public function saveDirectorLoanClosingAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array {
         $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId, true);
         if (empty($checklistResult['success'])) {
             return $checklistResult;
         }
 
         $lock = $this->lockService ?? new \eel_accounts\Service\YearEndLockService();
-        $result = $lock->saveDirectorLoanClosingAcknowledgement($companyId, $accountingPeriodId, $acknowledged, $changedBy);
+        $result = $lock->saveDirectorLoanClosingAcknowledgement($companyId, $accountingPeriodId, $acknowledged, $changedBy, $note);
         if (empty($result['success'])) {
             return $result;
         }
@@ -453,14 +453,14 @@ final class YearEndChecklistService
         ];
     }
 
-    public function saveTaxReadinessAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app'): array {
+    public function saveTaxReadinessAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array {
         $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId, true);
         if (empty($checklistResult['success'])) {
             return $checklistResult;
         }
 
         $lock = $this->lockService ?? new \eel_accounts\Service\YearEndLockService();
-        $result = $lock->saveTaxReadinessAcknowledgement($companyId, $accountingPeriodId, $acknowledged, $changedBy);
+        $result = $lock->saveTaxReadinessAcknowledgement($companyId, $accountingPeriodId, $acknowledged, $changedBy, $note);
         if (empty($result['success'])) {
             return $result;
         }
@@ -470,14 +470,14 @@ final class YearEndChecklistService
         ];
     }
 
-    public function saveExpensePositionAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app'): array {
+    public function saveExpensePositionAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array {
         $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId, true);
         if (empty($checklistResult['success'])) {
             return $checklistResult;
         }
 
         $lock = $this->lockService ?? new \eel_accounts\Service\YearEndLockService();
-        $result = $lock->saveExpensePositionAcknowledgement($companyId, $accountingPeriodId, $acknowledged, $changedBy);
+        $result = $lock->saveExpensePositionAcknowledgement($companyId, $accountingPeriodId, $acknowledged, $changedBy, $note);
         if (empty($result['success'])) {
             return $result;
         }
@@ -487,14 +487,14 @@ final class YearEndChecklistService
         ];
     }
 
-    public function saveRetainedEarningsCloseAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app'): array {
+    public function saveRetainedEarningsCloseAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array {
         $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId, true);
         if (empty($checklistResult['success'])) {
             return $checklistResult;
         }
 
         $result = ($this->retainedEarningsCloseService ?? new \eel_accounts\Service\RetainedEarningsCloseService())
-            ->saveAcknowledgement($companyId, $accountingPeriodId, $acknowledged, $changedBy);
+            ->saveAcknowledgement($companyId, $accountingPeriodId, $acknowledged, $changedBy, $note);
         if (empty($result['success'])) {
             return $result;
         }

@@ -89,6 +89,7 @@ final class YearEndExpenseConfirmationService
             'expense_position_acknowledged' => trim((string)($review['expense_position_acknowledged_at'] ?? '')) !== '',
             'expense_position_acknowledged_at' => (string)($review['expense_position_acknowledged_at'] ?? ''),
             'expense_position_acknowledged_by' => (string)($review['expense_position_acknowledged_by'] ?? ''),
+            'expense_position_approval_note' => (string)($review['expense_position_approval_note'] ?? ''),
         ];
     }
 

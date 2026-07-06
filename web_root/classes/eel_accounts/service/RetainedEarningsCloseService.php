@@ -91,7 +91,7 @@ final class RetainedEarningsCloseService
         ];
     }
 
-    public function saveAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app'): array
+    public function saveAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array
     {
         if (!$acknowledged) {
             return ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->saveRetainedEarningsCloseAcknowledgement(
@@ -99,7 +99,8 @@ final class RetainedEarningsCloseService
                 $accountingPeriodId,
                 false,
                 [],
-                $changedBy
+                $changedBy,
+                ''
             );
         }
 
@@ -113,7 +114,8 @@ final class RetainedEarningsCloseService
             $accountingPeriodId,
             true,
             (array)$context['summary'],
-            $changedBy
+            $changedBy,
+            $note
         );
     }
 

@@ -93,64 +93,22 @@ final class _journal_cut_off_confirmationCard extends CardBaseFramework
 
     private function acknowledgementHtml(?array $acknowledgement, int $companyId, int $accountingPeriodId): string
     {
-        if ($companyId <= 0 || $accountingPeriodId <= 0) {
-            return '<div class="helper">Select a company and accounting period before confirming journal cut-off review.</div>';
-        }
-
         $acknowledged = $acknowledgement !== null;
-        $acknowledgedAt = $acknowledged ? trim((string)($acknowledgement['acknowledged_at'] ?? '')) : '';
-        $acknowledgedBy = $acknowledged ? trim((string)($acknowledgement['acknowledged_by'] ?? '')) : '';
-        $note = $acknowledged ? trim((string)($acknowledgement['note'] ?? '')) : '';
-
-        if (!$acknowledged) {
-            return '<section class="panel-soft warn full settings-stack">
-                <div class="eyebrow">Acknowledgement</div>
-                <form method="post" data-ajax="true" class="form-grid">
-                    <input type="hidden" name="card_action" value="YearEnd">
-                    <input type="hidden" name="intent" value="acknowledge_review_check">
-                    <input type="hidden" name="company_id" value="' . $companyId . '">
-                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                    <input type="hidden" name="check_code" value="cut_off_journals_review">
-                    <div class="helper full">Confirm this after reviewing whether accruals, deferred income, prepayments, or other year-end cut-off journals are required.</div>
-                    <div class="form-row full">
-                        <label for="journal-cut-off-review-note">Confirmation notes</label>
-                        <textarea class="input" id="journal-cut-off-review-note" name="review_acknowledgement_note" rows="3"></textarea>
-                    </div>
-                    <div class="actions-row"><button class="button primary" type="submit">Mark reviewed</button></div>
-                </form>
-            </section>';
-        }
-
-        $confirmationFoot = $this->confirmationFoot($acknowledgedAt, $acknowledgedBy);
-
-        return '<section class="panel-soft success settings-stack">
-            <div class="eyebrow">Acknowledgement</div>
-            ' . ($note !== '' ? '<div class="summary-value">' . HelperFramework::escape($note) . '</div>' : '') . '
-            ' . ($confirmationFoot !== '' ? '<div class="stat-foot">' . HelperFramework::escape($confirmationFoot) . '</div>' : '') . '
-            <div class="actions-row">
-                <div class="year-end-related-workflow">
-                    <form method="post" data-ajax="true">
-                        <input type="hidden" name="card_action" value="YearEnd">
-                        <input type="hidden" name="intent" value="reopen_review_check">
-                        <input type="hidden" name="company_id" value="' . $companyId . '">
-                        <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                        <input type="hidden" name="check_code" value="cut_off_journals_review">
-                        <button class="button" type="submit">Reopen review</button>
-                    </form>
-                </div>
-            </div>
-        </section>';
-    }
-
-    private function confirmationFoot(string $confirmedAt, string $confirmedBy): string
-    {
-        if ($confirmedAt === '' && $confirmedBy === '') {
-            return '';
-        }
-
-        return 'Reviewed'
-            . ($confirmedAt !== '' ? ' at ' . $confirmedAt : '')
-            . ($confirmedBy !== '' ? ' by ' . $confirmedBy : '')
-            . '.';
+        return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
+            'subject' => 'journal cut-off position',
+            'companyId' => $companyId,
+            'accountingPeriodId' => $accountingPeriodId,
+            'acknowledged' => $acknowledged,
+            'acknowledgedAt' => (string)($acknowledgement['acknowledged_at'] ?? ''),
+            'acknowledgedBy' => (string)($acknowledgement['acknowledged_by'] ?? ''),
+            'note' => (string)($acknowledgement['note'] ?? ''),
+            'intent' => 'acknowledge_review_check',
+            'revokeIntent' => 'reopen_review_check',
+            'approveFields' => ['check_code' => 'cut_off_journals_review'],
+            'revokeFields' => ['check_code' => 'cut_off_journals_review'],
+            'noteName' => 'review_acknowledgement_note',
+            'noteId' => 'journal-cut-off-review-note',
+            'missingContextHtml' => '<div class="helper">Select a company and accounting period before approving journal cut-off review.</div>',
+        ]);
     }
 }

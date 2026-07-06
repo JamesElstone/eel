@@ -42,9 +42,9 @@ $harness->run(_year_end_expenses_confirmationCard::class, static function (Gener
         $harness->assertSame(true, str_contains($html, 'Balance carried forward (c/f)'));
         $harness->assertSame(true, str_contains($html, 'Alex Example'));
         $harness->assertSame(true, str_contains($html, 'save_expense_position_acknowledgement'));
-        $harness->assertSame(true, str_contains($html, 'Confirmed at 2026-07-06 10:00:00 by Alex Example using the web_app.'));
+        $harness->assertSame(true, str_contains($html, 'Approved at 2026-07-06 10:00:00 by Alex Example using the web_app.'));
         $harness->assertSame(true, str_contains($html, 'name="expense_position_acknowledgement" value="0"'));
-        $harness->assertSame(true, str_contains($html, 'Revoke acknowledgement'));
+        $harness->assertSame(true, str_contains($html, 'Revoke approval'));
         $harness->assertSame(false, str_contains($html, 'data-chicken-check="true"'));
         $harness->assertSame(false, str_contains($html, 'checked required'));
 

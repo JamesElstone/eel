@@ -12,7 +12,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 $harness = new GeneratedServiceClassTestHarness();
 
 $harness->run(_year_end_director_loan_offsetCard::class, static function (GeneratedServiceClassTestHarness $harness, _year_end_director_loan_offsetCard $card): void {
-    $harness->check(_year_end_director_loan_offsetCard::class, 'renders director loan acknowledgement details and revoke action', static function () use ($harness, $card): void {
+    $harness->check(_year_end_director_loan_offsetCard::class, 'renders director loan approval details and revoke action', static function () use ($harness, $card): void {
         $html = $card->render(yearEndDirectorLoanOffsetCardContext([
             'available' => true,
             'accounting_period' => ['id' => 70, 'period_end' => '2025-12-31'],
@@ -34,9 +34,9 @@ $harness->run(_year_end_director_loan_offsetCard::class, static function (Genera
         ]));
 
         $harness->assertSame(true, str_contains($html, 'save_director_loan_offset_acknowledgement'));
-        $harness->assertSame(true, str_contains($html, 'Confirmed at 2026-07-06 10:00:00 by Alex Example using the web_app.'));
+        $harness->assertSame(true, str_contains($html, 'Approved at 2026-07-06 10:00:00 by Alex Example using the web_app.'));
         $harness->assertSame(true, str_contains($html, 'name="director_loan_offset_acknowledgement" value="0"'));
-        $harness->assertSame(true, str_contains($html, 'Revoke acknowledgement'));
+        $harness->assertSame(true, str_contains($html, 'Revoke approval'));
         $harness->assertSame(false, str_contains($html, 'data-chicken-check="true"'));
         $harness->assertSame(false, str_contains($html, 'checked required'));
         $harness->assertSame(false, str_contains($html, 'Post Offset Journal'));

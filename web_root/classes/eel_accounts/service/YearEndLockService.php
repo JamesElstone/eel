@@ -21,30 +21,43 @@ final class YearEndLockService
         if ($this->hasReviewColumn('director_loan_closing_acknowledged_at') && $this->hasReviewColumn('director_loan_closing_acknowledged_by')) {
             $acknowledgementColumns[] = 'director_loan_closing_acknowledged_at';
             $acknowledgementColumns[] = 'director_loan_closing_acknowledged_by';
+            $acknowledgementColumns[] = $this->hasReviewColumn('director_loan_closing_approval_note')
+                ? 'director_loan_closing_approval_note'
+                : 'NULL AS director_loan_closing_approval_note';
         } else {
             $acknowledgementColumns[] = 'NULL AS director_loan_closing_acknowledged_at';
             $acknowledgementColumns[] = 'NULL AS director_loan_closing_acknowledged_by';
+            $acknowledgementColumns[] = 'NULL AS director_loan_closing_approval_note';
         }
 
         if ($this->hasReviewColumn('tax_readiness_acknowledged_at') && $this->hasReviewColumn('tax_readiness_acknowledged_by')) {
             $acknowledgementColumns[] = 'tax_readiness_acknowledged_at';
             $acknowledgementColumns[] = 'tax_readiness_acknowledged_by';
+            $acknowledgementColumns[] = $this->hasReviewColumn('tax_readiness_approval_note')
+                ? 'tax_readiness_approval_note'
+                : 'NULL AS tax_readiness_approval_note';
         } else {
             $acknowledgementColumns[] = 'NULL AS tax_readiness_acknowledged_at';
             $acknowledgementColumns[] = 'NULL AS tax_readiness_acknowledged_by';
+            $acknowledgementColumns[] = 'NULL AS tax_readiness_approval_note';
         }
 
         if ($this->hasReviewColumn('expense_position_acknowledged_at') && $this->hasReviewColumn('expense_position_acknowledged_by')) {
             $acknowledgementColumns[] = 'expense_position_acknowledged_at';
             $acknowledgementColumns[] = 'expense_position_acknowledged_by';
+            $acknowledgementColumns[] = $this->hasReviewColumn('expense_position_approval_note')
+                ? 'expense_position_approval_note'
+                : 'NULL AS expense_position_approval_note';
         } else {
             $acknowledgementColumns[] = 'NULL AS expense_position_acknowledged_at';
             $acknowledgementColumns[] = 'NULL AS expense_position_acknowledged_by';
+            $acknowledgementColumns[] = 'NULL AS expense_position_approval_note';
         }
 
         $retainedEarningsColumns = [
             'retained_earnings_close_acknowledged_at',
             'retained_earnings_close_acknowledged_by',
+            'retained_earnings_close_approval_note',
             'retained_earnings_close_opening_equity',
             'retained_earnings_close_current_profit_loss',
             'retained_earnings_close_closing_equity_before',
@@ -259,7 +272,7 @@ final class YearEndLockService
         ];
     }
 
-    public function saveDirectorLoanClosingAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app'): array {
+    public function saveDirectorLoanClosingAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array {
         if (!$this->hasReviewTable()) {
             return [
                 'success' => false,
@@ -277,10 +290,16 @@ final class YearEndLockService
         $this->ensureReviewRow($companyId, $accountingPeriodId);
         $existing = $this->fetchReview($companyId, $accountingPeriodId);
         $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
+        $hasApprovalNote = $this->hasReviewColumn('director_loan_closing_approval_note');
+        $noteSql = $hasApprovalNote
+            ? ',
+                 director_loan_closing_approval_note = ' . ($acknowledged ? ':approval_note' : 'NULL')
+            : '';
 
         \InterfaceDB::execute( 'UPDATE year_end_reviews
              SET director_loan_closing_acknowledged_at = ' . ($acknowledged ? ':acknowledged_at' : 'NULL') . ',
                  director_loan_closing_acknowledged_by = ' . ($acknowledged ? ':acknowledged_by' : 'NULL') . ',
+                 ' . ltrim($noteSql, "\n,") . ($noteSql !== '' ? ',' : '') . '
                  updated_at = :updated_at
              WHERE company_id = :company_id
                AND accounting_period_id = :accounting_period_id'
@@ -290,7 +309,7 @@ final class YearEndLockService
             'updated_at' => $now,
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
-        ], static fn(mixed $value): bool => $value !== null));
+        ], static fn(mixed $value): bool => $value !== null) + ($hasApprovalNote && $acknowledged ? ['approval_note' => trim($note) !== '' ? trim($note) : null] : []));
 
         $review = $this->fetchReview($companyId, $accountingPeriodId);
         $this->writeAuditLog($companyId, $accountingPeriodId, $acknowledged ? 'director_loan_closing_acknowledged' : 'director_loan_closing_reopened', $changedBy, $existing, $review);
@@ -301,7 +320,7 @@ final class YearEndLockService
         ];
     }
 
-    public function saveTaxReadinessAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app'): array {
+    public function saveTaxReadinessAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array {
         if (!$this->hasReviewTable()) {
             return [
                 'success' => false,
@@ -319,10 +338,16 @@ final class YearEndLockService
         $this->ensureReviewRow($companyId, $accountingPeriodId);
         $existing = $this->fetchReview($companyId, $accountingPeriodId);
         $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
+        $hasApprovalNote = $this->hasReviewColumn('tax_readiness_approval_note');
+        $noteSql = $hasApprovalNote
+            ? ',
+                 tax_readiness_approval_note = ' . ($acknowledged ? ':approval_note' : 'NULL')
+            : '';
 
         \InterfaceDB::execute( 'UPDATE year_end_reviews
              SET tax_readiness_acknowledged_at = ' . ($acknowledged ? ':acknowledged_at' : 'NULL') . ',
                  tax_readiness_acknowledged_by = ' . ($acknowledged ? ':acknowledged_by' : 'NULL') . ',
+                 ' . ltrim($noteSql, "\n,") . ($noteSql !== '' ? ',' : '') . '
                  updated_at = :updated_at
              WHERE company_id = :company_id
                AND accounting_period_id = :accounting_period_id'
@@ -332,7 +357,7 @@ final class YearEndLockService
             'updated_at' => $now,
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
-        ], static fn(mixed $value): bool => $value !== null));
+        ], static fn(mixed $value): bool => $value !== null) + ($hasApprovalNote && $acknowledged ? ['approval_note' => trim($note) !== '' ? trim($note) : null] : []));
 
         $review = $this->fetchReview($companyId, $accountingPeriodId);
         $this->writeAuditLog($companyId, $accountingPeriodId, $acknowledged ? 'tax_readiness_acknowledged' : 'tax_readiness_reopened', $changedBy, $existing, $review);
@@ -343,7 +368,7 @@ final class YearEndLockService
         ];
     }
 
-    public function saveExpensePositionAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app'): array {
+    public function saveExpensePositionAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array {
         if (!$this->hasReviewTable()) {
             return [
                 'success' => false,
@@ -361,10 +386,16 @@ final class YearEndLockService
         $this->ensureReviewRow($companyId, $accountingPeriodId);
         $existing = $this->fetchReview($companyId, $accountingPeriodId);
         $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
+        $hasApprovalNote = $this->hasReviewColumn('expense_position_approval_note');
+        $noteSql = $hasApprovalNote
+            ? ',
+                 expense_position_approval_note = ' . ($acknowledged ? ':approval_note' : 'NULL')
+            : '';
 
         \InterfaceDB::execute( 'UPDATE year_end_reviews
              SET expense_position_acknowledged_at = ' . ($acknowledged ? ':acknowledged_at' : 'NULL') . ',
                  expense_position_acknowledged_by = ' . ($acknowledged ? ':acknowledged_by' : 'NULL') . ',
+                 ' . ltrim($noteSql, "\n,") . ($noteSql !== '' ? ',' : '') . '
                  updated_at = :updated_at
              WHERE company_id = :company_id
                AND accounting_period_id = :accounting_period_id'
@@ -374,7 +405,7 @@ final class YearEndLockService
             'updated_at' => $now,
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
-        ], static fn(mixed $value): bool => $value !== null));
+        ], static fn(mixed $value): bool => $value !== null) + ($hasApprovalNote && $acknowledged ? ['approval_note' => trim($note) !== '' ? trim($note) : null] : []));
 
         $review = $this->fetchReview($companyId, $accountingPeriodId);
         $this->writeAuditLog($companyId, $accountingPeriodId, $acknowledged ? 'expense_position_acknowledged' : 'expense_position_reopened', $changedBy, $existing, $review);
@@ -390,7 +421,8 @@ final class YearEndLockService
         int $accountingPeriodId,
         bool $acknowledged,
         array $summary,
-        string $changedBy = 'web_app'
+        string $changedBy = 'web_app',
+        string $note = ''
     ): array {
         if (!$this->hasReviewTable()) {
             return [
@@ -418,11 +450,17 @@ final class YearEndLockService
         $this->ensureReviewRow($companyId, $accountingPeriodId);
         $existing = $this->fetchReview($companyId, $accountingPeriodId);
         $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
+        $hasApprovalNote = $this->hasReviewColumn('retained_earnings_close_approval_note');
+        $noteSql = $hasApprovalNote
+            ? ',
+                 retained_earnings_close_approval_note = ' . ($acknowledged ? ':approval_note' : 'NULL')
+            : '';
 
         \InterfaceDB::execute(
             'UPDATE year_end_reviews
              SET retained_earnings_close_acknowledged_at = ' . ($acknowledged ? ':acknowledged_at' : 'NULL') . ',
                  retained_earnings_close_acknowledged_by = ' . ($acknowledged ? ':acknowledged_by' : 'NULL') . ',
+                 ' . ltrim($noteSql, "\n,") . ($noteSql !== '' ? ',' : '') . '
                  retained_earnings_close_opening_equity = ' . ($acknowledged ? ':opening_equity' : 'NULL') . ',
                  retained_earnings_close_current_profit_loss = ' . ($acknowledged ? ':current_profit_loss' : 'NULL') . ',
                  retained_earnings_close_closing_equity_before = ' . ($acknowledged ? ':closing_equity_before' : 'NULL') . ',
@@ -440,7 +478,7 @@ final class YearEndLockService
                 'updated_at' => $now,
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
-            ], static fn(mixed $value): bool => $value !== null)
+            ], static fn(mixed $value): bool => $value !== null) + ($hasApprovalNote && $acknowledged ? ['approval_note' => trim($note) !== '' ? trim($note) : null] : [])
         );
 
         $review = $this->fetchReview($companyId, $accountingPeriodId);

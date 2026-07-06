@@ -95,57 +95,23 @@ final class _year_end_transaction_tailCard extends CardBaseFramework
 
     private function acknowledgementHtml(?array $acknowledgement, int $companyId, int $accountingPeriodId): string
     {
-        if ($companyId <= 0 || $accountingPeriodId <= 0) {
-            return '';
-        }
-
         $acknowledged = $acknowledgement !== null;
-        $acknowledgedAt = $acknowledged ? trim((string)($acknowledgement['acknowledged_at'] ?? '')) : '';
-        $acknowledgedBy = $acknowledged ? trim((string)($acknowledgement['acknowledged_by'] ?? '')) : '';
-        $note = $acknowledged ? trim((string)($acknowledgement['note'] ?? '')) : '';
-
-        if ($acknowledged) {
-            return '<section class="panel-soft success settings-stack">
-                <div class="eyebrow">Acknowledgement</div>
-                ' . ($note !== '' ? '<div class="summary-value">' . HelperFramework::escape($note) . '</div>' : '') . '
-                <div class="stat-foot">' . HelperFramework::escape($this->confirmationFoot($acknowledgedAt, $acknowledgedBy)) . '</div>
-                <form method="post" data-ajax="true">
-                    <input type="hidden" name="card_action" value="YearEnd">
-                    <input type="hidden" name="intent" value="save_transaction_tail_acknowledgement">
-                    <input type="hidden" name="company_id" value="' . $companyId . '">
-                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                    <input type="hidden" name="transaction_tail_acknowledgement" value="0">
-                    <button class="button" type="submit">Revoke acknowledgement</button>
-                </form>
-            </section>';
-        }
-
-        return '<section class="panel-soft warn full settings-stack">
-            <div class="eyebrow">Acknowledgement</div>
-            <form method="post" data-ajax="true" class="form-grid" data-year-end-ack-form="true">
-                <input type="hidden" name="card_action" value="YearEnd">
-                <input type="hidden" name="intent" value="save_transaction_tail_acknowledgement">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <label class="checkbox-row full">
-                    <input type="checkbox" name="transaction_tail_acknowledgement" value="1" required data-year-end-ack-checkbox>
-                    <span>I acknowledge that the latest transaction line for each company account has been reviewed before closing this Accounting Period</span>
-                </label>
-                <div class="form-row full">
-                    <label for="transaction-tail-acknowledgement-note">Acknowledgement notes</label>
-                    <textarea class="input" id="transaction-tail-acknowledgement-note" name="transaction_tail_acknowledgement_note" rows="3"></textarea>
-                </div>
-                <div class="actions-row"><button class="button primary" type="submit" disabled data-year-end-ack-submit>Save acknowledgement</button></div>
-            </form>
-        </section>';
-    }
-
-    private function confirmationFoot(string $acknowledgedAt, string $acknowledgedBy): string
-    {
-        return 'Confirmed'
-            . ($acknowledgedAt !== '' ? ' at ' . $acknowledgedAt : '')
-            . ($acknowledgedBy !== '' ? ' by ' . $acknowledgedBy : '')
-            . '.';
+        return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
+            'subject' => 'transaction cut-off position',
+            'companyId' => $companyId,
+            'accountingPeriodId' => $accountingPeriodId,
+            'acknowledged' => $acknowledged,
+            'acknowledgedAt' => (string)($acknowledgement['acknowledged_at'] ?? ''),
+            'acknowledgedBy' => (string)($acknowledgement['acknowledged_by'] ?? ''),
+            'note' => (string)($acknowledgement['note'] ?? ''),
+            'intent' => 'save_transaction_tail_acknowledgement',
+            'revokeIntent' => 'save_transaction_tail_acknowledgement',
+            'checkboxName' => 'transaction_tail_acknowledgement',
+            'approveFields' => ['transaction_tail_acknowledgement' => '1'],
+            'revokeFields' => ['transaction_tail_acknowledgement' => '0'],
+            'noteName' => 'review_acknowledgement_note',
+            'noteId' => 'transaction-tail-acknowledgement-note',
+        ]);
     }
 
     private function money(array $companySettings, float|int|string|null $value): string

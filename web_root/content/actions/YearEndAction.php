@@ -71,31 +71,35 @@ final class YearEndAction implements ActionInterfaceFramework
                     $companyId,
                     $accountingPeriodId,
                     $this->truthy($request->input('director_loan_offset_acknowledgement', '0')),
-                    $actor
+                    $actor,
+                    (string)$request->input('approval_note', '')
                 ),
                 'save_tax_readiness_acknowledgement' => (new \eel_accounts\Service\YearEndChecklistService())->saveTaxReadinessAcknowledgement(
                     $companyId,
                     $accountingPeriodId,
                     $this->truthy($request->input('tax_readiness_acknowledgement', '0')),
-                    $actor
+                    $actor,
+                    (string)$request->input('approval_note', '')
                 ),
                 'save_expense_position_acknowledgement' => (new \eel_accounts\Service\YearEndChecklistService())->saveExpensePositionAcknowledgement(
                     $companyId,
                     $accountingPeriodId,
                     $this->truthy($request->input('expense_position_acknowledgement', '0')),
-                    $actor
+                    $actor,
+                    (string)$request->input('approval_note', '')
                 ),
                 'save_retained_earnings_close_acknowledgement' => (new \eel_accounts\Service\YearEndChecklistService())->saveRetainedEarningsCloseAcknowledgement(
                     $companyId,
                     $accountingPeriodId,
                     $this->truthy($request->input('retained_earnings_close_acknowledgement', '0')),
-                    $actor
+                    $actor,
+                    (string)$request->input('approval_note', '')
                 ),
                 'save_transaction_tail_acknowledgement' => (new \eel_accounts\Service\YearEndChecklistService())->saveTransactionTailAcknowledgement(
                     $companyId,
                     $accountingPeriodId,
                     $this->truthy($request->input('transaction_tail_acknowledgement', '0')),
-                    (string)$request->input('transaction_tail_acknowledgement_note', ''),
+                    (string)$request->input('review_acknowledgement_note', (string)$request->input('transaction_tail_acknowledgement_note', '')),
                     $actor
                 ),
                 'acknowledge_review_check' => (new \eel_accounts\Service\YearEndChecklistService())->acknowledgeReviewCheck(
@@ -185,13 +189,13 @@ final class YearEndAction implements ActionInterfaceFramework
             'revoke_empty_month' => 'Empty month confirmation revoked.',
             'save_opening_balance' => 'Opening balance journal saved.',
             'create_adjustment' => 'Year-end adjustment posted.',
-            'save_director_loan_offset_acknowledgement' => 'Director loan offset acknowledgement saved.',
-            'save_tax_readiness_acknowledgement' => 'Tax readiness acknowledgement saved.',
-            'save_expense_position_acknowledgement' => 'Expense position acknowledgement saved.',
-            'save_retained_earnings_close_acknowledgement' => 'Retained earnings agreement saved.',
-            'save_transaction_tail_acknowledgement' => 'Transaction cut-off review acknowledgement saved.',
-            'acknowledge_review_check' => 'Year-end review check marked reviewed.',
-            'reopen_review_check' => 'Year-end review check reopened.',
+            'save_director_loan_offset_acknowledgement' => 'Director loan offset approval saved.',
+            'save_tax_readiness_acknowledgement' => 'Tax readiness approval saved.',
+            'save_expense_position_acknowledgement' => 'Expense position approval saved.',
+            'save_retained_earnings_close_acknowledgement' => 'Retained earnings approval saved.',
+            'save_transaction_tail_acknowledgement' => 'Transaction cut-off approval saved.',
+            'acknowledge_review_check' => 'Year-end approval saved.',
+            'reopen_review_check' => 'Year-end approval revoked.',
             'post_director_loan_offset' => 'Director loan offset journal posted.',
             default => 'Year-end readiness updated.',
         };

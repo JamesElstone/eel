@@ -69,6 +69,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             $acknowledged,
             (string)($review['tax_readiness_acknowledged_at'] ?? ''),
             (string)($review['tax_readiness_acknowledged_by'] ?? ''),
+            (string)($review['tax_readiness_approval_note'] ?? ''),
             $companyId,
             $accountingPeriodId
         );
@@ -78,7 +79,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             <div class="status-head">
                 <span class="badge info">Estimate</span>
                 <span class="badge ' . HelperFramework::escape($confidenceStatus === 'ready_for_review' ? 'success' : 'warning') . '">' . HelperFramework::escape($confidenceLabel) . '</span>
-                <span class="badge ' . HelperFramework::escape($acknowledged ? 'success' : 'warning') . '">' . HelperFramework::escape($acknowledged ? 'Acknowledged' : 'Acknowledgement pending') . '</span>
+                <span class="badge ' . HelperFramework::escape($acknowledged ? 'success' : 'warning') . '">' . HelperFramework::escape($acknowledged ? 'Approved' : 'Approval pending') . '</span>
             </div>
             ' . ($warningHtml !== '' ? '<section class="panel-soft stack"><h3 class="card-title">Review warnings</h3>' . $warningHtml . '</section>' : '') . '
             ' . $this->periodSnapshots($companySettings, $taxReadiness) . '
@@ -89,53 +90,26 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
                 <div class="summary-card"><div class="summary-label">Losses carried forward (c/f)</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $taxReadiness['losses_carried_forward'] ?? 0)) . '</div></div>
             </div>
             <div class="actions-row">' . $taxWorkflowButton . '</div>
-            <div class="actions-row">' . $acknowledgementForm . '</div>
+            ' . $acknowledgementForm . '
         </section>';
     }
 
-    private function acknowledgementHtml(bool $acknowledged, string $acknowledgedAt, string $acknowledgedBy, int $companyId, int $accountingPeriodId): string
+    private function acknowledgementHtml(bool $acknowledged, string $acknowledgedAt, string $acknowledgedBy, string $note, int $companyId, int $accountingPeriodId): string
     {
-        if ($companyId <= 0 || $accountingPeriodId <= 0) {
-            return '';
-        }
-
-        if ($acknowledged) {
-            return '<section class="panel-soft success settings-stack">
-                <div class="eyebrow">Acknowledgement</div>
-                <div class="stat-foot">' . HelperFramework::escape($this->confirmationFoot($acknowledgedAt, $acknowledgedBy)) . '</div>
-                <form method="post" data-ajax="true">
-                    <input type="hidden" name="card_action" value="YearEnd">
-                    <input type="hidden" name="intent" value="save_tax_readiness_acknowledgement">
-                    <input type="hidden" name="company_id" value="' . $companyId . '">
-                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                    <input type="hidden" name="tax_readiness_acknowledgement" value="0">
-                    <button class="button" type="submit">Revoke acknowledgement</button>
-                </form>
-            </section>';
-        }
-
-        return '<section class="panel-soft warn full settings-stack">
-            <div class="eyebrow">Acknowledgement</div>
-            <form method="post" data-ajax="true" class="form-grid" data-year-end-ack-form="true">
-                <input type="hidden" name="card_action" value="YearEnd">
-                <input type="hidden" name="intent" value="save_tax_readiness_acknowledgement">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <label class="checkbox-row full">
-                    <input type="checkbox" name="tax_readiness_acknowledgement" value="1" required data-year-end-ack-checkbox>
-                    <span>I acknowledge that the corporation tax workings have been reviewed before closing this Accounting Period</span>
-                </label>
-                <div class="actions-row"><button class="button primary" type="submit" disabled data-year-end-ack-submit>Save acknowledgement</button></div>
-            </form>
-        </section>';
-    }
-
-    private function confirmationFoot(string $acknowledgedAt, string $acknowledgedBy): string
-    {
-        return 'Confirmed'
-            . (trim($acknowledgedAt) !== '' ? ' at ' . trim($acknowledgedAt) : '')
-            . (trim($acknowledgedBy) !== '' ? ' by ' . trim($acknowledgedBy) : '')
-            . '.';
+        return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
+            'subject' => 'corporation tax readiness',
+            'companyId' => $companyId,
+            'accountingPeriodId' => $accountingPeriodId,
+            'acknowledged' => $acknowledged,
+            'acknowledgedAt' => $acknowledgedAt,
+            'acknowledgedBy' => $acknowledgedBy,
+            'note' => $note,
+            'intent' => 'save_tax_readiness_acknowledgement',
+            'revokeIntent' => 'save_tax_readiness_acknowledgement',
+            'checkboxName' => 'tax_readiness_acknowledgement',
+            'approveFields' => ['tax_readiness_acknowledgement' => '1'],
+            'revokeFields' => ['tax_readiness_acknowledgement' => '0'],
+        ]);
     }
 
     private function money(array $companySettings, float|int|string|null $value): string

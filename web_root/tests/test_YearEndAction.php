@@ -108,7 +108,7 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             );
 
             $harness->assertSame(true, $result->isSuccess());
-            $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'acknowledgement saved'));
+            $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'approval saved'));
             $acknowledgedAt = (string)InterfaceDB::fetchColumn(
                 'SELECT COALESCE(director_loan_closing_acknowledged_at, \'\')
                  FROM year_end_reviews
@@ -122,6 +122,19 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             );
 
             $harness->assertSame(false, $acknowledgedAt === '');
+            if (InterfaceDB::columnExists('year_end_reviews', 'director_loan_closing_approval_note')) {
+                $harness->assertSame('Approval note from action test.', (string)InterfaceDB::fetchColumn(
+                    'SELECT COALESCE(director_loan_closing_approval_note, \'\')
+                     FROM year_end_reviews
+                     WHERE company_id = :company_id
+                       AND accounting_period_id = :accounting_period_id
+                     LIMIT 1',
+                    [
+                        'company_id' => (int)$fixture['company_id'],
+                        'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                    ]
+                ));
+            }
         });
     });
 
@@ -138,7 +151,7 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             );
 
             $harness->assertSame(true, $result->isSuccess());
-            $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'Tax readiness acknowledgement saved'));
+            $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'Tax readiness approval saved'));
             $acknowledgedAt = (string)InterfaceDB::fetchColumn(
                 'SELECT COALESCE(tax_readiness_acknowledged_at, \'\')
                  FROM year_end_reviews
@@ -152,6 +165,19 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             );
 
             $harness->assertSame(false, $acknowledgedAt === '');
+            if (InterfaceDB::columnExists('year_end_reviews', 'tax_readiness_approval_note')) {
+                $harness->assertSame('Approval note from action test.', (string)InterfaceDB::fetchColumn(
+                    'SELECT COALESCE(tax_readiness_approval_note, \'\')
+                     FROM year_end_reviews
+                     WHERE company_id = :company_id
+                       AND accounting_period_id = :accounting_period_id
+                     LIMIT 1',
+                    [
+                        'company_id' => (int)$fixture['company_id'],
+                        'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                    ]
+                ));
+            }
         });
     });
 
@@ -168,7 +194,7 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             );
 
             $harness->assertSame(true, $result->isSuccess());
-            $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'Expense position acknowledgement saved'));
+            $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'Expense position approval saved'));
             $acknowledgedAt = (string)InterfaceDB::fetchColumn(
                 'SELECT COALESCE(expense_position_acknowledged_at, \'\')
                  FROM year_end_reviews
@@ -182,6 +208,19 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             );
 
             $harness->assertSame(false, $acknowledgedAt === '');
+            if (InterfaceDB::columnExists('year_end_reviews', 'expense_position_approval_note')) {
+                $harness->assertSame('Approval note from action test.', (string)InterfaceDB::fetchColumn(
+                    'SELECT COALESCE(expense_position_approval_note, \'\')
+                     FROM year_end_reviews
+                     WHERE company_id = :company_id
+                       AND accounting_period_id = :accounting_period_id
+                     LIMIT 1',
+                    [
+                        'company_id' => (int)$fixture['company_id'],
+                        'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                    ]
+                ));
+            }
         });
     });
 
@@ -487,6 +526,7 @@ function yearEndActionDirectorLoanTestRequest(int $companyId, int $accountingPer
             'company_id' => (string)$companyId,
             'accounting_period_id' => (string)$accountingPeriodId,
             'review_notes' => 'Notes from director eligibility test.',
+            'approval_note' => 'Approval note from action test.',
             'director_loan_offset_acknowledgement' => '1',
             'tax_readiness_acknowledgement' => '1',
             'expense_position_acknowledgement' => '1',

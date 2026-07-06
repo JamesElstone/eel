@@ -830,13 +830,7 @@ final class _transactions_importedCard extends CardBaseFramework
             return '<button class="button primary" type="button" disabled title="Period locked">Rule</button>';
         }
 
-        $nominalAccountId = (int)($transaction['nominal_account_id'] ?? 0);
-        $nominalInputHtml = $nominalAccountId > 0
-            ? '<input type="hidden" name="nominal_account_id" value="' . $nominalAccountId . '">'
-            : '';
-
-        return $nominalInputHtml
-            . '<input type="hidden" name="transaction_reference" value="' . HelperFramework::escape((string)($transaction['reference'] ?? '')) . '">'
+        return '<input type="hidden" name="transaction_reference" value="' . HelperFramework::escape((string)($transaction['reference'] ?? '')) . '">'
             . '<button class="button primary" type="submit" name="global_action" value="auto_create_transaction_rule" data-show-card="transactions_rule_form">Rule</button>';
     }
 

@@ -78,12 +78,14 @@ final class ProfitLossService
                AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
                AND j.journal_date BETWEEN :period_start AND :period_end
+               AND COALESCE(j.source_type, \'\') <> :asset_depreciation_source_type
                AND jem_close.id IS NULL
                AND na.account_type IN (:income_type, :cost_type, :expense_type)
              GROUP BY na.id, na.code, na.name, na.account_type, nas.code, nas.name
              ORDER BY na.account_type ASC, ABS(COALESCE(SUM(jl.debit), 0) - COALESCE(SUM(jl.credit), 0)) DESC, na.code ASC',
             [
                 'close_journal_tag' => \eel_accounts\Service\RetainedEarningsCloseService::JOURNAL_TAG,
+                'asset_depreciation_source_type' => \eel_accounts\Service\YearEndClosePreviewService::ASSET_DEPRECIATION_SOURCE_TYPE,
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
                 'period_start' => (string)$accountingPeriod['period_start'],
@@ -132,6 +134,14 @@ final class ProfitLossService
             usort($groupRows, static fn(array $left, array $right): int => abs((float)$right['amount']) <=> abs((float)$left['amount']));
         }
         unset($groupRows);
+
+        $breakdown = $this->appendDepreciationExpenseBreakdown(
+            $breakdown,
+            $companyId,
+            $accountingPeriodId,
+            (string)$accountingPeriod['period_start'],
+            (string)$accountingPeriod['period_end']
+        );
 
         $breakdown['positive_non_income_receipts'] = $this->positiveNonIncomeReceipts(
             $companyId,
@@ -473,11 +483,13 @@ final class ProfitLossService
                AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
                AND j.journal_date BETWEEN :period_start AND :period_end
+               AND COALESCE(j.source_type, \'\') <> :asset_depreciation_source_type
                AND jem_close.id IS NULL
                AND na.account_type IN (:income_type, :cost_type, :expense_type)
              GROUP BY na.account_type',
             [
                 'close_journal_tag' => \eel_accounts\Service\RetainedEarningsCloseService::JOURNAL_TAG,
+                'asset_depreciation_source_type' => \eel_accounts\Service\YearEndClosePreviewService::ASSET_DEPRECIATION_SOURCE_TYPE,
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
                 'period_start' => $periodStart,
@@ -506,8 +518,50 @@ final class ProfitLossService
                 $totals['expense_total'] += round($debit - $credit, 2);
             }
         }
+        $totals['expense_total'] = round(
+            $totals['expense_total'] + (new \eel_accounts\Service\YearEndClosePreviewService())->depreciationExpenseForPeriod($companyId, $accountingPeriodId, $periodStart, $periodEnd),
+            2
+        );
 
         return $totals;
+    }
+
+    private function appendDepreciationExpenseBreakdown(array $breakdown, int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array
+    {
+        $preview = new \eel_accounts\Service\YearEndClosePreviewService();
+        $amount = $preview->depreciationExpenseForPeriod($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        if ($amount <= 0) {
+            return $breakdown;
+        }
+
+        $nominal = $preview->depreciationExpenseNominal();
+        if ($nominal === null) {
+            return $breakdown;
+        }
+
+        $row = [
+            'nominal_account_id' => (int)($nominal['nominal_account_id'] ?? 0),
+            'code' => (string)($nominal['code'] ?? '6200'),
+            'name' => (string)($nominal['name'] ?? 'Depreciation Expense'),
+            'account_type' => 'expense',
+            'account_subtype_code' => (string)($nominal['subtype_code'] ?? ''),
+            'account_subtype_name' => 'Depreciation Expense',
+            'amount' => $amount,
+        ];
+
+        foreach ($breakdown['expense'] as $index => $existing) {
+            if ((int)($existing['nominal_account_id'] ?? 0) !== (int)$row['nominal_account_id']) {
+                continue;
+            }
+
+            $breakdown['expense'][$index]['amount'] = round((float)($existing['amount'] ?? 0) + $amount, 2);
+            return $breakdown;
+        }
+
+        $breakdown['expense'][] = $row;
+        usort($breakdown['expense'], static fn(array $left, array $right): int => abs((float)$right['amount']) <=> abs((float)$left['amount']));
+
+        return $breakdown;
     }
 
     private function positiveNonIncomeReceipts(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array

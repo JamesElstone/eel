@@ -61,6 +61,7 @@ final class IxbrlBalanceSheetMetricsService
              ORDER BY na.sort_order, na.code',
             $params
         );
+        $rows = $this->applyPendingClosePreviewAdjustments($rows, $companyId, $accountingPeriodId, $periodEnd);
 
         $buckets = $this->emptyBuckets();
         $sources = [];
@@ -149,6 +150,59 @@ final class IxbrlBalanceSheetMetricsService
         );
 
         return is_array($row) ? $row : null;
+    }
+
+    private function applyPendingClosePreviewAdjustments(array $rows, int $companyId, ?int $accountingPeriodId, string $periodEnd): array
+    {
+        if ($accountingPeriodId === null || $accountingPeriodId <= 0) {
+            return $rows;
+        }
+
+        $adjustments = (new \eel_accounts\Service\YearEndClosePreviewService())
+            ->pendingBalanceSheetAdjustments($companyId, $accountingPeriodId, $periodEnd);
+        if ($adjustments === []) {
+            return $rows;
+        }
+
+        $indexedRows = [];
+        foreach ($rows as $row) {
+            $nominalId = (int)($row['nominal_account_id'] ?? 0);
+            if ($nominalId <= 0) {
+                continue;
+            }
+
+            $indexedRows[$nominalId] = $row;
+        }
+
+        foreach ($adjustments as $adjustment) {
+            $nominalId = (int)($adjustment['nominal_account_id'] ?? 0);
+            if ($nominalId <= 0) {
+                continue;
+            }
+
+            $movement = round((float)($adjustment['debit'] ?? 0) - (float)($adjustment['credit'] ?? 0), 2);
+            if (abs($movement) < 0.005) {
+                continue;
+            }
+
+            if (!isset($indexedRows[$nominalId])) {
+                $indexedRows[$nominalId] = [
+                    'nominal_account_id' => $nominalId,
+                    'code' => (string)($adjustment['code'] ?? ''),
+                    'name' => (string)($adjustment['name'] ?? ''),
+                    'account_type' => (string)($adjustment['account_type'] ?? ''),
+                    'subtype_code' => (string)($adjustment['subtype_code'] ?? ''),
+                    'debit_credit_balance' => 0.0,
+                ];
+            }
+
+            $indexedRows[$nominalId]['debit_credit_balance'] = round(
+                (float)($indexedRows[$nominalId]['debit_credit_balance'] ?? 0) + $movement,
+                2
+            );
+        }
+
+        return array_values($indexedRows);
     }
 
     private function emptyResult(): array

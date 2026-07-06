@@ -406,42 +406,8 @@ final class CorporationTaxComputationService
 
     private function depreciationAddBack(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): float
     {
-        if (!$this->tableExists('asset_depreciation_entries')) {
-            return 0.0;
-        }
-
-        $rows = \InterfaceDB::fetchAll(
-            'SELECT period_start, period_end, amount
-             FROM asset_depreciation_entries
-             WHERE accounting_period_id = :accounting_period_id
-               AND asset_id IN (
-                    SELECT id FROM asset_register WHERE company_id = :company_id
-               )',
-            [
-                'company_id' => $companyId,
-                'accounting_period_id' => $accountingPeriodId,
-            ]
-        ) ?: [];
-
-        $total = 0.0;
-        foreach ($rows as $row) {
-            $amount = round((float)($row['amount'] ?? 0), 2);
-            if ($periodStart === '' || $periodEnd === '') {
-                $total += $amount;
-                continue;
-            }
-
-            $entryStart = (string)($row['period_start'] ?? '');
-            $entryEnd = (string)($row['period_end'] ?? '');
-            $entryDays = $this->periodDays($entryStart, $entryEnd);
-            $overlapDays = $this->overlapDays($entryStart, $entryEnd, $periodStart, $periodEnd);
-            if ($entryDays <= 0 || $overlapDays <= 0) {
-                continue;
-            }
-            $total += round($amount * ($overlapDays / $entryDays), 2);
-        }
-
-        return round(max(0.0, $total), 2);
+        return (new \eel_accounts\Service\YearEndClosePreviewService())
+            ->depreciationExpenseForPeriod($companyId, $accountingPeriodId, $periodStart, $periodEnd);
     }
 
     private function capitalAllowanceAmount(int $companyId, int $accountingPeriodId, int $ctPeriodId): float
@@ -489,23 +455,6 @@ final class CorporationTaxComputationService
         $summary['summary_source'] = 'locked_snapshot';
 
         return $summary;
-    }
-
-    private function periodDays(string $start, string $end): int
-    {
-        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $start) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $end) || $end < $start) {
-            return 0;
-        }
-
-        return max(1, (new \DateTimeImmutable($start))->diff(new \DateTimeImmutable($end))->days + 1);
-    }
-
-    private function overlapDays(string $firstStart, string $firstEnd, string $secondStart, string $secondEnd): int
-    {
-        $start = max($firstStart, $secondStart);
-        $end = min($firstEnd, $secondEnd);
-
-        return $this->periodDays($start, $end);
     }
 
     private function insertLossHistory(int $companyId, int $accountingPeriodId, ?int $ctPeriodId, string $computationHash, array $row): void {

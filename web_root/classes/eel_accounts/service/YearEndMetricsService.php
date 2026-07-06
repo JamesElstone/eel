@@ -535,10 +535,12 @@ final class YearEndMetricsService
                AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
                AND j.journal_date BETWEEN :period_start AND :period_end
+               AND COALESCE(j.source_type, \'\') <> :asset_depreciation_source_type
                AND jem_close.id IS NULL
                AND (na.account_type = :income_type OR na.account_type = :cost_type OR na.account_type = :expense_type)
              GROUP BY na.id, na.code, na.name, na.account_type, na.tax_treatment', [
             'close_journal_tag' => \eel_accounts\Service\RetainedEarningsCloseService::JOURNAL_TAG,
+            'asset_depreciation_source_type' => \eel_accounts\Service\YearEndClosePreviewService::ASSET_DEPRECIATION_SOURCE_TYPE,
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
             'period_start' => $periodStart,
@@ -580,6 +582,8 @@ final class YearEndMetricsService
                 }
             }
         }
+        $depreciationExpense = (new \eel_accounts\Service\YearEndClosePreviewService())->depreciationExpenseForPeriod($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $expenses = round($expenses + $depreciationExpense, 2);
 
         return [
             'income' => round($income, 2),
@@ -587,6 +591,7 @@ final class YearEndMetricsService
             'profit_before_tax' => round($income - $expenses, 2),
             'disallowable_add_backs' => round($disallowableAddBacks, 2),
             'capital_add_backs' => round($capitalAddBacks, 2),
+            'depreciation_expense' => round($depreciationExpense, 2),
             'other_treatment_count' => $otherTreatmentCount,
             'unknown_treatment_count' => $unknownTreatmentCount,
         ];

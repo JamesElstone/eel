@@ -48,7 +48,7 @@ final class _year_end_checklistCard extends CardBaseFramework
         return '<section class="panel-soft settings-stack">
             <div class="status-head">
                 <h3 class="card-title">Overall status</h3>
-                <span class="badge ' . HelperFramework::escape($this->badgeClass($status)) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($status, '_')) . '</span>
+                <span class="badge ' . HelperFramework::escape($this->badgeClass($status)) . '">' . HelperFramework::escape($this->overallStatusLabel($status)) . '</span>
             </div>
         </section>';
     }
@@ -219,9 +219,22 @@ final class _year_end_checklistCard extends CardBaseFramework
     {
         return match ($status) {
             'pass', 'ready', 'locked' => 'success',
+            'ready_for_review' => 'success',
             'fail', 'needs_attention' => 'danger',
             'warning', 'not_started' => 'warning',
             default => 'info',
+        };
+    }
+
+    private function overallStatusLabel(string $status): string
+    {
+        return match ($status) {
+            'ready_for_review' => 'Ready to Close and Lock',
+            'locked' => 'Locked',
+            'in_progress' => 'Checks Need Review',
+            'needs_attention' => 'Needs Attention',
+            'not_started' => 'Not Started',
+            default => HelperFramework::labelFromKey($status, '_'),
         };
     }
 

@@ -90,8 +90,10 @@ final class _dashboard_year_end_readinessCard extends CardBaseFramework
         if ($topIssues === []) {
             $statsHtml .= $this->statCard(
                 'Next step',
-                'Review',
-                'Open the Year End To Do page to calculate the detailed checklist.',
+                $status === 'ready_for_review' ? 'Close and lock' : 'Review',
+                $status === 'ready_for_review'
+                    ? 'Open Year End to run the close tasks and lock this accounting period.'
+                    : 'Open Year End to refresh the detailed checklist.',
                 'warn'
             );
         }
@@ -119,7 +121,7 @@ final class _dashboard_year_end_readinessCard extends CardBaseFramework
     {
         return match ($status) {
             'locked' => 'Locked',
-            'ready_for_review', 'pass' => 'Ready',
+            'ready_for_review', 'pass' => 'Ready to Close',
             'in_progress', 'warning' => 'Warning',
             'needs_attention', 'fail' => 'Missing',
             default => 'Not started',

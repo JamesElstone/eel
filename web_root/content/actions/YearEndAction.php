@@ -181,8 +181,8 @@ final class YearEndAction implements ActionInterfaceFramework
     private function successMessage(string $intent): string
     {
         return match ($intent) {
-            'recalculate' => 'Year-end checklist recalculated.',
-            'lock_period' => 'Accounting period locked.',
+            'recalculate' => 'Year-end checklist refreshed.',
+            'lock_period' => 'Year-end close tasks completed and accounting period locked.',
             'unlock_period' => 'Accounting period unlocked.',
             'save_notes' => 'Year-end notes saved.',
             'confirm_empty_month' => 'Empty month confirmation saved.',

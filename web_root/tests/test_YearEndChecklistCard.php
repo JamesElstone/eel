@@ -100,6 +100,7 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
         ]);
 
         $harness->assertSame(true, str_contains($html, 'Filing basis reminder'));
+        $harness->assertSame(true, str_contains($html, 'Ready to Close and Lock'));
         $harness->assertSame(true, str_contains($html, 'year-end-check-panel-info'));
         $harness->assertSame(true, str_contains($html, 'Year-end lock finalises the app ledger.'));
         $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=year_end" data-ajax="true"'));

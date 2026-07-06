@@ -165,7 +165,24 @@ $harness->run(_dashboard_year_end_readinessCard::class, static function (Generat
         $harness->assertSame(true, str_contains($html, 'stat-card-status-ok'));
         $harness->assertSame(true, str_contains($html, 'stat-card-status-warn'));
         $harness->assertSame(true, str_contains($html, 'Next step'));
-        $harness->assertSame(true, str_contains($html, 'Open the Year End To Do page to calculate the detailed checklist.'));
+        $harness->assertSame(true, str_contains($html, 'Open Year End to refresh the detailed checklist.'));
+    });
+
+    $harness->check(_dashboard_year_end_readinessCard::class, 'renders ready summary with close and lock next step', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'page' => [
+                'year_end_dashboard_summary' => [
+                    'status' => 'ready_for_review',
+                    'period_label' => '05/09/2022 to 30/09/2023',
+                    'top_issues' => [],
+                    'action_url' => '?page=year-end',
+                ],
+            ],
+        ]);
+
+        $harness->assertSame(true, str_contains($html, 'Ready to Close'));
+        $harness->assertSame(true, str_contains($html, 'Close and lock'));
+        $harness->assertSame(true, str_contains($html, 'Open Year End to run the close tasks and lock this accounting period.'));
     });
 });
 

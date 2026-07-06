@@ -48,30 +48,35 @@ final class _year_end_stateCard extends CardBaseFramework
         $review = (array)($checklist['review'] ?? []);
         $isLocked = !empty($review['is_locked']);
         $lockIntent = $isLocked ? 'unlock_period' : 'lock_period';
-        $lockLabel = $isLocked ? 'Unlock Period' : 'Lock Accounting Period';
+        $lockLabel = $isLocked ? 'Unlock Period' : 'Run Year-End Close and Lock';
+        $lockTitle = $isLocked
+            ? 'Reopen this accounting period for changes.'
+            : 'Runs the final year-end close tasks, snapshots tax summaries, and locks this accounting period against further changes.';
         $lockDisabled = !$isLocked && !empty((($context['year_end'] ?? [])['checklist_has_warnings'] ?? false));
+        $status = (string)($checklist['overall_status'] ?? '');
 
         return '
             <section class="panel-soft settings-stack">
                 <div class="form-grid">
                     <div class="form-row">
                         <label>Status</label>
-                        <div><span class="badge ' . HelperFramework::escape($this->badgeClass((string)($checklist['overall_status'] ?? ''))) . '">' . HelperFramework::escape(HelperFramework::labelFromKey((string)($checklist['overall_status'] ?? ''), '_')) . '</span></div>
+                        <div><span class="badge ' . HelperFramework::escape($this->badgeClass($status)) . '">' . HelperFramework::escape($this->statusLabel($status)) . '</span></div>
                     </div>
                     <div class="form-row">
-                        <label>Last recalculated</label>
+                        <label>Checklist last changed</label>
                         <div>' . HelperFramework::escape((string)($checklist['last_recalculated_at'] ?? '')) . '</div>
                     </div>
                 </div>
+                <div class="helper">' . HelperFramework::escape($this->statusHelp($status, $isLocked)) . '</div>
                 <div class="actions-row">
-                    ' . $this->actionForm($companyId, $accountingPeriodId, 'recalculate', 'Recalculate') . '
+                    ' . $this->actionForm($companyId, $accountingPeriodId, 'recalculate', 'Refresh Year-End Checklist', false, 'Re-checks the year-end readiness checklist using the latest ledger, review, tax, and confirmation data.') . '
                     ' . $this->actionForm(
                         $companyId,
                         $accountingPeriodId,
                         $lockIntent,
                         $lockLabel,
                         $lockDisabled,
-                        $lockDisabled ? 'Resolve year-end checklist warnings before locking this accounting period.' : ''
+                        $lockDisabled ? 'Resolve year-end checklist warnings before running the year-end close and locking this accounting period.' : $lockTitle
                     ) . '
                     <button class="button" type="button" disabled>Export checklist</button>
                 </div>
@@ -96,9 +101,37 @@ final class _year_end_stateCard extends CardBaseFramework
     {
         return match ($status) {
             'pass', 'ready', 'locked' => 'success',
+            'ready_for_review' => 'success',
             'fail', 'needs_attention' => 'danger',
             'warning', 'not_started' => 'warning',
             default => 'info',
+        };
+    }
+
+    private function statusLabel(string $status): string
+    {
+        return match ($status) {
+            'ready_for_review' => 'Ready to Close and Lock',
+            'locked' => 'Locked',
+            'in_progress' => 'Checks Need Review',
+            'needs_attention' => 'Needs Attention',
+            'not_started' => 'Not Started',
+            default => HelperFramework::labelFromKey($status, '_'),
+        };
+    }
+
+    private function statusHelp(string $status, bool $isLocked): string
+    {
+        if ($isLocked || $status === 'locked') {
+            return 'This accounting period is locked. Unlock it only if you need to make further ledger changes.';
+        }
+
+        return match ($status) {
+            'ready_for_review' => 'All blocking checks are clear. You can now run the year-end close tasks and lock this accounting period.',
+            'needs_attention' => 'Resolve the blocking checklist items before running the year-end close and lock.',
+            'in_progress' => 'Complete or acknowledge the remaining checklist items before running the year-end close and lock.',
+            'not_started' => 'Refresh the year-end checklist once source data is available for this period.',
+            default => 'Use the checklist to confirm this period is ready for the year-end close and lock.',
         };
     }
 

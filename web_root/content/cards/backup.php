@@ -48,7 +48,7 @@ final class _backupCard extends CardBaseFramework
                 ' . $this->hiddenFields($context) . '
                 <input type="hidden" name="card_action" value="Backup">
                 <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
-                <button class="button primary" type="submit" name="intent" value="create_database_backup">Create Backup</button>
+                <button class="button primary" type="submit" name="intent" value="create_database_backup" data-processing-text="Creating Backup" data-processing-state="disabled">Create Backup</button>
             </form>
             ' . $this->recentBackupsHtml((array)($status['recent_backups'] ?? [])) . '
         </div>';

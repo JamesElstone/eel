@@ -56,6 +56,7 @@ final class _vat_registrationCard extends CardBaseFramework
 
         return '
             <form method="post" data-ajax="true" data-vat-registration-form>
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="VatRegistration">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <div class="form-grid">

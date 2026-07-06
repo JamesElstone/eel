@@ -183,6 +183,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
             : ' data-chicken-check="true" data-chicken-title="Confirm no claim lines" data-chicken-message="This records that this month has no expense claim lines. Repayments and carried-forward balances remain visible for review. Continue?" data-chicken-confirm-text="Confirm No Lines" data-chicken-button-class="button primary"';
 
         return '<form method="post" action="?page=expense_claims" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Expense">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="intent" value="' . $intent . '">
@@ -227,6 +228,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
     {
         return '<div class="panel-soft">
             <form method="post" action="?page=expense_claims" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Expense">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="intent" value="bulk_save_lines">
@@ -335,6 +337,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
         $selectedType = $selectedType === 'asset' ? 'asset' : 'expense';
 
         return '<form method="post" action="?page=expense_claims" id="' . $formId . '" data-ajax="true" class="segmented-control">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Expense">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="intent" value="update_line_type">
@@ -364,6 +367,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
         $formId = 'expense-line-nominal-form-' . $lineId;
 
         return '<form method="post" action="?page=expense_claims" id="' . $formId . '" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Expense">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="intent" value="update_line_nominal">
@@ -384,6 +388,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
         $residual = number_format((float)($row['asset_residual_value'] ?? 0), 2, '.', '');
 
         return '<form method="post" action="?page=expense_claims" id="' . $formId . '" data-ajax="true" class="expense-line-asset-form">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Expense">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="intent" value="save_line_asset_details">
@@ -434,6 +439,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
     private function deleteLineForm(int $claimId, int $lineId, int $companyId, array $context): string
     {
         return '<form method="post" action="?page=expense_claims" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="Expense">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="intent" value="delete_line">
@@ -455,6 +461,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
         $amountLabel = 'Amount (' . $this->defaultCurrencySymbol($companySettings) . ')';
 
         return '<form id="' . $formId . '" method="post" action="?page=expense_claims" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Expense">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="intent" value="save_line">
@@ -557,6 +564,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
     private function unlinkPaymentForm(int $claimId, int $paymentLinkId, int $companyId): string
     {
         return '<form method="post" action="?page=expense_claims" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="Expense">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="intent" value="unlink_payment">
@@ -569,6 +577,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
     private function renderPaymentCandidateSearch(string $paymentQuery, int $claimId, int $companyId): string
     {
         return '<form class="toolbar expenses-toolbar" method="post" action="?page=expense_claims" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="Expense">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="intent" value="filter_claims">
@@ -636,6 +645,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
         $canLink = $allocatedElsewhere <= 0 && ($currentLinkAmount > 0 || $availableAmount > 0);
 
         return '<form method="post" action="?page=expense_claims" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="Expense">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="intent" value="link_payment">

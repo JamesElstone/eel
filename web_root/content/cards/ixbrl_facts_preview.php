@@ -43,6 +43,7 @@ final class _ixbrl_facts_previewCard extends CardBaseFramework
 
         return '<div class="settings-stack">
             <form method="post" action="?page=ixbrl_builder" data-ajax="true" class="actions-row">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Ixbrl">
                 <input type="hidden" name="intent" value="build_ixbrl_facts">
                 <input type="hidden" name="company_id" value="' . $companyId . '">

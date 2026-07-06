@@ -60,6 +60,7 @@ final class _companies_searchCard extends CardBaseFramework
                     <span class="status-pill">' . HelperFramework::escape((string)($result['source'] ?? '') === 'profile' ? 'Direct lookup' : 'Search result') . '</span>
                 </div>
                 <form method="post" data-ajax="true" data-invalidate-page="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                     <input type="hidden" name="card_action" value="Company">
                     <input type="hidden" name="intent" value="add_company">
                     <input type="hidden" name="company_name" value="' . HelperFramework::escape((string)($result['company_name'] ?? '')) . '">
@@ -73,6 +74,7 @@ final class _companies_searchCard extends CardBaseFramework
 
         return '
             <form id="company-search-form" method="post" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Company">
                 <input type="hidden" name="intent" value="search_company">
                 <div class="mini-form">

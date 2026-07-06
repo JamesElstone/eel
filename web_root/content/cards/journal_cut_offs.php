@@ -65,6 +65,7 @@ final class _journal_cut_offsCard extends CardBaseFramework
         return '<section class="settings-stack" id="cut-off-journals">
             <section class="panel-soft settings-stack">
                 <form id="' . $formId . '" method="post" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                     <input type="hidden" name="card_action" value="YearEnd">
                     <input type="hidden" name="intent" value="create_adjustment">
                     <input type="hidden" name="show_card" value=".self">

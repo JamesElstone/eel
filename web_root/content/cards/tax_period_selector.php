@@ -52,6 +52,7 @@ final class _tax_period_selectorCard extends CardBaseFramework
 
             return '<div class="summary-grid five">'
                 . '<form method="post" action="?page=tax" data-ajax="true" class="summary-card tax-period-selector-summary-card">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                     <input type="hidden" name="card_action" value="Tax">
                     <input type="hidden" name="intent" value="select_ct_period">
                     <input type="hidden" name="company_id" value="' . $companyId . '">

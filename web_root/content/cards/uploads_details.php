@@ -142,6 +142,7 @@ final class _uploads_detailsCard extends CardBaseFramework
                     : ($isDuplicateFile
                         ? '<span class="helper">Duplicate file already uploaded.</span>'
                         : '<form method="post" action="?page=uploads" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                             <input type="hidden" name="card_action" value="Uploads">
                             <input type="hidden" name="intent" value="preview_upload">
                             <input type="hidden" name="upload_id" value="' . (int)($upload['id'] ?? 0) . '">
@@ -150,6 +151,7 @@ final class _uploads_detailsCard extends CardBaseFramework
                             <button class="button" type="submit" data-show-card="statement_field_mapping" data-page-card-switch-tab="Review Uploads">Field Mappings</button>
                         </form>
                         <form method="post" action="?page=uploads" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                             <input type="hidden" name="card_action" value="Uploads">
                             <input type="hidden" name="intent" value="stage_account_upload">
                             <input type="hidden" name="upload_id" value="' . (int)($upload['id'] ?? 0) . '">
@@ -160,6 +162,7 @@ final class _uploads_detailsCard extends CardBaseFramework
 
                 if ($developerOptions) {
                     $previewActions .= '<form method="post" action="?page=uploads" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                         <input type="hidden" name="card_action" value="Uploads">
                         <input type="hidden" name="intent" value="rescan_account_upload">
                         <input type="hidden" name="upload_id" value="' . (int)($upload['id'] ?? 0) . '">
@@ -217,6 +220,7 @@ final class _uploads_detailsCard extends CardBaseFramework
             <div class="stack">
                 <div class="flex-controls">
                     <form method="post" action="?page=uploads" class="mini-form" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                         <input type="hidden" name="card_action" value="Uploads">
                         <input type="hidden" name="intent" value="filter_uploads">
                         ' . ($selectedUploadId > 0 ? '<input type="hidden" name="upload_id" value="' . $selectedUploadId . '">' : '') . '
@@ -302,6 +306,7 @@ final class _uploads_detailsCard extends CardBaseFramework
     {
         return '<div class="actions-row">
                 <form method="post" action="?page=uploads" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                     <input type="hidden" name="card_action" value="Uploads">
                     <input type="hidden" name="intent" value="recalculate_upload_checksums">
                     <input type="hidden" name="upload_id" value="' . $uploadId . '">
@@ -310,6 +315,7 @@ final class _uploads_detailsCard extends CardBaseFramework
                     <button class="button danger" type="submit">Recalculate Checksums</button>
                 </form>
                 <form method="post" action="?page=uploads" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                     <input type="hidden" name="card_action" value="Uploads">
                     <input type="hidden" name="intent" value="backfill_transaction_types_from_staged_json">
                     <input type="hidden" name="upload_id" value="' . $uploadId . '">

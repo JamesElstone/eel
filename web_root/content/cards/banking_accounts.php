@@ -153,6 +153,7 @@ final class _banking_accountsCard extends CardBaseFramework
         $disabled = $this->hasMissingNominal($context) ? '' : ' disabled title="All account sources already have a nominal assigned."';
 
         return '<form method="post" data-ajax="true" class="toolbar">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="Banking">
             <input type="hidden" name="intent" value="assign_missing_nominals">
             <input type="hidden" name="company_id" value="' . HelperFramework::escape((string)$companyId) . '">
@@ -184,6 +185,7 @@ final class _banking_accountsCard extends CardBaseFramework
 
         return '<div>
             <form method="post" class="actions-row actions-row-nowrap" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="account_id" value="' . HelperFramework::escape((string)$accountId) . '">
                 <input type="hidden" name="field_mapping_account_id" value="' . HelperFramework::escape((string)$accountId) . '">
                 <input type="hidden" name="card_action" value="Banking">

@@ -71,6 +71,7 @@ final class _incorporation_add_sharesCard extends CardBaseFramework
 
         return '
             <form class="incorporation-share-add-form" id="' . HelperFramework::escape($formId) . '" method="post" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Incorporation">
                 <input type="hidden" name="intent" value="save_incorporation_shares">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -117,6 +118,7 @@ final class _incorporation_add_sharesCard extends CardBaseFramework
     private function newincDraftButton(int $companyId): string
     {
         return '<form method="post" data-ajax="true" class="actions-row">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="Incorporation">
             <input type="hidden" name="intent" value="populate_incorporation_shares_from_newinc">
             <input type="hidden" name="company_id" value="' . $companyId . '">

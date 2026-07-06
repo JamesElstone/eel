@@ -53,6 +53,7 @@ final class _hmrc_anti_fraud_testCard extends CardBaseFramework
 
         return '
             <form method="post" data-ajax="true" data-ajax-transport="xhr" class="toolbar">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="hmrcCheck">
                 <input type="hidden" name="company_id" value="' . HelperFramework::escape((string)$companyId) . '">
                 ' . $cardsHtml . '

@@ -64,6 +64,7 @@ final class _test_sourceCard extends CardBaseFramework
 
         return '
             <form method="post" data-ajax="true" class="toolbar">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="action" value="set-test-context">
                 ' . $cardsHtml . '
                 <div class="form-row">

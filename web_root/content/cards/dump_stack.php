@@ -47,6 +47,7 @@ final class _dump_stackCard extends CardBaseFramework
                         </div>
                         <div>
                             <form method="post" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                                 <input type="hidden" name="card_action" value="Test">
                                 <button class="button primary" type="submit" name="intent" value="check">Test Action</button>
                             </form>

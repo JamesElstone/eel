@@ -191,6 +191,7 @@ final class _year_end_checklistCard extends CardBaseFramework
             : ' data-chicken-check="true" data-chicken-title="Mark review complete" data-chicken-message="This will mark this year-end warning as reviewed for the selected accounting period.<br><br>Continue?" data-chicken-confirm-text="Mark Reviewed" data-chicken-button-class="button primary"';
 
         return '<form method="post" action="?page=year_end" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="YearEnd">
                 <input type="hidden" name="intent" value="' . HelperFramework::escape($intent) . '">
                 <input type="hidden" name="company_id" value="' . $companyId . '">

@@ -88,6 +88,7 @@ final class _uploads_bank_transactionsCard extends CardBaseFramework
             ($uploadsAutoSwitchTab !== '' ? '<div hidden data-uploads-next-tab="' . HelperFramework::escape($uploadsAutoSwitchTab) . '"></div>' : '') 
             . '
             <form method="post" enctype="multipart/form-data" action="?page=uploads">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Uploads">
                 <input type="hidden" name="intent" value="upload_account_csv">
                 <input type="hidden" name="company_id" value="' . $companyId . '">

@@ -54,12 +54,14 @@ final class _nominals_add_categoryCard extends CardBaseFramework
         return '
             ' . ($editingSubtype !== null
                 ? '<form id="' . $cancelFormId . '" method="post" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                     <input type="hidden" name="card_action" value="Nominals">
                     <input type="hidden" name="intent" value="cancel_nominal_edit">
                     <input type="hidden" name="show_card" value="nominals_add_category">
                 </form>'
                 : '') . '
             <form method="post" data-ajax-card-form="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Nominals">
                 <input type="hidden" name="global_action" value="' . HelperFramework::escape($editingSubtype !== null ? 'save_nominal_subtype' : 'add_nominal_subtype') . '">'
                 . ($editingSubtype !== null

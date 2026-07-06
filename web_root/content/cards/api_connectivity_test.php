@@ -26,6 +26,7 @@ final class _api_connectivity_testCard extends CardBaseFramework
             <div class="stack">
                 <div>
                     <form method="post" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                         <input type="hidden" name="card_action" value="ApiMode">
                         <button class="button primary" type="submit" name="intent" value="check">Check Credentials</button>
                     </form>

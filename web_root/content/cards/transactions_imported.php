@@ -153,6 +153,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 <div class="transactions-imported-primary-controls">
                     ' . $this->monthNavigationButtonHtml('<', (string)($monthNavigation['previous'] ?? ''), $companyId, $accountingPeriodId, $selectedTransactionFilter, 'previous') . '
                     <form class="toolbar" method="post" action="?page=transactions" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                         <input type="hidden" name="card_action" value="Transaction">
                         <input type="hidden" name="global_action" value="select_transaction_month">
                         <input type="hidden" name="selection_source" value="transactions_imported_filters">
@@ -270,6 +271,7 @@ final class _transactions_importedCard extends CardBaseFramework
         }
 
         return '<form method="post" action="?page=transactions" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Transaction">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
@@ -280,6 +282,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 <button class="button"' . $autoButtonAttributes . '>Run Auto Rules</button>
             </form>
             <form method="post" action="?page=transactions" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Transaction">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
@@ -333,6 +336,7 @@ final class _transactions_importedCard extends CardBaseFramework
             : ' type="button" disabled';
 
         return '<form class="toolbar" method="post" action="?page=transactions" data-ajax="true" data-month-navigation="' . HelperFramework::escape($direction) . '">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Transaction">
                 <input type="hidden" name="global_action" value="select_transaction_month">
                 <input type="hidden" name="selection_source" value="transactions_imported_filters">
@@ -508,6 +512,7 @@ final class _transactions_importedCard extends CardBaseFramework
         } elseif ($sourceDocumentUrl !== '') {
             $documentHtml .= '<a class="text-link" href="' . HelperFramework::escape($sourceDocumentUrl) . '" target="_blank" rel="noopener noreferrer">Source URL</a>
                 <form method="post" action="?page=transactions" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                     <input type="hidden" name="card_action" value="Transaction">
                     <input type="hidden" name="company_id" value="' . $companyId . '">
                     <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
@@ -637,6 +642,7 @@ final class _transactions_importedCard extends CardBaseFramework
         string $selectedTransactionFilter
     ): string {
         return '<form method="post" action="?page=transactions" data-ajax="true" data-auto-approval-batch-form="true" hidden>
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Transaction">
                 <input type="hidden" name="global_action" value="sync_auto_approval_state">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -692,6 +698,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="transaction_id" value="' . $transactionId . '">
             </form>
             <form method="post" action="?page=transactions" id="' . HelperFramework::escape($dividendFormId) . '" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Dividend">
                 <input type="hidden" name="intent" value="declare_dividend_from_transaction">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -701,6 +708,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
             </form>
             <form method="post" action="?page=transactions" id="' . HelperFramework::escape($transactionFormId) . '" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Transaction">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">

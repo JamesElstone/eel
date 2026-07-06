@@ -51,6 +51,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 <div class="helper">Generated XHTML is an FRS 105 micro-entity accounts iXBRL export for review and validation before filing.</div>
             </section>
             <form method="post" action="?page=ixbrl_builder" data-ajax="true" class="actions-row">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Ixbrl">
                 <input type="hidden" name="intent" value="build_ixbrl_facts">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -58,6 +59,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 <button class="button" type="submit"' . ($canBuild ? '' : ' disabled') . '>Build / Refresh Facts</button>
             </form>
             <form method="post" action="?page=ixbrl_builder" data-ajax="true" class="actions-row">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Ixbrl">
                 <input type="hidden" name="intent" value="generate_ixbrl_preview">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -66,6 +68,7 @@ final class _ixbrl_generationCard extends CardBaseFramework
                 ' . $download . '
             </form>
             <form method="post" action="?page=ixbrl_builder" data-ajax="true" class="actions-row">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Ixbrl">
                 <input type="hidden" name="intent" value="validate_ixbrl_external">
                 <input type="hidden" name="company_id" value="' . $companyId . '">

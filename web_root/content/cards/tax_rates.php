@@ -187,6 +187,7 @@ final class _tax_ratesCard extends CardBaseFramework
         $buttonLabel = $isEmpty ? 'Import Live His Majesty\'s Revenue and Customs (HMRC) Rates' : 'Refresh His Majesty\'s Revenue and Customs (HMRC) Rates';
 
         return '<form method="post" action="?page=tax_rates" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="TaxRates">
             <input type="hidden" name="intent" value="refresh_hmrc_rates">
             <input type="hidden" name="' . HelperFramework::escape(self::FILTER_FIELD) . '" value="' . HelperFramework::escape($this->normaliseStatusFilter($statusFilter)) . '">

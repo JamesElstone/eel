@@ -211,6 +211,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
                 ' . $summaryHtml . '
                 ' . $sampleHtml . '
                 <form method="post" action="' . HelperFramework::escape($action) . '" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                     <input type="hidden" name="card_action" value="' . HelperFramework::escape($cardAction) . '">
                     <input type="hidden" name="intent" value="save_account_mapping">
                     <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -396,6 +397,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
         }
 
         return '<form method="post" action="' . HelperFramework::escape($action) . '" data-ajax="true" class="statement-mapping-account-switcher">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="' . HelperFramework::escape($cardAction) . '">
             <input type="hidden" name="intent" value="select_field_mapping">
             <input type="hidden" name="show_card" value="statement_field_mapping">
@@ -471,6 +473,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
         }
 
         return '<form method="post" action="?page=uploads" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="Uploads">
             <input type="hidden" name="intent" value="stage_account_upload">
             <input type="hidden" name="company_id" value="' . $companyId . '">

@@ -78,12 +78,14 @@ final class _nominals_add_accountCard extends CardBaseFramework
         return '
             ' . ($editingNominal !== null
                 ? '<form id="' . $cancelFormId . '" method="post" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                     <input type="hidden" name="card_action" value="Nominals">
                     <input type="hidden" name="intent" value="cancel_nominal_edit">
                     <input type="hidden" name="show_card" value="nominals_add_account">
                 </form>'
                 : '') . '
             <form method="post" data-ajax-card-form="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Nominals">
                 <input type="hidden" name="global_action" value="' . HelperFramework::escape($editingNominal !== null ? 'save_nominal_account' : 'add_nominal_account') . '">'
                 . ($editingNominal !== null

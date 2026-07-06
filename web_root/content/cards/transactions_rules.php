@@ -88,6 +88,7 @@ final class _transactions_rulesCard extends CardBaseFramework
             <section class="panel-soft">
                 <h3 class="card-title">Upload exported JSON rules</h3>
                 <form method="post" action="?page=transactions">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                     <input type="hidden" name="card_action" value="Transaction">
                     <input type="hidden" name="company_id" value="' . $companyId . '">
                     <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
@@ -182,6 +183,7 @@ final class _transactions_rulesCard extends CardBaseFramework
     private function exportRulesToolbarAction(int $companyId, int $accountingPeriodId, string $selectedTransactionMonth, string $selectedTransactionFilter): string
     {
         return '<form method="post" action="?page=transactions">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="Transaction">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">

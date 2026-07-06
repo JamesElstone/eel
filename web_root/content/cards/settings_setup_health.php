@@ -85,6 +85,7 @@ final class _settings_setup_healthCard extends CardBaseFramework
 
         return '<div class="stack">
             <form method="post" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Health">
                 <button class="button primary" type="submit" name="intent" value="check">Check Setup Health</button>
             </form>

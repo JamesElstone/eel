@@ -241,6 +241,7 @@ final class _expense_claimantsCard extends CardBaseFramework
         }
 
         return '<form method="post" action="?page=expense_claims" data-ajax="true" class="actions-row actions-row-nowrap">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="Expense">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="claimant_id" value="' . $claimantId . '">

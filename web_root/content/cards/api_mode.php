@@ -38,6 +38,7 @@ final class _api_modeCard extends CardBaseFramework
 
         return '
             <form method="post" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="ApiMode">
                 <input type="hidden" name="intent" value="set">
                 <div class="form-grid">

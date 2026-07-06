@@ -34,6 +34,7 @@ $harness->run(_uploads_bank_transactionsCard::class, static function (GeneratedS
 
         $harness->assertTrue(str_contains($html, 'data-upload-submit>Upload CSV
                                 <img class="upload-processing-icon is-hidden" src="svg/loader.svg" alt="" aria-hidden="true" data-upload-processing-icon></button>'));
+        $harness->assertTrue(str_contains($html, 'name="csrf_token"'));
         $harness->assertTrue(str_contains($html, 'class="upload-processing-icon is-hidden"'));
         $harness->assertTrue(str_contains($html, 'src="svg/loader.svg"'));
         $harness->assertTrue(str_contains($html, 'data-upload-processing-icon'));

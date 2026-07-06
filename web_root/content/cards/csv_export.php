@@ -90,11 +90,13 @@ final class _csv_exportCard extends CardBaseFramework
                     <td>
                         <div class="actions-row-nowrap">
                         <form method="post" action="?page=uploads" class="inline-form">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                             ' . $hiddenInputs . '
                             <input type="hidden" name="intent" value="export_csv_upload">
                             <button class="button primary" type="submit">Export CSV</button>
                         </form>
                         <form method="post" action="?page=uploads" class="inline-form">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                             ' . $hiddenInputs . '
                             <input type="hidden" name="intent" value="export_xlsx_upload">
                             <button class="button" type="submit">Export XLSX</button>

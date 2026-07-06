@@ -93,6 +93,7 @@ final class _vehicle_registerCard extends CardBaseFramework
             . '<div class="helper">' . HelperFramework::escape((string)($row['nominal_code'] ?? '') . ' ' . (string)($row['nominal_name'] ?? '')) . '</div>';
 
         $vehicleFacts = '<form id="' . HelperFramework::escape($formId) . '" method="post" action="?page=vehicles" data-ajax="true" data-vehicle-row="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Vehicle">
                 <input type="hidden" name="intent" value="save_vehicle_details">
                 <input type="hidden" name="company_id" value="' . $companyId . '">

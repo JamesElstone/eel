@@ -232,6 +232,7 @@ final class _incorporation_payment_matchingCard extends CardBaseFramework
         }
 
         return '<form method="post" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="Incorporation">
             <input type="hidden" name="intent" value="match_share_payment">
             <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -244,6 +245,7 @@ final class _incorporation_payment_matchingCard extends CardBaseFramework
     private function clearForm(int $companyId, int $shareClassId): string
     {
         return '<form method="post" data-ajax="true" class="actions-row">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="Incorporation">
             <input type="hidden" name="intent" value="clear_share_payment_match">
             <input type="hidden" name="company_id" value="' . $companyId . '">

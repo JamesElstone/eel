@@ -67,6 +67,7 @@ final class _asset_createCard extends CardBaseFramework
 
         return '
             <form class="asset-create-form" ' . $formAttributes . '>
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
                 . ($prefillTransaction !== null

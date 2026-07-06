@@ -331,6 +331,7 @@ final class _transaction_searchCard extends CardBaseFramework
         }
 
         return '<form class="card-toolbar" method="post" action="?page=transactions" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="Transaction">
             <input type="hidden" name="global_action" value="post_categorised_transactions">
             <input type="hidden" name="post_scope" value="period">

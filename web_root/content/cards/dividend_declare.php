@@ -78,6 +78,7 @@ final class _dividend_declareCard extends CardBaseFramework
         return '<div class="settings-stack">
             <div class="' . $statusPanelClass . '">' . $statusItems . '</div>
             <form method="post" action="?page=dividends" data-ajax="true" class="form-grid">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Dividend">
                 <input type="hidden" name="intent" value="declare_dividend">
                 <input type="hidden" name="company_id" value="' . $companyId . '">

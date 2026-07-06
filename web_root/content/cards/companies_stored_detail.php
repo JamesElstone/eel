@@ -76,11 +76,13 @@ final class _companies_stored_detailCard extends CardBaseFramework
             <div class="form-grid">
                 <div class="actions-row">
                     <form method="post" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                         <input type="hidden" name="card_action" value="Company">
                         <input type="hidden" name="intent" value="refresh_company">
                         <button class="button primary" data-processing-text="Syncronising with Companies House..." data-processing-state="disabled" type="submit">Syncronise with Companies House</button>
                     </form>
                     <form method="post" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                         <input type="hidden" name="card_action" value="Company">
                         <input type="hidden" name="intent" value="refresh_sic">
                         <button class="button primary" data-processing-text="Syncing SIC codes..." data-processing-state="disabled" type="submit">Refresh SIC Lookup Data</button>

@@ -50,6 +50,7 @@ final class _tax_corporation_tax_summaryCard extends CardBaseFramework
         }
 
         return '<form method="post" action="?page=tax&amp;ct_period_id=' . $ctPeriodId . '" data-ajax="true" class="actions-row">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="Tax">
             <input type="hidden" name="intent" value="post_ct_provision">
             <input type="hidden" name="company_id" value="' . $companyId . '">

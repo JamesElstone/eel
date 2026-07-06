@@ -99,6 +99,7 @@ final class _companies_nominalsCard extends CardBaseFramework
                     </div>
                     <div>
                         <form method="post" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                             <input type="hidden" name="card_action" value="Nominals">
                             <input type="hidden" name="intent" value="apply_nominal_suggestions">
                             <input type="hidden" name="company_id" value="' . HelperFramework::escape((string)($context['company']['id'] ?? 0)) . '">
@@ -111,6 +112,7 @@ final class _companies_nominalsCard extends CardBaseFramework
 
         $mainHtml = '
             <form method="post" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Nominals">
                 <input type="hidden" name="intent" value="save_nominals">
                 <input type="hidden" name="company_id" value="' . HelperFramework::escape((string)($context['company']['id'] ?? 0)) . '">

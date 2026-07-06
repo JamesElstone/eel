@@ -33,6 +33,7 @@ $harness->run(_year_end_stateCard::class, static function (GeneratedServiceClass
                         <div class="summary-label">Latest backup</div>'));
         $harness->assertSame(true, str_contains($html, 'name="card_action" value="Backup"'));
         $harness->assertSame(true, str_contains($html, 'name="intent" value="create_database_backup"'));
+        $harness->assertSame(true, str_contains($html, 'name="csrf_token"'));
         $harness->assertSame(true, str_contains($html, 'Backup'));
         $harness->assertSame(true, str_contains($html, 'data-year-end-state-card="true"'));
         $harness->assertSame(true, str_contains($html, 'data-year-end-state-form="true"'));

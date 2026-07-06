@@ -75,6 +75,7 @@ final class _nominal_opening_balancesCard extends CardBaseFramework
 
         return '<section class="settings-stack" id="opening-balances">
             <form id="' . $formId . '" method="post" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="YearEnd">
                 <input type="hidden" name="intent" value="save_opening_balance">
                 <input type="hidden" name="show_card" value=".self">

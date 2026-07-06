@@ -98,6 +98,7 @@ final class _companies_company_settingsCard extends CardBaseFramework
 
         return '
             <form method="post" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Company">
                 <input type="hidden" name="intent" value="save_company">
                 <section data-state-fields="utr,associated_company_count,default_currency,date_format" data-state-target="save_company_settings_button">

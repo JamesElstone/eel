@@ -121,6 +121,7 @@ final class _transactions_rule_formCard extends CardBaseFramework
         return '
             ' . ($editingRuleId > 0
                 ? '<form id="' . $cancelFormId . '" method="post" action="?page=transactions" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                     <input type="hidden" name="card_action" value="Transaction">
                     <input type="hidden" name="global_action" value="cancel_categorisation_rule">
                     <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
@@ -128,6 +129,7 @@ final class _transactions_rule_formCard extends CardBaseFramework
                 </form>'
                 : '') . '
             <form method="post" action="?page=transactions" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Transaction">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">

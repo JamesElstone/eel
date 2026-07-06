@@ -119,6 +119,7 @@ final class _asset_reconcile_manualCard extends CardBaseFramework
                     <div class="helper">' . HelperFramework::escape((string)($candidate['nominal_label'] ?? 'Unassigned')) . '</div>
                 </div>
                 <form method="post" action="?page=assets" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                     <input type="hidden" name="card_action" value="Asset">
                     <input type="hidden" name="intent" value="reconcile_manual_asset_with_transaction">
                     <input type="hidden" name="company_id" value="' . $companyId . '">

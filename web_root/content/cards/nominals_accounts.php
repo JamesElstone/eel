@@ -122,6 +122,7 @@ final class _nominals_accountsCard extends CardBaseFramework
         }
 
         return '<form method="post" class="actions-row actions-row-nowrap" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="Nominals">
             <input type="hidden" name="page" value="' . HelperFramework::escape($pageId) . '">
             <input type="hidden" name="show_card" value="nominals_add_account">

@@ -125,6 +125,7 @@ final class _year_end_stateCard extends CardBaseFramework
         $titleAttribute = $title !== '' ? ' title="' . HelperFramework::escape($title) . '"' : '';
 
         return '<form method="post" data-ajax="true" data-year-end-state-form="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="YearEnd">
             <input type="hidden" name="intent" value="' . HelperFramework::escape($intent) . '">
             <input type="hidden" name="company_id" value="' . $companyId . '">

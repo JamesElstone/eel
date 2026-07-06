@@ -78,6 +78,7 @@ final class _check_file_pathsCard extends CardBaseFramework
         return '
             <div class="stack">
                 <form method="post" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                     <input type="hidden" name="card_action" value="AppPaths">
                     <div class="inline-actions">
                         <button class="button primary" type="submit" name="intent" value="check">Test Paths</button>

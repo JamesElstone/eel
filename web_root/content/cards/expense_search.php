@@ -380,6 +380,7 @@ final class _expense_searchCard extends CardBaseFramework
         }
 
         return '<form method="post" action="?page=expense_claims" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="Expense">
             <input type="hidden" name="company_id" value="' . $companyId . '">
             <input type="hidden" name="intent" value="select_claim">

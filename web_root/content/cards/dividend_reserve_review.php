@@ -101,6 +101,7 @@ final class _dividend_reserve_reviewCard extends CardBaseFramework
             </div>
             ' . ($unknownAmount > 0.0 ? '<section class="panel-soft warn settings-stack"><span class="badge warning">Needs review</span><div class="helper">You cannot save this review while Unknown amounts remain.</div></section>' : '') . '
             <form method="post" action="?page=dividends" data-ajax="true" class="settings-stack">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Dividend">
                 <input type="hidden" name="intent" value="save_dividend_reserve_review">
                 <input type="hidden" name="company_id" value="' . $companyId . '">

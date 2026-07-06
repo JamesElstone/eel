@@ -168,6 +168,7 @@ final class _tax_treatment_rulesCard extends CardBaseFramework
             : '';
 
         return '<form method="post" action="?page=tax_rates" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="TaxRates">
             <input type="hidden" name="intent" value="toggle_tax_treatment_rule">
             <input type="hidden" name="rule_id" value="' . $ruleId . '">
@@ -247,6 +248,7 @@ final class _tax_treatment_rulesCard extends CardBaseFramework
         }
 
         return '<form method="post" action="?page=tax_rates" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="TaxRates">
             <input type="hidden" name="intent" value="update_tax_treatment_rule_review_status">
             <input type="hidden" name="rule_id" value="' . $ruleId . '">

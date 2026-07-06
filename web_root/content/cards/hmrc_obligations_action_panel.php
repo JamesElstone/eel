@@ -43,6 +43,7 @@ final class _hmrc_obligations_action_panelCard extends CardBaseFramework
         }
 
         $syncForm = '<form method="post" action="?page=hmrc_obligations" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="HmrcObligation">
             <input type="hidden" name="intent" value="sync_hmrc_obligations">
             <input type="hidden" name="company_id" value="' . $companyId . '">

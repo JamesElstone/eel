@@ -96,6 +96,7 @@ final class _banking_account_formCard extends CardBaseFramework
 
         return '
             <form method="post" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Banking">
                 <input type="hidden" name="intent" value="' . HelperFramework::escape($LookupCompanyAccount !== null ? 'save' : 'add') . '">
                 <input type="hidden" name="company_id" value="' . $companyId . '">

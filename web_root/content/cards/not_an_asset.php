@@ -165,6 +165,7 @@ final class _not_an_assetCard extends CardBaseFramework
         }
 
         return '<form method="post" action="?page=assets" data-ajax="true" class="toolbar">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="Asset">
             <input type="hidden" name="intent" value="save_potential_asset_threshold">
             <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -273,6 +274,7 @@ final class _not_an_assetCard extends CardBaseFramework
             : 'This will rebuild the posted expense claim journal. The claim will remain posted. Continue?';
 
         return '<form method="post" action="?page=assets" data-ajax="true" class="non-asset-convert-form">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="Asset">
             <input type="hidden" name="intent" value="convert_non_asset_to_asset">
             <input type="hidden" name="company_id" value="' . $companyId . '">

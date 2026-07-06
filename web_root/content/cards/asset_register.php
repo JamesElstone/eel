@@ -276,6 +276,7 @@ final class _asset_registerCard extends CardBaseFramework
         $nextLabel = $this->disposalMethodLabel($nextMethod);
 
         return '<form class="asset-disposal-method-form" method="post" action="?page=assets" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="Asset">
             <input type="hidden" name="intent" value="set_asset_disposal_method">
             <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -308,6 +309,7 @@ final class _asset_registerCard extends CardBaseFramework
         if ($disposalMethod === 'at_nil_value') {
             return '<div class="asset-disposal-panel">
                 <form class="asset-disposal-form" method="post" action="?page=assets" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                     <input type="hidden" name="card_action" value="Asset">
                     <input type="hidden" name="company_id" value="' . $companyId . '">
                     <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
@@ -327,6 +329,7 @@ final class _asset_registerCard extends CardBaseFramework
 
         return '<div class="asset-disposal-panel">
             <form class="asset-disposal-form" method="post" action="?page=assets" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Asset">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
@@ -369,6 +372,7 @@ final class _asset_registerCard extends CardBaseFramework
                     <div class="helper">' . HelperFramework::escape((string)($candidate['description'] ?? '')) . '</div>
                 </div>
                 <form method="post" action="?page=assets" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                     <input type="hidden" name="card_action" value="Asset">
                     <input type="hidden" name="intent" value="dispose_asset_with_transaction">
                     <input type="hidden" name="company_id" value="' . $companyId . '">

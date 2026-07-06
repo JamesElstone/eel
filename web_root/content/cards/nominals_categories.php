@@ -91,6 +91,7 @@ final class _nominals_categoriesCard extends CardBaseFramework
     private function actionsHtml(array $subtype, string $pageId): string
     {
         return '<form method="post" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="Nominals">
             <input type="hidden" name="intent" value="edit_nominal_subtype">
             <input type="hidden" name="page" value="' . HelperFramework::escape($pageId) . '">

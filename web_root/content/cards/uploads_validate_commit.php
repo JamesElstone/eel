@@ -124,6 +124,7 @@ final class _uploads_validate_commitCard extends CardBaseFramework
         $importButtonDisabled = $readyToImport <= 0 ? ' disabled' : '';
 
         $importForm = '<form method="post" action="?page=uploads">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Uploads">
                 <input type="hidden" name="intent" value="commit_account_upload">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -229,6 +230,7 @@ final class _uploads_validate_commitCard extends CardBaseFramework
                     </div>
                     <div class="actions-row">
                         <form method="post" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                             <input type="hidden" name="card_action" value="AccountingPeriods">
                             <input type="hidden" name="intent" value="create_required_periods_for_upload">
                             <input type="hidden" name="company_id" value="' . $companyId . '">

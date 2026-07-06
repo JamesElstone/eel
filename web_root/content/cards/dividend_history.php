@@ -73,6 +73,7 @@ final class _dividend_historyCard extends CardBaseFramework
             $journalId = (int)($row['id'] ?? 0);
 
             return '<form method="post" action="?page=dividends" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Dividend">
                 <input type="hidden" name="intent" value="void_dividend">
                 <input type="hidden" name="company_id" value="' . $companyId . '">

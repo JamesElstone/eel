@@ -77,6 +77,7 @@ final class _companies_dangerCard extends CardBaseFramework
                         </ul>
                     </div>
                     <form method="post" data-ajax="true" class="stack">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                         <input type="hidden" name="card_action" value="Company">
                         <input type="hidden" name="intent" value="clear_imported_accounting_data">
                         <div class="form-row">
@@ -94,6 +95,7 @@ final class _companies_dangerCard extends CardBaseFramework
                     <h3 class="card-title">Delete Orphaned Transferred Files</h3>
                     <div class="standout helper">Removes server files for this company only when the database no longer references them. This checks staged statement CSVs, downloaded transaction receipts, and expense receipt uploads.</div>
                     <form method="post" data-ajax="true" class="stack">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                         <input type="hidden" name="card_action" value="Company">
                         <input type="hidden" name="intent" value="delete_orphaned_transferred_files">
                         <div class="form-row">
@@ -107,6 +109,7 @@ final class _companies_dangerCard extends CardBaseFramework
                     <h3 class="card-title">Delete Company</h3>
                     <div class="standout helper">This permanently removes the selected company and all linked company data from the database. Manual/shared nominal accounts are retained; safe unreferenced auto-created company account nominals are removed.</div>
                     <form method="post" data-ajax="true" class="stack">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                         <input type="hidden" name="card_action" value="Company">
                         <input type="hidden" name="intent" value="delete_company">
                         <label class="checkbox-item">

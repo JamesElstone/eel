@@ -82,6 +82,7 @@ final class _transactions_monthly_statusCard extends CardBaseFramework
                 : '';
 
             $monthsHtml .= '<form class="month-card-form" method="post" action="?page=transactions" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Transaction">
                 <input type="hidden" name="global_action" value="select_transaction_month">
                 <input type="hidden" name="company_id" value="' . $companyId . '">

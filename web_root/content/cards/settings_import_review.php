@@ -42,6 +42,7 @@ final class _settings_import_reviewCard extends CardBaseFramework
 
         return '
             <form method="post" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Company">
                 <input type="hidden" name="intent" value="save_import_review">
                 <input type="hidden" name="company_id" value="' . HelperFramework::escape((string)$companyId) . '">

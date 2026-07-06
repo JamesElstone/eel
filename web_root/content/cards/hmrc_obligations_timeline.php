@@ -30,6 +30,7 @@ final class _hmrc_obligations_timelineCard extends CardBaseFramework
         }
 
         $filterForm = '<form class="toolbar" method="post" action="?page=hmrc_obligations" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="HmrcObligation">
             <input type="hidden" name="intent" value="filter_obligations">
             <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -71,6 +72,7 @@ final class _hmrc_obligations_timelineCard extends CardBaseFramework
 
         if ($type === 'ct600_filing') {
             return '<form method="post" action="?page=hmrc_obligations" data-ajax="true" class="mini-form">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 ' . $common . '
                 <input type="hidden" name="intent" value="mark_filed">
                 <input class="input" name="source_reference" placeholder="HMRC ref">
@@ -80,6 +82,7 @@ final class _hmrc_obligations_timelineCard extends CardBaseFramework
         }
 
         return '<form method="post" action="?page=hmrc_obligations" data-ajax="true" class="mini-form">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             ' . $common . '
             <input type="hidden" name="intent" value="mark_paid">
             <input class="input" type="number" step="0.01" min="0" name="amount_paid" value="' . HelperFramework::escape(number_format((float)($item['amount_due'] ?? 0), 2, '.', '')) . '">

@@ -117,6 +117,7 @@ final class _accounting_periodsCard extends CardBaseFramework
                 </div>
                 <div>
                     <form method="post" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                         <input type="hidden" name="card_action" value="AccountingPeriods">
                         <input type="hidden" name="intent" value="create_suggested_periods">
                         <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -159,6 +160,7 @@ final class _accounting_periodsCard extends CardBaseFramework
                 <div class="form-row full">
                     <label for="accounting_period_id">Accounting period</label>
                     <form method="post" data-ajax="true" data-accounting-period-selector="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                         <input type="hidden" name="action" value="set-site-context">
                         <input type="hidden" name="_ajax" value="1">
                         <input type="hidden" name="page" value="' . $this->escape($pageId) . '">
@@ -187,6 +189,7 @@ final class _accounting_periodsCard extends CardBaseFramework
                 </div>
             </div>
             <form method="post" data-ajax="true" data-accounting-period-form="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Company">
                 <input type="hidden" id="accounting_period_intent" name="intent" value="' . ($selectedAccountingPeriodId > 0 ? 'update_accounting_period' : 'add_accounting_period') . '">
                 <input type="hidden" name="company_id" value="' . $companyId . '">

@@ -28,6 +28,7 @@ final class _hmrc_fines_tableCard extends CardBaseFramework
         $form = '<section class="panel-soft">
             <h3 class="card-title">Record HMRC notice</h3>
             <form method="post" action="?page=hmrc_obligations" data-ajax="true" class="form-grid">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="HmrcObligation">
                 <input type="hidden" name="intent" value="create_manual_obligation">
                 <input type="hidden" name="company_id" value="' . $companyId . '">

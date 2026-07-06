@@ -120,6 +120,7 @@ final class _prepayments_reviewCard extends CardBaseFramework
             <td class="numeric">' . HelperFramework::escape($this->money($companySettings, $item['amount'] ?? 0)) . '</td>
             <td>
                 <form id="' . HelperFramework::escape($formId) . '" method="post" data-ajax="true" class="actions-row actions-row-nowrap">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                     <input type="hidden" name="card_action" value="Prepayments">
                     <input type="hidden" name="intent" value="save_review">
                     <input type="hidden" name="company_id" value="' . $companyId . '">

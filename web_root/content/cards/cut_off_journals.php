@@ -80,7 +80,37 @@ final class _cut_off_journalsCard extends CardBaseFramework
             ' . $this->lineEditorTable('adjustment', $formId, (array)($data['nominals'] ?? []), [], 8) . '
             <div class="actions-row"><button class="button primary" type="submit" form="' . $formId . '">Post Cut-off Journal</button></div>
             ' . $this->renderPostedAdjustments((array)($data['adjustments'] ?? [])) . '
+            ' . $this->acknowledgementHtml(is_array($data['review_acknowledgement'] ?? null) ? $data['review_acknowledgement'] : null, $companyId, $accountingPeriodId) . '
         </section>';
+    }
+
+    private function acknowledgementHtml(?array $acknowledgement, int $companyId, int $accountingPeriodId): string
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return '';
+        }
+
+        $acknowledged = $acknowledgement !== null;
+        $intent = $acknowledged ? 'reopen_review_check' : 'acknowledge_review_check';
+        $buttonClass = $acknowledged ? 'button' : 'button primary';
+        $buttonLabel = $acknowledged ? 'Reopen review' : 'Mark reviewed';
+        $acknowledgedAt = $acknowledged ? trim((string)($acknowledgement['acknowledged_at'] ?? '')) : '';
+        $acknowledgedBy = $acknowledged ? trim((string)($acknowledgement['acknowledged_by'] ?? '')) : '';
+        $confirmAttributes = $acknowledged
+            ? ''
+            : ' data-chicken-check="true" data-chicken-title="Mark cut-off journals review complete" data-chicken-message="This records that accruals, deferred income, prepayments, and other year-end cut-off journals have been reviewed for this accounting period.<br><br>Continue?" data-chicken-confirm-text="Mark Reviewed" data-chicken-button-class="button primary"';
+
+        return '<div class="actions-row"><form method="post" data-ajax="true" class="panel-soft stack">
+                <input type="hidden" name="card_action" value="YearEnd">
+                <input type="hidden" name="intent" value="' . HelperFramework::escape($intent) . '">
+                <input type="hidden" name="show_card" value=".self">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <input type="hidden" name="check_code" value="cut_off_journals_review">
+                <div class="helper">Confirm this after reviewing whether accruals, deferred income, prepayments, or other year-end cut-off journals are required.</div>
+                ' . ($acknowledged ? '<div class="helper">Reviewed' . ($acknowledgedAt !== '' ? ' at ' . HelperFramework::escape($acknowledgedAt) : '') . ($acknowledgedBy !== '' ? ' by ' . HelperFramework::escape($acknowledgedBy) : '') . '.</div>' : '') . '
+                <button class="' . HelperFramework::escape($buttonClass) . '" type="submit"' . $confirmAttributes . '>' . HelperFramework::escape($buttonLabel) . '</button>
+            </form></div>';
     }
 
     private function lineEditorTable(string $prefix, string $formId, array $nominals, array $rows, int $rowCount): string

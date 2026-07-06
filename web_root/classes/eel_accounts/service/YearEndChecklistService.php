@@ -708,6 +708,18 @@ final class YearEndChecklistService
         ];
     }
 
+    public function fetchReviewAcknowledgement(int $companyId, int $accountingPeriodId, string $checkCode): ?array
+    {
+        $checkCode = trim($checkCode);
+        if ($checkCode === '') {
+            return null;
+        }
+
+        $acknowledgement = $this->fetchReviewAcknowledgements($companyId, $accountingPeriodId)[$checkCode] ?? null;
+
+        return is_array($acknowledgement) ? $acknowledgement : null;
+    }
+
     public function unlockPeriod(int $companyId, int $accountingPeriodId, string $changedBy = 'web_app', ?string $notes = null): array {
         $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId, true);
         if (empty($checklistResult['success'])) {

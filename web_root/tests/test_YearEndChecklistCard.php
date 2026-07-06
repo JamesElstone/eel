@@ -12,7 +12,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 $harness = new GeneratedServiceClassTestHarness();
 
 $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceClassTestHarness $harness, _year_end_checklistCard $card): void {
-    $harness->check(_year_end_checklistCard::class, 'renders review acknowledgement and reopen actions', static function () use ($harness, $card): void {
+    $harness->check(_year_end_checklistCard::class, 'renders workflow links but not inline cut-off review approval', static function () use ($harness, $card): void {
         $html = $card->render([
             'year_end' => [
                 'checklist' => [
@@ -22,12 +22,12 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
                     'sections' => [
                         'year_end_accounts_review' => [
                             [
-                                'check_code' => 'prepayments_accruals_placeholder',
-                                'title' => 'Prepayments and accruals review',
+                                'check_code' => 'cut_off_journals_review',
+                                'title' => 'Cut-off journals review',
                                 'status' => 'warning',
-                                'detail_text' => 'Manual review reminder.',
-                                'metric_value' => '',
-                                'action_url' => '?page=journal&company_id=12&accounting_period_id=34&show_card=nominal_closing_balances',
+                                'detail_text' => 'Review whether any cut-off journals are required.',
+                                'metric_value' => 'Pending',
+                                'action_url' => '?page=cut_off_journals&company_id=12&accounting_period_id=34',
                                 'review_clearable' => true,
                             ],
                             [
@@ -50,16 +50,16 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
         ]);
 
         $harness->assertSame(true, str_contains($html, 'Open Related Workflow'));
-        $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=journal" data-ajax="true"'));
+        $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=cut_off_journals" data-ajax="true"'));
         $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=assets" data-ajax="true"'));
-        $harness->assertSame(true, str_contains($html, '<input type="hidden" name="show_card" value="nominal_closing_balances">'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="show_card" value="not_an_asset">'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="company_id" value="12">'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="accounting_period_id" value="34">'));
         $harness->assertSame(false, str_contains($html, 'company_id=12'));
         $harness->assertSame(false, str_contains($html, 'accounting_period_id=34'));
-        $harness->assertSame(true, str_contains($html, 'name="intent" value="acknowledge_review_check"'));
-        $harness->assertSame(true, str_contains($html, 'Mark reviewed'));
+        $harness->assertSame(false, str_contains($html, 'name="check_code" value="cut_off_journals_review"'));
+        $harness->assertSame(false, str_contains($html, 'name="intent" value="acknowledge_review_check"'));
+        $harness->assertSame(false, str_contains($html, 'Mark reviewed'));
         $harness->assertSame(true, str_contains($html, 'name="intent" value="reopen_review_check"'));
         $harness->assertSame(true, str_contains($html, 'Reopen review'));
     });

@@ -38,6 +38,8 @@ final class YearEndAdjustmentService
             'nominals' => $this->fetchNominals(),
             'adjustments' => ($this->journalService ?? new \eel_accounts\Service\ManualJournalService())
                 ->listJournalsByTags($companyId, $accountingPeriodId, ['year_end_adjustment', 'year_end_adjustment_reversal']),
+            'review_acknowledgement' => (new \eel_accounts\Service\YearEndChecklistService())
+                ->fetchReviewAcknowledgement($companyId, $accountingPeriodId, 'cut_off_journals_review'),
         ];
     }
 

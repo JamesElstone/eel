@@ -411,19 +411,30 @@ final class TestCardsHarness
     {
         $yearEndPage = new _year_end();
         $this->assertTrue(in_array('year_end_companies_house_comparison', $yearEndPage->cards(), true));
+        $this->assertTrue(in_array('prepayments_review', $yearEndPage->cards(), true));
+        $this->assertTrue(in_array('cut_off_journals', $yearEndPage->cards(), true));
 
         $layout = $yearEndPage->cardLayout();
         $hasCompaniesHouseTab = false;
+        $hasPrepaymentsTab = false;
+        $hasCutOffJournalsTab = false;
         foreach ($layout as $tab) {
             if (($tab['tab'] ?? '') === 'Companies House' && in_array('year_end_companies_house_comparison', (array)($tab['cards'] ?? []), true)) {
                 $hasCompaniesHouseTab = true;
-                break;
+            }
+            if (($tab['tab'] ?? '') === 'Prepayments' && in_array('prepayments_review', (array)($tab['cards'] ?? []), true)) {
+                $hasPrepaymentsTab = true;
+            }
+            if (($tab['tab'] ?? '') === 'Cut-off Journals' && in_array('cut_off_journals', (array)($tab['cards'] ?? []), true)) {
+                $hasCutOffJournalsTab = true;
             }
         }
 
         $this->assertSame(true, $hasCompaniesHouseTab);
+        $this->assertSame(true, $hasPrepaymentsTab);
+        $this->assertSame(true, $hasCutOffJournalsTab);
 
-        test_output_line('Cards: year_end page includes the Companies House comparison tab.');
+        test_output_line('Cards: year_end page includes Companies House, Prepayments, and Cut-off Journals tabs.');
     }
 
     private function assertYearEndCompaniesHouseComparisonRendersMismatchAcknowledgement(): void

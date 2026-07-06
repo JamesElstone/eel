@@ -232,6 +232,14 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
     $harness->check('YearEndAction', 'save_notes is not blocked by director-count guard', static function () use ($harness): void {
         yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness): void {
             $instance = yearEndActionTestInstanceWithDirectorCount(2);
+            $actorUser = (new UserAuthenticationService())->createUser(
+                'Alex Example',
+                'year-end-notes-' . bin2hex(random_bytes(4)) . '@example.test',
+                'Strong Password 1!'
+            );
+            $actorUserId = (int)(($actorUser['user'] ?? [])['id'] ?? 0);
+            $harness->assertSame(true, $actorUserId > 0);
+            authenticateTestSession($actorUserId);
 
             $result = $instance->handle(
                 yearEndActionDirectorLoanTestRequest((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'save_notes'),
@@ -239,6 +247,23 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             );
 
             $harness->assertSame(false, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'exactly 1 active director'));
+            $harness->assertSame(
+                'Alex Example using the web_app',
+                (string)InterfaceDB::fetchColumn(
+                    'SELECT action_by
+                       FROM year_end_audit_log
+                      WHERE company_id = :company_id
+                        AND accounting_period_id = :accounting_period_id
+                        AND action = :action
+                      ORDER BY id DESC
+                      LIMIT 1',
+                    [
+                        'company_id' => (int)$fixture['company_id'],
+                        'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                        'action' => 'notes',
+                    ]
+                )
+            );
         });
     });
 
@@ -457,7 +482,7 @@ function yearEndActionDirectorLoanTestRequest(int $companyId, int $accountingPer
         ],
         ['REQUEST_METHOD' => 'POST', 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest', 'HTTP_ACCEPT' => 'application/json'],
         [],
-        [],
+        ['X-AntiFraud-Client-Device-ID' => testCurrentAntiFraudDeviceId()],
         null
     );
 }
@@ -673,7 +698,7 @@ function yearEndActionReviewCheckRequest(int $companyId, int $accountingPeriodId
         ],
         ['REQUEST_METHOD' => 'POST', 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest', 'HTTP_ACCEPT' => 'application/json'],
         [],
-        [],
+        ['X-AntiFraud-Client-Device-ID' => testCurrentAntiFraudDeviceId()],
         null
     );
 }

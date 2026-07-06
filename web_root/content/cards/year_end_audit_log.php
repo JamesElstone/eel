@@ -68,7 +68,7 @@ final class _year_end_audit_logCard extends CardBaseFramework
                 <td>' . HelperFramework::escape((string)($row['action_at'] ?? '')) . '</td>
                 <td>' . HelperFramework::escape((string)($row['company_name'] ?? '')) . '<div class="helper">' . HelperFramework::escape($period) . '</div></td>
                 <td><span class="badge info">' . HelperFramework::escape(HelperFramework::labelFromKey((string)($row['action'] ?? ''), '_')) . '</span></td>
-                <td>' . HelperFramework::escape((string)($row['action_by'] ?? '')) . '</td>
+                <td>' . HelperFramework::escape($this->userName($row)) . '</td>
                 <td>' . HelperFramework::escape(implode(' | ', $detailParts)) . '</td>
             </tr>';
         }
@@ -86,7 +86,7 @@ final class _year_end_audit_logCard extends CardBaseFramework
                             <th>Time</th>
                             <th>Company / Period</th>
                             <th>Action</th>
-                            <th>By</th>
+                            <th>User Name</th>
                             <th>Details</th>
                         </tr>
                     </thead>
@@ -107,6 +107,13 @@ final class _year_end_audit_logCard extends CardBaseFramework
         }
 
         return 'Tax year #' . (string)($row['accounting_period_id'] ?? '');
+    }
+
+    private function userName(array $row): string
+    {
+        $userName = trim((string)($row['action_by'] ?? ''));
+
+        return $userName !== '' ? $userName : 'System';
     }
 
     private function jsonSummary(string $oldValueJson, string $newValueJson): string

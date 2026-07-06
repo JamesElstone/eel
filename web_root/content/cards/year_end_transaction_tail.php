@@ -69,7 +69,7 @@ final class _year_end_transaction_tailCard extends CardBaseFramework
 
         return '<section class="settings-stack" id="year-end-transaction-tail">
             <div class="helper">Review the last imported transaction on each company account before closing the accounting period.</div>
-            <div class="table-scroll">
+            <div class="table-scroll panel-soft">
                 <table>
                     <thead><tr><th>Account</th><th>Type</th><th>Last transaction date</th><th>Last transaction desc</th><th>Last transaction amount</th></tr></thead>
                     <tbody>' . $rowsHtml . '</tbody>

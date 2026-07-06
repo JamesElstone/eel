@@ -133,6 +133,8 @@ final class _year_end extends PageContextFramework
         ActionResultFramework $actionResult,
         array $baseContext
     ): array {
+        $sessionAuthenticationService = new SessionAuthenticationService();
+        $sessionAuthenticationService->startSession();
         $company = (array)($baseContext['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
@@ -141,6 +143,9 @@ final class _year_end extends PageContextFramework
             : [];
 
         return [
+            'page' => array_merge((array)($baseContext['page'] ?? []), [
+                'csrf_token' => $sessionAuthenticationService->csrfToken(),
+            ]),
             'year_end' => [
                 'checklist' => $checklist,
                 'checklist_has_warnings' => $this->checklistHasWarnings($checklist),

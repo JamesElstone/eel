@@ -12,8 +12,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 $harness = new GeneratedServiceClassTestHarness();
 
 $harness->run(_year_end_stateCard::class, static function (GeneratedServiceClassTestHarness $harness, _year_end_stateCard $card): void {
-    $harness->check(_year_end_stateCard::class, 'uses page shared checklist context without declaring card service', static function () use ($harness, $card): void {
-        $harness->assertSame([], $card->services());
+    $harness->check(_year_end_stateCard::class, 'uses page shared checklist context and backup status service', static function () use ($harness, $card): void {
+        $services = $card->services();
+        $harness->assertSame('backup_status', (string)($services[0]['key'] ?? ''));
+        $harness->assertSame(\eel_accounts\Service\DatabaseBackupService::class, (string)($services[0]['service'] ?? ''));
 
         $html = $card->render(yearEndStateCardContext(false));
 
@@ -21,6 +23,11 @@ $harness->run(_year_end_stateCard::class, static function (GeneratedServiceClass
         $harness->assertSame(true, str_contains($html, 'All blocking checks are clear. You can now run the year-end close tasks and lock this accounting period.'));
         $harness->assertSame(true, str_contains($html, 'Refresh Year-End Checklist'));
         $harness->assertSame(true, str_contains($html, 'Run Year-End Close and Lock'));
+        $harness->assertSame(true, str_contains($html, 'Latest backup'));
+        $harness->assertSame(true, str_contains($html, '2026-01-01 10:05:00'));
+        $harness->assertSame(true, str_contains($html, 'name="card_action" value="Backup"'));
+        $harness->assertSame(true, str_contains($html, 'name="intent" value="create_database_backup"'));
+        $harness->assertSame(true, str_contains($html, 'Backup'));
         $harness->assertSame(true, str_contains($html, 'data-year-end-state-card="true"'));
         $harness->assertSame(true, str_contains($html, 'data-year-end-state-form="true"'));
         $harness->assertSame(true, str_contains($html, 'data-year-end-state-submit="true"'));
@@ -36,6 +43,29 @@ $harness->run(_year_end_stateCard::class, static function (GeneratedServiceClass
         $harness->assertSame(true, str_contains($html, 'Run Year-End Close and Lock'));
         $harness->assertSame(true, str_contains($html, 'Complete or acknowledge the remaining checklist items before running the year-end close and lock.'));
         $harness->assertSame(true, str_contains($html, 'disabled title="Resolve year-end checklist warnings before running the year-end close and locking this accounting period."'));
+    });
+
+    $harness->check(_year_end_stateCard::class, 'disables lock when latest backup is older than checklist', static function () use ($harness, $card): void {
+        $context = yearEndStateCardContext(false);
+        $context['services']['backup_status']['recent_backups'][0]['created_at'] = '2026-01-01 09:59:59';
+
+        $html = $card->render($context);
+
+        $harness->assertSame(true, str_contains($html, 'Latest backup'));
+        $harness->assertSame(true, str_contains($html, '2026-01-01 09:59:59'));
+        $harness->assertSame(true, str_contains($html, 'Create a new database backup because the checklist changed after the latest backup.'));
+        $harness->assertSame(true, str_contains($html, 'disabled title="Create a fresh database backup after the latest checklist change before running the year-end close and locking this accounting period."'));
+    });
+
+    $harness->check(_year_end_stateCard::class, 'disables lock when no backup is available', static function () use ($harness, $card): void {
+        $context = yearEndStateCardContext(false);
+        $context['services']['backup_status']['recent_backups'] = [];
+
+        $html = $card->render($context);
+
+        $harness->assertSame(true, str_contains($html, 'No backup available'));
+        $harness->assertSame(true, str_contains($html, 'Create a database backup before running the year-end close.'));
+        $harness->assertSame(true, str_contains($html, 'disabled title="Create a fresh database backup after the latest checklist change before running the year-end close and locking this accounting period."'));
     });
 
     $harness->check(_year_end_stateCard::class, 'keeps unlock enabled when locked even if shared warnings remain', static function () use ($harness, $card): void {
@@ -58,6 +88,10 @@ function yearEndStateCardContext(bool $hasWarnings): array
             'name' => 'Year End Fixture Limited',
             'accounting_period_id' => 70,
         ],
+        'page' => [
+            'csrf_token' => 'test-csrf',
+            'page_cards' => ['year_end_state'],
+        ],
         'year_end' => [
             'checklist_has_warnings' => $hasWarnings,
             'checklist' => [
@@ -75,6 +109,16 @@ function yearEndStateCardContext(bool $hasWarnings): array
                 ] : [],
             ],
         ],
-        'services' => [],
+        'services' => [
+            'backup_status' => [
+                'recent_backups' => [
+                    [
+                        'filename' => 'fixture.sql.zip',
+                        'created_at' => '2026-01-01 10:05:00',
+                        'size_bytes' => 1024,
+                    ],
+                ],
+            ],
+        ],
     ];
 }

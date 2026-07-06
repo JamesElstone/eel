@@ -37,6 +37,10 @@ final class YearEndAction implements ActionInterfaceFramework
                 }
             }
 
+            if ($intent === 'lock_period' && !$this->hasCurrentBackup($companyId, $accountingPeriodId)) {
+                return $this->result(false, ['Create a fresh database backup after the latest year-end checklist change before locking this period.']);
+            }
+
             $result = match ($intent) {
                 'recalculate' => (new \eel_accounts\Service\YearEndChecklistService())->recalculateChecklist($companyId, $accountingPeriodId, $actor),
                 'lock_period' => (new \eel_accounts\Service\YearEndChecklistService())->lockPeriod($companyId, $accountingPeriodId, $actor),
@@ -231,6 +235,26 @@ final class YearEndAction implements ActionInterfaceFramework
             'save_transaction_tail_acknowledgement',
             'post_director_loan_offset',
         ], true);
+    }
+
+    private function hasCurrentBackup(int $companyId, int $accountingPeriodId): bool
+    {
+        $checklist = (new \eel_accounts\Service\YearEndChecklistService())->fetchChecklist($companyId, $accountingPeriodId, false);
+        $checklistChangedAt = trim((string)($checklist['last_recalculated_at'] ?? ''));
+        $backupStatus = (new \eel_accounts\Service\DatabaseBackupService())->fetchBackupStatus();
+        $latestBackup = (array)(((array)($backupStatus['recent_backups'] ?? []))[0] ?? []);
+        $latestBackupAt = trim((string)($latestBackup['created_at'] ?? ''));
+
+        if ($checklistChangedAt === '' || $latestBackupAt === '') {
+            return false;
+        }
+
+        $checklistChangedTime = strtotime($checklistChangedAt);
+        $latestBackupTime = strtotime($latestBackupAt);
+
+        return $checklistChangedTime !== false
+            && $latestBackupTime !== false
+            && $latestBackupTime >= $checklistChangedTime;
     }
 
     private function companyIsVatRegistered(int $companyId): bool

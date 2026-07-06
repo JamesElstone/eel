@@ -89,4 +89,10 @@ $harness->run(\eel_accounts\Service\DatabaseBackupService::class, static functio
     $statements = $splitMethod->invoke($directoryService, $extractedSql);
     $harness->assertSame(3, count($statements));
     $harness->assertTrue(str_contains((string)$statements[1], "semi;colon"));
+
+    $skipMethod = new ReflectionMethod($directoryService, 'shouldSkipRestoreStatement');
+    $skipMethod->setAccessible(true);
+    $harness->assertSame(true, $skipMethod->invoke($directoryService, 'SET NAMES utf8mb4'));
+    $harness->assertSame(true, $skipMethod->invoke($directoryService, "-- EEL Accounts database backup\n-- Created: 2026-07-06 12:00:00\nSET NAMES utf8mb4"));
+    $harness->assertSame(false, $skipMethod->invoke($directoryService, 'SET FOREIGN_KEY_CHECKS=0'));
 });

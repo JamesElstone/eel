@@ -120,6 +120,10 @@ final class DatabaseBackupService
         $executed = 0;
 
         foreach ($statements as $statement) {
+            if ($this->shouldSkipRestoreStatement($statement)) {
+                continue;
+            }
+
             $pdo->exec($statement);
             $executed++;
         }
@@ -600,6 +604,31 @@ final class DatabaseBackupService
         }
 
         return array_values(array_filter($statements, static fn(string $statement): bool => trim($statement) !== ''));
+    }
+
+    private function shouldSkipRestoreStatement(string $statement): bool
+    {
+        $statement = $this->statementWithoutLeadingComments($statement);
+        if ($statement === '') {
+            return true;
+        }
+
+        return preg_match('/^SET\s+NAMES\b/i', $statement) === 1;
+    }
+
+    private function statementWithoutLeadingComments(string $statement): string
+    {
+        $statement = trim($statement);
+
+        do {
+            $previous = $statement;
+            $statement = preg_replace('/^\s*--[^\r\n]*(?:\r\n|\r|\n|$)/', '', $statement) ?? $statement;
+            $statement = preg_replace('/^\s*#[^\r\n]*(?:\r\n|\r|\n|$)/', '', $statement) ?? $statement;
+            $statement = preg_replace('/^\s*\/\*.*?\*\//s', '', $statement) ?? $statement;
+            $statement = trim($statement);
+        } while ($statement !== $previous);
+
+        return $statement;
     }
 
     private function write(mixed $handle, string $content): void

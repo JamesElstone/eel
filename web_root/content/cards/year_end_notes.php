@@ -19,6 +19,11 @@ final class _year_end_notesCard extends CardBaseFramework
         return 'Year End Notes';
     }
 
+    public function helper(array $context): string
+    {
+        return 'Record any notes for the year here, to be kept with the accounting period.';
+    }
+
     protected function additionalInvalidationFacts(): array
     {
         return ['year.end.state', 'year.end.checklist', 'year.end.audit.log'];
@@ -50,7 +55,6 @@ final class _year_end_notesCard extends CardBaseFramework
                     <input type="hidden" name="company_id" value="' . $companyId . '">
                     <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                     <div class="form-row full">
-                        <div class="helper">Record any notes for the year here, to be kept with the accounting period.</div>
                         <textarea class="input year-end-review-notes" id="year-end-review-notes" name="review_notes" aria-label="Year end notes">' . HelperFramework::escape((string)($review['review_notes'] ?? '')) . '</textarea>
                     </div>
                     <div><button class="button primary" type="submit">Save notes</button></div>

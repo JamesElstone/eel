@@ -298,6 +298,16 @@ final class YearEndAction implements ActionInterfaceFramework
 
     private function truthy(mixed $value): bool
     {
+        if (is_array($value)) {
+            foreach ($value as $item) {
+                if ($this->truthy($item)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         return in_array(strtolower(trim((string)$value)), ['1', 'true', 'yes', 'on'], true);
     }
 }

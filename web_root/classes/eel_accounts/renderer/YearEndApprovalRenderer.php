@@ -66,6 +66,9 @@ final class YearEndApprovalRenderer
         $disabled = !empty($options['disabled']);
         $disabledReason = trim((string)($options['disabledReason'] ?? ''));
         $noteMode = self::noteMode((string)($options['noteMode'] ?? self::NOTE_OPTIONAL));
+        $checkboxName = trim((string)($options['checkboxName'] ?? 'approval_confirmed'));
+        $approveFields = (array)($options['approveFields'] ?? []);
+        unset($approveFields[$checkboxName]);
         $buttonAttributes = $disabled
             ? ' disabled' . ($disabledReason !== '' ? ' title="' . \HelperFramework::escape($disabledReason) . '"' : '')
             : ' disabled data-year-end-ack-submit';
@@ -74,9 +77,9 @@ final class YearEndApprovalRenderer
             <div class="eyebrow">Approval</div>
             <form method="post" data-ajax="true" class="form-grid" data-year-end-ack-form="true">
                 ' . self::commonFields($companyId, $accountingPeriodId, $intent) . '
-                ' . self::hiddenFields((array)($options['approveFields'] ?? [])) . '
+                ' . self::hiddenFields($approveFields) . '
                 <label class="checkbox-row full">
-                    <input type="checkbox" name="' . \HelperFramework::escape((string)($options['checkboxName'] ?? 'approval_confirmed')) . '" value="1" required data-year-end-ack-checkbox' . ($disabled ? ' disabled' : '') . '>
+                    <input type="checkbox" name="' . \HelperFramework::escape($checkboxName) . '" value="1" required data-year-end-ack-checkbox' . ($disabled ? ' disabled' : '') . '>
                     <span>I confirm that I have reviewed the ' . \HelperFramework::escape($subject) . ' shown above and approve it as accurate for Year End.</span>
                 </label>
                 ' . self::noteField($options, $noteMode, $disabled) . '

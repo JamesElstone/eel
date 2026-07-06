@@ -103,7 +103,12 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             yearEndActionDirectorLoanTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 0.00, 1500.00, 'liability');
 
             $result = $instance->handle(
-                yearEndActionDirectorLoanTestRequest((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'save_director_loan_offset_acknowledgement'),
+                yearEndActionDirectorLoanTestRequest(
+                    (int)$fixture['company_id'],
+                    (int)$fixture['accounting_period_id'],
+                    'save_director_loan_offset_acknowledgement',
+                    ['director_loan_offset_acknowledgement' => ['1', '1']]
+                ),
                 createTestPageServiceFramework()
             );
 
@@ -516,11 +521,11 @@ function yearEndActionDirectorLoanTestInsertLineJournal(array $fixture, int $nom
     );
 }
 
-function yearEndActionDirectorLoanTestRequest(int $companyId, int $accountingPeriodId, string $intent = 'post_director_loan_offset'): RequestFramework
+function yearEndActionDirectorLoanTestRequest(int $companyId, int $accountingPeriodId, string $intent = 'post_director_loan_offset', array $postOverrides = []): RequestFramework
 {
     return new RequestFramework(
         [],
-        [
+        array_merge([
             'card_action' => 'YearEnd',
             'intent' => $intent,
             'company_id' => (string)$companyId,
@@ -530,7 +535,7 @@ function yearEndActionDirectorLoanTestRequest(int $companyId, int $accountingPer
             'director_loan_offset_acknowledgement' => '1',
             'tax_readiness_acknowledgement' => '1',
             'expense_position_acknowledgement' => '1',
-        ],
+        ], $postOverrides),
         ['REQUEST_METHOD' => 'POST', 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest', 'HTTP_ACCEPT' => 'application/json'],
         [],
         ['X-AntiFraud-Client-Device-ID' => testCurrentAntiFraudDeviceId()],

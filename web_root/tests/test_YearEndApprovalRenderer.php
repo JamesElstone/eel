@@ -33,6 +33,21 @@ $harness->run(\eel_accounts\Renderer\YearEndApprovalRenderer::class, static func
         $harness->assertSame(true, str_contains($html, 'Approve for Year End'));
     });
 
+    $harness->check(\eel_accounts\Renderer\YearEndApprovalRenderer::class, 'does not duplicate checkbox field as hidden approval field', static function () use ($harness): void {
+        $html = \eel_accounts\Renderer\YearEndApprovalRenderer::render([
+            'subject' => 'director loan offset',
+            'companyId' => 12,
+            'accountingPeriodId' => 34,
+            'acknowledged' => false,
+            'intent' => 'save_director_loan_offset_acknowledgement',
+            'checkboxName' => 'director_loan_offset_acknowledgement',
+            'approveFields' => ['director_loan_offset_acknowledgement' => '1'],
+        ]);
+
+        $harness->assertSame(1, substr_count($html, 'name="director_loan_offset_acknowledgement"'));
+        $harness->assertSame(false, str_contains($html, '<input type="hidden" name="director_loan_offset_acknowledgement"'));
+    });
+
     $harness->check(\eel_accounts\Renderer\YearEndApprovalRenderer::class, 'renders completed approval with note and revoke action', static function () use ($harness): void {
         $html = \eel_accounts\Renderer\YearEndApprovalRenderer::render([
             'subject' => 'test position',

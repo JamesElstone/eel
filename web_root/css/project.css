@@ -30,6 +30,23 @@
   padding-bottom: 0;
 }
 
+.backup-restore-form,
+.backup-download-form {
+  margin: 0;
+}
+
+.backup-restore-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.backup-restore-input {
+  width: 9rem;
+  min-width: 7rem;
+}
+
 .expenses-toolbar {
   align-items: flex-end;
   flex-wrap: nowrap;

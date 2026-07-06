@@ -14,6 +14,7 @@ final class BackupAction implements ActionInterfaceFramework
         return match ((string)$request->post('intent', '')) {
             'create_database_backup' => $this->createBackup($request),
             'restore_database_backup' => $this->restoreBackup($request),
+            'download_database_backup' => $this->downloadBackup($request),
             default => ActionResultFramework::none(),
         };
     }
@@ -79,6 +80,40 @@ final class BackupAction implements ActionInterfaceFramework
             [],
             ['restore_result' => $restore]
         );
+    }
+
+    private function downloadBackup(RequestFramework $request): ActionResultFramework
+    {
+        $session = new SessionAuthenticationService();
+        $session->startSession();
+
+        if (!$this->canUseBackups($session) || !$session->isValidCsrfToken((string)$request->input('csrf_token', ''))) {
+            return $this->error('You do not have permission to download database backups, or your security token expired.');
+        }
+
+        $filename = trim((string)$request->post('backup_filename', ''));
+        if ($filename === '') {
+            return $this->error('Select a database backup to download.');
+        }
+
+        try {
+            $download = (new \eel_accounts\Service\DatabaseBackupService())->backupFileForDownload($filename);
+        } catch (Throwable $exception) {
+            return $this->error('Database backup download failed: ' . $exception->getMessage());
+        }
+
+        $path = (string)($download['file'] ?? '');
+        if ($path === '' || !is_file($path) || !is_readable($path)) {
+            return $this->error('The selected database backup could not be read.');
+        }
+
+        $safeFilename = basename((string)($download['filename'] ?? 'database-backup.sql.zip'));
+        $sizeBytes = (int)($download['size_bytes'] ?? (filesize($path) ?: 0));
+        header('Content-Type: application/zip');
+        header('Content-Disposition: attachment; filename="' . $safeFilename . '"');
+        header('Content-Length: ' . (string)$sizeBytes);
+        readfile($path);
+        exit;
     }
 
     private function canUseBackups(SessionAuthenticationService $session): bool

@@ -136,6 +136,17 @@ final class DatabaseBackupService
         ];
     }
 
+    public function backupFileForDownload(string $filename): array
+    {
+        $backupPath = $this->resolveBackupPath($filename);
+
+        return [
+            'file' => $backupPath,
+            'filename' => basename($backupPath),
+            'size_bytes' => is_file($backupPath) ? (int)filesize($backupPath) : 0,
+        ];
+    }
+
     private function writeSqlDump(PDO $pdo, string $sqlPath, string $databaseName): int
     {
         $handle = @fopen($sqlPath, 'wb');

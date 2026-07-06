@@ -35,6 +35,8 @@ $harness->run(_backups_availableCard::class, static function (GeneratedServiceCl
     $harness->assertTrue(strpos($html, 'eel_accounts_20260714_120000.sql.zip') < strpos($html, 'eel_accounts_20260713_120000.sql.zip'));
     $harness->assertTrue(str_contains($html, 'name="card_action" value="Backup"'));
     $harness->assertTrue(str_contains($html, 'name="intent" value="restore_database_backup"'));
+    $harness->assertTrue(str_contains($html, '>Download</'));
+    $harness->assertTrue(str_contains($html, 'name="intent" value="download_database_backup"'));
     $harness->assertTrue(str_contains($html, 'name="backup_filename"'));
     $harness->assertTrue(str_contains($html, 'placeholder="RESTORE"'));
     $harness->assertTrue(str_contains($html, 'name="csrf_token" value="test-token"'));
@@ -53,6 +55,7 @@ $harness->run(_backups_availableCard::class, static function (GeneratedServiceCl
     $csv = $tables[0]->exportCsv();
     $harness->assertTrue(str_contains($csv, 'eel_accounts_20260714_120000.sql.zip'));
     $harness->assertTrue(!str_contains($csv, 'Restore'));
+    $harness->assertTrue(!str_contains($csv, 'Download'));
 });
 
 function backupRows(): array

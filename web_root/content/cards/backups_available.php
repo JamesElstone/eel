@@ -131,6 +131,14 @@ final class _backups_availableCard extends CardBaseFramework
                 cellClass: 'cell-fit',
                 exportable: false,
                 sort: false
+            )
+            ->column(
+                'download',
+                'Download',
+                html: fn(array $row): string => $this->downloadForm($row),
+                cellClass: 'cell-fit',
+                exportable: false,
+                sort: false
             );
     }
 
@@ -155,14 +163,35 @@ final class _backups_availableCard extends CardBaseFramework
             return '';
         }
 
-        return '<form class="inline-form" method="post" action="?page=backup" data-ajax="true">
+        $hiddenFields = $this->hiddenFields()
+            . '<input type="hidden" name="card_action" value="Backup">'
+            . '<input type="hidden" name="backup_filename" value="' . HelperFramework::escape($filename) . '">'
+            . '<input type="hidden" name="csrf_token" value="' . HelperFramework::escape($this->csrfToken()) . '">';
+
+        return '<form class="backup-restore-form" method="post" action="?page=backup" data-ajax="true">
+            ' . $hiddenFields . '
+            <input type="hidden" name="intent" value="restore_database_backup">
+            <div class="backup-restore-controls">
+                <input class="input backup-restore-input" name="restore_confirmation" placeholder="RESTORE" autocomplete="off" required>
+                <button class="button secondary" type="submit" data-processing-text="Restoring" data-processing-state="disabled">Restore</button>
+            </div>
+        </form>';
+    }
+
+    private function downloadForm(array $row): string
+    {
+        $filename = (string)($row['filename'] ?? '');
+        if ($filename === '') {
+            return '';
+        }
+
+        return '<form class="backup-download-form" method="post" action="?page=backup">
             ' . $this->hiddenFields() . '
             <input type="hidden" name="card_action" value="Backup">
-            <input type="hidden" name="intent" value="restore_database_backup">
+            <input type="hidden" name="intent" value="download_database_backup">
             <input type="hidden" name="backup_filename" value="' . HelperFramework::escape($filename) . '">
             <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($this->csrfToken()) . '">
-            <input class="input" name="restore_confirmation" placeholder="RESTORE" autocomplete="off" required>
-            <button class="button secondary" type="submit" data-processing-text="Restoring" data-processing-state="disabled">Restore</button>
+            <button class="button secondary" type="submit">Download</button>
         </form>';
     }
 

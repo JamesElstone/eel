@@ -36,8 +36,44 @@ final class DatabaseBackupService
             'directory_exists' => $directoryExists,
             'directory_writable' => $directoryExists && is_writable($this->backupDirectory),
             'zip_available' => true,
-            'recent_backups' => $this->recentBackups(),
+            'recent_backups' => array_slice($this->fetchAvailableBackups(), 0, 5),
         ];
+    }
+
+    public function fetchAvailableBackups(): array
+    {
+        if (!is_dir($this->backupDirectory)) {
+            return [];
+        }
+
+        $files = glob($this->backupDirectory . DIRECTORY_SEPARATOR . '*.sql.zip');
+        if ($files === false) {
+            return [];
+        }
+
+        usort($files, static function (string $left, string $right): int {
+            $timeComparison = (filemtime($right) ?: 0) <=> (filemtime($left) ?: 0);
+
+            return $timeComparison !== 0 ? $timeComparison : strcmp(basename($right), basename($left));
+        });
+
+        $backups = [];
+        foreach ($files as $file) {
+            if (!is_file($file)) {
+                continue;
+            }
+
+            $filename = basename($file);
+            $backups[] = [
+                'filename' => $filename,
+                'path' => $file,
+                'restore_key' => hash('sha256', $filename),
+                'size_bytes' => (int)(filesize($file) ?: 0),
+                'created_at' => date('Y-m-d H:i:s', (int)(filemtime($file) ?: time())),
+            ];
+        }
+
+        return $backups;
     }
 
     public function createBackup(): array
@@ -68,6 +104,35 @@ final class DatabaseBackupService
             'size_bytes' => is_file($zipPath) ? (int)filesize($zipPath) : 0,
             'table_count' => $tableCount,
             'created_at' => (new DateTimeImmutable())->format('Y-m-d H:i:s'),
+        ];
+    }
+
+    public function restoreBackup(string $filename): array
+    {
+        $backupPath = $this->resolveBackupPath($filename);
+        $sql = $this->extractSqlFromBackup($backupPath);
+        $statements = $this->splitSqlStatements($sql);
+        if ($statements === []) {
+            throw new RuntimeException('The selected backup does not contain SQL statements to restore.');
+        }
+
+        $pdo = $this->connect();
+        $executed = 0;
+
+        foreach ($statements as $statement) {
+            $pdo->exec($statement);
+            $executed++;
+        }
+
+        clearstatcache(true, $backupPath);
+
+        return [
+            'file' => $backupPath,
+            'filename' => basename($backupPath),
+            'directory' => $this->backupDirectory,
+            'size_bytes' => is_file($backupPath) ? (int)filesize($backupPath) : 0,
+            'statement_count' => $executed,
+            'restored_at' => (new DateTimeImmutable())->format('Y-m-d H:i:s'),
         ];
     }
 
@@ -356,30 +421,174 @@ final class DatabaseBackupService
         }
     }
 
-    private function recentBackups(): array
+    private function resolveBackupPath(string $filename): string
     {
-        if (!is_dir($this->backupDirectory)) {
-            return [];
+        $filename = trim(str_replace('\\', '/', $filename));
+        if ($filename === '' || basename($filename) !== $filename || !str_ends_with(strtolower($filename), '.sql.zip')) {
+            throw new RuntimeException('Select a valid SQL ZIP backup file to restore.');
         }
 
-        $files = glob($this->backupDirectory . DIRECTORY_SEPARATOR . '*.sql.zip');
-        if ($files === false) {
-            return [];
+        $directory = realpath($this->backupDirectory);
+        if ($directory === false || !is_dir($directory)) {
+            throw new RuntimeException('The SQL dump directory is not available.');
         }
 
-        usort($files, static fn(string $left, string $right): int => (filemtime($right) ?: 0) <=> (filemtime($left) ?: 0));
-        $recent = [];
+        $path = realpath($directory . DIRECTORY_SEPARATOR . $filename);
+        if ($path === false || !is_file($path)) {
+            throw new RuntimeException('The selected backup file was not found.');
+        }
 
-        foreach (array_slice($files, 0, 5) as $file) {
-            $recent[] = [
-                'filename' => basename($file),
-                'path' => $file,
-                'size_bytes' => (int)(filesize($file) ?: 0),
-                'created_at' => date('Y-m-d H:i:s', (int)(filemtime($file) ?: time())),
+        $directoryPrefix = rtrim($directory, '\\/') . DIRECTORY_SEPARATOR;
+        if (!str_starts_with($path, $directoryPrefix)) {
+            throw new RuntimeException('The selected backup file is outside the SQL dump directory.');
+        }
+
+        return $path;
+    }
+
+    private function extractSqlFromBackup(string $zipPath): string
+    {
+        $content = @file_get_contents($zipPath);
+        if (!is_string($content) || $content === '') {
+            throw new RuntimeException('The selected backup file is empty or unreadable.');
+        }
+
+        $offset = 0;
+        $entries = [];
+        while (($offset + 30) <= strlen($content) && substr($content, $offset, 4) === "PK\x03\x04") {
+            $header = unpack('Vsignature/vversion/vflags/vmethod/vtime/vdate/Vcrc/Vcompressed_size/Vuncompressed_size/vname_length/vextra_length', substr($content, $offset, 30));
+            if (!is_array($header)) {
+                throw new RuntimeException('The selected backup ZIP header is malformed.');
+            }
+
+            $method = (int)$header['method'];
+            $compressedSize = (int)$header['compressed_size'];
+            $uncompressedSize = (int)$header['uncompressed_size'];
+            $nameLength = (int)$header['name_length'];
+            $extraLength = (int)$header['extra_length'];
+            $dataOffset = $offset + 30 + $nameLength + $extraLength;
+            $dataEnd = $dataOffset + $compressedSize;
+
+            if ($nameLength <= 0 || $compressedSize < 0 || $dataEnd > strlen($content)) {
+                throw new RuntimeException('The selected backup ZIP entry is malformed.');
+            }
+
+            $entryName = substr($content, $offset + 30, $nameLength);
+            $entryData = substr($content, $dataOffset, $compressedSize);
+            if ($method !== 0 || strlen($entryData) !== $uncompressedSize) {
+                throw new RuntimeException('The selected backup ZIP uses an unsupported compression method.');
+            }
+
+            $entries[] = [
+                'name' => $entryName,
+                'data' => $entryData,
             ];
+
+            $offset = $dataEnd;
         }
 
-        return $recent;
+        if (count($entries) !== 1) {
+            throw new RuntimeException('The selected backup ZIP must contain exactly one SQL file.');
+        }
+
+        $entry = $entries[0];
+        if (!str_ends_with(strtolower((string)$entry['name']), '.sql')) {
+            throw new RuntimeException('The selected backup ZIP does not contain a SQL dump.');
+        }
+
+        $sql = (string)$entry['data'];
+        if (trim($sql) === '') {
+            throw new RuntimeException('The selected backup SQL dump is empty.');
+        }
+
+        return $sql;
+    }
+
+    private function splitSqlStatements(string $sql): array
+    {
+        $statements = [];
+        $buffer = '';
+        $length = strlen($sql);
+        $quote = null;
+        $lineComment = false;
+        $blockComment = false;
+
+        for ($index = 0; $index < $length; $index++) {
+            $char = $sql[$index];
+            $next = $index + 1 < $length ? $sql[$index + 1] : '';
+
+            if ($lineComment) {
+                $buffer .= $char;
+                if ($char === "\n") {
+                    $lineComment = false;
+                }
+                continue;
+            }
+
+            if ($blockComment) {
+                $buffer .= $char;
+                if ($char === '*' && $next === '/') {
+                    $buffer .= $next;
+                    $index++;
+                    $blockComment = false;
+                }
+                continue;
+            }
+
+            if ($quote !== null) {
+                $buffer .= $char;
+                if ($char === '\\' && $next !== '') {
+                    $buffer .= $next;
+                    $index++;
+                    continue;
+                }
+                if ($char === $quote) {
+                    $quote = null;
+                }
+                continue;
+            }
+
+            if (($char === '-' && $next === '-' && ($index + 2 >= $length || preg_match('/\s/', $sql[$index + 2]) === 1)) || $char === '#') {
+                $lineComment = true;
+                $buffer .= $char;
+                if ($char === '-') {
+                    $buffer .= $next;
+                    $index++;
+                }
+                continue;
+            }
+
+            if ($char === '/' && $next === '*') {
+                $blockComment = true;
+                $buffer .= $char . $next;
+                $index++;
+                continue;
+            }
+
+            if ($char === "'" || $char === '"' || $char === '`') {
+                $quote = $char;
+                $buffer .= $char;
+                continue;
+            }
+
+            if ($char === ';') {
+                $statement = trim($buffer);
+                if ($statement !== '') {
+                    $statements[] = $statement;
+                }
+                $buffer = '';
+                continue;
+            }
+
+            $buffer .= $char;
+        }
+
+        $statement = trim($buffer);
+        if ($statement !== '') {
+            $statements[] = $statement;
+        }
+
+        return array_values(array_filter($statements, static fn(string $statement): bool => trim($statement) !== ''));
     }
 
     private function write(mixed $handle, string $content): void

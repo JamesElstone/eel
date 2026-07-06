@@ -33,6 +33,7 @@ final class _backup extends PageContextFramework
     {
         return [
             'backup',
+            'backups_available',
         ];
     }
 

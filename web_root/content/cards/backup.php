@@ -50,7 +50,6 @@ final class _backupCard extends CardBaseFramework
                 <input type="hidden" name="csrf_token" value="' . HelperFramework::escape($csrfToken) . '">
                 <button class="button primary" type="submit" name="intent" value="create_database_backup" data-processing-text="Creating Backup" data-processing-state="disabled">Create Backup</button>
             </form>
-            ' . $this->recentBackupsHtml((array)($status['recent_backups'] ?? [])) . '
         </div>';
     }
 
@@ -95,28 +94,6 @@ final class _backupCard extends CardBaseFramework
             </div>
             <div class="helper">Folder: ' . HelperFramework::escape((string)($status['directory'] ?? '')) . '</div>
         </div>';
-    }
-
-    private function recentBackupsHtml(array $backups): string
-    {
-        if ($backups === []) {
-            return '<p class="helper">No zipped SQL backups have been created yet.</p>';
-        }
-
-        $html = '<div class="path-detail-grid">';
-        foreach ($backups as $backup) {
-            if (!is_array($backup)) {
-                continue;
-            }
-
-            $html .= '<div class="path-detail-card">
-                <strong>' . HelperFramework::escape((string)($backup['filename'] ?? 'backup.sql.zip')) . '</strong>
-                <div class="helper">Created: ' . HelperFramework::escape((string)($backup['created_at'] ?? '')) . '</div>
-                <div class="helper">Size: ' . HelperFramework::escape($this->formatBytes((int)($backup['size_bytes'] ?? 0))) . '</div>
-            </div>';
-        }
-
-        return $html . '</div>';
     }
 
     private function hiddenFields(array $context): string

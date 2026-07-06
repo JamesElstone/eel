@@ -11,14 +11,19 @@ final class BackupAction implements ActionInterfaceFramework
 {
     public function handle(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
-        if ((string)$request->post('intent', '') !== 'create_database_backup') {
-            return ActionResultFramework::none();
-        }
+        return match ((string)$request->post('intent', '')) {
+            'create_database_backup' => $this->createBackup($request),
+            'restore_database_backup' => $this->restoreBackup($request),
+            default => ActionResultFramework::none(),
+        };
+    }
 
+    private function createBackup(RequestFramework $request): ActionResultFramework
+    {
         $session = new SessionAuthenticationService();
         $session->startSession();
 
-        if (!$this->canCreateBackup($session) || !$session->isValidCsrfToken((string)$request->input('csrf_token', ''))) {
+        if (!$this->canUseBackups($session) || !$session->isValidCsrfToken((string)$request->input('csrf_token', ''))) {
             return $this->error('You do not have permission to create database backups, or your security token expired.');
         }
 
@@ -40,7 +45,43 @@ final class BackupAction implements ActionInterfaceFramework
         );
     }
 
-    private function canCreateBackup(SessionAuthenticationService $session): bool
+    private function restoreBackup(RequestFramework $request): ActionResultFramework
+    {
+        $session = new SessionAuthenticationService();
+        $session->startSession();
+
+        if (!$this->canUseBackups($session) || !$session->isValidCsrfToken((string)$request->input('csrf_token', ''))) {
+            return $this->error('You do not have permission to restore database backups, or your security token expired.');
+        }
+
+        $filename = trim((string)$request->post('backup_filename', ''));
+        if ($filename === '') {
+            return $this->error('Select a database backup to restore.');
+        }
+
+        if ((string)$request->post('restore_confirmation', '') !== 'RESTORE') {
+            return $this->error('Type RESTORE to confirm the database restore.');
+        }
+
+        try {
+            @set_time_limit(0);
+            $restore = (new \eel_accounts\Service\DatabaseBackupService())->restoreBackup($filename);
+        } catch (Throwable $exception) {
+            return $this->error('Database restore failed: ' . $exception->getMessage());
+        }
+
+        return ActionResultFramework::success(
+            ['backup.database'],
+            [[
+                'type' => 'success',
+                'message' => 'Database backup restored: ' . (string)($restore['filename'] ?? 'backup zip'),
+            ]],
+            [],
+            ['restore_result' => $restore]
+        );
+    }
+
+    private function canUseBackups(SessionAuthenticationService $session): bool
     {
         $deviceId = trim((string)AntiFraudService::instance()->requestValue('Client-Device-ID'));
         $userId = $session->authenticatedUserId($deviceId);

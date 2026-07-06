@@ -24,7 +24,9 @@ $harness->run(_backupCard::class, static function (GeneratedServiceClassTestHarn
                 'directory_exists' => false,
                 'directory_writable' => false,
                 'zip_available' => true,
-                'recent_backups' => [],
+                'recent_backups' => [
+                    ['filename' => 'eel_accounts_20260706_120000.sql.zip', 'created_at' => '2026-07-06 12:00:00', 'size_bytes' => 2048],
+                ],
             ],
         ],
     ]);
@@ -34,4 +36,5 @@ $harness->run(_backupCard::class, static function (GeneratedServiceClassTestHarn
     $harness->assertTrue(str_contains($html, 'name="csrf_token"'));
     $harness->assertTrue(str_contains($html, 'data-processing-state="disabled"'));
     $harness->assertTrue(str_contains($html, 'sqldump folder'));
+    $harness->assertTrue(!str_contains($html, 'eel_accounts_20260706_120000.sql.zip'));
 });

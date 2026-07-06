@@ -35,4 +35,58 @@ $harness->run(\eel_accounts\Service\DatabaseBackupService::class, static functio
         "'£ 0.00'",
         $method->invoke($service, "\xA3 0.00", 'year_end_check_results', 'metric_value', '2308')
     );
+
+    $backupDirectory = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'eel_accounts_backup_service_test_' . getmypid();
+    if (!is_dir($backupDirectory)) {
+        mkdir($backupDirectory, 0755, true);
+    }
+
+    $older = $backupDirectory . DIRECTORY_SEPARATOR . 'eel_accounts_20260705_120000.sql.zip';
+    $newer = $backupDirectory . DIRECTORY_SEPARATOR . 'eel_accounts_20260706_120000.sql.zip';
+    file_put_contents($older, 'older');
+    file_put_contents($newer, 'newer');
+    touch($older, strtotime('2026-07-05 12:00:00'));
+    touch($newer, strtotime('2026-07-06 12:00:00'));
+
+    $directoryService = new \eel_accounts\Service\DatabaseBackupService([], $backupDirectory);
+    $directoryStatus = $directoryService->fetchBackupStatus();
+    $available = $directoryService->fetchAvailableBackups();
+
+    $harness->assertSame('eel_accounts_20260706_120000.sql.zip', (string)($available[0]['filename'] ?? ''));
+    $harness->assertSame('eel_accounts_20260705_120000.sql.zip', (string)($available[1]['filename'] ?? ''));
+    $harness->assertSame(2, count((array)($directoryStatus['recent_backups'] ?? [])));
+    $harness->assertTrue(isset($available[0]['restore_key']));
+
+    try {
+        $directoryService->restoreBackup('../eel_accounts_20260706_120000.sql.zip');
+        throw new RuntimeException('Traversal restore filename was accepted.');
+    } catch (RuntimeException $exception) {
+        $harness->assertTrue(str_contains($exception->getMessage(), 'valid SQL ZIP backup'));
+    }
+
+    try {
+        $directoryService->restoreBackup('not-a-backup.sql');
+        throw new RuntimeException('Non ZIP restore filename was accepted.');
+    } catch (RuntimeException $exception) {
+        $harness->assertTrue(str_contains($exception->getMessage(), 'valid SQL ZIP backup'));
+    }
+
+    $sqlPath = $backupDirectory . DIRECTORY_SEPARATOR . 'fixture.sql';
+    $zipPath = $backupDirectory . DIRECTORY_SEPARATOR . 'fixture.sql.zip';
+    file_put_contents($sqlPath, "CREATE TABLE `sample` (`note` varchar(255));\nINSERT INTO `sample` (`note`) VALUES ('semi;colon');\n-- comment;\nINSERT INTO `sample` (`note`) VALUES ('done');\n");
+
+    $zipMethod = new ReflectionMethod($directoryService, 'zipSqlDump');
+    $zipMethod->setAccessible(true);
+    $zipMethod->invoke($directoryService, $sqlPath, $zipPath, basename($sqlPath));
+
+    $extractMethod = new ReflectionMethod($directoryService, 'extractSqlFromBackup');
+    $extractMethod->setAccessible(true);
+    $extractedSql = (string)$extractMethod->invoke($directoryService, $zipPath);
+    $harness->assertTrue(str_contains($extractedSql, "semi;colon"));
+
+    $splitMethod = new ReflectionMethod($directoryService, 'splitSqlStatements');
+    $splitMethod->setAccessible(true);
+    $statements = $splitMethod->invoke($directoryService, $extractedSql);
+    $harness->assertSame(3, count($statements));
+    $harness->assertTrue(str_contains((string)$statements[1], "semi;colon"));
 });

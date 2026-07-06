@@ -28,4 +28,17 @@ $harness->run(BackupAction::class, static function (GeneratedServiceClassTestHar
 
     $harness->assertTrue(!$denied->isSuccess());
     $harness->assertSame(['backup.database'], $denied->changedFacts());
+
+    $restoreDenied = $action->handle(
+        new RequestFramework([], [
+            'card_action' => 'Backup',
+            'intent' => 'restore_database_backup',
+            'backup_filename' => 'eel_accounts_20260706_120000.sql.zip',
+            'restore_confirmation' => 'RESTORE',
+        ], ['REQUEST_METHOD' => 'POST'], [], []),
+        createTestPageServiceFramework()
+    );
+
+    $harness->assertTrue(!$restoreDenied->isSuccess());
+    $harness->assertSame(['backup.database'], $restoreDenied->changedFacts());
 });

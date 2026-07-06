@@ -105,7 +105,7 @@ final class _year_end_expenses_confirmationCard extends CardBaseFramework
                 ' . $this->summaryCard('Payments in period', $this->money($companySettings, $totals['payments_made'] ?? 0)) . '
                 ' . $this->summaryCard('Balance carried forward (c/f)', $this->money($companySettings, $totals['carried_forward'] ?? 0)) . '
             </div>
-            <div class="table-scroll">
+            <div class="table-scroll panel-soft">
                 <table>
                     <thead><tr><th>Claimant</th><th>Last claimed</th><th>Last item desc</th><th>Last expense amount</th><th>Balance brought forward (b/f)</th><th>Claimed</th><th>Payments</th><th>Balance carried forward (c/f)</th></tr></thead>
                     <tbody>' . $rowsHtml . '</tbody>

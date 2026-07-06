@@ -119,8 +119,16 @@ final class DatabaseBackupService
                 continue;
             }
 
-            $columns = array_map(fn(string $column): string => $this->quoteIdentifier($column), array_keys($row));
-            $values = array_map(fn(mixed $value): string => $this->sqlLiteral($value), array_values($row));
+            $rowKey = (string)($row['id'] ?? '');
+            $columns = [];
+            $values = [];
+
+            foreach ($row as $column => $value) {
+                $column = (string)$column;
+                $columns[] = $this->quoteIdentifier($column);
+                $values[] = $this->sqlLiteral($value, $tableName, $column, $rowKey);
+            }
+
             $this->write(
                 $handle,
                 'INSERT INTO ' . $quotedTable . ' (' . implode(', ', $columns) . ') VALUES (' . implode(', ', $values) . ");\n"
@@ -381,7 +389,7 @@ final class DatabaseBackupService
         }
     }
 
-    private function sqlLiteral(mixed $value): string
+    private function sqlLiteral(mixed $value, string $tableName = '', string $columnName = '', string $rowKey = ''): string
     {
         if ($value === null) {
             return 'NULL';
@@ -391,14 +399,12 @@ final class DatabaseBackupService
             return $value ? '1' : '0';
         }
 
-        return $this->mysqlStringLiteral((string)$value);
+        return $this->mysqlStringLiteral((string)$value, $tableName, $columnName, $rowKey);
     }
 
-    private function mysqlStringLiteral(string $value): string
+    private function mysqlStringLiteral(string $value, string $tableName = '', string $columnName = '', string $rowKey = ''): string
     {
-        if (!$this->isValidUtf8($value)) {
-            throw new RuntimeException('Database backup cannot safely export a non-UTF-8 text value.');
-        }
+        $value = $this->normaliseDumpString($value, $tableName, $columnName, $rowKey);
 
         return "'" . strtr($value, [
             "\\" => "\\\\",
@@ -408,6 +414,33 @@ final class DatabaseBackupService
             "'" => "\\'",
             "\x1a" => "\\Z",
         ]) . "'";
+    }
+
+    private function normaliseDumpString(string $value, string $tableName = '', string $columnName = '', string $rowKey = ''): string
+    {
+        if ($this->isValidUtf8($value)) {
+            return $value;
+        }
+
+        $converted = function_exists('mb_convert_encoding')
+            ? mb_convert_encoding($value, 'UTF-8', 'Windows-1252')
+            : false;
+
+        if (is_string($converted) && $this->isValidUtf8($converted)) {
+            return $converted;
+        }
+
+        $context = array_filter([
+            $tableName !== '' ? 'table ' . $tableName : '',
+            $columnName !== '' ? 'column ' . $columnName : '',
+            $rowKey !== '' ? 'row id ' . $rowKey : '',
+        ]);
+
+        throw new RuntimeException(
+            'Database backup cannot safely export a non-UTF-8 text value'
+            . ($context !== [] ? ' from ' . implode(', ', $context) : '')
+            . '.'
+        );
     }
 
     private function isValidUtf8(string $value): bool

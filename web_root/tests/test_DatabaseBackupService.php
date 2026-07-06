@@ -31,13 +31,8 @@ $harness->run(\eel_accounts\Service\DatabaseBackupService::class, static functio
         $method->invoke($service, $value)
     );
 
-    try {
-        $method->invoke($service, "\xA3 0.00");
-    } catch (ReflectionException $exception) {
-        throw $exception;
-    } catch (Throwable) {
-        return;
-    }
-
-    throw new RuntimeException('Non-UTF-8 backup strings should not be exported.');
+    $harness->assertSame(
+        "'£ 0.00'",
+        $method->invoke($service, "\xA3 0.00", 'year_end_check_results', 'metric_value', '2308')
+    );
 });

@@ -14,6 +14,7 @@ final class NominalAccountRepository
 {
     private ?array $availableNominalReferenceSources = null;
     private ?bool $nominalReferenceSchemaComplete = null;
+    private ?bool $hasPrepaymentCandidateColumn = null;
 
     public function fetchNominalAccounts(int $companyId = 0): array
     {
@@ -28,7 +29,7 @@ final class NominalAccountRepository
     public function findByCode(string $code): ?array
     {
         $row = \InterfaceDB::fetchOne(
-            'SELECT id, code, name, account_type, account_subtype_id, tax_treatment, is_active, sort_order
+            'SELECT id, code, name, account_type, account_subtype_id, tax_treatment, ' . $this->prepaymentCandidateSelectSql() . ', is_active, sort_order
              FROM nominal_accounts
              WHERE code = :code
              LIMIT 1',
@@ -45,7 +46,7 @@ final class NominalAccountRepository
         }
 
         $row = \InterfaceDB::fetchOne(
-            'SELECT id, code, name, account_type, account_subtype_id, tax_treatment, is_active, sort_order
+            'SELECT id, code, name, account_type, account_subtype_id, tax_treatment, ' . $this->prepaymentCandidateSelectSql() . ', is_active, sort_order
              FROM nominal_accounts
              WHERE id = :id
              LIMIT 1',
@@ -159,34 +160,66 @@ final class NominalAccountRepository
             trim((string)$input['account_type']),
             $subtypeId,
             strtolower(trim((string)($input['tax_treatment'] ?? 'allowable'))),
+            (int)($input['prepayment_candidate'] ?? 0),
             (int)$input['is_active'],
             (int)$input['sort_order'],
         ];
 
         if ($id === null) {
-            \InterfaceDB::prepareExecute(
-                'INSERT INTO nominal_accounts (code, name, account_type, account_subtype_id, tax_treatment, is_active, sort_order, origin_type, origin_company_id, origin_company_account_id)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                [...$payload, 'manual', null, null]
-            );
+            if ($this->hasPrepaymentCandidateColumn()) {
+                \InterfaceDB::prepareExecute(
+                    'INSERT INTO nominal_accounts (code, name, account_type, account_subtype_id, tax_treatment, prepayment_candidate, is_active, sort_order, origin_type, origin_company_id, origin_company_account_id)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    [...$payload, 'manual', null, null]
+                );
+            } else {
+                $legacyPayload = $payload;
+                array_splice($legacyPayload, 5, 1);
+                \InterfaceDB::prepareExecute(
+                    'INSERT INTO nominal_accounts (code, name, account_type, account_subtype_id, tax_treatment, is_active, sort_order, origin_type, origin_company_id, origin_company_account_id)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    [...$legacyPayload, 'manual', null, null]
+                );
+            }
             return;
         }
 
-        \InterfaceDB::prepareExecute(
-            'UPDATE nominal_accounts
-             SET code = ?,
-                 name = ?,
-                 account_type = ?,
-                 account_subtype_id = ?,
-                 tax_treatment = ?,
-                 is_active = ?,
-                 sort_order = ?,
-                 origin_type = ?,
-                 origin_company_id = NULL,
-                 origin_company_account_id = NULL
-             WHERE id = ?',
-            [...$payload, 'manual', $id]
-        );
+        if ($this->hasPrepaymentCandidateColumn()) {
+            \InterfaceDB::prepareExecute(
+                'UPDATE nominal_accounts
+                 SET code = ?,
+                     name = ?,
+                     account_type = ?,
+                     account_subtype_id = ?,
+                     tax_treatment = ?,
+                     prepayment_candidate = ?,
+                     is_active = ?,
+                     sort_order = ?,
+                     origin_type = ?,
+                     origin_company_id = NULL,
+                     origin_company_account_id = NULL
+                 WHERE id = ?',
+                [...$payload, 'manual', $id]
+            );
+        } else {
+            $legacyPayload = $payload;
+            array_splice($legacyPayload, 5, 1);
+            \InterfaceDB::prepareExecute(
+                'UPDATE nominal_accounts
+                 SET code = ?,
+                     name = ?,
+                     account_type = ?,
+                     account_subtype_id = ?,
+                     tax_treatment = ?,
+                     is_active = ?,
+                     sort_order = ?,
+                     origin_type = ?,
+                     origin_company_id = NULL,
+                     origin_company_account_id = NULL
+                 WHERE id = ?',
+                [...$legacyPayload, 'manual', $id]
+            );
+        }
     }
 
     private function withDeleteEligibility(array $rows): array
@@ -474,7 +507,7 @@ final class NominalAccountRepository
      */
     private function validAccountTypes(): array
     {
-        return ['asset', 'liability', 'equity', 'income', 'expense'];
+        return ['asset', 'liability', 'equity', 'income', 'cost_of_sales', 'expense'];
     }
 
     /**
@@ -487,7 +520,7 @@ final class NominalAccountRepository
 
     private function fetchNominalAccountsSql(): string
     {
-        return 'SELECT na.id, na.code, na.name, na.account_type, na.tax_treatment, nas.code AS subtype_code
+        return 'SELECT na.id, na.code, na.name, na.account_type, na.tax_treatment, ' . $this->prepaymentCandidateSelectSql('na') . ', nas.code AS subtype_code
                 FROM nominal_accounts na
                 LEFT JOIN nominal_account_subtypes nas ON nas.id = na.account_subtype_id
                 WHERE na.is_active = 1
@@ -502,6 +535,7 @@ final class NominalAccountRepository
                        na.account_type,
                        na.account_subtype_id,
                        na.tax_treatment,
+                       ' . $this->prepaymentCandidateSelectSql('na') . ',
                        na.is_active,
                        na.sort_order,
                        nas.code AS subtype_code,
@@ -510,5 +544,28 @@ final class NominalAccountRepository
                 FROM nominal_accounts na
                 LEFT JOIN nominal_account_subtypes nas ON nas.id = na.account_subtype_id
                 ORDER BY na.sort_order, na.code, na.name, na.id';
+    }
+
+    private function prepaymentCandidateSelectSql(string $alias = ''): string
+    {
+        if (!$this->hasPrepaymentCandidateColumn()) {
+            return '0 AS prepayment_candidate';
+        }
+
+        $prefix = $alias !== '' ? $alias . '.' : '';
+        return 'COALESCE(' . $prefix . 'prepayment_candidate, 0) AS prepayment_candidate';
+    }
+
+    private function hasPrepaymentCandidateColumn(): bool
+    {
+        if ($this->hasPrepaymentCandidateColumn !== null) {
+            return $this->hasPrepaymentCandidateColumn;
+        }
+
+        try {
+            return $this->hasPrepaymentCandidateColumn = \InterfaceDB::columnExists('nominal_accounts', 'prepayment_candidate');
+        } catch (\Throwable) {
+            return $this->hasPrepaymentCandidateColumn = false;
+        }
     }
 }

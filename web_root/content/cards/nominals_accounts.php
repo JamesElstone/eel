@@ -58,6 +58,7 @@ final class _nominals_accountsCard extends CardBaseFramework
             ->textColumn('account_type', 'Type')
             ->textColumn('subtype_name', 'Subtype')
             ->textColumn('tax_treatment_label', 'Tax Treatment')
+            ->textColumn('prepayment_candidate_label', 'Prepayment Candidate')
             ->column(
                 'sort_order',
                 'Sort',
@@ -86,6 +87,7 @@ final class _nominals_accountsCard extends CardBaseFramework
             $nominal['tax_treatment_label'] = \eel_accounts\Service\AccountingFormattingService::nominalTaxTreatmentLabel(
                 (string)($nominal['tax_treatment'] ?? 'allowable')
             );
+            $nominal['prepayment_candidate_label'] = (int)($nominal['prepayment_candidate'] ?? 0) === 1 ? 'Yes' : 'No';
             $nominal['status_label'] = (int)($nominal['is_active'] ?? 0) === 1 ? 'Active' : 'Inactive';
 
             $rows[] = $nominal;

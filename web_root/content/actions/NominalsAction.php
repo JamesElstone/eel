@@ -163,6 +163,7 @@ final class NominalsAction implements ActionInterfaceFramework
             'account_type' => trim((string)$request->post('nominal_account_type', '')),
             'account_subtype_id' => trim((string)$request->post('nominal_account_subtype_id', '')),
             'tax_treatment' => trim((string)$request->post('nominal_tax_treatment', 'allowable')),
+            'prepayment_candidate' => (string)$request->post('nominal_prepayment_candidate', '') === '1' ? 1 : 0,
             'sort_order' => trim((string)$request->post('nominal_sort_order', '100')),
             'is_active' => (string)$request->post('nominal_is_active', '') === '1' ? 1 : 0,
         ];

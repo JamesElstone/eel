@@ -38,6 +38,7 @@ final class _year_end extends PageContextFramework
             'year_end_retained_earnings',
             'year_end_tax_readiness',
             'year_end_empty_month_confirmations',
+            'year_end_transaction_tail',
             'year_end_notes',
             'year_end_state',
             'year_end_audit_log',
@@ -81,6 +82,7 @@ final class _year_end extends PageContextFramework
                 'tab' => 'Transactions',
                 'cards' => [
                     'year_end_empty_month_confirmations',
+                    'year_end_transaction_tail',
                 ],
             ],
             [

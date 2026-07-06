@@ -67,6 +67,7 @@ final class CompanyDataResetService
             ['company_id' => $companyId]
         );
         $counts = [
+            'prepayment_reviews' => $this->countRowsForCompany('prepayment_reviews', $companyId),
             'expense_claim_lines' => $this->countRowsByIds('expense_claim_lines', 'expense_claim_id', $expenseClaimIds),
             'expense_claim_payment_links' => $this->countRowsByIds('expense_claim_payment_links', 'expense_claim_id', $expenseClaimIds),
             'expense_claimants' => count($expenseClaimantIds),
@@ -87,6 +88,7 @@ final class CompanyDataResetService
         }
 
         try {
+            $this->deleteRowsForCompany('prepayment_reviews', $companyId);
             $this->deleteRowsByIds('expense_claim_payment_links', 'expense_claim_id', $expenseClaimIds);
             $this->deleteRowsByIds('expense_claim_lines', 'expense_claim_id', $expenseClaimIds);
             $this->deleteRowsByIds('expense_claims', 'id', $expenseClaimIds);
@@ -163,6 +165,14 @@ final class CompanyDataResetService
         return $count;
     }
 
+    private function countRowsForCompany(string $table, int $companyId): int {
+        if ($companyId <= 0 || !$this->tableExists($table)) {
+            return 0;
+        }
+
+        return (int)\InterfaceDB::countWhere($table, ['company_id' => $companyId]);
+    }
+
     private function countStatementFieldMappingsForCompany(int $companyId): int {
         if ($companyId <= 0) {
             return 0;
@@ -191,6 +201,26 @@ final class CompanyDataResetService
                  WHERE ' . $column . ' IN (' . $placeholders . ')'
             );
             $stmt->execute($chunk);
+        }
+    }
+
+    private function deleteRowsForCompany(string $table, int $companyId): void {
+        if ($companyId <= 0 || !$this->tableExists($table)) {
+            return;
+        }
+
+        \InterfaceDB::prepareExecute(
+            'DELETE FROM ' . $table . ' WHERE company_id = :company_id',
+            ['company_id' => $companyId]
+        );
+    }
+
+    private function tableExists(string $table): bool
+    {
+        try {
+            return \InterfaceDB::tableExists($table);
+        } catch (\Throwable) {
+            return false;
         }
     }
 

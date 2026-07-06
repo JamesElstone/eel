@@ -67,6 +67,14 @@ final class YearEndExpenseConfirmationService
             $totals['carried_forward'] += (float)($claimant['carried_forward'] ?? 0);
         }
 
+        $lastClaimLines = $this->fetchLastClaimLines($companyId, $accountingPeriodId);
+        foreach ($claimants as $index => $claimant) {
+            $claimantId = (int)($claimant['claimant_id'] ?? $claimant['id'] ?? 0);
+            $claimants[$index]['last_claimed'] = (string)($lastClaimLines[$claimantId]['expense_date'] ?? '');
+            $claimants[$index]['last_item_desc'] = (string)($lastClaimLines[$claimantId]['description'] ?? '');
+            $claimants[$index]['last_expense_amount'] = $lastClaimLines[$claimantId]['amount'] ?? null;
+        }
+
         foreach ($totals as $key => $value) {
             $totals[$key] = round((float)$value, 2);
         }
@@ -91,5 +99,38 @@ final class YearEndExpenseConfirmationService
         } catch (\Throwable) {
             return false;
         }
+    }
+
+    private function fetchLastClaimLines(int $companyId, int $accountingPeriodId): array
+    {
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT ec.claimant_id,
+                    ecl.expense_date,
+                    ecl.description,
+                    ecl.amount
+             FROM expense_claim_lines ecl
+             INNER JOIN expense_claims ec ON ec.id = ecl.expense_claim_id
+             WHERE ec.company_id = :company_id
+               AND ec.accounting_period_id = :accounting_period_id
+             ORDER BY ecl.expense_date DESC, ec.id DESC, ecl.line_number DESC, ecl.id DESC',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+            ]
+        );
+
+        $lastLines = [];
+        foreach ((array)$rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $claimantId = (int)($row['claimant_id'] ?? 0);
+            if ($claimantId > 0 && !isset($lastLines[$claimantId])) {
+                $lastLines[$claimantId] = $row;
+            }
+        }
+
+        return $lastLines;
     }
 }

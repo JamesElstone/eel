@@ -115,6 +115,14 @@ final class _nominals_add_accountCard extends CardBaseFramework
                         <input class="input" id="nominal_sort_order" name="nominal_sort_order" value="' . HelperFramework::escape((string)($editingNominal['sort_order'] ?? '100')) . '">
                     </div>
                     <label class="checkbox-item">
+                        <input type="hidden" name="nominal_prepayment_candidate" value="0">
+                        <input type="checkbox" name="nominal_prepayment_candidate" value="1"' . ((int)($editingNominal['prepayment_candidate'] ?? 0) === 1 ? ' checked' : '') . '>
+                        <div class="checkbox-copy">
+                            <strong>Prepayment candidate</strong>
+                            <span>Use this for nominals where a payment may cover a service period crossing the accounting year end.</span>
+                        </div>
+                    </label>
+                    <label class="checkbox-item">
                         <input type="checkbox" name="nominal_is_active" value="1"' . (!isset($editingNominal['is_active']) || (int)($editingNominal['is_active'] ?? 0) === 1 ? ' checked' : '') . '>
                         <div class="checkbox-copy">
                             <strong>Active</strong>

@@ -63,6 +63,9 @@ final class _year_end_expenses_confirmationCard extends CardBaseFramework
         foreach ((array)($expenses['claimants'] ?? []) as $claimant) {
             $rowsHtml .= '<tr>
                 <td>' . HelperFramework::escape((string)($claimant['claimant_name'] ?? '')) . '</td>
+                <td>' . HelperFramework::escape($this->displayDate((string)($claimant['last_claimed'] ?? ''))) . '</td>
+                <td>' . HelperFramework::escape((string)($claimant['last_item_desc'] ?? '')) . '</td>
+                <td class="numeric">' . HelperFramework::escape(!array_key_exists('last_expense_amount', $claimant) || $claimant['last_expense_amount'] === null ? '' : $this->money($companySettings, $claimant['last_expense_amount'])) . '</td>
                 <td class="numeric">' . HelperFramework::escape($this->money($companySettings, $claimant['brought_forward'] ?? 0)) . '</td>
                 <td class="numeric">' . HelperFramework::escape($this->money($companySettings, $claimant['claimed_total'] ?? 0)) . '</td>
                 <td class="numeric">' . HelperFramework::escape($this->money($companySettings, $claimant['payments_made'] ?? 0)) . '</td>
@@ -71,7 +74,7 @@ final class _year_end_expenses_confirmationCard extends CardBaseFramework
         }
 
         if ($rowsHtml === '') {
-            $rowsHtml = '<tr><td colspan="5">No expense claim balances were found for this accounting period.</td></tr>';
+            $rowsHtml = '<tr><td colspan="8">No expense claim balances were found for this accounting period.</td></tr>';
         }
 
         $acknowledgementForm = '';
@@ -104,7 +107,7 @@ final class _year_end_expenses_confirmationCard extends CardBaseFramework
             </div>
             <div class="table-scroll">
                 <table>
-                    <thead><tr><th>Claimant</th><th>Balance brought forward (b/f)</th><th>Claimed</th><th>Payments</th><th>Balance carried forward (c/f)</th></tr></thead>
+                    <thead><tr><th>Claimant</th><th>Last claimed</th><th>Last item desc</th><th>Last expense amount</th><th>Balance brought forward (b/f)</th><th>Claimed</th><th>Payments</th><th>Balance carried forward (c/f)</th></tr></thead>
                     <tbody>' . $rowsHtml . '</tbody>
                 </table>
             </div>
@@ -120,6 +123,11 @@ final class _year_end_expenses_confirmationCard extends CardBaseFramework
     private function money(array $companySettings, float|int|string|null $value): string
     {
         return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
+    }
+
+    private function displayDate(string $date): string
+    {
+        return trim($date) !== '' ? HelperFramework::displayDate($date) : '';
     }
 
     private function renderErrors(array $errors): string

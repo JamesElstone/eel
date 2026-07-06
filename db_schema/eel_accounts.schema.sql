@@ -963,6 +963,7 @@ CREATE TABLE `nominal_accounts` (
   `account_type` enum('income','cost_of_sales','expense','asset','liability','equity') NOT NULL,
   `account_subtype_id` int(11) DEFAULT NULL,
   `tax_treatment` enum('allowable','disallowable','capital','other') NOT NULL DEFAULT 'allowable',
+  `prepayment_candidate` tinyint(1) NOT NULL DEFAULT 0,
   `is_active` tinyint(1) NOT NULL DEFAULT 1,
   `sort_order` int(11) NOT NULL DEFAULT 100,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
@@ -972,10 +973,47 @@ CREATE TABLE `nominal_accounts` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uniq_nominal_code` (`code`),
   KEY `idx_nominal_type_active` (`account_type`,`is_active`,`sort_order`),
+  KEY `idx_nominal_prepayment_candidate` (`prepayment_candidate`,`account_type`,`is_active`),
   KEY `idx_nominal_subtype` (`account_subtype_id`),
   KEY `idx_nominal_origin` (`origin_type`,`origin_company_id`,`origin_company_account_id`),
   CONSTRAINT `fk_nominal_accounts_subtype` FOREIGN KEY (`account_subtype_id`) REFERENCES `nominal_account_subtypes` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB AUTO_INCREMENT=41 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `prepayment_reviews`
+--
+
+DROP TABLE IF EXISTS `prepayment_reviews`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `prepayment_reviews` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `source_type` enum('transaction','expense_claim_line') NOT NULL,
+  `source_id` bigint(20) NOT NULL,
+  `status` enum('pending','not_prepaid','prepaid') NOT NULL DEFAULT 'pending',
+  `service_start_date` date DEFAULT NULL,
+  `service_end_date` date DEFAULT NULL,
+  `notes` text DEFAULT NULL,
+  `generated_journal_id` bigint(20) DEFAULT NULL,
+  `reversal_journal_id` bigint(20) DEFAULT NULL,
+  `reviewed_at` datetime DEFAULT NULL,
+  `reviewed_by` varchar(100) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_prepayment_reviews_source` (`company_id`,`accounting_period_id`,`source_type`,`source_id`),
+  KEY `idx_prepayment_reviews_period_status` (`company_id`,`accounting_period_id`,`status`),
+  KEY `idx_prepayment_reviews_generated_journal` (`generated_journal_id`),
+  KEY `idx_prepayment_reviews_reversal_journal` (`reversal_journal_id`),
+  CONSTRAINT `fk_prepayment_reviews_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_prepayment_reviews_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_prepayment_reviews_generated_journal` FOREIGN KEY (`generated_journal_id`) REFERENCES `journals` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_prepayment_reviews_reversal_journal` FOREIGN KEY (`reversal_journal_id`) REFERENCES `journals` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `chk_prepayment_reviews_dates` CHECK (`service_start_date` IS NULL OR `service_end_date` IS NULL OR `service_start_date` <= `service_end_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -2264,7 +2302,8 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_04_005_vehicle_register_capital_allowances.sql'),
   ('2026_07_04_006_read_only_tax_workings_permissions.sql'),
   ('2026_07_05_001_ct_period_tax_page_provisions.sql'),
-  ('2026_07_05_002_dynamic_tax_append_only_close.sql');
+  ('2026_07_05_002_dynamic_tax_append_only_close.sql'),
+  ('2026_07_06_001_prepayments_cutoff_workflows.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

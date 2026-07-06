@@ -19,6 +19,11 @@ final class _dividend_capacityCard extends CardBaseFramework
         return 'Dividend Capacity';
     }
 
+    public function services(): array
+    {
+        return [$this->dividendContextService()];
+    }
+
     protected function additionalInvalidationFacts(): array
     {
         return ['page.context'];
@@ -27,8 +32,9 @@ final class _dividend_capacityCard extends CardBaseFramework
     public function render(array $context): string
     {
         $company = (array)($context['company'] ?? []);
-        $capacity = (array)($context['dividends']['capacity'] ?? []);
-        $warnings = (array)($context['dividends']['warnings'] ?? []);
+        $dividends = $this->dividendsContext($context);
+        $capacity = (array)($dividends['capacity'] ?? []);
+        $warnings = (array)($dividends['warnings'] ?? []);
         $reliabilityWarnings = (array)($capacity['reliability_warnings'] ?? []);
         if (empty($capacity['available'])) {
             return '<div class="settings-stack">
@@ -187,5 +193,28 @@ final class _dividend_capacityCard extends CardBaseFramework
         }
 
         return $html;
+    }
+
+    private function dividendContextService(): array
+    {
+        return [
+            'key' => 'dividendContext',
+            'service' => \eel_accounts\Service\DividendViewDataService::class,
+            'method' => 'fetchContext',
+            'params' => [
+                'companyId' => ':company.id',
+                'accountingPeriodId' => ':company.accounting_period_id',
+            ],
+        ];
+    }
+
+    private function dividendsContext(array $context): array
+    {
+        $serviceContext = $context['services']['dividendContext'] ?? null;
+        if (is_array($serviceContext)) {
+            return $serviceContext;
+        }
+
+        return (array)($context['dividends'] ?? []);
     }
 }

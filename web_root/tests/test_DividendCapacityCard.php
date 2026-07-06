@@ -12,6 +12,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 $harness = new GeneratedServiceClassTestHarness();
 
 $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceClassTestHarness $harness, _dividend_capacityCard $card): void {
+    $harness->check(_dividend_capacityCard::class, 'declares shared dividend context service', static function () use ($harness, $card): void {
+        dividend_card_assert_context_service($harness, $card);
+    });
+
     $harness->check(_dividend_capacityCard::class, 'renders reliability warning panels with related workflow action', static function () use ($harness, $card): void {
         $html = $card->render([
             'company' => [
@@ -95,3 +99,15 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
         $harness->assertTrue(str_contains($html, 'Estimated Corporation Tax &#163; 2,475.00 - posted Corporation Tax &#163; 475.00 = &#163; 2,000.00'));
     });
 });
+
+function dividend_card_assert_context_service(GeneratedServiceClassTestHarness $harness, CardInterfaceFramework $card): void
+{
+    $service = (array)($card->services()[0] ?? []);
+    $params = (array)($service['params'] ?? []);
+
+    $harness->assertSame('dividendContext', $service['key'] ?? null);
+    $harness->assertSame(\eel_accounts\Service\DividendViewDataService::class, $service['service'] ?? null);
+    $harness->assertSame('fetchContext', $service['method'] ?? null);
+    $harness->assertSame(':company.id', $params['companyId'] ?? null);
+    $harness->assertSame(':company.accounting_period_id', $params['accountingPeriodId'] ?? null);
+}

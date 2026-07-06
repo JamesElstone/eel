@@ -12,6 +12,17 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 $harness = new GeneratedServiceClassTestHarness();
 
 $harness->run(_dividend_historyCard::class, static function (GeneratedServiceClassTestHarness $harness, _dividend_historyCard $card): void {
+    $harness->check(_dividend_historyCard::class, 'declares shared dividend context service', static function () use ($harness, $card): void {
+        $service = (array)($card->services()[0] ?? []);
+        $params = (array)($service['params'] ?? []);
+
+        $harness->assertSame('dividendContext', $service['key'] ?? null);
+        $harness->assertSame(\eel_accounts\Service\DividendViewDataService::class, $service['service'] ?? null);
+        $harness->assertSame('fetchContext', $service['method'] ?? null);
+        $harness->assertSame(':company.id', $params['companyId'] ?? null);
+        $harness->assertSame(':company.accounting_period_id', $params['accountingPeriodId'] ?? null);
+    });
+
     $harness->check(_dividend_historyCard::class, 'renders dividend amounts with company currency symbol', static function () use ($harness, $card): void {
         $html = $card->render([
             'company' => [

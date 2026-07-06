@@ -50,32 +50,25 @@ final class YearEndTaxReadinessService
             ];
         }
 
-        $periodService = new \eel_accounts\Service\CorporationTaxPeriodService();
-        $sync = $periodService->syncForAccountingPeriod($companyId, $accountingPeriodId);
-        $ctPeriods = array_values(array_filter(
-            (array)($sync['periods'] ?? []),
-            static fn(array $period): bool => (string)($period['status'] ?? '') !== 'superseded'
-        ));
+        $service = $this->taxComputationService ?? new \eel_accounts\Service\CorporationTaxComputationService(
+            $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService()
+        );
+        $activePeriods = $service->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId);
+        $ctPeriods = (array)($activePeriods['periods'] ?? []);
 
         if ($ctPeriods === []) {
             return [
                 'available' => false,
-                'errors' => (array)($sync['errors'] ?? ['No CT periods are available for the selected accounting period.']),
+                'errors' => (array)($activePeriods['errors'] ?? ['No CT periods are available for the selected accounting period.']),
                 'periods' => [],
                 'totals' => [],
             ];
         }
 
-        usort($ctPeriods, static function (array $a, array $b): int {
-            $sequenceCompare = (int)($a['sequence_no'] ?? 0) <=> (int)($b['sequence_no'] ?? 0);
-            return $sequenceCompare !== 0 ? $sequenceCompare : ((int)($a['id'] ?? 0) <=> (int)($b['id'] ?? 0));
-        });
+        $service->preloadCtPeriodLossPositionsForAccountingPeriod($companyId, $accountingPeriodId);
 
-        $service = $this->taxComputationService ?? new \eel_accounts\Service\CorporationTaxComputationService(
-            $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService()
-        );
         $periodSummaries = [];
-        $errors = (array)($sync['errors'] ?? []);
+        $errors = (array)($activePeriods['errors'] ?? []);
 
         foreach ($ctPeriods as $ctPeriod) {
             $ctPeriodId = (int)($ctPeriod['id'] ?? 0);

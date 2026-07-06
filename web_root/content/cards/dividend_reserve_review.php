@@ -19,6 +19,11 @@ final class _dividend_reserve_reviewCard extends CardBaseFramework
         return 'Distributable Profit Review';
     }
 
+    public function services(): array
+    {
+        return [$this->dividendContextService()];
+    }
+
     protected function additionalInvalidationFacts(): array
     {
         return ['page.context', 'dividend.capacity', 'dividend.declare', 'dividend.warnings'];
@@ -30,8 +35,11 @@ final class _dividend_reserve_reviewCard extends CardBaseFramework
         $companySettings = (array)($company['settings'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
-        $review = (array)($context['dividends']['reserve_review'] ?? []);
-        $isLocked = (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);
+        $dividends = $this->dividendsContext($context);
+        $review = (array)($dividends['reserve_review'] ?? []);
+        $isLocked = array_key_exists('is_locked', $dividends)
+            ? (bool)$dividends['is_locked']
+            : (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);
 
         if (empty($review['available'])) {
             return '<div class="settings-stack">' . $this->renderErrors((array)($review['errors'] ?? ['Dividend reserve review is not available.'])) . '</div>';
@@ -238,5 +246,28 @@ final class _dividend_reserve_reviewCard extends CardBaseFramework
         }
 
         return $html;
+    }
+
+    private function dividendContextService(): array
+    {
+        return [
+            'key' => 'dividendContext',
+            'service' => \eel_accounts\Service\DividendViewDataService::class,
+            'method' => 'fetchContext',
+            'params' => [
+                'companyId' => ':company.id',
+                'accountingPeriodId' => ':company.accounting_period_id',
+            ],
+        ];
+    }
+
+    private function dividendsContext(array $context): array
+    {
+        $serviceContext = $context['services']['dividendContext'] ?? null;
+        if (is_array($serviceContext)) {
+            return $serviceContext;
+        }
+
+        return (array)($context['dividends'] ?? []);
     }
 }

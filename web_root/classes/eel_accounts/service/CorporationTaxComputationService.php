@@ -12,10 +12,35 @@ namespace eel_accounts\Service;
 
 final class CorporationTaxComputationService
 {
+    private array $accountingPeriodLossScheduleCache = [];
+    private array $activeCtPeriodsCache = [];
+    private array $assetAdjustmentsCache = [];
+    private array $associatedCompanyCountCache = [];
+    private array $capitalAllowanceBreakdownCache = [];
+    private array $ctPeriodCache = [];
+    private array $ctPeriodLossScheduleCompleteCache = [];
+    private array $ctPeriodLossScheduleCache = [];
+    private array $ctPeriodSummaryCache = [];
+    private array $profitAndLossSummaryCache = [];
+
     public function __construct(
         private readonly ?\eel_accounts\Service\YearEndMetricsService $metricsService = null,
         private readonly ?\eel_accounts\Service\CorporationTaxRateService $rateService = null,
     ) {
+    }
+
+    public function clearRuntimeCaches(): void
+    {
+        $this->accountingPeriodLossScheduleCache = [];
+        $this->activeCtPeriodsCache = [];
+        $this->assetAdjustmentsCache = [];
+        $this->associatedCompanyCountCache = [];
+        $this->capitalAllowanceBreakdownCache = [];
+        $this->ctPeriodCache = [];
+        $this->ctPeriodLossScheduleCompleteCache = [];
+        $this->ctPeriodLossScheduleCache = [];
+        $this->ctPeriodSummaryCache = [];
+        $this->profitAndLossSummaryCache = [];
     }
 
     public function fetchSummary(int $companyId, int $accountingPeriodId): array {
@@ -105,17 +130,21 @@ final class CorporationTaxComputationService
     }
 
     public function fetchSummaryForCtPeriodId(int $companyId, int $ctPeriodId): array {
-        $stored = $this->storedLockedSummaryForCtPeriodId($companyId, $ctPeriodId);
-        if ($stored !== null) {
-            return $stored;
+        $cacheKey = $companyId . ':' . $ctPeriodId;
+        if (isset($this->ctPeriodSummaryCache[$cacheKey])) {
+            return $this->ctPeriodSummaryCache[$cacheKey];
         }
 
-        return $this->calculateSummaryForCtPeriodId($companyId, $ctPeriodId);
+        $stored = $this->storedLockedSummaryForCtPeriodId($companyId, $ctPeriodId);
+        if ($stored !== null) {
+            return $this->ctPeriodSummaryCache[$cacheKey] = $stored;
+        }
+
+        return $this->ctPeriodSummaryCache[$cacheKey] = $this->calculateSummaryForCtPeriodId($companyId, $ctPeriodId);
     }
 
     public function calculateSummaryForCtPeriodId(int $companyId, int $ctPeriodId): array {
-        $periodService = new \eel_accounts\Service\CorporationTaxPeriodService();
-        $ctPeriod = $periodService->fetch($companyId, $ctPeriodId);
+        $ctPeriod = $this->fetchCtPeriod($companyId, $ctPeriodId);
         if ($ctPeriod === null) {
             return [
                 'available' => false,
@@ -124,8 +153,7 @@ final class CorporationTaxComputationService
         }
 
         $accountingPeriodId = (int)$ctPeriod['accounting_period_id'];
-        $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
-        $pnl = $metrics->profitAndLossSummary(
+        $pnl = $this->profitAndLossSummary(
             $companyId,
             $accountingPeriodId,
             (string)$ctPeriod['period_start'],
@@ -202,13 +230,19 @@ final class CorporationTaxComputationService
         $summary['ct_period_display_sequence_no'] = (int)($ctPeriod['display_sequence_no'] ?? $ctPeriod['sequence_no']);
         $summary['period_start'] = (string)$ctPeriod['period_start'];
         $summary['period_end'] = (string)$ctPeriod['period_end'];
-        $summary['capital_allowance_breakdown'] = (new \eel_accounts\Service\CapitalAllowanceService())->fetchPeriodBreakdown($companyId, $accountingPeriodId, $ctPeriodId);
+        $summary['capital_allowance_breakdown'] = (array)($assetAdjustments['capital_allowance_breakdown'] ?? []);
         $summary['computation_hash'] = $computationHash;
 
         return $summary;
     }
 
     public function persistSummaryForCtPeriodId(int $companyId, int $ctPeriodId): array {
+        $this->clearRuntimeCaches();
+
+        return $this->persistSummaryForCtPeriodIdWithCurrentCaches($companyId, $ctPeriodId);
+    }
+
+    private function persistSummaryForCtPeriodIdWithCurrentCaches(int $companyId, int $ctPeriodId): array {
         $summary = $this->calculateSummaryForCtPeriodId($companyId, $ctPeriodId);
         if (empty($summary['available'])) {
             return $summary;
@@ -231,6 +265,7 @@ final class CorporationTaxComputationService
         $runId = $this->insertComputationRun($companyId, $row, $summary);
         if ($runId > 0) {
             (new \eel_accounts\Service\CorporationTaxPeriodService())->markLatestComputation((int)$row['ct_period_id'], $runId);
+            unset($this->ctPeriodSummaryCache[$companyId . ':' . (int)$row['ct_period_id']]);
             $summary['computation_run_id'] = $runId;
         }
 
@@ -239,19 +274,17 @@ final class CorporationTaxComputationService
 
     public function persistSummariesForAccountingPeriod(int $companyId, int $accountingPeriodId): array
     {
-        $sync = (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $accountingPeriodId);
-        $periods = array_values(array_filter(
-            (array)($sync['periods'] ?? []),
-            static fn(array $period): bool => (string)($period['status'] ?? '') !== 'superseded'
-        ));
+        $this->clearRuntimeCaches();
+        $activePeriods = $this->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId);
+        $periods = (array)($activePeriods['periods'] ?? []);
         $summaries = [];
-        $errors = (array)($sync['errors'] ?? []);
+        $errors = (array)($activePeriods['errors'] ?? []);
         foreach ($periods as $period) {
             $ctPeriodId = (int)($period['id'] ?? 0);
             if ($ctPeriodId <= 0) {
                 continue;
             }
-            $summary = $this->persistSummaryForCtPeriodId($companyId, $ctPeriodId);
+            $summary = $this->persistSummaryForCtPeriodIdWithCurrentCaches($companyId, $ctPeriodId);
             if (empty($summary['available'])) {
                 foreach ((array)($summary['errors'] ?? ['CT period summary could not be persisted.']) as $error) {
                     $errors[] = (string)($period['display_label'] ?? ('CT Period ' . (int)($period['sequence_no'] ?? 0))) . ': ' . (string)$error;
@@ -268,7 +301,44 @@ final class CorporationTaxComputationService
         ];
     }
 
+    public function activeCtPeriodsForAccountingPeriod(int $companyId, int $accountingPeriodId): array
+    {
+        $cacheKey = $companyId . ':' . $accountingPeriodId;
+        if (isset($this->activeCtPeriodsCache[$cacheKey])) {
+            return $this->activeCtPeriodsCache[$cacheKey];
+        }
+
+        $sync = (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $accountingPeriodId);
+        $periods = array_values(array_filter(
+            (array)($sync['periods'] ?? []),
+            static fn(array $period): bool => (string)($period['status'] ?? '') !== 'superseded'
+        ));
+        usort($periods, static function (array $a, array $b): int {
+            $sequenceCompare = (int)($a['sequence_no'] ?? 0) <=> (int)($b['sequence_no'] ?? 0);
+            return $sequenceCompare !== 0 ? $sequenceCompare : ((int)($a['id'] ?? 0) <=> (int)($b['id'] ?? 0));
+        });
+
+        return $this->activeCtPeriodsCache[$cacheKey] = [
+            'periods' => $periods,
+            'errors' => (array)($sync['errors'] ?? []),
+        ];
+    }
+
+    public function preloadCtPeriodLossPositionsForAccountingPeriod(int $companyId, int $accountingPeriodId): void
+    {
+        $periods = (array)($this->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId)['periods'] ?? []);
+        $lastPeriod = end($periods);
+        $lastCtPeriodId = is_array($lastPeriod) ? (int)($lastPeriod['id'] ?? 0) : 0;
+        if ($lastCtPeriodId > 0) {
+            $this->ctPeriodLossSchedule($companyId, $lastCtPeriodId);
+        }
+    }
+
     private function rebuildLossSchedule(int $companyId): array {
+        if (isset($this->accountingPeriodLossScheduleCache[$companyId])) {
+            return $this->accountingPeriodLossScheduleCache[$companyId];
+        }
+
         $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
         $accountingPeriods = array_reverse($metrics->fetchAccountingPeriods($companyId));
         if ($accountingPeriods === []) {
@@ -283,7 +353,7 @@ final class CorporationTaxComputationService
         try {
             foreach ($accountingPeriods as $accountingPeriod) {
                 $accountingPeriodId = (int)($accountingPeriod['id'] ?? 0);
-                $pnl = $metrics->profitAndLossSummary(
+                $pnl = $this->profitAndLossSummary(
                     $companyId,
                     $accountingPeriodId,
                     (string)($accountingPeriod['period_start'] ?? ''),
@@ -375,32 +445,47 @@ final class CorporationTaxComputationService
             throw $exception;
         }
 
-        return $schedule;
+        return $this->accountingPeriodLossScheduleCache[$companyId] = $schedule;
     }
 
     private function fetchAssetAdjustments(int $companyId, int $accountingPeriodId): array {
+        $cacheKey = $companyId . ':' . $accountingPeriodId . ':0';
+        if (isset($this->assetAdjustmentsCache[$cacheKey])) {
+            return $this->assetAdjustmentsCache[$cacheKey];
+        }
+
         $depreciation = $this->depreciationAddBack($companyId, $accountingPeriodId, '', '');
-        $allowances = $this->capitalAllowanceAmount($companyId, $accountingPeriodId, 0);
-        $warnings = (new \eel_accounts\Service\CapitalAllowanceService())->periodWarnings($companyId, $accountingPeriodId, 0);
+        $breakdown = $this->capitalAllowanceBreakdown($companyId, $accountingPeriodId, 0);
+        $allowances = $this->capitalAllowanceAmountFromBreakdown($breakdown);
+        $warnings = (array)($breakdown['warnings'] ?? []);
         if ($this->tableExists('asset_register') && $this->countCompanyAssets($companyId) > 0 && abs($depreciation) < 0.005 && abs($allowances) < 0.005) {
             $warnings[] = 'Fixed assets exist, but no depreciation entries or capital allowance runs were found.';
         }
 
-        return [
+        return $this->assetAdjustmentsCache[$cacheKey] = [
             'depreciation_add_back' => round(max(0.0, $depreciation), 2),
             'capital_allowances' => round($allowances, 2),
             'warning' => implode(' ', array_values(array_unique(array_filter($warnings)))),
+            'capital_allowance_breakdown' => $breakdown,
         ];
     }
 
     private function fetchAssetAdjustmentsForCtPeriod(int $companyId, int $accountingPeriodId, array $ctPeriod): array {
         $ctPeriodId = (int)($ctPeriod['id'] ?? 0);
+        $cacheKey = $companyId . ':' . $accountingPeriodId . ':' . $ctPeriodId;
+        if (isset($this->assetAdjustmentsCache[$cacheKey])) {
+            return $this->assetAdjustmentsCache[$cacheKey];
+        }
+
         $periodStart = (string)($ctPeriod['period_start'] ?? '');
         $periodEnd = (string)($ctPeriod['period_end'] ?? '');
-        return [
+        $breakdown = $this->capitalAllowanceBreakdown($companyId, $accountingPeriodId, $ctPeriodId);
+
+        return $this->assetAdjustmentsCache[$cacheKey] = [
             'depreciation_add_back' => $this->depreciationAddBack($companyId, $accountingPeriodId, $periodStart, $periodEnd),
-            'capital_allowances' => $this->capitalAllowanceAmount($companyId, $accountingPeriodId, $ctPeriodId),
-            'warning' => implode(' ', (new \eel_accounts\Service\CapitalAllowanceService())->periodWarnings($companyId, $accountingPeriodId, $ctPeriodId)),
+            'capital_allowances' => $this->capitalAllowanceAmountFromBreakdown($breakdown),
+            'warning' => implode(' ', (array)($breakdown['warnings'] ?? [])),
+            'capital_allowance_breakdown' => $breakdown,
         ];
     }
 
@@ -412,7 +497,13 @@ final class CorporationTaxComputationService
 
     private function capitalAllowanceAmount(int $companyId, int $accountingPeriodId, int $ctPeriodId): float
     {
-        $breakdown = (new \eel_accounts\Service\CapitalAllowanceService())->fetchPeriodBreakdown($companyId, $accountingPeriodId, $ctPeriodId);
+        return $this->capitalAllowanceAmountFromBreakdown(
+            $this->capitalAllowanceBreakdown($companyId, $accountingPeriodId, $ctPeriodId)
+        );
+    }
+
+    private function capitalAllowanceAmountFromBreakdown(array $breakdown): float
+    {
         $allowances = 0.0;
         $charges = 0.0;
         foreach ((array)($breakdown['rows'] ?? []) as $row) {
@@ -424,6 +515,17 @@ final class CorporationTaxComputationService
         }
 
         return round($allowances - $charges, 2);
+    }
+
+    private function capitalAllowanceBreakdown(int $companyId, int $accountingPeriodId, int $ctPeriodId = 0): array
+    {
+        $cacheKey = $companyId . ':' . $accountingPeriodId . ':' . $ctPeriodId;
+        if (isset($this->capitalAllowanceBreakdownCache[$cacheKey])) {
+            return $this->capitalAllowanceBreakdownCache[$cacheKey];
+        }
+
+        return $this->capitalAllowanceBreakdownCache[$cacheKey] =
+            (new \eel_accounts\Service\CapitalAllowanceService())->fetchPeriodBreakdown($companyId, $accountingPeriodId, $ctPeriodId);
     }
 
     private function storedLockedSummaryForCtPeriodId(int $companyId, int $ctPeriodId): ?array
@@ -504,29 +606,36 @@ final class CorporationTaxComputationService
     }
 
     private function ctPeriodLossPosition(int $companyId, int $targetCtPeriodId): array {
-        $periodService = new \eel_accounts\Service\CorporationTaxPeriodService();
-        $target = $periodService->fetch($companyId, $targetCtPeriodId);
-        if ($target === null) {
-            return ['brought_forward' => 0.0];
+        $schedule = $this->ctPeriodLossSchedule($companyId, $targetCtPeriodId);
+
+        return (array)($schedule[$targetCtPeriodId] ?? ['brought_forward' => 0.0]);
+    }
+
+    private function ctPeriodLossSchedule(int $companyId, ?int $stopAtCtPeriodId = null): array
+    {
+        if ($stopAtCtPeriodId !== null && isset($this->ctPeriodLossScheduleCache[$companyId][$stopAtCtPeriodId])) {
+            return $this->ctPeriodLossScheduleCache[$companyId];
+        }
+        if ($stopAtCtPeriodId === null && !empty($this->ctPeriodLossScheduleCompleteCache[$companyId])) {
+            return $this->ctPeriodLossScheduleCache[$companyId];
         }
 
         $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
         $accountingPeriods = array_reverse($metrics->fetchAccountingPeriods($companyId));
         $lossPool = [];
+        $schedule = [];
 
         foreach ($accountingPeriods as $accountingPeriod) {
             $accountingPeriodId = (int)($accountingPeriod['id'] ?? 0);
-            $sync = $periodService->syncForAccountingPeriod($companyId, $accountingPeriodId);
-            foreach ((array)($sync['periods'] ?? []) as $ctPeriod) {
-                if ((string)($ctPeriod['status'] ?? '') === 'superseded') {
+            $ctPeriods = (array)($this->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId)['periods'] ?? []);
+            foreach ($ctPeriods as $ctPeriod) {
+                $ctPeriodId = (int)($ctPeriod['id'] ?? 0);
+                if ($ctPeriodId <= 0) {
                     continue;
                 }
-                $ctPeriodId = (int)($ctPeriod['id'] ?? 0);
-                if ($ctPeriodId === $targetCtPeriodId) {
-                    return ['brought_forward' => round(array_sum(array_column($lossPool, 'amount_remaining')), 2)];
-                }
 
-                $pnl = $metrics->profitAndLossSummary(
+                $lossBroughtForward = round(array_sum(array_column($lossPool, 'amount_remaining')), 2);
+                $pnl = $this->profitAndLossSummary(
                     $companyId,
                     $accountingPeriodId,
                     (string)$ctPeriod['period_start'],
@@ -541,6 +650,7 @@ final class CorporationTaxComputationService
                     2
                 );
 
+                $lossUsed = 0.0;
                 if ($taxableBeforeLosses > 0) {
                     $remainingTaxable = $taxableBeforeLosses;
                     foreach ($lossPool as &$lossRow) {
@@ -550,15 +660,28 @@ final class CorporationTaxComputationService
                         $usage = min((float)$lossRow['amount_remaining'], $remainingTaxable);
                         $lossRow['amount_remaining'] = round((float)$lossRow['amount_remaining'] - $usage, 2);
                         $remainingTaxable = round($remainingTaxable - $usage, 2);
+                        $lossUsed = round($lossUsed + $usage, 2);
                     }
                     unset($lossRow);
                 } elseif ($taxableBeforeLosses < 0) {
                     $lossPool[] = ['amount_remaining' => abs($taxableBeforeLosses)];
                 }
+
+                $schedule[$ctPeriodId] = [
+                    'brought_forward' => $lossBroughtForward,
+                    'loss_utilised' => $lossUsed,
+                    'loss_carried_forward' => round(array_sum(array_column($lossPool, 'amount_remaining')), 2),
+                    'taxable_before_losses' => $taxableBeforeLosses,
+                ];
+
+                if ($stopAtCtPeriodId !== null && $ctPeriodId === $stopAtCtPeriodId) {
+                    return $this->ctPeriodLossScheduleCache[$companyId] = $schedule;
+                }
             }
         }
 
-        return ['brought_forward' => 0.0];
+        $this->ctPeriodLossScheduleCompleteCache[$companyId] = true;
+        return $this->ctPeriodLossScheduleCache[$companyId] = $schedule;
     }
 
     private function summaryFromRows(array $current, array $schedule): array {
@@ -643,7 +766,7 @@ final class CorporationTaxComputationService
 
         $periodStart = (string)($accountingPeriod['period_start'] ?? '');
         $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
-        $profitAndLoss ??= $metrics->profitAndLossSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $profitAndLoss ??= $this->profitAndLossSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $assetAdjustments = $this->fetchAssetAdjustments($companyId, $accountingPeriodId);
         $taxableBeforeLosses = round(
             (float)($profitAndLoss['profit_before_tax'] ?? 0)
@@ -712,7 +835,7 @@ final class CorporationTaxComputationService
             'other_treatment_count' => (int)($profitAndLoss['other_treatment_count'] ?? 0),
             'unknown_treatment_count' => (int)($profitAndLoss['unknown_treatment_count'] ?? 0),
             'warnings' => $warnings,
-            'capital_allowance_breakdown' => (new \eel_accounts\Service\CapitalAllowanceService())->fetchPeriodBreakdown($companyId, $accountingPeriodId),
+            'capital_allowance_breakdown' => (array)($assetAdjustments['capital_allowance_breakdown'] ?? []),
             'calculation_status' => 'estimate',
             'confidence_status' => $confidenceStatus,
             'confidence_label' => $confidenceStatus === 'ready_for_review' ? 'Ready for review' : 'Review required',
@@ -827,15 +950,43 @@ final class CorporationTaxComputationService
         return round((float)($row['amount'] ?? 0), 2);
     }
 
+    private function fetchCtPeriod(int $companyId, int $ctPeriodId): ?array
+    {
+        $cacheKey = $companyId . ':' . $ctPeriodId;
+        if (array_key_exists($cacheKey, $this->ctPeriodCache)) {
+            return $this->ctPeriodCache[$cacheKey];
+        }
+
+        return $this->ctPeriodCache[$cacheKey] =
+            (new \eel_accounts\Service\CorporationTaxPeriodService())->fetch($companyId, $ctPeriodId);
+    }
+
+    private function profitAndLossSummary(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array
+    {
+        $cacheKey = $companyId . ':' . $accountingPeriodId . ':' . $periodStart . ':' . $periodEnd;
+        if (isset($this->profitAndLossSummaryCache[$cacheKey])) {
+            return $this->profitAndLossSummaryCache[$cacheKey];
+        }
+
+        $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
+        return $this->profitAndLossSummaryCache[$cacheKey] =
+            $metrics->profitAndLossSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+    }
+
     private function associatedCompanyCount(int $companyId): int {
         if ($companyId <= 0) {
             return 0;
         }
 
+        if (array_key_exists($companyId, $this->associatedCompanyCountCache)) {
+            return $this->associatedCompanyCountCache[$companyId];
+        }
+
         try {
-            return max(0, (int)(new \eel_accounts\Store\CompanySettingsStore($companyId))->get('associated_company_count', 0));
+            return $this->associatedCompanyCountCache[$companyId] =
+                max(0, (int)(new \eel_accounts\Store\CompanySettingsStore($companyId))->get('associated_company_count', 0));
         } catch (\Throwable) {
-            return 0;
+            return $this->associatedCompanyCountCache[$companyId] = 0;
         }
     }
 

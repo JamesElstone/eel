@@ -84,6 +84,65 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 }
             }
         });
+
+        $harness->check(\eel_accounts\Service\CorporationTaxComputationService::class, 'persists CT lock snapshots from fresh calculations after retained earnings close posting', static function () use ($harness): void {
+            yearEndClosePreviewRequireSchema($harness);
+            if (!InterfaceDB::tableExists('corporation_tax_computation_runs')) {
+                $harness->skip('Corporation Tax computation runs table is not available.');
+            }
+            if (!InterfaceDB::columnExists('corporation_tax_periods', 'latest_computation_run_id')) {
+                $harness->skip('Corporation Tax latest computation column is not available.');
+            }
+
+            InterfaceDB::beginTransaction();
+            try {
+                $fixture = yearEndClosePreviewCreateFixture();
+                $companyId = (int)$fixture['company_id'];
+                $accountingPeriodId = (int)$fixture['accounting_period_id'];
+                (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $accountingPeriodId);
+                $ctPeriods = (new \eel_accounts\Service\CorporationTaxPeriodService())->fetchForAccountingPeriod($companyId, $accountingPeriodId);
+                if (count($ctPeriods) < 2) {
+                    $harness->skip('The fixture did not create multiple CT periods.');
+                }
+                $targetCtPeriodId = (int)$ctPeriods[1]['id'];
+
+                $ctService = new \eel_accounts\Service\CorporationTaxComputationService();
+                $staleSummary = $ctService->fetchSummaryForCtPeriodId($companyId, $targetCtPeriodId);
+
+                yearEndClosePreviewInsertJournal($companyId, $accountingPeriodId, (string)$fixture['company_id'] . '-extra-expense', '2025-12-15', [
+                    [yearEndClosePreviewNominalId('6200'), 50.00, 0.00],
+                    [yearEndClosePreviewNominalId('1000'), 0.00, 50.00],
+                ]);
+
+                $retainedEarningsService = new \eel_accounts\Service\RetainedEarningsCloseService();
+                $acknowledged = $retainedEarningsService->saveAcknowledgement($companyId, $accountingPeriodId, true, 'test');
+                $harness->assertSame(true, (bool)($acknowledged['success'] ?? false));
+                $postedClose = $retainedEarningsService->postClose($companyId, $accountingPeriodId, 'test');
+                $harness->assertSame(true, (bool)($postedClose['success'] ?? false));
+
+                $persisted = $ctService->persistSummariesForAccountingPeriod($companyId, $accountingPeriodId);
+                $harness->assertSame(true, (bool)($persisted['success'] ?? false));
+
+                $targetSummary = null;
+                foreach ((array)($persisted['summaries'] ?? []) as $summary) {
+                    if ((int)($summary['ct_period_id'] ?? 0) === $targetCtPeriodId) {
+                        $targetSummary = $summary;
+                        break;
+                    }
+                }
+
+                $harness->assertTrue(is_array($targetSummary));
+                $harness->assertSame(
+                    number_format(round((float)($staleSummary['accounting_profit'] ?? 0) - 50.00, 2), 2, '.', ''),
+                    number_format((float)($targetSummary['accounting_profit'] ?? 0), 2, '.', '')
+                );
+                $harness->assertTrue((int)($targetSummary['computation_run_id'] ?? 0) > 0);
+            } finally {
+                if (InterfaceDB::inTransaction()) {
+                    InterfaceDB::rollBack();
+                }
+            }
+        });
     }
 );
 

@@ -95,18 +95,33 @@ final class DividendService
 
     public function getDividendCapacity(int $companyId, int $accountingPeriodId, ?string $asAtDate = null): array
     {
+        return (array)$this->getDividendCapacityContext($companyId, $accountingPeriodId, $asAtDate)['capacity'];
+    }
+
+    public function getDividendCapacityContext(int $companyId, int $accountingPeriodId, ?string $asAtDate = null): array
+    {
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
-            return [
+            $capacity = [
                 'available' => false,
                 'errors' => ['Select a company and accounting period before reviewing dividend capacity.'],
+            ];
+
+            return [
+                'capacity' => $capacity,
+                'reserve_review' => $this->unavailableReserveReview('Select a company and accounting period before reviewing dividend reserves.'),
             ];
         }
 
         $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
         if ($accountingPeriod === null) {
-            return [
+            $capacity = [
                 'available' => false,
                 'errors' => ['The selected accounting period could not be found.'],
+            ];
+
+            return [
+                'capacity' => $capacity,
+                'reserve_review' => $this->unavailableReserveReview('The selected accounting period could not be found.'),
             ];
         }
 
@@ -132,7 +147,7 @@ final class DividendService
             && !empty($taxPosition['reliable']);
         $reserveBasisDetail = $this->reserveBasisDetail($retainedEarningsPosition, $reserveReviewReliable, $reserveReviewDetail, $taxPosition);
 
-        return [
+        $capacity = [
             'available' => true,
             'errors' => [],
             'company_id' => $companyId,
@@ -164,6 +179,11 @@ final class DividendService
             'status' => $reservesReliable && $availableReserves > 0 ? 'available' : 'blocked',
             'status_label' => !$reservesReliable ? 'Reserve basis not ready' : ($availableReserves > 0 ? 'Available reserves' : 'No distributable reserves'),
             'status_badge_class' => $reservesReliable && $availableReserves > 0 ? 'success' : 'danger',
+        ];
+
+        return [
+            'capacity' => $capacity,
+            'reserve_review' => $reserveReview,
         ];
     }
 
@@ -586,6 +606,7 @@ final class DividendService
 
         $stmt->execute($params);
         $rows = $stmt->fetchAll() ?: [];
+        $isPeriodLocked = $this->isPeriodLocked($companyId, $accountingPeriodId);
         foreach ($rows as &$row) {
             $transactionId = (int)($row['voucher_transaction_id'] ?? 0);
             if ($transactionId <= 0) {
@@ -616,7 +637,7 @@ final class DividendService
             }
             $row['status'] = $isVoided ? 'voided' : (!empty($row['is_posted']) ? 'posted' : 'draft');
             $row['can_void'] = !$isVoided
-                && !$this->isPeriodLocked($companyId, $accountingPeriodId)
+                && !$isPeriodLocked
                 && (bool)$paymentLink['voidable']
                 && trim((string)$paymentLink['notes']) !== '';
         }
@@ -755,6 +776,15 @@ final class DividendService
 
     public function getDividendWarnings(int $companyId, int $accountingPeriodId): array
     {
+        $capacity = $companyId > 0 && $accountingPeriodId > 0
+            ? $this->getDividendCapacity($companyId, $accountingPeriodId)
+            : null;
+
+        return $this->getDividendWarningsForCapacity($companyId, $accountingPeriodId, $capacity);
+    }
+
+    public function getDividendWarningsForCapacity(int $companyId, int $accountingPeriodId, ?array $capacity = null): array
+    {
         $warnings = [];
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             $warnings[] = [
@@ -777,7 +807,7 @@ final class DividendService
         }
 
         if ($companyId > 0 && $accountingPeriodId > 0) {
-            $capacity = $this->getDividendCapacity($companyId, $accountingPeriodId);
+            $capacity ??= $this->getDividendCapacity($companyId, $accountingPeriodId);
             $profit = (float)($capacity['ledger_current_year_profit_loss'] ?? $capacity['current_year_profit_loss'] ?? 0);
             $reserves = (float)($capacity['available_distributable_reserves'] ?? 0);
 
@@ -991,6 +1021,14 @@ final class DividendService
         return $status === 'stale'
             ? 'Dividend declaration is blocked because the dividend reserve classification review is stale.'
             : 'Dividend declaration is blocked until current-year reserve movements are classified and reviewed.';
+    }
+
+    private function unavailableReserveReview(string $message): array
+    {
+        return [
+            'available' => false,
+            'errors' => [$message],
+        ];
     }
 
     private function reserveBasisDetail(array $retainedEarningsPosition, bool $reserveReviewReliable, string $reserveReviewDetail, array $taxPosition): string

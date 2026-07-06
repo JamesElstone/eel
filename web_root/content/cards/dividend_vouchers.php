@@ -19,6 +19,11 @@ final class _dividend_vouchersCard extends CardBaseFramework
         return 'Dividend Vouchers';
     }
 
+    public function services(): array
+    {
+        return [$this->dividendContextService()];
+    }
+
     protected function additionalInvalidationFacts(): array
     {
         return ['dividend.vouchers', 'dividend.history'];
@@ -26,7 +31,7 @@ final class _dividend_vouchersCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $rows = (array)($context['dividends']['vouchers'] ?? []);
+        $rows = (array)($this->dividendsContext($context)['vouchers'] ?? []);
         $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
         if ($rows === []) {
             return '<div class="helper">No dividend vouchers have been issued for the selected company and accounting period.</div>';
@@ -81,5 +86,28 @@ final class _dividend_vouchersCard extends CardBaseFramework
             <summary>' . HelperFramework::escape($label) . '</summary>
             <pre class="helper">' . HelperFramework::escape($text) . '</pre>
         </details>';
+    }
+
+    private function dividendContextService(): array
+    {
+        return [
+            'key' => 'dividendContext',
+            'service' => \eel_accounts\Service\DividendViewDataService::class,
+            'method' => 'fetchContext',
+            'params' => [
+                'companyId' => ':company.id',
+                'accountingPeriodId' => ':company.accounting_period_id',
+            ],
+        ];
+    }
+
+    private function dividendsContext(array $context): array
+    {
+        $serviceContext = $context['services']['dividendContext'] ?? null;
+        if (is_array($serviceContext)) {
+            return $serviceContext;
+        }
+
+        return (array)($context['dividends'] ?? []);
     }
 }

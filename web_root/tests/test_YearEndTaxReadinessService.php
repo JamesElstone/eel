@@ -45,5 +45,32 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(697.58, $totals['losses_carried_forward']);
             $harness->assertSame(0.00, $totals['taxable_profit']);
         });
+
+        $harness->check(\eel_accounts\Service\CorporationTaxComputationService::class, 'keeps CT loss values stable across runtime cache rebuilds', static function () use ($harness): void {
+            if (!InterfaceDB::tableExists('corporation_tax_periods')) {
+                $harness->skip('Corporation Tax periods are not available on the default InterfaceDB connection.');
+            }
+
+            $row = InterfaceDB::fetchOne(
+                'SELECT company_id, id AS ct_period_id
+                 FROM corporation_tax_periods
+                 WHERE status <> :superseded_status
+                 ORDER BY company_id ASC, accounting_period_id ASC, sequence_no ASC, id ASC
+                 LIMIT 1',
+                ['superseded_status' => 'superseded']
+            );
+            if (!is_array($row)) {
+                $harness->skip('No Corporation Tax periods are available for cache rebuild testing.');
+            }
+
+            $taxService = new \eel_accounts\Service\CorporationTaxComputationService();
+            $first = $taxService->fetchSummaryForCtPeriodId((int)$row['company_id'], (int)$row['ct_period_id']);
+            $taxService->clearRuntimeCaches();
+            $second = $taxService->fetchSummaryForCtPeriodId((int)$row['company_id'], (int)$row['ct_period_id']);
+
+            $harness->assertSame(round((float)($first['losses_brought_forward'] ?? 0), 2), round((float)($second['losses_brought_forward'] ?? 0), 2));
+            $harness->assertSame(round((float)($first['losses_used'] ?? 0), 2), round((float)($second['losses_used'] ?? 0), 2));
+            $harness->assertSame(round((float)($first['losses_carried_forward'] ?? 0), 2), round((float)($second['losses_carried_forward'] ?? 0), 2));
+        });
     }
 );

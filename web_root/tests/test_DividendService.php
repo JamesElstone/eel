@@ -44,6 +44,55 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
         $harness->assertSame($pastPeriodEnd, dividend_service_effective_as_at_date($service, null, '2000-01-01', $pastPeriodEnd));
     });
 
+    $harness->check(\eel_accounts\Service\DividendService::class, 'builds warnings from precomputed capacity without recalculating capacity', function () use ($harness, $service): void {
+        if (!InterfaceDB::tableExists('nominal_accounts')) {
+            $harness->skip('Nominal tables are not available on the default InterfaceDB connection.');
+        }
+
+        $warnings = $service->getDividendWarningsForCapacity(1, 1, [
+            'reserves_reliable' => false,
+            'reserve_basis_detail' => 'Reserve basis fixture detail.',
+            'available_distributable_reserves' => -1.00,
+            'ledger_current_year_profit_loss' => -2.00,
+            'unposted_corporation_tax_adjustment' => 3.00,
+        ]);
+        $titles = array_map(static fn(array $warning): string => (string)($warning['title'] ?? ''), $warnings);
+
+        $harness->assertTrue(in_array('Reserve basis blocked', $titles, true));
+        $harness->assertTrue(in_array('Insufficient reserves', $titles, true));
+        $harness->assertTrue(in_array('Negative current-year profit', $titles, true));
+        $harness->assertTrue(in_array('Corporation Tax estimate deducted', $titles, true));
+        $harness->assertTrue(in_array('Dividend review scope', $titles, true));
+    });
+
+    $harness->check(\eel_accounts\Service\CorporationTaxComputationService::class, 'clears runtime caches before recalculating changed ledger profit', function () use ($harness, $service): void {
+        if (!InterfaceDB::tableExists('companies') || !InterfaceDB::tableExists('accounting_periods') || !InterfaceDB::tableExists('journals') || !InterfaceDB::tableExists('journal_lines')) {
+            $harness->skip('Company, accounting period, and journal tables are not available on the default InterfaceDB connection.');
+        }
+        dividend_service_require_reserve_schema($harness);
+
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = dividend_service_manual_fixture($service, 100.00);
+            $taxService = new \eel_accounts\Service\CorporationTaxComputationService();
+            $method = new ReflectionMethod($taxService, 'profitAndLossSummary');
+            $method->setAccessible(true);
+
+            $first = $method->invoke($taxService, $fixture['company_id'], $fixture['accounting_period_id'], '2022-01-01', '2022-12-31');
+            dividend_service_add_profit_journal($fixture['company_id'], $fixture['accounting_period_id'], (string)$fixture['marker'] . 'CACHE', 25.00, '2022-11-15');
+            $cached = $method->invoke($taxService, $fixture['company_id'], $fixture['accounting_period_id'], '2022-01-01', '2022-12-31');
+            $taxService->clearRuntimeCaches();
+            $fresh = $method->invoke($taxService, $fixture['company_id'], $fixture['accounting_period_id'], '2022-01-01', '2022-12-31');
+
+            $harness->assertSame(round((float)($first['profit_before_tax'] ?? 0), 2), round((float)($cached['profit_before_tax'] ?? 0), 2));
+            $harness->assertSame(round((float)($first['profit_before_tax'] ?? 0) + 25.00, 2), round((float)($fresh['profit_before_tax'] ?? 0), 2));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
     $harness->check(\eel_accounts\Service\DividendService::class, 'creates dividend declaration from payable transaction once', function () use ($harness, $service): void {
         if (!InterfaceDB::tableExists('transactions') || !InterfaceDB::tableExists('journals') || !InterfaceDB::tableExists('journal_lines')) {
             $harness->skip('Transaction and journal tables are not available on the default InterfaceDB connection.');

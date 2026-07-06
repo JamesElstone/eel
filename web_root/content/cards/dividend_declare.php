@@ -19,6 +19,11 @@ final class _dividend_declareCard extends CardBaseFramework
         return 'Declare Dividend';
     }
 
+    public function services(): array
+    {
+        return [$this->dividendContextService()];
+    }
+
     protected function additionalInvalidationFacts(): array
     {
         return ['page.context'];
@@ -28,16 +33,19 @@ final class _dividend_declareCard extends CardBaseFramework
     {
         $company = (array)($context['company'] ?? []);
         $companySettings = (array)($company['settings'] ?? []);
-        $capacity = (array)($context['dividends']['capacity'] ?? []);
+        $dividends = $this->dividendsContext($context);
+        $capacity = (array)($dividends['capacity'] ?? []);
         $accountingPeriod = (array)($capacity['accounting_period'] ?? []);
-        $candidates = (array)($context['dividends']['reconciliation_candidates'] ?? []);
+        $candidates = (array)($dividends['reconciliation_candidates'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $periodStart = (string)($accountingPeriod['period_start'] ?? '');
         $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
         $defaultDate = (string)($capacity['as_at_date'] ?? date('Y-m-d'));
         $availableReserves = round((float)($capacity['available_distributable_reserves'] ?? 0), 2);
-        $isLocked = (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);
+        $isLocked = array_key_exists('is_locked', $dividends)
+            ? (bool)$dividends['is_locked']
+            : (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);
 
         $disabledReason = '';
         if ($isLocked) {
@@ -121,5 +129,28 @@ final class _dividend_declareCard extends CardBaseFramework
     private function money(array $companySettings, mixed $value): string
     {
         return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
+    }
+
+    private function dividendContextService(): array
+    {
+        return [
+            'key' => 'dividendContext',
+            'service' => \eel_accounts\Service\DividendViewDataService::class,
+            'method' => 'fetchContext',
+            'params' => [
+                'companyId' => ':company.id',
+                'accountingPeriodId' => ':company.accounting_period_id',
+            ],
+        ];
+    }
+
+    private function dividendsContext(array $context): array
+    {
+        $serviceContext = $context['services']['dividendContext'] ?? null;
+        if (is_array($serviceContext)) {
+            return $serviceContext;
+        }
+
+        return (array)($context['dividends'] ?? []);
     }
 }

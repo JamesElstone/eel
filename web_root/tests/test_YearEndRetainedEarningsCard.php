@@ -19,7 +19,7 @@ $harness->run(_year_end_retained_earningsCard::class, static function (Generated
         $harness->assertSame(true, str_contains($html, 'carry current profit/loss into 3000 Retained Earnings'));
         $harness->assertSame(true, str_contains($html, 'reset income and expense nominal balances for the next period (clear them)'));
         $harness->assertSame(true, str_contains($html, 'Original transactions, expense claims, and source journals are not changed.'));
-        $harness->assertSame(true, str_contains($html, 'I agree that current profit/loss will be carried into retained earnings'));
+        $harness->assertSame(true, str_contains($html, 'I confirm that I have reviewed the retained earnings close shown above and approve it as accurate for Year End.'));
         $harness->assertSame(true, str_contains($html, 'disabled data-year-end-ack-submit'));
     });
 

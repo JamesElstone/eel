@@ -1057,6 +1057,79 @@ final class AssetService
         return $summary;
     }
 
+    public function previewDepreciationRun(int $companyId, int $accountingPeriodId): array {
+        if (!$this->hasRequiredSchema()) {
+            return ['success' => false, 'errors' => ['Run the fixed asset migration before posting depreciation.']];
+        }
+
+        $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null) {
+            return ['success' => false, 'errors' => ['The selected accounting period could not be found.']];
+        }
+
+        $periodEnd = trim((string)($accountingPeriod['period_end'] ?? ''));
+        $today = (new \DateTimeImmutable('today'))->format('Y-m-d');
+        if ($periodEnd === '' || $today <= $periodEnd) {
+            return [
+                'success' => false,
+                'errors' => [
+                    sprintf(
+                        'Depreciation can only be posted after the accounting period end date. Period ends %s; today is %s.',
+                        $periodEnd !== '' ? $periodEnd : 'unknown',
+                        $today
+                    ),
+                ],
+            ];
+        }
+
+        $assets = $this->fetchDepreciableAssets($companyId, (string)$accountingPeriod['period_start'], (string)$accountingPeriod['period_end']);
+        $rows = [];
+        $total = 0.0;
+        $skipped = 0;
+
+        foreach ($assets as $asset) {
+            $depreciationPeriodStart = max((string)$accountingPeriod['period_start'], (string)$asset['purchase_date']);
+            $depreciationPeriodEnd = (string)$accountingPeriod['period_end'];
+            if ((string)($asset['status'] ?? 'active') === 'disposed' && trim((string)($asset['disposal_date'] ?? '')) !== '') {
+                $depreciationPeriodEnd = min($depreciationPeriodEnd, (string)$asset['disposal_date']);
+            }
+
+            if ($depreciationPeriodEnd < $depreciationPeriodStart) {
+                $skipped++;
+                continue;
+            }
+
+            if ($this->depreciationEntryExists((int)$asset['id'], $accountingPeriodId, $depreciationPeriodStart, $depreciationPeriodEnd)) {
+                $skipped++;
+                continue;
+            }
+
+            $amount = $this->calculateDepreciationAmount($asset, $depreciationPeriodStart, $depreciationPeriodEnd);
+            if ($amount <= 0) {
+                $skipped++;
+                continue;
+            }
+
+            $amount = round($amount, 2);
+            $total = round($total + $amount, 2);
+            $rows[] = [
+                'asset_id' => (int)$asset['id'],
+                'asset_code' => (string)($asset['asset_code'] ?? ''),
+                'period_start' => $depreciationPeriodStart,
+                'period_end' => $depreciationPeriodEnd,
+                'amount' => $amount,
+            ];
+        }
+
+        return [
+            'success' => true,
+            'created' => count($rows),
+            'skipped' => $skipped,
+            'total_amount' => $total,
+            'rows' => $rows,
+        ];
+    }
+
     public function disposeAsset(int $companyId, int $assetId, string $disposalDate, float $proceeds, int $bankNominalId): array {
         if (round($proceeds, 2) > 0.0) {
             return ['success' => false, 'errors' => ['Select a receipt transaction before disposing an asset with proceeds.']];

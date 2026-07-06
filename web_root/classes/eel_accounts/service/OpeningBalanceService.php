@@ -66,30 +66,73 @@ final class OpeningBalanceService
             $description = 'Opening balances for ' . (string)($context['accounting_period']['label'] ?? 'selected period');
         }
 
-        $result = ($this->journalService ?? new \eel_accounts\Service\ManualJournalService())->saveTaggedJournal(
-            $companyId,
-            $accountingPeriodId,
-            'opening_balance',
-            'primary',
-            (string)$context['accounting_period']['period_start'],
-            $description,
-            $lines,
-            $entryMode,
-            null,
-            $existing !== null ? (int)$existing['id'] : null,
-            trim((string)($payload['notes'] ?? '')),
-            $changedBy
-        );
+        (new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'save opening balances in this period');
 
-        if (empty($result['success'])) {
-            return $result;
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
         }
 
-        return [
-            'success' => true,
-            'journal' => $result['journal'],
-            'appended_to_existing' => !empty($result['appended_to_existing']),
-        ];
+        try {
+            if ($existing !== null && $replaceExisting) {
+                \InterfaceDB::prepareExecute(
+                    'UPDATE journals
+                     SET is_posted = 0,
+                         updated_at = CURRENT_TIMESTAMP
+                     WHERE id = :journal_id
+                       AND company_id = :company_id
+                       AND accounting_period_id = :accounting_period_id',
+                    [
+                        'journal_id' => (int)$existing['id'],
+                        'company_id' => $companyId,
+                        'accounting_period_id' => $accountingPeriodId,
+                    ]
+                );
+            }
+
+            $result = ($this->journalService ?? new \eel_accounts\Service\ManualJournalService())->saveTaggedJournal(
+                $companyId,
+                $accountingPeriodId,
+                'opening_balance',
+                'primary',
+                (string)$context['accounting_period']['period_start'],
+                $description,
+                $lines,
+                $entryMode,
+                null,
+                $existing !== null ? (int)$existing['id'] : null,
+                trim((string)($payload['notes'] ?? '')),
+                $changedBy
+            );
+
+            if (empty($result['success'])) {
+                if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                    \InterfaceDB::rollBack();
+                }
+
+                return $result;
+            }
+
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
+
+            return [
+                'success' => true,
+                'journal' => $result['journal'],
+                'replaced_existing' => $existing !== null && $replaceExisting,
+                'appended_to_existing' => !empty($result['appended_to_existing']),
+            ];
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+
+            return [
+                'success' => false,
+                'errors' => [$exception->getMessage()],
+            ];
+        }
     }
 
     private function fetchNominals(): array {

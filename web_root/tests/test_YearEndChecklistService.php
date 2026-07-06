@@ -11,27 +11,109 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static function (GeneratedServiceClassTestHarness $harness): void {
-    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'locking a period posts asset depreciation first', static function () use ($harness): void {
-        yearEndChecklistServiceRequireDepreciationLockSchema($harness);
+    $harness->check(\eel_accounts\Service\AssetService::class, 'depreciation preview reports pending year-end depreciation', static function () use ($harness): void {
+        yearEndChecklistServiceRequireDepreciationLockTables($harness);
 
         InterfaceDB::beginTransaction();
         try {
+            yearEndChecklistServiceEnsureNominal('1000', 'Bank', 'asset');
+            yearEndChecklistServiceEnsureNominal('1300', 'Tools', 'asset');
+            yearEndChecklistServiceEnsureNominal('1330', 'Accum Dep - Tools', 'asset');
+            yearEndChecklistServiceEnsureNominal('4000', 'Sales', 'income');
+            yearEndChecklistServiceEnsureNominal('6200', 'Depreciation Expense', 'expense');
+
             $fixture = yearEndChecklistServiceCreateDepreciationLockFixture();
-            $result = (new \eel_accounts\Service\YearEndChecklistService())->lockPeriod(
+            $result = (new \eel_accounts\Service\AssetService())->previewDepreciationRun(
                 (int)$fixture['company_id'],
-                (int)$fixture['accounting_period_id'],
-                'test'
+                (int)$fixture['accounting_period_id']
             );
 
             $harness->assertSame(true, (bool)($result['success'] ?? false));
-            $harness->assertSame(1, (int)(($result['depreciation'] ?? [])['created'] ?? 0));
-            $harness->assertSame(1, InterfaceDB::countWhere('asset_depreciation_entries', [
+            $harness->assertSame(1, (int)($result['created'] ?? 0));
+            $harness->assertTrue((float)($result['total_amount'] ?? 0) > 0);
+            $harness->assertSame(0, InterfaceDB::countWhere('asset_depreciation_entries', [
                 'asset_id' => (int)$fixture['asset_id'],
                 'accounting_period_id' => (int)$fixture['accounting_period_id'],
             ]));
-            $harness->assertSame(1, InterfaceDB::countWhere('year_end_reviews', [
-                'company_id' => (int)$fixture['company_id'],
-                'accounting_period_id' => (int)$fixture['accounting_period_id'],
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'lock fails before writes when pending depreciation would stale retained earnings approval', static function () use ($harness): void {
+        yearEndChecklistServiceRequireDepreciationLockTables($harness);
+
+        InterfaceDB::beginTransaction();
+        try {
+            yearEndChecklistServiceEnsureNominal('1000', 'Bank', 'asset');
+            yearEndChecklistServiceEnsureNominal('1300', 'Tools', 'asset');
+            yearEndChecklistServiceEnsureNominal('1330', 'Accum Dep - Tools', 'asset');
+            yearEndChecklistServiceEnsureNominal('3000', 'Retained Earnings', 'equity');
+            yearEndChecklistServiceEnsureNominal('4000', 'Sales', 'income');
+            yearEndChecklistServiceEnsureNominal('6200', 'Depreciation Expense', 'expense');
+
+            $fixture = yearEndChecklistServiceCreateDepreciationLockFixture();
+            $companyId = (int)$fixture['company_id'];
+            $accountingPeriodId = (int)$fixture['accounting_period_id'];
+
+            $acknowledged = (new \eel_accounts\Service\RetainedEarningsCloseService())->saveAcknowledgement($companyId, $accountingPeriodId, true, 'test');
+            $harness->assertSame(true, (bool)($acknowledged['success'] ?? false));
+
+            $service = new \eel_accounts\Service\YearEndChecklistService();
+            $preflight = new ReflectionMethod($service, 'preflightLockPeriod');
+            $preflight->setAccessible(true);
+            $preflightResult = $preflight->invoke($service, $companyId, $accountingPeriodId, [
+                'overall_status' => 'ready_for_review',
+                'retained_earnings_close' => [
+                    'acknowledged' => true,
+                    'acknowledgement_stale' => false,
+                ],
+            ]);
+            $harness->assertSame(false, (bool)($preflightResult['success'] ?? true));
+            $harness->assertTrue(str_contains(implode(' ', (array)($preflightResult['errors'] ?? [])), 'Depreciation must be posted and reviewed before locking'));
+
+            $result = $service->lockPeriod($companyId, $accountingPeriodId, 'test');
+
+            $harness->assertSame(false, (bool)($result['success'] ?? true));
+            $harness->assertTrue(str_contains(implode(' ', (array)($result['errors'] ?? [])), 'No year-end close tasks were committed'));
+            $harness->assertSame(0, InterfaceDB::countWhere('asset_depreciation_entries', [
+                'asset_id' => (int)$fixture['asset_id'],
+                'accounting_period_id' => $accountingPeriodId,
+            ]));
+            $harness->assertSame(0, (int)InterfaceDB::fetchColumn(
+                'SELECT COUNT(*)
+                 FROM journals
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id
+                   AND source_type = :source_type',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'source_type' => 'asset_depreciation',
+                ]
+            ));
+            $harness->assertSame(0, (int)InterfaceDB::fetchColumn(
+                'SELECT COUNT(*)
+                 FROM journal_entry_metadata
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id
+                   AND journal_tag IN (:retained_tag, :director_offset_tag)',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'retained_tag' => \eel_accounts\Service\RetainedEarningsCloseService::JOURNAL_TAG,
+                    'director_offset_tag' => \eel_accounts\Service\DirectorLoanReconciliationService::OFFSET_JOURNAL_TAG,
+                ]
+            ));
+            $harness->assertSame(0, InterfaceDB::countWhere('corporation_tax_computation_runs', [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+            ]));
+            $harness->assertSame(0, InterfaceDB::countWhere('year_end_reviews', [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
                 'is_locked' => 1,
             ]));
         } finally {
@@ -82,6 +164,40 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
                 'accounting_period_id' => (int)$fixture['accounting_period_id'],
                 'journal_tag' => \eel_accounts\Service\DirectorLoanReconciliationService::OFFSET_JOURNAL_TAG,
                 'journal_key' => \eel_accounts\Service\DirectorLoanReconciliationService::OFFSET_JOURNAL_KEY,
+            ]));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
+    $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'stale director loan offset blocks duplicate posting', static function () use ($harness): void {
+        yearEndChecklistServiceRequireDirectorLoanOffsetLockTables($harness);
+
+        InterfaceDB::beginTransaction();
+        try {
+            yearEndChecklistServiceEnsureNominal('1200', 'Director Loan Asset', 'asset');
+            yearEndChecklistServiceEnsureNominal('2100', 'Director Loan Liability', 'liability');
+
+            $fixture = yearEndChecklistServiceCreateDirectorLoanOffsetFixture();
+            $companyId = (int)$fixture['company_id'];
+            $accountingPeriodId = (int)$fixture['accounting_period_id'];
+            $assetNominalId = yearEndChecklistServiceNominalId('1200');
+
+            $service = new \eel_accounts\Service\DirectorLoanReconciliationService();
+            $first = $service->postOffset($companyId, $accountingPeriodId, 'test');
+            $harness->assertSame(true, (bool)($first['success'] ?? false));
+
+            yearEndChecklistServiceInsertDirectorLoanLineJournal($companyId, $accountingPeriodId, $assetNominalId, 100.00, 0.00, 'asset-extra', (string)$companyId);
+
+            $second = $service->postOffset($companyId, $accountingPeriodId, 'test');
+            $harness->assertSame(false, (bool)($second['success'] ?? true));
+            $harness->assertTrue(str_contains(implode(' ', (array)($second['errors'] ?? [])), 'stale director loan offset'));
+            $harness->assertSame(1, InterfaceDB::countWhere('journal_entry_metadata', [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'journal_tag' => \eel_accounts\Service\DirectorLoanReconciliationService::OFFSET_JOURNAL_TAG,
             ]));
         } finally {
             if (InterfaceDB::inTransaction()) {
@@ -403,11 +519,7 @@ function yearEndChecklistServiceFindCheck(array $checklist, string $checkCode): 
 
 function yearEndChecklistServiceRequireDepreciationLockSchema(GeneratedServiceClassTestHarness $harness): void
 {
-    foreach (['companies', 'accounting_periods', 'journals', 'journal_lines', 'nominal_accounts', 'asset_register', 'asset_depreciation_entries', 'year_end_reviews', 'year_end_check_results', 'year_end_audit_log', 'capital_allowance_pool_runs', 'capital_allowance_asset_calculations', 'tax_loss_carryforwards'] as $table) {
-        if (!InterfaceDB::tableExists($table)) {
-            $harness->skip($table . ' table is not available.');
-        }
-    }
+    yearEndChecklistServiceRequireDepreciationLockTables($harness);
 
     foreach (['1000', '1300', '1330', '4000', '6200'] as $code) {
         if (yearEndChecklistServiceNominalId($code) <= 0) {
@@ -416,17 +528,31 @@ function yearEndChecklistServiceRequireDepreciationLockSchema(GeneratedServiceCl
     }
 }
 
-function yearEndChecklistServiceRequireDirectorLoanOffsetLockSchema(GeneratedServiceClassTestHarness $harness): void
+function yearEndChecklistServiceRequireDepreciationLockTables(GeneratedServiceClassTestHarness $harness): void
 {
-    foreach (['companies', 'accounting_periods', 'journals', 'journal_lines', 'nominal_accounts', 'journal_entry_metadata'] as $table) {
+    foreach (['companies', 'accounting_periods', 'journals', 'journal_lines', 'journal_entry_metadata', 'nominal_accounts', 'asset_register', 'asset_depreciation_entries', 'year_end_reviews', 'year_end_check_results', 'year_end_audit_log', 'capital_allowance_pool_runs', 'capital_allowance_asset_calculations', 'tax_loss_carryforwards'] as $table) {
         if (!InterfaceDB::tableExists($table)) {
             $harness->skip($table . ' table is not available.');
         }
     }
+}
+
+function yearEndChecklistServiceRequireDirectorLoanOffsetLockSchema(GeneratedServiceClassTestHarness $harness): void
+{
+    yearEndChecklistServiceRequireDirectorLoanOffsetLockTables($harness);
 
     foreach (['1200', '2100'] as $code) {
         if (yearEndChecklistServiceNominalId($code) <= 0) {
             $harness->skip('Nominal ' . $code . ' is not available.');
+        }
+    }
+}
+
+function yearEndChecklistServiceRequireDirectorLoanOffsetLockTables(GeneratedServiceClassTestHarness $harness): void
+{
+    foreach (['companies', 'accounting_periods', 'journals', 'journal_lines', 'nominal_accounts', 'journal_entry_metadata'] as $table) {
+        if (!InterfaceDB::tableExists($table)) {
+            $harness->skip($table . ' table is not available.');
         }
     }
 }
@@ -913,4 +1039,24 @@ function yearEndChecklistServiceNominalId(string $code): int
         'SELECT id FROM nominal_accounts WHERE code = :code LIMIT 1',
         ['code' => $code]
     );
+}
+
+function yearEndChecklistServiceEnsureNominal(string $code, string $name, string $accountType): int
+{
+    $existingId = yearEndChecklistServiceNominalId($code);
+    if ($existingId > 0) {
+        return $existingId;
+    }
+
+    InterfaceDB::prepareExecute(
+        'INSERT INTO nominal_accounts (code, name, account_type, is_active)
+         VALUES (:code, :name, :account_type, 1)',
+        [
+            'code' => $code,
+            'name' => $name,
+            'account_type' => $accountType,
+        ]
+    );
+
+    return yearEndChecklistServiceNominalId($code);
 }

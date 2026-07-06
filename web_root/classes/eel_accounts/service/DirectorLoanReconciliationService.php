@@ -98,6 +98,14 @@ final class DirectorLoanReconciliationService
             ];
         }
 
+        if ((string)($context['offset_status'] ?? '') === 'stale') {
+            return [
+                'success' => false,
+                'errors' => ['A stale director loan offset journal already exists. Review or reverse the existing offset before posting another one.'],
+                'context' => $context,
+            ];
+        }
+
         if (empty($context['can_post'])) {
             return [
                 'success' => false,

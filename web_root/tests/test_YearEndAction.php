@@ -92,6 +92,57 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
         });
     });
 
+    $harness->check('YearEndAction', 'locked period blocks notes changes', static function () use ($harness, $instance): void {
+        foreach (['companies', 'accounting_periods', 'year_end_reviews'] as $table) {
+            if (!InterfaceDB::tableExists($table)) {
+                $harness->skip($table . ' table is not available on the default InterfaceDB connection.');
+            }
+        }
+
+        InterfaceDB::beginTransaction();
+        try {
+            $marker = (string)random_int(100000, 999999);
+            $companyId = (int)('91' . $marker);
+            $accountingPeriodId = (int)('92' . $marker);
+            InterfaceDB::prepareExecute(
+                'INSERT INTO companies (id, company_name, company_number, is_active)
+                 VALUES (:id, :company_name, :company_number, 1)',
+                ['id' => $companyId, 'company_name' => 'Year End Locked Notes ' . $marker, 'company_number' => 'YLN' . substr($marker, 0, 5)]
+            );
+            InterfaceDB::prepareExecute(
+                'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end)
+                 VALUES (:id, :company_id, :label, :period_start, :period_end)',
+                ['id' => $accountingPeriodId, 'company_id' => $companyId, 'label' => 'Locked Notes FY', 'period_start' => '2025-01-01', 'period_end' => '2025-12-31']
+            );
+            InterfaceDB::prepareExecute(
+                'INSERT INTO year_end_reviews (company_id, accounting_period_id, status, is_locked, locked_at, locked_by)
+                 VALUES (:company_id, :accounting_period_id, :status, 1, CURRENT_TIMESTAMP, :locked_by)',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'status' => 'locked',
+                    'locked_by' => 'test',
+                ]
+            );
+
+            $result = $instance->handle(yearEndActionDirectorLoanTestRequest($companyId, $accountingPeriodId, 'save_notes'), createTestPageServiceFramework());
+
+            $harness->assertSame(false, $result->isSuccess());
+            $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'locked'));
+            $harness->assertSame('', (string)InterfaceDB::fetchColumn(
+                'SELECT COALESCE(review_notes, \'\')
+                 FROM year_end_reviews
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id',
+                ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+            ));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
     $harness->check('YearEndAction', 'saves director loan offset acknowledgement', static function () use ($harness): void {
         yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness): void {
             $instance = yearEndActionTestInstanceWithDirectorCount(1);

@@ -306,12 +306,119 @@ final class YearEndChecklistService
     }
 
     public function lockPeriod(int $companyId, int $accountingPeriodId, string $lockedBy = 'web_app'): array {
-        $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId, true);
-        if (empty($checklistResult['success'])) {
-            return $checklistResult;
-        }
+        $transaction = $this->beginLockTransaction();
 
-        $checklist = (array)$checklistResult['checklist'];
+        try {
+            $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId, true);
+            if (empty($checklistResult['success'])) {
+                return $this->rollbackLockTransaction($transaction, $checklistResult);
+            }
+
+            $checklist = (array)$checklistResult['checklist'];
+            $preflightResult = $this->preflightLockPeriod($companyId, $accountingPeriodId, $checklist);
+            if (empty($preflightResult['success'])) {
+                return $this->rollbackLockTransaction($transaction, $preflightResult);
+            }
+
+            $directorLoanOffsetResult = $this->applyDirectorLoanOffsetBeforeLock($companyId, $accountingPeriodId, $checklist, $lockedBy);
+            if (empty($directorLoanOffsetResult['success'])) {
+                return $this->rollbackLockTransaction($transaction, [
+                    'success' => false,
+                    'status' => (int)($directorLoanOffsetResult['status'] ?? 422),
+                    'errors' => (array)($directorLoanOffsetResult['errors'] ?? ['Director loan offset could not be applied before locking this period.']),
+                    'checklist' => $checklist,
+                    'director_loan_offset' => $directorLoanOffsetResult,
+                ]);
+            }
+
+            $depreciationResult = ($this->assetService ?? new \eel_accounts\Service\AssetService())->runDepreciation($companyId, $accountingPeriodId);
+            if (empty($depreciationResult['success'])) {
+                return $this->rollbackLockTransaction($transaction, [
+                    'success' => false,
+                    'status' => (int)($depreciationResult['status'] ?? 422),
+                    'errors' => (array)($depreciationResult['errors'] ?? ['Depreciation could not be posted before locking this period.']),
+                    'checklist' => $checklist,
+                    'director_loan_offset' => $directorLoanOffsetResult,
+                    'depreciation' => $depreciationResult,
+                ]);
+            }
+
+            $stagedRetainedEarningsContext = ($this->retainedEarningsCloseService ?? new \eel_accounts\Service\RetainedEarningsCloseService())
+                ->fetchContext($companyId, $accountingPeriodId);
+            if (!empty($stagedRetainedEarningsContext['acknowledgement_stale'])) {
+                return $this->rollbackLockTransaction($transaction, [
+                    'success' => false,
+                    'status' => 422,
+                    'errors' => ['The retained earnings figures changed while preparing year-end close tasks. Review and agree the retained earnings close again.'],
+                    'checklist' => $checklist,
+                    'director_loan_offset' => $directorLoanOffsetResult,
+                    'depreciation' => $depreciationResult,
+                    'retained_earnings_close' => ['success' => false, 'context' => $stagedRetainedEarningsContext],
+                ]);
+            }
+
+            $retainedEarningsCloseResult = ($this->retainedEarningsCloseService ?? new \eel_accounts\Service\RetainedEarningsCloseService())
+                ->postClose($companyId, $accountingPeriodId, $lockedBy);
+            if (empty($retainedEarningsCloseResult['success'])) {
+                return $this->rollbackLockTransaction($transaction, [
+                    'success' => false,
+                    'status' => (int)($retainedEarningsCloseResult['status'] ?? 422),
+                    'errors' => (array)($retainedEarningsCloseResult['errors'] ?? ['Retained earnings close could not be posted before locking this period.']),
+                    'checklist' => $checklist,
+                    'director_loan_offset' => $directorLoanOffsetResult,
+                    'depreciation' => $depreciationResult,
+                    'retained_earnings_close' => $retainedEarningsCloseResult,
+                ]);
+            }
+
+            $taxPersistenceResult = (new \eel_accounts\Service\CorporationTaxComputationService())
+                ->persistSummariesForAccountingPeriod($companyId, $accountingPeriodId);
+            if (empty($taxPersistenceResult['success'])) {
+                return $this->rollbackLockTransaction($transaction, [
+                    'success' => false,
+                    'status' => 422,
+                    'errors' => (array)($taxPersistenceResult['errors'] ?? ['Corporation Tax estimates could not be snapshotted before locking this period.']),
+                    'checklist' => $checklist,
+                    'director_loan_offset' => $directorLoanOffsetResult,
+                    'depreciation' => $depreciationResult,
+                    'retained_earnings_close' => $retainedEarningsCloseResult,
+                    'corporation_tax' => $taxPersistenceResult,
+                ]);
+            }
+
+            $lock = $this->lockService ?? new \eel_accounts\Service\YearEndLockService();
+            $result = $lock->lockPeriod($companyId, $accountingPeriodId, $lockedBy);
+            if (empty($result['success'])) {
+                return $this->rollbackLockTransaction($transaction, $result);
+            }
+
+            $result += [
+                'depreciation' => $depreciationResult,
+                'director_loan_offset' => $directorLoanOffsetResult,
+                'retained_earnings_close' => $retainedEarningsCloseResult,
+                'corporation_tax' => $taxPersistenceResult,
+                'checklist' => $this->fetchChecklist($companyId, $accountingPeriodId, true),
+            ];
+
+            $this->commitLockTransaction($transaction);
+
+            return $result;
+        } catch (\Throwable $exception) {
+            return $this->rollbackLockTransaction($transaction, [
+                'success' => false,
+                'status' => 500,
+                'errors' => [$exception->getMessage()],
+            ]);
+        }
+    }
+
+    private function canLockOverallStatus(string $overallStatus): bool
+    {
+        return $overallStatus === 'ready_for_review';
+    }
+
+    private function preflightLockPeriod(int $companyId, int $accountingPeriodId, array $checklist): array
+    {
         $overallStatus = (string)($checklist['overall_status'] ?? 'not_started');
         if (!$this->canLockOverallStatus($overallStatus)) {
             return [
@@ -322,76 +429,100 @@ final class YearEndChecklistService
             ];
         }
 
-        $directorLoanOffsetResult = $this->applyDirectorLoanOffsetBeforeLock($companyId, $accountingPeriodId, $checklist, $lockedBy);
-        if (empty($directorLoanOffsetResult['success'])) {
-            return [
-                'success' => false,
-                'status' => (int)($directorLoanOffsetResult['status'] ?? 422),
-                'errors' => (array)($directorLoanOffsetResult['errors'] ?? ['Director loan offset could not be applied before locking this period.']),
-                'checklist' => $checklist,
-                'director_loan_offset' => $directorLoanOffsetResult,
-            ];
-        }
-
-        $depreciationResult = ($this->assetService ?? new \eel_accounts\Service\AssetService())->runDepreciation($companyId, $accountingPeriodId);
-        if (empty($depreciationResult['success'])) {
-            return [
-                'success' => false,
-                'status' => (int)($depreciationResult['status'] ?? 422),
-                'errors' => (array)($depreciationResult['errors'] ?? ['Depreciation could not be posted before locking this period.']),
-                'checklist' => $checklist,
-                'director_loan_offset' => $directorLoanOffsetResult,
-                'depreciation' => $depreciationResult,
-            ];
-        }
-
-        $retainedEarningsCloseResult = ($this->retainedEarningsCloseService ?? new \eel_accounts\Service\RetainedEarningsCloseService())
-            ->postClose($companyId, $accountingPeriodId, $lockedBy);
-        if (empty($retainedEarningsCloseResult['success'])) {
-            return [
-                'success' => false,
-                'status' => (int)($retainedEarningsCloseResult['status'] ?? 422),
-                'errors' => (array)($retainedEarningsCloseResult['errors'] ?? ['Retained earnings close could not be posted before locking this period.']),
-                'checklist' => $checklist,
-                'director_loan_offset' => $directorLoanOffsetResult,
-                'depreciation' => $depreciationResult,
-                'retained_earnings_close' => $retainedEarningsCloseResult,
-            ];
-        }
-
-        $taxPersistenceResult = (new \eel_accounts\Service\CorporationTaxComputationService())
-            ->persistSummariesForAccountingPeriod($companyId, $accountingPeriodId);
-        if (empty($taxPersistenceResult['success'])) {
+        $retainedEarningsClose = (array)($checklist['retained_earnings_close'] ?? []);
+        if (!empty($retainedEarningsClose['acknowledgement_stale'])) {
             return [
                 'success' => false,
                 'status' => 422,
-                'errors' => (array)($taxPersistenceResult['errors'] ?? ['Corporation Tax estimates could not be snapshotted before locking this period.']),
+                'errors' => ['The retained earnings figures have changed since acknowledgement. Review and agree the retained earnings close again.'],
                 'checklist' => $checklist,
-                'director_loan_offset' => $directorLoanOffsetResult,
-                'depreciation' => $depreciationResult,
-                'retained_earnings_close' => $retainedEarningsCloseResult,
-                'corporation_tax' => $taxPersistenceResult,
+                'retained_earnings_close' => $retainedEarningsClose,
             ];
         }
 
-        $lock = $this->lockService ?? new \eel_accounts\Service\YearEndLockService();
-        $result = $lock->lockPeriod($companyId, $accountingPeriodId, $lockedBy);
-        if (empty($result['success'])) {
-            return $result;
+        $depreciationPreview = ($this->assetService ?? new \eel_accounts\Service\AssetService())->previewDepreciationRun($companyId, $accountingPeriodId);
+        if (empty($depreciationPreview['success'])) {
+            return [
+                'success' => false,
+                'status' => 422,
+                'errors' => (array)($depreciationPreview['errors'] ?? ['Depreciation could not be checked before locking this period.']),
+                'checklist' => $checklist,
+                'depreciation' => $depreciationPreview,
+            ];
         }
 
-        return $result + [
-            'depreciation' => $depreciationResult,
-            'director_loan_offset' => $directorLoanOffsetResult,
-            'retained_earnings_close' => $retainedEarningsCloseResult,
-            'corporation_tax' => $taxPersistenceResult,
-            'checklist' => $this->fetchChecklist($companyId, $accountingPeriodId, true),
+        if (!empty($retainedEarningsClose['acknowledged']) && (int)($depreciationPreview['created'] ?? 0) > 0 && abs((float)($depreciationPreview['total_amount'] ?? 0)) >= 0.005) {
+            return [
+                'success' => false,
+                'status' => 422,
+                'errors' => [
+                    'Depreciation must be posted and reviewed before locking this period. Review and agree retained earnings again after depreciation is reflected in the figures.',
+                ],
+                'checklist' => $checklist,
+                'depreciation' => $depreciationPreview,
+                'retained_earnings_close' => $retainedEarningsClose,
+            ];
+        }
+
+        return [
+            'success' => true,
+            'depreciation' => $depreciationPreview,
         ];
     }
 
-    private function canLockOverallStatus(string $overallStatus): bool
+    private function beginLockTransaction(): array
     {
-        return $overallStatus === 'ready_for_review';
+        if (!\InterfaceDB::inTransaction()) {
+            \InterfaceDB::beginTransaction();
+
+            return [
+                'owns_transaction' => true,
+                'savepoint' => '',
+            ];
+        }
+
+        $savepoint = 'year_end_lock_' . bin2hex(random_bytes(6));
+        \InterfaceDB::execute('SAVEPOINT ' . $savepoint);
+
+        return [
+            'owns_transaction' => false,
+            'savepoint' => $savepoint,
+        ];
+    }
+
+    private function commitLockTransaction(array $transaction): void
+    {
+        if (!empty($transaction['owns_transaction'])) {
+            \InterfaceDB::commit();
+            return;
+        }
+
+        $savepoint = trim((string)($transaction['savepoint'] ?? ''));
+        if ($savepoint !== '' && \InterfaceDB::inTransaction()) {
+            \InterfaceDB::execute('RELEASE SAVEPOINT ' . $savepoint);
+        }
+    }
+
+    private function rollbackLockTransaction(array $transaction, array $result): array
+    {
+        if (!empty($transaction['owns_transaction'])) {
+            if (\InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+        } else {
+            $savepoint = trim((string)($transaction['savepoint'] ?? ''));
+            if ($savepoint !== '' && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::execute('ROLLBACK TO SAVEPOINT ' . $savepoint);
+                \InterfaceDB::execute('RELEASE SAVEPOINT ' . $savepoint);
+            }
+        }
+
+        $errors = (array)($result['errors'] ?? []);
+        $errors[] = 'No year-end close tasks were committed.';
+        $result['success'] = false;
+        $result['errors'] = array_values(array_unique(array_map('strval', $errors)));
+
+        return $result;
     }
 
     private function applyDirectorLoanOffsetBeforeLock(int $companyId, int $accountingPeriodId, array $checklist, string $changedBy): array {

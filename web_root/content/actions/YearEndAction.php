@@ -37,6 +37,10 @@ final class YearEndAction implements ActionInterfaceFramework
                 }
             }
 
+            if ($this->requiresUnlockedPeriod($intent) && (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId)) {
+                return $this->result(false, ['This accounting period is locked. Unlock it before changing year-end review data.']);
+            }
+
             if ($intent === 'lock_period' && !$this->hasCurrentBackup($companyId, $accountingPeriodId)) {
                 return $this->result(false, ['Create a fresh database backup after the latest year-end checklist change before locking this period.']);
             }
@@ -233,6 +237,26 @@ final class YearEndAction implements ActionInterfaceFramework
             'save_expense_position_acknowledgement',
             'save_retained_earnings_close_acknowledgement',
             'save_transaction_tail_acknowledgement',
+            'post_director_loan_offset',
+        ], true);
+    }
+
+    private function requiresUnlockedPeriod(string $intent): bool
+    {
+        return in_array($intent, [
+            'recalculate',
+            'save_notes',
+            'confirm_empty_month',
+            'revoke_empty_month',
+            'save_opening_balance',
+            'create_adjustment',
+            'save_director_loan_offset_acknowledgement',
+            'save_tax_readiness_acknowledgement',
+            'save_expense_position_acknowledgement',
+            'save_retained_earnings_close_acknowledgement',
+            'save_transaction_tail_acknowledgement',
+            'acknowledge_review_check',
+            'reopen_review_check',
             'post_director_loan_offset',
         ], true);
     }

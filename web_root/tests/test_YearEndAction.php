@@ -297,6 +297,18 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
                 'accounting_period_id' => (int)$fixture['accounting_period_id'],
                 'check_code' => 'cut_off_journals_review',
             ]));
+
+            $prepaymentApproval = $instance->handle(
+                yearEndActionReviewCheckRequest((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'acknowledge_review_check', 'prepayment_approvals'),
+                createTestPageServiceFramework()
+            );
+
+            $harness->assertSame(true, $prepaymentApproval->isSuccess());
+            $harness->assertSame(1, InterfaceDB::countWhere('year_end_review_acknowledgements', [
+                'company_id' => (int)$fixture['company_id'],
+                'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                'check_code' => 'prepayment_approvals',
+            ]));
         });
     });
 

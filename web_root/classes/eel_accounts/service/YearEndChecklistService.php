@@ -15,6 +15,7 @@ final class YearEndChecklistService
     private const REVIEW_ACKNOWLEDGEABLE_CHECKS = [
         'fixed_asset_review_placeholder',
         'cut_off_journals_review',
+        'prepayment_approvals',
         'director_loan_tax_review',
         'companies_house_mismatch_acknowledgement',
     ];
@@ -638,6 +639,13 @@ final class YearEndChecklistService
             ];
         }
 
+        if ($acknowledged && $checkCode === 'prepayment_approvals') {
+            $prepaymentApprovalGate = $this->prepaymentApprovalGate($companyId, $accountingPeriodId);
+            if (empty($prepaymentApprovalGate['success'])) {
+                return $prepaymentApprovalGate;
+            }
+        }
+
         $existing = $this->fetchReviewAcknowledgements($companyId, $accountingPeriodId)[$checkCode] ?? null;
         $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
         $actor = $this->actorValue($changedBy);
@@ -1174,6 +1182,19 @@ final class YearEndChecklistService
             '?page=prepayments'
         );
 
+        $prepaymentApprovalsAcknowledged = isset($reviewAcknowledgements['prepayment_approvals']);
+        $sections['year_end_accounts_review'][] = $this->applyReviewAcknowledgement($this->makeCheck(
+            'prepayment_approvals',
+            'Prepayment approvals',
+            'warning',
+            $prepaymentApprovalsAcknowledged ? 'pass' : 'warning',
+            $prepaymentApprovalsAcknowledged
+                ? 'The prepayment position has been approved for this accounting period.'
+                : 'Approve the prepayment review before closing this accounting period.',
+            $prepaymentApprovalsAcknowledged ? 'Approved' : 'Pending',
+            '?page=year_end&show_card=year_end_prepayment_approvals'
+        ), $reviewAcknowledgements);
+
         $cutOffJournalsAcknowledged = isset($reviewAcknowledgements['cut_off_journals_review']);
         $sections['year_end_accounts_review'][] = $this->applyReviewAcknowledgement($this->makeCheck(
             'cut_off_journals_review',
@@ -1316,6 +1337,7 @@ final class YearEndChecklistService
             && $journalIntegrityIssues === 0
             && $unpostedSourceWorkCount === 0
             && $retainedEarningsCloseCurrent
+            && $prepaymentApprovalsAcknowledged
             && $directorLoanTaxReviewCleared;
         $sections['final_review_lock'][] = $this->makeCheck(
             'lock_readiness_checklist',
@@ -1620,6 +1642,31 @@ final class YearEndChecklistService
         }
 
         return $check;
+    }
+
+    private function prepaymentApprovalGate(int $companyId, int $accountingPeriodId): array
+    {
+        $review = (new \eel_accounts\Service\PrepaymentReviewService(
+            $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService(),
+            $this->lockService ?? new \eel_accounts\Service\YearEndLockService()
+        ))->fetchContext($companyId, $accountingPeriodId);
+
+        if (empty($review['available'])) {
+            return [
+                'success' => false,
+                'errors' => [(string)(($review['errors'] ?? [])[0] ?? 'Prepayment review is not available.')],
+            ];
+        }
+
+        $incompleteCount = (int)($review['pending_count'] ?? 0);
+        if ($incompleteCount > 0) {
+            return [
+                'success' => false,
+                'errors' => ['Complete all pre-paid service dates before saving this approval. Incomplete: ' . $incompleteCount . '.'],
+            ];
+        }
+
+        return ['success' => true];
     }
 
     private function findChecklistCheck(array $checklist, string $checkCode): ?array

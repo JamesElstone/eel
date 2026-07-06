@@ -413,7 +413,8 @@ final class TestCardsHarness
     {
         $yearEndPage = new _year_end();
         $this->assertTrue(in_array('year_end_companies_house_comparison', $yearEndPage->cards(), true));
-        $this->assertTrue(in_array('prepayments_review', $yearEndPage->cards(), true));
+        $this->assertSame(false, in_array('prepayments_review', $yearEndPage->cards(), true));
+        $this->assertTrue(in_array('year_end_prepayment_approvals', $yearEndPage->cards(), true));
         $this->assertTrue(in_array('journal_cut_off_confirmation', $yearEndPage->cards(), true));
 
         $layout = $yearEndPage->cardLayout();
@@ -424,7 +425,7 @@ final class TestCardsHarness
             if (($tab['tab'] ?? '') === 'Companies House' && in_array('year_end_companies_house_comparison', (array)($tab['cards'] ?? []), true)) {
                 $hasCompaniesHouseTab = true;
             }
-            if (($tab['tab'] ?? '') === 'Prepayments' && in_array('prepayments_review', (array)($tab['cards'] ?? []), true)) {
+            if (($tab['tab'] ?? '') === 'Prepayment' && in_array('year_end_prepayment_approvals', (array)($tab['cards'] ?? []), true)) {
                 $hasPrepaymentsTab = true;
             }
             if (($tab['tab'] ?? '') === 'Journal' && in_array('journal_cut_off_confirmation', (array)($tab['cards'] ?? []), true)) {
@@ -436,7 +437,7 @@ final class TestCardsHarness
         $this->assertSame(true, $hasPrepaymentsTab);
         $this->assertSame(true, $hasJournalTab);
 
-        test_output_line('Cards: year_end page includes Companies House, Prepayments, and Journal tabs.');
+        test_output_line('Cards: year_end page includes Companies House, Prepayment, and Journal tabs.');
     }
 
     private function assertJournalPageIncludesCutOffJournalsAdjustments(): void

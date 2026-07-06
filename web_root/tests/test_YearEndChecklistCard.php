@@ -43,6 +43,15 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
                                     'acknowledged_by' => 'test',
                                 ],
                             ],
+                            [
+                                'check_code' => 'prepayment_approvals',
+                                'title' => 'Prepayment approvals',
+                                'status' => 'warning',
+                                'detail_text' => 'Approve the prepayment review before closing this accounting period.',
+                                'metric_value' => 'Pending',
+                                'action_url' => '?page=year_end&company_id=12&accounting_period_id=34&show_card=year_end_prepayment_approvals',
+                                'review_clearable' => true,
+                            ],
                         ],
                     ],
                 ],
@@ -52,6 +61,7 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
         $harness->assertSame(true, str_contains($html, 'Open Related Workflow'));
         $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=year_end" data-ajax="true"'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="show_card" value="journal_cut_off_confirmation">'));
+        $harness->assertSame(true, str_contains($html, '<input type="hidden" name="show_card" value="year_end_prepayment_approvals">'));
         $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=assets" data-ajax="true"'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="show_card" value="not_an_asset">'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="company_id" value="12">'));
@@ -59,6 +69,7 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
         $harness->assertSame(false, str_contains($html, 'company_id=12'));
         $harness->assertSame(false, str_contains($html, 'accounting_period_id=34'));
         $harness->assertSame(false, str_contains($html, 'name="check_code" value="cut_off_journals_review"'));
+        $harness->assertSame(false, str_contains($html, 'name="check_code" value="prepayment_approvals"'));
         $harness->assertSame(false, str_contains($html, 'name="intent" value="acknowledge_review_check"'));
         $harness->assertSame(false, str_contains($html, 'Mark reviewed'));
         $harness->assertSame(true, str_contains($html, 'name="intent" value="reopen_review_check"'));

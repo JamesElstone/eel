@@ -40,7 +40,7 @@ final class _year_end extends PageContextFramework
             'year_end_companies_house_comparison',
             'year_end_empty_month_confirmations',
             'year_end_transaction_tail',
-            'prepayments_review',
+            'year_end_prepayment_approvals',
             'journal_cut_off_confirmation',
             'year_end_notes',
             'year_end_state',
@@ -95,9 +95,9 @@ final class _year_end extends PageContextFramework
                 ],
             ],
             [
-                'tab' => 'Prepayments',
+                'tab' => 'Prepayment',
                 'cards' => [
-                    'prepayments_review',
+                    'year_end_prepayment_approvals',
                 ],
             ],
             [

@@ -59,36 +59,50 @@ final class _prepayments_reviewCard extends CardBaseFramework
         $rowsHtml = '';
 
         foreach ((array)($review['items'] ?? []) as $item) {
-            $rowsHtml .= $this->itemRow((array)$item, $companyId, $accountingPeriodId, $companySettings);
+            $rowsHtml .= $this->itemRow((array)$item, $companyId, $accountingPeriodId, $companySettings, $accountingPeriod);
         }
 
         if ($rowsHtml === '') {
-            $rowsHtml = '<tr><td colspan="9">No transaction or expense claim lines use nominals marked as prepayment candidates for this accounting period.</td></tr>';
+            $rowsHtml = '<tr><td colspan="6">No transaction or expense claim lines use nominals marked as prepayment candidates for this accounting period.</td></tr>';
         }
 
         return '<section class="settings-stack" id="prepayments-review">
             <div class="month-grid">
                 ' . $this->summaryCard('Potential items', (string)(int)($review['total_count'] ?? 0)) . '
-                ' . $this->summaryCard('Reviewed', (string)(int)($review['reviewed_count'] ?? 0)) . '
-                ' . $this->summaryCard('Pending', (string)(int)($review['pending_count'] ?? 0)) . '
+                ' . $this->summaryCard('Prepaid', (string)(int)($review['prepaid_count'] ?? 0)) . '
+                ' . $this->summaryCard('Incomplete', (string)(int)($review['pending_count'] ?? 0)) . '
             </div>
             <div class="helper">Only nominals marked as prepayment candidates in Nominals appear here. Enter service dates only when the source item covers a period beyond this accounting year.</div>
             <div class="table-scroll">
                 <table>
-                    <thead><tr><th>Source</th><th>Date</th><th>Nominal</th><th>Description</th><th>Amount</th><th>Status</th><th>Service start</th><th>Service end</th><th></th></tr></thead>
+                    <thead><tr><th>Source</th><th>Date</th><th>Nominal</th><th>Description</th><th>Amount</th><th>Status</th></tr></thead>
                     <tbody>' . $rowsHtml . '</tbody>
                 </table>
             </div>
         </section>';
     }
 
-    private function itemRow(array $item, int $companyId, int $accountingPeriodId, array $companySettings): string
+    private function itemRow(array $item, int $companyId, int $accountingPeriodId, array $companySettings, array $accountingPeriod): string
     {
         $review = (array)($item['review'] ?? []);
         $sourceType = (string)($item['source_type'] ?? '');
         $sourceId = (int)($item['source_id'] ?? 0);
         $formId = 'prepayment-review-' . preg_replace('/[^a-z0-9_-]/i', '-', $sourceType) . '-' . $sourceId;
-        $status = (string)($review['status'] ?? 'pending');
+        $status = (string)($review['status'] ?? 'not_prepaid');
+        if ($status !== 'prepaid') {
+            $status = 'not_prepaid';
+        }
+        $sourceDate = (string)($item['source_date'] ?? '');
+        $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
+        $serviceStart = trim((string)($review['service_start_date'] ?? ''));
+        if ($serviceStart === '') {
+            $serviceStart = $sourceDate;
+        }
+        $serviceEnd = trim((string)($review['service_end_date'] ?? ''));
+        if ($serviceEnd === '') {
+            $serviceEnd = $periodEnd;
+        }
+        $saveButtonClass = 'prepayment-save-' . preg_replace('/[^a-z0-9_-]/i', '-', $sourceType) . '-' . $sourceId;
 
         return '<tr>
             <td>' . HelperFramework::escape(HelperFramework::labelFromKey($sourceType, '_')) . '</td>
@@ -96,7 +110,10 @@ final class _prepayments_reviewCard extends CardBaseFramework
             <td>' . HelperFramework::escape(trim((string)($item['nominal_code'] ?? '') . ' ' . (string)($item['nominal_name'] ?? ''))) . '</td>
             <td>
                 ' . HelperFramework::escape((string)($item['description'] ?? '')) . '
-                <form id="' . HelperFramework::escape($formId) . '" method="post" data-ajax="true">
+            </td>
+            <td class="numeric">' . HelperFramework::escape($this->money($companySettings, $item['amount'] ?? 0)) . '</td>
+            <td>
+                <form id="' . HelperFramework::escape($formId) . '" method="post" data-ajax="true" class="actions-row actions-row-nowrap">
                     <input type="hidden" name="card_action" value="Prepayments">
                     <input type="hidden" name="intent" value="save_review">
                     <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -104,21 +121,21 @@ final class _prepayments_reviewCard extends CardBaseFramework
                     <input type="hidden" name="source_type" value="' . HelperFramework::escape($sourceType) . '">
                     <input type="hidden" name="source_id" value="' . $sourceId . '">
                     <input type="hidden" name="prepayment_notes" value="' . HelperFramework::escape((string)($review['notes'] ?? '')) . '">
+                    <select class="select" id="' . HelperFramework::escape($formId) . '-status" name="prepayment_status">' . $this->statusOptions($status) . '</select>
+                    <span data-visible-when-field="prepayment_status" data-visible-when-value="prepaid"' . ($status === 'prepaid' ? '' : ' hidden aria-hidden="true"') . '>
+                        <input class="input" type="date" name="service_start_date" value="' . HelperFramework::escape($serviceStart) . '" data-dirty-action-target=".' . HelperFramework::escape($saveButtonClass) . '" data-initial-value="' . HelperFramework::escape($serviceStart) . '" data-dirty-require-value="1">
+                        <input class="input" type="date" name="service_end_date" value="' . HelperFramework::escape($serviceEnd) . '" data-dirty-action-target=".' . HelperFramework::escape($saveButtonClass) . '" data-initial-value="' . HelperFramework::escape($serviceEnd) . '" data-dirty-require-value="1">
+                        <button class="button button-inline primary ' . HelperFramework::escape($saveButtonClass) . '" type="submit" data-dirty-enable-mode="changed" disabled>Save</button>
+                    </span>
                 </form>
             </td>
-            <td class="numeric">' . HelperFramework::escape($this->money($companySettings, $item['amount'] ?? 0)) . '</td>
-            <td><select class="select" name="prepayment_status" form="' . HelperFramework::escape($formId) . '">' . $this->statusOptions($status) . '</select></td>
-            <td><input class="input" type="date" name="service_start_date" form="' . HelperFramework::escape($formId) . '" value="' . HelperFramework::escape((string)($review['service_start_date'] ?? '')) . '"></td>
-            <td><input class="input" type="date" name="service_end_date" form="' . HelperFramework::escape($formId) . '" value="' . HelperFramework::escape((string)($review['service_end_date'] ?? '')) . '"></td>
-            <td><button class="button button-inline primary" type="submit" form="' . HelperFramework::escape($formId) . '">Save</button></td>
         </tr>';
     }
 
     private function statusOptions(string $selected): string
     {
         $labels = [
-            'pending' => 'Pending',
-            'not_prepaid' => 'Not prepaid',
+            'not_prepaid' => 'Not pre-paid',
             'prepaid' => 'Prepaid',
         ];
         $html = '';

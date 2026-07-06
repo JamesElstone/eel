@@ -993,7 +993,7 @@ CREATE TABLE `prepayment_reviews` (
   `accounting_period_id` int(11) NOT NULL,
   `source_type` enum('transaction','expense_claim_line') NOT NULL,
   `source_id` bigint(20) NOT NULL,
-  `status` enum('pending','not_prepaid','prepaid') NOT NULL DEFAULT 'pending',
+  `status` enum('not_prepaid','prepaid') NOT NULL DEFAULT 'not_prepaid',
   `service_start_date` date DEFAULT NULL,
   `service_end_date` date DEFAULT NULL,
   `notes` text DEFAULT NULL,
@@ -2303,7 +2303,8 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_04_006_read_only_tax_workings_permissions.sql'),
   ('2026_07_05_001_ct_period_tax_page_provisions.sql'),
   ('2026_07_05_002_dynamic_tax_append_only_close.sql'),
-  ('2026_07_06_001_prepayments_cutoff_workflows.sql');
+  ('2026_07_06_001_prepayments_cutoff_workflows.sql'),
+  ('2026_07_06_002_remove_pending_prepayment_status.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

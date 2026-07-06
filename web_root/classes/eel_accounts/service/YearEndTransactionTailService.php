@@ -79,6 +79,7 @@ final class YearEndTransactionTailService
             'rows' => $rows,
             'account_count' => count($rows),
             'accounts_with_transactions' => count(array_filter($rows, static fn(array $row): bool => (string)($row['last_transaction_date'] ?? '') !== '')),
+            'acknowledgement' => $this->fetchAcknowledgement($companyId, $accountingPeriodId),
         ];
     }
 
@@ -115,5 +116,30 @@ final class YearEndTransactionTailService
         } catch (\Throwable) {
             return false;
         }
+    }
+
+    private function fetchAcknowledgement(int $companyId, int $accountingPeriodId): ?array
+    {
+        if (!$this->tableExists('year_end_review_acknowledgements')) {
+            return null;
+        }
+
+        $row = \InterfaceDB::fetchOne(
+            'SELECT acknowledged_at,
+                    acknowledged_by,
+                    note
+             FROM year_end_review_acknowledgements
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+               AND check_code = :check_code
+             LIMIT 1',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'check_code' => 'transaction_tail_review',
+            ]
+        );
+
+        return is_array($row) ? $row : null;
     }
 }

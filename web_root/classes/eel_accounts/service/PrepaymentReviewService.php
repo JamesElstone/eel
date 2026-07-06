@@ -60,7 +60,7 @@ final class PrepaymentReviewService
         foreach ($items as $index => $item) {
             $review = $reviews[$this->reviewKey((string)$item['source_type'], (int)$item['source_id'])] ?? null;
             $items[$index]['review'] = is_array($review) ? $review : [
-                'status' => 'pending',
+                'status' => 'not_prepaid',
                 'service_start_date' => '',
                 'service_end_date' => '',
                 'notes' => '',
@@ -79,8 +79,10 @@ final class PrepaymentReviewService
         });
 
         $pendingCount = count(array_filter($items, static function (array $item): bool {
-            $status = (string)(((array)($item['review'] ?? []))['status'] ?? 'pending');
-            return $status === '' || $status === 'pending';
+            $status = (string)(((array)($item['review'] ?? []))['status'] ?? 'not_prepaid');
+            return $status === 'prepaid'
+                && (trim((string)(((array)($item['review'] ?? []))['service_start_date'] ?? '')) === ''
+                    || trim((string)(((array)($item['review'] ?? []))['service_end_date'] ?? '')) === '');
         }));
 
         return [
@@ -89,6 +91,9 @@ final class PrepaymentReviewService
             'items' => $items,
             'total_count' => count($items),
             'pending_count' => $pendingCount,
+            'prepaid_count' => count(array_filter($items, static function (array $item): bool {
+                return (string)(((array)($item['review'] ?? []))['status'] ?? 'not_prepaid') === 'prepaid';
+            })),
             'reviewed_count' => count($items) - $pendingCount,
         ];
     }
@@ -106,7 +111,7 @@ final class PrepaymentReviewService
 
         $sourceType = trim((string)($payload['source_type'] ?? ''));
         $sourceId = max(0, (int)($payload['source_id'] ?? 0));
-        $status = trim((string)($payload['status'] ?? 'pending'));
+        $status = trim((string)($payload['status'] ?? 'not_prepaid'));
         $serviceStart = trim((string)($payload['service_start_date'] ?? ''));
         $serviceEnd = trim((string)($payload['service_end_date'] ?? ''));
         $notes = trim((string)($payload['notes'] ?? ''));
@@ -118,7 +123,7 @@ final class PrepaymentReviewService
             ];
         }
 
-        if (!in_array($status, ['pending', 'not_prepaid', 'prepaid'], true)) {
+        if (!in_array($status, ['not_prepaid', 'prepaid'], true)) {
             return [
                 'success' => false,
                 'errors' => ['Select a valid prepayment review status.'],
@@ -198,11 +203,11 @@ final class PrepaymentReviewService
                 'source_type' => $sourceType,
                 'source_id' => $sourceId,
                 'status' => $status,
-                'service_start_date' => $serviceStart !== '' ? $serviceStart : null,
-                'service_end_date' => $serviceEnd !== '' ? $serviceEnd : null,
+                'service_start_date' => $status === 'prepaid' && $serviceStart !== '' ? $serviceStart : null,
+                'service_end_date' => $status === 'prepaid' && $serviceEnd !== '' ? $serviceEnd : null,
                 'notes' => $notes !== '' ? $notes : null,
-                'reviewed_at' => $status === 'pending' ? null : $now,
-                'reviewed_by' => $status === 'pending' ? null : $this->actorValue($changedBy),
+                'reviewed_at' => $now,
+                'reviewed_by' => $this->actorValue($changedBy),
                 'created_at' => $now,
                 'updated_at' => $now,
             ]
@@ -310,6 +315,11 @@ final class PrepaymentReviewService
         $reviews = [];
         foreach ((array)$rows as $row) {
             if (is_array($row)) {
+                if ((string)($row['status'] ?? '') === 'pending' || (string)($row['status'] ?? '') === '') {
+                    $row['status'] = 'not_prepaid';
+                    $row['service_start_date'] = '';
+                    $row['service_end_date'] = '';
+                }
                 $reviews[$this->reviewKey((string)$row['source_type'], (int)$row['source_id'])] = $row;
             }
         }

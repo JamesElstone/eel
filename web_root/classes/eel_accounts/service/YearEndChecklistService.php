@@ -14,7 +14,6 @@ final class YearEndChecklistService
 {
     private const REVIEW_ACKNOWLEDGEABLE_CHECKS = [
         'fixed_asset_review_placeholder',
-        'transaction_tail_review',
         'cut_off_journals_review',
         'director_loan_tax_review',
         'companies_house_mismatch_acknowledgement',
@@ -523,6 +522,98 @@ final class YearEndChecklistService
         }
 
         return $result + [
+            'checklist' => $this->fetchChecklist($companyId, $accountingPeriodId, true),
+        ];
+    }
+
+    public function saveTransactionTailAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $note = '', string $changedBy = 'web_app'): array
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return [
+                'success' => false,
+                'errors' => ['Select a company and accounting period before saving this review.'],
+            ];
+        }
+
+        if (!$this->tableExists('year_end_review_acknowledgements')) {
+            return [
+                'success' => false,
+                'errors' => ['Run the Year End review acknowledgement migration before saving this review.'],
+            ];
+        }
+
+        $checkCode = 'transaction_tail_review';
+        $existing = $this->fetchReviewAcknowledgements($companyId, $accountingPeriodId)[$checkCode] ?? null;
+        $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
+        $actor = $this->actorValue($changedBy);
+        $note = trim($note);
+
+        if ($acknowledged) {
+            \InterfaceDB::execute(
+                'INSERT INTO year_end_review_acknowledgements (
+                    company_id,
+                    accounting_period_id,
+                    check_code,
+                    acknowledged_at,
+                    acknowledged_by,
+                    note,
+                    created_at,
+                    updated_at
+                 ) VALUES (
+                    :company_id,
+                    :accounting_period_id,
+                    :check_code,
+                    :acknowledged_at,
+                    :acknowledged_by,
+                    :note,
+                    :created_at,
+                    :updated_at
+                 )
+                 ON DUPLICATE KEY UPDATE
+                    acknowledged_at = VALUES(acknowledged_at),
+                    acknowledged_by = VALUES(acknowledged_by),
+                    note = VALUES(note),
+                    updated_at = VALUES(updated_at)',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'check_code' => $checkCode,
+                    'acknowledged_at' => $now,
+                    'acknowledged_by' => $actor,
+                    'note' => $note !== '' ? $note : null,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]
+            );
+        } else {
+            \InterfaceDB::execute(
+                'DELETE FROM year_end_review_acknowledgements
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id
+                   AND check_code = :check_code',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'check_code' => $checkCode,
+                ]
+            );
+        }
+
+        ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->writeAuditLog(
+            $companyId,
+            $accountingPeriodId,
+            $acknowledged ? 'transaction_tail_acknowledged' : 'transaction_tail_reopened',
+            $changedBy,
+            is_array($existing) ? $existing : null,
+            [
+                'check_code' => $checkCode,
+                'acknowledged' => $acknowledged,
+                'note' => $note !== '' ? $note : null,
+            ]
+        );
+
+        return [
+            'success' => true,
             'checklist' => $this->fetchChecklist($companyId, $accountingPeriodId, true),
         ];
     }

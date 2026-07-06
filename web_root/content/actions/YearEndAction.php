@@ -38,10 +38,10 @@ final class YearEndAction implements ActionInterfaceFramework
             }
 
             $result = match ($intent) {
-                'recalculate' => (new \eel_accounts\Service\YearEndChecklistService())->recalculateChecklist($companyId, $accountingPeriodId),
-                'lock_period' => (new \eel_accounts\Service\YearEndChecklistService())->lockPeriod($companyId, $accountingPeriodId),
-                'unlock_period' => (new \eel_accounts\Service\YearEndChecklistService())->unlockPeriod($companyId, $accountingPeriodId),
-                'save_notes' => (new \eel_accounts\Service\YearEndChecklistService())->saveNotes($companyId, $accountingPeriodId, (string)$request->input('review_notes', '')),
+                'recalculate' => (new \eel_accounts\Service\YearEndChecklistService())->recalculateChecklist($companyId, $accountingPeriodId, $actor),
+                'lock_period' => (new \eel_accounts\Service\YearEndChecklistService())->lockPeriod($companyId, $accountingPeriodId, $actor),
+                'unlock_period' => (new \eel_accounts\Service\YearEndChecklistService())->unlockPeriod($companyId, $accountingPeriodId, $actor),
+                'save_notes' => (new \eel_accounts\Service\YearEndChecklistService())->saveNotes($companyId, $accountingPeriodId, (string)$request->input('review_notes', ''), $actor),
                 'confirm_empty_month' => (new \eel_accounts\Service\EmptyMonthConfirmationService())->confirmMonth(
                     $companyId,
                     $accountingPeriodId,
@@ -58,50 +58,65 @@ final class YearEndAction implements ActionInterfaceFramework
                 'save_opening_balance' => (new \eel_accounts\Service\OpeningBalanceService())->saveOpeningBalance(
                     $companyId,
                     $accountingPeriodId,
-                    $this->openingBalancePayload($request)
+                    $this->openingBalancePayload($request),
+                    $actor
                 ),
                 'create_adjustment' => (new \eel_accounts\Service\YearEndAdjustmentService())->createAdjustment(
                     $companyId,
                     $accountingPeriodId,
-                    $this->adjustmentPayload($request)
+                    $this->adjustmentPayload($request),
+                    $actor
                 ),
                 'save_director_loan_offset_acknowledgement' => (new \eel_accounts\Service\YearEndChecklistService())->saveDirectorLoanClosingAcknowledgement(
                     $companyId,
                     $accountingPeriodId,
-                    $this->truthy($request->input('director_loan_offset_acknowledgement', '0'))
+                    $this->truthy($request->input('director_loan_offset_acknowledgement', '0')),
+                    $actor
                 ),
                 'save_tax_readiness_acknowledgement' => (new \eel_accounts\Service\YearEndChecklistService())->saveTaxReadinessAcknowledgement(
                     $companyId,
                     $accountingPeriodId,
-                    $this->truthy($request->input('tax_readiness_acknowledgement', '0'))
+                    $this->truthy($request->input('tax_readiness_acknowledgement', '0')),
+                    $actor
                 ),
                 'save_expense_position_acknowledgement' => (new \eel_accounts\Service\YearEndChecklistService())->saveExpensePositionAcknowledgement(
                     $companyId,
                     $accountingPeriodId,
-                    $this->truthy($request->input('expense_position_acknowledgement', '0'))
+                    $this->truthy($request->input('expense_position_acknowledgement', '0')),
+                    $actor
                 ),
                 'save_retained_earnings_close_acknowledgement' => (new \eel_accounts\Service\YearEndChecklistService())->saveRetainedEarningsCloseAcknowledgement(
                     $companyId,
                     $accountingPeriodId,
-                    $this->truthy($request->input('retained_earnings_close_acknowledgement', '0'))
+                    $this->truthy($request->input('retained_earnings_close_acknowledgement', '0')),
+                    $actor
+                ),
+                'save_transaction_tail_acknowledgement' => (new \eel_accounts\Service\YearEndChecklistService())->saveTransactionTailAcknowledgement(
+                    $companyId,
+                    $accountingPeriodId,
+                    $this->truthy($request->input('transaction_tail_acknowledgement', '0')),
+                    (string)$request->input('transaction_tail_acknowledgement_note', '')
                 ),
                 'acknowledge_review_check' => (new \eel_accounts\Service\YearEndChecklistService())->acknowledgeReviewCheck(
                     $companyId,
                     $accountingPeriodId,
                     (string)$request->input('check_code', ''),
                     true,
-                    (string)$request->input('review_acknowledgement_note', '')
+                    (string)$request->input('review_acknowledgement_note', ''),
+                    $actor
                 ),
                 'reopen_review_check' => (new \eel_accounts\Service\YearEndChecklistService())->acknowledgeReviewCheck(
                     $companyId,
                     $accountingPeriodId,
                     (string)$request->input('check_code', ''),
                     false,
-                    (string)$request->input('review_acknowledgement_note', '')
+                    (string)$request->input('review_acknowledgement_note', ''),
+                    $actor
                 ),
                 'post_director_loan_offset' => (new \eel_accounts\Service\DirectorLoanReconciliationService())->postOffset(
                     $companyId,
-                    $accountingPeriodId
+                    $accountingPeriodId,
+                    $actor
                 ),
                 default => ['success' => false, 'errors' => ['Unknown year-end action.']],
             };
@@ -173,6 +188,7 @@ final class YearEndAction implements ActionInterfaceFramework
             'save_tax_readiness_acknowledgement' => 'Tax readiness acknowledgement saved.',
             'save_expense_position_acknowledgement' => 'Expense position acknowledgement saved.',
             'save_retained_earnings_close_acknowledgement' => 'Retained earnings agreement saved.',
+            'save_transaction_tail_acknowledgement' => 'Transaction cut-off review acknowledgement saved.',
             'acknowledge_review_check' => 'Year-end review check marked reviewed.',
             'reopen_review_check' => 'Year-end review check reopened.',
             'post_director_loan_offset' => 'Director loan offset journal posted.',
@@ -191,6 +207,7 @@ final class YearEndAction implements ActionInterfaceFramework
             'save_tax_readiness_acknowledgement',
             'save_expense_position_acknowledgement',
             'save_retained_earnings_close_acknowledgement',
+            'save_transaction_tail_acknowledgement',
             'post_director_loan_offset',
         ], true);
     }
@@ -206,6 +223,7 @@ final class YearEndAction implements ActionInterfaceFramework
             'save_tax_readiness_acknowledgement',
             'save_expense_position_acknowledgement',
             'save_retained_earnings_close_acknowledgement',
+            'save_transaction_tail_acknowledgement',
             'post_director_loan_offset',
         ], true);
     }

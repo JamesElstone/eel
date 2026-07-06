@@ -52,14 +52,20 @@ final class _year_end_transaction_tailCard extends CardBaseFramework
         }
 
         $companySettings = (array)(((array)($context['company'] ?? []))['settings'] ?? []);
+        $company = (array)($context['company'] ?? []);
+        $companyId = (int)($company['id'] ?? 0);
+        $accountingPeriod = (array)($tail['accounting_period'] ?? []);
+        $accountingPeriodId = (int)($accountingPeriod['id'] ?? ($company['accounting_period_id'] ?? 0));
+        $acknowledgement = $tail['acknowledgement'] ?? null;
         $rowsHtml = '';
         foreach ((array)($tail['rows'] ?? []) as $row) {
+            $amount = array_key_exists('last_transaction_amount', $row) ? $row['last_transaction_amount'] : null;
             $rowsHtml .= '<tr>
                 <td>' . HelperFramework::escape((string)($row['account'] ?? '')) . '</td>
                 <td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($row['account_type'] ?? ''), '_')) . '</td>
                 <td>' . HelperFramework::escape($this->displayDate((string)($row['last_transaction_date'] ?? ''))) . '</td>
                 <td>' . HelperFramework::escape((string)($row['last_transaction_desc'] ?? '')) . '</td>
-                <td class="numeric">' . HelperFramework::escape($row['last_transaction_amount'] === null ? '' : $this->money($companySettings, $row['last_transaction_amount'])) . '</td>
+                <td class="numeric">' . HelperFramework::escape($amount === null ? '' : $this->money($companySettings, $amount)) . '</td>
             </tr>';
         }
 
@@ -75,7 +81,39 @@ final class _year_end_transaction_tailCard extends CardBaseFramework
                     <tbody>' . $rowsHtml . '</tbody>
                 </table>
             </div>
+            ' . $this->acknowledgementHtml(is_array($acknowledgement) ? $acknowledgement : null, $companyId, $accountingPeriodId) . '
         </section>';
+    }
+
+    private function acknowledgementHtml(?array $acknowledgement, int $companyId, int $accountingPeriodId): string
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return '';
+        }
+
+        $acknowledged = $acknowledgement !== null;
+        $acknowledgedAt = $acknowledged ? trim((string)($acknowledgement['acknowledged_at'] ?? '')) : '';
+        $acknowledgedBy = $acknowledged ? trim((string)($acknowledgement['acknowledged_by'] ?? '')) : '';
+
+        return '<div class="actions-row"><form method="post" data-ajax="true" class="panel-soft stack" data-year-end-transaction-tail-ack-form="true">
+                <input type="hidden" name="card_action" value="YearEnd">
+                <input type="hidden" name="intent" value="save_transaction_tail_acknowledgement">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <input type="hidden" name="transaction_tail_acknowledgement" value="0">
+                <label class="checkbox-row">
+                    <input type="checkbox" name="transaction_tail_acknowledgement" value="1"' . ($acknowledged ? ' checked' : '') . ' required data-year-end-transaction-tail-ack-checkbox>
+                    <span>I acknowledge that the latest transaction line for each company account has been reviewed before closing this Accounting Period</span>
+                </label>
+                ' . ($acknowledged ? '<div class="helper">Confirmed' . ($acknowledgedAt !== '' ? ' at ' . HelperFramework::escape($acknowledgedAt) : '') . ($acknowledgedBy !== '' ? ' by ' . HelperFramework::escape($acknowledgedBy) : '') . '.</div>' : '') . '
+                <button class="button primary" type="submit"
+                    data-year-end-transaction-tail-ack-submit
+                    data-chicken-check="true"
+                    data-chicken-title="Save transaction cut-off acknowledgement"
+                    data-chicken-message="This records that the latest transaction line for each company account has been reviewed for this accounting period.<br><br>Continue?"
+                    data-chicken-confirm-text="I Agree"
+                    data-chicken-button-class="button danger">I Agree</button>
+            </form></div>';
     }
 
     private function money(array $companySettings, float|int|string|null $value): string

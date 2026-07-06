@@ -19,6 +19,11 @@ final class _nominal_closing_balancesCard extends CardBaseFramework
         return 'Nominal Closing Balances';
     }
 
+    public function helper(array $context): string
+    {
+        return 'Post year-end nominal adjustments for accruals, prepayments, deferred income, or custom closing journals.';
+    }
+
     public function services(): array
     {
         return [
@@ -59,7 +64,6 @@ final class _nominal_closing_balancesCard extends CardBaseFramework
         $formId = 'nominal-closing-balance-form';
 
         return '<section class="settings-stack" id="nominal-closing-balances">
-            <div class="helper">Post year-end nominal adjustments for accruals, prepayments, deferred income, or custom closing journals.</div>
             <form id="' . $formId . '" method="post" data-ajax="true">
                 <input type="hidden" name="card_action" value="YearEnd">
                 <input type="hidden" name="intent" value="create_adjustment">
@@ -67,19 +71,25 @@ final class _nominal_closing_balancesCard extends CardBaseFramework
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
             </form>
-            <div class="form-grid">
-                <div class="form-row"><label for="adjustment-template-type">Template</label><select class="select" id="adjustment-template-type" name="adjustment_template_type" form="' . $formId . '">' . $this->options(['accrual' => 'Create accrual', 'prepayment' => 'Create prepayment', 'deferred_income' => 'Create deferred income', 'custom' => 'Custom journal'], 'accrual') . '</select></div>
-                <div class="form-row"><label for="adjustment-date">Date</label><input class="input" id="adjustment-date" name="adjustment_date" form="' . $formId . '" type="date" value="' . HelperFramework::escape((string)($accountingPeriod['period_end'] ?? '')) . '"></div>
-                <div class="form-row"><label for="adjustment-description">Description</label><input class="input" id="adjustment-description" name="adjustment_description" form="' . $formId . '" value=""></div>
-                <div class="form-row"><label for="adjustment-notes">Notes</label><input class="input" id="adjustment-notes" name="adjustment_notes" form="' . $formId . '" value=""></div>
-                <div class="form-row"><label for="adjustment-primary-nominal">Primary nominal</label><select class="select" id="adjustment-primary-nominal" name="adjustment_primary_nominal_id" form="' . $formId . '">' . $this->nominalOptions((array)($adjustments['nominals'] ?? []), 0) . '</select></div>
-                <div class="form-row"><label for="adjustment-offset-nominal">Offset nominal</label><select class="select" id="adjustment-offset-nominal" name="adjustment_offset_nominal_id" form="' . $formId . '">' . $this->nominalOptions((array)($adjustments['nominals'] ?? []), 0) . '</select></div>
-                <div class="form-row"><label for="adjustment-amount">Amount</label><input class="input" id="adjustment-amount" name="adjustment_amount" form="' . $formId . '" inputmode="decimal"></div>
-                <div class="form-row"><label>&nbsp;</label><label class="checkbox-item"><input type="checkbox" id="adjustment-auto-reverse" name="adjustment_auto_reverse" form="' . $formId . '" value="1"><div class="checkbox-copy"><strong>Auto reverse into next period</strong><span>Create the reversing journal on the next period start date.</span></div></label></div>
-            </div>
-            <h4 class="card-title">Custom journal lines</h4>
-            ' . $this->lineEditorTable('adjustment', $formId, (array)($adjustments['nominals'] ?? []), [], 8) . '
-            <div class="actions-row"><button class="button primary" type="submit" form="' . $formId . '">Post Adjustment</button></div>
+            <section class="panel-soft">
+                <div class="form-grid">
+                    <div class="form-row"><label for="adjustment-template-type">Template</label><select class="select" id="adjustment-template-type" name="adjustment_template_type" form="' . $formId . '">' . $this->options(['accrual' => 'Create accrual', 'prepayment' => 'Create prepayment', 'deferred_income' => 'Create deferred income', 'custom' => 'Custom journal'], 'accrual') . '</select></div>
+                    <div class="form-row"><label for="adjustment-date">Date</label><input class="input" id="adjustment-date" name="adjustment_date" form="' . $formId . '" type="date" value="' . HelperFramework::escape((string)($accountingPeriod['period_end'] ?? '')) . '"></div>
+                    <div class="form-row"><label for="adjustment-description">Description</label><input class="input" id="adjustment-description" name="adjustment_description" form="' . $formId . '" value=""></div>
+                    <div class="form-row"><label for="adjustment-notes">Notes</label><input class="input" id="adjustment-notes" name="adjustment_notes" form="' . $formId . '" value=""></div>
+                    <div class="form-row"><label for="adjustment-primary-nominal">Primary nominal</label><select class="select" id="adjustment-primary-nominal" name="adjustment_primary_nominal_id" form="' . $formId . '">' . $this->nominalOptions((array)($adjustments['nominals'] ?? []), 0) . '</select></div>
+                    <div class="form-row"><label for="adjustment-offset-nominal">Offset nominal</label><select class="select" id="adjustment-offset-nominal" name="adjustment_offset_nominal_id" form="' . $formId . '">' . $this->nominalOptions((array)($adjustments['nominals'] ?? []), 0) . '</select></div>
+                    <div class="form-row"><label for="adjustment-amount">Amount</label><input class="input" id="adjustment-amount" name="adjustment_amount" form="' . $formId . '" inputmode="decimal"></div>
+                    <div class="form-row"><label>&nbsp;</label><label class="checkbox-item"><input type="checkbox" id="adjustment-auto-reverse" name="adjustment_auto_reverse" form="' . $formId . '" value="1"><div class="checkbox-copy"><strong>Auto reverse into next period</strong><span>Create the reversing journal on the next period start date.</span></div></label></div>
+                </div>
+            </section>
+            <section class="panel-soft settings-stack">
+                <h4 class="card-title">Custom journal lines</h4>
+                ' . $this->lineEditorTable('adjustment', $formId, (array)($adjustments['nominals'] ?? []), [], 8) . '
+            </section>
+            <section class="panel-soft">
+                <div class="actions-row"><button class="button primary" type="submit" form="' . $formId . '">Post Adjustment</button></div>
+            </section>
             ' . $this->renderPostedAdjustments((array)($adjustments['adjustments'] ?? [])) . '
         </section>';
     }
@@ -105,7 +115,7 @@ final class _nominal_closing_balancesCard extends CardBaseFramework
     private function renderPostedAdjustments(array $adjustments): string
     {
         if ($adjustments === []) {
-            return '<div><h4 class="card-title">Posted adjustments</h4><div class="helper">No year-end adjustments have been posted for this period yet.</div></div>';
+            return '<section class="panel-soft settings-stack"><h4 class="card-title">Posted adjustments</h4><div class="helper">No year-end adjustments have been posted for this period yet.</div></section>';
         }
 
         $rows = '';
@@ -118,7 +128,7 @@ final class _nominal_closing_balancesCard extends CardBaseFramework
             </tr>';
         }
 
-        return '<div><h4 class="card-title">Posted adjustments</h4><div class="table-scroll"><table><thead><tr><th>Date</th><th>Description</th><th>Type</th><th>Lines</th></tr></thead><tbody>' . $rows . '</tbody></table></div></div>';
+        return '<section class="panel-soft settings-stack"><h4 class="card-title">Posted adjustments</h4><div class="table-scroll"><table><thead><tr><th>Date</th><th>Description</th><th>Type</th><th>Lines</th></tr></thead><tbody>' . $rows . '</tbody></table></div></section>';
     }
 
     private function nominalOptions(array $nominals, int $selectedNominalId): string

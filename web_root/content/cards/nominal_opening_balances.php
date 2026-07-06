@@ -19,6 +19,11 @@ final class _nominal_opening_balancesCard extends CardBaseFramework
         return 'Nominal Opening Balances';
     }
 
+    public function helper(array $context): string
+    {
+        return 'Post one balanced opening balance journal for this accounting period. Suggestions from the immediately prior Companies House figures can be edited before saving.';
+    }
+
     public function services(): array
     {
         return [
@@ -69,7 +74,6 @@ final class _nominal_opening_balancesCard extends CardBaseFramework
             : 'Opening balances for ' . (string)($accountingPeriod['label'] ?? 'selected period');
 
         return '<section class="settings-stack" id="opening-balances">
-            <div class="helper">Post one balanced opening balance journal for this accounting period. Suggestions from the immediately prior Companies House figures can be edited before saving.</div>
             <form id="' . $formId . '" method="post" data-ajax="true">
                 <input type="hidden" name="card_action" value="YearEnd">
                 <input type="hidden" name="intent" value="save_opening_balance">
@@ -77,24 +81,32 @@ final class _nominal_opening_balancesCard extends CardBaseFramework
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
             </form>
-            ' . $this->lineEditorTable('opening_balance', $formId, (array)($openingBalances['nominals'] ?? []), $defaultRows, 8) . '
-            ' . $this->balanceSummary($defaultRows, $companySettings) . '
-            <div class="form-grid">
-                <div class="form-row">
-                    <label for="opening-balance-description">Description</label>
-                    <input class="input" id="opening-balance-description" name="opening_balance_description" form="' . $formId . '" value="' . HelperFramework::escape($description) . '">
+            <section class="panel-soft settings-stack">
+                ' . $this->lineEditorTable('opening_balance', $formId, (array)($openingBalances['nominals'] ?? []), $defaultRows, 8) . '
+                ' . $this->balanceSummary($defaultRows, $companySettings) . '
+            </section>
+            <section class="panel-soft">
+                <div class="form-grid">
+                    <div class="form-row">
+                        <label for="opening-balance-description">Description</label>
+                        <input class="input" id="opening-balance-description" name="opening_balance_description" form="' . $formId . '" value="' . HelperFramework::escape($description) . '">
+                    </div>
+                    <div class="form-row">
+                        <label for="opening-balance-notes">Notes</label>
+                        <input class="input" id="opening-balance-notes" name="opening_balance_notes" form="' . $formId . '" value="' . HelperFramework::escape((string)($existing['notes'] ?? '')) . '">
+                    </div>
                 </div>
-                <div class="form-row">
-                    <label for="opening-balance-notes">Notes</label>
-                    <input class="input" id="opening-balance-notes" name="opening_balance_notes" form="' . $formId . '" value="' . HelperFramework::escape((string)($existing['notes'] ?? '')) . '">
+            </section>
+            <section class="panel-soft">
+                <div class="actions-row">
+                    <label class="checkbox-item"><input type="checkbox" id="opening-balance-system-mode" name="opening_balance_system_mode" form="' . $formId . '" value="1"><div class="checkbox-copy"><strong>Mark as system-generated</strong><span>Use when the journal is seeded from prior filed figures or another controlled source.</span></div></label>
+                    <label class="checkbox-item"><input type="checkbox" id="opening-balance-replace" name="opening_balance_replace" form="' . $formId . '" value="1"' . ($existing !== [] ? ' checked' : '') . '><div class="checkbox-copy"><strong>Replace existing opening balance</strong><span>Required when an active opening balance journal already exists.</span></div></label>
                 </div>
-            </div>
-            <div class="actions-row">
-                <label class="checkbox-item"><input type="checkbox" id="opening-balance-system-mode" name="opening_balance_system_mode" form="' . $formId . '" value="1"><div class="checkbox-copy"><strong>Mark as system-generated</strong><span>Use when the journal is seeded from prior filed figures or another controlled source.</span></div></label>
-                <label class="checkbox-item"><input type="checkbox" id="opening-balance-replace" name="opening_balance_replace" form="' . $formId . '" value="1"' . ($existing !== [] ? ' checked' : '') . '><div class="checkbox-copy"><strong>Replace existing opening balance</strong><span>Required when an active opening balance journal already exists.</span></div></label>
-            </div>
-            <div class="helper">Total debits must equal total credits before the opening balance journal can be saved.</div>
-            <div class="actions-row"><button class="button primary" type="submit" form="' . $formId . '">Save Opening Balances</button></div>
+            </section>
+            <section class="panel-soft settings-stack">
+                <div class="helper">Total debits must equal total credits before the opening balance journal can be saved.</div>
+                <div class="actions-row"><button class="button primary" type="submit" form="' . $formId . '">Save Opening Balances</button></div>
+            </section>
         </section>';
     }
 

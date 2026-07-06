@@ -16,8 +16,8 @@ final class AssetAction implements ActionInterfaceFramework
         $intent = trim((string)$request->input('intent', $request->input('global_action', '')));
         $service = new \eel_accounts\Service\AssetService();
 
-        $searchContext = in_array($intent, ['search_asset_disposal_receipts', 'dispose_asset_with_transaction', 'dispose_asset_nil'], true)
-            ? $this->searchContext($request)
+        $searchContext = in_array($intent, ['set_asset_disposal_method', 'search_asset_disposal_receipts', 'dispose_asset_with_transaction', 'dispose_asset_nil'], true)
+            ? $this->searchContext($request, $intent)
             : [];
 
         try {
@@ -42,7 +42,7 @@ final class AssetAction implements ActionInterfaceFramework
                     (int)$request->input('offset_nominal_id', 0),
                     (array)($request->files()['manual_asset_evidence'] ?? [])
                 ),
-                'search_asset_disposal_receipts' => ['success' => true],
+                'set_asset_disposal_method', 'search_asset_disposal_receipts' => ['success' => true],
                 'reconcile_manual_asset_with_transaction' => $service->reconcileManualAssetWithTransaction(
                     $companyId,
                     (int)$request->input('asset_id', 0),
@@ -86,18 +86,28 @@ final class AssetAction implements ActionInterfaceFramework
         );
     }
 
-    private function searchContext(RequestFramework $request): array
+    private function searchContext(RequestFramework $request, string $intent): array
     {
         $searchDate = trim((string)$request->input('disposal_search_date', $request->input('disposal_date', '')));
         $assetId = max(0, (int)$request->input('asset_id', $request->input('asset_disposal_search_asset_id', 0)));
+        $context = [
+            'asset_disposal_method_asset_id' => max(0, (int)$request->input('asset_disposal_method_asset_id', $assetId)),
+            'asset_disposal_method' => $this->normaliseDisposalMethod((string)$request->input('asset_disposal_method', '')),
+        ];
 
-        return array_filter(
-            [
-                'asset_disposal_search_date' => $searchDate,
-                'asset_disposal_search_asset_id' => $assetId,
-            ],
-            static fn(mixed $value): bool => $value !== '' && $value !== 0
-        );
+        if ($intent === 'set_asset_disposal_method') {
+            return array_filter($context, static fn(mixed $value): bool => $value !== '' && $value !== 0);
+        }
+
+        $context['asset_disposal_search_date'] = $searchDate;
+        $context['asset_disposal_search_asset_id'] = $assetId;
+
+        return array_filter($context, static fn(mixed $value): bool => $value !== '' && $value !== 0);
+    }
+
+    private function normaliseDisposalMethod(string $method): string
+    {
+        return in_array($method, ['sell_asset', 'at_nil_value'], true) ? $method : '';
     }
 
     private function flashMessages(string $intent, array $result): array

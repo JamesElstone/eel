@@ -1311,7 +1311,7 @@
 
 .settings-stack {
   display: grid;
-  /*gap: 18px;*/
+  gap: 18px;
 }
 
 .expense-statistics-nominal-layout {

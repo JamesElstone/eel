@@ -25,6 +25,8 @@ $harness->run(AssetAction::class, static function (GeneratedServiceClassTestHarn
                 'company_id' => '49',
                 'asset_id' => '12',
                 'disposal_search_date' => '2026-07-01',
+                'asset_disposal_method_asset_id' => '12',
+                'asset_disposal_method' => 'sell_asset',
             ],
             ['REQUEST_METHOD' => 'POST'],
             [],
@@ -38,5 +40,33 @@ $harness->run(AssetAction::class, static function (GeneratedServiceClassTestHarn
         $harness->assertSame(['asset.create', 'asset.reconcile_manual', 'asset.register', 'asset.tax', 'asset.not_an_asset', 'expense.claim.editor', 'expenses.state', 'transactions.imported', 'page.context', 'year.end.checklist'], $result->changedFacts());
         $harness->assertSame('2026-07-01', (string)($result->context()['asset_disposal_search_date'] ?? ''));
         $harness->assertSame(12, (int)($result->context()['asset_disposal_search_asset_id'] ?? 0));
+        $harness->assertSame(12, (int)($result->context()['asset_disposal_method_asset_id'] ?? 0));
+        $harness->assertSame('sell_asset', (string)($result->context()['asset_disposal_method'] ?? ''));
+    });
+
+    $harness->check(AssetAction::class, 'method toggle preserves disposal method context without search state', static function () use ($harness, $action): void {
+        $request = new RequestFramework(
+            [],
+            [
+                'card_action' => 'Asset',
+                'intent' => 'set_asset_disposal_method',
+                'company_id' => '49',
+                'asset_id' => '12',
+                'asset_disposal_method_asset_id' => '12',
+                'asset_disposal_method' => 'at_nil_value',
+            ],
+            ['REQUEST_METHOD' => 'POST'],
+            [],
+            [],
+            null
+        );
+
+        $result = $action->handle($request, createTestPageServiceFramework());
+
+        $harness->assertSame(true, $result->isSuccess());
+        $harness->assertSame(12, (int)($result->context()['asset_disposal_method_asset_id'] ?? 0));
+        $harness->assertSame('at_nil_value', (string)($result->context()['asset_disposal_method'] ?? ''));
+        $harness->assertSame(false, array_key_exists('asset_disposal_search_date', $result->context()));
+        $harness->assertSame(false, array_key_exists('asset_disposal_search_asset_id', $result->context()));
     });
 });

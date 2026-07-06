@@ -57,6 +57,19 @@ final class _asset_registerCard extends CardBaseFramework
             $pageContext['asset_disposal_search_asset_id'] = $assetId;
         }
 
+        $methodAssetId = max(0, (int)(
+            $resultContext['asset_disposal_method_asset_id']
+            ?? $request->input('asset_disposal_method_asset_id', $request->input('asset_id', 0))
+        ));
+        $method = $this->normaliseDisposalMethod((string)(
+            $resultContext['asset_disposal_method']
+            ?? $request->input('asset_disposal_method', '')
+        ));
+        if ($methodAssetId > 0 && $method !== '') {
+            $pageContext['asset_disposal_method_asset_id'] = $methodAssetId;
+            $pageContext['asset_disposal_method'] = $method;
+        }
+
         return $pageContext;
     }
 
@@ -118,6 +131,8 @@ final class _asset_registerCard extends CardBaseFramework
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $defaultBankNominalId = (int)($assetsPageData['default_bank_nominal_id'] ?? 0);
         $disposalSearch = (array)($assetsPageData['disposal_search'] ?? []);
+        $disposalMethodAssetId = (int)($context['asset_disposal_method_asset_id'] ?? 0);
+        $disposalMethod = $this->normaliseDisposalMethod((string)($context['asset_disposal_method'] ?? ''));
 
         return TableFramework::make($this->key(), $this->rows($context))
             ->filename('asset-register')
@@ -159,9 +174,32 @@ final class _asset_registerCard extends CardBaseFramework
                 }
             )
             ->column(
+                'disposal_method',
+                'Disposal Method',
+                html: fn(array $row): string => $this->disposalMethodToggleHtml(
+                    $row,
+                    $companyId,
+                    $accountingPeriodId,
+                    $disposalMethodAssetId,
+                    $disposalMethod
+                ),
+                headerClass: 'asset-register-actions-heading',
+                cellClass: 'asset-register-actions-cell',
+                exportable: false
+            )
+            ->column(
                 'actions',
-                'Actions',
-                html: fn(array $row): string => $this->actionsHtml($row, $companyId, $accountingPeriodId, $defaultBankNominalId, $disposalSearch, $settings),
+                'Asset Disposal',
+                html: fn(array $row): string => $this->actionsHtml(
+                    $row,
+                    $companyId,
+                    $accountingPeriodId,
+                    $defaultBankNominalId,
+                    $disposalSearch,
+                    $settings,
+                    $disposalMethodAssetId,
+                    $disposalMethod
+                ),
                 headerClass: 'asset-register-actions-heading',
                 cellClass: 'asset-register-actions-cell',
                 exportable: false
@@ -197,7 +235,9 @@ final class _asset_registerCard extends CardBaseFramework
         int $accountingPeriodId,
         int $defaultBankNominalId,
         array $disposalSearch,
-        array $settings
+        array $settings,
+        int $disposalMethodAssetId,
+        string $disposalMethod
     ): string {
         $status = (string)($asset['status'] ?? 'active');
 
@@ -213,8 +253,38 @@ final class _asset_registerCard extends CardBaseFramework
             (int)($asset['id'] ?? 0),
             $defaultBankNominalId,
             $disposalSearch,
-            $settings
+            $settings,
+            $this->disposalMethodForAsset((int)($asset['id'] ?? 0), $disposalMethodAssetId, $disposalMethod)
         );
+    }
+
+    private function disposalMethodToggleHtml(
+        array $asset,
+        int $companyId,
+        int $accountingPeriodId,
+        int $disposalMethodAssetId,
+        string $disposalMethod
+    ): string {
+        if ((string)($asset['status'] ?? 'active') === 'disposed') {
+            return '';
+        }
+
+        $assetId = (int)($asset['id'] ?? 0);
+        $currentMethod = $this->disposalMethodForAsset($assetId, $disposalMethodAssetId, $disposalMethod);
+        $nextMethod = $currentMethod === 'at_nil_value' ? 'sell_asset' : 'at_nil_value';
+        $currentLabel = $this->disposalMethodLabel($currentMethod);
+        $nextLabel = $this->disposalMethodLabel($nextMethod);
+
+        return '<form class="asset-disposal-method-form" method="post" action="?page=assets" data-ajax="true">
+            <input type="hidden" name="card_action" value="Asset">
+            <input type="hidden" name="intent" value="set_asset_disposal_method">
+            <input type="hidden" name="company_id" value="' . $companyId . '">
+            <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+            <input type="hidden" name="cards[]" value="' . HelperFramework::escape($this->key()) . '">
+            <input type="hidden" name="asset_disposal_method_asset_id" value="' . $assetId . '">
+            <input type="hidden" name="asset_disposal_method" value="' . HelperFramework::escape($nextMethod) . '">
+            <button class="button button-inline" type="submit" title="Switch to ' . HelperFramework::escape($nextLabel) . '">' . HelperFramework::escape($currentLabel) . '</button>
+        </form>';
     }
 
     private function disposalControls(
@@ -223,7 +293,8 @@ final class _asset_registerCard extends CardBaseFramework
         int $assetId,
         int $defaultBankNominalId,
         array $disposalSearch,
-        array $settings
+        array $settings,
+        string $disposalMethod
     ): string {
         $selectedAssetId = (int)($disposalSearch['asset_id'] ?? 0);
         $searchDate = $selectedAssetId === $assetId
@@ -234,21 +305,38 @@ final class _asset_registerCard extends CardBaseFramework
             : '';
         $nilReasonOptions = $this->nilReasonOptionsHtml();
 
+        if ($disposalMethod === 'at_nil_value') {
+            return '<div class="asset-disposal-panel">
+                <form class="asset-disposal-form" method="post" action="?page=assets" data-ajax="true">
+                    <input type="hidden" name="card_action" value="Asset">
+                    <input type="hidden" name="company_id" value="' . $companyId . '">
+                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                    <input type="hidden" name="asset_id" value="' . $assetId . '">
+                    <input type="hidden" name="asset_disposal_method_asset_id" value="' . $assetId . '">
+                    <input type="hidden" name="asset_disposal_method" value="at_nil_value">
+                    <div class="asset-disposal-controls">
+                        <div class="asset-disposal-row">
+                            <select class="select" name="disposal_event_type" aria-label="Nil value disposal reason">' . $nilReasonOptions . '</select>
+                            <input class="input" type="text" name="disposal_reason" placeholder="Nil value note" maxlength="20" size="20">
+                            <button class="button button-inline primary" type="submit" name="intent" value="dispose_asset_nil">Dispose of at Nil Value</button>
+                        </div>
+                    </div>
+                </form>
+            </div>';
+        }
+
         return '<div class="asset-disposal-panel">
             <form class="asset-disposal-form" method="post" action="?page=assets" data-ajax="true">
                 <input type="hidden" name="card_action" value="Asset">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="asset_id" value="' . $assetId . '">
+                <input type="hidden" name="asset_disposal_method_asset_id" value="' . $assetId . '">
+                <input type="hidden" name="asset_disposal_method" value="sell_asset">
                 <div class="asset-disposal-controls">
                     <div class="asset-disposal-row">
                         <input class="input" type="date" name="disposal_search_date" value="' . HelperFramework::escape($searchDate) . '">
                         <button class="button button-inline primary" type="submit" name="intent" value="search_asset_disposal_receipts">Search Incoming Payments</button>
-                    </div>
-                    <div class="asset-disposal-row">
-                        <select class="select" name="disposal_event_type" aria-label="Nil value disposal reason">' . $nilReasonOptions . '</select>
-                        <input class="input" type="text" name="disposal_reason" placeholder="Nil value note" maxlength="20" size="20">
-                        <button class="button button-inline primary" type="submit" name="intent" value="dispose_asset_nil">Dispose of at Nil Value</button>
                     </div>
                 </div>
             </form>
@@ -335,6 +423,25 @@ final class _asset_registerCard extends CardBaseFramework
         }
 
         return HelperFramework::displayDate($value);
+    }
+
+    private function disposalMethodForAsset(int $assetId, int $selectedAssetId, string $method): string
+    {
+        if ($assetId > 0 && $selectedAssetId === $assetId && $method !== '') {
+            return $method;
+        }
+
+        return 'sell_asset';
+    }
+
+    private function normaliseDisposalMethod(string $method): string
+    {
+        return in_array($method, ['sell_asset', 'at_nil_value'], true) ? $method : '';
+    }
+
+    private function disposalMethodLabel(string $method): string
+    {
+        return $method === 'at_nil_value' ? 'No Value' : 'Sold Asset';
     }
 
 }

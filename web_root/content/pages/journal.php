@@ -33,7 +33,7 @@ final class _journal extends PageContextFramework
     {
         return [
             'journals_list',
-            'nominal_closing_balances',
+            'journal_cut_offs',
         ];
     }
 
@@ -49,7 +49,7 @@ final class _journal extends PageContextFramework
             [
                 'tab' => 'Adjustments',
                 'cards' => [
-                    'nominal_closing_balances',
+                    'journal_cut_offs',
                 ],
             ],
         ];

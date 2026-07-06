@@ -1184,7 +1184,7 @@ final class YearEndChecklistService
                 ? 'Accruals, deferred income, prepayments, and other cut-off journals have been reviewed for this period.'
                 : 'Review whether any accruals, deferred income, prepayments, or other year-end cut-off journals are required.',
             $cutOffJournalsAcknowledged ? 'Reviewed' : 'Pending',
-            '?page=cut_off_journals'
+            '?page=year_end&show_card=journal_cut_off_confirmation'
         ), $reviewAcknowledgements);
 
         $taxPeriodDisplay = $this->taxPeriodDisplay($taxReadiness);

@@ -27,7 +27,7 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
                                 'status' => 'warning',
                                 'detail_text' => 'Review whether any cut-off journals are required.',
                                 'metric_value' => 'Pending',
-                                'action_url' => '?page=cut_off_journals&company_id=12&accounting_period_id=34',
+                                'action_url' => '?page=year_end&company_id=12&accounting_period_id=34&show_card=journal_cut_off_confirmation',
                                 'review_clearable' => true,
                             ],
                             [
@@ -50,7 +50,8 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
         ]);
 
         $harness->assertSame(true, str_contains($html, 'Open Related Workflow'));
-        $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=cut_off_journals" data-ajax="true"'));
+        $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=year_end" data-ajax="true"'));
+        $harness->assertSame(true, str_contains($html, '<input type="hidden" name="show_card" value="journal_cut_off_confirmation">'));
         $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=assets" data-ajax="true"'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="show_card" value="not_an_asset">'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="company_id" value="12">'));

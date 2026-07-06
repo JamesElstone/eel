@@ -21,17 +21,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
 
     public function services(): array
     {
-        return [
-            [
-                'key' => 'yearEndTaxReadiness',
-                'service' => \eel_accounts\Service\YearEndTaxReadinessService::class,
-                'method' => 'fetchAccountingPeriodCtSummary',
-                'params' => [
-                    'companyId' => ':company.id',
-                    'accountingPeriodId' => ':company.accounting_period_id',
-                ],
-            ],
-        ];
+        return [];
     }
 
     protected function additionalInvalidationFacts(): array
@@ -46,7 +36,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $taxReadiness = (array)($context['services']['yearEndTaxReadiness'] ?? []);
+        $taxReadiness = (array)($context['services']['yearEndTaxReadiness'] ?? (($context['year_end'] ?? [])['checklist'] ?? [])['tax_readiness'] ?? []);
         $company = (array)($context['company'] ?? []);
         $companySettings = (array)($company['settings'] ?? []);
         $companyId = (int)($company['id'] ?? 0);

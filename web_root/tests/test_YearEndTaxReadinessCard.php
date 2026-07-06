@@ -77,6 +77,34 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame(false, str_contains($html, '$ 300.00'));
         $harness->assertSame(false, str_contains($html, '$ 400.00'));
     });
+
+    $harness->check(_year_end_tax_readinessCard::class, 'renders tax readiness from year-end checklist context without a card service payload', static function () use ($harness, $card): void {
+        $html = $card->render(yearEndTaxReadinessChecklistContext([
+            'available' => true,
+            'taxable_profit' => 8000,
+            'estimated_corporation_tax' => 1520,
+            'losses_carried_forward' => 12.50,
+            'confidence_status' => 'ready_for_review',
+            'confidence_label' => 'Ready for review',
+            'periods' => [
+                [
+                    'period_label' => '01/10/2025 to 30/09/2026',
+                    'taxable_profit' => 8000,
+                    'estimated_corporation_tax' => 1520,
+                    'losses_carried_forward' => 12.50,
+                    'warnings' => [],
+                ],
+            ],
+            'warnings' => [],
+        ]));
+
+        $harness->assertSame(true, str_contains($html, '$ 8,000.00'));
+        $harness->assertSame(true, str_contains($html, '$ 1,520.00'));
+        $harness->assertSame(true, str_contains($html, '$ 12.50'));
+        $harness->assertSame(true, str_contains($html, '01/10/2025 to 30/09/2026'));
+        $harness->assertSame(true, str_contains($html, 'Ready for review'));
+        $harness->assertSame(true, str_contains($html, 'Open Tax Workflow'));
+    });
 });
 
 function yearEndTaxReadinessCardContext(array $taxReadiness, array $review = []): array
@@ -98,5 +126,26 @@ function yearEndTaxReadinessCardContext(array $taxReadiness, array $review = [])
         'services' => [
             'yearEndTaxReadiness' => $taxReadiness,
         ],
+    ];
+}
+
+function yearEndTaxReadinessChecklistContext(array $taxReadiness, array $review = []): array
+{
+    return [
+        'company' => [
+            'id' => 33,
+            'name' => 'Tax Readiness Fixture Limited',
+            'accounting_period_id' => 70,
+            'settings' => [
+                'default_currency_symbol' => '&#36;',
+            ],
+        ],
+        'year_end' => [
+            'checklist' => [
+                'review' => $review,
+                'tax_readiness' => $taxReadiness,
+            ],
+        ],
+        'services' => [],
     ];
 }

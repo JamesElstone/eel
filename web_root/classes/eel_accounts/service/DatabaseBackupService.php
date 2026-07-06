@@ -379,12 +379,29 @@ final class DatabaseBackupService
             return $value ? '1' : '0';
         }
 
-        $quoted = $pdo->quote((string)$value);
+        try {
+            $quoted = $pdo->quote((string)$value);
+        } catch (Throwable) {
+            $quoted = false;
+        }
+
         if ($quoted === false) {
-            return "'" . str_replace("'", "''", (string)$value) . "'";
+            return $this->fallbackSqlStringLiteral((string)$value);
         }
 
         return $quoted;
+    }
+
+    private function fallbackSqlStringLiteral(string $value): string
+    {
+        return "'" . strtr($value, [
+            "\\" => "\\\\",
+            "\0" => "\\0",
+            "\n" => "\\n",
+            "\r" => "\\r",
+            "'" => "''",
+            "\x1a" => "\\Z",
+        ]) . "'";
     }
 
     private function quoteIdentifier(string $identifier): string

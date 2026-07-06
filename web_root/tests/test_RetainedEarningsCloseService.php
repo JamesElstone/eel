@@ -76,6 +76,45 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
             }
         }
     });
+
+    $harness->check(\eel_accounts\Service\RetainedEarningsCloseService::class, 'includes pending year-end depreciation in approval figures', static function () use ($harness): void {
+        retainedEarningsCloseRequireDepreciationSchema($harness);
+
+        InterfaceDB::beginTransaction();
+        try {
+            retainedEarningsCloseEnsureNominal('1000', 'Bank', 'asset');
+            retainedEarningsCloseEnsureNominal('1300', 'Tools', 'asset');
+            retainedEarningsCloseEnsureNominal('1330', 'Accum Dep - Tools', 'asset');
+            retainedEarningsCloseEnsureNominal('3000', 'Retained Earnings', 'equity');
+            retainedEarningsCloseEnsureNominal('4000', 'Sales', 'income');
+            retainedEarningsCloseEnsureNominal('6200', 'Depreciation Expense', 'expense');
+
+            $fixture = retainedEarningsCloseCreateDepreciationFixture();
+            $service = new \eel_accounts\Service\RetainedEarningsCloseService();
+            $context = $service->fetchContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+
+            $harness->assertSame(true, (bool)($context['available'] ?? false));
+            $harness->assertSame(1, (int)(($context['depreciation_preview'] ?? [])['created'] ?? 0));
+            $harness->assertSame('400.00', number_format((float)(($context['depreciation_preview'] ?? [])['total_amount'] ?? 0), 2, '.', ''));
+            $harness->assertSame('600.00', number_format((float)(($context['summary'] ?? [])['current_profit_loss'] ?? 0), 2, '.', ''));
+
+            $acknowledged = $service->saveAcknowledgement((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], true, 'test');
+            $harness->assertSame(true, (bool)($acknowledged['success'] ?? false));
+            $harness->assertSame(false, (bool)($service->fetchContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id'])['acknowledgement_stale'] ?? true));
+
+            $postedDepreciation = (new \eel_accounts\Service\AssetService())->runDepreciation((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+            $harness->assertSame(true, (bool)($postedDepreciation['success'] ?? false));
+
+            $afterPosting = $service->fetchContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+            $harness->assertSame(0, (int)(($afterPosting['depreciation_preview'] ?? [])['created'] ?? -1));
+            $harness->assertSame('600.00', number_format((float)(($afterPosting['summary'] ?? [])['current_profit_loss'] ?? 0), 2, '.', ''));
+            $harness->assertSame(false, (bool)($afterPosting['acknowledgement_stale'] ?? true));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
 });
 
 function retainedEarningsCloseRequireSchema(GeneratedServiceClassTestHarness $harness): void
@@ -102,6 +141,28 @@ function retainedEarningsCloseRequireSchema(GeneratedServiceClassTestHarness $ha
     foreach (['1000', '3000', '4000', '5000'] as $code) {
         if (retainedEarningsCloseNominalId($code) <= 0) {
             $harness->skip('Nominal ' . $code . ' is not available.');
+        }
+    }
+}
+
+function retainedEarningsCloseRequireDepreciationSchema(GeneratedServiceClassTestHarness $harness): void
+{
+    foreach (['companies', 'accounting_periods', 'journals', 'journal_lines', 'journal_entry_metadata', 'nominal_accounts', 'year_end_reviews', 'year_end_audit_log', 'asset_register', 'asset_depreciation_entries'] as $table) {
+        if (!InterfaceDB::tableExists($table)) {
+            $harness->skip($table . ' table is not available.');
+        }
+    }
+
+    foreach ([
+        'retained_earnings_close_acknowledged_at',
+        'retained_earnings_close_acknowledged_by',
+        'retained_earnings_close_opening_equity',
+        'retained_earnings_close_current_profit_loss',
+        'retained_earnings_close_closing_equity_before',
+        'retained_earnings_close_amount',
+    ] as $column) {
+        if (!InterfaceDB::columnExists('year_end_reviews', $column)) {
+            $harness->skip($column . ' column is not available.');
         }
     }
 }
@@ -154,6 +215,96 @@ function retainedEarningsCloseCreateLossFixture(): array
         'company_id' => $companyId,
         'accounting_period_id' => $accountingPeriodId,
         'retained_earnings_nominal_id' => retainedEarningsCloseNominalId('3000'),
+    ];
+}
+
+function retainedEarningsCloseCreateDepreciationFixture(): array
+{
+    $marker = 'retained-dep-' . bin2hex(random_bytes(4));
+    InterfaceDB::prepareExecute(
+        'INSERT INTO companies (company_name, company_number, is_active)
+         VALUES (:company_name, :company_number, 1)',
+        [
+            'company_name' => 'Retained Dep Fixture',
+            'company_number' => $marker,
+        ]
+    );
+    $companyId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM companies WHERE company_number = :company_number ORDER BY id DESC LIMIT 1',
+        ['company_number' => $marker]
+    );
+
+    InterfaceDB::prepareExecute(
+        'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
+         VALUES (:company_id, :label, :period_start, :period_end)',
+        [
+            'company_id' => $companyId,
+            'label' => '2025 retained dep fixture',
+            'period_start' => '2025-01-01',
+            'period_end' => '2025-12-31',
+        ]
+    );
+    $accountingPeriodId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM accounting_periods WHERE company_id = :company_id AND label = :label ORDER BY id DESC LIMIT 1',
+        [
+            'company_id' => $companyId,
+            'label' => '2025 retained dep fixture',
+        ]
+    );
+
+    retainedEarningsCloseInsertJournal($companyId, $accountingPeriodId, $marker . '-sales', '2025-03-31', [
+        ['nominal_account_id' => retainedEarningsCloseNominalId('1000'), 'debit' => '1000.00', 'credit' => '0.00', 'line_description' => 'Bank receipt'],
+        ['nominal_account_id' => retainedEarningsCloseNominalId('4000'), 'debit' => '0.00', 'credit' => '1000.00', 'line_description' => 'Sales'],
+    ]);
+
+    InterfaceDB::prepareExecute(
+        'INSERT INTO asset_register (
+            company_id,
+            asset_code,
+            description,
+            category,
+            nominal_account_id,
+            accum_dep_nominal_id,
+            purchase_date,
+            cost,
+            useful_life_years,
+            depreciation_method,
+            residual_value,
+            status
+         ) VALUES (
+            :company_id,
+            :asset_code,
+            :description,
+            :category,
+            :nominal_account_id,
+            :accum_dep_nominal_id,
+            :purchase_date,
+            :cost,
+            :useful_life_years,
+            :depreciation_method,
+            :residual_value,
+            :status
+         )',
+        [
+            'company_id' => $companyId,
+            'asset_code' => 'RDEP-' . substr($marker, -8),
+            'description' => 'Retained earnings pending depreciation fixture asset',
+            'category' => 'tools_equipment',
+            'nominal_account_id' => retainedEarningsCloseNominalId('1300'),
+            'accum_dep_nominal_id' => retainedEarningsCloseNominalId('1330'),
+            'purchase_date' => '2025-01-01',
+            'cost' => 1200.00,
+            'useful_life_years' => 3,
+            'depreciation_method' => 'straight_line',
+            'residual_value' => 0.00,
+            'status' => 'active',
+        ]
+    );
+
+    return [
+        'marker' => $marker,
+        'company_id' => $companyId,
+        'accounting_period_id' => $accountingPeriodId,
     ];
 }
 
@@ -225,4 +376,24 @@ function retainedEarningsCloseNominalId(string $code): int
         'SELECT id FROM nominal_accounts WHERE code = :code AND is_active = 1 LIMIT 1',
         ['code' => $code]
     ) ?: 0);
+}
+
+function retainedEarningsCloseEnsureNominal(string $code, string $name, string $accountType): int
+{
+    $existingId = retainedEarningsCloseNominalId($code);
+    if ($existingId > 0) {
+        return $existingId;
+    }
+
+    InterfaceDB::prepareExecute(
+        'INSERT INTO nominal_accounts (code, name, account_type, is_active)
+         VALUES (:code, :name, :account_type, 1)',
+        [
+            'code' => $code,
+            'name' => $name,
+            'account_type' => $accountType,
+        ]
+    );
+
+    return retainedEarningsCloseNominalId($code);
 }

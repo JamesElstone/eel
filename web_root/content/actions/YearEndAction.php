@@ -47,7 +47,6 @@ final class YearEndAction implements ActionInterfaceFramework
 
             $result = match ($intent) {
                 'recalculate' => (new \eel_accounts\Service\YearEndChecklistService())->recalculateChecklist($companyId, $accountingPeriodId, $actor),
-                'post_asset_depreciation' => (new \eel_accounts\Service\AssetService())->runDepreciation($companyId, $accountingPeriodId),
                 'lock_period' => (new \eel_accounts\Service\YearEndChecklistService())->lockPeriod($companyId, $accountingPeriodId, $actor),
                 'unlock_period' => (new \eel_accounts\Service\YearEndChecklistService())->unlockPeriod($companyId, $accountingPeriodId, $actor),
                 'save_notes' => (new \eel_accounts\Service\YearEndChecklistService())->saveNotes($companyId, $accountingPeriodId, (string)$request->input('review_notes', ''), $actor),
@@ -184,14 +183,13 @@ final class YearEndAction implements ActionInterfaceFramework
             }
         }
 
-        return new ActionResultFramework($success, ['page.context', 'year.end.state', 'year.end.checklist', 'year.end.director.loan.offset', 'year.end.tax.readiness', 'year.end.expenses.confirmation', 'year.end.retained.earnings', 'year.end.empty.month.confirmations', 'year.end.transaction.tail', 'year.end.notes', 'year.end.audit.log', 'trial.balance.state', 'nominal.opening.balances', 'nominal.closing.balances', 'cut.off.journals', 'prepayments.state', 'asset.register', 'asset.tax'], $flashMessages);
+        return new ActionResultFramework($success, ['page.context', 'year.end.state', 'year.end.checklist', 'year.end.director.loan.offset', 'year.end.tax.readiness', 'year.end.expenses.confirmation', 'year.end.retained.earnings', 'year.end.empty.month.confirmations', 'year.end.transaction.tail', 'year.end.notes', 'year.end.audit.log', 'trial.balance.state', 'nominal.opening.balances', 'nominal.closing.balances', 'cut.off.journals', 'prepayments.state'], $flashMessages);
     }
 
     private function successMessage(string $intent): string
     {
         return match ($intent) {
             'recalculate' => 'Year-end checklist refreshed.',
-            'post_asset_depreciation' => 'Asset depreciation posted. Review and agree retained earnings again before locking.',
             'lock_period' => 'Year-end close tasks completed and accounting period locked.',
             'unlock_period' => 'Accounting period unlocked.',
             'save_notes' => 'Year-end notes saved.',
@@ -215,7 +213,6 @@ final class YearEndAction implements ActionInterfaceFramework
     {
         return in_array($intent, [
             'recalculate',
-            'post_asset_depreciation',
             'lock_period',
             'save_opening_balance',
             'create_adjustment',
@@ -232,7 +229,6 @@ final class YearEndAction implements ActionInterfaceFramework
     {
         return in_array($intent, [
             'recalculate',
-            'post_asset_depreciation',
             'lock_period',
             'save_opening_balance',
             'create_adjustment',
@@ -249,7 +245,6 @@ final class YearEndAction implements ActionInterfaceFramework
     {
         return in_array($intent, [
             'recalculate',
-            'post_asset_depreciation',
             'save_notes',
             'confirm_empty_month',
             'revoke_empty_month',

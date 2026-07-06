@@ -67,10 +67,6 @@ final class _year_end_stateCard extends CardBaseFramework
         $latestBackupAt = $this->latestBackupCreatedAt($context);
         $backupIsCurrent = $this->backupIsCurrent($latestBackupAt, $checklistChangedAt);
         $hasChecklistWarnings = !empty((($context['year_end'] ?? [])['checklist_has_warnings'] ?? false));
-        $depreciationPreview = (array)($checklist['depreciation_preview'] ?? []);
-        $pendingDepreciation = !empty($depreciationPreview['success'])
-            && (int)($depreciationPreview['created'] ?? 0) > 0
-            && abs((float)($depreciationPreview['total_amount'] ?? 0)) >= 0.005;
         $lockDisabled = !$isLocked && ($hasChecklistWarnings || !$backupIsCurrent);
         $lockDisabledTitle = $hasChecklistWarnings
             ? 'Resolve year-end checklist warnings before running the year-end close and locking this accounting period.'
@@ -98,9 +94,6 @@ final class _year_end_stateCard extends CardBaseFramework
                 <div class="actions-row">
                     ' . $this->actionForm($companyId, $accountingPeriodId, 'recalculate', 'Refresh Year-End Checklist', false, 'Re-checks the year-end readiness checklist using the latest ledger, review, tax, and confirmation data.') . '
                     ' . $this->backupForm($context) . '
-                    ' . ($pendingDepreciation && !$isLocked
-                        ? $this->actionForm($companyId, $accountingPeriodId, 'post_asset_depreciation', 'Post Asset Depreciation', false, 'Posts the pending fixed-asset depreciation journals for this accounting period.')
-                        : '') . '
                     ' . $this->actionForm(
                         $companyId,
                         $accountingPeriodId,
@@ -195,7 +188,6 @@ final class _year_end_stateCard extends CardBaseFramework
     {
         return match ($intent) {
             'lock_period' => 'Running Year-End Close...',
-            'post_asset_depreciation' => 'Posting Depreciation...',
             'unlock_period' => 'Unlocking...',
             'recalculate' => 'Refreshing...',
             default => 'Working...',

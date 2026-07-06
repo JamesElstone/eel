@@ -58,6 +58,12 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
         }
 
         $summary = (array)($close['summary'] ?? []);
+        $depreciationPreview = (array)($close['depreciation_preview'] ?? []);
+        $pendingDepreciationAmount = !empty($depreciationPreview['success']) ? (float)($depreciationPreview['total_amount'] ?? 0) : 0.0;
+        $pendingDepreciationCount = !empty($depreciationPreview['success']) ? (int)($depreciationPreview['created'] ?? 0) : 0;
+        $pendingDepreciationHtml = $pendingDepreciationCount > 0 && abs($pendingDepreciationAmount) >= 0.005
+            ? '<div class="helper">These figures include ' . HelperFramework::escape((string)$pendingDepreciationCount) . ' pending depreciation posting(s) totalling ' . HelperFramework::escape($this->money($companySettings, $pendingDepreciationAmount)) . ', which will be posted automatically when Year End is locked.</div>'
+            : '';
         $acknowledged = !empty($close['acknowledged']);
         $stale = !empty($close['acknowledgement_stale']);
         $journalLinesHtml = $this->journalLinesHtml((array)($close['journal_lines'] ?? []), $companySettings);
@@ -87,7 +93,7 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
                 ' . $this->summaryCard('Retained earnings movement', $this->money($companySettings, $summary['retained_earnings_movement'] ?? 0)) . '
             </div>
             <div class="helper">' . HelperFramework::escape($this->balanceEquation($companySettings, $summary)) . '</div>
-            ' . $staleHtml . $existingHtml . '
+            ' . $pendingDepreciationHtml . $staleHtml . $existingHtml . '
             <div class="table-scroll panel-soft">
                 <table>
                     <thead><tr><th>Nominal</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead>

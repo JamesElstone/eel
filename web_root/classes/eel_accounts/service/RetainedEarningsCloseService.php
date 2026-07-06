@@ -20,6 +20,7 @@ final class RetainedEarningsCloseService
         private readonly ?\eel_accounts\Service\YearEndMetricsService $metricsService = null,
         private readonly ?\eel_accounts\Service\ManualJournalService $journalService = null,
         private readonly ?\eel_accounts\Service\YearEndLockService $lockService = null,
+        private readonly ?\eel_accounts\Service\AssetService $assetService = null,
     ) {
     }
 
@@ -49,6 +50,8 @@ final class RetainedEarningsCloseService
         }
 
         $plRows = $this->profitAndLossRows($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $depreciationPreview = ($this->assetService ?? new \eel_accounts\Service\AssetService())->previewDepreciationRun($companyId, $accountingPeriodId);
+        $plRows = $this->includePendingDepreciationRows($plRows, $depreciationPreview);
         $profitAndLoss = $this->profitAndLossTotals($plRows);
         $openingEquity = $this->equityBalanceUntilDate($companyId, $periodStart, true, false);
         $closingEquityBeforeClose = $this->equityBalanceUntilDate($companyId, $periodEnd, false, true);
@@ -85,6 +88,7 @@ final class RetainedEarningsCloseService
             'acknowledgement_stale' => $this->acknowledgementIsStale($review, $summary),
             'retained_earnings_nominal' => $retainedEarningsNominal,
             'summary' => $summary,
+            'depreciation_preview' => $depreciationPreview,
             'profit_and_loss_rows' => $plRows,
             'journal_lines' => $journalLines,
             'existing_journal' => $existingJournal,
@@ -218,17 +222,28 @@ final class RetainedEarningsCloseService
 
     private function retainedEarningsNominal(): ?array
     {
+        return $this->nominalByCode(self::RETAINED_EARNINGS_CODE, 'equity');
+    }
+
+    private function nominalByCode(string $code, string $accountType = ''): ?array
+    {
+        $conditions = [
+            'code' => $code,
+        ];
+        $accountTypeSql = '';
+        if ($accountType !== '') {
+            $accountTypeSql = ' AND account_type = :account_type';
+            $conditions['account_type'] = $accountType;
+        }
+
         $row = \InterfaceDB::fetchOne(
-            'SELECT id, code, name, account_type, is_active
+            'SELECT id, code, name, account_type, tax_treatment, is_active
              FROM nominal_accounts
              WHERE code = :code
-               AND account_type = :account_type
+               ' . $accountTypeSql . '
                AND is_active = 1
              LIMIT 1',
-            [
-                'code' => self::RETAINED_EARNINGS_CODE,
-                'account_type' => 'equity',
-            ]
+            $conditions
         );
 
         return is_array($row) ? $row : null;
@@ -293,6 +308,48 @@ final class RetainedEarningsCloseService
             'expenses' => round($expenses, 2),
             'profit_before_tax' => round($income - $expenses, 2),
         ];
+    }
+
+    private function includePendingDepreciationRows(array $plRows, array $depreciationPreview): array
+    {
+        if (empty($depreciationPreview['success']) || (int)($depreciationPreview['created'] ?? 0) <= 0) {
+            return $plRows;
+        }
+
+        $amount = round((float)($depreciationPreview['total_amount'] ?? 0), 2);
+        if (abs($amount) < 0.005) {
+            return $plRows;
+        }
+
+        $depreciationNominal = $this->nominalByCode('6200');
+        if ($depreciationNominal === null) {
+            return $plRows;
+        }
+
+        $nominalId = (int)$depreciationNominal['id'];
+        foreach ($plRows as $index => $row) {
+            if ((int)($row['id'] ?? 0) !== $nominalId) {
+                continue;
+            }
+
+            $plRows[$index]['total_debit'] = number_format(round((float)($row['total_debit'] ?? 0) + $amount, 2), 2, '.', '');
+            $plRows[$index]['pending_year_end_depreciation'] = number_format($amount, 2, '.', '');
+
+            return $plRows;
+        }
+
+        $plRows[] = [
+            'id' => $nominalId,
+            'code' => (string)($depreciationNominal['code'] ?? '6200'),
+            'name' => (string)($depreciationNominal['name'] ?? 'Depreciation Expense'),
+            'account_type' => (string)($depreciationNominal['account_type'] ?? 'expense'),
+            'tax_treatment' => (string)($depreciationNominal['tax_treatment'] ?? 'allowable'),
+            'total_debit' => number_format($amount, 2, '.', ''),
+            'total_credit' => '0.00',
+            'pending_year_end_depreciation' => number_format($amount, 2, '.', ''),
+        ];
+
+        return $plRows;
     }
 
     private function buildJournalLines(array $plRows, int $retainedEarningsNominalId): array

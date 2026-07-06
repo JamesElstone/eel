@@ -79,21 +79,6 @@ $harness->run(_year_end_stateCard::class, static function (GeneratedServiceClass
         $harness->assertSame(true, str_contains($html, 'disabled title="Create a fresh database backup after the latest checklist change before running the year-end close and locking this accounting period."'));
     });
 
-    $harness->check(_year_end_stateCard::class, 'renders depreciation posting action when preview has pending rows', static function () use ($harness, $card): void {
-        $context = yearEndStateCardContext(true);
-        $context['year_end']['checklist']['depreciation_preview'] = [
-            'success' => true,
-            'created' => 2,
-            'total_amount' => 123.45,
-        ];
-
-        $html = $card->render($context);
-
-        $harness->assertSame(true, str_contains($html, 'Post Asset Depreciation'));
-        $harness->assertSame(true, str_contains($html, 'intent" value="post_asset_depreciation"'));
-        $harness->assertSame(true, str_contains($html, 'data-year-end-state-running-label="Posting Depreciation..."'));
-    });
-
     $harness->check(_year_end_stateCard::class, 'keeps unlock enabled when locked even if shared warnings remain', static function () use ($harness, $card): void {
         $context = yearEndStateCardContext(true);
         $context['year_end']['checklist']['review']['is_locked'] = true;

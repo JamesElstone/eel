@@ -42,6 +42,45 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
         }
     });
 
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'pending depreciation makes checklist not ready', static function () use ($harness): void {
+        yearEndChecklistServiceRequireDepreciationLockTables($harness);
+
+        InterfaceDB::beginTransaction();
+        try {
+            yearEndChecklistServiceEnsureNominal('1000', 'Bank', 'asset');
+            yearEndChecklistServiceEnsureNominal('1300', 'Tools', 'asset');
+            yearEndChecklistServiceEnsureNominal('1330', 'Accum Dep - Tools', 'asset');
+            yearEndChecklistServiceEnsureNominal('3000', 'Retained Earnings', 'equity');
+            yearEndChecklistServiceEnsureNominal('4000', 'Sales', 'income');
+            yearEndChecklistServiceEnsureNominal('6200', 'Depreciation Expense', 'expense');
+
+            $fixture = yearEndChecklistServiceCreateDepreciationLockFixture();
+            $checklist = (new \eel_accounts\Service\YearEndChecklistService())->fetchChecklist(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                false
+            );
+
+            $harness->assertSame(false, $checklist === null);
+            $harness->assertSame(false, (string)($checklist['overall_status'] ?? '') === 'ready_for_review');
+            $depreciationCheck = null;
+            foreach ((array)($checklist['checks_flat'] ?? []) as $check) {
+                if ((string)($check['check_code'] ?? '') === 'asset_depreciation_posted') {
+                    $depreciationCheck = $check;
+                    break;
+                }
+            }
+
+            $harness->assertSame(false, $depreciationCheck === null);
+            $harness->assertSame('fail', (string)($depreciationCheck['status'] ?? ''));
+            $harness->assertTrue(str_contains((string)($depreciationCheck['detail_text'] ?? ''), 'Post pending asset depreciation'));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
     $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'lock fails before writes when pending depreciation would stale retained earnings approval', static function () use ($harness): void {
         yearEndChecklistServiceRequireDepreciationLockTables($harness);
 

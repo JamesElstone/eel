@@ -944,6 +944,7 @@ final class YearEndChecklistService
         $financialStatements = $metrics->financialStatementsSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd, $trialBalance);
         $retainedEarningsClose = ($this->retainedEarningsCloseService ?? new \eel_accounts\Service\RetainedEarningsCloseService())
             ->fetchContext($companyId, $accountingPeriodId);
+        $depreciationPreview = ($this->assetService ?? new \eel_accounts\Service\AssetService())->previewDepreciationRun($companyId, $accountingPeriodId);
         $incorporationShares = (new \eel_accounts\Service\IncorporationShareCapitalService())->fetchSummary($companyId);
         $potentialAssetThreshold = \eel_accounts\Service\AssetService::normalisePotentialAssetThreshold($settings['potential_asset_threshold'] ?? 250);
         $potentialAssetCandidateCount = ($this->assetService ?? new \eel_accounts\Service\AssetService())->potentialAssetCandidateCount(
@@ -1263,6 +1264,25 @@ final class YearEndChecklistService
             (string)$potentialAssetCandidateCount,
             '?page=assets&show_card=not_an_asset'
         ), $reviewAcknowledgements);
+        $pendingDepreciationCount = !empty($depreciationPreview['success']) ? (int)($depreciationPreview['created'] ?? 0) : 0;
+        $pendingDepreciationAmount = !empty($depreciationPreview['success']) ? (float)($depreciationPreview['total_amount'] ?? 0) : 0.0;
+        $depreciationPostingCurrent = !empty($depreciationPreview['success'])
+            && ($pendingDepreciationCount <= 0 || abs($pendingDepreciationAmount) < 0.005);
+        $sections['year_end_accounts_review'][] = $this->makeCheck(
+            'asset_depreciation_posted',
+            'Asset depreciation posted',
+            'fail',
+            $depreciationPostingCurrent ? 'pass' : 'fail',
+            empty($depreciationPreview['success'])
+                ? (string)(($depreciationPreview['errors'] ?? [])[0] ?? 'Depreciation could not be checked for this period.')
+                : ($depreciationPostingCurrent
+                    ? 'No pending asset depreciation postings remain for this period.'
+                    : 'Post pending asset depreciation, then review and agree retained earnings again before locking.'),
+            empty($depreciationPreview['success'])
+                ? ''
+                : ($pendingDepreciationCount . ' pending, ' . $this->money($settings, $pendingDepreciationAmount)),
+            '?page=year_end&show_card=year_end_state'
+        );
         $vehicleReviewWarnings = (new \eel_accounts\Service\VehicleService())->periodReviewWarnings($companyId, $accountingPeriodId);
         $sections['year_end_accounts_review'][] = $this->makeCheck(
             'vehicle_tax_review',
@@ -1467,6 +1487,7 @@ final class YearEndChecklistService
             && !empty($trialBalance['exists'])
             && $journalIntegrityIssues === 0
             && $unpostedSourceWorkCount === 0
+            && $depreciationPostingCurrent
             && $retainedEarningsCloseCurrent
             && $prepaymentApprovalsAcknowledged
             && $directorLoanTaxReviewCleared;
@@ -1513,6 +1534,7 @@ final class YearEndChecklistService
                 : (string)($review['last_recalculated_at'] ?? ''),
             'review' => $lock->fetchReview($companyId, $accountingPeriodId),
             'review_acknowledgements' => $reviewAcknowledgements,
+            'depreciation_preview' => $depreciationPreview,
             'month_tiles' => $monthTiles,
             'auto_decision_summary' => $autoDecisionSummary,
             'sections' => $sections,

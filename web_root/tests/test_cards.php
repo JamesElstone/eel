@@ -48,6 +48,8 @@ final class TestCardsHarness
         $this->assertTrialBalanceLossesRendersCtPeriodTotals();
         $this->assertCompaniesHousePageIncludesCompaniesHouseSnapshot();
         $this->assertCompaniesHouseSnapshotUsesSelectedCompanyContext();
+        $this->assertYearEndPageIncludesCompaniesHouseComparison();
+        $this->assertYearEndCompaniesHouseComparisonRendersMismatchAcknowledgement();
     }
 
     private function assertRoleAssignmentCardOwnsDashboardContext(): void
@@ -403,6 +405,66 @@ final class TestCardsHarness
         $this->assertSame(false, str_contains($html, 'Profit and loss figures remain') && str_contains($html, 'Expenses</td>'));
 
         test_output_line('Cards: companies_house_snapshot uses selected company context and renders balance sheet fields.');
+    }
+
+    private function assertYearEndPageIncludesCompaniesHouseComparison(): void
+    {
+        $yearEndPage = new _year_end();
+        $this->assertTrue(in_array('year_end_companies_house_comparison', $yearEndPage->cards(), true));
+
+        $layout = $yearEndPage->cardLayout();
+        $hasCompaniesHouseTab = false;
+        foreach ($layout as $tab) {
+            if (($tab['tab'] ?? '') === 'Companies House' && in_array('year_end_companies_house_comparison', (array)($tab['cards'] ?? []), true)) {
+                $hasCompaniesHouseTab = true;
+                break;
+            }
+        }
+
+        $this->assertSame(true, $hasCompaniesHouseTab);
+
+        test_output_line('Cards: year_end page includes the Companies House comparison tab.');
+    }
+
+    private function assertYearEndCompaniesHouseComparisonRendersMismatchAcknowledgement(): void
+    {
+        $card = new _year_end_companies_house_comparisonCard();
+        $this->assertSame('Year End Companies House Comparison', $card->title());
+
+        $html = $card->render([
+            'company' => [
+                'id' => 12,
+                'accounting_period_id' => 34,
+                'settings' => [],
+            ],
+            'services' => [
+                'yearEndCompaniesHouseComparison' => [
+                    'available' => true,
+                    'comparison_note' => 'Matching filed numbers suggests the reconstructed ledger aligns with the stored Companies House filing.',
+                    'filing' => [
+                        'filing_date' => '2025-05-29',
+                    ],
+                    'rows' => [
+                        ['label' => 'Fixed assets', 'app_value' => 208.41, 'filed_value' => 0.00, 'variance' => 208.41, 'status' => 'fail'],
+                        ['label' => 'Current assets', 'app_value' => 1038.26, 'filed_value' => 275.00, 'variance' => 763.26, 'status' => 'fail'],
+                    ],
+                ],
+            ],
+            'year_end' => [
+                'checklist' => [
+                    'review_acknowledgements' => [],
+                ],
+            ],
+        ]);
+
+        $this->assertTrue(str_contains($html, 'Companies House Comparison'));
+        $this->assertTrue(str_contains($html, 'Stored filing date: 2025-05-29'));
+        $this->assertTrue(str_contains($html, 'Fixed assets'));
+        $this->assertTrue(str_contains($html, 'Current assets'));
+        $this->assertTrue(str_contains($html, 'companies_house_mismatch_acknowledgement'));
+        $this->assertTrue(str_contains($html, 'will be corrected before HMRC submission'));
+
+        test_output_line('Cards: year_end_companies_house_comparison renders mismatch data and acknowledgement.');
     }
 
     /**

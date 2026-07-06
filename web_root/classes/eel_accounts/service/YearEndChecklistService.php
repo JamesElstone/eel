@@ -17,6 +17,7 @@ final class YearEndChecklistService
         'transaction_tail_review',
         'cut_off_journals_review',
         'director_loan_tax_review',
+        'companies_house_mismatch_acknowledgement',
     ];
 
     public function __construct(
@@ -1214,17 +1215,19 @@ final class YearEndChecklistService
             '',
             '?page=companies_house#companies-house-comparison'
         );
-        $sections['companies_house_comparison'][] = $this->makeCheck(
-            'accounts_comparison_metrics',
+        $sections['companies_house_comparison'][] = $this->applyReviewAcknowledgement($this->makeCheck(
+            'companies_house_mismatch_acknowledgement',
             'Accounts comparison metrics',
             'warning',
-            !empty($chComparison['available']) && $comparisonFailures > 0 ? 'fail' : (!empty($chComparison['available']) ? 'pass' : 'not_applicable'),
+            !empty($chComparison['available']) && $comparisonFailures > 0 ? 'warning' : (!empty($chComparison['available']) ? 'pass' : 'not_applicable'),
             !empty($chComparison['available'])
-                ? 'Compare app-computed balance sheet values against the stored filed accounts.'
+                ? ($comparisonFailures > 0
+                    ? 'Stored Companies House filing values differ from the reviewed app figures. Acknowledge here only when this is a known filing error to be corrected before HMRC submission.'
+                    : 'App-computed balance sheet values match the stored filed accounts.')
                 : 'No comparison metrics are available.',
             !empty($chComparison['available']) ? (string)$comparisonFailures : '',
-            '?page=companies_house#companies-house-comparison'
-        );
+            '?page=year_end&show_card=year_end_companies_house_comparison#companies-house-mismatch-acknowledgement'
+        ), $reviewAcknowledgements);
 
         $blockingChecksPass = $uncategorisedCount === 0
             && abs((float)$suspenseSummary['closing_balance']) < 0.005
@@ -1528,9 +1531,11 @@ final class YearEndChecklistService
         $check['review_acknowledgement'] = $acknowledgement;
         if ((string)($check['status'] ?? '') === 'warning') {
             $check['status'] = 'pass';
-            $check['metric_value'] = trim((string)($check['metric_value'] ?? '')) !== ''
+            $check['metric_value'] = $checkCode === 'companies_house_mismatch_acknowledgement'
+                ? 'Acknowledged'
+                : (trim((string)($check['metric_value'] ?? '')) !== ''
                 ? (string)$check['metric_value']
-                : 'Reviewed';
+                : 'Reviewed');
             $check['detail_text'] = 'Review acknowledged for this period. ' . (string)($check['detail_text'] ?? '');
         }
 

@@ -37,6 +37,7 @@ final class _year_end extends PageContextFramework
             'year_end_expenses_confirmation',
             'year_end_retained_earnings',
             'year_end_tax_readiness',
+            'year_end_companies_house_comparison',
             'year_end_empty_month_confirmations',
             'year_end_transaction_tail',
             'year_end_notes',
@@ -76,6 +77,12 @@ final class _year_end extends PageContextFramework
                 'tab' => 'Tax',
                 'cards' => [
                     'year_end_tax_readiness',
+                ],
+            ],
+            [
+                'tab' => 'Companies House',
+                'cards' => [
+                    'year_end_companies_house_comparison',
                 ],
             ],
             [

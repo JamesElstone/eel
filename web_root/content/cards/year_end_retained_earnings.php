@@ -100,7 +100,7 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
             </div>
             <div class="helper">' . HelperFramework::escape($this->balanceEquation($companySettings, $summary)) . '</div>
             ' . $staleHtml . $existingHtml . '
-            <div class="table-scroll">
+            <div class="table-scroll panel-soft">
                 <table>
                     <thead><tr><th>Nominal</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead>
                     <tbody>' . $journalLinesHtml . '</tbody>

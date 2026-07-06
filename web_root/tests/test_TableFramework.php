@@ -49,9 +49,10 @@ $harness->check(TableFramework::class, 'renders visible rows with toolbar export
             ]
         );
 
-    $html = $table->render(['page' => ['page_id' => 'test']]);
+    $html = $table->render(['page' => ['page_id' => 'test', 'csrf_token' => 'test-csrf-token']]);
 
     $harness->assertTrue(str_contains($html, 'Demo rows 1-2 of 3'));
+    $harness->assertTrue(str_contains($html, 'name="csrf_token" value="test-csrf-token"'));
     $harness->assertTrue(strpos($html, 'Demo rows 1-2 of 3') > strpos($html, '</table>'));
     $harness->assertTrue(str_contains($html, '<label for="table-filter-demo_table-demo_status">Status</label>'));
     $harness->assertTrue(str_contains($html, '<option value="ready" selected>Ready</option>'));
@@ -143,13 +144,14 @@ $harness->check(TableFramework::class, 'renders sortable headings and sorts full
             'cards[]' => ['demo_table'],
         ]);
 
-    $html = $table->render(['page' => ['page_id' => 'test']]);
+    $html = $table->render(['page' => ['page_id' => 'test', 'csrf_token' => 'sort-csrf-token']]);
     $csv = $table->exportCsv();
     $tsv = $table->exportTsv();
     $ascii = $table->exportAscii();
     $sortedRows = $table->sortedRows();
 
     $harness->assertTrue(str_contains($html, 'class="table-sort-form"'));
+    $harness->assertTrue(str_contains($html, 'name="csrf_token" value="sort-csrf-token"'));
     $harness->assertTrue(str_contains($html, 'name="demo_table_sort" value="name"'));
     $harness->assertTrue(str_contains($html, 'name="demo_table_sort" value="amount"'));
     $harness->assertTrue(str_contains($html, 'name="demo_table_sort_direction" value="desc"'));
@@ -350,11 +352,12 @@ $harness->check(TableFramework::class, 'renders filters and custom toolbar actio
         ->toolbarActions('<button class="button" type="button">Auto Apply</button>')
         ->column('name', 'Name');
 
-    $html = $table->renderToolbar(['page' => ['page_id' => 'test']]);
+    $html = $table->renderToolbar(['page' => ['page_id' => 'test', 'csrf_token' => 'toolbar-csrf-token']]);
     $filterPosition = strpos($html, '<label for="table-filter-demo_table-demo_status">Status</label>');
     $customActionPosition = strpos($html, 'Auto Apply');
 
     $harness->assertTrue($filterPosition !== false);
+    $harness->assertTrue(str_contains($html, 'name="csrf_token" value="toolbar-csrf-token"'));
     $harness->assertTrue($customActionPosition !== false);
     $harness->assertTrue($filterPosition < $customActionPosition);
     $harness->assertSame(2, substr_count($html, '<div class="actions-row">'));

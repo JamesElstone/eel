@@ -35,6 +35,7 @@ final class TableFramework
     private string $sortDirection = '';
     private array $sortHiddenFields = [];
     private bool $sortingConfigured = false;
+    private string $csrfToken = '';
 
     private function __construct(private readonly string $key, private readonly array $rows)
     {
@@ -425,6 +426,8 @@ final class TableFramework
 
     public function render(array $context, array $exportHiddenFields = []): string
     {
+        $this->csrfToken = (string)($context['page']['csrf_token'] ?? '');
+
         return $this->renderToolbar($context, $exportHiddenFields)
             . $this->renderTable()
             . $this->renderFooter();
@@ -508,6 +511,8 @@ final class TableFramework
 
     public function renderToolbar(array $context, array $exportHiddenFields = []): string
     {
+        $this->csrfToken = (string)($context['page']['csrf_token'] ?? '');
+
         if (!$this->exportsEnabled && $this->filters === [] && $this->toolbarActionsHtml === '') {
             return '';
         }
@@ -742,6 +747,7 @@ final class TableFramework
                 '_table_export_prepare' => $format,
                 'table_key' => $this->key,
             ],
+            $this->csrfHiddenFields(),
             $hiddenFields,
             $this->sortHiddenFields()
         );
@@ -793,7 +799,7 @@ final class TableFramework
 
             $fieldId = 'table-filter-' . $this->key . '-' . preg_replace('/[^A-Za-z0-9_-]+/', '-', (string)$filter['name']);
             $html .= '<form method="post" data-ajax="true" class="toolbar">'
-                . $this->hiddenInputs(array_merge((array)$filter['hidden_fields'], $this->sortHiddenFields()))
+                . $this->hiddenInputs(array_merge($this->csrfHiddenFields(), (array)$filter['hidden_fields'], $this->sortHiddenFields()))
                 . '<div class="form-row table-filter-row">'
                 . '<label for="' . HelperFramework::escape($fieldId) . '">' . HelperFramework::escape((string)$filter['label']) . '</label>'
                 . '<select class="selector-input" id="' . HelperFramework::escape($fieldId) . '" name="' . HelperFramework::escape((string)$filter['name']) . '">'
@@ -817,7 +823,7 @@ final class TableFramework
             $page,
             $enabled,
             $this->paginationPageField,
-            array_merge($this->paginationHiddenFields, $this->sortHiddenFields()),
+            array_merge($this->csrfHiddenFields(), $this->paginationHiddenFields, $this->sortHiddenFields()),
             '',
             'post',
             ['data-ajax' => 'true'],
@@ -832,7 +838,7 @@ final class TableFramework
 
     private function sortButtonFields(TableColumnFramework $column): array
     {
-        $fields = array_merge(['_pagination' => '1'], $this->sortHiddenFields);
+        $fields = array_merge(['_pagination' => '1'], $this->csrfHiddenFields(), $this->sortHiddenFields);
         $fields[$this->sortFieldName()] = $column->key();
         $fields[$this->sortDirectionFieldName()] = $this->nextSortDirection($column);
 
@@ -841,6 +847,13 @@ final class TableFramework
         }
 
         return $fields;
+    }
+
+    private function csrfHiddenFields(): array
+    {
+        return $this->csrfToken !== ''
+            ? [CsrfGuardFramework::tokenField() => $this->csrfToken]
+            : [];
     }
 
     private function sortIndicator(TableColumnFramework $column): string

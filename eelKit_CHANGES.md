@@ -1,5 +1,100 @@
 # eelKit Changes
 
+## Framework CSRF guard
+
+Feature name: `framework_csrf_guard`.
+
+eelKit now provides framework-level CSRF support for page and shared card actions. The framework still uses the existing session-backed token from `SessionAuthenticationService::csrfToken()` and validates it with `SessionAuthenticationService::isValidCsrfToken()`, but downstream projects no longer need to hand-roll the same validation pattern in every action before they can adopt a consistent CSRF policy.
+
+The default mode is compatibility-first:
+
+```php
+'security' => [
+    'csrf_mode' => 'supplied',
+],
+```
+
+Supported modes are:
+
+- `supplied`: validate `csrf_token` when a POST action supplies one, but allow legacy forms without a token. This is the default.
+- `required`: require a valid `csrf_token` for POST requests that submit `action` or `card_action`.
+- `off`: disable framework CSRF enforcement.
+
+Downstream projects that want strict CSRF protection should first make sure their forms render a token, then set `security.csrf_mode` to `required` in their app configuration.
+
+Every page context now includes the current token at:
+
+```php
+$context['page']['csrf_token']
+```
+
+Cards can render the standard hidden input with:
+
+```php
+return '<form method="post" data-ajax="true">
+    ' . HelperFramework::csrfHiddenInput($context) . '
+    <input type="hidden" name="card_action" value="Example">
+    <button class="button primary" type="submit">Save</button>
+</form>';
+```
+
+The helper renders:
+
+```html
+<input type="hidden" name="csrf_token" value="...">
+```
+
+Framework-generated POST forms now include CSRF where the page token is available, including table sorting, table filtering, table pagination, table export preparation, card pagination controls, and site-context selector forms. Existing AJAX nonce checks are unchanged and remain separate from CSRF validation.
+
+If an invalid token is supplied, eelKit stops before page action or shared card action logic runs and returns a standard security-token-expired flash message. Existing downstream manual CSRF checks remain safe; validating the same stable session token twice is harmless.
+
+## Cross-page card action handoff
+
+Feature name: `cross_page_card_action_handoff`.
+
+The approved way for a card on one page to send a user to another page, while carrying button payload for a card on the target page, is to submit the source card form directly to the destination page URL.
+
+For example, a `Source` card on page `one` can send a payload to page `two` like this:
+
+```php
+return '<form method="post" action="?page=two" data-ajax="true">
+    <input type="hidden" name="show_card" value="target">
+    <input type="hidden" name="source_id" value="' . HelperFramework::escape((string)$sourceId) . '">
+    <button type="submit" class="button primary">Open target</button>
+</form>';
+```
+
+When the AJAX response is rendered by page `two`, eelKit's `web_root/js/index.js` sees that the response `page` differs from the current page and navigates the browser to the response `url`. Downstream projects should use this normal page request flow rather than inventing a custom `redirect` property in card action JSON.
+
+If the handoff also needs to run a command, include the target page's shared card action in the submitted payload:
+
+```html
+<form method="post" action="?page=two" data-ajax="true">
+    <input type="hidden" name="card_action" value="Target">
+    <input type="hidden" name="show_card" value="target">
+    <input type="hidden" name="source_id" value="123">
+    <button type="submit" class="button primary">Open target</button>
+</form>
+```
+
+The target card should read request values in `handle()`, place any durable render state under a clear context key, and then render from context:
+
+```php
+public function handle(
+    RequestFramework $request,
+    PageServiceFramework $services,
+    array $context,
+    ActionResultFramework $actionResult
+): array {
+    $context = parent::handle($request, $services, $context, $actionResult);
+    $context['target']['source_id'] = (int)$request->input('source_id', 0);
+
+    return $context;
+}
+```
+
+Use `show_card` when the destination page has multiple cards or tabs and should reveal the target card after navigation. Use normal `ActionResultFramework` changed facts, flash messages, query values, and context for the target page render; `ActionResultFramework` does not provide a first-class cross-page redirect property.
+
 ## AJAX pending blur scopes
 
 Feature name: `ajax_pending_blur_scopes`.

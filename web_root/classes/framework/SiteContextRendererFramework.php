@@ -77,7 +77,8 @@ final class SiteContextRendererFramework
         $hiddenInputs = '<input type="hidden" name="action" value="' . HelperFramework::escape(SiteContextCoordinatorFramework::ACTION) . '">'
             . '<input type="hidden" name="page" value="' . HelperFramework::escape($page->id()) . '">'
             . '<input type="hidden" name="_ajax" value="1">'
-            . '<input type="hidden" name="site_context_key" value="' . HelperFramework::escape($key) . '">';
+            . '<input type="hidden" name="site_context_key" value="' . HelperFramework::escape($key) . '">'
+            . HelperFramework::csrfHiddenInput($context);
 
         if ($inputName !== '') {
             $hiddenInputs .= '<input type="hidden" name="site_context_input_name" value="' . HelperFramework::escape($inputName) . '">';

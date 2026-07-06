@@ -19,6 +19,11 @@ final class _prepayments_reviewCard extends CardBaseFramework
         return 'Prepayment Review';
     }
 
+    public function helper(array $context): string
+    {
+        return 'Only nominals marked as prepayment candidates in Nominals appear here. Enter service dates only when the source item covers a period beyond this accounting year.';
+    }
+
     public function services(): array
     {
         return [
@@ -72,12 +77,13 @@ final class _prepayments_reviewCard extends CardBaseFramework
                 ' . $this->summaryCard('Prepaid', (string)(int)($review['prepaid_count'] ?? 0)) . '
                 ' . $this->summaryCard('Incomplete', (string)(int)($review['pending_count'] ?? 0)) . '
             </div>
-            <div class="helper">Only nominals marked as prepayment candidates in Nominals appear here. Enter service dates only when the source item covers a period beyond this accounting year.</div>
-            <div class="table-scroll">
-                <table>
-                    <thead><tr><th>Source</th><th>Date</th><th>Nominal</th><th>Description</th><th>Amount</th><th>Status</th></tr></thead>
-                    <tbody>' . $rowsHtml . '</tbody>
-                </table>
+            <div class="panel-soft">
+                <div class="table-scroll">
+                    <table>
+                        <thead><tr><th>Source</th><th>Date</th><th>Nominal</th><th>Description</th><th>Amount</th><th>Status</th></tr></thead>
+                        <tbody>' . $rowsHtml . '</tbody>
+                    </table>
+                </div>
             </div>
         </section>';
     }
@@ -122,7 +128,7 @@ final class _prepayments_reviewCard extends CardBaseFramework
                     <input type="hidden" name="source_id" value="' . $sourceId . '">
                     <input type="hidden" name="prepayment_notes" value="' . HelperFramework::escape((string)($review['notes'] ?? '')) . '">
                     <select class="select" id="' . HelperFramework::escape($formId) . '-status" name="prepayment_status">' . $this->statusOptions($status) . '</select>
-                    <span data-visible-when-field="prepayment_status" data-visible-when-value="prepaid"' . ($status === 'prepaid' ? '' : ' hidden aria-hidden="true"') . '>
+                    <span class="prepayment-date-actions" data-visible-when-field="prepayment_status" data-visible-when-value="prepaid"' . ($status === 'prepaid' ? '' : ' hidden aria-hidden="true"') . '>
                         <input class="input" type="date" name="service_start_date" value="' . HelperFramework::escape($serviceStart) . '" data-dirty-action-target=".' . HelperFramework::escape($saveButtonClass) . '" data-initial-value="' . HelperFramework::escape($serviceStart) . '" data-dirty-require-value="1">
                         <input class="input" type="date" name="service_end_date" value="' . HelperFramework::escape($serviceEnd) . '" data-dirty-action-target=".' . HelperFramework::escape($saveButtonClass) . '" data-initial-value="' . HelperFramework::escape($serviceEnd) . '" data-dirty-require-value="1">
                         <button class="button button-inline primary ' . HelperFramework::escape($saveButtonClass) . '" type="submit" data-dirty-enable-mode="changed" disabled>Save</button>

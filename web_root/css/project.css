@@ -176,6 +176,22 @@
   flex-wrap: nowrap;
 }
 
+.prepayment-date-actions {
+  align-items: center;
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.prepayment-date-actions .input {
+  width: auto;
+}
+
+.prepayment-date-actions[hidden] {
+  display: none;
+}
+
 .expense-claimant-add-form {
   display: flex;
   align-items: flex-end;

@@ -40,6 +40,9 @@ $harness->run(_asset_registerCard::class, static function (GeneratedServiceClass
                 'page_id' => 'assets',
                 'page_cards' => ['asset_register'],
             ],
+            'accounting_period' => [
+                'period_end' => '2020-01-10',
+            ],
             'company' => [
                 'id' => 7,
                 'accounting_period_id' => 22,
@@ -53,8 +56,12 @@ $harness->run(_asset_registerCard::class, static function (GeneratedServiceClass
                         'id' => 44,
                         'asset_code' => 'FA-7-1',
                         'description' => 'Test asset',
+                        'purchase_date' => '2020-01-01',
+                        'period_depreciation' => 12.34,
+                        'resale_value' => 87.66,
+                        'residual_value' => 10.00,
+                        'useful_life_years' => 3,
                         'cost' => 100,
-                        'nbv' => 80,
                         'status' => 'active',
                     ]],
                 ],
@@ -65,10 +72,39 @@ $harness->run(_asset_registerCard::class, static function (GeneratedServiceClass
         $harness->assertTrue(str_contains($html, 'class="asset-disposal-controls"'));
         $harness->assertTrue(str_contains($html, 'class="table-scroll asset-register-table"'));
         $harness->assertTrue(str_contains($html, 'AIA eligibility check'));
+        $purchaseDateHeaderPosition = strpos($html, '<th>Purchase Date</th>');
+        $ageHeaderPosition = strpos($html, '<th>Age (days)</th>');
+        $usefulLifeHeaderPosition = strpos($html, '<th>Useful Life</th>');
+        $codeHeaderPosition = strpos($html, '<th>Code</th>');
+        $descriptionHeaderPosition = strpos($html, '<th>Description</th>');
+        $costHeaderPosition = strpos($html, '<th>Cost</th>');
+        $periodDepreciationHeaderPosition = strpos($html, '<th>Depreciation in Period</th>');
+        $resaleValueHeaderPosition = strpos($html, '<th>Resale Value</th>');
+        $residualValueHeaderPosition = strpos($html, '<th>EOL Value</th>');
+        $statusHeaderPosition = strpos($html, '<th>Status</th>');
+        $harness->assertTrue($purchaseDateHeaderPosition !== false);
+        $harness->assertTrue($ageHeaderPosition !== false);
+        $harness->assertTrue($usefulLifeHeaderPosition !== false);
+        $harness->assertTrue($codeHeaderPosition !== false);
+        $harness->assertTrue($descriptionHeaderPosition !== false);
+        $harness->assertTrue($costHeaderPosition !== false);
+        $harness->assertTrue($periodDepreciationHeaderPosition !== false);
+        $harness->assertTrue($resaleValueHeaderPosition !== false);
+        $harness->assertTrue($residualValueHeaderPosition !== false);
+        $harness->assertTrue($statusHeaderPosition !== false);
+        $harness->assertTrue($purchaseDateHeaderPosition < $ageHeaderPosition);
+        $harness->assertTrue($ageHeaderPosition < $usefulLifeHeaderPosition);
+        $harness->assertTrue($usefulLifeHeaderPosition < $codeHeaderPosition);
+        $harness->assertTrue($codeHeaderPosition < $descriptionHeaderPosition);
+        $harness->assertTrue($descriptionHeaderPosition < $costHeaderPosition);
+        $harness->assertTrue($costHeaderPosition < $periodDepreciationHeaderPosition);
+        $harness->assertTrue($periodDepreciationHeaderPosition < $resaleValueHeaderPosition);
+        $harness->assertTrue($resaleValueHeaderPosition < $residualValueHeaderPosition);
+        $harness->assertTrue($residualValueHeaderPosition < $statusHeaderPosition);
+        $harness->assertTrue(str_contains($html, '<td>01/01/20</td><td class="numeric">10</td><td class="numeric">3</td><td>FA-7-1</td><td><div>Test asset</div></td><td class="numeric">$ 100.00</td><td class="numeric">$ 12.34</td><td class="numeric">$ 87.66</td><td class="numeric">$ 10.00</td>'));
         $harness->assertTrue(str_contains($html, 'FA-7-1'));
         $harness->assertTrue(str_contains($html, 'Test asset'));
         $harness->assertTrue(str_contains($html, '$ 100.00'));
-        $harness->assertTrue(str_contains($html, '$ 80.00'));
         $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="csv"'));
         $harness->assertTrue(str_contains($html, '<th class="asset-register-actions-heading">Disposal Method</th>'));
         $harness->assertTrue(str_contains($html, '<th class="asset-register-actions-heading">Asset Disposal</th>'));

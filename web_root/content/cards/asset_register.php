@@ -133,12 +133,36 @@ final class _asset_registerCard extends CardBaseFramework
         $disposalSearch = (array)($assetsPageData['disposal_search'] ?? []);
         $disposalMethodAssetId = (int)($context['asset_disposal_method_asset_id'] ?? 0);
         $disposalMethod = $this->normaliseDisposalMethod((string)($context['asset_disposal_method'] ?? ''));
+        $ageReferenceDate = $this->ageReferenceDate((string)($context['accounting_period']['period_end'] ?? ''));
 
         return TableFramework::make($this->key(), $this->rows($context))
             ->filename('asset-register')
             ->exportLimit(5000)
             ->classes(wrapperClass: 'table-scroll asset-register-table')
             ->empty('No assets have been recorded yet.')
+            ->column(
+                'purchase_date',
+                'Purchase Date',
+                html: fn(array $row): string => HelperFramework::escape($this->displayDate((string)($row['purchase_date'] ?? ''))),
+                export: static fn(array $row): string => trim((string)($row['purchase_date'] ?? '')),
+                exportType: 'date'
+            )
+            ->column(
+                'age_days',
+                'Age (days)',
+                html: fn(array $row): string => HelperFramework::escape($this->ageDays($row, $ageReferenceDate)),
+                export: fn(array $row): string => $this->ageDays($row, $ageReferenceDate),
+                cellClass: 'numeric',
+                exportType: 'number'
+            )
+            ->column(
+                'useful_life_years',
+                'Useful Life',
+                html: static fn(array $row): string => HelperFramework::escape((string)max(1, (int)($row['useful_life_years'] ?? 1))),
+                export: static fn(array $row): string => (string)max(1, (int)($row['useful_life_years'] ?? 1)),
+                cellClass: 'numeric',
+                exportType: 'number'
+            )
             ->textColumn('asset_code', 'Code')
             ->column(
                 'description',
@@ -155,10 +179,26 @@ final class _asset_registerCard extends CardBaseFramework
                 exportType: 'number'
             )
             ->column(
-                'nbv',
-                'NBV',
-                html: fn(array $row): string => HelperFramework::escape($this->money($settings, (float)($row['nbv'] ?? 0))),
-                export: static fn(array $row): string => number_format((float)($row['nbv'] ?? 0), 2, '.', ''),
+                'period_depreciation',
+                'Depreciation in Period',
+                html: fn(array $row): string => HelperFramework::escape($this->money($settings, (float)($row['period_depreciation'] ?? 0))),
+                export: static fn(array $row): string => number_format((float)($row['period_depreciation'] ?? 0), 2, '.', ''),
+                cellClass: 'numeric',
+                exportType: 'number'
+            )
+            ->column(
+                'resale_value',
+                'Resale Value',
+                html: fn(array $row): string => HelperFramework::escape($this->money($settings, (float)($row['resale_value'] ?? 0))),
+                export: static fn(array $row): string => number_format((float)($row['resale_value'] ?? 0), 2, '.', ''),
+                cellClass: 'numeric',
+                exportType: 'number'
+            )
+            ->column(
+                'residual_value',
+                'EOL Value',
+                html: fn(array $row): string => HelperFramework::escape($this->money($settings, (float)($row['residual_value'] ?? 0))),
+                export: static fn(array $row): string => number_format((float)($row['residual_value'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
                 exportType: 'number'
             )
@@ -434,6 +474,72 @@ final class _asset_registerCard extends CardBaseFramework
         }
 
         return HelperFramework::displayDate($value);
+    }
+
+    private function ageDays(array $asset, ?\DateTimeImmutable $referenceDate): string
+    {
+        if ($referenceDate === null) {
+            return '';
+        }
+
+        $purchaseDate = $this->isoDate((string)($asset['purchase_date'] ?? ''));
+        if ($purchaseDate === null) {
+            return '';
+        }
+
+        $usefulLifeEndDate = $this->usefulLifeEndDate($purchaseDate, (int)($asset['useful_life_years'] ?? 1));
+        if ($usefulLifeEndDate !== null && $usefulLifeEndDate < $referenceDate) {
+            $referenceDate = $usefulLifeEndDate;
+        }
+        if ($purchaseDate > $referenceDate) {
+            return '0';
+        }
+
+        $days = $purchaseDate->diff($referenceDate)->days;
+
+        return is_int($days) ? (string)($days + 1) : '';
+    }
+
+    private function ageReferenceDate(string $periodEnd): ?\DateTimeImmutable
+    {
+        $periodEndDate = $this->isoDate($periodEnd);
+        if ($periodEndDate === null) {
+            return null;
+        }
+
+        $today = new \DateTimeImmutable('today');
+
+        return $periodEndDate < $today ? $periodEndDate : $today;
+    }
+
+    private function isoDate(string $value): ?\DateTimeImmutable
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return null;
+        }
+
+        $date = \DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+        $errors = \DateTimeImmutable::getLastErrors();
+
+        if (
+            !$date instanceof \DateTimeImmutable
+            || $date->format('Y-m-d') !== $value
+            || (is_array($errors) && ((int)($errors['warning_count'] ?? 0) > 0 || (int)($errors['error_count'] ?? 0) > 0))
+        ) {
+            return null;
+        }
+
+        return $date;
+    }
+
+    private function usefulLifeEndDate(\DateTimeImmutable $purchaseDate, int $lifeYears): ?\DateTimeImmutable
+    {
+        $lifeYears = max(1, $lifeYears);
+
+        return $purchaseDate
+            ->modify('+' . $lifeYears . ' years')
+            ->modify('-1 day');
     }
 
     private function disposalMethodForAsset(int $assetId, int $selectedAssetId, string $method): string

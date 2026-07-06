@@ -149,7 +149,7 @@ final class AssetService
         }
 
         return [
-            'assets' => $this->fetchAssets($companyId),
+            'assets' => $this->fetchAssets($companyId, $accountingPeriodId),
             'accounting_periods' => $this->fetchAccountingPeriods($companyId),
             'accounting_period_id' => $accountingPeriodId,
             'tax_view' => $accountingPeriodId > 0 ? $this->fetchTaxView($companyId, $accountingPeriodId) : null,
@@ -177,7 +177,7 @@ final class AssetService
         ];
     }
 
-    public function fetchAssets(int $companyId): array {
+    public function fetchAssets(int $companyId, int $accountingPeriodId = 0): array {
         if (!$this->hasRequiredSchema()) {
             return [];
         }
@@ -186,7 +186,7 @@ final class AssetService
             return [];
         }
 
-        return \InterfaceDB::fetchAll( 'SELECT ar.*,
+        $assets = \InterfaceDB::fetchAll( 'SELECT ar.*,
                     COALESCE(cost, 0) - COALESCE((
                         SELECT SUM(ade.amount)
                         FROM asset_depreciation_entries ade
@@ -203,6 +203,8 @@ final class AssetService
              LEFT JOIN nominal_accounts na ON na.id = ar.nominal_account_id
              WHERE ar.company_id = :company_id
              ORDER BY ar.purchase_date DESC, ar.id DESC', ['company_id' => $companyId]);
+
+        return $this->assetsWithPeriodDepreciation($assets ?: [], $companyId, $accountingPeriodId);
     }
 
     public function fetchDisposalSearch(int $companyId, string $searchDate, int $assetId = 0): array {
@@ -981,6 +983,7 @@ final class AssetService
                 if ((string)($asset['status'] ?? 'active') === 'disposed' && trim((string)($asset['disposal_date'] ?? '')) !== '') {
                     $periodEnd = min($periodEnd, (string)$asset['disposal_date']);
                 }
+                $periodEnd = min($periodEnd, $this->usefulLifeEndDate((string)$asset['purchase_date'], (int)($asset['useful_life_years'] ?? 1)));
 
                 if ($periodEnd < $periodStart) {
                     $summary['skipped']++;
@@ -1093,6 +1096,10 @@ final class AssetService
             if ((string)($asset['status'] ?? 'active') === 'disposed' && trim((string)($asset['disposal_date'] ?? '')) !== '') {
                 $depreciationPeriodEnd = min($depreciationPeriodEnd, (string)$asset['disposal_date']);
             }
+            $depreciationPeriodEnd = min(
+                $depreciationPeriodEnd,
+                $this->usefulLifeEndDate((string)$asset['purchase_date'], (int)($asset['useful_life_years'] ?? 1))
+            );
 
             if ($depreciationPeriodEnd < $depreciationPeriodStart) {
                 $skipped++;
@@ -1605,6 +1612,85 @@ final class AssetService
         return $stmt->fetchAll() ?: [];
     }
 
+    private function assetsWithPeriodDepreciation(array $assets, int $companyId, int $accountingPeriodId): array {
+        if ($assets === [] || $companyId <= 0 || $accountingPeriodId <= 0) {
+            return $assets;
+        }
+
+        $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null) {
+            return $assets;
+        }
+
+        return array_map(
+            function (array $asset) use ($accountingPeriod): array {
+                $asset['period_depreciation'] = $this->calculatePeriodDepreciationAmount($asset, $accountingPeriod);
+                $asset['resale_value'] = $this->calculateResaleValue($asset, $accountingPeriod);
+
+                return $asset;
+            },
+            $assets
+        );
+    }
+
+    private function calculatePeriodDepreciationAmount(array $asset, array $accountingPeriod): float {
+        $periodStart = trim((string)($accountingPeriod['period_start'] ?? ''));
+        $periodEnd = trim((string)($accountingPeriod['period_end'] ?? ''));
+        $purchaseDate = trim((string)($asset['purchase_date'] ?? ''));
+        if (!$this->isIsoDate($periodStart) || !$this->isIsoDate($periodEnd) || !$this->isIsoDate($purchaseDate)) {
+            return 0.0;
+        }
+
+        $depreciationPeriodStart = max($periodStart, $purchaseDate);
+        $depreciationPeriodEnd = $this->periodDepreciationReferenceEnd($periodEnd);
+        $disposalDate = trim((string)($asset['disposal_date'] ?? ''));
+        if ((string)($asset['status'] ?? 'active') === 'disposed' && $this->isIsoDate($disposalDate)) {
+            $depreciationPeriodEnd = min($depreciationPeriodEnd, $disposalDate);
+        }
+
+        if ($depreciationPeriodEnd < $depreciationPeriodStart) {
+            return 0.0;
+        }
+
+        $openingDepreciation = $this->sumDepreciationToDate(
+            (int)($asset['id'] ?? 0),
+            (new \DateTimeImmutable($depreciationPeriodStart))->modify('-1 day')->format('Y-m-d')
+        );
+
+        return $this->calculateDepreciationAmountFromOpening(
+            $asset,
+            $depreciationPeriodStart,
+            $depreciationPeriodEnd,
+            $openingDepreciation
+        );
+    }
+
+    private function periodDepreciationReferenceEnd(string $periodEnd): string {
+        $today = (new \DateTimeImmutable('today'))->format('Y-m-d');
+
+        return $periodEnd < $today ? $periodEnd : $today;
+    }
+
+    private function calculateResaleValue(array $asset, array $accountingPeriod): float {
+        $periodEnd = trim((string)($accountingPeriod['period_end'] ?? ''));
+        $purchaseDate = trim((string)($asset['purchase_date'] ?? ''));
+        if (!$this->isIsoDate($periodEnd) || !$this->isIsoDate($purchaseDate)) {
+            return round((float)($asset['cost'] ?? 0), 2);
+        }
+
+        $referenceEnd = $this->periodDepreciationReferenceEnd($periodEnd);
+        $disposalDate = trim((string)($asset['disposal_date'] ?? ''));
+        if ((string)($asset['status'] ?? 'active') === 'disposed' && $this->isIsoDate($disposalDate)) {
+            $referenceEnd = min($referenceEnd, $disposalDate);
+        }
+
+        $depreciationToDate = $this->calculateDepreciationToDateAmount($asset, $referenceEnd);
+        $cost = round((float)($asset['cost'] ?? 0), 2);
+        $residual = round((float)($asset['residual_value'] ?? 0), 2);
+
+        return round(max($residual, $cost - $depreciationToDate), 2);
+    }
+
     private function depreciationEntryExists(int $assetId, int $accountingPeriodId, string $periodStart, string $periodEnd): bool {
         return \InterfaceDB::countWhere('asset_depreciation_entries', [
             'asset_id' => $assetId,
@@ -1615,15 +1701,26 @@ final class AssetService
     }
 
     private function calculateDepreciationAmount(array $asset, string $periodStart, string $periodEnd): float {
+        $openingDepreciation = $this->sumDepreciationToDate((int)$asset['id'], (new \DateTimeImmutable($periodStart))->modify('-1 day')->format('Y-m-d'));
+
+        return $this->calculateDepreciationAmountFromOpening($asset, $periodStart, $periodEnd, $openingDepreciation);
+    }
+
+    private function calculateDepreciationAmountFromOpening(array $asset, string $periodStart, string $periodEnd, float $openingDepreciation): float {
         $method = (string)($asset['depreciation_method'] ?? 'straight_line');
         if ($method === 'none') {
             return 0.0;
         }
 
+        $boundedPeriodEnd = $this->boundedDepreciationPeriodEnd($asset, $periodStart, $periodEnd);
+        if ($boundedPeriodEnd === null) {
+            return 0.0;
+        }
+        $periodEnd = $boundedPeriodEnd;
+
         $cost = round((float)($asset['cost'] ?? 0), 2);
         $residual = round((float)($asset['residual_value'] ?? 0), 2);
         $lifeYears = max(1, (int)($asset['useful_life_years'] ?? 1));
-        $openingDepreciation = $this->sumDepreciationToDate((int)$asset['id'], (new \DateTimeImmutable($periodStart))->modify('-1 day')->format('Y-m-d'));
 
         $daysInPeriod = max(1, $this->dateDiffDaysInclusive($periodStart, $periodEnd));
         $yearDays = max(365, $this->dateDiffDaysInclusive(
@@ -1640,6 +1737,70 @@ final class AssetService
 
         $remainingCap = max(0.0, ($cost - $residual) - $openingDepreciation);
         return round(min($remainingCap, $annualAmount * ($daysInPeriod / $yearDays)), 2);
+    }
+
+    private function calculateDepreciationToDateAmount(array $asset, string $referenceEnd): float {
+        $method = (string)($asset['depreciation_method'] ?? 'straight_line');
+        $purchaseDate = trim((string)($asset['purchase_date'] ?? ''));
+        if ($method === 'none' || !$this->isIsoDate($purchaseDate) || !$this->isIsoDate($referenceEnd) || $referenceEnd < $purchaseDate) {
+            return 0.0;
+        }
+
+        $boundedReferenceEnd = $this->boundedDepreciationPeriodEnd($asset, $purchaseDate, $referenceEnd);
+        if ($boundedReferenceEnd === null) {
+            return 0.0;
+        }
+
+        $cost = round((float)($asset['cost'] ?? 0), 2);
+        $residual = round((float)($asset['residual_value'] ?? 0), 2);
+        $lifeYears = max(1, (int)($asset['useful_life_years'] ?? 1));
+        $depreciableAmount = max(0.0, $cost - $residual);
+
+        if ($method === 'straight_line') {
+            $lifeDays = max(1, $this->dateDiffDaysInclusive($purchaseDate, $this->usefulLifeEndDate($purchaseDate, $lifeYears)));
+            $elapsedDays = max(0, $this->dateDiffDaysInclusive($purchaseDate, $boundedReferenceEnd));
+
+            return round(min($depreciableAmount, $depreciableAmount * ($elapsedDays / $lifeDays)), 2);
+        }
+
+        $total = 0.0;
+        $periodStart = $purchaseDate;
+        while ($periodStart <= $boundedReferenceEnd) {
+            $yearEnd = (new \DateTimeImmutable($periodStart))->format('Y-12-31');
+            $periodEnd = min($boundedReferenceEnd, $yearEnd);
+            $amount = $this->calculateDepreciationAmountFromOpening($asset, $periodStart, $periodEnd, $total);
+            if ($amount <= 0.0) {
+                break;
+            }
+
+            $total = round(min($depreciableAmount, $total + $amount), 2);
+            $periodStart = (new \DateTimeImmutable($periodEnd))->modify('+1 day')->format('Y-m-d');
+        }
+
+        return $total;
+    }
+
+    private function boundedDepreciationPeriodEnd(array $asset, string $periodStart, string $periodEnd): ?string {
+        $purchaseDate = trim((string)($asset['purchase_date'] ?? ''));
+        if (!$this->isIsoDate($purchaseDate) || !$this->isIsoDate($periodStart) || !$this->isIsoDate($periodEnd)) {
+            return null;
+        }
+
+        $usefulLifeEnd = $this->usefulLifeEndDate($purchaseDate, (int)($asset['useful_life_years'] ?? 1));
+        if ($usefulLifeEnd < $periodStart) {
+            return null;
+        }
+
+        return min($periodEnd, $usefulLifeEnd);
+    }
+
+    private function usefulLifeEndDate(string $purchaseDate, int $lifeYears): string {
+        $lifeYears = max(1, $lifeYears);
+
+        return (new \DateTimeImmutable($purchaseDate))
+            ->modify('+' . $lifeYears . ' years')
+            ->modify('-1 day')
+            ->format('Y-m-d');
     }
 
     private function sumDepreciationToDate(int $assetId, string $toDate): float {

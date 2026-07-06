@@ -154,10 +154,13 @@ final class _year_end_empty_month_confirmationsCard extends CardBaseFramework
         }
 
         if ($status === 'confirmed') {
+            $confirmationFoot = $this->confirmationFoot($confirmedAt, $confirmedBy);
+
             return '<section class="panel-soft settings-stack">
-                ' . ($notes !== '' ? '<div class="helper"><strong>Notes:</strong> ' . HelperFramework::escape($notes) . '</div>' : '') . '
+                <div class="eyebrow">Acknowledgement</div>
+                ' . ($notes !== '' ? '<div class="stat-value">' . HelperFramework::escape($notes) . '</div>' : '') . '
+                ' . ($confirmationFoot !== '' ? '<div class="stat-foot">' . HelperFramework::escape($confirmationFoot) . '</div>' : '') . '
                 <div class="actions-row">
-                    <div class="helper">Confirmed' . ($confirmedAt !== '' ? ' at ' . HelperFramework::escape($confirmedAt) : '') . ($confirmedBy !== '' ? ' by ' . HelperFramework::escape($confirmedBy) : '') . '.</div>
                     <form method="post" data-ajax="true">
                         <input type="hidden" name="card_action" value="YearEnd">
                         <input type="hidden" name="intent" value="revoke_empty_month">
@@ -171,6 +174,18 @@ final class _year_end_empty_month_confirmationsCard extends CardBaseFramework
         }
 
         return '';
+    }
+
+    private function confirmationFoot(string $confirmedAt, string $confirmedBy): string
+    {
+        if ($confirmedAt === '' && $confirmedBy === '') {
+            return '';
+        }
+
+        return 'Confirmed'
+            . ($confirmedAt !== '' ? ' at ' . $confirmedAt : '')
+            . ($confirmedBy !== '' ? ' by ' . $confirmedBy : '')
+            . '.';
     }
 
     private function statusLabel(string $status, bool $canConfirm): string

@@ -19,6 +19,7 @@ final class YearEndAction implements ActionInterfaceFramework
         $companyId = max(0, (int)$request->input('company_id', 0));
         $accountingPeriodId = max(0, (int)$request->input('accounting_period_id', 0));
         $intent = trim((string)$request->input('intent', ''));
+        $actor = $this->currentWebActor($request);
 
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return $this->result(false, ['Select a company and accounting period before updating year-end readiness.']);
@@ -45,12 +46,14 @@ final class YearEndAction implements ActionInterfaceFramework
                     $companyId,
                     $accountingPeriodId,
                     (string)$request->input('month_start', ''),
-                    (string)$request->input('confirmation_notes', '')
+                    (string)$request->input('confirmation_notes', ''),
+                    $actor
                 ),
                 'revoke_empty_month' => (new \eel_accounts\Service\EmptyMonthConfirmationService())->revokeMonth(
                     $companyId,
                     $accountingPeriodId,
-                    (string)$request->input('month_start', '')
+                    (string)$request->input('month_start', ''),
+                    $actor
                 ),
                 'save_opening_balance' => (new \eel_accounts\Service\OpeningBalanceService())->saveOpeningBalance(
                     $companyId,
@@ -111,6 +114,27 @@ final class YearEndAction implements ActionInterfaceFramework
             (array)($result['errors'] ?? []),
             $this->successMessage($intent)
         );
+    }
+
+    private function currentWebActor(RequestFramework $request): string
+    {
+        try {
+            $session = new SessionAuthenticationService();
+            $session->startSession();
+            $deviceId = trim((string)AntiFraudService::instance($request)->requestValue('Client-Device-ID'));
+            $userId = $deviceId !== '' ? $session->authenticatedUserId($deviceId) : 0;
+
+            if ($userId > 0) {
+                $user = (new UserAuthenticationService())->userById($userId);
+                $displayName = trim((string)($user['display_name'] ?? ''));
+                if ($displayName !== '') {
+                    return $displayName . ' using the web_app';
+                }
+            }
+        } catch (Throwable) {
+        }
+
+        return 'web_app';
     }
 
     private function result(bool $success, array $errors = [], string $successMessage = ''): ActionResultFramework

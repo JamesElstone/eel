@@ -298,6 +298,14 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
     $harness->check('YearEndAction', 'confirms and revokes empty month confirmations', static function () use ($harness): void {
         yearEndActionEmptyMonthTestWithFixture($harness, static function (array $fixture) use ($harness): void {
             $instance = yearEndActionTestInstanceWithDirectorCount(2);
+            $actorUser = (new UserAuthenticationService())->createUser(
+                'Alex Example',
+                'year-end-empty-month-' . bin2hex(random_bytes(4)) . '@example.test',
+                'Strong Password 1!'
+            );
+            $actorUserId = (int)(($actorUser['user'] ?? [])['id'] ?? 0);
+            $harness->assertSame(true, $actorUserId > 0);
+            authenticateTestSession($actorUserId);
 
             $confirm = $instance->handle(
                 yearEndActionEmptyMonthTestRequest((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'confirm_empty_month'),
@@ -313,6 +321,23 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
                 'month_start' => '2022-09-01',
                 'revoked_at' => null,
             ]));
+            $harness->assertSame(
+                'Alex Example using the web_app',
+                (string)InterfaceDB::fetchColumn(
+                    'SELECT confirmed_by
+                       FROM accounting_period_month_confirmations
+                      WHERE company_id = :company_id
+                        AND accounting_period_id = :accounting_period_id
+                        AND month_start = :month_start
+                        AND revoked_at IS NULL
+                      LIMIT 1',
+                    [
+                        'company_id' => (int)$fixture['company_id'],
+                        'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                        'month_start' => '2022-09-01',
+                    ]
+                )
+            );
 
             $revoke = $instance->handle(
                 yearEndActionEmptyMonthTestRequest((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'revoke_empty_month'),
@@ -629,7 +654,7 @@ function yearEndActionEmptyMonthTestRequest(int $companyId, int $accountingPerio
         ],
         ['REQUEST_METHOD' => 'POST', 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest', 'HTTP_ACCEPT' => 'application/json'],
         [],
-        [],
+        ['X-AntiFraud-Client-Device-ID' => testCurrentAntiFraudDeviceId()],
         null
     );
 }

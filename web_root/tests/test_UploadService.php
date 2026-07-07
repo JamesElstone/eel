@@ -15,6 +15,265 @@ $harness->run(\eel_accounts\Service\StatementUploadService::class, static functi
         $harness->assertSame([], $service->buildMonthStatus(0, 0));
     });
 
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'treats ready transaction splits as categorised in month status', static function () use ($harness, $service): void {
+        foreach ([
+            'companies',
+            'accounting_periods',
+            'company_accounts',
+            'nominal_accounts',
+            'statement_uploads',
+            'transactions',
+            'transaction_splits',
+            'transaction_split_lines',
+            'journals',
+        ] as $table) {
+            if (!InterfaceDB::tableExists($table)) {
+                $harness->skip($table . ' table is not available.');
+            }
+        }
+
+        $marker = strtoupper(substr(hash('sha256', uniqid('', true)), 0, 10));
+
+        InterfaceDB::beginTransaction();
+        try {
+            InterfaceDB::prepareExecute(
+                'INSERT INTO companies (company_name, company_number) VALUES (:company_name, :company_number)',
+                [
+                    'company_name' => 'Split Month Status Fixture',
+                    'company_number' => 'SMS' . $marker,
+                ]
+            );
+            $companyId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM companies WHERE company_number = :company_number',
+                ['company_number' => 'SMS' . $marker]
+            );
+
+            InterfaceDB::prepareExecute(
+                'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
+                 VALUES (:company_id, :label, :period_start, :period_end)',
+                [
+                    'company_id' => $companyId,
+                    'label' => 'Split Month Status FY',
+                    'period_start' => '2023-10-01',
+                    'period_end' => '2024-09-30',
+                ]
+            );
+            $periodId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM accounting_periods WHERE company_id = :company_id AND label = :label',
+                [
+                    'company_id' => $companyId,
+                    'label' => 'Split Month Status FY',
+                ]
+            );
+
+            $insertNominal = static function (string $code, string $name, string $accountType, string $taxTreatment): int {
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO nominal_accounts (code, name, account_type, tax_treatment, is_active, sort_order)
+                     VALUES (:code, :name, :account_type, :tax_treatment, 1, 100)',
+                    [
+                        'code' => $code,
+                        'name' => $name,
+                        'account_type' => $accountType,
+                        'tax_treatment' => $taxTreatment,
+                    ]
+                );
+
+                return (int)InterfaceDB::fetchColumn(
+                    'SELECT id FROM nominal_accounts WHERE code = :code',
+                    ['code' => $code]
+                );
+            };
+
+            $bankNominalId = $insertNominal('SMSB' . $marker, 'Split Month Bank ' . $marker, 'asset', 'other');
+            $materialsNominalId = $insertNominal('SMSM' . $marker, 'Split Month Materials ' . $marker, 'cost_of_sales', 'allowable');
+            $toolsNominalId = $insertNominal('SMST' . $marker, 'Split Month Tools ' . $marker, 'asset', 'capital');
+
+            InterfaceDB::prepareExecute(
+                'INSERT INTO company_accounts (company_id, account_name, account_type, nominal_account_id, is_active)
+                 VALUES (:company_id, :account_name, :account_type, :nominal_account_id, 1)',
+                [
+                    'company_id' => $companyId,
+                    'account_name' => 'Split Month Bank',
+                    'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
+                    'nominal_account_id' => $bankNominalId,
+                ]
+            );
+            $accountId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM company_accounts WHERE company_id = :company_id AND account_name = :account_name',
+                [
+                    'company_id' => $companyId,
+                    'account_name' => 'Split Month Bank',
+                ]
+            );
+
+            InterfaceDB::prepareExecute(
+                'INSERT INTO statement_uploads (
+                    company_id,
+                    accounting_period_id,
+                    account_id,
+                    workflow_status,
+                    statement_month,
+                    original_filename,
+                    stored_filename,
+                    file_sha256
+                 ) VALUES (
+                    :company_id,
+                    :accounting_period_id,
+                    :account_id,
+                    :workflow_status,
+                    :statement_month,
+                    :original_filename,
+                    :stored_filename,
+                    :file_sha256
+                 )',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $periodId,
+                    'account_id' => $accountId,
+                    'workflow_status' => 'committed',
+                    'statement_month' => '2023-10-01',
+                    'original_filename' => 'split-month-' . $marker . '.csv',
+                    'stored_filename' => 'split-month-' . $marker . '.csv',
+                    'file_sha256' => hash('sha256', 'split-month-upload-' . $marker),
+                ]
+            );
+            $uploadId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM statement_uploads WHERE company_id = :company_id AND original_filename = :filename',
+                [
+                    'company_id' => $companyId,
+                    'filename' => 'split-month-' . $marker . '.csv',
+                ]
+            );
+
+            $insertTransaction = static function (string $description, string $amount, bool $posted) use ($companyId, $periodId, $uploadId, $accountId, $marker): int {
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO transactions (
+                        company_id,
+                        accounting_period_id,
+                        statement_upload_id,
+                        account_id,
+                        txn_date,
+                        txn_type,
+                        description,
+                        amount,
+                        currency,
+                        source_account_label,
+                        nominal_account_id,
+                        category_status,
+                        dedupe_hash
+                     ) VALUES (
+                        :company_id,
+                        :accounting_period_id,
+                        :statement_upload_id,
+                        :account_id,
+                        :txn_date,
+                        :txn_type,
+                        :description,
+                        :amount,
+                        :currency,
+                        :source_account_label,
+                        NULL,
+                        :category_status,
+                        :dedupe_hash
+                     )',
+                    [
+                        'company_id' => $companyId,
+                        'accounting_period_id' => $periodId,
+                        'statement_upload_id' => $uploadId,
+                        'account_id' => $accountId,
+                        'txn_date' => '2023-10-30',
+                        'txn_type' => 'POS',
+                        'description' => $description,
+                        'amount' => $amount,
+                        'currency' => 'GBP',
+                        'source_account_label' => 'Split Month Bank',
+                        'category_status' => 'manual',
+                        'dedupe_hash' => hash('sha256', $marker . '-' . $description),
+                    ]
+                );
+
+                $transactionId = (int)InterfaceDB::fetchColumn(
+                    'SELECT id FROM transactions WHERE company_id = :company_id AND dedupe_hash = :dedupe_hash',
+                    [
+                        'company_id' => $companyId,
+                        'dedupe_hash' => hash('sha256', $marker . '-' . $description),
+                    ]
+                );
+
+                if ($posted) {
+                    InterfaceDB::prepareExecute(
+                        'INSERT INTO journals (company_id, accounting_period_id, source_type, source_ref, journal_date, description, is_posted)
+                         VALUES (:company_id, :accounting_period_id, :source_type, :source_ref, :journal_date, :description, 1)',
+                        [
+                            'company_id' => $companyId,
+                            'accounting_period_id' => $periodId,
+                            'source_type' => 'bank_csv',
+                            'source_ref' => 'transaction:' . $transactionId,
+                            'journal_date' => '2023-10-30',
+                            'description' => 'Posted split transaction',
+                        ]
+                    );
+                }
+
+                return $transactionId;
+            };
+
+            $insertReadySplit = static function (int $transactionId, array $lines): void {
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO transaction_splits (transaction_id) VALUES (:transaction_id)',
+                    ['transaction_id' => $transactionId]
+                );
+                $splitId = (int)InterfaceDB::fetchColumn(
+                    'SELECT id FROM transaction_splits WHERE transaction_id = :transaction_id',
+                    ['transaction_id' => $transactionId]
+                );
+
+                foreach ($lines as $index => $line) {
+                    InterfaceDB::prepareExecute(
+                        'INSERT INTO transaction_split_lines (split_id, line_number, description, amount, nominal_account_id, is_deferred)
+                         VALUES (:split_id, :line_number, :description, :amount, :nominal_account_id, 0)',
+                        [
+                            'split_id' => $splitId,
+                            'line_number' => $index + 1,
+                            'description' => 'Split line ' . ($index + 1),
+                            'amount' => $line['amount'],
+                            'nominal_account_id' => $line['nominal_account_id'],
+                        ]
+                    );
+                }
+            };
+
+            $postedSplitTransactionId = $insertTransaction('Posted ready split parent', '-146.36', true);
+            $readySplitTransactionId = $insertTransaction('Unposted ready split parent', '-50.00', false);
+            $insertReadySplit($postedSplitTransactionId, [
+                ['amount' => '56.37', 'nominal_account_id' => $materialsNominalId],
+                ['amount' => '89.99', 'nominal_account_id' => $toolsNominalId],
+            ]);
+            $insertReadySplit($readySplitTransactionId, [
+                ['amount' => '20.00', 'nominal_account_id' => $materialsNominalId],
+                ['amount' => '30.00', 'nominal_account_id' => $toolsNominalId],
+            ]);
+
+            $monthStatus = $service->buildMonthStatus($companyId, $periodId);
+            $october = null;
+            foreach ($monthStatus as $month) {
+                if ((string)($month['month_key'] ?? '') === '2023-10-01') {
+                    $october = $month;
+                    break;
+                }
+            }
+
+            $harness->assertTrue(is_array($october));
+            $harness->assertSame(2, (int)($october['transactions'] ?? -1));
+            $harness->assertSame(0, (int)($october['uncategorised'] ?? -1));
+            $harness->assertSame(1, (int)($october['ready_to_post'] ?? -1));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
     $harness->check(\eel_accounts\Service\StatementUploadService::class, 'provides upload history filter labels', static function () use ($harness, $service): void {
         $options = $service->uploadsHistoryFilterOptions();
 

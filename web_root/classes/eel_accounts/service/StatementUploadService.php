@@ -3510,28 +3510,74 @@ final class StatementUploadService
             return [];
         }
 
-        $summaryStmt = \InterfaceDB::prepare("SELECT DATE_FORMAT(txn_date, '%Y-%m-01') AS month_key,
+        $splitStatusJoin = '';
+        $readySplitPredicate = '0 = 1';
+        if (\InterfaceDB::tableExists('transaction_splits') && \InterfaceDB::tableExists('transaction_split_lines')) {
+            $splitStatusJoin = "LEFT JOIN (
+                                    SELECT ts.transaction_id,
+                                           CASE
+                                               WHEN SUM(CASE WHEN COALESCE(tsl.is_deferred, 0) = 0 THEN 1 ELSE 0 END) >= 2
+                                                AND SUM(CASE WHEN COALESCE(tsl.is_deferred, 0) = 1 THEN 1 ELSE 0 END) = 0
+                                                AND SUM(
+                                                    CASE
+                                                        WHEN COALESCE(tsl.is_deferred, 0) = 0
+                                                         AND (tsl.amount IS NULL OR tsl.amount <= 0 OR tsl.nominal_account_id IS NULL)
+                                                        THEN 1
+                                                        ELSE 0
+                                                    END
+                                                ) = 0
+                                                AND ABS(ROUND(ABS(st.amount) - COALESCE(SUM(CASE WHEN COALESCE(tsl.is_deferred, 0) = 0 THEN tsl.amount ELSE 0 END), 0), 2)) < 0.005
+                                               THEN 1
+                                               ELSE 0
+                                           END AS is_ready
+                                    FROM transaction_splits ts
+                                    INNER JOIN transactions st
+                                       ON st.id = ts.transaction_id
+                                    INNER JOIN transaction_split_lines tsl
+                                       ON tsl.split_id = ts.id
+                                    GROUP BY ts.id, ts.transaction_id, st.amount
+                                ) split_status
+                                   ON split_status.transaction_id = t.id";
+            $readySplitPredicate = 'COALESCE(split_status.is_ready, 0) = 1';
+        }
+        $validTransferPredicate = "(COALESCE(t.is_internal_transfer, 0) = 1 AND COALESCE(t.transfer_account_id, 0) > 0 AND t.category_status = 'manual')";
+        $readyToPostPredicate = "(
+                                                (t.category_status IN ('auto', 'manual') AND t.nominal_account_id IS NOT NULL)
+                                                OR {$readySplitPredicate}
+                                                OR {$validTransferPredicate}
+                                            )";
+
+        $summaryStmt = \InterfaceDB::prepare("SELECT DATE_FORMAT(t.txn_date, '%Y-%m-01') AS month_key,
                                              COUNT(*) AS txn_count,
-                                             SUM(CASE WHEN category_status = 'uncategorised' OR nominal_account_id IS NULL THEN 1 ELSE 0 END) AS uncategorised_count,
-                                             SUM(CASE WHEN is_auto_excluded = 1 THEN 1 ELSE 0 END) AS deferred_count,
                                              SUM(
                                                  CASE
-                                                     WHEN category_status IN ('auto', 'manual')
-                                                       AND nominal_account_id IS NOT NULL
+                                                     WHEN t.category_status = 'uncategorised' THEN 1
+                                                     WHEN t.nominal_account_id IS NULL
+                                                      AND NOT ({$readySplitPredicate})
+                                                      AND NOT ({$validTransferPredicate})
+                                                     THEN 1
+                                                     ELSE 0
+                                                 END
+                                             ) AS uncategorised_count,
+                                             SUM(CASE WHEN t.is_auto_excluded = 1 THEN 1 ELSE 0 END) AS deferred_count,
+                                             SUM(
+                                                 CASE
+                                                     WHEN {$readyToPostPredicate}
                                                        AND NOT EXISTS (
                                                            SELECT 1
                                                            FROM journals j
                                                            WHERE j.source_type = 'bank_csv'
-                                                             AND j.source_ref = CONCAT('transaction:', transactions.id)
+                                                             AND j.source_ref = CONCAT('transaction:', t.id)
                                                        )
                                                      THEN 1
                                                      ELSE 0
                                                  END
                                              ) AS ready_to_post_count
-                                      FROM transactions
-                                      WHERE company_id = ?
-                                        AND txn_date BETWEEN ? AND ?
-                                      GROUP BY DATE_FORMAT(txn_date, '%Y-%m-01')
+                                      FROM transactions t
+                                      {$splitStatusJoin}
+                                      WHERE t.company_id = ?
+                                        AND t.txn_date BETWEEN ? AND ?
+                                      GROUP BY DATE_FORMAT(t.txn_date, '%Y-%m-01')
                                       ORDER BY month_key");
         $summaryStmt->execute([
             $companyId,

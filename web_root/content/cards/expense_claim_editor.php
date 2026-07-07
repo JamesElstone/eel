@@ -70,7 +70,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
         return [
             $this->linesTable((array)($claim['lines'] ?? []), (array)($data['nominal_accounts'] ?? []), (array)($data['asset_categories'] ?? []), $claimId, $isReadOnly, $companyId, $dateFormat, $companySettings, $context),
             $this->paymentsTable((array)($claim['payment_links'] ?? []), $companySettings, $claimId, $isReadOnly, $companyId, $dateFormat),
-            $this->paymentCandidatesTable((array)($data['payment_candidates'] ?? []), $companySettings, $claimId, $companyId, $dateFormat, $isReadOnly),
+            $this->paymentCandidatesTable((array)($data['payment_candidates'] ?? []), $companySettings, $claimId, $companyId, $dateFormat, $isPeriodLocked),
         ];
     }
 
@@ -128,7 +128,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
                 $context,
                 $isReadOnly ? '' : $this->submitClaimToolbarAction($claim, $companySettings, $companyId)
             ) . '
-            ' . $this->renderPaymentsPanel((array)($claim['payment_links'] ?? []), $paymentCandidates, $companySettings, $filters, $claimId, $isReadOnly, $companyId, $dateFormat, $context) . '
+            ' . $this->renderPaymentsPanel((array)($claim['payment_links'] ?? []), $paymentCandidates, $companySettings, $filters, $claimId, $isReadOnly, $isPeriodLocked, $companyId, $dateFormat, $context) . '
         ';
     }
 
@@ -498,19 +498,19 @@ final class _expense_claim_editorCard extends CardBaseFramework
             ';
     }
 
-    private function renderPaymentsPanel(array $payments, array $paymentCandidates, array $companySettings, array $filters, int $claimId, bool $isPosted, int $companyId, string $dateFormat, array $context): string
+    private function renderPaymentsPanel(array $payments, array $paymentCandidates, array $companySettings, array $filters, int $claimId, bool $paymentsReadOnly, bool $candidateLinksReadOnly, int $companyId, string $dateFormat, array $context): string
     {
         $paymentQuery = (string)($filters['payment_query'] ?? '');
         $paymentsPanel = $this->renderTablePanel(
             'Repayments',
-            $this->withoutEmptyActionRows($this->configuredPaymentsTable($payments, $companySettings, $claimId, $isPosted, $companyId, $dateFormat, $context)->render($context, $this->tableExportFields(['claim_id' => $claimId]))),
+            $this->withoutEmptyActionRows($this->configuredPaymentsTable($payments, $companySettings, $claimId, $paymentsReadOnly, $companyId, $dateFormat, $context)->render($context, $this->tableExportFields(['claim_id' => $claimId]))),
             'Link repayments from bank transactions in the month they were paid. The selected claim determines the claimant.'
         );
 
         return $paymentsPanel . '
             <div class="panel-soft">
                 <div class="status-head"><h4 class="card-title">Candidate Repayments</h4></div>
-                ' . $this->withoutEmptyActionRows($this->configuredPaymentCandidatesTable($paymentCandidates, $companySettings, $paymentQuery, $claimId, $companyId, $dateFormat, $context, $isPosted)->render($context, $this->tableExportFields(['claim_id' => $claimId, 'payment_query' => $paymentQuery]))) . '
+                ' . $this->withoutEmptyActionRows($this->configuredPaymentCandidatesTable($paymentCandidates, $companySettings, $paymentQuery, $claimId, $companyId, $dateFormat, $context, $candidateLinksReadOnly)->render($context, $this->tableExportFields(['claim_id' => $claimId, 'payment_query' => $paymentQuery]))) . '
             </div>';
     }
 

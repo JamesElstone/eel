@@ -1449,6 +1449,8 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, 'Post Categorised Transactions'));
         $harness->assertSame(false, str_contains($html, 'data-chicken-check="true"'));
         $harness->assertSame(false, str_contains($html, 'Confirm checked auto decisions'));
+        $harness->assertSame(true, str_contains($html, 'name="confirm_auto_categorisations" value="0"'));
+        $harness->assertSame(false, str_contains($html, 'data-submit-field="confirm_auto_categorisations"'));
         $harness->assertSame(true, str_contains($html, 'Unconfirmed'));
     });
 
@@ -1495,7 +1497,11 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
 
         $harness->assertSame(true, str_contains($html, 'data-chicken-check="true"'));
         $harness->assertSame(true, str_contains($html, 'Confirm checked auto decisions'));
-        $harness->assertSame(true, str_contains($html, 'name="confirm_auto_categorisations" value="1"'));
+        $harness->assertSame(true, str_contains($html, 'name="confirm_auto_categorisations" value="0"'));
+        $harness->assertSame(true, str_contains($html, 'data-submit-field="confirm_auto_categorisations"'));
+        $harness->assertSame(true, str_contains($html, 'data-submit-value="1"'));
+        $harness->assertSame(true, str_contains($html, 'data-initial-pending-auto-approval-count="1"'));
+        $harness->assertSame(true, str_contains($html, 'data-auto-approval-pending-initial="1"'));
         $harness->assertSame(true, str_contains($html, 'confirm 1 checked auto decision(s)'));
         $harness->assertSame(true, str_contains($html, 'Unticked auto decisions will post but remain unconfirmed.'));
         $harness->assertSame(true, str_contains($html, 'Correct'));

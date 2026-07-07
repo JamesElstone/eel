@@ -26,6 +26,7 @@ final class _expenses_stateCard extends CardBaseFramework
                 'params' => [
                     'companyId' => ':company.id',
                     'filters' => ':expense_filters',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
         ];

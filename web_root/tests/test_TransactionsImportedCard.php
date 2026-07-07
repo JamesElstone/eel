@@ -43,6 +43,9 @@ $harness->run(_transactions_importedCard::class, static function (GeneratedServi
     ]);
 
     $harness->assertTrue(str_contains($html, 'data-auto-approval-batch-form="true"'));
+    $harness->assertTrue(str_contains($html, 'data-transactions-imported-post-form="true"'));
+    $harness->assertTrue(str_contains($html, 'data-initial-pending-auto-approval-count="0"'));
+    $harness->assertTrue(str_contains($html, 'name="confirm_auto_categorisations" value="0"'));
     $harness->assertTrue(str_contains($html, 'name="card_action" value="Transaction"'));
     $harness->assertTrue(str_contains($html, 'name="global_action" value="sync_auto_approval_state"'));
     $harness->assertTrue(str_contains($html, 'name="csrf_token"'));

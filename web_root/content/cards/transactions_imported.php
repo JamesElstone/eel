@@ -258,9 +258,8 @@ final class _transactions_importedCard extends CardBaseFramework
     {
         $autoButtonAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit"';
         $postButtonAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit"';
-        $confirmAutoInput = '';
+        $postFormAttributes = ' data-transactions-imported-post-form="true" data-initial-pending-auto-approval-count="' . max(0, $pendingAutoApprovalCount) . '"';
         if (!$isPeriodLocked && $pendingAutoApprovalCount > 0) {
-            $confirmAutoInput = '<input type="hidden" name="confirm_auto_categorisations" value="1">';
             $postButtonAttributes .= ' data-chicken-check="true"
                     data-chicken-title="Confirm checked auto decisions"
                     data-chicken-message="This will post categorised transactions and confirm ' . (int)$pendingAutoApprovalCount . ' checked auto decision(s). Unticked auto decisions will post but remain unconfirmed.<br><br>Continue?"
@@ -268,6 +267,13 @@ final class _transactions_importedCard extends CardBaseFramework
                     data-chicken-button-class="button primary"
                     data-submit-field="confirm_auto_categorisations"
                     data-submit-value="1"';
+        }
+        if (!$isPeriodLocked) {
+            $postButtonAttributes .= ' data-post-categorised-transactions-button="true"
+                    data-auto-approval-confirm-title="Confirm checked auto decisions"
+                    data-auto-approval-confirm-message-template="This will post categorised transactions and confirm {count} checked auto decision(s). Unticked auto decisions will post but remain unconfirmed.<br><br>Continue?"
+                    data-auto-approval-confirm-text="Post Transactions"
+                    data-auto-approval-confirm-button-class="button primary"';
         }
 
         return '<form method="post" action="?page=transactions" data-ajax="true">
@@ -281,7 +287,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="global_action" value="run_auto_rules">
                 <button class="button"' . $autoButtonAttributes . '>Run Auto Rules</button>
             </form>
-            <form method="post" action="?page=transactions" data-ajax="true">
+            <form method="post" action="?page=transactions" data-ajax="true"' . $postFormAttributes . '>
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Transaction">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -289,7 +295,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
                 <input type="hidden" name="global_action" value="post_categorised_transactions">
-                ' . $confirmAutoInput . '
+                <input type="hidden" name="confirm_auto_categorisations" value="0">
                 <button class="button primary"' . $postButtonAttributes . '>Post Categorised Transactions</button>
             </form>';
     }
@@ -621,6 +627,8 @@ final class _transactions_importedCard extends CardBaseFramework
 
         $transactionId = (int)($transaction['id'] ?? 0);
         $checked = $this->autoApprovalCheckedCurrent($transaction) ? ' checked' : '';
+        $confirmed = $this->autoApprovalConfirmedCurrent($transaction);
+        $pendingPostConfirmation = $checked !== '' && !$confirmed;
         $decisionLabel = $checked !== '' ? 'Correct' : 'Unconfirmed';
         $disabled = $isPeriodLocked ? ' disabled title="Period locked"' : '';
 
@@ -628,7 +636,9 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="checkbox" value="1"
                     data-auto-approval-control="true"
                     data-auto-approval-transaction-id="' . $transactionId . '"
-                    data-auto-approval-initial="' . ($checked !== '' ? '1' : '0') . '"' . $checked . $disabled . '>
+                    data-auto-approval-initial="' . ($checked !== '' ? '1' : '0') . '"
+                    data-auto-approval-confirmed-initial="' . ($confirmed ? '1' : '0') . '"
+                    data-auto-approval-pending-initial="' . ($pendingPostConfirmation ? '1' : '0') . '"' . $checked . $disabled . '>
                 <span class="auto-approval-copy">
                     <span class="helper" data-auto-approval-status data-auto-approval-default-status="' . HelperFramework::escape($decisionLabel) . '" aria-live="polite">' . HelperFramework::escape($decisionLabel) . '</span>
                 </span>

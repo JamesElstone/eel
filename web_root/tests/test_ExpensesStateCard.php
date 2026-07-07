@@ -16,6 +16,15 @@ $harness->run(_expenses_stateCard::class, function (GeneratedServiceClassTestHar
         $harness->skip('Expenses state card did not instantiate.');
     }
 
+    $harness->check(_expenses_stateCard::class, 'requests page data for selected accounting period', function () use ($harness, $instance): void {
+        $services = $instance->services();
+        $definition = (array)($services[0] ?? []);
+        $params = (array)($definition['params'] ?? []);
+
+        $harness->assertSame('expensesPageData', (string)($definition['key'] ?? ''));
+        $harness->assertSame(':company.accounting_period_id', (string)($params['accountingPeriodId'] ?? ''));
+    });
+
     $harness->check(_expenses_stateCard::class, 'renders empty claim heatmap until claimant is selected', function () use ($harness, $instance): void {
         $html = $instance->render(expensesStateCardContext([
             'heatmap_claimant_id' => 0,

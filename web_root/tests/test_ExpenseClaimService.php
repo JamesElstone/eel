@@ -685,15 +685,18 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
                 ]
             );
 
+            $previousClaimId = (int)$fixture['claimant_id'] + 3;
             expenseClaimServiceInsertClaimWithId(
                 array_merge($fixture, ['period_id' => $previousPeriodId]),
-                (int)$fixture['claimant_id'] + 3,
+                $previousClaimId,
                 (int)$fixture['claimant_id'],
                 2026,
                 3,
                 '2026-03-01',
                 '2026-03-31'
             );
+            expenseClaimServiceInsertLine($fixture, (int)$fixture['claim_id'], 1, '2026-05-05', 'Current period materials', 10.00);
+            expenseClaimServiceInsertLine($fixture, $previousClaimId, 1, '2026-03-05', 'Previous period materials', 20.00);
 
             $currentClaims = $instance->listClaims((int)$fixture['company_id'], [
                 'heatmap_claimant_id' => (int)$fixture['claimant_id'],
@@ -708,6 +711,9 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
                 'accounting_period_start' => '2025-04-01',
                 'accounting_period_end' => '2026-03-31',
             ]);
+            $pageData = $instance->fetchPageData((int)$fixture['company_id'], [
+                'heatmap_claimant_id' => (int)$fixture['claimant_id'],
+            ], (int)$fixture['period_id']);
 
             $harness->assertSame(1, count($currentClaims));
             $harness->assertSame(1, count($previousClaims));
@@ -715,6 +721,11 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
             $harness->assertSame('EXP-' . (string)$fixture['marker'] . '-' . (string)$fixture['claimant_id'] . '-202605', (string)($currentClaims[0]['claim_reference_code'] ?? ''));
             $harness->assertSame('EXP-' . (string)$fixture['marker'] . '-' . (string)$fixture['claimant_id'] . '-202603', (string)($previousClaims[0]['claim_reference_code'] ?? ''));
             $harness->assertSame((string)($previousClaims[0]['claim_reference_code'] ?? ''), (string)($fallbackClaims[0]['claim_reference_code'] ?? ''));
+            $harness->assertSame(1, count((array)($pageData['claims'] ?? [])));
+            $harness->assertSame(1, count((array)($pageData['claim_heatmap_lines'] ?? [])));
+            $harness->assertSame((int)$fixture['period_id'], (int)(($pageData['filters'] ?? [])['accounting_period_id'] ?? 0));
+            $harness->assertSame('EXP-' . (string)$fixture['marker'] . '-' . (string)$fixture['claimant_id'] . '-202605', (string)(($pageData['claims'][0] ?? [])['claim_reference_code'] ?? ''));
+            $harness->assertSame('EXP-' . (string)$fixture['marker'] . '-' . (string)$fixture['claimant_id'] . '-202605', (string)(($pageData['claim_heatmap_lines'][0] ?? [])['claim_reference_code'] ?? ''));
         });
     });
 

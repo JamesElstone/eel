@@ -23,20 +23,28 @@ final class ExpenseClaimService
         $this->journalService = $journalService ?? new \eel_accounts\Service\TransactionJournalService();
     }
 
-    public function fetchPageData(int $companyId, array $filters = []): array {
-        $selectedClaim = null;
-        $heatmapClaimantId = max(0, (int)($filters['heatmap_claimant_id'] ?? 0));
-        $heatmapDate = trim((string)($filters['heatmap_date'] ?? ''));
-
-        if (isset($filters['claim_reference_code']) && trim((string)$filters['claim_reference_code']) !== '') {
-            $selectedClaim = $this->fetchClaimByReferenceCode($companyId, (string)$filters['claim_reference_code']);
-        } elseif (isset($filters['claim_id']) && (int)$filters['claim_id'] > 0) {
-            $selectedClaim = $this->fetchClaim($companyId, (int)$filters['claim_id']);
-        } elseif ($heatmapClaimantId > 0 && $this->isValidDate($heatmapDate)) {
-            $selectedClaim = $this->fetchClaimForHeatmapLine($companyId, $heatmapClaimantId, $heatmapDate);
+    public function fetchPageData(int $companyId, array $filters = [], int $accountingPeriodId = 0): array {
+        $effectiveFilters = $filters;
+        $selectedAccountingPeriodId = max(0, $accountingPeriodId);
+        if ($selectedAccountingPeriodId > 0) {
+            $effectiveFilters['accounting_period_id'] = $selectedAccountingPeriodId;
+        } else {
+            $selectedAccountingPeriodId = max(0, (int)($effectiveFilters['accounting_period_id'] ?? 0));
         }
 
-        $paymentQuery = trim((string)($filters['payment_query'] ?? ''));
+        $selectedClaim = null;
+        $heatmapClaimantId = max(0, (int)($effectiveFilters['heatmap_claimant_id'] ?? 0));
+        $heatmapDate = trim((string)($effectiveFilters['heatmap_date'] ?? ''));
+
+        if (isset($effectiveFilters['claim_reference_code']) && trim((string)$effectiveFilters['claim_reference_code']) !== '') {
+            $selectedClaim = $this->fetchClaimByReferenceCode($companyId, (string)$effectiveFilters['claim_reference_code']);
+        } elseif (isset($effectiveFilters['claim_id']) && (int)$effectiveFilters['claim_id'] > 0) {
+            $selectedClaim = $this->fetchClaim($companyId, (int)$effectiveFilters['claim_id']);
+        } elseif ($heatmapClaimantId > 0 && $this->isValidDate($heatmapDate)) {
+            $selectedClaim = $this->fetchClaimForHeatmapLine($companyId, $heatmapClaimantId, $heatmapDate, $selectedAccountingPeriodId);
+        }
+
+        $paymentQuery = trim((string)($effectiveFilters['payment_query'] ?? ''));
 
         return [
             'claimants' => $this->fetchClaimants($companyId, false),
@@ -51,19 +59,19 @@ final class ExpenseClaimService
                     'current_month_only' => true,
                 ])
                 : [],
-            'claims' => $this->listClaims($companyId, $filters),
-            'claim_heatmap_lines' => $this->listClaimLinesForHeatmap($companyId),
+            'claims' => $this->listClaims($companyId, $effectiveFilters),
+            'claim_heatmap_lines' => $this->listClaimLinesForHeatmap($companyId, $effectiveFilters),
             'selected_claim' => $selectedClaim,
             'filters' => [
-                'query' => trim((string)($filters['query'] ?? '')),
-                'status' => $this->normaliseStatusFilter((string)($filters['status'] ?? 'all')),
+                'query' => trim((string)($effectiveFilters['query'] ?? '')),
+                'status' => $this->normaliseStatusFilter((string)($effectiveFilters['status'] ?? 'all')),
                 'payment_query' => $paymentQuery,
                 'heatmap_claimant_id' => $heatmapClaimantId,
-                'heatmap_period_start' => trim((string)($filters['heatmap_period_start'] ?? '')),
+                'heatmap_period_start' => trim((string)($effectiveFilters['heatmap_period_start'] ?? '')),
                 'heatmap_date' => $heatmapDate,
-                'accounting_period_id' => max(0, (int)($filters['accounting_period_id'] ?? 0)),
-                'accounting_period_start' => trim((string)($filters['accounting_period_start'] ?? '')),
-                'accounting_period_end' => trim((string)($filters['accounting_period_end'] ?? '')),
+                'accounting_period_id' => max(0, (int)($effectiveFilters['accounting_period_id'] ?? 0)),
+                'accounting_period_start' => trim((string)($effectiveFilters['accounting_period_start'] ?? '')),
+                'accounting_period_end' => trim((string)($effectiveFilters['accounting_period_end'] ?? '')),
             ],
         ];
     }
@@ -914,9 +922,27 @@ final class ExpenseClaimService
         ];
     }
 
-    private function listClaimLinesForHeatmap(int $companyId): array {
+    private function listClaimLinesForHeatmap(int $companyId, array $filters = []): array {
         if ($companyId <= 0) {
             return [];
+        }
+
+        $conditions = ['ec.company_id = :company_id'];
+        $params = ['company_id' => $companyId];
+        $accountingPeriodId = max(0, (int)($filters['accounting_period_id'] ?? 0));
+
+        if ($accountingPeriodId > 0) {
+            $conditions[] = 'ec.accounting_period_id = :accounting_period_id';
+            $params['accounting_period_id'] = $accountingPeriodId;
+        } else {
+            $periodStart = trim((string)($filters['accounting_period_start'] ?? ''));
+            $periodEnd = trim((string)($filters['accounting_period_end'] ?? ''));
+            if ($this->isValidDate($periodStart) && $this->isValidDate($periodEnd)) {
+                $conditions[] = 'ec.period_start >= :accounting_period_start';
+                $conditions[] = 'ec.period_end <= :accounting_period_end';
+                $params['accounting_period_start'] = $periodStart;
+                $params['accounting_period_end'] = $periodEnd;
+            }
         }
 
         return array_map(
@@ -934,10 +960,8 @@ final class ExpenseClaimService
                     ec.claim_reference_code
              FROM expense_claim_lines l
              INNER JOIN expense_claims ec ON ec.id = l.expense_claim_id
-             WHERE ec.company_id = :company_id
-             ORDER BY l.expense_date ASC, l.line_number ASC, l.id ASC', [
-                'company_id' => $companyId,
-            ])
+             WHERE ' . implode(' AND ', $conditions) . '
+             ORDER BY l.expense_date ASC, l.line_number ASC, l.id ASC', $params)
         );
     }
 
@@ -1151,23 +1175,33 @@ final class ExpenseClaimService
         ];
     }
 
-    private function fetchClaimForHeatmapLine(int $companyId, int $claimantId, string $expenseDate): ?array {
+    private function fetchClaimForHeatmapLine(int $companyId, int $claimantId, string $expenseDate, int $accountingPeriodId = 0): ?array {
         if ($companyId <= 0 || $claimantId <= 0 || !$this->isValidDate($expenseDate)) {
             return null;
+        }
+
+        $conditions = [
+            'ec.company_id = :company_id',
+            'ec.claimant_id = :claimant_id',
+            'l.expense_date = :expense_date',
+        ];
+        $params = [
+            'company_id' => $companyId,
+            'claimant_id' => $claimantId,
+            'expense_date' => $expenseDate,
+        ];
+        $accountingPeriodId = max(0, $accountingPeriodId);
+        if ($accountingPeriodId > 0) {
+            $conditions[] = 'ec.accounting_period_id = :accounting_period_id';
+            $params['accounting_period_id'] = $accountingPeriodId;
         }
 
         $claimId = (int)\InterfaceDB::fetchColumn( 'SELECT ec.id
              FROM expense_claim_lines l
              INNER JOIN expense_claims ec ON ec.id = l.expense_claim_id
-             WHERE ec.company_id = :company_id
-               AND ec.claimant_id = :claimant_id
-               AND l.expense_date = :expense_date
+             WHERE ' . implode(' AND ', $conditions) . '
              ORDER BY ec.period_start DESC, l.line_number ASC, l.id ASC
-             LIMIT 1', [
-            'company_id' => $companyId,
-            'claimant_id' => $claimantId,
-            'expense_date' => $expenseDate,
-        ]);
+             LIMIT 1', $params);
 
         return $claimId > 0 ? $this->fetchClaim($companyId, $claimId) : null;
     }

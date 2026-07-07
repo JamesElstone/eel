@@ -457,6 +457,147 @@
         });
     }
 
+    function autoApprovalCardForElement(element) {
+        const card = element instanceof Element ? element.closest('.card[data-card-key]') : null;
+
+        return card instanceof HTMLElement ? card : null;
+    }
+
+    function autoApprovalPostForms(root = document) {
+        const selector = 'form[data-transactions-imported-post-form="true"]';
+        if (root instanceof HTMLFormElement && root.matches(selector)) {
+            return [root];
+        }
+
+        return root && typeof root.querySelectorAll === 'function'
+            ? Array.from(root.querySelectorAll(selector)).filter((form) => form instanceof HTMLFormElement)
+            : [];
+    }
+
+    function autoApprovalSavePendingForCard(card) {
+        if (!(card instanceof HTMLElement)) {
+            return false;
+        }
+
+        return Array.from(card.querySelectorAll('form[data-auto-approval-batch-form="true"]')).some((form) => {
+            if (!(form instanceof HTMLFormElement)) {
+                return false;
+            }
+
+            const state = autoApprovalBatchState.get(form);
+
+            return Boolean(state && (state.inFlight || state.pending.size > 0 || state.timerId));
+        });
+    }
+
+    function visibleAutoApprovalControlsForCard(card) {
+        const controlsByTransaction = new Map();
+
+        if (!(card instanceof HTMLElement)) {
+            return [];
+        }
+
+        card.querySelectorAll('[data-auto-approval-control="true"]').forEach((control) => {
+            if (!(control instanceof HTMLInputElement)) {
+                return;
+            }
+
+            const transactionId = String(control.dataset.autoApprovalTransactionId || '').trim();
+            if (transactionId === '' || controlsByTransaction.has(transactionId)) {
+                return;
+            }
+
+            controlsByTransaction.set(transactionId, control);
+        });
+
+        return Array.from(controlsByTransaction.values());
+    }
+
+    function currentAutoApprovalPending(control) {
+        if (!(control instanceof HTMLInputElement) || !control.checked) {
+            return false;
+        }
+
+        return control.dataset.autoApprovalPendingInitial === '1'
+            || control.dataset.autoApprovalDirty === '1'
+            || control.dataset.autoApprovalConfirmedInitial !== '1';
+    }
+
+    function pendingAutoApprovalCountForCard(card, initialPendingCount) {
+        let count = Math.max(0, Number.parseInt(String(initialPendingCount || '0'), 10) || 0);
+
+        visibleAutoApprovalControlsForCard(card).forEach((control) => {
+            const wasPending = control.dataset.autoApprovalPendingInitial === '1';
+            const isPending = currentAutoApprovalPending(control);
+
+            if (isPending && !wasPending) {
+                count += 1;
+            } else if (!isPending && wasPending) {
+                count -= 1;
+            }
+        });
+
+        return Math.max(0, count);
+    }
+
+    function setAutoApprovalPostButtonSaving(button, isSaving) {
+        if (!(button instanceof HTMLButtonElement)) {
+            return;
+        }
+
+        if (!Object.prototype.hasOwnProperty.call(button.dataset, 'autoApprovalOriginalTitle')) {
+            button.dataset.autoApprovalOriginalTitle = button.getAttribute('title') || '';
+        }
+
+        button.disabled = isSaving;
+        if (isSaving) {
+            button.title = 'Saving auto decisions...';
+            return;
+        }
+
+        const originalTitle = String(button.dataset.autoApprovalOriginalTitle || '');
+        if (originalTitle !== '') {
+            button.title = originalTitle;
+        } else {
+            button.removeAttribute('title');
+        }
+    }
+
+    function syncTransactionsImportedPostConfirmationState(root = document) {
+        autoApprovalPostForms(root).forEach((form) => {
+            const card = autoApprovalCardForElement(form);
+            const button = form.querySelector('[data-post-categorised-transactions-button="true"]');
+            if (!(button instanceof HTMLButtonElement)) {
+                return;
+            }
+
+            const pendingCount = pendingAutoApprovalCountForCard(card, form.dataset.initialPendingAutoApprovalCount);
+            const isSaving = autoApprovalSavePendingForCard(card);
+
+            delete button.dataset.chickenArmed;
+            if (pendingCount > 0) {
+                button.dataset.chickenCheck = 'true';
+                button.dataset.chickenTitle = String(button.dataset.autoApprovalConfirmTitle || 'Confirm checked auto decisions');
+                button.dataset.chickenMessage = String(button.dataset.autoApprovalConfirmMessageTemplate || '')
+                    .replace('{count}', String(pendingCount));
+                button.dataset.chickenConfirmText = String(button.dataset.autoApprovalConfirmText || 'Post Transactions');
+                button.dataset.chickenButtonClass = String(button.dataset.autoApprovalConfirmButtonClass || 'button primary');
+                button.dataset.submitField = 'confirm_auto_categorisations';
+                button.dataset.submitValue = '1';
+            } else {
+                delete button.dataset.chickenCheck;
+                delete button.dataset.chickenTitle;
+                delete button.dataset.chickenMessage;
+                delete button.dataset.chickenConfirmText;
+                delete button.dataset.chickenButtonClass;
+                delete button.dataset.submitField;
+                delete button.dataset.submitValue;
+            }
+
+            setAutoApprovalPostButtonSaving(button, isSaving);
+        });
+    }
+
     function syncAutoApprovalDuplicateControls(transactionId, checked) {
         autoApprovalControlsForTransaction(transactionId).forEach((control) => {
             control.checked = checked;
@@ -532,7 +673,18 @@
 
     async function flushAutoApprovalBatch(form) {
         const state = autoApprovalFormState(form);
-        if (state.inFlight || state.pending.size === 0) {
+        if (state.inFlight) {
+            syncTransactionsImportedPostConfirmationState(autoApprovalCardForElement(form) || document);
+            return;
+        }
+
+        if (state.timerId) {
+            window.clearTimeout(state.timerId);
+            state.timerId = 0;
+        }
+
+        if (state.pending.size === 0) {
+            syncTransactionsImportedPostConfirmationState(autoApprovalCardForElement(form) || document);
             return;
         }
 
@@ -543,6 +695,7 @@
         }));
         state.pending.clear();
         state.inFlight = true;
+        syncTransactionsImportedPostConfirmationState(autoApprovalCardForElement(form) || document);
 
         entries.forEach((entry) => setAutoApprovalStatus(entry.controls, 'Saving...'));
         replaceAutoApprovalBatchInputs(form, entries);
@@ -570,8 +723,10 @@
             });
         } finally {
             state.inFlight = false;
+            syncTransactionsImportedPostConfirmationState(autoApprovalCardForElement(form) || document);
             if (state.pending.size > 0) {
                 state.timerId = window.setTimeout(() => flushAutoApprovalBatch(form), autoApprovalDebounceMs);
+                syncTransactionsImportedPostConfirmationState(autoApprovalCardForElement(form) || document);
             }
         }
     }
@@ -589,16 +744,21 @@
 
         const checked = control.checked;
         syncAutoApprovalDuplicateControls(transactionId, checked);
+        autoApprovalControlsForTransaction(transactionId).forEach((matchingControl) => {
+            matchingControl.dataset.autoApprovalDirty = '1';
+        });
 
         const state = autoApprovalFormState(form);
         state.pending.set(transactionId, checked);
         setAutoApprovalStatus(autoApprovalControlsForTransaction(transactionId), 'Saving...');
+        syncTransactionsImportedPostConfirmationState(autoApprovalCardForElement(form) || document);
 
         if (state.timerId) {
             window.clearTimeout(state.timerId);
         }
 
         state.timerId = window.setTimeout(() => flushAutoApprovalBatch(form), autoApprovalDebounceMs);
+        syncTransactionsImportedPostConfirmationState(autoApprovalCardForElement(form) || document);
     }
 
     function initialiseTransactionAutoApprovalControls(root = document) {
@@ -612,6 +772,8 @@
             control.dataset.autoApprovalBound = '1';
             control.addEventListener('change', () => queueAutoApprovalState(control));
         });
+
+        syncTransactionsImportedPostConfirmationState(root);
     }
 
     function setYearEndStateCardProcessing(form, submitter) {

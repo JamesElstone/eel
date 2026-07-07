@@ -43,26 +43,13 @@ $harness->run(_vehicle_registerCard::class, static function (GeneratedServiceCla
                 'Blue' => 'Blue',
                 'White' => 'White',
             ],
-            'rows' => [[
-                'id' => 44,
-                'asset_code' => 'FA-33-1',
-                'description' => 'Ford Transit',
-                'purchase_date' => '2026-07-01',
-                'cost' => 12000,
-                'nominal_code' => '1320',
-                'nominal_name' => 'Motor Vehicles',
-                'vehicle_type' => 'unreviewed',
-                'tax_review_status' => 'unreviewed',
-                'registration_mark' => 'AB12 CDE',
-                'make_model' => 'Ford Transit',
-                'colour' => 'White',
-                'payload_kg' => '1100.00',
-                'warnings' => [
-                    'Vehicle asset is still in 1320 and must be reviewed before year end.',
-                ],
-            ]],
+            'rows' => vehicleRegisterRows(),
         ]));
 
+        $harness->assertTrue(str_contains($html, '<div class="card-toolbar">'));
+        $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="csv"'));
+        $harness->assertTrue(str_contains($html, 'Vehicles 1-5 of 6'));
+        $harness->assertTrue(str_contains($html, 'name="vehicle_register_page" value="2"'));
         $harness->assertTrue(str_contains($html, '<span class="badge warning">Warning</span>'));
         $harness->assertTrue(str_contains($html, 'Unreviewed motor vehicles remain in 1320'));
         $harness->assertTrue(str_contains($html, 'data-vehicle-row="true"'));
@@ -88,6 +75,40 @@ $harness->run(_vehicle_registerCard::class, static function (GeneratedServiceCla
         $harness->assertTrue(str_contains($html, 'Ford Transit'));
         $harness->assertTrue(str_contains($html, 'AB12 CDE'));
         $harness->assertTrue(str_contains($html, '$ 12,000.00'));
+        $harness->assertSame(false, str_contains($html, 'FA-33-6'));
+    });
+
+    $harness->check(_vehicle_registerCard::class, 'registers vehicle rows as an exportable framework table', static function () use ($harness, $card): void {
+        $context = vehicleRegisterCardContext([
+            'vehicle_types' => [
+                'unreviewed' => 'Unreviewed',
+                'car' => 'Car',
+                'van' => 'Van',
+            ],
+            'acquisition_conditions' => [
+                '' => 'Select',
+                'new_unused' => 'New and Unused',
+                'second_hand' => 'Second Hand',
+            ],
+            'vehicle_colours' => [
+                '' => 'Not recorded',
+                'Blue' => 'Blue',
+                'White' => 'White',
+            ],
+            'rows' => vehicleRegisterRows(),
+        ]);
+        $tables = $card->tables($context);
+
+        $harness->assertCount(1, $tables);
+        $harness->assertTrue($tables[0] instanceof TableFramework);
+
+        $csv = $tables[0]->exportCsv();
+
+        $harness->assertTrue(str_contains($csv, 'Asset,Vehicle facts,Tax facts,Status'));
+        $harness->assertTrue(str_contains($csv, 'FA-33-6'));
+        $harness->assertTrue(str_contains($csv, 'Type: Van'));
+        $harness->assertSame(false, str_contains($csv, ',Action'));
+        $harness->assertSame(false, str_contains($csv, 'data-vehicle-save'));
     });
 
     $harness->check(_vehicle_registerCard::class, 'renders schema migration empty state', static function () use ($harness, $card): void {
@@ -110,6 +131,11 @@ $harness->run(_vehicle_registerCard::class, static function (GeneratedServiceCla
 function vehicleRegisterCardContext(array $vehicleRegister): array
 {
     return [
+        'page' => [
+            'page_id' => 'vehicles',
+            'page_cards' => ['vehicle_register'],
+            'csrf_token' => 'test-token',
+        ],
         'company' => [
             'id' => 33,
             'accounting_period_id' => 70,
@@ -122,4 +148,43 @@ function vehicleRegisterCardContext(array $vehicleRegister): array
             'vehicleRegister' => $vehicleRegister,
         ],
     ];
+}
+
+function vehicleRegisterRows(): array
+{
+    $base = [
+        'id' => 44,
+        'asset_code' => 'FA-33-1',
+        'description' => 'Ford Transit',
+        'purchase_date' => '2026-07-01',
+        'cost' => 12000,
+        'nominal_code' => '1320',
+        'nominal_name' => 'Motor Vehicles',
+        'vehicle_type' => 'unreviewed',
+        'tax_review_status' => 'unreviewed',
+        'registration_mark' => 'AB12 CDE',
+        'make_model' => 'Ford Transit',
+        'colour' => 'White',
+        'payload_kg' => '1100.00',
+        'warnings' => [
+            'Vehicle asset is still in 1320 and must be reviewed before year end.',
+        ],
+    ];
+    $rows = [$base];
+
+    for ($index = 2; $index <= 6; $index++) {
+        $rows[] = array_merge($base, [
+            'id' => 43 + $index,
+            'asset_code' => 'FA-33-' . $index,
+            'description' => $index === 6 ? 'Sixth vehicle hidden by pagination' : 'Vehicle ' . $index,
+            'vehicle_type' => $index === 6 ? 'van' : 'car',
+            'tax_review_status' => 'reviewed',
+            'registration_mark' => 'AB12 CD' . $index,
+            'make_model' => 'Vehicle Model ' . $index,
+            'colour' => $index % 2 === 0 ? 'Blue' : 'White',
+            'warnings' => [],
+        ]);
+    }
+
+    return $rows;
 }

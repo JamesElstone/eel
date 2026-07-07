@@ -27,7 +27,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         'vehicle_type' => 'car',
                         'registration_mark' => 'ab12 cde',
                         'make_model' => 'Test Car',
-                        'colour' => 'Blue',
+                        'colour' => 'blue',
                         'acquisition_condition' => 'second_hand',
                         'co2_emissions_g_km' => '75',
                     ],
@@ -49,6 +49,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame($carNominalId, (int)\InterfaceDB::fetchColumn('SELECT nominal_account_id FROM transactions WHERE id = :id', ['id' => $fixture['transaction_id']]));
                 $harness->assertSame($carNominalId, (int)\InterfaceDB::fetchColumn('SELECT nominal_account_id FROM journal_lines WHERE journal_id = :id AND debit = 20000.00 LIMIT 1', ['id' => $rebuiltJournalId]));
                 $harness->assertSame('AB12 CDE', (string)\InterfaceDB::fetchColumn('SELECT registration_mark FROM asset_vehicle_details WHERE asset_id = :id', ['id' => $fixture['transaction_asset_id']]));
+                $harness->assertSame('Blue', (string)\InterfaceDB::fetchColumn('SELECT colour FROM asset_vehicle_details WHERE asset_id = :id', ['id' => $fixture['transaction_asset_id']]));
             });
         });
 
@@ -90,6 +91,26 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame(true, (bool)($result['success'] ?? false));
                 $harness->assertSame($vehicleNominalId, (int)\InterfaceDB::fetchColumn('SELECT nominal_account_id FROM asset_register WHERE id = :id', ['id' => $fixture['transaction_asset_id']]));
                 $harness->assertSame('motor_vehicle', (string)\InterfaceDB::fetchColumn('SELECT category FROM asset_register WHERE id = :id', ['id' => $fixture['transaction_asset_id']]));
+            });
+        });
+
+        $harness->check(\eel_accounts\Service\VehicleService::class, 'rejects vehicle colours outside the DVLA register set', static function () use ($harness, $service): void {
+            vehicleServiceFixture('invalid-colour', static function (array $fixture) use ($harness, $service): void {
+                $result = $service->saveVehicleDetails(
+                    (int)$fixture['company_id'],
+                    (int)$fixture['transaction_asset_id'],
+                    [
+                        'vehicle_type' => 'car',
+                        'colour' => 'Midnight pearl',
+                        'acquisition_condition' => 'second_hand',
+                    ],
+                    0,
+                    'test'
+                );
+
+                $harness->assertSame(false, (bool)($result['success'] ?? true));
+                $harness->assertSame(['Choose a valid DVLA vehicle colour.'], (array)($result['errors'] ?? []));
+                $harness->assertSame(0, (int)\InterfaceDB::fetchColumn('SELECT COUNT(*) FROM asset_vehicle_details WHERE asset_id = :id', ['id' => $fixture['transaction_asset_id']]));
             });
         });
 

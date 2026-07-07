@@ -2629,6 +2629,45 @@
   white-space: nowrap;
 }
 
+.vehicle-register-table td {
+  vertical-align: top;
+}
+
+.vehicle-register-table th:nth-child(2),
+.vehicle-register-table th:nth-child(3),
+.vehicle-register-table td:nth-child(2),
+.vehicle-register-table td:nth-child(3) {
+  min-width: 12rem;
+}
+
+.vehicle-register-table .vehicle-register-controls {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: minmax(0, 1fr);
+  padding-bottom: 0;
+}
+
+.vehicle-register-table .vehicle-register-controls > label {
+  color: var(--muted);
+  display: grid;
+  font-size: 0.78rem;
+  font-weight: 700;
+  gap: 0.28rem;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.vehicle-register-table .vehicle-register-controls .input,
+.vehicle-register-table .vehicle-register-controls .select {
+  min-width: 0;
+  width: 100%;
+}
+
+.vehicle-register-table .vehicle-register-controls .checkbox-row input {
+  justify-self: start;
+  margin: 0;
+}
+
 .incorporation-share-add-form {
   max-width: 100%;
   overflow-x: auto;

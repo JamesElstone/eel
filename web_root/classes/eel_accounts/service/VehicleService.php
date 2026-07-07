@@ -32,8 +32,34 @@ final class VehicleService
     {
         return [
             '' => 'Not recorded',
-            'new_unused' => 'New and unused',
-            'second_hand' => 'Second hand',
+            'new_unused' => 'New and Unused',
+            'second_hand' => 'Second Hand',
+        ];
+    }
+
+    public static function vehicleColourOptions(): array
+    {
+        return [
+            '' => 'Not recorded',
+            'Beige' => 'Beige',
+            'Black' => 'Black',
+            'Blue' => 'Blue',
+            'Bronze' => 'Bronze',
+            'Brown' => 'Brown',
+            'Cream' => 'Cream',
+            'Gold' => 'Gold',
+            'Green' => 'Green',
+            'Grey' => 'Grey',
+            'Maroon' => 'Maroon',
+            'Multi-colour' => 'Multi-colour',
+            'Orange' => 'Orange',
+            'Pink' => 'Pink',
+            'Purple' => 'Purple',
+            'Red' => 'Red',
+            'Silver' => 'Silver',
+            'Turquoise' => 'Turquoise',
+            'White' => 'White',
+            'Yellow' => 'Yellow',
         ];
     }
 
@@ -52,6 +78,7 @@ final class VehicleService
                 'schema_ready' => $this->hasRequiredSchema(),
                 'vehicle_types' => self::vehicleTypeOptions(),
                 'acquisition_conditions' => self::acquisitionConditionOptions(),
+                'vehicle_colours' => self::vehicleColourOptions(),
                 'rows' => [],
                 'warnings' => [],
             ];
@@ -63,6 +90,7 @@ final class VehicleService
                 'schema_ready' => true,
                 'vehicle_types' => self::vehicleTypeOptions(),
                 'acquisition_conditions' => self::acquisitionConditionOptions(),
+                'vehicle_colours' => self::vehicleColourOptions(),
                 'rows' => [],
                 'warnings' => ['Vehicle nominal accounts 1320, 1321, and 1322 are not all available.'],
             ];
@@ -140,6 +168,7 @@ final class VehicleService
             'schema_ready' => true,
             'vehicle_types' => self::vehicleTypeOptions(),
             'acquisition_conditions' => self::acquisitionConditionOptions(),
+            'vehicle_colours' => self::vehicleColourOptions(),
             'rows' => $rows,
             'warnings' => array_values(array_unique($warnings)),
         ];
@@ -325,7 +354,7 @@ final class VehicleService
             'vehicle_type' => $vehicleType,
             'registration_mark' => $this->nullableString(strtoupper((string)($payload['registration_mark'] ?? '')), 32),
             'make_model' => $this->nullableString((string)($payload['make_model'] ?? ''), 255),
-            'colour' => $this->nullableString((string)($payload['colour'] ?? ''), 64),
+            'colour' => $this->normaliseVehicleColour((string)($payload['colour'] ?? ''), $errors),
             'engine_capacity_cc' => $this->nullablePositiveInt($payload['engine_capacity_cc'] ?? null),
             'first_registered_date' => $this->nullableIsoDate((string)($payload['first_registered_date'] ?? ''), $errors, 'first registration date'),
             'acquisition_condition' => $this->normaliseAcquisitionCondition((string)($payload['acquisition_condition'] ?? '')),
@@ -583,6 +612,26 @@ final class VehicleService
         $value = trim($value);
 
         return array_key_exists($value, self::acquisitionConditionOptions()) ? $value : '';
+    }
+
+    private function normaliseVehicleColour(string $value, array &$errors): ?string
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return null;
+        }
+
+        foreach (self::vehicleColourOptions() as $colour => $label) {
+            if ($colour === '') {
+                continue;
+            }
+            if (strcasecmp($value, (string)$colour) === 0 || strcasecmp($value, (string)$label) === 0) {
+                return (string)$colour;
+            }
+        }
+
+        $errors[] = 'Choose a valid DVLA vehicle colour.';
+        return null;
     }
 
     private function nullableString(string $value, int $maxLength): ?string

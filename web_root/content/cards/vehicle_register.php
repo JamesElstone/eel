@@ -62,11 +62,12 @@ final class _vehicle_registerCard extends CardBaseFramework
 
         $warningHtml = $this->warningPanel((array)($data['warnings'] ?? []));
         $body = '';
+        $vehicleColours = (array)($data['vehicle_colours'] ?? \eel_accounts\Service\VehicleService::vehicleColourOptions());
         foreach ($rows as $row) {
-            $body .= $this->rowHtml($row, (array)($data['vehicle_types'] ?? []), (array)($data['acquisition_conditions'] ?? []), $company, $settings, $isLocked);
+            $body .= $this->rowHtml($row, (array)($data['vehicle_types'] ?? []), (array)($data['acquisition_conditions'] ?? []), $vehicleColours, $company, $settings, $isLocked);
         }
 
-        return $warningHtml . ($isLocked ? '<div class="helper"><span class="badge warning">Period locked</span> Vehicle facts are read only.</div>' : '') . '<div class="table-scroll"><table>
+        return $warningHtml . ($isLocked ? '<div class="helper"><span class="badge warning">Period locked</span> Vehicle facts are read only.</div>' : '') . '<div class="table-scroll"><table class="vehicle-register-table">
             <thead><tr>
                 <th>Asset</th>
                 <th>Vehicle facts</th>
@@ -78,7 +79,7 @@ final class _vehicle_registerCard extends CardBaseFramework
         </table></div>';
     }
 
-    private function rowHtml(array $row, array $vehicleTypes, array $conditions, array $company, array $settings, bool $isLocked): string
+    private function rowHtml(array $row, array $vehicleTypes, array $conditions, array $vehicleColours, array $company, array $settings, bool $isLocked): string
     {
         $companyId = (int)($company['id'] ?? 0);
         $assetId = (int)($row['id'] ?? 0);
@@ -100,22 +101,22 @@ final class _vehicle_registerCard extends CardBaseFramework
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="asset_id" value="' . $assetId . '">
                 <input type="hidden" name="default_bank_nominal_id" value="' . (int)(($company['settings'] ?? [])['default_bank_nominal_id'] ?? 0) . '">
-                <div class="form-grid compact">
-                    <label>Type<select class="select" name="vehicle_type" data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '>' . $this->options($vehicleTypes, $vehicleType) . '</select></label>
+                <div class="form-grid compact vehicle-register-controls vehicle-facts-controls">
+                    <label>Type<select class="select" name="vehicle_type" data-vehicle-watch data-no-submit-on-change="true"' . ($isLocked ? ' disabled' : '') . '>' . $this->options($vehicleTypes, $vehicleType) . '</select></label>
                     <label>Registration<input class="input" name="registration_mark" value="' . HelperFramework::escape((string)($row['registration_mark'] ?? '')) . '" data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '></label>
                     <label>Make / model<input class="input" name="make_model" value="' . HelperFramework::escape((string)($row['make_model'] ?? '')) . '" data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '></label>
-                    <label>Colour<input class="input" name="colour" value="' . HelperFramework::escape((string)($row['colour'] ?? '')) . '" data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '></label>
+                    <label>Colour<select class="select" name="colour" data-vehicle-watch data-no-submit-on-change="true"' . ($isLocked ? ' disabled' : '') . '>' . $this->options($vehicleColours, (string)($row['colour'] ?? '')) . '</select></label>
                 </div>
             </form>';
 
-        $taxFacts = '<div class="form-grid compact">
-                <label>Condition<select class="select" name="acquisition_condition" form="' . HelperFramework::escape($formId) . '" data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '>' . $this->options($conditions, (string)($row['acquisition_condition'] ?? '')) . '</select></label>
+        $taxFacts = '<div class="form-grid compact vehicle-register-controls vehicle-tax-controls">
+                <label>Condition<select class="select" name="acquisition_condition" form="' . HelperFramework::escape($formId) . '" data-vehicle-watch data-no-submit-on-change="true"' . ($isLocked ? ' disabled' : '') . '>' . $this->options($conditions, (string)($row['acquisition_condition'] ?? '')) . '</select></label>
                 <label>CO2 g/km<input class="input" type="number" min="0" step="1" name="co2_emissions_g_km" form="' . HelperFramework::escape($formId) . '" value="' . HelperFramework::escape((string)($row['co2_emissions_g_km'] ?? '')) . '" data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '></label>
                 <label>Engine cc<input class="input" type="number" min="0" step="1" name="engine_capacity_cc" form="' . HelperFramework::escape($formId) . '" value="' . HelperFramework::escape((string)($row['engine_capacity_cc'] ?? '')) . '" data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '></label>
                 <label>Payload kg<input class="input" type="number" min="0" step="0.01" name="payload_kg" form="' . HelperFramework::escape($formId) . '" value="' . HelperFramework::escape((string)($row['payload_kg'] ?? '')) . '" data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '></label>
                 <label>First registered<input class="input" type="date" name="first_registered_date" form="' . HelperFramework::escape($formId) . '" value="' . HelperFramework::escape((string)($row['first_registered_date'] ?? '')) . '" data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '></label>
                 <label>Contract date<input class="input" type="date" name="contract_date" form="' . HelperFramework::escape($formId) . '" value="' . HelperFramework::escape((string)($row['contract_date'] ?? '')) . '" data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '></label>
-                <label class="checkbox-row"><input type="checkbox" name="is_zero_emission" value="1" form="' . HelperFramework::escape($formId) . '"' . ((int)($row['is_zero_emission'] ?? 0) === 1 ? ' checked' : '') . ' data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '><span>Zero emission</span></label>
+                <label class="checkbox-row"><span>Zero emission</span><input type="checkbox" name="is_zero_emission" value="1" form="' . HelperFramework::escape($formId) . '"' . ((int)($row['is_zero_emission'] ?? 0) === 1 ? ' checked' : '') . ' data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '></label>
                 <label>Notes<input class="input" name="notes" form="' . HelperFramework::escape($formId) . '" value="' . HelperFramework::escape((string)($row['notes'] ?? '')) . '" data-vehicle-watch' . ($isLocked ? ' disabled' : '') . '></label>
             </div>';
 
@@ -154,7 +155,8 @@ final class _vehicle_registerCard extends CardBaseFramework
     {
         $html = '';
         foreach ($options as $value => $label) {
-            $html .= '<option value="' . HelperFramework::escape((string)$value) . '"' . ((string)$value === $selected ? ' selected' : '') . '>'
+            $isSelected = (string)$value === $selected || ($selected !== '' && strcasecmp((string)$value, $selected) === 0);
+            $html .= '<option value="' . HelperFramework::escape((string)$value) . '"' . ($isSelected ? ' selected' : '') . '>'
                 . HelperFramework::escape((string)$label)
                 . '</option>';
         }

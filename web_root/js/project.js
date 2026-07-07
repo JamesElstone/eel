@@ -397,6 +397,13 @@
             const saveButton = document.querySelector(`[data-vehicle-save][form="${CSS.escape(formId)}"]`);
             const controls = Array.from(document.querySelectorAll(`[data-vehicle-watch][form="${CSS.escape(formId)}"], #${CSS.escape(formId)} [data-vehicle-watch]`));
 
+            form.addEventListener('submit', (event) => {
+                if (!(event.submitter instanceof HTMLButtonElement) || event.submitter !== saveButton) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+            });
+
             const markDirty = () => {
                 if (saveButton instanceof HTMLButtonElement) {
                     saveButton.disabled = false;

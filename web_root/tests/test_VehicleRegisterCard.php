@@ -35,8 +35,13 @@ $harness->run(_vehicle_registerCard::class, static function (GeneratedServiceCla
             ],
             'acquisition_conditions' => [
                 '' => 'Select',
-                'new_unused' => 'New and unused',
-                'second_hand' => 'Second-hand',
+                'new_unused' => 'New and Unused',
+                'second_hand' => 'Second Hand',
+            ],
+            'vehicle_colours' => [
+                '' => 'Not recorded',
+                'Blue' => 'Blue',
+                'White' => 'White',
             ],
             'rows' => [[
                 'id' => 44,
@@ -61,14 +66,22 @@ $harness->run(_vehicle_registerCard::class, static function (GeneratedServiceCla
         $harness->assertTrue(str_contains($html, '<span class="badge warning">Warning</span>'));
         $harness->assertTrue(str_contains($html, 'Unreviewed motor vehicles remain in 1320'));
         $harness->assertTrue(str_contains($html, 'data-vehicle-row="true"'));
+        $harness->assertTrue(str_contains($html, 'class="vehicle-register-table"'));
+        $harness->assertTrue(str_contains($html, 'vehicle-register-controls vehicle-facts-controls'));
+        $harness->assertTrue(str_contains($html, 'vehicle-register-controls vehicle-tax-controls'));
         $harness->assertTrue(str_contains($html, 'name="card_action" value="Vehicle"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="save_vehicle_details"'));
         $harness->assertTrue(str_contains($html, 'name="vehicle_type"'));
+        $harness->assertTrue(str_contains($html, 'name="vehicle_type" data-vehicle-watch data-no-submit-on-change="true"'));
+        $harness->assertTrue(str_contains($html, 'name="colour" data-vehicle-watch data-no-submit-on-change="true"'));
+        $harness->assertTrue(str_contains($html, '<option value="White" selected>White</option>'));
+        $harness->assertTrue(str_contains($html, 'name="acquisition_condition" form="vehicle-row-44" data-vehicle-watch data-no-submit-on-change="true"'));
         $harness->assertTrue(str_contains($html, 'name="registration_mark"'));
         $harness->assertTrue(str_contains($html, 'name="co2_emissions_g_km"'));
         $harness->assertTrue(str_contains($html, 'name="payload_kg"'));
         $harness->assertTrue(str_contains($html, 'data-vehicle-watch'));
         $harness->assertTrue(str_contains($html, 'data-vehicle-save disabled'));
+        $harness->assertTrue(str_contains($html, '<label class="checkbox-row"><span>Zero emission</span><input type="checkbox"'));
         $harness->assertTrue(str_contains($html, 'FA-33-1'));
         $harness->assertTrue(str_contains($html, 'Ford Transit'));
         $harness->assertTrue(str_contains($html, 'AB12 CDE'));

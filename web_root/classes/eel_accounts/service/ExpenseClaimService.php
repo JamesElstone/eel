@@ -2010,8 +2010,7 @@ final class ExpenseClaimService
              LEFT JOIN expense_claim_payment_links l ON l.transaction_id = t.id
              WHERE ' . implode(' AND ', $conditions) . '
              GROUP BY t.id, t.txn_date, t.description, t.reference, t.amount, t.nominal_account_id, t.category_status, n.code, n.name
-             ORDER BY t.txn_date DESC, t.id DESC
-             LIMIT 80'
+             ORDER BY t.txn_date DESC, t.id DESC'
         );
         $stmt->execute(array_merge([$claimId, $claimId, $claimId], $params));
 

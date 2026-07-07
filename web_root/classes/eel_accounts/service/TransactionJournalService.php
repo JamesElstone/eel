@@ -315,15 +315,33 @@ final class TransactionJournalService
         );
         $stmt->execute($params);
 
-        return array_map(
+        $transactionIds = array_map(
             static fn(array $row): int => (int)$row['id'],
             $stmt->fetchAll()
         );
+
+        foreach ((new \eel_accounts\Service\TransactionSplitService())->fetchReadySplitTransactionIds($companyId, $accountingPeriodId, $monthKey !== '' ? $monthKey : null) as $splitTransactionId) {
+            $transactionIds[] = (int)$splitTransactionId;
+        }
+
+        $unique = [];
+        foreach ($transactionIds as $transactionId) {
+            if ($transactionId > 0) {
+                $unique[$transactionId] = $transactionId;
+            }
+        }
+
+        return array_values($unique);
     }
 
     private function buildDesiredJournal(array $transaction, int $bankNominalId): ?array {
         if ($this->isTransferTransaction($transaction)) {
             return $this->buildTransferJournal($transaction, $bankNominalId);
+        }
+
+        $split = (new \eel_accounts\Service\TransactionSplitService())->fetchReadySplitForPosting((int)($transaction['id'] ?? 0));
+        if ($split !== null) {
+            return $this->buildSplitJournal($transaction, $bankNominalId, $split);
         }
 
         $nominalAccountId = (int)($transaction['nominal_account_id'] ?? 0);
@@ -423,6 +441,91 @@ final class TransactionJournalService
         ];
     }
 
+    private function buildSplitJournal(array $transaction, int $bankNominalId, array $split): ?array
+    {
+        $amount = round(abs((float)($transaction['amount'] ?? 0)), 2);
+        $sourceAccountId = (int)($transaction['account_id'] ?? 0);
+        $sourceAccountType = (string)($transaction['source_account_type'] ?? '');
+        $sourceNominalAccountId = $this->resolveCompanyAccountNominalId($transaction, 'source', $bankNominalId);
+
+        if ($amount <= 0.0 || $sourceNominalAccountId <= 0) {
+            return null;
+        }
+
+        $description = trim((string)($transaction['description'] ?? ''));
+        $journalDate = trim((string)($transaction['txn_date'] ?? ''));
+        $itemLines = [];
+
+        foreach ((array)($split['lines'] ?? []) as $line) {
+            if ((int)($line['is_deferred'] ?? 0) === 1) {
+                continue;
+            }
+
+            $lineAmount = round((float)($line['amount'] ?? 0), 2);
+            $nominalAccountId = (int)($line['nominal_account_id'] ?? 0);
+            if ($lineAmount <= 0.0 || $nominalAccountId <= 0) {
+                return null;
+            }
+
+            $lineDescription = trim((string)($line['description'] ?? ''));
+            $itemLines[] = [
+                'nominal_account_id' => $nominalAccountId,
+                'debit' => '0.00',
+                'credit' => '0.00',
+                'line_description' => $lineDescription !== '' ? $lineDescription : $description,
+                '_amount' => number_format($lineAmount, 2, '.', ''),
+            ];
+        }
+
+        if ($itemLines === []) {
+            return null;
+        }
+
+        $sourceLine = [
+            'nominal_account_id' => $sourceNominalAccountId,
+            'company_account_id' => $sourceAccountId,
+            'debit' => '0.00',
+            'credit' => '0.00',
+            'line_description' => $description,
+        ];
+
+        $amountIsNegative = (float)($transaction['amount'] ?? 0) < 0;
+        if ($sourceAccountType === \eel_accounts\Service\CompanyAccountService::TYPE_TRADE) {
+            $itemLinesAreDebit = !$amountIsNegative;
+        } else {
+            $itemLinesAreDebit = $amountIsNegative;
+        }
+
+        foreach ($itemLines as &$line) {
+            if ($itemLinesAreDebit) {
+                $line['debit'] = (string)$line['_amount'];
+            } else {
+                $line['credit'] = (string)$line['_amount'];
+            }
+            unset($line['_amount']);
+        }
+        unset($line);
+
+        if ($itemLinesAreDebit) {
+            $sourceLine['credit'] = number_format($amount, 2, '.', '');
+            $lines = array_merge($itemLines, [$sourceLine]);
+        } else {
+            $sourceLine['debit'] = number_format($amount, 2, '.', '');
+            $lines = array_merge([$sourceLine], $itemLines);
+        }
+
+        return [
+            'company_id' => (int)$transaction['company_id'],
+            'accounting_period_id' => (int)$transaction['accounting_period_id'],
+            'source_type' => 'bank_csv',
+            'source_ref' => $this->sourceRefForTransaction((int)$transaction['id']),
+            'journal_date' => $journalDate,
+            'description' => $description !== '' ? $description : 'Imported transaction',
+            'is_posted' => 1,
+            'lines' => $lines,
+        ];
+    }
+
     private function postingNominalErrors(array $transaction, int $fallbackBankNominalId): array
     {
         if ($this->isTransferTransaction($transaction)) {
@@ -445,6 +548,15 @@ final class TransactionJournalService
             }
 
             return $errors;
+        }
+
+        $split = (new \eel_accounts\Service\TransactionSplitService())->fetchReadySplitForPosting((int)($transaction['id'] ?? 0));
+        if ($split !== null) {
+            if ($this->resolveCompanyAccountNominalId($transaction, 'source', $fallbackBankNominalId) <= 0) {
+                return ['Assign a nominal to the source account before posting this split transaction: ' . (string)($transaction['source_account_name'] ?? 'Unknown account') . '.'];
+            }
+
+            return [];
         }
 
         $nominalAccountId = (int)($transaction['nominal_account_id'] ?? 0);

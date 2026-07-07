@@ -2751,6 +2751,32 @@
   width: 8rem;
 }
 
+.transaction-categorisation-control,
+.transaction-split-parent-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.35rem;
+}
+
+.transaction-categorisation-control .select,
+.transaction-split-line-nominal {
+  min-width: 13rem;
+}
+
+.transaction-split-line-input {
+  min-width: 12rem;
+}
+
+.transaction-split-line-amount {
+  min-width: 7rem;
+  text-align: right;
+}
+
+.transaction-split-difference {
+  white-space: nowrap;
+}
+
 @media (max-width: 760px) {
   .transaction-search-table-footer {
     justify-content: center;

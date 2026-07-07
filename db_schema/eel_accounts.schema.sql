@@ -1516,6 +1516,51 @@ CONSTRAINT `chk_transactions_amount_nonzero` CHECK (`amount` <> 0)
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `transaction_splits`
+--
+
+DROP TABLE IF EXISTS `transaction_splits`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `transaction_splits` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `transaction_id` bigint(20) NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_transaction_splits_transaction` (`transaction_id`),
+  CONSTRAINT `fk_transaction_splits_transaction` FOREIGN KEY (`transaction_id`) REFERENCES `transactions` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `transaction_split_lines`
+--
+
+DROP TABLE IF EXISTS `transaction_split_lines`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `transaction_split_lines` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `split_id` bigint(20) NOT NULL,
+  `line_number` int(11) NOT NULL,
+  `description` varchar(255) DEFAULT NULL,
+  `amount` decimal(12,2) DEFAULT NULL,
+  `nominal_account_id` int(11) DEFAULT NULL,
+  `is_deferred` tinyint(1) NOT NULL DEFAULT 0,
+  `notes` text DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_transaction_split_lines_number` (`split_id`,`line_number`),
+  KEY `idx_transaction_split_lines_nominal` (`nominal_account_id`),
+  CONSTRAINT `fk_transaction_split_lines_split` FOREIGN KEY (`split_id`) REFERENCES `transaction_splits` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_transaction_split_lines_nominal` FOREIGN KEY (`nominal_account_id`) REFERENCES `nominal_accounts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `chk_transaction_split_lines_amount` CHECK (`amount` IS NULL OR `amount` > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `company_incorporation_share_payment_matches`
 --
 
@@ -1569,6 +1614,7 @@ CREATE TABLE `asset_register` (
   `linked_journal_id` bigint(20) DEFAULT NULL,
   `linked_transaction_id` bigint(20) DEFAULT NULL,
   `linked_expense_claim_line_id` bigint(20) DEFAULT NULL,
+  `linked_transaction_split_line_id` bigint(20) DEFAULT NULL,
   `manual_addition_reason` varchar(64) DEFAULT NULL,
   `manual_offset_nominal_id` int(11) DEFAULT NULL,
   `manual_evidence_path` varchar(512) DEFAULT NULL,
@@ -1592,6 +1638,7 @@ CREATE TABLE `asset_register` (
   KEY `idx_asset_register_linked_journal` (`linked_journal_id`),
   KEY `idx_asset_register_linked_transaction` (`linked_transaction_id`),
   KEY `idx_asset_register_expense_claim_line` (`linked_expense_claim_line_id`),
+  KEY `idx_asset_register_transaction_split_line` (`linked_transaction_split_line_id`),
   KEY `idx_asset_register_manual_reconcile` (`company_id`,`manual_addition_reason`,`linked_transaction_id`),
   KEY `idx_asset_register_manual_offset_nominal` (`manual_offset_nominal_id`),
   KEY `idx_asset_register_manual_evidence_sha` (`company_id`,`manual_evidence_sha256`),
@@ -1601,6 +1648,7 @@ CREATE TABLE `asset_register` (
   CONSTRAINT `fk_asset_register_linked_journal` FOREIGN KEY (`linked_journal_id`) REFERENCES `journals` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_asset_register_linked_transaction` FOREIGN KEY (`linked_transaction_id`) REFERENCES `transactions` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_asset_register_expense_claim_line` FOREIGN KEY (`linked_expense_claim_line_id`) REFERENCES `expense_claim_lines` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_asset_register_transaction_split_line` FOREIGN KEY (`linked_transaction_split_line_id`) REFERENCES `transaction_split_lines` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_asset_register_manual_offset_nominal` FOREIGN KEY (`manual_offset_nominal_id`) REFERENCES `nominal_accounts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `chk_asset_register_cost` CHECK (`cost` > 0),
   CONSTRAINT `chk_asset_register_useful_life` CHECK (`useful_life_years` > 0),
@@ -2308,7 +2356,8 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_05_001_ct_period_tax_page_provisions.sql'),
   ('2026_07_05_002_dynamic_tax_append_only_close.sql'),
   ('2026_07_06_001_prepayments_cutoff_workflows.sql'),
-  ('2026_07_06_002_remove_pending_prepayment_status.sql');
+  ('2026_07_06_002_remove_pending_prepayment_status.sql'),
+  ('2026_07_07_001_transaction_splits.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

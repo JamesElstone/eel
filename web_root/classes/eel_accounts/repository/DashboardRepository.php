@@ -523,7 +523,7 @@ final class DashboardRepository
         $stmt = \InterfaceDB::prepare($sql);
         $stmt->execute($params);
 
-        return $stmt->fetchAll();
+        return (new \eel_accounts\Service\TransactionSplitService())->attachSplitsToTransactions($stmt->fetchAll());
     }
 
     public function searchTransactions(
@@ -586,7 +586,18 @@ final class DashboardRepository
                 $params[$key] = $nominalAccountId;
             }
 
-            $where[] = 't.nominal_account_id IN (' . implode(', ', $placeholders) . ')';
+            if ((new \eel_accounts\Service\TransactionSplitService())->hasSchema()) {
+                $where[] = '(t.nominal_account_id IN (' . implode(', ', $placeholders) . ')
+                    OR EXISTS (
+                        SELECT 1
+                        FROM transaction_splits filter_ts
+                        INNER JOIN transaction_split_lines filter_tsl ON filter_tsl.split_id = filter_ts.id
+                        WHERE filter_ts.transaction_id = t.id
+                          AND filter_tsl.nominal_account_id IN (' . implode(', ', $placeholders) . ')
+                    ))';
+            } else {
+                $where[] = 't.nominal_account_id IN (' . implode(', ', $placeholders) . ')';
+            }
         }
 
         if ($categoryStatus !== '') {
@@ -673,7 +684,7 @@ final class DashboardRepository
         $stmt = \InterfaceDB::prepare($sql);
         $stmt->execute($params);
 
-        return $stmt->fetchAll();
+        return (new \eel_accounts\Service\TransactionSplitService())->attachSplitsToTransactions($stmt->fetchAll());
     }
 
     private function transactionMonthKeySql(string $dateExpression): string

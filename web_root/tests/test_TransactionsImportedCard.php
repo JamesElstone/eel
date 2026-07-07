@@ -102,4 +102,174 @@ $harness->run(_transactions_importedCard::class, static function (GeneratedServi
     $harness->assertTrue(str_contains($pageTwoHtml, 'data-table-pagination-page="2"'));
     $harness->assertTrue(str_contains($pageTwoHtml, 'Imported transactions 21 of 21'));
     $harness->assertFalse(str_contains($pageTwoHtml, 'data-preserve-table-pagination="false"'));
+
+    $normalHtml = $card->render([
+        'company' => [
+            'id' => 12,
+            'accounting_period_id' => 34,
+            'settings' => [],
+        ],
+        'page' => [
+            'page_id' => 'transactions',
+            'page_cards' => ['transactions_imported'],
+            'month_key' => '2026-01',
+            'category_filter' => 'not_posted',
+            'csrf_token' => 'test-csrf',
+        ],
+        'services' => [
+            'month_status' => [[
+                'month_key' => '2026-01',
+                'label' => 'Jan 2026',
+            ]],
+            'transactions_by_month' => [[
+                'id' => 91,
+                'txn_date' => '2026-01-08',
+                'description' => 'Normal unsplit transaction',
+                'source_account' => 'Current account',
+                'source_category' => '',
+                'amount' => -146.36,
+                'document_download_status' => 'skipped',
+                'category_status' => 'uncategorised',
+                'has_derived_journal' => 0,
+                'has_transaction_split' => 0,
+            ]],
+            'nominal_accounts' => [[
+                'id' => 32,
+                'code' => '1300',
+                'name' => 'Tools & Equipment (FA)',
+            ]],
+            'company_accounts' => [],
+            'year_end_review' => [
+                'is_locked' => false,
+            ],
+            'pending_auto_approval_count' => 0,
+        ],
+    ]);
+
+    $harness->assertTrue(str_contains($normalHtml, 'name="global_action" value="start_transaction_split"'));
+    $harness->assertTrue(str_contains($normalHtml, '>Split</button>'));
+
+    $splitTransaction = [
+        'id' => 92,
+        'txn_date' => '2026-01-09',
+        'description' => 'AMZNMKTPLACE',
+        'source_account' => 'Example Bank - Current Account',
+        'source_category' => '',
+        'amount' => -146.36,
+        'document_download_status' => 'skipped',
+        'category_status' => 'manual',
+        'has_derived_journal' => 0,
+        'has_transaction_split' => 1,
+        'transaction_split_ready' => 1,
+        'transaction_split_difference' => '0.00',
+        'transaction_split_lines' => [[
+            'id' => 9001,
+            'line_number' => 1,
+            'description' => 'AMZNMKTPLACE tool item',
+            'amount' => '89.99',
+            'nominal_account_id' => 32,
+            'notes' => 'asset line',
+            'is_deferred' => 0,
+            'is_complete' => 1,
+            'nominal_code' => '1300',
+            'nominal_name' => 'Tools & Equipment (FA)',
+        ], [
+            'id' => 9002,
+            'line_number' => 2,
+            'description' => 'AMZNMKTPLACE materials',
+            'amount' => '56.37',
+            'nominal_account_id' => 8,
+            'notes' => '',
+            'is_deferred' => 0,
+            'is_complete' => 1,
+            'nominal_code' => '5000',
+            'nominal_name' => 'Materials',
+        ]],
+    ];
+    $splitHtml = $card->render([
+        'company' => [
+            'id' => 12,
+            'accounting_period_id' => 34,
+            'settings' => [],
+        ],
+        'page' => [
+            'page_id' => 'transactions',
+            'page_cards' => ['transactions_imported'],
+            'month_key' => '2026-01',
+            'category_filter' => 'not_posted',
+            'csrf_token' => 'test-csrf',
+        ],
+        'services' => [
+            'month_status' => [[
+                'month_key' => '2026-01',
+                'label' => 'Jan 2026',
+            ]],
+            'transactions_by_month' => [$splitTransaction],
+            'nominal_accounts' => [[
+                'id' => 32,
+                'code' => '1300',
+                'name' => 'Tools & Equipment (FA)',
+            ], [
+                'id' => 8,
+                'code' => '5000',
+                'name' => 'Materials',
+            ]],
+            'company_accounts' => [],
+            'year_end_review' => [
+                'is_locked' => false,
+            ],
+            'pending_auto_approval_count' => 0,
+        ],
+    ]);
+
+    $harness->assertTrue(str_contains($splitHtml, 'name="global_action" value="merge_transaction_split"'));
+    $harness->assertTrue(str_contains($splitHtml, 'name="global_action" value="add_transaction_split_line"'));
+    $harness->assertTrue(str_contains($splitHtml, 'transaction-split-line-form-9001'));
+    $harness->assertTrue(str_contains($splitHtml, 'name="split_line_description" value="AMZNMKTPLACE tool item"'));
+    $harness->assertTrue(str_contains($splitHtml, 'name="split_line_amount" value="89.99"'));
+    $harness->assertTrue(str_contains($splitHtml, 'name="transaction_split_line_id" value="9001"'));
+    $harness->assertTrue(str_contains($splitHtml, 'name="global_action" value="save_transaction_split_line"'));
+    $harness->assertTrue(str_contains($splitHtml, 'name="global_action" value="defer_transaction_split_line"'));
+    $harness->assertTrue(str_contains($splitHtml, 'name="global_action" value="remove_transaction_split_line"'));
+    $harness->assertTrue(str_contains($splitHtml, 'Difference:'));
+    $harness->assertTrue(str_contains($splitHtml, 'Ready to post'));
+
+    $lockedHtml = $card->render([
+        'company' => [
+            'id' => 12,
+            'accounting_period_id' => 34,
+            'settings' => [],
+        ],
+        'page' => [
+            'page_id' => 'transactions',
+            'page_cards' => ['transactions_imported'],
+            'month_key' => '2026-01',
+            'category_filter' => 'not_posted',
+            'csrf_token' => 'test-csrf',
+        ],
+        'services' => [
+            'month_status' => [[
+                'month_key' => '2026-01',
+                'label' => 'Jan 2026',
+            ]],
+            'transactions_by_month' => [$splitTransaction],
+            'nominal_accounts' => [[
+                'id' => 32,
+                'code' => '1300',
+                'name' => 'Tools & Equipment (FA)',
+            ], [
+                'id' => 8,
+                'code' => '5000',
+                'name' => 'Materials',
+            ]],
+            'company_accounts' => [],
+            'year_end_review' => [
+                'is_locked' => true,
+            ],
+            'pending_auto_approval_count' => 0,
+        ],
+    ]);
+
+    $harness->assertTrue(str_contains($lockedHtml, 'Period locked'));
+    $harness->assertTrue(str_contains($lockedHtml, 'disabled title="Period locked"'));
 });

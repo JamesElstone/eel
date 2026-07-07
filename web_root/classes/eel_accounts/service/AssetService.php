@@ -196,7 +196,8 @@ final class AssetService
         int $companyId,
         int $accountingPeriodId,
         int|string $defaultBankNominalId = 0,
-        int $prefillTransactionId = 0
+        int $prefillTransactionId = 0,
+        int $prefillTransactionSplitLineId = 0
     ): array {
         $defaultBankNominalId = max(0, (int)$defaultBankNominalId);
 
@@ -212,7 +213,9 @@ final class AssetService
 
         return [
             'accounting_period_id' => $accountingPeriodId,
-            'prefill_transaction' => $prefillTransactionId > 0 ? $this->fetchTransactionPrefill($companyId, $prefillTransactionId) : null,
+            'prefill_transaction' => $prefillTransactionSplitLineId > 0
+                ? $this->fetchTransactionSplitLinePrefill($companyId, $prefillTransactionSplitLineId)
+                : ($prefillTransactionId > 0 ? $this->fetchTransactionPrefill($companyId, $prefillTransactionId) : null),
             'default_bank_nominal_id' => $defaultBankNominalId,
             'asset_categories' => self::assetCategoryOptions(),
             'schema_ready' => true,
@@ -363,6 +366,25 @@ final class AssetService
         return [
             'assets' => $assets,
             'manual_addition_reasons' => self::manualAdditionReasonOptions(),
+        ];
+    }
+
+    public function fetchTransactionSplitLinePrefill(int $companyId, int $lineId): ?array {
+        $line = (new \eel_accounts\Service\TransactionSplitService())->fetchSplitLineForAsset($companyId, $lineId);
+        if ($line === null || round((float)($line['amount'] ?? 0), 2) <= 0.0) {
+            return null;
+        }
+
+        $description = trim((string)($line['description'] ?? ''));
+
+        return [
+            'transaction_split_line_id' => (int)$line['id'],
+            'transaction_id' => (int)$line['transaction_id'],
+            'description' => $description !== '' ? $description : (string)($line['transaction_description'] ?? ''),
+            'purchase_date' => (string)$line['txn_date'],
+            'cost' => number_format((float)$line['amount'], 2, '.', ''),
+            'accounting_period_id' => (int)$line['accounting_period_id'],
+            'nominal_account_id' => (int)($line['nominal_account_id'] ?? 0),
         ];
     }
 
@@ -901,6 +923,99 @@ final class AssetService
             $evidenceStorage->deleteStoredEvidence($storedEvidence);
 
             return ['success' => false, 'errors' => ['The manual asset could not be posted: ' . $exception->getMessage()]];
+        }
+    }
+
+    public function createAssetFromTransactionSplitLine(int $companyId, int $lineId, array $payload, int $defaultBankNominalId): array {
+        if (!$this->hasRequiredSchema()) {
+            return ['success' => false, 'errors' => ['Run the fixed asset migration before using the asset register.']];
+        }
+
+        if (!\InterfaceDB::columnExists('asset_register', 'linked_transaction_split_line_id')) {
+            return ['success' => false, 'errors' => ['Run the transaction split migration before creating assets from split lines.']];
+        }
+
+        $splitService = new \eel_accounts\Service\TransactionSplitService();
+        $line = $splitService->fetchSplitLineForAsset($companyId, $lineId);
+        if ($line === null) {
+            return ['success' => false, 'errors' => ['The selected transaction split line could not be found for this company.']];
+        }
+
+        $transactionId = (int)$line['transaction_id'];
+        $accountingPeriodId = (int)$line['accounting_period_id'];
+        (new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'create assets from transaction split lines in this period');
+
+        if ($splitService->splitLineHasAsset($lineId)) {
+            return ['success' => false, 'errors' => ['This split line is already linked to an asset.']];
+        }
+
+        if ($defaultBankNominalId <= 0) {
+            return ['success' => false, 'errors' => ['Set the default bank nominal before creating an asset from a transaction split line.']];
+        }
+
+        $readySplit = $splitService->fetchReadySplitForPosting($transactionId);
+        if ($readySplit === null) {
+            return ['success' => false, 'errors' => ['Complete and balance the split before creating an asset from one of its lines.']];
+        }
+
+        $description = trim((string)($line['description'] ?? ''));
+        $normalised = $this->normaliseAssetPayload($companyId, $payload, [
+            'purchase_date' => (string)$line['txn_date'],
+            'cost' => (float)$line['amount'],
+            'description' => $description !== '' ? $description : (string)($line['transaction_description'] ?? ''),
+            'accounting_period_id' => $accountingPeriodId,
+        ]);
+        if ($normalised['errors'] !== []) {
+            return ['success' => false, 'errors' => $normalised['errors']];
+        }
+
+        if ((int)$normalised['values']['nominal_account_id'] !== (int)($line['nominal_account_id'] ?? 0)) {
+            return ['success' => false, 'errors' => ['Choose an asset category whose cost nominal matches the split line nominal.']];
+        }
+
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
+        }
+
+        try {
+            $journalResult = $this->transactionJournalService->syncJournalForTransaction(
+                $transactionId,
+                $defaultBankNominalId,
+                'asset_register_split_line',
+                true
+            );
+            if (empty($journalResult['success'])) {
+                throw new \RuntimeException(implode(' ', array_map('strval', $journalResult['errors'] ?? ['The split transaction journal could not be posted.'])));
+            }
+
+            $assetCode = $this->generateAssetCode($companyId);
+            $this->insertAssetRecord($normalised['values'], [
+                'asset_code' => $assetCode,
+                'linked_transaction_id' => $transactionId,
+                'linked_transaction_split_line_id' => $lineId,
+                'linked_journal_id' => (int)($journalResult['journal_id'] ?? $this->findJournalIdBySourceRef($companyId, 'bank_csv', 'transaction:' . $transactionId) ?? 0),
+            ]);
+            $asset = $this->fetchAssetByCode($companyId, $assetCode);
+            if ($asset === null) {
+                throw new \RuntimeException('The asset could not be reloaded after save.');
+            }
+
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
+
+            return [
+                'success' => true,
+                'asset' => $asset,
+                'messages' => ['Asset created from the selected split line and linked to the split journal.'],
+            ];
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+
+            return ['success' => false, 'errors' => ['The split-line asset could not be created: ' . $exception->getMessage()]];
         }
     }
 
@@ -2069,8 +2184,18 @@ final class AssetService
             'linked_expense_claim_line_id' => $links['linked_expense_claim_line_id'] ?? null,
         ];
 
+        if (\InterfaceDB::columnExists('asset_register', 'linked_transaction_split_line_id')) {
+            $insertAt = array_search('disposal_date', $columns, true);
+            $insertAt = $insertAt === false ? count($columns) : (int)$insertAt;
+            array_splice($columns, $insertAt, 0, ['linked_transaction_split_line_id']);
+            array_splice($placeholders, $insertAt, 0, [':linked_transaction_split_line_id']);
+            $params['linked_transaction_split_line_id'] = $links['linked_transaction_split_line_id'] ?? null;
+        }
+
         if ($this->hasManualAssetSchema()) {
-            array_splice($columns, 15, 0, [
+            $insertAt = array_search('disposal_date', $columns, true);
+            $insertAt = $insertAt === false ? count($columns) : (int)$insertAt;
+            array_splice($columns, $insertAt, 0, [
                 'manual_addition_reason',
                 'manual_offset_nominal_id',
                 'manual_evidence_path',
@@ -2081,7 +2206,7 @@ final class AssetService
                 'manual_legal_warning_version',
                 'manual_legal_acknowledged_at',
             ]);
-            array_splice($placeholders, 15, 0, [
+            array_splice($placeholders, $insertAt, 0, [
                 ':manual_addition_reason',
                 ':manual_offset_nominal_id',
                 ':manual_evidence_path',

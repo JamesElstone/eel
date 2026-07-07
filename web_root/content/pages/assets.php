@@ -68,6 +68,7 @@ final class _assets extends PageContextFramework
     ): array {
         return [
             'prefill_transaction_id' => max(0, (int)$request->input('transaction_id', $request->query('transaction_id', 0))),
+            'prefill_transaction_split_line_id' => max(0, (int)$request->input('transaction_split_line_id', $request->query('transaction_split_line_id', 0))),
         ];
     }
 }

@@ -18,6 +18,12 @@ final class TransactionAction implements ActionInterfaceFramework
         'save_transaction_category',
         'defer_transaction',
         'mark_director_loan',
+        'start_transaction_split',
+        'add_transaction_split_line',
+        'save_transaction_split_line',
+        'defer_transaction_split_line',
+        'remove_transaction_split_line',
+        'merge_transaction_split',
     ];
 
     public function handle(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
@@ -52,6 +58,12 @@ final class TransactionAction implements ActionInterfaceFramework
             'save_transaction_category',
             'defer_transaction',
             'mark_director_loan' => $this->saveTransactionCategory($request, $services, $intent),
+            'start_transaction_split',
+            'add_transaction_split_line',
+            'save_transaction_split_line',
+            'defer_transaction_split_line',
+            'remove_transaction_split_line',
+            'merge_transaction_split' => $this->saveTransactionSplit($request, $services, $intent),
             'auto_create_transaction_rule' => $this->draftCategorisationRule($request, $services),
             'run_auto_rules' => $this->runAutoRules($request, $services),
             'set_auto_approval_state',
@@ -75,6 +87,12 @@ final class TransactionAction implements ActionInterfaceFramework
             'save_transaction_category',
             'defer_transaction',
             'mark_director_loan',
+            'start_transaction_split',
+            'add_transaction_split_line',
+            'save_transaction_split_line',
+            'defer_transaction_split_line',
+            'remove_transaction_split_line',
+            'merge_transaction_split',
             'auto_create_transaction_rule',
             'run_auto_rules',
             'set_auto_approval_state',
@@ -309,6 +327,53 @@ final class TransactionAction implements ActionInterfaceFramework
         }
 
         return $changed ? [self::CATEGORISATION_SUMMARY_FACT] : [];
+    }
+
+    private function saveTransactionSplit(
+        RequestFramework $request,
+        PageServiceFramework $services,
+        string $globalAction
+    ): ActionResultFramework {
+        $context = $this->filterContext($request);
+        $companyId = $this->selectedCompanyId($request);
+        $transactionId = $this->positiveInt($request->post('transaction_id', 0));
+        $lineId = $this->positiveInt($request->post('transaction_split_line_id', 0));
+        $confirmedJournalRebuild = $this->checkboxValue($request, 'confirm_rebuild_journal');
+        $splitService = self::service($services, \eel_accounts\Service\TransactionSplitService::class);
+        $errors = [];
+        $messages = [];
+
+        try {
+            $result = match ($globalAction) {
+                'start_transaction_split' => $splitService->startSplit($companyId, $transactionId),
+                'add_transaction_split_line' => $splitService->addLine($companyId, $transactionId),
+                'save_transaction_split_line' => $splitService->saveLine($companyId, $lineId, $this->postArray($request)),
+                'defer_transaction_split_line' => $splitService->deferLine($companyId, $lineId),
+                'remove_transaction_split_line' => $splitService->removeLine($companyId, $lineId),
+                'merge_transaction_split' => $splitService->mergeSplit($companyId, $transactionId, $confirmedJournalRebuild),
+                default => ['success' => false, 'errors' => ['Unknown transaction split action.']],
+            };
+
+            if (!empty($result['requires_confirmation'])) {
+                $errors[] = 'This split transaction already has a derived journal. Tick confirm and save again to rebuild it.';
+            } else {
+                $errors = array_merge($errors, array_map('strval', (array)($result['errors'] ?? [])));
+                if (!empty($result['success'])) {
+                    $messages = array_merge($messages, array_map('strval', (array)($result['messages'] ?? [])));
+                }
+            }
+        } catch (Throwable $exception) {
+            $errors[] = 'The transaction split could not be saved: ' . $exception->getMessage();
+        }
+
+        return $this->result(
+            $errors === [],
+            $errors,
+            $messages,
+            $context,
+            [],
+            [self::TRANSACTIONS_IMPORTED_FACT, self::CATEGORISATION_SUMMARY_FACT, 'transaction.search', 'page.context', 'year.end.checklist']
+        );
     }
 
     private function saveTransactionNote(RequestFramework $request): ActionResultFramework

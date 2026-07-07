@@ -218,8 +218,10 @@ final class _transactions_importedCard extends CardBaseFramework
         $rows = array_values(array_filter($transactions, static fn(mixed $row): bool => is_array($row)));
         $pagination = HelperFramework::paginateArray($rows, $this->paginationPage($context), self::PAGE_SIZE);
 
+        $visibleRows = $this->transactionTableRows((array)$pagination['items']);
+
         return $this->transactionsTable(
-            $transactions,
+            (array)$pagination['items'],
             $companyId,
             $accountingPeriodId,
             $selectedTransactionMonth,
@@ -229,7 +231,7 @@ final class _transactions_importedCard extends CardBaseFramework
             $settings,
             $isPeriodLocked
         )
-            ->visibleRows((array)$pagination['items'])
+            ->visibleRows($visibleRows)
             ->pagination(
                 $pagination,
                 'Imported transactions',
@@ -365,7 +367,7 @@ final class _transactions_importedCard extends CardBaseFramework
         array $settings,
         bool $isPeriodLocked = false
     ): TableFramework {
-        $rows = array_values(array_filter($transactions, static fn(mixed $row): bool => is_array($row)));
+        $rows = $this->transactionTableRows($transactions);
 
         return TableFramework::make($this->key(), $rows)
             ->filename('imported-transactions')
@@ -394,30 +396,32 @@ final class _transactions_importedCard extends CardBaseFramework
             ->column(
                 'txn_date',
                 'Date',
-                html: fn(array $row): string => HelperFramework::escape($this->displayDate((string)($row['txn_date'] ?? '')))
+                html: fn(array $row): string => $this->isSyntheticSplitRow($row)
+                    ? ''
+                    : HelperFramework::escape($this->displayDate((string)($row['txn_date'] ?? '')))
             )
             ->column(
                 'description',
                 'Description',
-                html: fn(array $row): string => $this->descriptionHtml($row)
+                html: fn(array $row): string => $this->descriptionHtml($row, $isPeriodLocked)
             )
             ->column(
                 'source_account',
                 'Source',
-                html: fn(array $row): string => $this->sourceHtml($row)
+                html: fn(array $row): string => $this->isSyntheticSplitRow($row) ? '' : $this->sourceHtml($row)
             )
             ->column(
                 'amount',
                 'Amount',
-                html: function (array $row) use ($settings): string {
-                    return (new \eel_accounts\Service\CompanySettingsService())->moneyHtml($settings, $row['amount'] ?? null);
+                html: function (array $row) use ($settings, $isPeriodLocked): string {
+                    return $this->amountHtml($row, $settings, $isPeriodLocked);
                 },
                 cellClass: 'numeric'
             )
             ->column(
                 'document',
                 'Document',
-                html: fn(array $row): string => $this->documentHtml($row, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter)
+                html: fn(array $row): string => $this->isSyntheticSplitRow($row) ? '' : $this->documentHtml($row, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter)
             )
             ->column(
                 'categorisation',
@@ -427,9 +431,12 @@ final class _transactions_importedCard extends CardBaseFramework
             ->column(
                 'status',
                 'Status',
-                html: fn(array $row): string => '<span class="badge ' . HelperFramework::escape($this->transactionCategorisationStatusBadgeClass($row)) . '">'
-                    . HelperFramework::escape($this->transactionCategorisationStatusLabel($row))
-                    . '</span>'
+                html: function (array $row): string {
+                    $label = $this->transactionCategorisationStatusLabel($row);
+                    return $label === ''
+                        ? ''
+                        : '<span class="badge ' . HelperFramework::escape($this->transactionCategorisationStatusBadgeClass($row)) . '">' . HelperFramework::escape($label) . '</span>';
+                }
             )
             ->column(
                 'auto_approval',
@@ -445,9 +452,12 @@ final class _transactions_importedCard extends CardBaseFramework
             ->column(
                 'journal',
                 'Journal',
-                html: fn(array $row): string => '<span class="badge ' . HelperFramework::escape($this->transactionJournalStatusBadgeClass($row)) . '">'
-                    . HelperFramework::escape($this->transactionJournalStatusLabel($row))
-                    . '</span>'
+                html: function (array $row): string {
+                    $label = $this->transactionJournalStatusLabel($row);
+                    return $label === ''
+                        ? ''
+                        : '<span class="badge ' . HelperFramework::escape($this->transactionJournalStatusBadgeClass($row)) . '">' . HelperFramework::escape($label) . '</span>';
+                }
             )
             ->column(
                 'notes',
@@ -478,8 +488,76 @@ final class _transactions_importedCard extends CardBaseFramework
         return (string)($this->invalidationFacts()[0] ?? $this->key());
     }
 
-    private function descriptionHtml(array $transaction): string
+    private function transactionTableRows(array $transactions): array
     {
+        $rows = [];
+
+        foreach ($transactions as $transaction) {
+            if (!is_array($transaction)) {
+                continue;
+            }
+
+            $rows[] = $transaction;
+            if ((int)($transaction['has_transaction_split'] ?? 0) !== 1) {
+                continue;
+            }
+
+            foreach ((array)($transaction['transaction_split_lines'] ?? []) as $line) {
+                if (!is_array($line)) {
+                    continue;
+                }
+
+                $lineRow = $transaction;
+                $lineRow['_transaction_row_type'] = 'split_line';
+                $lineRow['transaction_split_line_id'] = (int)($line['id'] ?? 0);
+                $lineRow['split_line_number'] = (int)($line['line_number'] ?? 0);
+                $lineRow['split_line_description'] = (string)($line['description'] ?? '');
+                $lineRow['split_line_amount'] = (string)($line['amount'] ?? '');
+                $lineRow['split_line_nominal_account_id'] = (int)($line['nominal_account_id'] ?? 0);
+                $lineRow['split_line_notes'] = (string)($line['notes'] ?? '');
+                $lineRow['split_line_is_deferred'] = (int)($line['is_deferred'] ?? 0);
+                $lineRow['split_line_is_complete'] = (int)($line['is_complete'] ?? 0);
+                $lineRow['split_line_nominal_code'] = (string)($line['nominal_code'] ?? '');
+                $lineRow['split_line_nominal_name'] = (string)($line['nominal_name'] ?? '');
+                $rows[] = $lineRow;
+            }
+
+            $differenceRow = $transaction;
+            $differenceRow['_transaction_row_type'] = 'split_difference';
+            $rows[] = $differenceRow;
+        }
+
+        return $rows;
+    }
+
+    private function isSyntheticSplitRow(array $row): bool
+    {
+        return in_array($this->transactionRowType($row), ['split_line', 'split_difference'], true);
+    }
+
+    private function transactionRowType(array $row): string
+    {
+        return (string)($row['_transaction_row_type'] ?? 'transaction');
+    }
+
+    private function descriptionHtml(array $transaction, bool $isPeriodLocked = false): string
+    {
+        if ($this->transactionRowType($transaction) === 'split_difference') {
+            return '';
+        }
+
+        if ($this->transactionRowType($transaction) === 'split_line') {
+            $lineId = (int)($transaction['transaction_split_line_id'] ?? 0);
+            $formId = 'transaction-split-line-form-' . $lineId;
+            $description = (string)($transaction['split_line_description'] ?? '');
+            $disabled = $isPeriodLocked ? ' disabled title="Period locked"' : '';
+            $autosave = $isPeriodLocked
+                ? ''
+                : ' form="' . HelperFramework::escape($formId) . '" data-initial-value="' . HelperFramework::escape($description) . '" data-autosave-submit-target=".js-transaction-split-line-autosave-submit"';
+
+            return '<input class="input transaction-split-line-input" type="text" name="split_line_description" value="' . HelperFramework::escape($description) . '" aria-label="Split line description"' . $autosave . $disabled . '>';
+        }
+
         $helperLines = [];
         $reference = trim((string)($transaction['reference'] ?? ''));
         if ($reference !== '') {
@@ -495,6 +573,33 @@ final class _transactions_importedCard extends CardBaseFramework
         $helperHtml = $helperLines !== [] ? '<div class="helper">' . implode('<br>', $helperLines) . '</div>' : '';
 
         return '<div>' . HelperFramework::escape((string)($transaction['description'] ?? '')) . '</div>' . $helperHtml;
+    }
+
+    private function amountHtml(array $transaction, array $settings, bool $isPeriodLocked): string
+    {
+        $rowType = $this->transactionRowType($transaction);
+        if ($rowType === 'split_difference') {
+            $difference = (string)($transaction['transaction_split_difference'] ?? '0.00');
+            $badgeClass = abs((float)$difference) < 0.005 ? 'success' : 'warning';
+
+            return '<span class="badge ' . HelperFramework::escape($badgeClass) . ' transaction-split-difference">Difference: '
+                . (new \eel_accounts\Service\CompanySettingsService())->moneyHtml($settings, $difference)
+                . '</span>';
+        }
+
+        if ($rowType === 'split_line') {
+            $lineId = (int)($transaction['transaction_split_line_id'] ?? 0);
+            $formId = 'transaction-split-line-form-' . $lineId;
+            $amount = (string)($transaction['split_line_amount'] ?? '');
+            $disabled = $isPeriodLocked ? ' disabled title="Period locked"' : '';
+            $autosave = $isPeriodLocked
+                ? ''
+                : ' form="' . HelperFramework::escape($formId) . '" data-initial-value="' . HelperFramework::escape($amount) . '" data-autosave-submit-target=".js-transaction-split-line-autosave-submit"';
+
+            return '<input class="input transaction-split-line-amount" type="number" min="0.01" step="0.01" name="split_line_amount" value="' . HelperFramework::escape($amount) . '" aria-label="Split line amount"' . $autosave . $disabled . '>';
+        }
+
+        return (new \eel_accounts\Service\CompanySettingsService())->moneyHtml($settings, $transaction['amount'] ?? null);
     }
 
     private function sourceHtml(array $transaction): string
@@ -546,6 +651,31 @@ final class _transactions_importedCard extends CardBaseFramework
     ): string
     {
         $transactionFormId = 'transaction-form-' . (int)($transaction['id'] ?? 0);
+        $rowType = $this->transactionRowType($transaction);
+
+        if ($rowType === 'split_difference') {
+            return '';
+        }
+
+        if ($rowType === 'split_line') {
+            return $this->splitLineCategorisationHtml($transaction, $nominalAccounts, $isPeriodLocked);
+        }
+
+        if ((int)($transaction['has_transaction_split'] ?? 0) === 1) {
+            if ($isPeriodLocked) {
+                return $this->readonlyCategorisationHtml($transaction, $nominalAccounts, $activeTransferCompanyAccounts);
+            }
+
+            $mergeConfirmAttributes = (int)($transaction['has_derived_journal'] ?? 0) === 1
+                ? ' data-chicken-check="true" data-chicken-title="Confirm journal rebuild" data-chicken-message="This will remove the split journal for this transaction.<br><br>Continue?" data-chicken-confirm-text="Continue" data-chicken-button-class="button primary" data-submit-field="confirm_rebuild_journal" data-submit-value="1"'
+                : '';
+
+            return '<div class="actions-row transaction-split-parent-actions">
+                    <button class="button" type="submit" form="' . HelperFramework::escape($transactionFormId) . '" name="global_action" value="merge_transaction_split"' . $mergeConfirmAttributes . '>Merge</button>
+                    <button class="button" type="submit" form="' . HelperFramework::escape($transactionFormId) . '" name="global_action" value="add_transaction_split_line">Add Split</button>
+                </div>';
+        }
+
         $isTransferRow = $this->transactionIsTransferMode($transaction);
 
         if ($isPeriodLocked) {
@@ -570,6 +700,29 @@ final class _transactions_importedCard extends CardBaseFramework
         }
 
         $selectedNominalAccountId = (string)($transaction['nominal_account_id'] ?? '');
+        $nominalOptions = $this->nominalSelectOptions($nominalAccounts, $selectedNominalAccountId);
+
+        return '<div class="transaction-categorisation-control">
+                <select class="select js-transaction-nominal" name="nominal_account_id" form="' . HelperFramework::escape($transactionFormId) . '" data-autosave-submit-target=".js-transaction-autosave-submit" data-autosave-require-value="1">' . $nominalOptions . '</select>
+                <button class="button" type="submit" form="' . HelperFramework::escape($transactionFormId) . '" name="global_action" value="start_transaction_split">Split</button>
+            </div>';
+    }
+
+    private function splitLineCategorisationHtml(array $transaction, array $nominalAccounts, bool $isPeriodLocked): string
+    {
+        $lineId = (int)($transaction['transaction_split_line_id'] ?? 0);
+        $formId = 'transaction-split-line-form-' . $lineId;
+        $selectedNominalAccountId = (string)($transaction['split_line_nominal_account_id'] ?? '');
+
+        if ($isPeriodLocked) {
+            return '<div>' . HelperFramework::escape($this->splitLineNominalLabel($transaction, $nominalAccounts)) . '</div>';
+        }
+
+        return '<select class="select transaction-split-line-nominal" name="nominal_account_id" form="' . HelperFramework::escape($formId) . '" data-autosave-submit-target=".js-transaction-split-line-autosave-submit" data-autosave-require-value="1">' . $this->nominalSelectOptions($nominalAccounts, $selectedNominalAccountId) . '</select>';
+    }
+
+    private function nominalSelectOptions(array $nominalAccounts, string $selectedNominalAccountId): string
+    {
         $nominalOptions = '<option value="">Unassigned</option>';
         foreach ($nominalAccounts as $nominal) {
             if (!is_array($nominal)) {
@@ -578,13 +731,23 @@ final class _transactions_importedCard extends CardBaseFramework
             $nominalOptions .= '<option value="' . (int)($nominal['id'] ?? 0) . '"' . ((string)($nominal['id'] ?? '') === $selectedNominalAccountId ? ' selected' : '') . '>' . HelperFramework::escape(FormattingFramework::nominalLabel($nominal)) . '</option>';
         }
 
-        return '<select class="select js-transaction-nominal" name="nominal_account_id" form="' . HelperFramework::escape($transactionFormId) . '" data-autosave-submit-target=".js-transaction-autosave-submit" data-autosave-require-value="1">' . $nominalOptions . '</select>';
+        return $nominalOptions;
     }
 
     private function flagsHtml(array $transaction): string
     {
+        if ($this->transactionRowType($transaction) === 'split_difference') {
+            return '';
+        }
+
         $flagsHtml = '<div class="document-stack">';
         if ((int)($transaction['is_auto_excluded'] ?? 0) === 1) {
+            $flagsHtml .= '<span class="badge warning">Deferred</span>';
+        }
+        if ((int)($transaction['has_transaction_split'] ?? 0) === 1 && $this->transactionRowType($transaction) === 'transaction') {
+            $flagsHtml .= '<span class="badge info">Split</span>';
+        }
+        if ($this->transactionRowType($transaction) === 'split_line' && (int)($transaction['split_line_is_deferred'] ?? 0) === 1) {
             $flagsHtml .= '<span class="badge warning">Deferred</span>';
         }
         if ($this->autoApprovalConfirmedCurrent($transaction)) {
@@ -602,6 +765,22 @@ final class _transactions_importedCard extends CardBaseFramework
 
     private function notesHtml(array $transaction, bool $isPeriodLocked): string
     {
+        if ($this->transactionRowType($transaction) === 'split_difference') {
+            return '';
+        }
+
+        if ($this->transactionRowType($transaction) === 'split_line') {
+            $lineId = (int)($transaction['transaction_split_line_id'] ?? 0);
+            $notes = (string)($transaction['split_line_notes'] ?? '');
+            $formId = 'transaction-split-line-form-' . $lineId;
+            $disabled = $isPeriodLocked ? ' disabled title="Period locked"' : '';
+            $autosaveAttributes = $isPeriodLocked
+                ? ''
+                : ' form="' . HelperFramework::escape($formId) . '" data-initial-value="' . HelperFramework::escape($notes) . '" data-autosave-submit-target=".js-transaction-split-line-autosave-submit"';
+
+            return '<input class="input transaction-note-input" type="text" name="split_line_notes" value="' . HelperFramework::escape($notes) . '" aria-label="Split line note"' . $autosaveAttributes . $disabled . '>';
+        }
+
         $transactionId = (int)($transaction['id'] ?? 0);
         $notes = (string)($transaction['notes'] ?? '');
         $formId = 'transaction-form-' . $transactionId;
@@ -621,6 +800,10 @@ final class _transactions_importedCard extends CardBaseFramework
         string $selectedTransactionFilter,
         bool $isPeriodLocked
     ): string {
+        if ($this->isSyntheticSplitRow($transaction)) {
+            return '<span class="helper">-</span>';
+        }
+
         if (!$this->isRuleBasedAutoTransaction($transaction)) {
             return '<span class="helper">-</span>';
         }
@@ -665,6 +848,10 @@ final class _transactions_importedCard extends CardBaseFramework
 
     private function autoApprovalExport(array $transaction): string
     {
+        if ($this->isSyntheticSplitRow($transaction)) {
+            return '-';
+        }
+
         if (!$this->isRuleBasedAutoTransaction($transaction)) {
             return '-';
         }
@@ -682,6 +869,14 @@ final class _transactions_importedCard extends CardBaseFramework
         bool $isPeriodLocked
     ): string
     {
+        $rowType = $this->transactionRowType($transaction);
+        if ($rowType === 'split_difference') {
+            return '';
+        }
+        if ($rowType === 'split_line') {
+            return $this->splitLineActionsHtml($transaction, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $isPeriodLocked);
+        }
+
         $transactionId = (int)($transaction['id'] ?? 0);
         $transactionFormId = 'transaction-form-' . $transactionId;
         $assetFormId = 'transaction-asset-form-' . $transactionId;
@@ -701,6 +896,20 @@ final class _transactions_importedCard extends CardBaseFramework
         $createRuleHtml = $isTransferRow ? '' : $this->createRuleButtonHtml($transaction, $isPeriodLocked);
         $directorLoanButtonHtml = $this->directorLoanButtonHtml($transaction, $settings, $isPeriodLocked, $journalRebuildAttributes);
         $dividendButtonHtml = $this->dividendButtonHtml($transaction, $dividendFormId, $settings, $isPeriodLocked);
+        $isSplitParent = (int)($transaction['has_transaction_split'] ?? 0) === 1;
+
+        if ($isSplitParent) {
+            return '<form method="post" action="?page=transactions" id="' . HelperFramework::escape($transactionFormId) . '" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
+                <input type="hidden" name="card_action" value="Transaction">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <input type="hidden" name="transaction_id" value="' . $transactionId . '">
+                <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
+                <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                <input type="hidden" name="confirm_rebuild_journal" value="0">
+            </form>';
+        }
 
         return '<form method="post" action="?page=assets&amp;show_card=asset_create" id="' . HelperFramework::escape($assetFormId) . '">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -734,6 +943,44 @@ final class _transactions_importedCard extends CardBaseFramework
                     ' . $dividendButtonHtml . '
                     <button class="button primary"' . $lockedButtonAttributes . ' name="global_action" value="defer_transaction"' . $journalRebuildAttributes . '>Defer</button>
                     <button class="button"' . $createAssetAttributes . '>Asset</button>
+                </div>
+            </form>';
+    }
+
+    private function splitLineActionsHtml(
+        array $transaction,
+        int $companyId,
+        int $accountingPeriodId,
+        string $selectedTransactionMonth,
+        string $selectedTransactionFilter,
+        bool $isPeriodLocked
+    ): string {
+        $transactionId = (int)($transaction['id'] ?? 0);
+        $lineId = (int)($transaction['transaction_split_line_id'] ?? 0);
+        $formId = 'transaction-split-line-form-' . $lineId;
+        $assetFormId = 'transaction-split-line-asset-form-' . $lineId;
+        $lockedButtonAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit"';
+        $assetButtonAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit" form="' . HelperFramework::escape($assetFormId) . '" formnovalidate';
+
+        return '<form method="post" action="?page=assets&amp;show_card=asset_create" id="' . HelperFramework::escape($assetFormId) . '">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <input type="hidden" name="transaction_split_line_id" value="' . $lineId . '">
+            </form>
+            <form method="post" action="?page=transactions" id="' . HelperFramework::escape($formId) . '" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
+                <input type="hidden" name="card_action" value="Transaction">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <input type="hidden" name="transaction_id" value="' . $transactionId . '">
+                <input type="hidden" name="transaction_split_line_id" value="' . $lineId . '">
+                <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
+                <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                <button class="js-transaction-split-line-autosave-submit" type="submit" name="global_action" value="save_transaction_split_line" hidden>Autosave split line</button>
+                <div class="actions-row">
+                    <button class="button primary"' . $lockedButtonAttributes . ' name="global_action" value="defer_transaction_split_line">Defer</button>
+                    <button class="button"' . $lockedButtonAttributes . ' name="global_action" value="remove_transaction_split_line">Remove</button>
+                    <button class="button"' . $assetButtonAttributes . '>Asset</button>
                 </div>
             </form>';
     }
@@ -846,6 +1093,14 @@ final class _transactions_importedCard extends CardBaseFramework
 
     private function readonlyCategorisationHtml(array $transaction, array $nominalAccounts, array $activeTransferCompanyAccounts): string
     {
+        if ($this->transactionRowType($transaction) === 'split_line') {
+            return '<div>' . HelperFramework::escape($this->splitLineNominalLabel($transaction, $nominalAccounts)) . '</div>';
+        }
+
+        if ((int)($transaction['has_transaction_split'] ?? 0) === 1) {
+            return '<div class="helper">Split</div><div>' . count((array)($transaction['transaction_split_lines'] ?? [])) . ' line(s)</div>';
+        }
+
         if ($this->transactionIsTransferMode($transaction)) {
             $transferDirectionLabel = (float)($transaction['amount'] ?? 0) < 0 ? 'Transfer to:' : 'Transfer from:';
 
@@ -854,6 +1109,24 @@ final class _transactions_importedCard extends CardBaseFramework
         }
 
         return '<div>' . HelperFramework::escape($this->nominalAccountLabel($transaction, $nominalAccounts)) . '</div>';
+    }
+
+    private function splitLineNominalLabel(array $transaction, array $nominalAccounts): string
+    {
+        $nominalAccountId = (int)($transaction['split_line_nominal_account_id'] ?? 0);
+        foreach ($nominalAccounts as $nominal) {
+            if (is_array($nominal) && (int)($nominal['id'] ?? 0) === $nominalAccountId) {
+                return FormattingFramework::nominalLabel($nominal);
+            }
+        }
+
+        $code = trim((string)($transaction['split_line_nominal_code'] ?? ''));
+        $name = trim((string)($transaction['split_line_nominal_name'] ?? ''));
+        if ($code !== '' || $name !== '') {
+            return trim($code . ' ' . $name);
+        }
+
+        return 'Unassigned';
     }
 
     private function nominalAccountLabel(array $transaction, array $nominalAccounts): string
@@ -932,6 +1205,8 @@ final class _transactions_importedCard extends CardBaseFramework
 
             if ((int)($row['has_derived_journal'] ?? 0) === 1) {
                 $summary['posted']++;
+            } elseif ((int)($row['has_transaction_split'] ?? 0) === 1 && (int)($row['transaction_split_ready'] ?? 0) === 1) {
+                $summary['ready_to_post']++;
             } elseif ($this->transactionIsTransferMode($row) && $this->transactionHasTransferAssignment($row)) {
                 $summary['ready_to_post']++;
             } elseif (in_array($status, ['auto', 'manual'], true) && (int)($row['nominal_account_id'] ?? 0) > 0) {
@@ -1015,6 +1290,17 @@ final class _transactions_importedCard extends CardBaseFramework
 
     private function transactionCategorisationStatusBadgeClass(array $transaction): string
     {
+        if ($this->transactionRowType($transaction) === 'split_difference') {
+            return 'muted';
+        }
+        if ($this->transactionRowType($transaction) === 'split_line') {
+            if ((int)($transaction['split_line_is_deferred'] ?? 0) === 1) {
+                return 'warning';
+            }
+
+            return (int)($transaction['split_line_is_complete'] ?? 0) === 1 ? 'success' : 'warning';
+        }
+
         $status = strtolower(trim((string)($transaction['category_status'] ?? 'uncategorised')));
         return match ($status) {
             'auto' => 'info',
@@ -1025,6 +1311,17 @@ final class _transactions_importedCard extends CardBaseFramework
 
     private function transactionCategorisationStatusLabel(array $transaction): string
     {
+        if ($this->transactionRowType($transaction) === 'split_difference') {
+            return '';
+        }
+        if ($this->transactionRowType($transaction) === 'split_line') {
+            if ((int)($transaction['split_line_is_deferred'] ?? 0) === 1) {
+                return 'Deferred';
+            }
+
+            return (int)($transaction['split_line_is_complete'] ?? 0) === 1 ? 'Ready' : 'Not ready';
+        }
+
         $status = strtolower(trim((string)($transaction['category_status'] ?? 'uncategorised')));
         if ($this->transactionIsTransferMode($transaction)) {
             return $this->transactionHasTransferAssignment($transaction) ? 'Transfer assigned' : 'Transfer pending';
@@ -1039,8 +1336,19 @@ final class _transactions_importedCard extends CardBaseFramework
 
     private function transactionJournalStatusBadgeClass(array $transaction): string
     {
+        if ($this->transactionRowType($transaction) === 'split_difference') {
+            return 'muted';
+        }
+        if ($this->transactionRowType($transaction) === 'split_line') {
+            return (int)($transaction['transaction_split_ready'] ?? 0) === 1 ? 'info' : 'muted';
+        }
+
         if ((int)($transaction['has_derived_journal'] ?? 0) === 1) {
             return 'success';
+        }
+
+        if ((int)($transaction['has_transaction_split'] ?? 0) === 1) {
+            return (int)($transaction['transaction_split_ready'] ?? 0) === 1 ? 'info' : 'muted';
         }
 
         if ($this->transactionIsTransferMode($transaction) && $this->transactionHasTransferAssignment($transaction)) {
@@ -1056,8 +1364,19 @@ final class _transactions_importedCard extends CardBaseFramework
 
     private function transactionJournalStatusLabel(array $transaction): string
     {
+        if ($this->transactionRowType($transaction) === 'split_difference') {
+            return '';
+        }
+        if ($this->transactionRowType($transaction) === 'split_line') {
+            return (int)($transaction['transaction_split_ready'] ?? 0) === 1 ? 'Ready to post' : 'Not ready';
+        }
+
         if ((int)($transaction['has_derived_journal'] ?? 0) === 1) {
             return 'Posted';
+        }
+
+        if ((int)($transaction['has_transaction_split'] ?? 0) === 1) {
+            return (int)($transaction['transaction_split_ready'] ?? 0) === 1 ? 'Ready to post' : 'Not ready';
         }
 
         if ($this->transactionIsTransferMode($transaction) && $this->transactionHasTransferAssignment($transaction)) {

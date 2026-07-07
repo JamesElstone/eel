@@ -24,6 +24,7 @@ $harness->run(_asset_createCard::class, static function (GeneratedServiceClassTe
         $harness->assertSame(':company.accounting_period_id', $params['accountingPeriodId'] ?? null);
         $harness->assertSame(':company.settings.default_bank_nominal_id', $params['defaultBankNominalId'] ?? null);
         $harness->assertSame(':prefill_transaction_id', $params['prefillTransactionId'] ?? null);
+        $harness->assertSame(':prefill_transaction_split_line_id', $params['prefillTransactionSplitLineId'] ?? null);
 
         $harness->assertSame('nominal_accounts', $nominalAccountsService['key'] ?? null);
         $harness->assertSame(\eel_accounts\Repository\NominalAccountRepository::class, $nominalAccountsService['service'] ?? null);
@@ -171,5 +172,34 @@ $harness->run(_asset_createCard::class, static function (GeneratedServiceClassTe
         $harness->assertSame(false, str_contains($html, 'name="manual_asset_evidence"'));
         $harness->assertSame(false, str_contains($html, 'data-manual-asset-legal-check="true"'));
         $harness->assertSame(false, str_contains($html, 'Funding / clearing nominal'));
+    });
+
+    $harness->check(_asset_createCard::class, 'split-line prefilled creation posts through split-line action', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => [
+                'id' => 7,
+                'accounting_period_id' => 22,
+            ],
+            'services' => [
+                'assetPageData' => [
+                    'default_bank_nominal_id' => 42,
+                    'prefill_transaction' => [
+                        'transaction_id' => 91,
+                        'transaction_split_line_id' => 9001,
+                        'description' => 'AMZNMKTPLACE tool item',
+                        'purchase_date' => '2023-10-30',
+                        'cost' => '89.99',
+                    ],
+                ],
+                'nominal_accounts' => [],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, 'name="global_action" value="create_asset_from_transaction_split_line"'));
+        $harness->assertTrue(str_contains($html, 'name="transaction_id" value="91"'));
+        $harness->assertTrue(str_contains($html, 'name="transaction_split_line_id" value="9001"'));
+        $harness->assertTrue(str_contains($html, 'value="AMZNMKTPLACE tool item"'));
+        $harness->assertTrue(str_contains($html, 'name="cost" value="89.99"'));
+        $harness->assertSame(false, str_contains($html, 'name="manual_addition_reason"'));
     });
 });

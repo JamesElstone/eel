@@ -37,6 +37,12 @@ final class AssetAction implements ActionInterfaceFramework
                     $request->postValues(),
                     (int)$request->input('default_bank_nominal_id', 0)
                 ),
+                'create_asset_from_transaction_split_line' => $service->createAssetFromTransactionSplitLine(
+                    $companyId,
+                    (int)$request->input('transaction_split_line_id', 0),
+                    $request->postValues(),
+                    (int)$request->input('default_bank_nominal_id', 0)
+                ),
                 'convert_non_asset_to_asset' => $service->convertNonAssetToAsset(
                     $companyId,
                     (string)$request->input('source_type', ''),

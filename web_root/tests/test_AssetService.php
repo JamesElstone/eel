@@ -427,6 +427,78 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame($transactionId, (int)($asset['linked_transaction_id'] ?? 0));
         });
 
+        $harness->check(\eel_accounts\Service\AssetService::class, 'split-line asset prefill and creation link exact split line', static function () use ($harness, $service): void {
+            assetServiceTestRequireDisposalSchema($harness);
+            foreach (['transaction_splits', 'transaction_split_lines'] as $table) {
+                if (!InterfaceDB::tableExists($table)) {
+                    $harness->skip($table . ' table is not available.');
+                }
+            }
+            if (!InterfaceDB::columnExists('asset_register', 'linked_transaction_split_line_id')) {
+                $harness->skip('asset_register.linked_transaction_split_line_id column is not available.');
+            }
+
+            $fixture = assetServiceTestCreateDisposalFixture('split-line-asset');
+            $transactionId = assetServiceTestInsertTransaction($fixture, 1, '2026-07-03', -146.36, 'AMZNMKTPLACE');
+            $toolNominalId = assetServiceTestNominalId('1300');
+            $materialsNominalId = assetServiceTestEnsureNominalId('5000', 'Fixture Materials', 'cost_of_sales', 'allowable');
+            $splitService = new \eel_accounts\Service\TransactionSplitService();
+            $splitService->startSplit($fixture['company_id'], $transactionId);
+            $split = (array)$splitService->fetchSplitForTransaction($transactionId);
+            $lines = array_values((array)($split['lines'] ?? []));
+            $toolLineId = (int)$lines[0]['id'];
+            $materialsLineId = (int)$lines[1]['id'];
+
+            $splitService->saveLine($fixture['company_id'], $toolLineId, [
+                'split_line_description' => 'AMZNMKTPLACE tool item',
+                'split_line_amount' => '89.99',
+                'nominal_account_id' => $toolNominalId,
+            ]);
+            $splitService->saveLine($fixture['company_id'], $materialsLineId, [
+                'split_line_description' => 'AMZNMKTPLACE materials',
+                'split_line_amount' => '56.37',
+                'nominal_account_id' => $materialsNominalId,
+            ]);
+
+            $createData = $service->fetchCreateData($fixture['company_id'], $fixture['accounting_period_id'], $fixture['bank_nominal_id'], 0, $toolLineId);
+            $prefill = (array)($createData['prefill_transaction'] ?? []);
+            $harness->assertSame($toolLineId, (int)($prefill['transaction_split_line_id'] ?? 0));
+            $harness->assertSame('89.99', (string)($prefill['cost'] ?? ''));
+
+            $result = $service->createAssetFromTransactionSplitLine(
+                $fixture['company_id'],
+                $toolLineId,
+                [
+                    'description' => 'AMZNMKTPLACE tool item',
+                    'category' => 'tools_equipment',
+                    'purchase_date' => '2026-07-03',
+                    'cost' => '89.99',
+                    'useful_life_years' => '3',
+                    'depreciation_method' => 'straight_line',
+                    'residual_value' => '0.00',
+                ],
+                $fixture['bank_nominal_id']
+            );
+
+            $harness->assertSame(true, (bool)($result['success'] ?? false));
+            $asset = InterfaceDB::fetchOne(
+                'SELECT linked_transaction_id, linked_transaction_split_line_id, cost, nominal_account_id
+                 FROM asset_register
+                 WHERE id = :id',
+                ['id' => (int)($result['asset']['id'] ?? 0)]
+            );
+            $journalId = assetServiceTestJournalId($fixture['company_id'], 'bank_csv', 'transaction:' . $transactionId);
+
+            $harness->assertSame($transactionId, (int)($asset['linked_transaction_id'] ?? 0));
+            $harness->assertSame($toolLineId, (int)($asset['linked_transaction_split_line_id'] ?? 0));
+            $harness->assertSame('89.99', number_format((float)($asset['cost'] ?? 0), 2, '.', ''));
+            $harness->assertSame($toolNominalId, (int)($asset['nominal_account_id'] ?? 0));
+            $harness->assertTrue($journalId > 0);
+            $harness->assertSame(89.99, assetServiceTestJournalLineAmount($journalId, $toolNominalId, 'debit'));
+            $harness->assertSame(56.37, assetServiceTestJournalLineAmount($journalId, $materialsNominalId, 'debit'));
+            $harness->assertSame(146.36, assetServiceTestJournalLineAmount($journalId, $fixture['bank_nominal_id'], 'credit'));
+        });
+
         $harness->check(\eel_accounts\Service\AssetService::class, 'non-asset transaction conversion routes through transaction asset creation', static function () use ($harness, $service): void {
             assetServiceTestRequireDisposalSchema($harness);
             $fixture = assetServiceTestCreateDisposalFixture('non-asset-transaction');

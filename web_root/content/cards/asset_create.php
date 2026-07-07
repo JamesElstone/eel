@@ -26,6 +26,7 @@ final class _asset_createCard extends CardBaseFramework
                     'accountingPeriodId' => ':company.accounting_period_id',
                     'defaultBankNominalId' => ':company.settings.default_bank_nominal_id',
                     'prefillTransactionId' => ':prefill_transaction_id',
+                    'prefillTransactionSplitLineId' => ':prefill_transaction_split_line_id',
                 ],
             ],
             [
@@ -57,6 +58,10 @@ final class _asset_createCard extends CardBaseFramework
         $services = (array)($context['services'] ?? []);
         $nominalAccounts = (array)($services['nominal_accounts'] ?? $page['nominal_accounts'] ?? []);
         $prefillTransaction = is_array($assetsPageData['prefill_transaction'] ?? null) ? $assetsPageData['prefill_transaction'] : null;
+        $prefillTransactionSplitLineId = (int)($prefillTransaction['transaction_split_line_id'] ?? 0);
+        $prefillGlobalAction = $prefillTransaction === null
+            ? 'create_manual_asset'
+            : ($prefillTransactionSplitLineId > 0 ? 'create_asset_from_transaction_split_line' : 'create_asset_from_transaction');
         $assetCategories = is_array($assetsPageData['asset_categories'] ?? null)
             ? $assetsPageData['asset_categories']
             : \eel_accounts\Service\AssetService::assetCategoryOptions();
@@ -77,10 +82,11 @@ final class _asset_createCard extends CardBaseFramework
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">'
                 . ($prefillTransaction !== null
                     ? '<input type="hidden" name="transaction_id" value="' . (int)($prefillTransaction['transaction_id'] ?? 0) . '">'
+                        . ($prefillTransactionSplitLineId > 0 ? '<input type="hidden" name="transaction_split_line_id" value="' . $prefillTransactionSplitLineId . '">' : '')
                     : '') . '
                 <input type="hidden" name="card_action" value="Asset">
                 <input type="hidden" name="default_bank_nominal_id" value="' . (int)($assetsPageData['default_bank_nominal_id'] ?? 0) . '">
-                <input type="hidden" name="global_action" value="' . HelperFramework::escape($prefillTransaction !== null ? 'create_asset_from_transaction' : 'create_manual_asset') . '">
+                <input type="hidden" name="global_action" value="' . HelperFramework::escape($prefillGlobalAction) . '">
                 ' . ($isManualAsset ? '<input type="hidden" name="manual_asset_legal_acknowledged" value="0" data-manual-asset-legal-acknowledged>' : '') . '
                 <div class="asset-create-controls">
                     <div class="field">

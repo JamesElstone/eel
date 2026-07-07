@@ -14,12 +14,19 @@ $harness->run(_journals_listCard::class, static function (GeneratedServiceClassT
     $harness->check(_journals_listCard::class, 'declares journal entries as a card service', static function () use ($harness, $card): void {
         $services = $card->services();
 
-        $harness->assertTrue(count($services) === 1);
+        $harness->assertTrue(count($services) === 3);
         $harness->assertTrue(($services[0]['key'] ?? '') === 'journal_entries');
         $harness->assertTrue(($services[0]['service'] ?? '') === \eel_accounts\Service\TransactionJournalService::class);
         $harness->assertTrue(($services[0]['method'] ?? '') === 'fetchJournals');
         $harness->assertTrue(($services[0]['params']['companyId'] ?? '') === ':company.id');
         $harness->assertTrue(($services[0]['params']['accountingPeriodId'] ?? '') === ':company.accounting_period_id');
+        $harness->assertTrue(($services[0]['params']['filters'] ?? '') === ':journals_list');
+        $harness->assertTrue(($services[1]['key'] ?? '') === 'company_accounts');
+        $harness->assertTrue(($services[1]['service'] ?? '') === \eel_accounts\Service\CompanyAccountService::class);
+        $harness->assertTrue(($services[1]['method'] ?? '') === 'fetchAccounts');
+        $harness->assertTrue(($services[2]['key'] ?? '') === 'nominal_accounts');
+        $harness->assertTrue(($services[2]['service'] ?? '') === \eel_accounts\Repository\NominalAccountRepository::class);
+        $harness->assertTrue(($services[2]['method'] ?? '') === 'fetchNominalAccounts');
     });
 
     $harness->check(_journals_listCard::class, 'renders journals from service context and links to the source transaction', static function () use ($harness, $card): void {
@@ -33,7 +40,29 @@ $harness->run(_journals_listCard::class, static function (GeneratedServiceClassT
                 'page_cards' => ['journals_list'],
                 'journal_entries' => [],
             ],
+            'journals_list' => [
+                'keyword' => 'Materials',
+                'amount' => '123.45',
+                'side' => 'dr',
+                'source_account_id' => 7,
+                'nominal_account_ids' => [5000, 1200],
+            ],
             'services' => [
+                'company_accounts' => [[
+                    'id' => 7,
+                    'account_name' => 'Current Account',
+                    'institution_name' => 'Example Bank',
+                    'account_identifier' => '1234',
+                ]],
+                'nominal_accounts' => [[
+                    'id' => 5000,
+                    'code' => '5000',
+                    'name' => 'Purchases',
+                ], [
+                    'id' => 1200,
+                    'code' => '1200',
+                    'name' => 'Bank',
+                ]],
                 'journal_entries' => [
                     [
                         'journal_date' => '2026-02-14',
@@ -63,6 +92,14 @@ $harness->run(_journals_listCard::class, static function (GeneratedServiceClassT
             ],
         ]);
 
+        $harness->assertTrue(str_contains($html, 'name="journals_list_keyword" value="Materials"'));
+        $harness->assertTrue(str_contains($html, 'name="journals_list_amount" inputmode="decimal" value="123.45"'));
+        $harness->assertTrue(str_contains($html, '<option value="dr" selected>DR</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="7" selected>Current Account / Example Bank / 1234</option>'));
+        $harness->assertTrue(str_contains($html, 'name="journals_list_nominal_account_ids[]" multiple'));
+        $harness->assertTrue(str_contains($html, '<option value="5000" selected>5000 - Purchases</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="1200" selected>1200 - Bank</option>'));
+        $harness->assertTrue(str_contains($html, 'href="?page=journals&amp;show_card=journals_list"'));
         $harness->assertTrue(str_contains($html, 'Materials purchase'));
         $harness->assertTrue(str_contains($html, '<td>5000</td>'));
         $harness->assertTrue(str_contains($html, '<td>Purchases</td>'));
@@ -127,6 +164,35 @@ $harness->run(_journals_listCard::class, static function (GeneratedServiceClassT
         $harness->assertTrue(str_contains($export, '1200,Bank,123.45,'));
         $harness->assertTrue(str_contains($export, 'Posted'));
         $harness->assertTrue(!str_contains($export, 'Review Transaction'));
+    });
+
+    $harness->check(_journals_listCard::class, 'handle normalises journal search filters', static function () use ($harness, $card): void {
+        $request = new RequestFramework(
+            ['page' => 'journals'],
+            [
+                'journals_list_keyword' => ' Materials ',
+                'journals_list_amount' => "-\xC2\xA31000",
+                'journals_list_side' => 'cr',
+                'journals_list_source_account_id' => '7',
+                'journals_list_nominal_account_ids' => ['31', '32', '32', 'nope'],
+            ],
+            ['REQUEST_METHOD' => 'POST'],
+            [],
+            []
+        );
+        $services = new PageServiceFramework(new AppService(APP_ROOT . 'uploads'));
+        $handled = $card->handle($request, $services, [
+            'page' => [
+                'page_id' => 'journals',
+                'page_cards' => ['journals_list'],
+            ],
+        ], ActionResultFramework::none());
+
+        $harness->assertSame('Materials', (string)$handled['journals_list']['keyword']);
+        $harness->assertSame('1000.00', (string)$handled['journals_list']['amount']);
+        $harness->assertSame('cr', (string)$handled['journals_list']['side']);
+        $harness->assertSame(7, (int)$handled['journals_list']['source_account_id']);
+        $harness->assertSame([31, 32], $handled['journals_list']['nominal_account_ids']);
     });
 
     $harness->check(_journals_listCard::class, 'paginates journals at thirty rows', static function () use ($harness, $card): void {

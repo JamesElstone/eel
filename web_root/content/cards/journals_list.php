@@ -26,7 +26,22 @@ final class _journals_listCard extends CardBaseFramework
                 'params' => [
                     'companyId' => ':company.id',
                     'accountingPeriodId' => ':company.accounting_period_id',
+                    'filters' => ':journals_list',
                 ],
+            ],
+            [
+                'key' => 'company_accounts',
+                'service' => \eel_accounts\Service\CompanyAccountService::class,
+                'method' => 'fetchAccounts',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'activeOnly' => false,
+                ],
+            ],
+            [
+                'key' => 'nominal_accounts',
+                'service' => \eel_accounts\Repository\NominalAccountRepository::class,
+                'method' => 'fetchNominalAccounts',
             ],
         ];
     }
@@ -48,17 +63,27 @@ final class _journals_listCard extends CardBaseFramework
         ActionResultFramework $actionResult
     ): array {
         $pageContext = parent::handle($request, $services, $pageContext, $actionResult);
+        $pageContext = $this->applyTableSortContext($request, $pageContext, $this->key());
+        $pageContext[$this->key()] = array_merge(
+            (array)($pageContext[$this->key()] ?? []),
+            [
+                'keyword' => trim((string)$request->input('journals_list_keyword', '')),
+                'amount' => $this->normaliseAmount((string)$request->input('journals_list_amount', '')),
+                'side' => $this->normaliseSide((string)$request->input('journals_list_side', 'any')),
+                'source_account_id' => max(0, (int)$request->input('journals_list_source_account_id', 0)),
+                'nominal_account_ids' => $this->normaliseIds($request->input('journals_list_nominal_account_ids', [])),
+            ]
+        );
 
-        return $this->applyTableSortContext($request, $pageContext, $this->key());
+        return $pageContext;
     }
 
     public function render(array $context): string
     {
-        return $this->configuredTable($context)->render(
+        return $this->searchForm($context)
+            . $this->configuredTable($context)->render(
             $context,
-            [
-                'cards[]' => (array)($context['page']['page_cards'] ?? []),
-            ]
+            $this->tableHiddenFields($context)
         );
     }
 
@@ -94,8 +119,8 @@ final class _journals_listCard extends CardBaseFramework
 
         return TableFramework::make($this->key(), $this->journalLineRows($this->journalRows($context)))
             ->filename('journals-list')
-            ->exportLimit(1000)
-            ->empty('Posted transaction journals will appear here once transactions have been categorised and posted.')
+            ->exportLimit(5000)
+            ->empty($this->hasSearchCriteria($context) ? $this->noMatchesMessage() : 'Posted transaction journals will appear here once transactions have been categorised and posted.')
             ->column(
                 'journal_date',
                 'Date',
@@ -161,11 +186,117 @@ final class _journals_listCard extends CardBaseFramework
     private function tableHiddenFields(array $context): array
     {
         return [
-            'page' => (string)($context['page']['page_id'] ?? ''),
+            'page' => $this->pageId($context),
             '_pagination' => '1',
             '_invalidate_fact' => $this->tableInvalidationFact(),
             'cards[]' => [$this->key()],
+            'show_card' => $this->key(),
+            'journals_list_keyword' => $this->keyword($context),
+            'journals_list_amount' => $this->amount($context),
+            'journals_list_side' => $this->side($context),
+            'journals_list_source_account_id' => $this->sourceAccountId($context),
+            'journals_list_nominal_account_ids' => implode(',', $this->nominalAccountIds($context)),
         ];
+    }
+
+    private function searchForm(array $context): string
+    {
+        $pageId = $this->pageId($context);
+        $keyword = $this->keyword($context);
+        $amount = $this->amount($context);
+        $side = $this->side($context);
+        $sourceAccountId = $this->sourceAccountId($context);
+        $selectedNominalIds = $this->nominalAccountIds($context);
+
+        return '<form class="card-toolbar" method="post" action="?page=' . HelperFramework::escape(rawurlencode($pageId)) . '" data-ajax="true">
+            <input type="hidden" name="show_card" value=".self">
+            <input type="hidden" name="_pagination" value="1">
+            <input type="hidden" name="_invalidate_fact" value="' . HelperFramework::escape($this->tableInvalidationFact()) . '">
+            <input type="hidden" name="' . HelperFramework::escape($this->paginationPageField()) . '" value="1">
+            <div class="actions-row journal-search-controls">
+                <div class="mini-field">
+                    <label for="journals_list_keyword">Keyword</label>
+                    <input class="input" id="journals_list_keyword" name="journals_list_keyword" value="' . HelperFramework::escape($keyword) . '">
+                </div>
+                <div class="mini-field">
+                    <label for="journals_list_amount">Amount</label>
+                    <input class="input" id="journals_list_amount" name="journals_list_amount" inputmode="decimal" value="' . HelperFramework::escape($amount) . '">
+                </div>
+                <div class="mini-field">
+                    <label for="journals_list_side">Side</label>
+                    <select class="select" id="journals_list_side" name="journals_list_side">
+                        ' . $this->sideOptions($side) . '
+                    </select>
+                </div>
+                <div class="mini-field">
+                    <label for="journals_list_source_account_id">Source Account</label>
+                    <select class="select" id="journals_list_source_account_id" name="journals_list_source_account_id">
+                        ' . $this->sourceAccountOptions($context, $sourceAccountId) . '
+                    </select>
+                </div>
+                <div class="mini-field">
+                    <label for="journals_list_nominal_account_ids">Nominals</label>
+                    <select class="select" id="journals_list_nominal_account_ids" name="journals_list_nominal_account_ids[]" multiple size="6">
+                        ' . $this->nominalOptions($context, $selectedNominalIds) . '
+                    </select>
+                </div>
+                <button class="button primary" type="submit">Search</button>
+                <a class="button" href="?page=' . HelperFramework::escape(rawurlencode($pageId)) . '&amp;show_card=' . HelperFramework::escape($this->key()) . '">Clear</a>
+            </div>
+        </form>';
+    }
+
+    private function sideOptions(string $selectedSide): string
+    {
+        $options = [
+            'any' => 'Any',
+            'dr' => 'DR',
+            'cr' => 'CR',
+        ];
+        $html = '';
+
+        foreach ($options as $value => $label) {
+            $html .= '<option value="' . HelperFramework::escape($value) . '"' . ($value === $selectedSide ? ' selected' : '') . '>'
+                . HelperFramework::escape($label)
+                . '</option>';
+        }
+
+        return $html;
+    }
+
+    private function sourceAccountOptions(array $context, int $selectedAccountId): string
+    {
+        $html = '<option value="">Any</option>';
+        foreach ($this->companyAccounts($context) as $account) {
+            $id = (int)($account['id'] ?? 0);
+            if ($id <= 0) {
+                continue;
+            }
+
+            $html .= '<option value="' . $id . '"' . ($id === $selectedAccountId ? ' selected' : '') . '>'
+                . HelperFramework::escape($this->companyAccountLabel($account))
+                . '</option>';
+        }
+
+        return $html;
+    }
+
+    private function nominalOptions(array $context, array $selectedNominalIds): string
+    {
+        $selected = array_fill_keys($selectedNominalIds, true);
+        $html = '<option value="">Any</option>';
+        foreach ($this->nominalAccounts($context) as $nominal) {
+            $id = (int)($nominal['id'] ?? 0);
+            if ($id <= 0) {
+                continue;
+            }
+
+            $html .= '<option value="' . $id . '"' . (isset($selected[$id]) ? ' selected' : '') . '>'
+                . HelperFramework::escape(FormattingFramework::nominalLabel($nominal))
+                . '</option>';
+        }
+
+        return $html;
     }
 
     private function journalRows(array $context): array
@@ -174,6 +305,119 @@ final class _journals_listCard extends CardBaseFramework
             (array)($context['services']['journal_entries'] ?? []),
             static fn(mixed $row): bool => is_array($row)
         ));
+    }
+
+    private function companyAccounts(array $context): array
+    {
+        return array_values(array_filter(
+            (array)(($context['services'] ?? [])['company_accounts'] ?? []),
+            static fn(mixed $row): bool => is_array($row)
+        ));
+    }
+
+    private function nominalAccounts(array $context): array
+    {
+        return array_values(array_filter(
+            (array)(($context['services'] ?? [])['nominal_accounts'] ?? []),
+            static fn(mixed $row): bool => is_array($row)
+        ));
+    }
+
+    private function keyword(array $context): string
+    {
+        return trim((string)(($context[$this->key()] ?? [])['keyword'] ?? ''));
+    }
+
+    private function amount(array $context): string
+    {
+        return $this->normaliseAmount((string)(($context[$this->key()] ?? [])['amount'] ?? ''));
+    }
+
+    private function side(array $context): string
+    {
+        return $this->normaliseSide((string)(($context[$this->key()] ?? [])['side'] ?? 'any'));
+    }
+
+    private function sourceAccountId(array $context): int
+    {
+        return max(0, (int)(($context[$this->key()] ?? [])['source_account_id'] ?? 0));
+    }
+
+    private function nominalAccountIds(array $context): array
+    {
+        return $this->normaliseIds(($context[$this->key()] ?? [])['nominal_account_ids'] ?? []);
+    }
+
+    private function hasSearchCriteria(array $context): bool
+    {
+        return $this->keyword($context) !== ''
+            || $this->amount($context) !== ''
+            || $this->side($context) !== 'any'
+            || $this->sourceAccountId($context) > 0
+            || $this->nominalAccountIds($context) !== [];
+    }
+
+    private function noMatchesMessage(): string
+    {
+        return 'No journals match this search [' . (new DateTimeImmutable())->format('Y-m-d H:i:s') . '].';
+    }
+
+    private function normaliseAmount(string $value): string
+    {
+        $value = trim(str_replace("\xC2\xA3", '', $value));
+        if ($value === '' || preg_match('/^-?\d+(?:\.\d{1,2})?$/', $value) !== 1) {
+            return '';
+        }
+
+        $amount = abs(round((float)$value, 2));
+        if ($amount < 0.005) {
+            return '';
+        }
+
+        return number_format($amount, 2, '.', '');
+    }
+
+    private function normaliseSide(string $value): string
+    {
+        $value = strtolower(trim($value));
+
+        return in_array($value, ['dr', 'cr'], true) ? $value : 'any';
+    }
+
+    private function normaliseIds(mixed $values): array
+    {
+        if (is_string($values)) {
+            $values = preg_split('/[,\s]+/', $values) ?: [];
+        } elseif (!is_array($values)) {
+            $values = [$values];
+        }
+
+        $ids = [];
+        foreach ($values as $value) {
+            $id = (int)$value;
+            if ($id > 0) {
+                $ids[$id] = $id;
+            }
+        }
+
+        return array_values($ids);
+    }
+
+    private function companyAccountLabel(array $account): string
+    {
+        $name = trim((string)($account['account_name'] ?? ''));
+        $institution = trim((string)($account['institution_name'] ?? ''));
+        $identifier = trim((string)($account['account_identifier'] ?? ''));
+        $parts = array_values(array_filter([$name, $institution, $identifier], static fn(string $value): bool => $value !== ''));
+
+        return $parts !== [] ? implode(' / ', $parts) : 'Account #' . (int)($account['id'] ?? 0);
+    }
+
+    private function pageId(array $context): string
+    {
+        $pageId = trim((string)(($context['page'] ?? [])['page_id'] ?? 'journal'));
+
+        return $pageId !== '' ? $pageId : 'journal';
     }
 
     private function journalLineRows(array $journals): array

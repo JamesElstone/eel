@@ -2535,6 +2535,43 @@
   margin-top: calc(0.75rem * 1.5 + 6px);
 }
 
+.journal-search-controls {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.journal-search-controls .mini-field {
+  align-self: flex-start;
+  flex: 0 1 auto;
+  width: fit-content;
+}
+
+.journal-search-controls .mini-field .input,
+.journal-search-controls .mini-field .select {
+  width: auto;
+}
+
+.journal-search-controls #journals_list_keyword {
+  min-width: 18rem;
+}
+
+.journal-search-controls #journals_list_amount,
+.journal-search-controls #journals_list_side {
+  min-width: 8rem;
+}
+
+.journal-search-controls #journals_list_source_account_id,
+.journal-search-controls #journals_list_nominal_account_ids {
+  min-width: 14rem;
+}
+
+.journal-search-controls > .button {
+  align-self: flex-start;
+  flex: 0 0 auto;
+  margin-top: calc(0.75rem * 1.5 + 6px);
+  white-space: nowrap;
+}
+
 .expense-search-controls {
   align-items: flex-start;
   flex-wrap: wrap;
@@ -2822,12 +2859,20 @@
   }
 
   .expense-search-controls .mini-field,
+  .journal-search-controls .mini-field,
   .expense-search-controls .mini-field .input,
+  .journal-search-controls .mini-field .input,
+  .journal-search-controls .mini-field .select,
   .expense-search-controls .mini-field .select {
     width: 100%;
   }
 
   .expense-search-controls #expense_search_keyword,
+  .journal-search-controls #journals_list_keyword,
+  .journal-search-controls #journals_list_amount,
+  .journal-search-controls #journals_list_side,
+  .journal-search-controls #journals_list_source_account_id,
+  .journal-search-controls #journals_list_nominal_account_ids,
   .expense-search-controls #expense_search_amount,
   .expense-search-controls #expense_search_period,
   .expense-search-controls #expense_search_claimant_id,

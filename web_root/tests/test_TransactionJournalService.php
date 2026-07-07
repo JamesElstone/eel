@@ -121,6 +121,53 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             }
         }
     });
+
+    $harness->check(\eel_accounts\Service\TransactionJournalService::class, 'fetches filtered journals by nominal amount side source account and keyword', static function () use ($harness, $service): void {
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = transactionJournalSearchTestCreateFixture();
+
+            $nominalMatches = $service->fetchJournals($fixture['company_id'], $fixture['accounting_period_id'], 200, [
+                'nominal_account_ids' => [$fixture['software_nominal_id']],
+            ]);
+            $harness->assertSame(1, count($nominalMatches));
+            $harness->assertSame('Office software annual plan', (string)$nominalMatches[0]['description']);
+            $harness->assertSame(2, count((array)$nominalMatches[0]['lines']));
+
+            $debitMatches = $service->fetchJournals($fixture['company_id'], $fixture['accounting_period_id'], 200, [
+                'nominal_account_ids' => [$fixture['software_nominal_id']],
+                'amount' => '-120',
+                'side' => 'dr',
+            ]);
+            $harness->assertSame(1, count($debitMatches));
+            $harness->assertSame($fixture['software_journal_id'], (int)$debitMatches[0]['id']);
+
+            $sourceAndNominalMatches = $service->fetchJournals($fixture['company_id'], $fixture['accounting_period_id'], 200, [
+                'source_account_id' => $fixture['account_id'],
+                'nominal_account_ids' => [$fixture['materials_nominal_id']],
+            ]);
+            $harness->assertSame(1, count($sourceAndNominalMatches));
+            $harness->assertSame($fixture['materials_journal_id'], (int)$sourceAndNominalMatches[0]['id']);
+
+            $creditMatches = $service->fetchJournals($fixture['company_id'], $fixture['accounting_period_id'], 200, [
+                'amount' => '80.00',
+                'side' => 'cr',
+                'source_account_id' => $fixture['account_id'],
+            ]);
+            $harness->assertSame(1, count($creditMatches));
+            $harness->assertSame($fixture['materials_journal_id'], (int)$creditMatches[0]['id']);
+
+            $keywordMatches = $service->fetchJournals($fixture['company_id'], $fixture['accounting_period_id'], 200, [
+                'keyword' => 'Copper',
+            ]);
+            $harness->assertSame(1, count($keywordMatches));
+            $harness->assertSame($fixture['materials_journal_id'], (int)$keywordMatches[0]['id']);
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
 });
 
 function transactionJournalSplitTestCreateFixture(): array
@@ -271,4 +318,141 @@ function transactionJournalSplitTestInsertNominal(string $code, string $name, st
     );
 
     return $id;
+}
+
+function transactionJournalSearchTestCreateFixture(): array
+{
+    $marker = (string)random_int(100000, 999999);
+    $companyId = (int)('51' . $marker);
+    $accountingPeriodId = (int)('52' . $marker);
+    $accountId = (int)('53' . $marker);
+    $bankNominalId = transactionJournalSplitTestInsertNominal('TJSB' . substr($marker, 0, 4), 'Journal Search Bank ' . $marker, 'asset', 'other');
+    $softwareNominalId = transactionJournalSplitTestInsertNominal('TJSS' . substr($marker, 0, 4), 'Journal Search Software ' . $marker, 'expense', 'allowable');
+    $materialsNominalId = transactionJournalSplitTestInsertNominal('TJSM' . substr($marker, 0, 4), 'Journal Search Materials ' . $marker, 'cost_of_sales', 'allowable');
+
+    InterfaceDB::prepareExecute(
+        'INSERT INTO companies (id, company_name, company_number, is_active)
+         VALUES (:id, :company_name, :company_number, 1)',
+        [
+            'id' => $companyId,
+            'company_name' => 'Journal Search Fixture ' . $marker,
+            'company_number' => 'JQ' . substr($marker, 0, 6),
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end)
+         VALUES (:id, :company_id, :label, :period_start, :period_end)',
+        [
+            'id' => $accountingPeriodId,
+            'company_id' => $companyId,
+            'label' => 'Journal Search FY ' . $marker,
+            'period_start' => '2023-01-01',
+            'period_end' => '2023-12-31',
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO company_accounts (id, company_id, account_name, account_type, nominal_account_id, is_active)
+         VALUES (:id, :company_id, :account_name, :account_type, :nominal_account_id, 1)',
+        [
+            'id' => $accountId,
+            'company_id' => $companyId,
+            'account_name' => 'Journal Search Current Account',
+            'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
+            'nominal_account_id' => $bankNominalId,
+        ]
+    );
+
+    $softwareJournalId = transactionJournalSearchTestInsertJournal($companyId, $accountingPeriodId, 'search:software:' . $marker, '2023-02-01', 'Office software annual plan', [
+        [
+            'nominal_account_id' => $softwareNominalId,
+            'debit' => '120.00',
+            'credit' => '0.00',
+            'line_description' => 'SaaS annual plan',
+        ],
+        [
+            'nominal_account_id' => $bankNominalId,
+            'company_account_id' => $accountId,
+            'debit' => '0.00',
+            'credit' => '120.00',
+            'line_description' => 'Example Bank settlement',
+        ],
+    ]);
+    $materialsJournalId = transactionJournalSearchTestInsertJournal($companyId, $accountingPeriodId, 'search:materials:' . $marker, '2023-03-01', 'Materials purchase', [
+        [
+            'nominal_account_id' => $materialsNominalId,
+            'debit' => '80.00',
+            'credit' => '0.00',
+            'line_description' => 'Copper pipe',
+        ],
+        [
+            'nominal_account_id' => $bankNominalId,
+            'company_account_id' => $accountId,
+            'debit' => '0.00',
+            'credit' => '80.00',
+            'line_description' => 'Bank settlement',
+        ],
+    ]);
+
+    return [
+        'company_id' => $companyId,
+        'accounting_period_id' => $accountingPeriodId,
+        'account_id' => $accountId,
+        'bank_nominal_id' => $bankNominalId,
+        'software_nominal_id' => $softwareNominalId,
+        'materials_nominal_id' => $materialsNominalId,
+        'software_journal_id' => $softwareJournalId,
+        'materials_journal_id' => $materialsJournalId,
+    ];
+}
+
+function transactionJournalSearchTestInsertJournal(
+    int $companyId,
+    int $accountingPeriodId,
+    string $sourceRef,
+    string $journalDate,
+    string $description,
+    array $lines
+): int {
+    InterfaceDB::prepareExecute(
+        'INSERT INTO journals (company_id, accounting_period_id, source_type, source_ref, journal_date, description, is_posted)
+         VALUES (:company_id, :accounting_period_id, :source_type, :source_ref, :journal_date, :description, 1)',
+        [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'source_type' => 'manual',
+            'source_ref' => $sourceRef,
+            'journal_date' => $journalDate,
+            'description' => $description,
+        ]
+    );
+    $journalId = (int)InterfaceDB::fetchColumn(
+        'SELECT id
+         FROM journals
+         WHERE company_id = :company_id
+           AND source_type = :source_type
+           AND source_ref = :source_ref
+         LIMIT 1',
+        [
+            'company_id' => $companyId,
+            'source_type' => 'manual',
+            'source_ref' => $sourceRef,
+        ]
+    );
+
+    foreach ($lines as $line) {
+        InterfaceDB::prepareExecute(
+            'INSERT INTO journal_lines (journal_id, nominal_account_id, company_account_id, debit, credit, line_description)
+             VALUES (:journal_id, :nominal_account_id, :company_account_id, :debit, :credit, :line_description)',
+            [
+                'journal_id' => $journalId,
+                'nominal_account_id' => (int)($line['nominal_account_id'] ?? 0),
+                'company_account_id' => isset($line['company_account_id']) && (int)$line['company_account_id'] > 0 ? (int)$line['company_account_id'] : null,
+                'debit' => (string)($line['debit'] ?? '0.00'),
+                'credit' => (string)($line['credit'] ?? '0.00'),
+                'line_description' => (string)($line['line_description'] ?? ''),
+            ]
+        );
+    }
+
+    return $journalId;
 }

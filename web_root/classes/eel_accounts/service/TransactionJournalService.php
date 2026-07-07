@@ -207,12 +207,96 @@ final class TransactionJournalService
         ]) > 0;
     }
 
-    public function fetchJournals(int $companyId, int $accountingPeriodId, int $limit = 200): array {
+    public function fetchJournals(int $companyId, int $accountingPeriodId, int $limit = 200, array $filters = []): array {
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return [];
         }
 
-        $limit = max(1, min($limit, 500));
+        $filters = $this->normaliseJournalFilters($filters);
+        $hasFilters = $this->hasJournalFilters($filters);
+        if ($hasFilters && $limit === 200) {
+            $limit = 5000;
+        }
+        $limit = max(1, min($limit, $hasFilters ? 5000 : 500));
+        $where = [
+            'j.company_id = :company_id',
+            'j.accounting_period_id = :accounting_period_id',
+        ];
+        $params = [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+        ];
+
+        if ($filters['keyword'] !== '') {
+            $where[] = "(j.description LIKE :keyword ESCAPE '\\\\'
+                OR COALESCE(j.source_ref, '') LIKE :keyword ESCAPE '\\\\'
+                OR EXISTS (
+                    SELECT 1
+                    FROM journal_lines keyword_jl
+                    LEFT JOIN nominal_accounts keyword_na ON keyword_na.id = keyword_jl.nominal_account_id
+                    LEFT JOIN company_accounts keyword_ca ON keyword_ca.id = keyword_jl.company_account_id
+                    WHERE keyword_jl.journal_id = j.id
+                      AND (
+                          COALESCE(keyword_jl.line_description, '') LIKE :keyword ESCAPE '\\\\'
+                          OR COALESCE(keyword_na.code, '') LIKE :keyword ESCAPE '\\\\'
+                          OR COALESCE(keyword_na.name, '') LIKE :keyword ESCAPE '\\\\'
+                          OR COALESCE(keyword_ca.account_name, '') LIKE :keyword ESCAPE '\\\\'
+                      )
+                ))";
+            $params['keyword'] = '%' . $this->escapeLike((string)$filters['keyword']) . '%';
+        }
+
+        if ((int)$filters['source_account_id'] > 0) {
+            $where[] = 'EXISTS (
+                SELECT 1
+                FROM journal_lines source_jl
+                WHERE source_jl.journal_id = j.id
+                  AND source_jl.company_account_id = :source_account_id
+            )';
+            $params['source_account_id'] = (int)$filters['source_account_id'];
+        }
+
+        $lineWhere = ['filter_jl.journal_id = j.id'];
+        $hasLineFilter = false;
+        if ($filters['nominal_account_ids'] !== []) {
+            $placeholders = [];
+            foreach ($filters['nominal_account_ids'] as $index => $nominalAccountId) {
+                $key = 'filter_nominal_account_id_' . $index;
+                $placeholders[] = ':' . $key;
+                $params[$key] = $nominalAccountId;
+            }
+
+            $lineWhere[] = 'filter_jl.nominal_account_id IN (' . implode(', ', $placeholders) . ')';
+            $hasLineFilter = true;
+        }
+
+        if ($filters['amount'] !== '') {
+            if ($filters['side'] === 'dr') {
+                $lineWhere[] = 'filter_jl.debit = :filter_amount';
+            } elseif ($filters['side'] === 'cr') {
+                $lineWhere[] = 'filter_jl.credit = :filter_amount';
+            } else {
+                $lineWhere[] = '(filter_jl.debit = :filter_amount OR filter_jl.credit = :filter_amount)';
+            }
+
+            $params['filter_amount'] = (string)$filters['amount'];
+            $hasLineFilter = true;
+        } elseif ($filters['side'] === 'dr') {
+            $lineWhere[] = 'filter_jl.debit > 0';
+            $hasLineFilter = true;
+        } elseif ($filters['side'] === 'cr') {
+            $lineWhere[] = 'filter_jl.credit > 0';
+            $hasLineFilter = true;
+        }
+
+        if ($hasLineFilter) {
+            $where[] = 'EXISTS (
+                SELECT 1
+                FROM journal_lines filter_jl
+                WHERE ' . implode(' AND ', $lineWhere) . '
+            )';
+        }
+
         $stmt = \InterfaceDB::prepare(
             "SELECT j.id,
                     j.company_id,
@@ -226,16 +310,12 @@ final class TransactionJournalService
                     COALESCE(SUM(jl.debit), 0.00) AS total_debit
              FROM journals j
              LEFT JOIN journal_lines jl ON jl.journal_id = j.id
-             WHERE j.company_id = :company_id
-               AND j.accounting_period_id = :accounting_period_id
+             WHERE " . implode(' AND ', $where) . "
              GROUP BY j.id, j.company_id, j.accounting_period_id, j.source_type, j.source_ref, j.journal_date, j.description, j.is_posted
              ORDER BY j.journal_date DESC, j.id DESC
              LIMIT {$limit}"
         );
-        $stmt->execute([
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-        ]);
+        $stmt->execute($params);
 
         $journals = $stmt->fetchAll();
 
@@ -245,6 +325,78 @@ final class TransactionJournalService
         unset($journal);
 
         return $journals;
+    }
+
+    private function normaliseJournalFilters(array $filters): array
+    {
+        $side = $this->normaliseJournalSide((string)($filters['side'] ?? 'any'));
+
+        return [
+            'keyword' => trim((string)($filters['keyword'] ?? '')),
+            'amount' => $this->normaliseJournalAmount((string)($filters['amount'] ?? '')),
+            'side' => $side,
+            'source_account_id' => max(0, (int)($filters['source_account_id'] ?? 0)),
+            'nominal_account_ids' => $this->normalisePositiveIntList($filters['nominal_account_ids'] ?? []),
+        ];
+    }
+
+    private function hasJournalFilters(array $filters): bool
+    {
+        return $filters['keyword'] !== ''
+            || $filters['amount'] !== ''
+            || $filters['side'] !== 'any'
+            || (int)$filters['source_account_id'] > 0
+            || $filters['nominal_account_ids'] !== [];
+    }
+
+    private function normaliseJournalAmount(string $value): string
+    {
+        $value = trim(str_replace("\xC2\xA3", '', $value));
+        if ($value === '' || preg_match('/^-?\d+(?:\.\d{1,2})?$/', $value) !== 1) {
+            return '';
+        }
+
+        $amount = abs(round((float)$value, 2));
+        if ($amount < 0.005) {
+            return '';
+        }
+
+        return number_format($amount, 2, '.', '');
+    }
+
+    private function normaliseJournalSide(string $value): string
+    {
+        $value = strtolower(trim($value));
+
+        return in_array($value, ['dr', 'cr'], true) ? $value : 'any';
+    }
+
+    private function normalisePositiveIntList(mixed $values): array
+    {
+        if (is_string($values)) {
+            $values = preg_split('/[,\s]+/', $values) ?: [];
+        } elseif (!is_array($values)) {
+            $values = [$values];
+        }
+
+        $ids = [];
+        foreach ($values as $value) {
+            $id = (int)$value;
+            if ($id > 0) {
+                $ids[$id] = $id;
+            }
+        }
+
+        return array_values($ids);
+    }
+
+    private function escapeLike(string $value): string
+    {
+        return str_replace(
+            ['\\', '%', '_'],
+            ['\\\\', '\\%', '\\_'],
+            $value
+        );
     }
 
     private function fetchTransactionForPosting(int $transactionId): ?array {

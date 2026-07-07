@@ -20,7 +20,7 @@ final class _asset_createCard extends CardBaseFramework
             [
                 'key' => 'assetPageData',
                 'service' => \eel_accounts\Service\AssetService::class,
-                'method' => 'fetchPageData',
+                'method' => 'fetchCreateData',
                 'params' => [
                     'companyId' => ':company.id',
                     'accountingPeriodId' => ':company.accounting_period_id',

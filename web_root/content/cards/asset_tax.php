@@ -25,12 +25,10 @@ final class _asset_taxCard extends CardBaseFramework
             [
                 'key' => 'assetPageData',
                 'service' => \eel_accounts\Service\AssetService::class,
-                'method' => 'fetchPageData',
+                'method' => 'fetchTaxData',
                 'params' => [
                     'companyId' => ':company.id',
                     'accountingPeriodId' => ':company.accounting_period_id',
-                    'defaultBankNominalId' => ':company.settings.default_bank_nominal_id',
-                    'prefillTransactionId' => ':prefill_transaction_id',
                 ],
             ],
         ];

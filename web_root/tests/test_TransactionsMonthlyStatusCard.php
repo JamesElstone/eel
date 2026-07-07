@@ -11,6 +11,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(_transactions_monthly_statusCard::class, static function (GeneratedServiceClassTestHarness $harness, _transactions_monthly_statusCard $card): void {
+    $harness->check(_transactions_monthly_statusCard::class, 'refreshes after transaction categorisation summary changes', static function () use ($harness, $card): void {
+        $harness->assertTrue(in_array(TransactionAction::CATEGORISATION_SUMMARY_FACT, $card->invalidationFacts(), true));
+    });
+
     $harness->check(_transactions_monthly_statusCard::class, 'renders supplied period months with transaction and upload counts', static function () use ($harness, $card): void {
         $html = $card->render([
             'company' => [

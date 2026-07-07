@@ -18,10 +18,10 @@ $harness->run(_asset_taxCard::class, static function (GeneratedServiceClassTestH
 
         $harness->assertSame('assetPageData', $assetPageDataService['key'] ?? null);
         $harness->assertSame(\eel_accounts\Service\AssetService::class, $assetPageDataService['service'] ?? null);
-        $harness->assertSame('fetchPageData', $assetPageDataService['method'] ?? null);
+        $harness->assertSame('fetchTaxData', $assetPageDataService['method'] ?? null);
         $harness->assertSame(':company.id', $params['companyId'] ?? null);
         $harness->assertSame(':company.accounting_period_id', $params['accountingPeriodId'] ?? null);
-        $harness->assertSame(':company.settings.default_bank_nominal_id', $params['defaultBankNominalId'] ?? null);
+        $harness->assertSame(false, array_key_exists('defaultBankNominalId', $params));
     });
 
     $harness->check(_asset_taxCard::class, 'renders tax view without duplicate accounting period controls', static function () use ($harness, $card): void {

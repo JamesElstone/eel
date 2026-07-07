@@ -18,13 +18,21 @@ $harness->run(_asset_registerCard::class, static function (GeneratedServiceClass
 
         $harness->assertSame('assetPageData', $assetPageDataService['key'] ?? null);
         $harness->assertSame(\eel_accounts\Service\AssetService::class, $assetPageDataService['service'] ?? null);
-        $harness->assertSame('fetchPageData', $assetPageDataService['method'] ?? null);
+        $harness->assertSame('fetchRegisterData', $assetPageDataService['method'] ?? null);
         $harness->assertSame(':company.id', $params['companyId'] ?? null);
         $harness->assertSame(':company.accounting_period_id', $params['accountingPeriodId'] ?? null);
         $harness->assertSame(':company.settings.default_bank_nominal_id', $params['defaultBankNominalId'] ?? null);
-        $harness->assertSame(':prefill_transaction_id', $params['prefillTransactionId'] ?? null);
         $harness->assertSame(':asset_disposal_search_date', $params['disposalSearchDate'] ?? null);
         $harness->assertSame(':asset_disposal_search_asset_id', $params['disposalSearchAssetId'] ?? null);
+
+        $periodLockService = (array)($services[1] ?? []);
+        $lockParams = (array)($periodLockService['params'] ?? []);
+
+        $harness->assertSame('periodLockState', $periodLockService['key'] ?? null);
+        $harness->assertSame(\eel_accounts\Service\YearEndLockService::class, $periodLockService['service'] ?? null);
+        $harness->assertSame('isLocked', $periodLockService['method'] ?? null);
+        $harness->assertSame(':company.id', $lockParams['companyId'] ?? null);
+        $harness->assertSame(':company.accounting_period_id', $lockParams['accountingPeriodId'] ?? null);
     });
 
     $harness->check(_asset_registerCard::class, 'renders visible asset service errors', static function () use ($harness, $card): void {
@@ -120,6 +128,43 @@ $harness->run(_asset_registerCard::class, static function (GeneratedServiceClass
         $harness->assertSame(false, str_contains($html, 'Dispose of at Nil Value'));
         $harness->assertSame(false, str_contains($html, 'name="intent" value="run_asset_depreciation"'));
         $harness->assertSame(false, str_contains($html, 'Run Depreciation'));
+    });
+
+    $harness->check(_asset_registerCard::class, 'renders locked periods read only without disposal forms', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'page' => [
+                'page_id' => 'assets',
+                'page_cards' => ['asset_register'],
+            ],
+            'company' => [
+                'id' => 7,
+                'accounting_period_id' => 22,
+                'settings' => [
+                    'default_currency_symbol' => '&#36;',
+                ],
+            ],
+            'services' => [
+                'assetPageData' => [
+                    'assets' => [[
+                        'id' => 44,
+                        'asset_code' => 'FA-7-1',
+                        'description' => 'Test asset',
+                        'cost' => 100,
+                        'nbv' => 80,
+                        'status' => 'active',
+                    ]],
+                ],
+                'periodLockState' => true,
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, 'FA-7-1'));
+        $harness->assertTrue(str_contains($html, 'Period locked'));
+        $harness->assertTrue(str_contains($html, 'Asset disposals are read only.'));
+        $harness->assertSame(false, str_contains($html, 'class="asset-disposal-form"'));
+        $harness->assertSame(false, str_contains($html, 'class="asset-disposal-method-form"'));
+        $harness->assertSame(false, str_contains($html, 'name="intent" value="search_asset_disposal_receipts"'));
+        $harness->assertSame(false, str_contains($html, 'name="intent" value="dispose_asset_nil"'));
     });
 
     $harness->check(_asset_registerCard::class, 'renders nil disposal controls when selected', static function () use ($harness, $card): void {

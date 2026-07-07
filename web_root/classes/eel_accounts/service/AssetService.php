@@ -148,17 +148,91 @@ final class AssetService
             ];
         }
 
-        return [
-            'assets' => $this->fetchAssets($companyId, $accountingPeriodId),
+        return $this->fetchRegisterData(
+            $companyId,
+            $accountingPeriodId,
+            $defaultBankNominalId,
+            $disposalSearchDate,
+            $disposalSearchAssetId
+        ) + [
             'accounting_periods' => $this->fetchAccountingPeriods($companyId),
             'accounting_period_id' => $accountingPeriodId,
             'tax_view' => $accountingPeriodId > 0 ? $this->fetchTaxView($companyId, $accountingPeriodId) : null,
             'prefill_transaction' => $prefillTransactionId > 0 ? $this->fetchTransactionPrefill($companyId, $prefillTransactionId) : null,
-            'default_bank_nominal_id' => $defaultBankNominalId,
             'asset_categories' => self::assetCategoryOptions(),
+            'manual_schema_ready' => $this->hasManualAssetSchema(),
+        ];
+    }
+
+    public function fetchRegisterData(
+        int $companyId,
+        int $accountingPeriodId,
+        int|string $defaultBankNominalId = 0,
+        string $disposalSearchDate = '',
+        int $disposalSearchAssetId = 0
+    ): array {
+        $defaultBankNominalId = max(0, (int)$defaultBankNominalId);
+
+        if (!$this->hasRequiredSchema()) {
+            return [
+                'assets' => [],
+                'accounting_period_id' => $accountingPeriodId,
+                'default_bank_nominal_id' => $defaultBankNominalId,
+                'disposal_search' => $this->emptyDisposalSearch($disposalSearchDate, $disposalSearchAssetId),
+                'schema_ready' => false,
+            ];
+        }
+
+        return [
+            'assets' => $this->fetchAssets($companyId, $accountingPeriodId),
+            'accounting_period_id' => $accountingPeriodId,
+            'default_bank_nominal_id' => $defaultBankNominalId,
             'disposal_search' => $this->fetchDisposalSearch($companyId, $disposalSearchDate, $disposalSearchAssetId),
             'schema_ready' => true,
-            'manual_schema_ready' => $this->hasManualAssetSchema(),
+        ];
+    }
+
+    public function fetchCreateData(
+        int $companyId,
+        int $accountingPeriodId,
+        int|string $defaultBankNominalId = 0,
+        int $prefillTransactionId = 0
+    ): array {
+        $defaultBankNominalId = max(0, (int)$defaultBankNominalId);
+
+        if (!$this->hasRequiredSchema()) {
+            return [
+                'accounting_period_id' => $accountingPeriodId,
+                'prefill_transaction' => null,
+                'default_bank_nominal_id' => $defaultBankNominalId,
+                'asset_categories' => self::assetCategoryOptions(),
+                'schema_ready' => false,
+            ];
+        }
+
+        return [
+            'accounting_period_id' => $accountingPeriodId,
+            'prefill_transaction' => $prefillTransactionId > 0 ? $this->fetchTransactionPrefill($companyId, $prefillTransactionId) : null,
+            'default_bank_nominal_id' => $defaultBankNominalId,
+            'asset_categories' => self::assetCategoryOptions(),
+            'schema_ready' => true,
+        ];
+    }
+
+    public function fetchTaxData(int $companyId, int $accountingPeriodId): array
+    {
+        if (!$this->hasRequiredSchema()) {
+            return [
+                'accounting_period_id' => $accountingPeriodId,
+                'tax_view' => null,
+                'schema_ready' => false,
+            ];
+        }
+
+        return [
+            'accounting_period_id' => $accountingPeriodId,
+            'tax_view' => $accountingPeriodId > 0 ? $this->fetchTaxView($companyId, $accountingPeriodId) : null,
+            'schema_ready' => true,
         ];
     }
 

@@ -92,9 +92,25 @@ final class YearEndLockService
     }
 
     public function isLocked(int $companyId, int $accountingPeriodId): bool {
-        $review = $this->fetchReview($companyId, $accountingPeriodId);
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || !$this->hasReviewTable()) {
+            return false;
+        }
 
-        return is_array($review) && (int)($review['is_locked'] ?? 0) === 1;
+        try {
+            return (int)\InterfaceDB::fetchColumn(
+                'SELECT COALESCE(is_locked, 0)
+                 FROM year_end_reviews
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id
+                 LIMIT 1',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                ]
+            ) === 1;
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     public function assertUnlocked(int $companyId, int $accountingPeriodId, string $actionLabel = 'change this period'): void {

@@ -19,7 +19,7 @@ $harness->run(_asset_createCard::class, static function (GeneratedServiceClassTe
 
         $harness->assertSame('assetPageData', $assetPageDataService['key'] ?? null);
         $harness->assertSame(\eel_accounts\Service\AssetService::class, $assetPageDataService['service'] ?? null);
-        $harness->assertSame('fetchPageData', $assetPageDataService['method'] ?? null);
+        $harness->assertSame('fetchCreateData', $assetPageDataService['method'] ?? null);
         $harness->assertSame(':company.id', $params['companyId'] ?? null);
         $harness->assertSame(':company.accounting_period_id', $params['accountingPeriodId'] ?? null);
         $harness->assertSame(':company.settings.default_bank_nominal_id', $params['defaultBankNominalId'] ?? null);

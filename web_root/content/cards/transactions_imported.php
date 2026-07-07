@@ -566,7 +566,7 @@ final class _transactions_importedCard extends CardBaseFramework
             }
 
             return '<div class="helper">' . HelperFramework::escape($transferDirectionLabel) . '</div>
-                <select class="select js-transaction-transfer" name="transfer_account_id" form="' . HelperFramework::escape($transactionFormId) . '" data-initial-value="' . HelperFramework::escape($selectedTransferAccountId) . '" data-autosave-submit-target=".js-transaction-autosave-submit" data-autosave-require-value="1">' . $transferOptions . '</select>';
+                <select class="select js-transaction-transfer" name="transfer_account_id" form="' . HelperFramework::escape($transactionFormId) . '" data-autosave-submit-target=".js-transaction-autosave-submit" data-autosave-require-value="1">' . $transferOptions . '</select>';
         }
 
         $selectedNominalAccountId = (string)($transaction['nominal_account_id'] ?? '');
@@ -578,7 +578,7 @@ final class _transactions_importedCard extends CardBaseFramework
             $nominalOptions .= '<option value="' . (int)($nominal['id'] ?? 0) . '"' . ((string)($nominal['id'] ?? '') === $selectedNominalAccountId ? ' selected' : '') . '>' . HelperFramework::escape(FormattingFramework::nominalLabel($nominal)) . '</option>';
         }
 
-        return '<select class="select js-transaction-nominal" name="nominal_account_id" form="' . HelperFramework::escape($transactionFormId) . '" data-initial-value="' . HelperFramework::escape($selectedNominalAccountId) . '" data-autosave-submit-target=".js-transaction-autosave-submit" data-autosave-require-value="1">' . $nominalOptions . '</select>';
+        return '<select class="select js-transaction-nominal" name="nominal_account_id" form="' . HelperFramework::escape($transactionFormId) . '" data-autosave-submit-target=".js-transaction-autosave-submit" data-autosave-require-value="1">' . $nominalOptions . '</select>';
     }
 
     private function flagsHtml(array $transaction): string
@@ -693,7 +693,7 @@ final class _transactions_importedCard extends CardBaseFramework
         $lockedButtonAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit"';
         $autosaveSubmitHtml = $isPeriodLocked
             ? ''
-            : '<button class="js-transaction-autosave-submit" type="submit" name="global_action" value="save_transaction_category" hidden' . $journalRebuildAttributes . '>Autosave</button>';
+            : '<button class="js-transaction-autosave-submit" type="submit" name="global_action" value="save_transaction_category" data-blur-scope="none" hidden' . $journalRebuildAttributes . '>Autosave</button>';
         $noteAutosaveSubmitHtml = $isPeriodLocked
             ? ''
             : '<button class="js-transaction-note-autosave-submit" type="submit" name="global_action" value="save_transaction_note" hidden>Autosave note</button>';

@@ -43,7 +43,7 @@ final class _transaction_category_audit_logCard extends CardBaseFramework
 
     protected function additionalInvalidationFacts(): array
     {
-        return ['page.context'];
+        return ['page.context', TransactionAction::CATEGORISATION_SUMMARY_FACT];
     }
 
     public function handleError(string $serviceKey, array $error, array $context): string

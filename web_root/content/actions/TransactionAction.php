@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 final class TransactionAction implements ActionInterfaceFramework
 {
+    public const CATEGORISATION_SUMMARY_FACT = 'transactions.categorisation.summary';
+
     private const TRANSACTIONS_IMPORTED_FACT = 'transactions.imported';
     private const IMPORTED_FILTER_SELECTION_SOURCE = 'transactions_imported_filters';
 
@@ -28,11 +30,17 @@ final class TransactionAction implements ActionInterfaceFramework
         if ($this->requiresUnlockedPeriod($intent)
             && (new \eel_accounts\Service\YearEndLockService())->isLocked($this->selectedCompanyId($request), $this->selectedAccountingPeriodId($request))
         ) {
+            $changedFacts = in_array($intent, self::TRANSACTION_ACTIONS, true)
+                ? $this->changedFactsForTransactionCategoryResult(false, $intent, false)
+                : ['page.context'];
+
             return $this->result(
                 false,
                 ['This accounting period is locked, so transactions can be reviewed but not changed.'],
                 [],
-                $this->filterContext($request)
+                $this->filterContext($request),
+                [],
+                $changedFacts
             );
         }
 
@@ -179,6 +187,7 @@ final class TransactionAction implements ActionInterfaceFramework
         $targetAutoExcluded = $globalAction === 'defer_transaction';
         $isTransferTransaction = is_array($existingTransaction) && $this->transactionIsTransferMode($existingTransaction);
         $errors = [];
+        $categorisationChanged = false;
 
         if (!in_array($globalAction, self::TRANSACTION_ACTIONS, true)) {
             return ActionResultFramework::none();
@@ -207,7 +216,14 @@ final class TransactionAction implements ActionInterfaceFramework
         }
 
         if ($errors !== []) {
-            return $this->result(false, $errors, $flashMessages, $context);
+            return $this->result(
+                false,
+                $errors,
+                $flashMessages,
+                $context,
+                [],
+                $this->changedFactsForTransactionCategoryResult(false, $globalAction, false)
+            );
         }
 
         try {
@@ -249,8 +265,9 @@ final class TransactionAction implements ActionInterfaceFramework
                 }
 
                 InterfaceDB::commit();
+                $categorisationChanged = !empty($saveResult['changed']);
 
-                if (!empty($saveResult['changed'])) {
+                if ($categorisationChanged) {
                     $flashMessages[] = match ($globalAction) {
                         'defer_transaction' => 'Transaction deferred for manual review.',
                         'save_transaction_category' => $isTransferTransaction
@@ -271,7 +288,27 @@ final class TransactionAction implements ActionInterfaceFramework
             $errors[] = 'The transaction categorisation could not be saved: ' . $exception->getMessage();
         }
 
-        return $this->result($errors === [], $errors, $flashMessages, $context);
+        return $this->result(
+            $errors === [],
+            $errors,
+            $flashMessages,
+            $context,
+            [],
+            $this->changedFactsForTransactionCategoryResult($errors === [], $globalAction, $categorisationChanged)
+        );
+    }
+
+    private function changedFactsForTransactionCategoryResult(bool $success, string $globalAction, bool $changed): array
+    {
+        if ($globalAction !== 'save_transaction_category') {
+            return ['page.context'];
+        }
+
+        if (!$success) {
+            return [self::TRANSACTIONS_IMPORTED_FACT];
+        }
+
+        return $changed ? [self::CATEGORISATION_SUMMARY_FACT] : [];
     }
 
     private function saveTransactionNote(RequestFramework $request): ActionResultFramework

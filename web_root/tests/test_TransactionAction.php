@@ -525,6 +525,28 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         return $instance->handle($request, createTestPageServiceFramework());
     };
 
+    $saveTransactionCategory = static function (array $fixture, int $nominalAccountId, array $extraPost = []) use ($instance): ActionResultFramework {
+        $request = new RequestFramework(
+            [],
+            array_merge([
+                'card_action' => 'Transaction',
+                'global_action' => 'save_transaction_category',
+                'company_id' => (string)$fixture['company_id'],
+                'accounting_period_id' => (string)$fixture['accounting_period_id'],
+                'transaction_id' => (string)$fixture['transaction_id'],
+                'month_key' => '2026-03-01',
+                'category_filter' => 'uncategorised',
+                'nominal_account_id' => (string)$nominalAccountId,
+            ], $extraPost),
+            ['REQUEST_METHOD' => 'POST'],
+            [],
+            [],
+            null
+        );
+
+        return $instance->handle($request, createTestPageServiceFramework());
+    };
+
     $transactionNominalId = static function (int $transactionId): int {
         return (int)InterfaceDB::fetchColumn(
             'SELECT nominal_account_id FROM transactions WHERE id = :id',
@@ -614,6 +636,45 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
 
         $harness->assertSame(false, $result->isSuccess());
         $harness->assertSame('', $transactionNotes((int)$fixture['transaction_id']));
+        $harness->assertSame(true, str_contains(transactionActionFlashText($result), 'locked'));
+    });
+
+    $harness->check('TransactionAction', 'save_transaction_category refreshes summary cards without rebuilding imported transactions', function () use ($harness, $createDirectorLoanFixture, $saveTransactionCategory, $transactionNominalId, $transactionCategoryStatus): void {
+        $fixture = $createDirectorLoanFixture(-25.00);
+
+        $result = $saveTransactionCategory($fixture, (int)$fixture['asset_nominal_id']);
+
+        $harness->assertSame(true, $result->isSuccess());
+        $harness->assertSame([TransactionAction::CATEGORISATION_SUMMARY_FACT], $result->changedFacts());
+        $harness->assertSame($fixture['asset_nominal_id'], $transactionNominalId((int)$fixture['transaction_id']));
+        $harness->assertSame('manual', $transactionCategoryStatus((int)$fixture['transaction_id']));
+        $harness->assertSame(true, str_contains(transactionActionFlashText($result), 'Manual categorisation saved.'));
+    });
+
+    $harness->check('TransactionAction', 'unchanged transaction category autosave returns flash only', function () use ($harness, $createDirectorLoanFixture, $saveTransactionCategory): void {
+        $fixture = $createDirectorLoanFixture(-25.00);
+
+        $firstResult = $saveTransactionCategory($fixture, (int)$fixture['asset_nominal_id']);
+        $secondResult = $saveTransactionCategory($fixture, (int)$fixture['asset_nominal_id']);
+
+        $harness->assertSame(true, $firstResult->isSuccess());
+        $harness->assertSame(true, $secondResult->isSuccess());
+        $harness->assertSame([], $secondResult->changedFacts());
+        $harness->assertSame(true, str_contains(transactionActionFlashText($secondResult), 'No categorisation change was needed.'));
+    });
+
+    $harness->check('TransactionAction', 'locked save_transaction_category refreshes imported transactions for resync', function () use ($harness, $createDirectorLoanFixture, $saveTransactionCategory, $transactionNominalId): void {
+        if (!InterfaceDB::tableExists('year_end_reviews')) {
+            $harness->skip('Year end review table is not available on the default InterfaceDB connection.');
+        }
+
+        $fixture = $createDirectorLoanFixture(-25.00, [], [], true);
+
+        $result = $saveTransactionCategory($fixture, (int)$fixture['asset_nominal_id']);
+
+        $harness->assertSame(false, $result->isSuccess());
+        $harness->assertSame(['transactions.imported'], $result->changedFacts());
+        $harness->assertSame(0, $transactionNominalId((int)$fixture['transaction_id']));
         $harness->assertSame(true, str_contains(transactionActionFlashText($result), 'locked'));
     });
 
@@ -1178,6 +1239,14 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
     });
 
     $harness->check('TransactionAction cards', 'transaction cards render Transaction card action forms', function () use ($harness): void {
+        $monthlyStatusFacts = (new _transactions_monthly_statusCard())->invalidationFacts();
+        $auditLogFacts = (new _transaction_category_audit_logCard())->invalidationFacts();
+        $importedFacts = (new _transactions_importedCard())->invalidationFacts();
+
+        $harness->assertSame(true, in_array(TransactionAction::CATEGORISATION_SUMMARY_FACT, $monthlyStatusFacts, true));
+        $harness->assertSame(true, in_array(TransactionAction::CATEGORISATION_SUMMARY_FACT, $auditLogFacts, true));
+        $harness->assertSame(false, in_array(TransactionAction::CATEGORISATION_SUMMARY_FACT, $importedFacts, true));
+
         $context = [
             'company' => [
                 'id' => 1,
@@ -1395,7 +1464,8 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, 'Matched by rule #3 (Test)'));
         $harness->assertSame(true, str_contains($html, 'View Receipt'));
         $harness->assertSame(true, str_contains($html, 'data-autosave-submit-target=".js-transaction-autosave-submit"'));
-        $harness->assertSame(true, str_contains($html, '<button class="js-transaction-autosave-submit" type="submit" name="global_action" value="save_transaction_category" hidden>Autosave</button>'));
+        $harness->assertSame(true, str_contains($html, '<button class="js-transaction-autosave-submit" type="submit" name="global_action" value="save_transaction_category" data-blur-scope="none" hidden>Autosave</button>'));
+        $harness->assertSame(false, str_contains($html, 'js-transaction-nominal" name="nominal_account_id" form="transaction-form-42" data-initial-value'));
         $harness->assertSame(false, str_contains($html, 'Save Row'));
         $harness->assertSame(false, str_contains($html, '<input type="hidden" name="nominal_account_id"'));
         $harness->assertSame(true, str_contains($html, 'action="?page=assets&amp;show_card=asset_create"'));
@@ -1732,6 +1802,8 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains($html, 'Transfer from:'));
         $harness->assertSame(true, str_contains($html, '<option value="">Select owned account</option>'));
         $harness->assertSame(true, str_contains($html, 'data-autosave-submit-target=".js-transaction-autosave-submit"'));
+        $harness->assertSame(true, str_contains($html, 'data-blur-scope="none" hidden>Autosave</button>'));
+        $harness->assertSame(false, str_contains($html, 'js-transaction-transfer" name="transfer_account_id" form="transaction-form-42" data-initial-value'));
         $harness->assertSame(true, str_contains($html, 'Savings pot [Bank]'));
         $harness->assertSame(true, str_contains($html, '<span class="badge warning">Transfer pending</span>'));
         $harness->assertSame(false, str_contains($html, '<span class="badge info">Rule #3</span>'));

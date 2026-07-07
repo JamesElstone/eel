@@ -22,14 +22,22 @@ final class _asset_registerCard extends CardBaseFramework
             [
                 'key' => 'assetPageData',
                 'service' => \eel_accounts\Service\AssetService::class,
-                'method' => 'fetchPageData',
+                'method' => 'fetchRegisterData',
                 'params' => [
                     'companyId' => ':company.id',
                     'accountingPeriodId' => ':company.accounting_period_id',
                     'defaultBankNominalId' => ':company.settings.default_bank_nominal_id',
-                    'prefillTransactionId' => ':prefill_transaction_id',
                     'disposalSearchDate' => ':asset_disposal_search_date',
                     'disposalSearchAssetId' => ':asset_disposal_search_asset_id',
+                ],
+            ],
+            [
+                'key' => 'periodLockState',
+                'service' => \eel_accounts\Service\YearEndLockService::class,
+                'method' => 'isLocked',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
         ];
@@ -80,6 +88,10 @@ final class _asset_registerCard extends CardBaseFramework
 
     public function handleError(string $serviceKey, array $error, array $context): string
     {
+        if ($serviceKey === 'periodLockState') {
+            return 'Period lock state could not be loaded: ' . (string)($error['message'] ?? 'service error');
+        }
+
         return 'Asset data could not be loaded: ' . (string)($error['message'] ?? 'service error');
     }
 
@@ -134,6 +146,10 @@ final class _asset_registerCard extends CardBaseFramework
         $disposalMethodAssetId = (int)($context['asset_disposal_method_asset_id'] ?? 0);
         $disposalMethod = $this->normaliseDisposalMethod((string)($context['asset_disposal_method'] ?? ''));
         $ageReferenceDate = $this->ageReferenceDate((string)($context['accounting_period']['period_end'] ?? ''));
+        $isLocked = (bool)($context['services']['periodLockState'] ?? false);
+        if (($context['service_errors']['periodLockState'] ?? null) !== null) {
+            $isLocked = true;
+        }
 
         return TableFramework::make($this->key(), $this->rows($context))
             ->filename('asset-register')
@@ -221,7 +237,8 @@ final class _asset_registerCard extends CardBaseFramework
                     $companyId,
                     $accountingPeriodId,
                     $disposalMethodAssetId,
-                    $disposalMethod
+                    $disposalMethod,
+                    $isLocked
                 ),
                 headerClass: 'asset-register-actions-heading',
                 cellClass: 'asset-register-actions-cell',
@@ -238,7 +255,8 @@ final class _asset_registerCard extends CardBaseFramework
                     $disposalSearch,
                     $settings,
                     $disposalMethodAssetId,
-                    $disposalMethod
+                    $disposalMethod,
+                    $isLocked
                 ),
                 headerClass: 'asset-register-actions-heading',
                 cellClass: 'asset-register-actions-cell',
@@ -277,7 +295,8 @@ final class _asset_registerCard extends CardBaseFramework
         array $disposalSearch,
         array $settings,
         int $disposalMethodAssetId,
-        string $disposalMethod
+        string $disposalMethod,
+        bool $isLocked
     ): string {
         $status = (string)($asset['status'] ?? 'active');
 
@@ -294,7 +313,8 @@ final class _asset_registerCard extends CardBaseFramework
             $defaultBankNominalId,
             $disposalSearch,
             $settings,
-            $this->disposalMethodForAsset((int)($asset['id'] ?? 0), $disposalMethodAssetId, $disposalMethod)
+            $this->disposalMethodForAsset((int)($asset['id'] ?? 0), $disposalMethodAssetId, $disposalMethod),
+            $isLocked
         );
     }
 
@@ -303,12 +323,13 @@ final class _asset_registerCard extends CardBaseFramework
         int $companyId,
         int $accountingPeriodId,
         int $disposalMethodAssetId,
-        string $disposalMethod
+        string $disposalMethod,
+        bool $isLocked
     ): string {
         if ((string)($asset['status'] ?? 'active') === 'disposed') {
             return '';
         }
-        if ((new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId)) {
+        if ($isLocked) {
             return '<span class="helper">Period locked</span>';
         }
 
@@ -338,9 +359,10 @@ final class _asset_registerCard extends CardBaseFramework
         int $defaultBankNominalId,
         array $disposalSearch,
         array $settings,
-        string $disposalMethod
+        string $disposalMethod,
+        bool $isLocked
     ): string {
-        if ((new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId)) {
+        if ($isLocked) {
             return '<div class="helper"><span class="badge warning">Period locked</span> Asset disposals are read only.</div>';
         }
 

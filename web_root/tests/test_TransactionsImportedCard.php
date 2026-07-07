@@ -227,6 +227,11 @@ $harness->run(_transactions_importedCard::class, static function (GeneratedServi
     $harness->assertTrue(str_contains($splitHtml, 'transaction-split-line-form-9001'));
     $harness->assertTrue(str_contains($splitHtml, 'name="split_line_description" value="AMZNMKTPLACE tool item"'));
     $harness->assertTrue(str_contains($splitHtml, 'name="split_line_amount" value="89.99"'));
+    $harness->assertTrue(str_contains($splitHtml, 'name="split_line_description" value="AMZNMKTPLACE tool item" aria-label="Split line description" form="transaction-split-line-form-9001" data-initial-value="AMZNMKTPLACE tool item" data-autosave-submit-target=".js-transaction-split-line-autosave-submit"'));
+    $harness->assertTrue(str_contains($splitHtml, 'class="input transaction-split-line-amount" type="text" inputmode="decimal" pattern="[0-9]+\.[0-9]{2}"'));
+    $harness->assertTrue(str_contains($splitHtml, 'name="split_line_amount" value="89.99" aria-label="Split line amount" form="transaction-split-line-form-9001" data-initial-value="89.99" data-autosave-submit-target=".js-transaction-split-line-autosave-submit"'));
+    $harness->assertTrue(str_contains($splitHtml, 'name="split_line_notes" value="asset line" aria-label="Split line note" form="transaction-split-line-form-9001" data-initial-value="asset line" data-autosave-submit-target=".js-transaction-split-line-autosave-submit"'));
+    $harness->assertTrue(str_contains($splitHtml, '<select class="select transaction-split-line-nominal" name="nominal_account_id" form="transaction-split-line-form-9001" data-autosave-submit-target=".js-transaction-split-line-autosave-submit" data-autosave-require-value="1">'));
     $harness->assertTrue(str_contains($splitHtml, 'name="transaction_split_line_id" value="9001"'));
     $harness->assertTrue(str_contains($splitHtml, 'name="global_action" value="save_transaction_split_line"'));
     $harness->assertTrue(str_contains($splitHtml, 'name="global_action" value="defer_transaction_split_line"'));

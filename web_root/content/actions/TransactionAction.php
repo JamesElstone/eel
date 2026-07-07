@@ -25,6 +25,14 @@ final class TransactionAction implements ActionInterfaceFramework
         'remove_transaction_split_line',
         'merge_transaction_split',
     ];
+    private const TRANSACTION_SPLIT_ACTIONS = [
+        'start_transaction_split',
+        'add_transaction_split_line',
+        'save_transaction_split_line',
+        'defer_transaction_split_line',
+        'remove_transaction_split_line',
+        'merge_transaction_split',
+    ];
 
     public function handle(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
@@ -36,9 +44,11 @@ final class TransactionAction implements ActionInterfaceFramework
         if ($this->requiresUnlockedPeriod($intent)
             && (new \eel_accounts\Service\YearEndLockService())->isLocked($this->selectedCompanyId($request), $this->selectedAccountingPeriodId($request))
         ) {
-            $changedFacts = in_array($intent, self::TRANSACTION_ACTIONS, true)
+            $changedFacts = in_array($intent, self::TRANSACTION_SPLIT_ACTIONS, true)
+                ? $this->changedFactsForTransactionSplitResult(false, $intent)
+                : (in_array($intent, self::TRANSACTION_ACTIONS, true)
                 ? $this->changedFactsForTransactionCategoryResult(false, $intent, false)
-                : ['page.context'];
+                : ['page.context']);
 
             return $this->result(
                 false,
@@ -366,14 +376,38 @@ final class TransactionAction implements ActionInterfaceFramework
             $errors[] = 'The transaction split could not be saved: ' . $exception->getMessage();
         }
 
+        if ($globalAction === 'save_transaction_split_line' && $errors === []) {
+            $messages = [];
+        }
+
         return $this->result(
             $errors === [],
             $errors,
             $messages,
             $context,
             [],
-            [self::TRANSACTIONS_IMPORTED_FACT, self::CATEGORISATION_SUMMARY_FACT, 'transaction.search', 'page.context', 'year.end.checklist']
+            $this->changedFactsForTransactionSplitResult($errors === [], $globalAction)
         );
+    }
+
+    private function changedFactsForTransactionSplitResult(bool $success, string $globalAction): array
+    {
+        if ($globalAction === 'save_transaction_split_line') {
+            return [self::CATEGORISATION_SUMMARY_FACT];
+        }
+
+        if (!$success) {
+            return [self::TRANSACTIONS_IMPORTED_FACT];
+        }
+
+        return match ($globalAction) {
+            'start_transaction_split',
+            'add_transaction_split_line',
+            'defer_transaction_split_line',
+            'remove_transaction_split_line',
+            'merge_transaction_split' => [self::TRANSACTIONS_IMPORTED_FACT, self::CATEGORISATION_SUMMARY_FACT],
+            default => ['page.context'],
+        };
     }
 
     private function saveTransactionNote(RequestFramework $request): ActionResultFramework
@@ -962,6 +996,9 @@ final class TransactionAction implements ActionInterfaceFramework
             'source_category_value',
             'source_account_value',
             'nominal_account_id',
+            'split_line_description',
+            'split_line_amount',
+            'split_line_notes',
             'is_active',
             'transaction_id',
         ];

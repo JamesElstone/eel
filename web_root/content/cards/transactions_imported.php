@@ -596,7 +596,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 ? ''
                 : ' form="' . HelperFramework::escape($formId) . '" data-initial-value="' . HelperFramework::escape($amount) . '" data-autosave-submit-target=".js-transaction-split-line-autosave-submit"';
 
-            return '<input class="input transaction-split-line-amount" type="number" min="0.01" step="0.01" name="split_line_amount" value="' . HelperFramework::escape($amount) . '" aria-label="Split line amount"' . $autosave . $disabled . '>';
+            return '<input class="input transaction-split-line-amount" type="text" inputmode="decimal" pattern="[0-9]+\.[0-9]{2}" title="Enter a positive amount with exactly 2 decimal places, for example 56.37" name="split_line_amount" value="' . HelperFramework::escape($amount) . '" aria-label="Split line amount"' . $autosave . $disabled . '>';
         }
 
         return (new \eel_accounts\Service\CompanySettingsService())->moneyHtml($settings, $transaction['amount'] ?? null);

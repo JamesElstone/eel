@@ -144,12 +144,16 @@ final class TransactionSplitService
         );
 
         $description = $this->normaliseOptionalString($payload['split_line_description'] ?? $payload['description'] ?? null, 255);
-        $amount = $this->normaliseAmount($payload['split_line_amount'] ?? $payload['amount'] ?? null);
+        $amountValue = $payload['split_line_amount'] ?? $payload['amount'] ?? null;
+        $amountFormatValid = $this->amountIsBlank($amountValue) || $this->amountHasTwoDecimalPlaces($amountValue);
+        $amount = $amountFormatValid ? $this->normaliseAmount($amountValue) : null;
         $nominalAccountId = $this->normaliseNominalId($companyId, $payload['nominal_account_id'] ?? null);
         $notes = $this->normaliseOptionalString($payload['split_line_notes'] ?? $payload['notes'] ?? null, 10000);
         $errors = [];
 
-        if ($amount !== null && $amount <= 0.0) {
+        if (!$amountFormatValid) {
+            $errors[] = 'Split line amounts must use exactly 2 decimal places, for example 56.37.';
+        } elseif ($amount !== null && $amount <= 0.0) {
             $errors[] = 'Split line amounts must be positive.';
         }
 
@@ -878,20 +882,21 @@ final class TransactionSplitService
 
     private function normaliseAmount(mixed $value): ?float
     {
-        if ($value === null) {
+        if ($this->amountIsBlank($value)) {
             return null;
         }
 
-        $value = trim(str_replace([',', "\xC2\xA3"], ['', ''], (string)$value));
-        if ($value === '') {
-            return null;
-        }
+        return (float)trim((string)$value);
+    }
 
-        if (!is_numeric($value)) {
-            return -1.0;
-        }
+    private function amountIsBlank(mixed $value): bool
+    {
+        return $value === null || (is_scalar($value) && trim((string)$value) === '');
+    }
 
-        return round((float)$value, 2);
+    private function amountHasTwoDecimalPlaces(mixed $value): bool
+    {
+        return is_scalar($value) && preg_match('/^[0-9]+\.[0-9]{2}$/', trim((string)$value)) === 1;
     }
 
     private function normaliseNominalId(int $companyId, mixed $value): int

@@ -30,6 +30,25 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
                 $firstLineId = (int)$lines[0]['id'];
                 $secondLineId = (int)$lines[1]['id'];
+                foreach (['56', '56.3', '56.370', '£56.37', '1,234.56'] as $invalidAmount) {
+                    $invalidResult = $service->saveLine($fixture['company_id'], $firstLineId, [
+                        'split_line_description' => 'Invalid amount test',
+                        'split_line_amount' => $invalidAmount,
+                        'nominal_account_id' => $fixture['tool_nominal_id'],
+                    ]);
+                    $harness->assertSame(false, (bool)($invalidResult['success'] ?? true));
+                    $harness->assertSame(true, str_contains(implode("\n", (array)($invalidResult['errors'] ?? [])), 'exactly 2 decimal places'));
+                }
+                $unchangedLine = \InterfaceDB::fetchOne(
+                    'SELECT description, amount, nominal_account_id
+                     FROM transaction_split_lines
+                     WHERE id = :id',
+                    ['id' => $firstLineId]
+                );
+                $harness->assertSame(null, $unchangedLine['description'] ?? null);
+                $harness->assertSame(null, $unchangedLine['amount'] ?? null);
+                $harness->assertSame(null, $unchangedLine['nominal_account_id'] ?? null);
+
                 $service->saveLine($fixture['company_id'], $firstLineId, [
                     'split_line_description' => 'AMZNMKTPLACE tool item',
                     'split_line_amount' => '89.99',

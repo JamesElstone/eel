@@ -547,6 +547,31 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         return $instance->handle($request, createTestPageServiceFramework());
     };
 
+    $saveTransactionSplitLine = static function (array $fixture, int $lineId, string $amount, mixed $nominalAccountId, string $description = 'Split item') use ($instance): ActionResultFramework {
+        $request = new RequestFramework(
+            [],
+            [
+                'card_action' => 'Transaction',
+                'global_action' => 'save_transaction_split_line',
+                'company_id' => (string)$fixture['company_id'],
+                'accounting_period_id' => (string)$fixture['accounting_period_id'],
+                'transaction_id' => (string)$fixture['transaction_id'],
+                'transaction_split_line_id' => (string)$lineId,
+                'month_key' => '2026-03-01',
+                'category_filter' => 'uncategorised',
+                'split_line_description' => $description,
+                'split_line_amount' => $amount,
+                'nominal_account_id' => (string)$nominalAccountId,
+            ],
+            ['REQUEST_METHOD' => 'POST'],
+            [],
+            [],
+            null
+        );
+
+        return $instance->handle($request, createTestPageServiceFramework());
+    };
+
     $transactionNominalId = static function (int $transactionId): int {
         return (int)InterfaceDB::fetchColumn(
             'SELECT nominal_account_id FROM transactions WHERE id = :id',
@@ -676,6 +701,84 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(['transactions.imported'], $result->changedFacts());
         $harness->assertSame(0, $transactionNominalId((int)$fixture['transaction_id']));
         $harness->assertSame(true, str_contains(transactionActionFlashText($result), 'locked'));
+    });
+
+    $harness->check('TransactionAction', 'save_transaction_split_line records drafts without repainting imported transactions', function () use ($harness, $createDirectorLoanFixture, $saveTransactionSplitLine): void {
+        foreach (['transaction_splits', 'transaction_split_lines'] as $table) {
+            if (!InterfaceDB::tableExists($table)) {
+                $harness->skip($table . ' table is not available.');
+            }
+        }
+
+        $fixture = $createDirectorLoanFixture(-146.36);
+        $splitService = new \eel_accounts\Service\TransactionSplitService();
+        $started = $splitService->startSplit((int)$fixture['company_id'], (int)$fixture['transaction_id']);
+        $harness->assertSame(true, (bool)($started['success'] ?? false));
+
+        $lineId = (int)InterfaceDB::fetchColumn(
+            'SELECT tsl.id
+             FROM transaction_split_lines tsl
+             INNER JOIN transaction_splits ts ON ts.id = tsl.split_id
+             WHERE ts.transaction_id = :transaction_id
+             ORDER BY tsl.line_number
+             LIMIT 1',
+            ['transaction_id' => $fixture['transaction_id']]
+        );
+
+        $result = $saveTransactionSplitLine($fixture, $lineId, '56.37', (int)$fixture['asset_nominal_id'], 'AMZNMKTPLACE materials');
+        $line = InterfaceDB::fetchOne(
+            'SELECT description, amount, nominal_account_id
+             FROM transaction_split_lines
+             WHERE id = :id',
+            ['id' => $lineId]
+        );
+
+        $harness->assertSame(true, $result->isSuccess());
+        $harness->assertSame([TransactionAction::CATEGORISATION_SUMMARY_FACT], $result->changedFacts());
+        $harness->assertSame('', transactionActionFlashText($result));
+        $harness->assertSame('AMZNMKTPLACE materials', (string)($line['description'] ?? ''));
+        $harness->assertSame('56.37', (string)($line['amount'] ?? ''));
+        $harness->assertSame($fixture['asset_nominal_id'], (int)($line['nominal_account_id'] ?? 0));
+
+        $draftLineId = (int)InterfaceDB::fetchColumn(
+            'SELECT tsl.id
+             FROM transaction_split_lines tsl
+             INNER JOIN transaction_splits ts ON ts.id = tsl.split_id
+             WHERE ts.transaction_id = :transaction_id
+             ORDER BY tsl.line_number DESC
+             LIMIT 1',
+            ['transaction_id' => $fixture['transaction_id']]
+        );
+
+        $draftResult = $saveTransactionSplitLine($fixture, $draftLineId, '', '', 'Test');
+        $draftLine = InterfaceDB::fetchOne(
+            'SELECT description, amount, nominal_account_id
+             FROM transaction_split_lines
+             WHERE id = :id',
+            ['id' => $draftLineId]
+        );
+
+        $harness->assertSame(true, $draftResult->isSuccess());
+        $harness->assertSame([TransactionAction::CATEGORISATION_SUMMARY_FACT], $draftResult->changedFacts());
+        $harness->assertSame('', transactionActionFlashText($draftResult));
+        $harness->assertSame('Test', (string)($draftLine['description'] ?? ''));
+        $harness->assertSame(null, $draftLine['amount'] ?? null);
+        $harness->assertSame(null, $draftLine['nominal_account_id'] ?? null);
+
+        $invalidResult = $saveTransactionSplitLine($fixture, $draftLineId, '56.3', '', 'Invalid amount');
+        $unchangedDraftLine = InterfaceDB::fetchOne(
+            'SELECT description, amount, nominal_account_id
+             FROM transaction_split_lines
+             WHERE id = :id',
+            ['id' => $draftLineId]
+        );
+
+        $harness->assertSame(false, $invalidResult->isSuccess());
+        $harness->assertSame([TransactionAction::CATEGORISATION_SUMMARY_FACT], $invalidResult->changedFacts());
+        $harness->assertSame(true, str_contains(transactionActionFlashText($invalidResult), 'exactly 2 decimal places'));
+        $harness->assertSame('Test', (string)($unchangedDraftLine['description'] ?? ''));
+        $harness->assertSame(null, $unchangedDraftLine['amount'] ?? null);
+        $harness->assertSame(null, $unchangedDraftLine['nominal_account_id'] ?? null);
     });
 
     $harness->check('TransactionAction', 'mark_director_loan uses the asset nominal for money leaving the bank', function () use ($harness, $createDirectorLoanFixture, $markDirectorLoan, $transactionNominalId, $transactionCategoryStatus): void {

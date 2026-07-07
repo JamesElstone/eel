@@ -649,9 +649,21 @@ final class HmrcObligationService
 
     private function transactionSummary(int $companyId, int $accountingPeriodId): array
     {
+        try {
+            $hasInterAccountMarkers = \InterfaceDB::tableExists('transaction_inter_ac_marker');
+        } catch (\Throwable) {
+            $hasInterAccountMarkers = false;
+        }
+        $noPostPredicate = $hasInterAccountMarkers
+            ? "EXISTS (
+                   SELECT 1
+                   FROM transaction_inter_ac_marker tiam
+                   WHERE tiam.matched_transaction_id = transactions.id
+               )"
+            : '0 = 1';
         $row = \InterfaceDB::fetchOne(
             'SELECT COUNT(*) AS total,
-                    SUM(CASE WHEN category_status = :uncategorised OR nominal_account_id IS NULL THEN 1 ELSE 0 END) AS uncategorised
+                    SUM(CASE WHEN NOT (' . $noPostPredicate . ') AND (category_status = :uncategorised OR nominal_account_id IS NULL) THEN 1 ELSE 0 END) AS uncategorised
              FROM transactions
              WHERE company_id = :company_id
                AND accounting_period_id = :accounting_period_id',

@@ -3541,6 +3541,13 @@ final class StatementUploadService
             $readySplitPredicate = 'COALESCE(split_status.is_ready, 0) = 1';
         }
         $validTransferPredicate = "(COALESCE(t.is_internal_transfer, 0) = 1 AND COALESCE(t.transfer_account_id, 0) > 0 AND t.category_status = 'manual')";
+        $interAccountNoPostPredicate = \InterfaceDB::tableExists('transaction_inter_ac_marker')
+            ? "EXISTS (
+                  SELECT 1
+                  FROM transaction_inter_ac_marker tiam
+                  WHERE tiam.matched_transaction_id = t.id
+              )"
+            : '0 = 1';
         $readyToPostPredicate = "(
                                                 (t.category_status IN ('auto', 'manual') AND t.nominal_account_id IS NOT NULL)
                                                 OR {$readySplitPredicate}
@@ -3551,6 +3558,7 @@ final class StatementUploadService
                                              COUNT(*) AS txn_count,
                                              SUM(
                                                  CASE
+                                                     WHEN {$interAccountNoPostPredicate} THEN 0
                                                      WHEN t.category_status = 'uncategorised' THEN 1
                                                      WHEN t.nominal_account_id IS NULL
                                                       AND NOT ({$readySplitPredicate})
@@ -3563,6 +3571,7 @@ final class StatementUploadService
                                              SUM(
                                                  CASE
                                                      WHEN {$readyToPostPredicate}
+                                                       AND NOT ({$interAccountNoPostPredicate})
                                                        AND NOT EXISTS (
                                                            SELECT 1
                                                            FROM journals j

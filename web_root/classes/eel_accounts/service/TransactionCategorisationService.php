@@ -193,6 +193,14 @@ final class TransactionCategorisationService
             $nextState = $this->buildTransferTargetState($transaction, $transferAccountId, $isAutoExcluded);
         } else {
             $nextState = $this->buildManualTargetState($transaction, $nominalAccountId, $isAutoExcluded);
+            $selfNominalErrors = $this->validateDestinationNominal($transaction, $nextState['nominal_account_id']);
+            if ($selfNominalErrors !== []) {
+                return [
+                    'success' => false,
+                    'changed' => false,
+                    'errors' => $selfNominalErrors,
+                ];
+            }
         }
 
         if (!$this->categorisationFieldsChanged($transaction, $nextState)) {
@@ -341,7 +349,8 @@ final class TransactionCategorisationService
                     t.category_status,
                     t.auto_rule_id,
                     t.is_auto_excluded,
-                    ' . $internalTransferMarkerExpression . ' AS internal_transfer_marker
+                    ' . $internalTransferMarkerExpression . ' AS internal_transfer_marker,
+                    COALESCE(ca.nominal_account_id, 0) AS source_account_nominal_id
              FROM transactions t
              LEFT JOIN company_accounts ca ON ca.id = t.account_id
              WHERE t.id = :id
@@ -433,7 +442,8 @@ final class TransactionCategorisationService
                     t.category_status,
                     t.auto_rule_id,
                     t.is_auto_excluded,
-                    ' . $internalTransferMarkerExpression . ' AS internal_transfer_marker
+                    ' . $internalTransferMarkerExpression . ' AS internal_transfer_marker,
+                    COALESCE(ca.nominal_account_id, 0) AS source_account_nominal_id
              FROM transactions t
              LEFT JOIN company_accounts ca ON ca.id = t.account_id
              WHERE ' . implode(' AND ', $where) . '
@@ -461,6 +471,10 @@ final class TransactionCategorisationService
         }
 
         if ($rule !== null) {
+            if ($this->validateDestinationNominal($transaction, (int)$rule['nominal_account_id']) !== []) {
+                return null;
+            }
+
             return [
                 'nominal_account_id' => (int)$rule['nominal_account_id'],
                 'transfer_account_id' => null,
@@ -795,7 +809,8 @@ final class TransactionCategorisationService
                     t.category_status,
                     t.auto_rule_id,
                     t.is_auto_excluded,
-                    ' . $internalTransferMarkerExpression . ' AS internal_transfer_marker
+                    ' . $internalTransferMarkerExpression . ' AS internal_transfer_marker,
+                    COALESCE(ca.nominal_account_id, 0) AS source_account_nominal_id
              FROM transactions t
              LEFT JOIN company_accounts ca ON ca.id = t.account_id
              WHERE ' . implode(' AND ', $where) . '
@@ -872,7 +887,25 @@ final class TransactionCategorisationService
         return [];
     }
 
+    private function validateDestinationNominal(array $transaction, ?int $nominalAccountId): array
+    {
+        if ($nominalAccountId === null || $nominalAccountId <= 0) {
+            return [];
+        }
+
+        $sourceNominalAccountId = (int)($transaction['source_account_nominal_id'] ?? 0);
+        if ($sourceNominalAccountId <= 0 || $sourceNominalAccountId !== $nominalAccountId) {
+            return [];
+        }
+
+        return ['The destination nominal cannot be the same nominal used by the source account.'];
+    }
+
     private function transactionHasDerivedJournal(int $transactionId): bool {
+        if ((new \eel_accounts\Service\TransactionInterAccountMarkerService())->isMatchedNoPostTransaction($transactionId)) {
+            return false;
+        }
+
         return (int)\InterfaceDB::fetchColumn(
             'SELECT EXISTS(
                 SELECT 1

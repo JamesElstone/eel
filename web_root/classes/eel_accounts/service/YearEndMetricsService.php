@@ -147,12 +147,21 @@ final class YearEndMetricsService
     }
 
     public function uncategorisedTransactionsCount(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): int {
+        $noPostExclusionSql = $this->tableExists('transaction_inter_ac_marker')
+            ? 'AND NOT EXISTS (
+                   SELECT 1
+                   FROM transaction_inter_ac_marker tiam
+                   WHERE tiam.matched_transaction_id = transactions.id
+               )'
+            : '';
+
         return (int)\InterfaceDB::fetchColumn( 'SELECT COUNT(*)
              FROM transactions
              WHERE company_id = :company_id
                AND accounting_period_id = :accounting_period_id
                AND txn_date BETWEEN :period_start AND :period_end
-               AND (category_status = :category_status OR nominal_account_id IS NULL)', [
+               AND (category_status = :category_status OR nominal_account_id IS NULL)
+               ' . $noPostExclusionSql, [
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
             'period_start' => $periodStart,
@@ -616,6 +625,14 @@ final class YearEndMetricsService
             return 0;
         }
 
+        $noPostExclusionSql = $this->tableExists('transaction_inter_ac_marker')
+            ? 'AND NOT EXISTS (
+                    SELECT 1
+                    FROM transaction_inter_ac_marker tiam
+                    WHERE tiam.matched_transaction_id = t.id
+               )'
+            : '';
+
         return (int)\InterfaceDB::fetchColumn(
             'SELECT COUNT(*)
              FROM transactions t
@@ -634,7 +651,8 @@ final class YearEndMetricsService
                       AND j.source_type = :source_type
                       AND j.source_ref = CONCAT(:source_ref_prefix, t.id)
                       AND j.is_posted = 1
-               )',
+               )
+               ' . $noPostExclusionSql,
             [
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
@@ -757,9 +775,16 @@ final class YearEndMetricsService
 
     private function fetchTransactionCountsByMonth(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array {
         $result = [];
+        $noPostPredicate = $this->tableExists('transaction_inter_ac_marker')
+            ? "EXISTS (
+                   SELECT 1
+                   FROM transaction_inter_ac_marker tiam
+                   WHERE tiam.matched_transaction_id = transactions.id
+               )"
+            : '0 = 1';
         foreach (\InterfaceDB::fetchAll( 'SELECT DATE_FORMAT(txn_date, \'%Y-%m-01\') AS month_key,
                     COUNT(*) AS transaction_count,
-                    SUM(CASE WHEN category_status = :category_status OR nominal_account_id IS NULL THEN 1 ELSE 0 END) AS uncategorised_count
+                    SUM(CASE WHEN NOT (' . $noPostPredicate . ') AND (category_status = :category_status OR nominal_account_id IS NULL) THEN 1 ELSE 0 END) AS uncategorised_count
              FROM transactions
              WHERE company_id = :company_id
                AND accounting_period_id = :accounting_period_id

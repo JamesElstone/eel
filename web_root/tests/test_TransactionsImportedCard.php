@@ -149,6 +149,84 @@ $harness->run(_transactions_importedCard::class, static function (GeneratedServi
     $harness->assertTrue(str_contains($normalHtml, 'name="global_action" value="start_transaction_split"'));
     $harness->assertTrue(str_contains($normalHtml, '>Split</button>'));
 
+    $interAccountBaseContext = [
+        'company' => [
+            'id' => 12,
+            'accounting_period_id' => 34,
+            'settings' => [],
+        ],
+        'page' => [
+            'page_id' => 'transactions',
+            'page_cards' => ['transactions_imported'],
+            'month_key' => '2026-01',
+            'category_filter' => 'not_posted',
+            'csrf_token' => 'test-csrf',
+        ],
+        'services' => [
+            'month_status' => [[
+                'month_key' => '2026-01',
+                'label' => 'Jan 2026',
+            ]],
+            'transactions_by_month' => [[
+                'id' => 5802,
+                'account_id' => 100,
+                'txn_date' => '2026-01-08',
+                'description' => 'Example Bank payment to Example Trade Supplier',
+                'source_account' => 'Example Bank - Current Account',
+                'source_category' => '',
+                'amount' => -241.46,
+                'document_download_status' => 'skipped',
+                'category_status' => 'uncategorised',
+                'has_derived_journal' => 0,
+                'has_transaction_split' => 0,
+            ]],
+            'nominal_accounts' => [],
+            'company_accounts' => [[
+                'id' => 100,
+                'account_name' => 'Example Bank - Current Account',
+                'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
+                'is_active' => 1,
+            ]],
+            'year_end_review' => [
+                'is_locked' => false,
+            ],
+            'pending_auto_approval_count' => 0,
+        ],
+    ];
+
+    $oneAccountHtml = $card->render($interAccountBaseContext);
+    $harness->assertFalse(str_contains($oneAccountHtml, 'Inter A/C Trans.'));
+
+    $twoAccountContext = $interAccountBaseContext;
+    $twoAccountContext['services']['company_accounts'][] = [
+        'id' => 200,
+        'account_name' => 'Example Trade Supplier',
+        'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_TRADE,
+        'is_active' => 1,
+    ];
+    $twoAccountHtml = $card->render($twoAccountContext);
+    $harness->assertTrue(str_contains($twoAccountHtml, 'name="global_action" value="toggle_inter_ac_transaction"'));
+    $harness->assertTrue(str_contains($twoAccountHtml, 'Inter A/C Trans.'));
+
+    $pendingContext = $twoAccountContext;
+    $pendingContext['page']['inter_ac_transaction_id'] = 5802;
+    $pendingHtml = $card->render($pendingContext);
+    $harness->assertTrue(str_contains($pendingHtml, 'js-transaction-inter-ac-candidate'));
+    $harness->assertTrue(str_contains($pendingHtml, 'name="matched_transaction_id"'));
+    $harness->assertTrue(str_contains($pendingHtml, 'name="global_action" value="save_inter_ac_transaction"'));
+    $harness->assertTrue(str_contains($pendingHtml, 'class="button primary" type="submit" name="global_action" value="toggle_inter_ac_transaction"'));
+
+    $savedContext = $twoAccountContext;
+    $savedContext['services']['transactions_by_month'][0]['inter_ac_marker_id'] = 77;
+    $savedContext['services']['transactions_by_month'][0]['inter_ac_marker_role'] = 'source';
+    $savedContext['services']['transactions_by_month'][0]['inter_ac_peer_account_name'] = 'Example Trade Supplier';
+    $savedContext['services']['transactions_by_month'][0]['inter_ac_peer_txn_date'] = '2026-01-09';
+    $savedContext['services']['transactions_by_month'][0]['inter_ac_peer_description'] = 'Example Trade Supplier payment received';
+    $savedContext['services']['transactions_by_month'][0]['inter_ac_peer_amount'] = '241.46';
+    $savedHtml = $card->render($savedContext);
+    $harness->assertTrue(str_contains($savedHtml, 'Example Trade Supplier 09/01/26 Example Trade Supplier payment received 241.46'));
+    $harness->assertTrue(str_contains($savedHtml, 'Posting source'));
+
     $splitTransaction = [
         'id' => 92,
         'txn_date' => '2026-01-09',

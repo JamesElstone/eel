@@ -117,6 +117,7 @@ final class _transactions_importedCard extends CardBaseFramework
         $settings = (array)($company['settings'] ?? []);
         $selectedTransactionMonth = (string)($page['month_key'] ?? '');
         $selectedTransactionFilter = (string)($page['category_filter'] ?? 'not_posted');
+        $interAcActiveTransactionId = max(0, (int)($page['inter_ac_transaction_id'] ?? 0));
         $selectedMonthSummary = $this->buildSelectedMonthSummary($transactionsByMonth);
         $pendingAutoApprovalCount = (int)($services['pending_auto_approval_count'] ?? $selectedMonthSummary['pending_auto_approval']);
 
@@ -139,6 +140,7 @@ final class _transactions_importedCard extends CardBaseFramework
             $activeTransferCompanyAccounts,
             $settings,
             $isPeriodLocked,
+            $interAcActiveTransactionId,
             $context
         )->render(
             $context,
@@ -198,7 +200,8 @@ final class _transactions_importedCard extends CardBaseFramework
                 (array)($services['nominal_accounts'] ?? []),
                 $this->activeTransferCompanyAccounts($services),
                 (array)($company['settings'] ?? []),
-                $isPeriodLocked
+                $isPeriodLocked,
+                max(0, (int)($page['inter_ac_transaction_id'] ?? 0))
             ),
         ];
     }
@@ -213,6 +216,7 @@ final class _transactions_importedCard extends CardBaseFramework
         array $activeTransferCompanyAccounts,
         array $settings,
         bool $isPeriodLocked,
+        int $interAcActiveTransactionId,
         array $context
     ): TableFramework {
         $rows = array_values(array_filter($transactions, static fn(mixed $row): bool => is_array($row)));
@@ -229,7 +233,8 @@ final class _transactions_importedCard extends CardBaseFramework
             $nominalAccounts,
             $activeTransferCompanyAccounts,
             $settings,
-            $isPeriodLocked
+            $isPeriodLocked,
+            $interAcActiveTransactionId
         )
             ->visibleRows($visibleRows)
             ->pagination(
@@ -365,7 +370,8 @@ final class _transactions_importedCard extends CardBaseFramework
         array $nominalAccounts,
         array $activeTransferCompanyAccounts,
         array $settings,
-        bool $isPeriodLocked = false
+        bool $isPeriodLocked = false,
+        int $interAcActiveTransactionId = 0
     ): TableFramework {
         $rows = $this->transactionTableRows($transactions);
 
@@ -426,7 +432,7 @@ final class _transactions_importedCard extends CardBaseFramework
             ->column(
                 'categorisation',
                 'Categorisation',
-                html: fn(array $row): string => $this->categorisationHtml($row, $nominalAccounts, $activeTransferCompanyAccounts, $isPeriodLocked)
+                html: fn(array $row): string => $this->categorisationHtml($row, $nominalAccounts, $activeTransferCompanyAccounts, $isPeriodLocked, $interAcActiveTransactionId)
             )
             ->column(
                 'status',
@@ -468,7 +474,7 @@ final class _transactions_importedCard extends CardBaseFramework
             ->column(
                 'actions',
                 'Create / Set',
-                html: fn(array $row): string => $this->actionsHtml($row, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $settings, $isPeriodLocked),
+                html: fn(array $row): string => $this->actionsHtml($row, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $settings, $isPeriodLocked, $activeTransferCompanyAccounts, $interAcActiveTransactionId),
                 exportable: false
             );
     }
@@ -647,7 +653,8 @@ final class _transactions_importedCard extends CardBaseFramework
         array $transaction,
         array $nominalAccounts,
         array $activeTransferCompanyAccounts,
-        bool $isPeriodLocked
+        bool $isPeriodLocked,
+        int $interAcActiveTransactionId
     ): string
     {
         $transactionFormId = 'transaction-form-' . (int)($transaction['id'] ?? 0);
@@ -659,6 +666,10 @@ final class _transactions_importedCard extends CardBaseFramework
 
         if ($rowType === 'split_line') {
             return $this->splitLineCategorisationHtml($transaction, $nominalAccounts, $isPeriodLocked);
+        }
+
+        if ($this->interAccountControlIsActive($transaction, $interAcActiveTransactionId)) {
+            return $this->interAccountCategorisationHtml($transaction, $transactionFormId, $isPeriodLocked);
         }
 
         if ((int)($transaction['has_transaction_split'] ?? 0) === 1) {
@@ -708,6 +719,67 @@ final class _transactions_importedCard extends CardBaseFramework
             </div>';
     }
 
+    private function interAccountCategorisationHtml(array $transaction, string $transactionFormId, bool $isPeriodLocked): string
+    {
+        $role = trim((string)($transaction['inter_ac_marker_role'] ?? ''));
+        if ((int)($transaction['inter_ac_marker_id'] ?? 0) > 0) {
+            $label = $this->interAccountPeerLabel($transaction);
+            $roleLabel = $role === 'matched' ? 'Matched evidence' : 'Posting source';
+
+            return '<div class="document-stack">
+                    <span class="badge info">' . HelperFramework::escape($roleLabel) . '</span>
+                    <span class="helper">' . HelperFramework::escape($label) . '</span>
+                </div>';
+        }
+
+        if ($isPeriodLocked) {
+            return '<span class="helper">Period locked</span>';
+        }
+
+        $options = '<option value="">Select matching transaction</option>';
+        $candidates = (new \eel_accounts\Service\TransactionInterAccountMarkerService())->fetchCandidates((int)($transaction['id'] ?? 0));
+        foreach ($candidates as $candidate) {
+            if (!is_array($candidate)) {
+                continue;
+            }
+            $options .= '<option value="' . (int)($candidate['id'] ?? 0) . '">' . HelperFramework::escape($this->interAccountCandidateLabel($candidate)) . '</option>';
+        }
+
+        if ($candidates === []) {
+            $options .= '<option value="" disabled>No matching transactions found</option>';
+        }
+
+        return '<select class="select js-transaction-inter-ac-candidate" name="matched_transaction_id" form="' . HelperFramework::escape($transactionFormId) . '" data-autosave-submit-target=".js-transaction-inter-ac-submit" data-autosave-require-value="1">' . $options . '</select>';
+    }
+
+    private function interAccountControlIsActive(array $transaction, int $interAcActiveTransactionId): bool
+    {
+        return (int)($transaction['inter_ac_marker_id'] ?? 0) > 0
+            || ($interAcActiveTransactionId > 0 && $interAcActiveTransactionId === (int)($transaction['id'] ?? 0));
+    }
+
+    private function interAccountPeerLabel(array $transaction): string
+    {
+        return $this->interAccountCandidateLabel([
+            'account_name' => (string)($transaction['inter_ac_peer_account_name'] ?? ''),
+            'txn_date' => (string)($transaction['inter_ac_peer_txn_date'] ?? ''),
+            'description' => (string)($transaction['inter_ac_peer_description'] ?? ''),
+            'amount' => (string)($transaction['inter_ac_peer_amount'] ?? '0.00'),
+        ]);
+    }
+
+    private function interAccountCandidateLabel(array $transaction): string
+    {
+        $parts = [
+            trim((string)($transaction['account_name'] ?? '')),
+            $this->displayDate((string)($transaction['txn_date'] ?? '')),
+            trim((string)($transaction['description'] ?? '')),
+            number_format((float)($transaction['amount'] ?? 0), 2, '.', ''),
+        ];
+
+        return trim(implode(' ', array_filter($parts, static fn(string $part): bool => $part !== '')));
+    }
+
     private function splitLineCategorisationHtml(array $transaction, array $nominalAccounts, bool $isPeriodLocked): string
     {
         $lineId = (int)($transaction['transaction_split_line_id'] ?? 0);
@@ -746,6 +818,9 @@ final class _transactions_importedCard extends CardBaseFramework
         }
         if ((int)($transaction['has_transaction_split'] ?? 0) === 1 && $this->transactionRowType($transaction) === 'transaction') {
             $flagsHtml .= '<span class="badge info">Split</span>';
+        }
+        if ((int)($transaction['inter_ac_marker_id'] ?? 0) > 0) {
+            $flagsHtml .= '<span class="badge info">Inter A/C</span>';
         }
         if ($this->transactionRowType($transaction) === 'split_line' && (int)($transaction['split_line_is_deferred'] ?? 0) === 1) {
             $flagsHtml .= '<span class="badge warning">Deferred</span>';
@@ -866,7 +941,9 @@ final class _transactions_importedCard extends CardBaseFramework
         string $selectedTransactionMonth,
         string $selectedTransactionFilter,
         array $settings,
-        bool $isPeriodLocked
+        bool $isPeriodLocked,
+        array $activeTransferCompanyAccounts,
+        int $interAcActiveTransactionId
     ): string
     {
         $rowType = $this->transactionRowType($transaction);
@@ -889,6 +966,9 @@ final class _transactions_importedCard extends CardBaseFramework
         $autosaveSubmitHtml = $isPeriodLocked
             ? ''
             : '<button class="js-transaction-autosave-submit" type="submit" name="global_action" value="save_transaction_category" data-blur-scope="none" hidden' . $journalRebuildAttributes . '>Autosave</button>';
+        $interAcAutosaveSubmitHtml = $isPeriodLocked
+            ? ''
+            : '<button class="js-transaction-inter-ac-submit" type="submit" name="global_action" value="save_inter_ac_transaction" data-blur-scope="none" hidden>Autosave Inter A/C</button>';
         $noteAutosaveSubmitHtml = $isPeriodLocked
             ? ''
             : '<button class="js-transaction-note-autosave-submit" type="submit" name="global_action" value="save_transaction_note" hidden>Autosave note</button>';
@@ -896,6 +976,7 @@ final class _transactions_importedCard extends CardBaseFramework
         $createRuleHtml = $isTransferRow ? '' : $this->createRuleButtonHtml($transaction, $isPeriodLocked);
         $directorLoanButtonHtml = $this->directorLoanButtonHtml($transaction, $settings, $isPeriodLocked, $journalRebuildAttributes);
         $dividendButtonHtml = $this->dividendButtonHtml($transaction, $dividendFormId, $settings, $isPeriodLocked);
+        $interAcButtonHtml = $this->interAccountButtonHtml($transaction, $activeTransferCompanyAccounts, $isPeriodLocked, $interAcActiveTransactionId);
         $isSplitParent = (int)($transaction['has_transaction_split'] ?? 0) === 1;
 
         if ($isSplitParent) {
@@ -936,11 +1017,13 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
                 <input type="hidden" name="confirm_rebuild_journal" value="0">
                 ' . $autosaveSubmitHtml . '
+                ' . $interAcAutosaveSubmitHtml . '
                 ' . $noteAutosaveSubmitHtml . '
                 <div class="actions-row">
                     ' . $createRuleHtml . '
                     ' . $directorLoanButtonHtml . '
                     ' . $dividendButtonHtml . '
+                    ' . $interAcButtonHtml . '
                     <button class="button primary"' . $lockedButtonAttributes . ' name="global_action" value="defer_transaction"' . $journalRebuildAttributes . '>Defer</button>
                     <button class="button"' . $createAssetAttributes . '>Asset</button>
                 </div>
@@ -983,6 +1066,30 @@ final class _transactions_importedCard extends CardBaseFramework
                     <button class="button"' . $assetButtonAttributes . '>Asset</button>
                 </div>
             </form>';
+    }
+
+    private function interAccountButtonHtml(
+        array $transaction,
+        array $activeTransferCompanyAccounts,
+        bool $isPeriodLocked,
+        int $interAcActiveTransactionId
+    ): string {
+        if (count($activeTransferCompanyAccounts) < 2) {
+            return '';
+        }
+
+        if ((int)($transaction['has_transaction_split'] ?? 0) === 1) {
+            return '';
+        }
+
+        $isActive = $this->interAccountControlIsActive($transaction, $interAcActiveTransactionId);
+        $buttonClass = $isActive ? 'button primary' : 'button';
+        $buttonAttributes = $isPeriodLocked ? ' type="button" disabled title="Period locked"' : ' type="submit"';
+        $pendingInput = $isActive && (int)($transaction['inter_ac_marker_id'] ?? 0) <= 0
+            ? '<input type="hidden" name="inter_ac_pending" value="1">'
+            : '';
+
+        return $pendingInput . '<button class="' . HelperFramework::escape($buttonClass) . '"' . $buttonAttributes . ' name="global_action" value="toggle_inter_ac_transaction">Inter A/C Trans.</button>';
     }
 
     private function dividendButtonHtml(array $transaction, string $dividendFormId, array $settings, bool $isPeriodLocked): string
@@ -1194,13 +1301,18 @@ final class _transactions_importedCard extends CardBaseFramework
                 continue;
             }
 
+            $isMatchedNoPost = trim((string)($row['inter_ac_marker_role'] ?? '')) === 'matched';
             $status = (string)($row['category_status'] ?? 'uncategorised');
-            if (isset($summary[$status])) {
+            if (!$isMatchedNoPost && isset($summary[$status])) {
                 $summary[$status]++;
             }
 
-            if ((int)($row['is_auto_excluded'] ?? 0) === 1) {
+            if (!$isMatchedNoPost && (int)($row['is_auto_excluded'] ?? 0) === 1) {
                 $summary['deferred']++;
+            }
+
+            if ($isMatchedNoPost) {
+                continue;
             }
 
             if ((int)($row['has_derived_journal'] ?? 0) === 1) {
@@ -1301,6 +1413,10 @@ final class _transactions_importedCard extends CardBaseFramework
             return (int)($transaction['split_line_is_complete'] ?? 0) === 1 ? 'success' : 'warning';
         }
 
+        if ((int)($transaction['inter_ac_marker_id'] ?? 0) > 0) {
+            return 'info';
+        }
+
         $status = strtolower(trim((string)($transaction['category_status'] ?? 'uncategorised')));
         return match ($status) {
             'auto' => 'info',
@@ -1322,6 +1438,14 @@ final class _transactions_importedCard extends CardBaseFramework
             return (int)($transaction['split_line_is_complete'] ?? 0) === 1 ? 'Ready' : 'Not ready';
         }
 
+        $interAcRole = trim((string)($transaction['inter_ac_marker_role'] ?? ''));
+        if ($interAcRole === 'matched') {
+            return 'Matched evidence';
+        }
+        if ($interAcRole === 'source') {
+            return 'Inter A/C source';
+        }
+
         $status = strtolower(trim((string)($transaction['category_status'] ?? 'uncategorised')));
         if ($this->transactionIsTransferMode($transaction)) {
             return $this->transactionHasTransferAssignment($transaction) ? 'Transfer assigned' : 'Transfer pending';
@@ -1341,6 +1465,10 @@ final class _transactions_importedCard extends CardBaseFramework
         }
         if ($this->transactionRowType($transaction) === 'split_line') {
             return (int)($transaction['transaction_split_ready'] ?? 0) === 1 ? 'info' : 'muted';
+        }
+
+        if (trim((string)($transaction['inter_ac_marker_role'] ?? '')) === 'matched') {
+            return 'muted';
         }
 
         if ((int)($transaction['has_derived_journal'] ?? 0) === 1) {
@@ -1369,6 +1497,10 @@ final class _transactions_importedCard extends CardBaseFramework
         }
         if ($this->transactionRowType($transaction) === 'split_line') {
             return (int)($transaction['transaction_split_ready'] ?? 0) === 1 ? 'Ready to post' : 'Not ready';
+        }
+
+        if (trim((string)($transaction['inter_ac_marker_role'] ?? '')) === 'matched') {
+            return 'No posting';
         }
 
         if ((int)($transaction['has_derived_journal'] ?? 0) === 1) {

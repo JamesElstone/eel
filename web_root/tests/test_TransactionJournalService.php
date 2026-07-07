@@ -63,6 +63,26 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $harness->assertSame('100.00', (string)$lines[1]['credit']);
     });
 
+    $harness->check(\eel_accounts\Service\TransactionJournalService::class, 'does not create desired journal for inter account matched evidence', static function () use ($harness, $service, $buildDesiredJournal): void {
+        $journal = $buildDesiredJournal->invoke($service, [
+            'id' => 5802,
+            'company_id' => 1,
+            'accounting_period_id' => 2,
+            'account_id' => 10,
+            'txn_date' => '2026-05-03',
+            'description' => 'Matched Example Trade Supplier evidence',
+            'amount' => -241.46,
+            'nominal_account_id' => 2301,
+            'category_status' => 'manual',
+            'source_account_name' => 'Example Bank - Current Account',
+            'source_account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
+            'source_account_nominal_id' => 1001,
+            'inter_ac_no_post' => 1,
+        ], 0);
+
+        $harness->assertSame(null, $journal);
+    });
+
     $harness->check(\eel_accounts\Service\TransactionJournalService::class, 'posts bank payment split lines to their own nominals', static function () use ($harness, $service, $buildDesiredJournal): void {
         foreach (['transaction_splits', 'transaction_split_lines'] as $table) {
             if (!InterfaceDB::tableExists($table)) {

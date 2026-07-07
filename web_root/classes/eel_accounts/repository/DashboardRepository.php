@@ -451,6 +451,7 @@ final class DashboardRepository
             $params['month_end'] = $monthEnd->format('Y-m-d');
         }
 
+        $hasInterAccountMarkers = $this->tableExists('transaction_inter_ac_marker');
         if ($categoryFilter === 'not_posted') {
             $where[] = "NOT EXISTS(
                 SELECT 1
@@ -458,10 +459,77 @@ final class DashboardRepository
                 WHERE j.source_type = 'bank_csv'
                   AND j.source_ref = CONCAT('transaction:', t.id)
             )";
+            if ($hasInterAccountMarkers) {
+                $where[] = 'NOT EXISTS (
+                    SELECT 1
+                    FROM transaction_inter_ac_marker filter_tiam
+                    WHERE filter_tiam.matched_transaction_id = t.id
+                )';
+            }
         } elseif ($categoryFilter !== 'all') {
             $where[] = 't.category_status = :category_status';
             $params['category_status'] = $categoryFilter;
+            if ($categoryFilter === 'uncategorised' && $hasInterAccountMarkers) {
+                $where[] = 'NOT EXISTS (
+                    SELECT 1
+                    FROM transaction_inter_ac_marker filter_tiam
+                    WHERE filter_tiam.matched_transaction_id = t.id
+                )';
+            }
         }
+
+        $interAccountSelect = $hasInterAccountMarkers
+            ? ",
+                       COALESCE(tiam_source.id, tiam_matched.id, 0) AS inter_ac_marker_id,
+                       CASE
+                           WHEN tiam_source.id IS NOT NULL THEN 'source'
+                           WHEN tiam_matched.id IS NOT NULL THEN 'matched'
+                           ELSE ''
+                       END AS inter_ac_marker_role,
+                       COALESCE(tiam_source.transaction_id, tiam_matched.transaction_id, 0) AS inter_ac_source_transaction_id,
+                       COALESCE(tiam_source.matched_transaction_id, tiam_matched.matched_transaction_id, 0) AS inter_ac_matched_transaction_id,
+                       COALESCE(peer_t.id, 0) AS inter_ac_peer_transaction_id,
+                       COALESCE(peer_t.txn_date, '') AS inter_ac_peer_txn_date,
+                       COALESCE(peer_t.description, '') AS inter_ac_peer_description,
+                       COALESCE(peer_t.amount, 0.00) AS inter_ac_peer_amount,
+                       COALESCE(peer_ca.account_name, '') AS inter_ac_peer_account_name"
+            : ",
+                       0 AS inter_ac_marker_id,
+                       '' AS inter_ac_marker_role,
+                       0 AS inter_ac_source_transaction_id,
+                       0 AS inter_ac_matched_transaction_id,
+                       0 AS inter_ac_peer_transaction_id,
+                       '' AS inter_ac_peer_txn_date,
+                       '' AS inter_ac_peer_description,
+                       0.00 AS inter_ac_peer_amount,
+                       '' AS inter_ac_peer_account_name";
+        $interAccountJoin = $hasInterAccountMarkers
+            ? "LEFT JOIN transaction_inter_ac_marker tiam_source ON tiam_source.transaction_id = t.id
+                LEFT JOIN transaction_inter_ac_marker tiam_matched ON tiam_matched.matched_transaction_id = t.id
+                LEFT JOIN transactions peer_t
+                  ON peer_t.id = CASE
+                      WHEN tiam_source.id IS NOT NULL THEN tiam_source.matched_transaction_id
+                      WHEN tiam_matched.id IS NOT NULL THEN tiam_matched.transaction_id
+                      ELSE 0
+                  END
+                LEFT JOIN company_accounts peer_ca ON peer_ca.id = peer_t.account_id"
+            : '';
+        $hasDerivedJournalSql = $hasInterAccountMarkers
+            ? "CASE
+                           WHEN tiam_matched.id IS NOT NULL THEN 0
+                           ELSE EXISTS(
+                               SELECT 1
+                               FROM journals j
+                               WHERE j.source_type = 'bank_csv'
+                                 AND j.source_ref = CONCAT('transaction:', t.id)
+                           )
+                       END"
+            : "EXISTS(
+                           SELECT 1
+                           FROM journals j
+                           WHERE j.source_type = 'bank_csv'
+                             AND j.source_ref = CONCAT('transaction:', t.id)
+                       )";
 
         $sql = "SELECT t.id,
                        t.account_id,
@@ -497,12 +565,7 @@ final class DashboardRepository
                        taa.confirmed_transaction_updated_at AS auto_approval_confirmed_transaction_updated_at,
                        " . \eel_accounts\Service\TransactionAutoApprovalService::currentCheckedSql('taa', 't') . " AS auto_approval_checked_current,
                        " . \eel_accounts\Service\TransactionAutoApprovalService::currentApprovalSql('taa', 't') . " AS auto_approval_confirmed_current,
-                       EXISTS(
-                           SELECT 1
-                           FROM journals j
-                           WHERE j.source_type = 'bank_csv'
-                             AND j.source_ref = CONCAT('transaction:', t.id)
-                       ) AS has_derived_journal,
+                       {$hasDerivedJournalSql} AS has_derived_journal,
                        EXISTS(
                            SELECT 1
                            FROM journals dividend_j
@@ -510,12 +573,14 @@ final class DashboardRepository
                              AND dividend_j.source_type = 'manual'
                              AND dividend_j.source_ref = CONCAT('dividend:transaction:', t.id)
                        ) AS has_dividend_declaration
+                       {$interAccountSelect}
                 FROM transactions t
                 LEFT JOIN company_accounts ca ON ca.id = t.account_id
                 LEFT JOIN company_accounts ta ON ta.id = t.transfer_account_id
                 LEFT JOIN nominal_accounts na ON na.id = t.nominal_account_id
                 LEFT JOIN categorisation_rules cr ON cr.id = t.auto_rule_id
                 LEFT JOIN transaction_auto_approvals taa ON taa.transaction_id = t.id
+                {$interAccountJoin}
                 WHERE " . implode(' AND ', $where) . "
                 ORDER BY t.txn_date DESC, t.id DESC
                 LIMIT {$limit}";

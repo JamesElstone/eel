@@ -990,13 +990,22 @@ final class DividendService
             return 0;
         }
 
+        $noPostExclusionSql = $this->tableExists('transaction_inter_ac_marker')
+            ? 'AND NOT EXISTS (
+                   SELECT 1
+                   FROM transaction_inter_ac_marker tiam
+                   WHERE tiam.matched_transaction_id = transactions.id
+               )'
+            : '';
+
         return (int)(\InterfaceDB::fetchColumn(
             'SELECT COUNT(*)
              FROM transactions
              WHERE company_id = :company_id
                AND accounting_period_id = :accounting_period_id
                AND txn_date BETWEEN :period_start AND :as_at_date
-               AND (category_status = :category_status OR nominal_account_id IS NULL)',
+               AND (category_status = :category_status OR nominal_account_id IS NULL)
+               ' . $noPostExclusionSql,
             [
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,

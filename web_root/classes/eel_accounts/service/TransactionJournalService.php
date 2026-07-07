@@ -201,6 +201,10 @@ final class TransactionJournalService
             return false;
         }
 
+        if ((new \eel_accounts\Service\TransactionInterAccountMarkerService())->isMatchedNoPostTransaction($transactionId)) {
+            return false;
+        }
+
         return \InterfaceDB::countWhere('journals', [
             'source_type' => 'bank_csv',
             'source_ref' => $this->sourceRefForTransaction($transactionId),
@@ -403,6 +407,13 @@ final class TransactionJournalService
         $internalTransferMarkerExpression = \InterfaceDB::columnExists('company_accounts', 'internal_transfer_marker')
             ? 'COALESCE(ca.internal_transfer_marker, \'\')'
             : '\'\'';
+        $interAccountNoPostSelect = (new \eel_accounts\Service\TransactionInterAccountMarkerService())->hasSchema()
+            ? "EXISTS (
+                    SELECT 1
+                    FROM transaction_inter_ac_marker tiam
+                    WHERE tiam.matched_transaction_id = t.id
+                )"
+            : '0';
         $stmt = \InterfaceDB::prepare(
             'SELECT t.id,
                     t.company_id,
@@ -422,7 +433,8 @@ final class TransactionJournalService
                     COALESCE(ca.nominal_account_id, 0) AS source_account_nominal_id,
                     COALESCE(ta.account_name, \'\') AS transfer_account_name,
                     COALESCE(ta.account_type, \'\') AS transfer_account_type,
-                    COALESCE(ta.nominal_account_id, 0) AS transfer_account_nominal_id
+                    COALESCE(ta.nominal_account_id, 0) AS transfer_account_nominal_id,
+                    ' . $interAccountNoPostSelect . ' AS inter_ac_no_post
              FROM transactions t
              LEFT JOIN company_accounts ca ON ca.id = t.account_id
              LEFT JOIN company_accounts ta ON ta.id = t.transfer_account_id
@@ -444,6 +456,13 @@ final class TransactionJournalService
                 OR (t.transfer_account_id IS NOT NULL AND t.is_internal_transfer = 1 AND t.category_status = \'manual\')
             )',
         ];
+        if ((new \eel_accounts\Service\TransactionInterAccountMarkerService())->hasSchema()) {
+            $where[] = 'NOT EXISTS (
+                SELECT 1
+                FROM transaction_inter_ac_marker tiam
+                WHERE tiam.matched_transaction_id = t.id
+            )';
+        }
         $params = [
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
@@ -472,7 +491,11 @@ final class TransactionJournalService
             $stmt->fetchAll()
         );
 
+        $interAccountMarkerService = new \eel_accounts\Service\TransactionInterAccountMarkerService();
         foreach ((new \eel_accounts\Service\TransactionSplitService())->fetchReadySplitTransactionIds($companyId, $accountingPeriodId, $monthKey !== '' ? $monthKey : null) as $splitTransactionId) {
+            if ($interAccountMarkerService->isMatchedNoPostTransaction((int)$splitTransactionId)) {
+                continue;
+            }
             $transactionIds[] = (int)$splitTransactionId;
         }
 
@@ -487,6 +510,10 @@ final class TransactionJournalService
     }
 
     private function buildDesiredJournal(array $transaction, int $bankNominalId): ?array {
+        if ((int)($transaction['inter_ac_no_post'] ?? 0) === 1) {
+            return null;
+        }
+
         if ($this->isTransferTransaction($transaction)) {
             return $this->buildTransferJournal($transaction, $bankNominalId);
         }
@@ -680,6 +707,10 @@ final class TransactionJournalService
 
     private function postingNominalErrors(array $transaction, int $fallbackBankNominalId): array
     {
+        if ((int)($transaction['inter_ac_no_post'] ?? 0) === 1) {
+            return [];
+        }
+
         if ($this->isTransferTransaction($transaction)) {
             $sourceAccountId = (int)($transaction['account_id'] ?? 0);
             $transferAccountId = (int)($transaction['transfer_account_id'] ?? 0);

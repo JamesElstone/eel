@@ -1516,6 +1516,33 @@ CONSTRAINT `chk_transactions_amount_nonzero` CHECK (`amount` <> 0)
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `transaction_inter_ac_marker`
+--
+
+DROP TABLE IF EXISTS `transaction_inter_ac_marker`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `transaction_inter_ac_marker` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `company_id` int(11) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `transaction_id` bigint(20) NOT NULL,
+  `matched_transaction_id` bigint(20) NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `created_by` varchar(100) NOT NULL DEFAULT 'web_app',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_transaction_inter_ac_source` (`transaction_id`),
+  UNIQUE KEY `uq_transaction_inter_ac_matched` (`matched_transaction_id`),
+  KEY `idx_transaction_inter_ac_company_period` (`company_id`,`accounting_period_id`),
+  KEY `idx_transaction_inter_ac_matched` (`matched_transaction_id`),
+  CONSTRAINT `fk_transaction_inter_ac_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_transaction_inter_ac_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_transaction_inter_ac_source` FOREIGN KEY (`transaction_id`) REFERENCES `transactions` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_transaction_inter_ac_matched` FOREIGN KEY (`matched_transaction_id`) REFERENCES `transactions` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `transaction_splits`
 --
 
@@ -2357,7 +2384,8 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_05_002_dynamic_tax_append_only_close.sql'),
   ('2026_07_06_001_prepayments_cutoff_workflows.sql'),
   ('2026_07_06_002_remove_pending_prepayment_status.sql'),
-  ('2026_07_07_001_transaction_splits.sql');
+  ('2026_07_07_001_transaction_splits.sql'),
+  ('2026_07_07_002_transaction_inter_ac_marker.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

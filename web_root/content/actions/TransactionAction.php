@@ -18,6 +18,8 @@ final class TransactionAction implements ActionInterfaceFramework
         'save_transaction_category',
         'defer_transaction',
         'mark_director_loan',
+        'toggle_inter_ac_transaction',
+        'save_inter_ac_transaction',
         'start_transaction_split',
         'add_transaction_split_line',
         'save_transaction_split_line',
@@ -68,6 +70,8 @@ final class TransactionAction implements ActionInterfaceFramework
             'save_transaction_category',
             'defer_transaction',
             'mark_director_loan' => $this->saveTransactionCategory($request, $services, $intent),
+            'toggle_inter_ac_transaction' => $this->toggleInterAccountTransaction($request, $services),
+            'save_inter_ac_transaction' => $this->saveInterAccountTransaction($request, $services),
             'start_transaction_split',
             'add_transaction_split_line',
             'save_transaction_split_line',
@@ -97,6 +101,8 @@ final class TransactionAction implements ActionInterfaceFramework
             'save_transaction_category',
             'defer_transaction',
             'mark_director_loan',
+            'toggle_inter_ac_transaction',
+            'save_inter_ac_transaction',
             'start_transaction_split',
             'add_transaction_split_line',
             'save_transaction_split_line',
@@ -154,6 +160,7 @@ final class TransactionAction implements ActionInterfaceFramework
             'category_filter' => $categoryFilter,
             'selected_transaction_filter' => $categoryFilter,
             'editing_rule_id' => $editingRuleId,
+            'inter_ac_transaction_id' => max(0, (int)($context['inter_ac_transaction_id'] ?? $request->input('inter_ac_transaction_id', 0))),
         ]);
 
         foreach (['rule_form', 'rule_import_json'] as $key) {
@@ -337,6 +344,101 @@ final class TransactionAction implements ActionInterfaceFramework
         }
 
         return $changed ? [self::CATEGORISATION_SUMMARY_FACT] : [];
+    }
+
+    private function toggleInterAccountTransaction(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
+    {
+        $context = $this->filterContext($request);
+        $transactionId = $this->positiveInt($request->post('transaction_id', 0));
+        $errors = [];
+        $messages = [];
+        $changedFacts = ['page.context', self::TRANSACTIONS_IMPORTED_FACT, self::CATEGORISATION_SUMMARY_FACT, 'year.end.checklist', 'year.end.state'];
+
+        if ($transactionId <= 0) {
+            $errors[] = 'Select a valid transaction before marking an inter-account transaction.';
+        }
+
+        if ($errors === []) {
+            try {
+                $markerService = self::service($services, \eel_accounts\Service\TransactionInterAccountMarkerService::class);
+                $marker = $markerService->fetchMarkerForTransaction($transactionId);
+
+                if ($marker !== null) {
+                    $result = $markerService->clearMarkerForTransaction($transactionId);
+                    $errors = array_merge($errors, array_map('strval', (array)($result['errors'] ?? [])));
+                    if ($errors === []) {
+                        $messages[] = !empty($result['removed']) ? 'Inter-account marker removed.' : 'No inter-account marker needed removing.';
+                    }
+                } elseif ($this->checkboxValue($request, 'inter_ac_pending')) {
+                    $context['inter_ac_transaction_id'] = 0;
+                } else {
+                    $context['inter_ac_transaction_id'] = $transactionId;
+                }
+            } catch (Throwable $exception) {
+                $errors[] = 'The inter-account marker could not be changed: ' . $exception->getMessage();
+            }
+        }
+
+        return $this->result($errors === [], $errors, $messages, $context, [], $changedFacts);
+    }
+
+    private function saveInterAccountTransaction(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
+    {
+        $context = $this->filterContext($request);
+        $companyId = $this->selectedCompanyId($request);
+        $transactionId = $this->positiveInt($request->post('transaction_id', 0));
+        $matchedTransactionId = $this->positiveInt($request->post('matched_transaction_id', 0));
+        $errors = [];
+        $messages = [];
+        $changedFacts = ['page.context', self::TRANSACTIONS_IMPORTED_FACT, self::CATEGORISATION_SUMMARY_FACT, 'transaction.search', 'year.end.checklist', 'year.end.state'];
+
+        if ($transactionId <= 0 || $matchedTransactionId <= 0) {
+            $errors[] = 'Choose a valid inter-account transaction match.';
+        }
+
+        if ($errors === []) {
+            try {
+                InterfaceDB::beginTransaction();
+
+                $markerService = self::service($services, \eel_accounts\Service\TransactionInterAccountMarkerService::class);
+                $saveResult = $markerService->saveMarker(
+                    $transactionId,
+                    $matchedTransactionId,
+                    'user:' . $this->currentUserId()
+                );
+                $errors = array_merge($errors, array_map('strval', (array)($saveResult['errors'] ?? [])));
+
+                if ($errors === []) {
+                    $journalResult = self::service($services, \eel_accounts\Service\TransactionJournalService::class)->syncJournalForTransaction(
+                        $matchedTransactionId,
+                        $this->defaultBankNominalId($companyId),
+                        'inter_ac_marker',
+                        true
+                    );
+                    if (!empty($journalResult['errors'])) {
+                        $errors = array_merge($errors, array_map('strval', (array)$journalResult['errors']));
+                    }
+                }
+
+                if ($errors !== []) {
+                    InterfaceDB::rollBack();
+                } else {
+                    InterfaceDB::commit();
+                    $context['inter_ac_transaction_id'] = 0;
+                    $messages[] = 'Inter-account transaction match saved.';
+                    if (!empty($journalResult['removed'])) {
+                        $messages[] = 'The matched transaction journal was removed because it is evidence only.';
+                    }
+                }
+            } catch (Throwable $exception) {
+                if (InterfaceDB::inTransaction()) {
+                    InterfaceDB::rollBack();
+                }
+                $errors[] = 'The inter-account transaction match could not be saved: ' . $exception->getMessage();
+            }
+        }
+
+        return $this->result($errors === [], $errors, $messages, $context, [], $changedFacts);
     }
 
     private function saveTransactionSplit(

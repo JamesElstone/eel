@@ -688,10 +688,22 @@ final class ProfitLossService
     private function transactionMonths(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array
     {
         $result = [];
+        try {
+            $hasInterAccountMarkers = \InterfaceDB::tableExists('transaction_inter_ac_marker');
+        } catch (\Throwable) {
+            $hasInterAccountMarkers = false;
+        }
+        $noPostPredicate = $hasInterAccountMarkers
+            ? "EXISTS (
+                   SELECT 1
+                   FROM transaction_inter_ac_marker tiam
+                   WHERE tiam.matched_transaction_id = transactions.id
+               )"
+            : '0 = 1';
         foreach (\InterfaceDB::fetchAll(
             'SELECT DATE_FORMAT(txn_date, \'%Y-%m-01\') AS month_start,
                     COUNT(*) AS transaction_count,
-                    SUM(CASE WHEN category_status = :uncategorised OR nominal_account_id IS NULL THEN 1 ELSE 0 END) AS uncategorised_count
+                    SUM(CASE WHEN NOT (' . $noPostPredicate . ') AND (category_status = :uncategorised OR nominal_account_id IS NULL) THEN 1 ELSE 0 END) AS uncategorised_count
              FROM transactions
              WHERE company_id = :company_id
                AND accounting_period_id = :accounting_period_id

@@ -727,10 +727,11 @@ final class TransactionSplitService
                 $allComplete = false;
             } else {
                 $lineCount++;
+                if ($amount !== null && $amount > 0.0) {
+                    $lineTotal += $amount;
+                }
                 if ($amount === null || $amount <= 0.0 || $nominalAccountId <= 0) {
                     $allComplete = false;
-                } else {
-                    $lineTotal += $amount;
                 }
             }
 

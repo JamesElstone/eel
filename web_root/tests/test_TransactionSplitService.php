@@ -49,6 +49,17 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame(null, $unchangedLine['amount'] ?? null);
                 $harness->assertSame(null, $unchangedLine['nominal_account_id'] ?? null);
 
+                $draftLine = $service->saveLine($fixture['company_id'], $firstLineId, [
+                    'split_line_description' => 'AMZNMKTPLACE tool item',
+                    'split_line_amount' => '89.99',
+                    'nominal_account_id' => '',
+                ]);
+                $draftSplit = (array)$service->fetchSplitForTransaction($fixture['transaction_id']);
+                $harness->assertSame(true, (bool)($draftLine['success'] ?? false));
+                $harness->assertSame('89.99', (string)($draftSplit['line_total'] ?? ''));
+                $harness->assertSame('56.37', (string)($draftSplit['difference'] ?? ''));
+                $harness->assertSame(0, (int)($draftSplit['is_ready'] ?? 1));
+
                 $service->saveLine($fixture['company_id'], $firstLineId, [
                     'split_line_description' => 'AMZNMKTPLACE tool item',
                     'split_line_amount' => '89.99',

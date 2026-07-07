@@ -953,11 +953,6 @@ final class AssetService
             return ['success' => false, 'errors' => ['Set the default bank nominal before creating an asset from a transaction split line.']];
         }
 
-        $readySplit = $splitService->fetchReadySplitForPosting($transactionId);
-        if ($readySplit === null) {
-            return ['success' => false, 'errors' => ['Complete and balance the split before creating an asset from one of its lines.']];
-        }
-
         $description = trim((string)($line['description'] ?? ''));
         $normalised = $this->normaliseAssetPayload($companyId, $payload, [
             'purchase_date' => (string)$line['txn_date'],
@@ -969,8 +964,24 @@ final class AssetService
             return ['success' => false, 'errors' => $normalised['errors']];
         }
 
-        if ((int)$normalised['values']['nominal_account_id'] !== (int)($line['nominal_account_id'] ?? 0)) {
+        $lineAmount = round((float)($line['amount'] ?? 0), 2);
+        if ($lineAmount <= 0.0) {
+            return ['success' => false, 'errors' => ['Choose a split line with a positive amount before creating an asset.']];
+        }
+
+        if (abs(round((float)$normalised['values']['cost'], 2) - $lineAmount) >= 0.005) {
+            return ['success' => false, 'errors' => ['Asset cost must match the selected split line amount.']];
+        }
+
+        $assetNominalId = (int)$normalised['values']['nominal_account_id'];
+        $lineNominalId = (int)($line['nominal_account_id'] ?? 0);
+        if ($lineNominalId > 0 && $assetNominalId !== $lineNominalId) {
             return ['success' => false, 'errors' => ['Choose an asset category whose cost nominal matches the split line nominal.']];
+        }
+
+        $split = $splitService->fetchSplitForTransaction($transactionId);
+        if ($split === null || empty($split['is_balanced']) || !$this->splitWouldBeReadyWithAssetLine($split, $lineId, $assetNominalId)) {
+            return ['success' => false, 'errors' => ['Complete and balance the split before creating an asset from one of its lines.']];
         }
 
         $ownsTransaction = !\InterfaceDB::inTransaction();
@@ -979,6 +990,23 @@ final class AssetService
         }
 
         try {
+            if ($lineNominalId <= 0) {
+                $lineSave = $splitService->saveLine($companyId, $lineId, [
+                    'split_line_description' => (string)$normalised['values']['description'],
+                    'split_line_amount' => number_format($lineAmount, 2, '.', ''),
+                    'nominal_account_id' => $assetNominalId,
+                    'split_line_notes' => (string)($line['notes'] ?? ''),
+                ]);
+                if (empty($lineSave['success'])) {
+                    throw new \RuntimeException(implode(' ', array_map('strval', $lineSave['errors'] ?? ['The split line could not be assigned to the asset nominal.'])));
+                }
+            }
+
+            $readySplit = $splitService->fetchReadySplitForPosting($transactionId);
+            if ($readySplit === null) {
+                throw new \RuntimeException('Complete and balance the split before creating an asset from one of its lines.');
+            }
+
             $journalResult = $this->transactionJournalService->syncJournalForTransaction(
                 $transactionId,
                 $defaultBankNominalId,
@@ -1017,6 +1045,33 @@ final class AssetService
 
             return ['success' => false, 'errors' => ['The split-line asset could not be created: ' . $exception->getMessage()]];
         }
+    }
+
+    private function splitWouldBeReadyWithAssetLine(array $split, int $lineId, int $assetNominalId): bool
+    {
+        if (empty($split['is_balanced']) || $assetNominalId <= 0) {
+            return false;
+        }
+
+        $lineCount = 0;
+        foreach ((array)($split['lines'] ?? []) as $line) {
+            if ((int)($line['is_deferred'] ?? 0) === 1) {
+                return false;
+            }
+
+            $lineCount++;
+            $amount = $line['amount'] === null || $line['amount'] === '' ? null : round((float)$line['amount'], 2);
+            $nominalAccountId = (int)($line['nominal_account_id'] ?? 0);
+            if ((int)($line['id'] ?? 0) === $lineId && $nominalAccountId <= 0) {
+                $nominalAccountId = $assetNominalId;
+            }
+
+            if ($amount === null || $amount <= 0.0 || $nominalAccountId <= 0) {
+                return false;
+            }
+        }
+
+        return $lineCount >= 2;
     }
 
     public function reconcileManualAssetWithTransaction(

@@ -452,18 +452,22 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $splitService->saveLine($fixture['company_id'], $toolLineId, [
                 'split_line_description' => 'AMZNMKTPLACE tool item',
                 'split_line_amount' => '89.99',
-                'nominal_account_id' => $toolNominalId,
+                'nominal_account_id' => '',
             ]);
             $splitService->saveLine($fixture['company_id'], $materialsLineId, [
                 'split_line_description' => 'AMZNMKTPLACE materials',
                 'split_line_amount' => '56.37',
                 'nominal_account_id' => $materialsNominalId,
             ]);
+            $draftSplit = (array)$splitService->fetchSplitForTransaction($transactionId);
+            $harness->assertSame('0.00', (string)($draftSplit['difference'] ?? ''));
+            $harness->assertSame(0, (int)($draftSplit['is_ready'] ?? 1));
 
             $createData = $service->fetchCreateData($fixture['company_id'], $fixture['accounting_period_id'], $fixture['bank_nominal_id'], 0, $toolLineId);
             $prefill = (array)($createData['prefill_transaction'] ?? []);
             $harness->assertSame($toolLineId, (int)($prefill['transaction_split_line_id'] ?? 0));
             $harness->assertSame('89.99', (string)($prefill['cost'] ?? ''));
+            $harness->assertSame(0, (int)($prefill['nominal_account_id'] ?? -1));
 
             $result = $service->createAssetFromTransactionSplitLine(
                 $fixture['company_id'],
@@ -488,11 +492,18 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 ['id' => (int)($result['asset']['id'] ?? 0)]
             );
             $journalId = assetServiceTestJournalId($fixture['company_id'], 'bank_csv', 'transaction:' . $transactionId);
+            $toolLine = InterfaceDB::fetchOne(
+                'SELECT nominal_account_id
+                 FROM transaction_split_lines
+                 WHERE id = :id',
+                ['id' => $toolLineId]
+            );
 
             $harness->assertSame($transactionId, (int)($asset['linked_transaction_id'] ?? 0));
             $harness->assertSame($toolLineId, (int)($asset['linked_transaction_split_line_id'] ?? 0));
             $harness->assertSame('89.99', number_format((float)($asset['cost'] ?? 0), 2, '.', ''));
             $harness->assertSame($toolNominalId, (int)($asset['nominal_account_id'] ?? 0));
+            $harness->assertSame($toolNominalId, (int)($toolLine['nominal_account_id'] ?? 0));
             $harness->assertTrue($journalId > 0);
             $harness->assertSame(89.99, assetServiceTestJournalLineAmount($journalId, $toolNominalId, 'debit'));
             $harness->assertSame(56.37, assetServiceTestJournalLineAmount($journalId, $materialsNominalId, 'debit'));

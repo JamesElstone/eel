@@ -224,7 +224,7 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
         });
     });
 
-    $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'links repayment to posted claim without changing original claim journal', function () use ($harness, $instance): void {
+    $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'links and unlinks repayment on posted claim without changing original claim journal', function () use ($harness, $instance): void {
         expenseClaimServiceWithFixture(static function (array $fixture) use ($harness, $instance): void {
             expenseClaimServiceInsertLine($fixture, (int)$fixture['claim_id'], 1, '2026-05-05', 'Materials', 94.99);
 
@@ -271,16 +271,27 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
             $harness->assertSame(94.99, (float)($journalTotals['debit_total'] ?? 0));
             $harness->assertSame(94.99, (float)($journalTotals['credit_total'] ?? 0));
 
-            $unlinkRejected = $instance->unlinkPayment(
+            $paymentLinkId = (int)\InterfaceDB::fetchColumn(
+                'SELECT id FROM expense_claim_payment_links WHERE expense_claim_id = :claim_id AND transaction_id = :transaction_id',
+                ['claim_id' => (int)$fixture['claim_id'], 'transaction_id' => $transactionId]
+            );
+            $unlinked = $instance->unlinkPayment(
                 (int)$fixture['company_id'],
                 (int)$fixture['claim_id'],
-                (int)\InterfaceDB::fetchColumn(
-                    'SELECT id FROM expense_claim_payment_links WHERE expense_claim_id = :claim_id AND transaction_id = :transaction_id',
-                    ['claim_id' => (int)$fixture['claim_id'], 'transaction_id' => $transactionId]
-                )
+                $paymentLinkId
             );
-            $harness->assertSame(false, (bool)($unlinkRejected['success'] ?? true));
-            $harness->assertSame('Posted claims are locked.', (string)(($unlinkRejected['errors'] ?? [])[0] ?? ''));
+            $harness->assertSame(true, (bool)($unlinked['success'] ?? false));
+            $harness->assertSame(true, (bool)(($unlinked['claim'] ?? [])['is_posted'] ?? false));
+            $harness->assertSame(0, (int)(($unlinked['claim'] ?? [])['payment_link_count'] ?? -1));
+            $harness->assertSame([0.00, 94.99, 0.00, 94.99], expenseClaimServiceClaimTotals((int)$fixture['claim_id']));
+            $harness->assertSame(0, (int)\InterfaceDB::fetchColumn(
+                'SELECT COUNT(*) FROM expense_claim_payment_links WHERE id = :id',
+                ['id' => $paymentLinkId]
+            ));
+            $harness->assertSame($postedJournalId, (int)\InterfaceDB::fetchColumn(
+                'SELECT posted_journal_id FROM expense_claims WHERE id = :id',
+                ['id' => (int)$fixture['claim_id']]
+            ));
         });
     });
 

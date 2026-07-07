@@ -1946,9 +1946,7 @@ final class ExpenseClaimService
             return ['success' => false, 'errors' => ['The selected claim could not be found.']];
         }
 
-        if ((string)$claim['status'] === 'posted') {
-            return ['success' => false, 'errors' => ['Posted claims are locked.']];
-        }
+        (new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, (int)($claim['accounting_period_id'] ?? 0), 'unlink expense repayments in this period');
 
         \InterfaceDB::prepare(
             'DELETE FROM expense_claim_payment_links

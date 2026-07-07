@@ -306,6 +306,10 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $harness->assertSame(0, preg_match('/<div class="actions-row">\s*<\/div>/', $repaymentsHtml));
         $harness->assertTrue(str_contains($repaymentsHtml, '$ 75.00'));
         $harness->assertSame(2, substr_count($candidateRepaymentsHtml, '$ 75.00'));
+        $harness->assertTrue(str_contains($candidateRepaymentsHtml, 'name="payment_link_id" value="22"'));
+        $harness->assertTrue(str_contains($candidateRepaymentsHtml, '>Unlink</button>'));
+        $harness->assertTrue(str_contains($candidateRepaymentsHtml, '>Link</button>'));
+        $harness->assertSame(false, str_contains($candidateRepaymentsHtml, '>Update</button>'));
         $harness->assertTrue(str_contains($html, 'name="default_expense_nominal_id" value="5000"'));
         $harness->assertSame(false, str_contains($html, 'name="director_loan_nominal_id"'));
         $harness->assertSame(false, str_contains($html, 'name="linked_amount" inputmode="decimal"'));
@@ -318,12 +322,18 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $context['services']['expensesPageData']['selected_claim']['is_posted'] = true;
 
         $html = $instance->render($context);
+        $repaymentsPosition = strpos($html, '<h4 class="card-title">Repayments</h4>');
+        $candidateRepaymentsPosition = strpos($html, '<h4 class="card-title">Candidate Repayments</h4>');
+        $repaymentsHtml = substr($html, (int)$repaymentsPosition, (int)$candidateRepaymentsPosition - (int)$repaymentsPosition);
+        $candidateRepaymentsHtml = substr($html, (int)$candidateRepaymentsPosition);
 
         $harness->assertTrue(str_contains($html, 'Posted claim lines are locked. Repayments can still be linked from bank transactions.'));
         $harness->assertTrue(str_contains($html, '<h4 class="card-title">Candidate Repayments</h4>'));
         $harness->assertTrue(str_contains($html, 'name="payment_query"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="link_payment"'));
-        $harness->assertSame(false, str_contains($html, 'name="intent" value="unlink_payment"'));
+        $harness->assertSame(false, str_contains($repaymentsHtml, 'name="intent" value="unlink_payment"'));
+        $harness->assertTrue(str_contains($candidateRepaymentsHtml, 'name="intent" value="unlink_payment"'));
+        $harness->assertSame(false, str_contains($candidateRepaymentsHtml, '>Update</button>'));
         $harness->assertSame(false, str_contains($html, 'name="intent" value="bulk_save_lines"'));
         $harness->assertSame(false, str_contains($html, 'Claim Lines can be pasted below'));
         $harness->assertSame(false, str_contains($html, '>Submit Claim</button>'));
@@ -377,6 +387,16 @@ function expenseClaimEditorCardContext(): array
                         'reference' => 'EXP PAY',
                         'amount' => 75.00,
                         'available_amount' => 75.00,
+                        'current_link_id' => 22,
+                        'current_link_amount' => 75.00,
+                    ],
+                    [
+                        'id' => 92,
+                        'txn_date' => '2022-10-30',
+                        'description' => 'Expense repayment available',
+                        'reference' => 'EXP PAY 2',
+                        'amount' => 25.00,
+                        'available_amount' => 25.00,
                         'current_link_amount' => 0.0,
                     ],
                 ],

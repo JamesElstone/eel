@@ -635,18 +635,27 @@ final class _expense_claim_editorCard extends CardBaseFramework
             ->column(
                 'link',
                 'Link',
-                html: fn(array $row): string => $isReadOnly ? '' : $this->linkPaymentForm($row, $companySettings, $claimId, $companyId),
+                html: fn(array $row): string => $isReadOnly ? '' : $this->paymentCandidateActionsHtml($row, $companySettings, $claimId, $companyId),
                 exportable: false,
                 cellClass: 'cell-fit'
             );
+    }
+
+    private function paymentCandidateActionsHtml(array $candidate, array $companySettings, int $claimId, int $companyId): string
+    {
+        $currentLinkId = (int)($candidate['current_link_id'] ?? 0);
+        if ($currentLinkId > 0) {
+            return $this->unlinkPaymentForm($claimId, $currentLinkId, $companyId);
+        }
+
+        return $this->linkPaymentForm($candidate, $companySettings, $claimId, $companyId);
     }
 
     private function linkPaymentForm(array $candidate, array $companySettings, int $claimId, int $companyId): string
     {
         $availableAmount = round((float)($candidate['available_amount'] ?? 0), 2);
         $allocatedElsewhere = round((float)($candidate['allocated_elsewhere'] ?? 0), 2);
-        $currentLinkAmount = round((float)($candidate['current_link_amount'] ?? 0), 2);
-        $canLink = $allocatedElsewhere <= 0 && ($currentLinkAmount > 0 || $availableAmount > 0);
+        $canLink = $allocatedElsewhere <= 0 && $availableAmount > 0;
 
         return '<form method="post" action="?page=expense_claims" data-ajax="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
@@ -658,7 +667,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
             <input type="hidden" name="default_expense_nominal_id" value="' . (int)($companySettings['default_expense_nominal_id'] ?? 0) . '">
             <input type="hidden" name="default_bank_nominal_id" value="' . (int)($companySettings['default_bank_nominal_id'] ?? 0) . '">
             <div class="actions-row expense-payment-link-actions">
-                <button class="button button-inline primary" type="submit"' . ($canLink ? '' : ' disabled') . '>' . ($currentLinkAmount > 0 ? 'Update' : 'Link') . '</button>
+                <button class="button button-inline primary" type="submit"' . ($canLink ? '' : ' disabled') . '>Link</button>
             </div>
         </form>';
     }

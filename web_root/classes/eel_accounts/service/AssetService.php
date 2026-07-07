@@ -56,6 +56,13 @@ final class AssetService
         ];
     }
 
+    public static function assetCreateCategoryOptions(): array {
+        $options = self::assetCategoryOptions();
+        unset($options['van'], $options['car']);
+
+        return $options;
+    }
+
     public static function assetNominalCodesForCategory(string $category): array {
         return match ($category) {
             'tools_equipment' => ['cost' => '1300', 'accum' => '1330'],
@@ -206,7 +213,7 @@ final class AssetService
                 'accounting_period_id' => $accountingPeriodId,
                 'prefill_transaction' => null,
                 'default_bank_nominal_id' => $defaultBankNominalId,
-                'asset_categories' => self::assetCategoryOptions(),
+                'asset_categories' => self::assetCreateCategoryOptions(),
                 'schema_ready' => false,
             ];
         }
@@ -217,7 +224,7 @@ final class AssetService
                 ? $this->fetchTransactionSplitLinePrefill($companyId, $prefillTransactionSplitLineId)
                 : ($prefillTransactionId > 0 ? $this->fetchTransactionPrefill($companyId, $prefillTransactionId) : null),
             'default_bank_nominal_id' => $defaultBankNominalId,
-            'asset_categories' => self::assetCategoryOptions(),
+            'asset_categories' => self::assetCreateCategoryOptions(),
             'schema_ready' => true,
         ];
     }

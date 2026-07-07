@@ -64,7 +64,8 @@ final class _asset_createCard extends CardBaseFramework
             : ($prefillTransactionSplitLineId > 0 ? 'create_asset_from_transaction_split_line' : 'create_asset_from_transaction');
         $assetCategories = is_array($assetsPageData['asset_categories'] ?? null)
             ? $assetsPageData['asset_categories']
-            : \eel_accounts\Service\AssetService::assetCategoryOptions();
+            : \eel_accounts\Service\AssetService::assetCreateCategoryOptions();
+        $assetCategories = $this->assetCreateCategoryOptions($assetCategories);
         $isLocked = (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);
         if ($isLocked) {
             return '<div class="helper"><span class="badge warning">Period locked</span> Assets can be reviewed but not created for this accounting period.</div>';
@@ -153,6 +154,13 @@ final class _asset_createCard extends CardBaseFramework
         }
 
         return $html;
+    }
+
+    private function assetCreateCategoryOptions(array $assetCategories): array
+    {
+        unset($assetCategories['van'], $assetCategories['car']);
+
+        return $assetCategories;
     }
 
     private function manualAdditionReasonOptions(): string

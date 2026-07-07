@@ -40,6 +40,13 @@ $harness->run(_asset_createCard::class, static function (GeneratedServiceClassTe
             'services' => [
                 'assetPageData' => [
                     'default_bank_nominal_id' => 42,
+                    'asset_categories' => [
+                        'tools_equipment' => 'Tools & Equipment',
+                        'plant_machinery' => 'Plant & Machinery',
+                        'motor_vehicle' => 'Motor Vehicle',
+                        'van' => 'Van',
+                        'car' => 'Car',
+                    ],
                 ],
                 'nominal_accounts' => [[
                     'id' => 42,
@@ -128,6 +135,9 @@ $harness->run(_asset_createCard::class, static function (GeneratedServiceClassTe
         $harness->assertTrue(str_contains($html, '<select class="select" id="asset_category" name="category" data-no-submit-on-change="true">'));
         $harness->assertTrue(str_contains($html, '<select class="select" id="asset_method" name="depreciation_method" data-no-submit-on-change="true">'));
         $harness->assertTrue(str_contains($html, '<option value="tools_equipment">Tools &amp; Equipment</option>'));
+        $harness->assertTrue(str_contains($html, '<option value="motor_vehicle">Motor Vehicle</option>'));
+        $harness->assertSame(false, str_contains($html, '<option value="van">Van</option>'));
+        $harness->assertSame(false, str_contains($html, '<option value="car">Car</option>'));
         $harness->assertTrue(str_contains($html, '<option value="42" selected>'));
         $harness->assertTrue(str_contains($html, '<option value="43">'));
         $harness->assertTrue(str_contains($html, '<option value="44">'));
@@ -171,6 +181,9 @@ $harness->run(_asset_createCard::class, static function (GeneratedServiceClassTe
         $harness->assertTrue(str_contains($html, 'name="transaction_id" value="91"'));
         $harness->assertTrue(str_contains($html, '<select class="select" id="asset_category" name="category" data-no-submit-on-change="true">'));
         $harness->assertTrue(str_contains($html, '<select class="select" id="asset_method" name="depreciation_method" data-no-submit-on-change="true">'));
+        $harness->assertTrue(str_contains($html, '<option value="motor_vehicle">Motor Vehicle</option>'));
+        $harness->assertSame(false, str_contains($html, '<option value="van">Van</option>'));
+        $harness->assertSame(false, str_contains($html, '<option value="car">Car</option>'));
         $harness->assertSame(false, str_contains($html, 'name="manual_addition_reason"'));
         $harness->assertSame(false, str_contains($html, 'name="offset_nominal_id"'));
         $harness->assertSame(false, str_contains($html, 'name="manual_asset_evidence"'));
@@ -205,6 +218,9 @@ $harness->run(_asset_createCard::class, static function (GeneratedServiceClassTe
         $harness->assertTrue(str_contains($html, 'value="AMZNMKTPLACE tool item"'));
         $harness->assertTrue(str_contains($html, 'name="cost" value="89.99"'));
         $harness->assertTrue(str_contains($html, '<select class="select" id="asset_category" name="category" data-no-submit-on-change="true">'));
+        $harness->assertTrue(str_contains($html, '<option value="motor_vehicle">Motor Vehicle</option>'));
+        $harness->assertSame(false, str_contains($html, '<option value="van">Van</option>'));
+        $harness->assertSame(false, str_contains($html, '<option value="car">Car</option>'));
         $harness->assertSame(false, str_contains($html, 'name="manual_addition_reason"'));
     });
 });

@@ -27,6 +27,17 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(0, $pageData['default_bank_nominal_id'] ?? null);
         });
 
+        $harness->check(\eel_accounts\Service\AssetService::class, 'asset create categories keep vehicles under motor vehicle', static function () use ($harness): void {
+            $allCategories = \eel_accounts\Service\AssetService::assetCategoryOptions();
+            $createCategories = \eel_accounts\Service\AssetService::assetCreateCategoryOptions();
+
+            $harness->assertSame('Motor Vehicle', $createCategories['motor_vehicle'] ?? null);
+            $harness->assertTrue(array_key_exists('van', $allCategories));
+            $harness->assertTrue(array_key_exists('car', $allCategories));
+            $harness->assertSame(false, array_key_exists('van', $createCategories));
+            $harness->assertSame(false, array_key_exists('car', $createCategories));
+        });
+
         $harness->check(\eel_accounts\Service\AssetService::class, 'tax view uses dynamic corporation tax computation from capital allowance runs', static function () use ($harness, $service): void {
             assetServiceTestRequireTaxViewSchema($harness);
             $fixture = assetServiceTestCreateTaxViewFixture();

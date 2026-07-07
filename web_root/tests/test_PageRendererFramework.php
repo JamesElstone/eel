@@ -255,6 +255,17 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
         $harness->assertTrue(str_contains($source, '$this->ajaxPendingBlurScope($page)'));
     });
 
+    $harness->check(PageRendererFramework::class, 'renders collapsed sidebar tooltip labels on navigation icons', function () use ($harness): void {
+        $source = file_get_contents(APP_CLASSES . 'framework' . DIRECTORY_SEPARATOR . 'PageRendererFramework.php');
+
+        if (!is_string($source)) {
+            throw new RuntimeException('Unable to read page renderer source.');
+        }
+
+        $harness->assertTrue(str_contains($source, 'data-nav-tooltip="'));
+        $harness->assertTrue(str_contains($source, 'data-nav-tooltip="\' . HelperFramework::escape((string)$item[\'label\']) . \'"'));
+    });
+
     $harness->check(PageRendererFramework::class, 'reads the sidebar brand mark from application config', function () use ($harness, $instance, $brandMark): void {
         $harness->assertSame('T', $brandMark->invoke($instance));
     });
@@ -429,6 +440,23 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
             $script,
             "current.replaceWith(replacement);\n                    initialisePageCardTabs(replacement);"
         ));
+    });
+
+    $harness->check(PageRendererFramework::class, 'frontend syncs collapsed sidebar navigation icon titles', function () use ($harness): void {
+        $script = file_get_contents(APP_JS . 'index.js');
+
+        if (!is_string($script)) {
+            throw new RuntimeException('Unable to read frontend script.');
+        }
+
+        foreach ([
+            "const collapsed = body.classList.contains('sidebar-collapsed');",
+            "document.querySelectorAll('.nav-icon-wrap[data-nav-tooltip]')",
+            "iconWrap.setAttribute('title', iconWrap.dataset.navTooltip || '');",
+            "iconWrap.removeAttribute('title');",
+        ] as $expected) {
+            $harness->assertTrue(str_contains($script, $expected));
+        }
     });
 
     $harness->check(PageRendererFramework::class, 'frontend page card switchers can target page-level tab root', function () use ($harness): void {

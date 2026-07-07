@@ -1314,6 +1314,71 @@
         }
     }
 
+    function appendTablePaginationStateToFormData(formData, form, submitter = null) {
+        if (!(formData instanceof FormData) || !(form instanceof HTMLFormElement)) {
+            return;
+        }
+
+        if (tablePaginationPreservationDisabled(form, submitter)) {
+            return;
+        }
+
+        tablePaginationTablesForForm(form).forEach((table) => {
+            const field = String(table.dataset.tablePaginationField || '').trim();
+            const page = String(table.dataset.tablePaginationPage || '').trim();
+
+            if (field === '' || page === '' || formData.has(field)) {
+                return;
+            }
+
+            formData.append(field, page);
+        });
+    }
+
+    function tablePaginationPreservationDisabled(form, submitter) {
+        const formSetting = form instanceof HTMLFormElement
+            ? String(form.dataset.preserveTablePagination || '').trim().toLowerCase()
+            : '';
+        const submitterSetting = submitter instanceof HTMLElement
+            ? String(submitter.dataset.preserveTablePagination || '').trim().toLowerCase()
+            : '';
+
+        return formSetting === 'false' || submitterSetting === 'false';
+    }
+
+    function tablePaginationTablesForForm(form) {
+        const tables = new Set();
+        const directTable = form.closest('table[data-table-pagination-field][data-table-pagination-page]');
+
+        if (directTable instanceof HTMLTableElement) {
+            tables.add(directTable);
+        }
+
+        tableFormAssociatedControls(form).forEach((control) => {
+            const table = control.closest('table[data-table-pagination-field][data-table-pagination-page]');
+
+            if (table instanceof HTMLTableElement) {
+                tables.add(table);
+            }
+        });
+
+        return Array.from(tables);
+    }
+
+    function tableFormAssociatedControls(form) {
+        if (!(form instanceof HTMLFormElement) || String(form.id || '').trim() === '') {
+            return [];
+        }
+
+        try {
+            return Array.from(document.querySelectorAll(`[form="${escapeCssIdentifier(form.id)}"]`))
+                .filter((control) => control instanceof HTMLElement);
+        } catch (error) {
+            console.error('Unable to inspect form-associated controls for table pagination state.', error);
+            return [];
+        }
+    }
+
     function collectSiteContextSelections() {
         const selections = [];
         const selects = document.querySelectorAll('.site-context-slot select[data-site-context-key]');
@@ -3209,6 +3274,7 @@
         formData.set('_ajax', '1');
         appendCurrentPageCardKeys(formData, form);
         appendRequestedVisibleCard(formData, event.submitter);
+        appendTablePaginationStateToFormData(formData, form, event.submitter);
         appendSiteContextSelectionsToFormData(formData, form);
 
         if (tableExportClipboardRequested(event.submitter)) {

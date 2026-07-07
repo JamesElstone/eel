@@ -69,6 +69,10 @@ $harness->check(TableFramework::class, 'renders visible rows with toolbar export
     $harness->assertTrue(strpos($html, 'name="_table_export_prepare" value="csv"') < strpos($html, '<table'));
     $harness->assertTrue(strpos($html, 'name="_table_export_prepare" value="tsv"') < strpos($html, '<table'));
     $harness->assertTrue(strpos($html, 'name="_table_export_prepare" value="ascii"') < strpos($html, '<table'));
+    $harness->assertTrue(str_contains($html, 'data-table-framework="true"'));
+    $harness->assertTrue(str_contains($html, 'data-table-key="demo_table"'));
+    $harness->assertTrue(str_contains($html, 'data-table-pagination-field="demo_table_page"'));
+    $harness->assertTrue(str_contains($html, 'data-table-pagination-page="1"'));
     $harness->assertTrue(str_contains($html, 'name="demo_table_page" value="2"'));
     $harness->assertTrue(str_contains($html, 'name="_invalidate_fact" value="demo.table"'));
     $harness->assertTrue(str_contains($html, 'name="cards[]" value="demo_table"'));

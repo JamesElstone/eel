@@ -1,5 +1,19 @@
 # eelKit Changes
 
+## Table pagination preservation for row AJAX forms
+
+Feature name: `table_ajax_pagination_preservation`.
+
+Paginated `TableFramework` tables now render pagination metadata on the table element. eelKit's shared AJAX submit handler reads that metadata when a submitted form belongs to a table row and carries the current table page field into the AJAX payload before serialization.
+
+This covers forms physically inside a table row and form-associated controls that live in a row but point at an external form with `form="..."`, such as a select control that autosaves through a hidden submit button. Explicit hidden fields still win, so existing table pagination buttons, sort forms, and filter forms keep their current behavior, including intentional page resets.
+
+Forms or submit buttons can opt out with:
+
+```html
+data-preserve-table-pagination="false"
+```
+
 ## Framework CSRF guard
 
 Feature name: `framework_csrf_guard`.

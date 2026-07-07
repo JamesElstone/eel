@@ -503,6 +503,40 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
         $harness->assertTrue($finallyPosition < $restorePosition);
     });
 
+    $harness->check(PageRendererFramework::class, 'frontend preserves table pagination on ajax form submissions', function () use ($harness): void {
+        $script = file_get_contents(APP_JS . 'index.js');
+
+        if (!is_string($script)) {
+            throw new RuntimeException('Unable to read frontend script.');
+        }
+
+        foreach ([
+            'function appendTablePaginationStateToFormData(formData, form, submitter = null)',
+            'function tablePaginationPreservationDisabled(form, submitter)',
+            'function tablePaginationTablesForForm(form)',
+            'function tableFormAssociatedControls(form)',
+            'form.dataset.preserveTablePagination',
+            'submitter.dataset.preserveTablePagination',
+            "form.closest('table[data-table-pagination-field][data-table-pagination-page]')",
+            'document.querySelectorAll(`[form="${escapeCssIdentifier(form.id)}"]`)',
+            'formData.has(field)',
+            'formData.append(field, page)',
+            'appendTablePaginationStateToFormData(formData, form, event.submitter);',
+        ] as $expected) {
+            $harness->assertTrue(str_contains($script, $expected));
+        }
+
+        $formDataPosition = strpos($script, 'const formData = new FormData(form);');
+        $appendPosition = strpos($script, 'appendTablePaginationStateToFormData(formData, form, event.submitter);');
+        $payloadPosition = strpos($script, "const requestBody = method === 'GET' ? null : JSON.stringify(formDataToJsonPayload(formData));");
+
+        $harness->assertTrue(is_int($formDataPosition));
+        $harness->assertTrue(is_int($appendPosition));
+        $harness->assertTrue(is_int($payloadPosition));
+        $harness->assertTrue($formDataPosition < $appendPosition);
+        $harness->assertTrue($appendPosition < $payloadPosition);
+    });
+
     $harness->check(PageRendererFramework::class, 'frontend reveal helper activates tabs scrolls and focuses requested cards', function () use ($harness): void {
         $script = file_get_contents(APP_JS . 'index.js');
 

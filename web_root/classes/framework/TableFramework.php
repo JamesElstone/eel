@@ -440,9 +440,11 @@ final class TableFramework
             $this->tableClass,
             $this->tableCondensedDefaultEnabled() && $this->wrapperClass === '' ? 'table-condensed' : '',
         ]));
-        $classAttribute = $tableClasses !== []
-            ? ' class="' . HelperFramework::escape(implode(' ', $tableClasses)) . '"'
-            : '';
+        $tableAttributes = [];
+        if ($tableClasses !== []) {
+            $tableAttributes['class'] = implode(' ', $tableClasses);
+        }
+        $tableAttributes = array_merge($tableAttributes, $this->paginationTableAttributes());
         $headerHtml = '';
 
         foreach ($columns as $column) {
@@ -468,7 +470,7 @@ final class TableFramework
             $bodyHtml = '<tr><td colspan="' . max(1, count($columns)) . '">' . HelperFramework::escape($this->emptyMessage) . '</td></tr>';
         }
 
-        $table = '<table' . $classAttribute . '><thead><tr>' . $headerHtml . '</tr></thead><tbody>' . $bodyHtml . '</tbody></table>';
+        $table = '<table' . $this->attributeHtml($tableAttributes) . '><thead><tr>' . $headerHtml . '</tr></thead><tbody>' . $bodyHtml . '</tbody></table>';
 
         if ($this->wrapperClass === '') {
             return $table;
@@ -507,6 +509,39 @@ final class TableFramework
             . '</button>'
             . '</form>'
             . '</th>';
+    }
+
+    private function paginationTableAttributes(): array
+    {
+        if ($this->pagination === null || trim($this->paginationPageField) === '') {
+            return [];
+        }
+
+        return [
+            'data-table-framework' => 'true',
+            'data-table-key' => $this->key,
+            'data-table-pagination-field' => trim($this->paginationPageField),
+            'data-table-pagination-page' => (string)max(1, (int)($this->pagination['page'] ?? 1)),
+        ];
+    }
+
+    private function attributeHtml(array $attributes): string
+    {
+        $html = '';
+        foreach ($attributes as $name => $value) {
+            if (is_array($value) || is_object($value) || $value === null) {
+                continue;
+            }
+
+            $name = trim((string)$name);
+            if ($name === '') {
+                continue;
+            }
+
+            $html .= ' ' . HelperFramework::escape($name) . '="' . HelperFramework::escape((string)$value) . '"';
+        }
+
+        return $html;
     }
 
     public function renderToolbar(array $context, array $exportHiddenFields = []): string

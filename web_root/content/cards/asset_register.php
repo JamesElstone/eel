@@ -387,7 +387,8 @@ final class _asset_registerCard extends CardBaseFramework
                     <input type="hidden" name="asset_disposal_method" value="at_nil_value">
                     <div class="asset-disposal-controls">
                         <div class="asset-disposal-row">
-                            <select class="select" name="disposal_event_type" aria-label="Nil value disposal reason">' . $nilReasonOptions . '</select>
+                            <input class="input" type="date" name="disposal_date" value="' . HelperFramework::escape($searchDate) . '">
+                            <select class="select" name="disposal_event_type" aria-label="Nil value disposal reason" data-no-submit-on-change="true">' . $nilReasonOptions . '</select>
                             <input class="input" type="text" name="disposal_reason" placeholder="Nil value note" maxlength="20" size="20">
                             <button class="button button-inline primary" type="submit" name="intent" value="dispose_asset_nil">Dispose of at Nil Value</button>
                         </div>

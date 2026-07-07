@@ -15,9 +15,10 @@ final class AssetAction implements ActionInterfaceFramework
         $companyId = HelperFramework::sanitiseId($request->input('company_id', null), $context->companyId($request));
         $intent = trim((string)$request->input('intent', $request->input('global_action', '')));
         $service = new \eel_accounts\Service\AssetService();
+        $isDisposalUiNoop = $this->isDisposalUiNoopSubmission($request, $intent);
 
-        $searchContext = in_array($intent, ['set_asset_disposal_method', 'search_asset_disposal_receipts', 'dispose_asset_with_transaction', 'dispose_asset_nil'], true)
-            ? $this->searchContext($request, $intent)
+        $searchContext = in_array($intent, ['set_asset_disposal_method', 'search_asset_disposal_receipts', 'dispose_asset_with_transaction', 'dispose_asset_nil'], true) || $isDisposalUiNoop
+            ? $this->searchContext($request, $isDisposalUiNoop ? 'set_asset_disposal_method' : $intent)
             : [];
 
         try {
@@ -67,7 +68,7 @@ final class AssetAction implements ActionInterfaceFramework
                 'dispose_asset_nil' => $service->disposeAssetAtNilValue(
                     $companyId,
                     (int)$request->input('asset_id', 0),
-                    (string)$request->input('disposal_search_date', $request->input('disposal_date', '')),
+                    (string)$request->input('disposal_date', $request->input('disposal_search_date', '')),
                     (string)$request->input('disposal_event_type', ''),
                     (string)$request->input('disposal_reason', '')
                 ),
@@ -75,6 +76,7 @@ final class AssetAction implements ActionInterfaceFramework
                     $companyId,
                     $request->input('potential_asset_threshold', 250)
                 ),
+                '' => $isDisposalUiNoop ? ['success' => true] : ['success' => false, 'errors' => ['Unknown asset action.']],
                 default => ['success' => false, 'errors' => ['Unknown asset action.']],
             };
         } catch (Throwable $exception) {
@@ -116,6 +118,20 @@ final class AssetAction implements ActionInterfaceFramework
     private function normaliseDisposalMethod(string $method): string
     {
         return in_array($method, ['sell_asset', 'at_nil_value'], true) ? $method : '';
+    }
+
+    private function isDisposalUiNoopSubmission(RequestFramework $request, string $intent): bool
+    {
+        if ($intent !== '') {
+            return false;
+        }
+
+        $assetId = max(0, (int)$request->input('asset_id', $request->input('asset_disposal_method_asset_id', 0)));
+        if ($assetId <= 0) {
+            return false;
+        }
+
+        return $this->normaliseDisposalMethod((string)$request->input('asset_disposal_method', '')) !== '';
     }
 
     private function flashMessages(string $intent, array $result): array

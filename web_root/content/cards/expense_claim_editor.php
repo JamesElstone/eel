@@ -240,7 +240,7 @@ final class _expense_claim_editorCard extends CardBaseFramework
                 <input type="hidden" name="date_format" value="' . HelperFramework::escape($dateFormat) . '">
                 <div class="form-row">
                     <div class="status-head"><h4 class="card-title"><label for="expense-bulk-paste-' . $claimId . '">Claim Lines can be pasted below</label></h4></div>
-                    <div class="helper">Paste TSV as DATE[TAB]DESCRIPTION[TAB]AMOUNT CLAIMED or DATE[TAB]DESCRIPTION[TAB]Info[TAB]AMOUNT CLAIMED. Quoted CSV is also accepted.</div>
+                    <div class="helper">Paste TSV as<br>DATE[TAB]DESCRIPTION[TAB]AMOUNT CLAIMED or DATE[TAB]DESCRIPTION[TAB]Info[TAB]AMOUNT CLAIMED.<br>Quoted CSV is also accepted.</div>
                     <div class="expense-bulk-paste-controls">
                         <textarea class="input" id="expense-bulk-paste-' . $claimId . '" name="pasted_lines" rows="2"></textarea>
                         <button class="button primary" type="submit">Import Lines</button>

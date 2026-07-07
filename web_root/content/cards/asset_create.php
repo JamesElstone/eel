@@ -95,7 +95,7 @@ final class _asset_createCard extends CardBaseFramework
                     </div>
                     <div class="field">
                         <label for="asset_category">Asset category</label>
-                        <select class="select" id="asset_category" name="category">' . $this->assetCategoryOptions($assetCategories) . '</select>
+                        <select class="select" id="asset_category" name="category" data-no-submit-on-change="true">' . $this->assetCategoryOptions($assetCategories) . '</select>
                     </div>
                     <div class="field">
                         <label for="asset_purchase_date">Purchase Date</label>
@@ -111,7 +111,7 @@ final class _asset_createCard extends CardBaseFramework
                     </div>
                     <div class="field">
                         <label for="asset_method" title="None: no depreciation is posted. Straight Line: spreads cost less EOL Value evenly over the useful life. Reducing Balance: depreciates by the same rate each period, using the asset&apos;s remaining value after previous depreciation.">Depreciation</label>
-                        <select class="select" id="asset_method" name="depreciation_method">
+                        <select class="select" id="asset_method" name="depreciation_method" data-no-submit-on-change="true">
                             <option value="straight_line">Straight line</option>
                             <option value="reducing_balance">Reducing balance</option>
                             <option value="none">None</option>

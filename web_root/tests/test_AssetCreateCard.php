@@ -125,6 +125,8 @@ $harness->run(_asset_createCard::class, static function (GeneratedServiceClassTe
         $harness->assertTrue(str_contains($html, 'Supplier invoice pending payment'));
         $harness->assertTrue(str_contains($html, 'Opening / historical asset'));
         $harness->assertTrue(str_contains($html, 'Funding / clearing nominal'));
+        $harness->assertTrue(str_contains($html, '<select class="select" id="asset_category" name="category" data-no-submit-on-change="true">'));
+        $harness->assertTrue(str_contains($html, '<select class="select" id="asset_method" name="depreciation_method" data-no-submit-on-change="true">'));
         $harness->assertTrue(str_contains($html, '<option value="tools_equipment">Tools &amp; Equipment</option>'));
         $harness->assertTrue(str_contains($html, '<option value="42" selected>'));
         $harness->assertTrue(str_contains($html, '<option value="43">'));
@@ -167,6 +169,8 @@ $harness->run(_asset_createCard::class, static function (GeneratedServiceClassTe
         $harness->assertTrue(str_contains($html, 'name="card_action" value="Asset"'));
         $harness->assertTrue(str_contains($html, 'name="global_action" value="create_asset_from_transaction"'));
         $harness->assertTrue(str_contains($html, 'name="transaction_id" value="91"'));
+        $harness->assertTrue(str_contains($html, '<select class="select" id="asset_category" name="category" data-no-submit-on-change="true">'));
+        $harness->assertTrue(str_contains($html, '<select class="select" id="asset_method" name="depreciation_method" data-no-submit-on-change="true">'));
         $harness->assertSame(false, str_contains($html, 'name="manual_addition_reason"'));
         $harness->assertSame(false, str_contains($html, 'name="offset_nominal_id"'));
         $harness->assertSame(false, str_contains($html, 'name="manual_asset_evidence"'));
@@ -200,6 +204,7 @@ $harness->run(_asset_createCard::class, static function (GeneratedServiceClassTe
         $harness->assertTrue(str_contains($html, 'name="transaction_split_line_id" value="9001"'));
         $harness->assertTrue(str_contains($html, 'value="AMZNMKTPLACE tool item"'));
         $harness->assertTrue(str_contains($html, 'name="cost" value="89.99"'));
+        $harness->assertTrue(str_contains($html, '<select class="select" id="asset_category" name="category" data-no-submit-on-change="true">'));
         $harness->assertSame(false, str_contains($html, 'name="manual_addition_reason"'));
     });
 });

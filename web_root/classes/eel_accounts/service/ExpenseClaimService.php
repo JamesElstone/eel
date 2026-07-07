@@ -2711,6 +2711,7 @@ final class ExpenseClaimService
         $rows = [];
         $errors = [];
         $lineNumber = 0;
+        $isTsv = substr_count($pastedText, "\t") >= 2;
 
         foreach (explode("\n", $pastedText) as $rawLine) {
             $lineNumber++;
@@ -2719,25 +2720,23 @@ final class ExpenseClaimService
                 continue;
             }
 
-            $cells = array_map(
-                static fn(string $cell): string => trim($cell),
-                explode("\t", $line)
-            );
-            $cells = array_values(array_filter($cells, static fn(string $cell): bool => $cell !== ''));
+            $cells = $isTsv
+                ? $this->parseBulkTsvLineCells($line)
+                : $this->parseBulkCsvLineCells($line, $lineNumber, $errors);
             if ($cells === [] || $this->bulkLineIsIgnorable($cells)) {
                 continue;
             }
 
             if (count($cells) < 3) {
                 if ($this->bulkLineLooksLikeData($line)) {
-                    $errors[] = 'Line ' . $lineNumber . ' is not tab-delimited into date, description, and amount.';
+                    $errors[] = 'Line ' . $lineNumber . ' is not ' . ($isTsv ? 'tab-delimited' : 'quoted CSV') . ' into date, description, and amount.';
                 }
                 continue;
             }
 
             $expenseDate = $this->parseBulkLineDate((string)$cells[0]);
             $amount = $this->parseBulkLineAmount((string)$cells[count($cells) - 1]);
-            $description = trim(implode(' ', array_slice($cells, 1, -1)));
+            $description = trim((string)$cells[1]);
 
             if ($expenseDate === null || $description === '' || $amount <= 0) {
                 $errors[] = 'Line ' . $lineNumber . ' could not be read as date, description, and amount.';
@@ -2766,6 +2765,91 @@ final class ExpenseClaimService
                 0.0
             ), 2),
         ];
+    }
+
+    private function parseBulkTsvLineCells(string $line): array {
+        return array_values(array_filter(
+            array_map(static fn(string $cell): string => trim($cell), explode("\t", $line)),
+            static fn(string $cell): bool => $cell !== ''
+        ));
+    }
+
+    private function parseBulkCsvLineCells(string $line, int $lineNumber, array &$errors): array {
+        $rawFields = $this->splitBulkCsvRawFields($line);
+        if ($rawFields === null) {
+            $errors[] = 'Line ' . $lineNumber . ' has malformed quoted CSV fields.';
+            return [];
+        }
+
+        if (!$this->bulkCsvRawFieldsAreQuoted($rawFields)) {
+            if (str_contains($line, ',') || $this->bulkLineLooksLikeData($line)) {
+                $errors[] = 'Line ' . $lineNumber . ' CSV fields must be double-quoted.';
+            }
+            return [];
+        }
+
+        $cells = str_getcsv($line, ',', '"', '\\');
+        if (!is_array($cells)) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            array_map(static fn(string $cell): string => trim($cell), $cells),
+            static fn(string $cell): bool => $cell !== ''
+        ));
+    }
+
+    private function splitBulkCsvRawFields(string $line): ?array {
+        $fields = [];
+        $field = '';
+        $inQuotes = false;
+        $length = strlen($line);
+
+        for ($i = 0; $i < $length; $i++) {
+            $char = $line[$i];
+            if ($char === '"') {
+                $field .= $char;
+                if ($inQuotes && $i + 1 < $length && $line[$i + 1] === '"') {
+                    $field .= $line[$i + 1];
+                    $i++;
+                    continue;
+                }
+
+                $inQuotes = !$inQuotes;
+                continue;
+            }
+
+            if ($char === ',' && !$inQuotes) {
+                $fields[] = $field;
+                $field = '';
+                continue;
+            }
+
+            $field .= $char;
+        }
+
+        if ($inQuotes) {
+            return null;
+        }
+
+        $fields[] = $field;
+
+        return $fields;
+    }
+
+    private function bulkCsvRawFieldsAreQuoted(array $rawFields): bool {
+        foreach ($rawFields as $rawField) {
+            $field = trim((string)$rawField);
+            if ($field === '') {
+                continue;
+            }
+
+            if (!str_starts_with($field, '"') || !str_ends_with($field, '"')) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function bulkLineDedupeKeys(array $lines): array {
@@ -2822,6 +2906,7 @@ final class ExpenseClaimService
 
         foreach ([
             'date description amount claimed',
+            'date description info amount claimed',
             'claimant',
             'year',
             'total amount claimed',

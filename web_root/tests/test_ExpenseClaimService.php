@@ -42,6 +42,51 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
         $harness->assertSame('05-10-2022', (string)(($dash['rows'][0] ?? [])['expense_date_display'] ?? ''));
     });
 
+    $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'parses TSV claim lines with optional ignored info column', function () use ($harness, $instance): void {
+        $source = "DATE\tDESCRIPTION\tInfo\tAMOUNT CLAIMED\n"
+            . "5/10/2022\tCEF, Cable\tReceipt note ignored\t£12.34";
+        $result = expenseClaimServiceParseBulkLines($instance, $source, 'd/m/Y');
+
+        $harness->assertSame(true, (bool)($result['success'] ?? false));
+        $harness->assertCount(1, (array)($result['rows'] ?? []));
+        $row = (array)(($result['rows'] ?? [])[0] ?? []);
+        $harness->assertSame('2022-10-05', (string)($row['expense_date'] ?? ''));
+        $harness->assertSame('CEF, Cable', (string)($row['description'] ?? ''));
+        $harness->assertSame(12.34, (float)($row['amount'] ?? 0));
+    });
+
+    $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'parses quoted CSV claim lines and ignores optional info column', function () use ($harness, $instance): void {
+        $source = "\"DATE\",\"DESCRIPTION\",\"AMOUNT CLAIMED\"\n"
+            . "\"5/10/2022\",\"Materials, cable\",\"£10.00\"\n"
+            . "\"6/10/2022\",\"Fuel\",\"Receipt note ignored\",\"£20.00\"";
+        $result = expenseClaimServiceParseBulkLines($instance, $source, 'd/m/Y');
+
+        $harness->assertSame(true, (bool)($result['success'] ?? false));
+        $harness->assertCount(2, (array)($result['rows'] ?? []));
+        $rows = (array)$result['rows'];
+        $harness->assertSame('Materials, cable', (string)(($rows[0] ?? [])['description'] ?? ''));
+        $harness->assertSame(10.00, (float)(($rows[0] ?? [])['amount'] ?? 0));
+        $harness->assertSame('Fuel', (string)(($rows[1] ?? [])['description'] ?? ''));
+        $harness->assertSame(20.00, (float)(($rows[1] ?? [])['amount'] ?? 0));
+        $harness->assertSame(30.00, (float)($result['total'] ?? 0));
+    });
+
+    $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'rejects unquoted CSV claim lines', function () use ($harness, $instance): void {
+        $result = expenseClaimServiceParseBulkLines($instance, "5/10/2022,Materials,£10.00", 'd/m/Y');
+
+        $harness->assertSame(false, (bool)($result['success'] ?? true));
+        $harness->assertTrue(str_contains((string)(($result['errors'] ?? [])[0] ?? ''), 'CSV fields must be double-quoted'));
+    });
+
+    $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'prefers TSV when pasted text contains two or more tabs', function () use ($harness, $instance): void {
+        $source = "DATE\tDESCRIPTION\tAMOUNT CLAIMED\n5/10/2022\tCEF, Cable, Clips\t£12.34";
+        $result = expenseClaimServiceParseBulkLines($instance, $source, 'd/m/Y');
+
+        $harness->assertSame(true, (bool)($result['success'] ?? false));
+        $harness->assertSame('CEF, Cable, Clips', (string)((($result['rows'] ?? [])[0] ?? [])['description'] ?? ''));
+        $harness->assertSame(12.34, (float)((($result['rows'] ?? [])[0] ?? [])['amount'] ?? 0));
+    });
+
     $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'ignores non-line rows in pasted claim forms', function () use ($harness, $instance): void {
         $source = "Claimant\tAlex Example\nYear\t2022\tMonth\tOctober\nDATE\tDESCRIPTION\tAMOUNT CLAIMED\n-\t-\t-\n5/10/2022\tElectricFix, Wall Chaser\t£94.99\nTotal Amount Claimed (sum of above lines)\tB\t£94.99\nDirector's Signature\t\nAmount Paid\t\tDate Paid\t\tFA Proc. Date\t\tFA Ref #\t";
         $result = expenseClaimServiceParseBulkLines($instance, $source, 'd/m/Y');

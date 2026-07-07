@@ -27,7 +27,10 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $harness->assertSame(false, str_contains($html, 'data-chicken-title="Submit expense claim"'));
         $harness->assertSame(false, str_contains($html, '<h4 class="card-title">Submit Claim</h4>'));
         $harness->assertTrue(str_contains($html, 'Claim Lines can be pasted below'));
-        $harness->assertTrue(str_contains($html, '&quot;DATE&quot;, &quot;DESCRIPTION&quot;, &quot;AMOUNT CLAIMED&quot;'));
+        $harness->assertTrue(str_contains($html, 'DATE[TAB]DESCRIPTION[TAB]AMOUNT CLAIMED'));
+        $harness->assertTrue(str_contains($html, 'DATE[TAB]DESCRIPTION[TAB]Info[TAB]AMOUNT CLAIMED'));
+        $harness->assertTrue(str_contains($html, 'Quoted CSV is also accepted.'));
+        $harness->assertSame(false, str_contains($html, '&quot;DATE&quot;, &quot;DESCRIPTION&quot;, &quot;AMOUNT CLAIMED&quot;'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="bulk_save_lines"'));
         $harness->assertSame(false, str_contains($html, 'name="intent" value="preview_bulk_lines"'));
     });

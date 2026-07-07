@@ -11,10 +11,9 @@ namespace eel_accounts\Service;
 
 final class CapitalAllowanceService
 {
-    private const AIA_LIMIT = 1000000.0;
-    private const MAIN_RATE_BEFORE_APRIL_2026 = 0.18;
-    private const MAIN_RATE_FROM_APRIL_2026 = 0.14;
-    private const SPECIAL_RATE = 0.06;
+    public function __construct(private readonly ?\eel_accounts\Service\TaxRateRuleService $taxRateRuleService = null)
+    {
+    }
 
     public function hasRequiredSchema(): bool
     {
@@ -53,7 +52,7 @@ final class CapitalAllowanceService
                 $periodStart = (string)$ctPeriod['period_start'];
                 $periodEnd = (string)$ctPeriod['period_end'];
                 $periodDays = $this->periodDays($periodStart, $periodEnd);
-            $aiaRemaining = $this->aiaLimitForDays($periodDays);
+            $aiaRemaining = $this->aiaLimitForPeriod($periodStart, $periodEnd, $periodDays);
             $periodRows = [];
             $warnings = [];
 
@@ -136,7 +135,8 @@ final class CapitalAllowanceService
 
             $mainRate = $this->mainRateForPeriod($periodStart, $periodEnd);
             $mainWda = round($mainWdv * $mainRate * min(1.0, $periodDays / 365), 2);
-            $specialWda = round($specialWdv * self::SPECIAL_RATE * min(1.0, $periodDays / 365), 2);
+            $specialRate = $this->specialRateForPeriod($periodStart, $periodEnd);
+            $specialWda = round($specialWdv * $specialRate * min(1.0, $periodDays / 365), 2);
             $main['wda_claimed'] = min($mainWdv, $mainWda);
             $special['wda_claimed'] = min($specialWdv, $specialWda);
             $mainWdv = round($mainWdv - $main['wda_claimed'], 2);
@@ -534,14 +534,44 @@ final class CapitalAllowanceService
         return max(1, (new \DateTimeImmutable($start))->diff(new \DateTimeImmutable($end))->days + 1);
     }
 
-    private function aiaLimitForDays(int $periodDays): float
+    private function aiaLimitForPeriod(string $periodStart, string $periodEnd, int $periodDays): float
     {
-        return round(self::AIA_LIMIT * min(1.0, max(1, $periodDays) / 365), 2);
+        $annualLimit = $this->taxRateRules()->weightedAmountForPeriod(
+            'capital_allowances',
+            'plant_machinery',
+            'aia_annual_limit',
+            $periodStart,
+            $periodEnd
+        );
+
+        return round($annualLimit * min(1.0, max(1, $periodDays) / 365), 2);
     }
 
     private function mainRateForPeriod(string $periodStart, string $periodEnd): float
     {
-        return $periodEnd >= '2026-04-01' ? self::MAIN_RATE_FROM_APRIL_2026 : self::MAIN_RATE_BEFORE_APRIL_2026;
+        return $this->taxRateRules()->weightedRateForPeriod(
+            'capital_allowances',
+            'plant_machinery',
+            'main_pool_wda',
+            $periodStart,
+            $periodEnd
+        );
+    }
+
+    private function specialRateForPeriod(string $periodStart, string $periodEnd): float
+    {
+        return $this->taxRateRules()->weightedRateForPeriod(
+            'capital_allowances',
+            'plant_machinery',
+            'special_rate_pool_wda',
+            $periodStart,
+            $periodEnd
+        );
+    }
+
+    private function taxRateRules(): \eel_accounts\Service\TaxRateRuleService
+    {
+        return $this->taxRateRuleService ?? new \eel_accounts\Service\TaxRateRuleService();
     }
 
     private function isIsoDate(string $date): bool

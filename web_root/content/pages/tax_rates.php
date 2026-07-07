@@ -21,7 +21,7 @@ final class _tax_rates extends PageContextFramework
 
     public function subtitle(): string
     {
-        return 'Review the Corporation Tax rate rules used by the calculation engine.';
+        return 'Review the sourced tax and allowance rules used by the calculation engine.';
     }
 
     public function hiddenSiteContextSelectors(): array
@@ -43,12 +43,12 @@ final class _tax_rates extends PageContextFramework
         ActionResultFramework $actionResult,
         array $baseContext
     ): array {
-        $service = new \eel_accounts\Service\CorporationTaxRateRuleService();
+        $service = new \eel_accounts\Service\TaxRateRuleService();
 
         return [
             'tax_rates' => [
                 'rules' => $service->fetchRules(),
-                'source_url' => \eel_accounts\Service\CorporationTaxRateRuleService::SOURCE_URL,
+                'source_url' => \eel_accounts\Service\TaxRateRuleService::HMRC_RATES_COLLECTION_URL,
             ],
             'tax_treatment_rules' => [
                 'rules' => (new \eel_accounts\Service\CorporationTaxTreatmentRuleService())->fetchRules(),

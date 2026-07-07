@@ -26,7 +26,7 @@ final class TaxRatesAction implements ActionInterfaceFramework
     private function refreshHmrcRates(): ActionResultFramework
     {
         try {
-            $result = (new \eel_accounts\Service\CorporationTaxRateRuleService())->refreshFromHmrc();
+            $result = (new \eel_accounts\Service\TaxRateRuleService())->refreshFromHmrc();
         } catch (Throwable $exception) {
             $result = ['success' => false, 'errors' => [$exception->getMessage()], 'warnings' => []];
         }
@@ -35,7 +35,7 @@ final class TaxRatesAction implements ActionInterfaceFramework
         if (!empty($result['success'])) {
             $messages[] = [
                 'type' => 'success',
-                'message' => 'HMRC Corporation Tax rates refreshed: ' . (int)($result['refreshed_count'] ?? 0) . ' financial year rule(s) updated.',
+                'message' => 'HMRC tax and allowance rates refreshed: ' . (int)($result['refreshed_count'] ?? 0) . ' sourced rule(s) updated.',
             ];
             foreach ((array)($result['warnings'] ?? []) as $warning) {
                 $messages[] = ['type' => 'warning', 'message' => (string)$warning];

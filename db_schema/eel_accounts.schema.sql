@@ -1234,6 +1234,77 @@ INSERT INTO `corporation_tax_rate_rules` (
   ('non_ring_fence', '2026-04-01', '2027-03-31', 'govuk-2026-04-01', 0.250000, 0.190000, 50000.00, 250000.00, 0.015000, 'https://www.gov.uk/government/publications/rates-and-allowances-corporation-tax/rates-and-allowances-corporation-tax', '2026-04-01', '2026-05-26', 1, 'GOV.UK rates table shows small profits rate 19%, main rate 25%, lower limit 50000, upper limit 250000, standard fraction 3/200.');
 
 --
+-- Table structure for table `tax_rate_rules`
+--
+
+DROP TABLE IF EXISTS `tax_rate_rules`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `tax_rate_rules` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `tax_domain` varchar(64) NOT NULL,
+  `regime` varchar(64) NOT NULL DEFAULT '',
+  `rule_key` varchar(96) NOT NULL,
+  `rule_label` varchar(255) NOT NULL,
+  `period_start` date NOT NULL,
+  `period_end` date NOT NULL DEFAULT '9999-12-31',
+  `value_type` varchar(32) NOT NULL,
+  `rate_value` decimal(10,6) DEFAULT NULL,
+  `amount_value` decimal(14,2) DEFAULT NULL,
+  `fraction_value` decimal(10,6) DEFAULT NULL,
+  `source_url` varchar(500) NOT NULL,
+  `source_updated_at` date DEFAULT NULL,
+  `source_checked_at` date NOT NULL,
+  `rule_version` varchar(64) NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `notes` text DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_tax_rate_rule_version` (`tax_domain`,`regime`,`rule_key`,`period_start`,`period_end`,`rule_version`),
+  KEY `idx_tax_rate_rules_lookup` (`tax_domain`,`regime`,`rule_key`,`is_active`,`period_start`,`period_end`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Baseline seed rows for table `tax_rate_rules`
+--
+
+INSERT INTO `tax_rate_rules` (
+  `tax_domain`,
+  `regime`,
+  `rule_key`,
+  `rule_label`,
+  `period_start`,
+  `period_end`,
+  `value_type`,
+  `rate_value`,
+  `amount_value`,
+  `fraction_value`,
+  `source_url`,
+  `source_updated_at`,
+  `source_checked_at`,
+  `rule_version`,
+  `is_active`,
+  `notes`
+) VALUES
+  ('capital_allowances', 'plant_machinery', 'aia_annual_limit', 'Annual investment allowance limit', '2019-01-01', '9999-12-31', 'amount', NULL, 1000000.00, NULL, 'https://www.gov.uk/capital-allowances/annual-investment-allowance', NULL, '2026-07-07', 'govuk-seed-ca-aia-2019', 1, 'GOV.UK AIA page shows the AIA amount as GBP 1 million from 1 January 2019 for limited companies.'),
+  ('capital_allowances', 'plant_machinery', 'main_pool_wda', 'Main pool writing down allowance', '1900-01-01', '2026-03-31', 'rate', 0.180000, NULL, NULL, 'https://www.gov.uk/work-out-capital-allowances/rates-and-pools', NULL, '2026-07-07', 'govuk-seed-ca-main-wda-before-2026', 1, 'GOV.UK rates and pools page shows the main pool rate as 18% before April 2026.'),
+  ('capital_allowances', 'plant_machinery', 'main_pool_wda', 'Main pool writing down allowance', '2026-04-01', '9999-12-31', 'rate', 0.140000, NULL, NULL, 'https://www.gov.uk/work-out-capital-allowances/rates-and-pools', NULL, '2026-07-07', 'govuk-seed-ca-main-wda-from-2026', 1, 'GOV.UK rates and pools page shows the main pool rate as 14% from 1 April 2026 for Corporation Tax.'),
+  ('capital_allowances', 'plant_machinery', 'special_rate_pool_wda', 'Special rate pool writing down allowance', '1900-01-01', '9999-12-31', 'rate', 0.060000, NULL, NULL, 'https://www.gov.uk/work-out-capital-allowances/rates-and-pools', NULL, '2026-07-07', 'govuk-seed-ca-special-wda', 1, 'GOV.UK rates and pools page shows the special rate pool rate as 6%.'),
+  ('corporation_tax', 'special_unit_trust_oeic', 'special_rate', 'Special rate for unit trusts and open-ended investment companies', '2022-04-01', '2023-03-31', 'rate', 0.200000, NULL, NULL, 'https://www.gov.uk/government/publications/rates-and-allowances-corporation-tax/rates-and-allowances-corporation-tax', '2026-04-01', '2026-07-07', 'govuk-seed-ct-special-2022', 1, 'GOV.UK Corporation Tax rates table shows this special rate.'),
+  ('corporation_tax', 'special_unit_trust_oeic', 'special_rate', 'Special rate for unit trusts and open-ended investment companies', '2023-04-01', '2024-03-31', 'rate', 0.200000, NULL, NULL, 'https://www.gov.uk/government/publications/rates-and-allowances-corporation-tax/rates-and-allowances-corporation-tax', '2026-04-01', '2026-07-07', 'govuk-seed-ct-special-2023', 1, 'GOV.UK Corporation Tax rates table shows this special rate.'),
+  ('corporation_tax', 'special_unit_trust_oeic', 'special_rate', 'Special rate for unit trusts and open-ended investment companies', '2024-04-01', '2025-03-31', 'rate', 0.200000, NULL, NULL, 'https://www.gov.uk/government/publications/rates-and-allowances-corporation-tax/rates-and-allowances-corporation-tax', '2026-04-01', '2026-07-07', 'govuk-seed-ct-special-2024', 1, 'GOV.UK Corporation Tax rates table shows this special rate.'),
+  ('corporation_tax', 'special_unit_trust_oeic', 'special_rate', 'Special rate for unit trusts and open-ended investment companies', '2025-04-01', '2026-03-31', 'rate', 0.200000, NULL, NULL, 'https://www.gov.uk/government/publications/rates-and-allowances-corporation-tax/rates-and-allowances-corporation-tax', '2026-04-01', '2026-07-07', 'govuk-seed-ct-special-2025', 1, 'GOV.UK Corporation Tax rates table shows this special rate.'),
+  ('corporation_tax', 'special_unit_trust_oeic', 'special_rate', 'Special rate for unit trusts and open-ended investment companies', '2026-04-01', '2027-03-31', 'rate', 0.200000, NULL, NULL, 'https://www.gov.uk/government/publications/rates-and-allowances-corporation-tax/rates-and-allowances-corporation-tax', '2026-04-01', '2026-07-07', 'govuk-seed-ct-special-2026', 1, 'GOV.UK Corporation Tax rates table shows this special rate.'),
+  ('corporation_tax', 'ring_fence', 'small_profits_rate', 'Small ring fence profits rate under GBP 300,000', '2015-04-01', '2023-03-31', 'rate', 0.190000, NULL, NULL, 'https://www.gov.uk/government/publications/rates-and-allowances-corporation-tax/rates-and-allowances-corporation-tax', '2026-04-01', '2026-07-07', 'govuk-seed-ct-rf-small-2015-2022', 1, 'GOV.UK ring fence table shows this rate for 2015 to 2022.'),
+  ('corporation_tax', 'ring_fence', 'main_rate', 'Main ring fence rate over GBP 1,500,000', '2015-04-01', '2023-03-31', 'rate', 0.300000, NULL, NULL, 'https://www.gov.uk/government/publications/rates-and-allowances-corporation-tax/rates-and-allowances-corporation-tax', '2026-04-01', '2026-07-07', 'govuk-seed-ct-rf-main-2015-2022', 1, 'GOV.UK ring fence table shows this rate for 2015 to 2022.'),
+  ('corporation_tax', 'ring_fence', 'ring_fence_fraction', 'Ring fence fraction', '2015-04-01', '2023-03-31', 'fraction', NULL, NULL, 0.027500, 'https://www.gov.uk/government/publications/rates-and-allowances-corporation-tax/rates-and-allowances-corporation-tax', '2026-04-01', '2026-07-07', 'govuk-seed-ct-rf-fraction-2015-2022', 1, 'GOV.UK ring fence table shows the ring fence fraction.'),
+  ('corporation_tax', 'ring_fence', 'small_profits_rate', 'Small ring fence profits rate under GBP 50,000', '2023-04-01', '2027-03-31', 'rate', 0.190000, NULL, NULL, 'https://www.gov.uk/government/publications/rates-and-allowances-corporation-tax/rates-and-allowances-corporation-tax', '2026-04-01', '2026-07-07', 'govuk-seed-ct-rf-small-2023-2026', 1, 'GOV.UK ring fence table shows this rate for 2023 to 2026.'),
+  ('corporation_tax', 'ring_fence', 'main_rate', 'Main ring fence profits rate over GBP 250,000', '2023-04-01', '2027-03-31', 'rate', 0.300000, NULL, NULL, 'https://www.gov.uk/government/publications/rates-and-allowances-corporation-tax/rates-and-allowances-corporation-tax', '2026-04-01', '2026-07-07', 'govuk-seed-ct-rf-main-2023-2026', 1, 'GOV.UK ring fence table shows this rate for 2023 to 2026.'),
+  ('corporation_tax', 'ring_fence', 'ring_fence_fraction', 'Ring fence fraction', '2023-04-01', '2027-03-31', 'fraction', NULL, NULL, 0.027500, 'https://www.gov.uk/government/publications/rates-and-allowances-corporation-tax/rates-and-allowances-corporation-tax', '2026-04-01', '2026-07-07', 'govuk-seed-ct-rf-fraction-2023-2026', 1, 'GOV.UK ring fence table shows the ring fence fraction.');
+
+--
 -- Table structure for table `corporation_tax_treatment_rules`
 --
 
@@ -2385,7 +2456,8 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_06_001_prepayments_cutoff_workflows.sql'),
   ('2026_07_06_002_remove_pending_prepayment_status.sql'),
   ('2026_07_07_001_transaction_splits.sql'),
-  ('2026_07_07_002_transaction_inter_ac_marker.sql');
+  ('2026_07_07_002_transaction_inter_ac_marker.sql'),
+  ('2026_07_07_003_sourced_tax_rate_rules.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

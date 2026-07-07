@@ -1019,6 +1019,7 @@ function assetServiceTestCreateTaxViewFixture(): array
             'status' => 'active',
         ]
     );
+    assetServiceTestEnsureTaxRateRules();
     (new \eel_accounts\Service\CapitalAllowanceService())->rebuildForCompany($companyId);
 
     return [
@@ -1235,6 +1236,63 @@ function assetServiceTestInsertTransaction(array $fixture, int $offset, string $
     );
 
     return $transactionId;
+}
+
+function assetServiceTestEnsureTaxRateRules(): void
+{
+    (new \eel_accounts\Service\TaxRateRuleService())->ensureSchema();
+    $count = (int)\InterfaceDB::fetchColumn(
+        'SELECT COUNT(*)
+         FROM tax_rate_rules
+         WHERE tax_domain = :domain
+           AND regime = :regime
+           AND rule_key IN (\'aia_annual_limit\', \'main_pool_wda\', \'special_rate_pool_wda\')
+           AND is_active = 1',
+        ['domain' => 'capital_allowances', 'regime' => 'plant_machinery']
+    );
+    if ($count >= 3) {
+        return;
+    }
+
+    \InterfaceDB::prepareExecute(
+        'UPDATE tax_rate_rules
+         SET is_active = 0
+         WHERE tax_domain = :domain
+           AND regime = :regime
+           AND rule_key IN (\'aia_annual_limit\', \'main_pool_wda\', \'special_rate_pool_wda\')',
+        ['domain' => 'capital_allowances', 'regime' => 'plant_machinery']
+    );
+
+    foreach ([
+        ['aia_annual_limit', 'amount', null, 1000000.0, '2019-01-01', '9999-12-31'],
+        ['main_pool_wda', 'rate', 0.18, null, '1900-01-01', '2026-03-31'],
+        ['special_rate_pool_wda', 'rate', 0.06, null, '1900-01-01', '9999-12-31'],
+    ] as $index => $row) {
+        \InterfaceDB::prepareExecute(
+            'INSERT INTO tax_rate_rules (
+                tax_domain, regime, rule_key, rule_label, period_start, period_end, value_type,
+                rate_value, amount_value, fraction_value, source_url, source_checked_at, rule_version, is_active, notes
+             ) VALUES (
+                :domain, :regime, :rule_key, :rule_label, :period_start, :period_end, :value_type,
+                :rate_value, :amount_value, NULL, :source_url, :source_checked_at, :rule_version, 1, :notes
+             )',
+            [
+                'domain' => 'capital_allowances',
+                'regime' => 'plant_machinery',
+                'rule_key' => (string)$row[0],
+                'rule_label' => (string)$row[0],
+                'period_start' => (string)$row[4],
+                'period_end' => (string)$row[5],
+                'value_type' => (string)$row[1],
+                'rate_value' => $row[2],
+                'amount_value' => $row[3],
+                'source_url' => 'https://example.test/rates',
+                'source_checked_at' => '2026-07-07',
+                'rule_version' => 'asset-fixture-' . (string)$index . '-' . random_int(100000, 999999),
+                'notes' => 'Fixture sourced tax rate rule.',
+            ]
+        );
+    }
 }
 
 function assetServiceTestCreateExpenseClaimLineFixture(array $fixture, int $nominalId): array

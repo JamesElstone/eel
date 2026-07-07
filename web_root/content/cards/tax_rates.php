@@ -11,8 +11,6 @@ final class _tax_ratesCard extends CardBaseFramework
 {
     private const PAGE_SIZE = 5;
     private const FILTER_FIELD = 'tax_rates_status';
-    private const LIMIT_CURRENCY_CODE = 'GBP';
-    private const LIMIT_CURRENCY_SYMBOL = '£';
 
     public function key(): string
     {
@@ -21,7 +19,7 @@ final class _tax_ratesCard extends CardBaseFramework
 
     public function title(): string
     {
-        return 'Corporation Tax Rates';
+        return 'Tax and Allowance Rates';
     }
 
     protected function additionalInvalidationFacts(): array
@@ -61,7 +59,7 @@ final class _tax_ratesCard extends CardBaseFramework
             ->toolbarActions($this->refreshRatesAction($statusFilter, count($rules) === 0))
             ->pagination(
                 $pagination,
-                'Corporation Tax rate rules',
+                'sourced tax and allowance rules',
                 $this->paginationPageField(),
                 [
                     'page' => (string)($context['page']['page_id'] ?? 'tax_rates'),
@@ -93,45 +91,31 @@ final class _tax_ratesCard extends CardBaseFramework
     private function table(array $rules, string $statusFilter): TableFramework
     {
         return TableFramework::make($this->key(), $rules)
-            ->filename('corporation-tax-rates')
+            ->filename('tax-and-allowance-rates')
             ->empty($statusFilter === 'active'
-                ? 'No active Corporation Tax rate rules are stored yet.'
-                : 'No Corporation Tax rate rules are stored yet.')
+                ? 'No active sourced tax or allowance rules are stored yet.'
+                : 'No sourced tax or allowance rules are stored yet.')
             ->column(
-                'financial_year',
-                'Financial year',
-                html: fn(array $row): string => HelperFramework::escape($this->financialYearLabel($row)),
-                export: fn(array $row): string => $this->financialYearLabel($row)
+                'domain_label',
+                'Domain'
             )
             ->column(
-                'main_rate',
-                'Main rate',
-                html: fn(array $row): string => HelperFramework::escape($this->percent($row['main_rate'] ?? null)),
-                export: fn(array $row): string => $this->percent($row['main_rate'] ?? null)
+                'regime_label',
+                'Regime'
             )
             ->column(
-                'small_profits_rate',
-                'Small profits',
-                html: fn(array $row): string => HelperFramework::escape($this->percent($row['small_profits_rate'] ?? null)),
-                export: fn(array $row): string => $this->percent($row['small_profits_rate'] ?? null)
+                'rule_label',
+                'Rule'
             )
             ->column(
-                'lower_limit',
-                'Lower limit',
-                html: fn(array $row): string => HelperFramework::escape($this->moneyLimit($row['lower_limit'] ?? null)),
-                export: fn(array $row): string => $this->moneyLimit($row['lower_limit'] ?? null)
+                'period',
+                'Period',
+                html: fn(array $row): string => HelperFramework::escape($this->periodLabel($row)),
+                export: fn(array $row): string => $this->periodLabel($row)
             )
             ->column(
-                'upper_limit',
-                'Upper limit',
-                html: fn(array $row): string => HelperFramework::escape($this->moneyLimit($row['upper_limit'] ?? null)),
-                export: fn(array $row): string => $this->moneyLimit($row['upper_limit'] ?? null)
-            )
-            ->column(
-                'marginal_relief_fraction',
-                'Marginal relief (MR) fraction',
-                html: fn(array $row): string => HelperFramework::escape($this->fraction($row['marginal_relief_fraction'] ?? null)),
-                export: fn(array $row): string => $this->fraction($row['marginal_relief_fraction'] ?? null)
+                'value_summary',
+                'Value'
             )
             ->column(
                 'status',
@@ -212,40 +196,18 @@ final class _tax_ratesCard extends CardBaseFramework
         return (string)($this->invalidationFacts()[0] ?? $this->key());
     }
 
-    private function financialYearLabel(array $rule): string
+    private function periodLabel(array $rule): string
     {
-        $start = trim((string)($rule['financial_year_start'] ?? ''));
-        if (preg_match('/^(20\d{2})-04-01$/', $start, $matches) === 1) {
-            return 'Financial Year (FY) ' . $matches[1];
-        }
-
-        return $start . ' to ' . (string)($rule['financial_year_end'] ?? '');
-    }
-
-    private function percent(mixed $value): string
-    {
-        if ($value === null || trim((string)$value) === '') {
+        $start = trim((string)($rule['period_start'] ?? ''));
+        $end = trim((string)($rule['period_end'] ?? ''));
+        if ($start === '' && $end === '') {
             return '-';
         }
-
-        return number_format(((float)$value) * 100, 2) . '%';
-    }
-
-    private function moneyLimit(mixed $value): string
-    {
-        if ($value === null || trim((string)$value) === '') {
-            return '-';
+        if ($end === '') {
+            return $start . ' onwards';
         }
 
-        return '(' . self::LIMIT_CURRENCY_CODE . ') ' . self::LIMIT_CURRENCY_SYMBOL . FormattingFramework::money($value);
+        return $start . ' to ' . $end;
     }
 
-    private function fraction(mixed $value): string
-    {
-        if ($value === null || trim((string)$value) === '') {
-            return '-';
-        }
-
-        return number_format((float)$value, 6);
-    }
 }

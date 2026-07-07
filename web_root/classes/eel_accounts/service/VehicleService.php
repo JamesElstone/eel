@@ -131,7 +131,6 @@ final class VehicleService
                     vd.is_zero_emission,
                     vd.co2_emissions_g_km,
                     vd.payload_kg,
-                    vd.contract_date,
                     vd.tax_review_status,
                     vd.notes
              FROM asset_register ar
@@ -361,7 +360,6 @@ final class VehicleService
             'is_zero_emission' => $this->truthy($payload['is_zero_emission'] ?? '0') ? 1 : 0,
             'co2_emissions_g_km' => $this->nullablePositiveInt($payload['co2_emissions_g_km'] ?? null),
             'payload_kg' => $this->nullablePositiveMoney($payload['payload_kg'] ?? null),
-            'contract_date' => $this->nullableIsoDate((string)($payload['contract_date'] ?? ''), $errors, 'contract date'),
             'tax_review_status' => $vehicleType === 'unreviewed' ? 'unreviewed' : 'reviewed',
             'notes' => $this->nullableString((string)($payload['notes'] ?? ''), 512),
         ];
@@ -373,7 +371,7 @@ final class VehicleService
     {
         $columns = 'asset_id, company_id, vehicle_type, registration_mark, make_model, colour, engine_capacity_cc,
             first_registered_date, acquisition_condition, is_zero_emission, co2_emissions_g_km, payload_kg,
-            contract_date, tax_review_status, reviewed_at, reviewed_by, notes, created_at, updated_at';
+            tax_review_status, reviewed_at, reviewed_by, notes, created_at, updated_at';
         $params = [
             'asset_id' => $assetId,
             'company_id' => $companyId,
@@ -387,7 +385,6 @@ final class VehicleService
             'is_zero_emission' => (int)$values['is_zero_emission'],
             'co2_emissions_g_km' => $values['co2_emissions_g_km'],
             'payload_kg' => $values['payload_kg'],
-            'contract_date' => $values['contract_date'],
             'tax_review_status' => (string)$values['tax_review_status'],
             'reviewed_at' => (string)$values['tax_review_status'] === 'reviewed' ? date('Y-m-d H:i:s') : null,
             'reviewed_by' => (string)$values['tax_review_status'] === 'reviewed' ? $changedBy : null,
@@ -397,7 +394,7 @@ final class VehicleService
         $sql = 'INSERT INTO asset_vehicle_details (' . $columns . ')
             VALUES (:asset_id, :company_id, :vehicle_type, :registration_mark, :make_model, :colour, :engine_capacity_cc,
                 :first_registered_date, :acquisition_condition, :is_zero_emission, :co2_emissions_g_km, :payload_kg,
-                :contract_date, :tax_review_status, :reviewed_at, :reviewed_by, :notes, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)';
+                :tax_review_status, :reviewed_at, :reviewed_by, :notes, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)';
 
         if (\InterfaceDB::driverName() === 'sqlite') {
             $sql .= ' ON CONFLICT(asset_id) DO UPDATE SET
@@ -412,7 +409,6 @@ final class VehicleService
                 is_zero_emission = excluded.is_zero_emission,
                 co2_emissions_g_km = excluded.co2_emissions_g_km,
                 payload_kg = excluded.payload_kg,
-                contract_date = excluded.contract_date,
                 tax_review_status = excluded.tax_review_status,
                 reviewed_at = excluded.reviewed_at,
                 reviewed_by = excluded.reviewed_by,
@@ -431,7 +427,6 @@ final class VehicleService
                 is_zero_emission = VALUES(is_zero_emission),
                 co2_emissions_g_km = VALUES(co2_emissions_g_km),
                 payload_kg = VALUES(payload_kg),
-                contract_date = VALUES(contract_date),
                 tax_review_status = VALUES(tax_review_status),
                 reviewed_at = VALUES(reviewed_at),
                 reviewed_by = VALUES(reviewed_by),

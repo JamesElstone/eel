@@ -79,6 +79,8 @@ $harness->run(_vehicle_registerCard::class, static function (GeneratedServiceCla
         $harness->assertTrue(str_contains($html, 'name="registration_mark"'));
         $harness->assertTrue(str_contains($html, 'name="co2_emissions_g_km"'));
         $harness->assertTrue(str_contains($html, 'name="payload_kg"'));
+        $harness->assertSame(false, str_contains($html, 'Contract date'));
+        $harness->assertSame(false, str_contains($html, 'name="contract_date"'));
         $harness->assertTrue(str_contains($html, 'data-vehicle-watch'));
         $harness->assertTrue(str_contains($html, 'data-vehicle-save disabled'));
         $harness->assertTrue(str_contains($html, '<label class="checkbox-row"><span>Zero emission</span><input type="checkbox"'));

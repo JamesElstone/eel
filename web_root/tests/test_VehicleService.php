@@ -114,6 +114,38 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             });
         });
 
+        $harness->check(\eel_accounts\Service\VehicleService::class, 'saving visible vehicle facts preserves hidden contract date', static function () use ($harness, $service): void {
+            vehicleServiceFixture('contract-date-preserved', static function (array $fixture) use ($harness, $service): void {
+                \InterfaceDB::prepareExecute(
+                    'INSERT INTO asset_vehicle_details (asset_id, company_id, vehicle_type, acquisition_condition, contract_date, is_zero_emission, tax_review_status)
+                     VALUES (:asset_id, :company_id, :vehicle_type, :condition, :contract_date, 0, :status)',
+                    [
+                        'asset_id' => $fixture['transaction_asset_id'],
+                        'company_id' => $fixture['company_id'],
+                        'vehicle_type' => 'car',
+                        'condition' => 'second_hand',
+                        'contract_date' => '2026-03-15',
+                        'status' => 'reviewed',
+                    ]
+                );
+
+                $result = $service->saveVehicleDetails(
+                    (int)$fixture['company_id'],
+                    (int)$fixture['transaction_asset_id'],
+                    [
+                        'vehicle_type' => 'car',
+                        'acquisition_condition' => 'second_hand',
+                        'co2_emissions_g_km' => '90',
+                    ],
+                    0,
+                    'test'
+                );
+
+                $harness->assertSame(true, (bool)($result['success'] ?? false));
+                $harness->assertSame('2026-03-15', (string)\InterfaceDB::fetchColumn('SELECT contract_date FROM asset_vehicle_details WHERE asset_id = :id', ['id' => $fixture['transaction_asset_id']]));
+            });
+        });
+
         $harness->check(\eel_accounts\Service\VehicleService::class, 'source recategorisation away from vehicle nominal removes vehicle details', static function () use ($harness, $service): void {
             vehicleServiceFixture('cleanup', static function (array $fixture) use ($harness, $service): void {
                 $service->saveVehicleDetails(

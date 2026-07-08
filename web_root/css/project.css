@@ -227,19 +227,41 @@
   width: max-content;
 }
 
-.asset-register-actions-heading,
-.asset-register-actions-cell {
+.asset-register-method-heading,
+.asset-register-method-cell {
   width: 1%;
 }
 
-.asset-register-actions-cell {
+.asset-register-method-heading,
+.asset-register-method-cell {
   min-width: max-content;
+}
+
+.asset-register-method-heading {
+  line-height: 1.15;
+  white-space: normal;
+}
+
+.asset-register-disposal-heading,
+.asset-register-disposal-cell {
+  max-width: 24rem;
+  min-width: 16rem;
+  white-space: normal;
+  width: 24rem;
+}
+
+.asset-register-disposal-heading {
+  line-height: 1.15;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .asset-register-wrap-heading {
   line-height: 1.15;
   min-width: 0;
+  overflow-wrap: normal;
   white-space: normal;
+  word-break: normal;
 }
 
 .asset-register-wrap-heading .table-sort-button,
@@ -248,44 +270,46 @@
 }
 
 .asset-register-purchase-date-heading {
-  max-width: 8ch;
-  width: 8ch;
+  max-width: 10ch;
+  width: 10ch;
 }
 
 .asset-register-age-heading {
-  max-width: 6ch;
-  width: 6ch;
-}
-
-.asset-register-useful-life-heading {
   max-width: 8ch;
   width: 8ch;
 }
 
+.asset-register-useful-life-heading {
+  max-width: 10ch;
+  width: 10ch;
+}
+
 .asset-register-period-depreciation-heading {
-  max-width: 12ch;
-  width: 12ch;
+  max-width: 14ch;
+  width: 14ch;
 }
 
 .asset-disposal-panel,
 .asset-disposal-form {
-  min-width: max-content;
-  width: max-content;
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
 }
 
 .asset-disposal-controls {
   display: grid;
   gap: 8px;
-  min-width: max-content;
-  width: max-content;
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
 }
 
 .asset-disposal-row {
   align-items: center;
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 8px;
-  min-width: max-content;
+  min-width: 0;
 }
 
 .asset-disposal-controls .input,
@@ -307,7 +331,7 @@
 .asset-disposal-controls .button {
   flex: 0 0 auto;
   margin-bottom: 0;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .asset-disposal-candidates {

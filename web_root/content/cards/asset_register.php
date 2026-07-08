@@ -248,8 +248,8 @@ final class _asset_registerCard extends CardBaseFramework
                     $disposalMethod,
                     $isLocked
                 ),
-                headerClass: 'asset-register-actions-heading',
-                cellClass: 'asset-register-actions-cell',
+                headerClass: 'asset-register-method-heading',
+                cellClass: 'asset-register-method-cell',
                 exportable: false
             )
             ->column(
@@ -266,8 +266,8 @@ final class _asset_registerCard extends CardBaseFramework
                     $disposalMethod,
                     $isLocked
                 ),
-                headerClass: 'asset-register-actions-heading',
-                cellClass: 'asset-register-actions-cell',
+                headerClass: 'asset-register-disposal-heading',
+                cellClass: 'asset-register-disposal-cell',
                 exportable: false
             );
     }
@@ -305,8 +305,17 @@ final class _asset_registerCard extends CardBaseFramework
 
         if ($status === 'disposed') {
             $reason = trim((string)($asset['disposal_reason'] ?? ''));
+            $eventLabel = $this->disposalEventLabel((string)($asset['disposal_event_type'] ?? ''));
+            $detailHtml = '';
+            if ($eventLabel !== '') {
+                $detailHtml .= '<div class="helper">Reason: ' . HelperFramework::escape($eventLabel) . '</div>';
+            }
+            if ($reason !== '' && $reason !== $eventLabel) {
+                $detailHtml .= '<div class="helper">' . ($eventLabel !== '' ? 'Note' : 'Reason') . ': ' . HelperFramework::escape($reason) . '</div>';
+            }
+
             return '<span class="helper">Disposed on ' . HelperFramework::escape($this->displayDate((string)($asset['disposal_date'] ?? ''))) . '</span>'
-                . ($reason !== '' ? '<div class="helper">Reason: ' . HelperFramework::escape($reason) . '</div>' : '');
+                . $detailHtml;
         }
 
         return $this->disposalControls(
@@ -513,9 +522,14 @@ final class _asset_registerCard extends CardBaseFramework
             return '';
         }
 
-        $usefulLifeEndDate = $this->usefulLifeEndDate($purchaseDate, (int)($asset['useful_life_years'] ?? 1));
-        if ($usefulLifeEndDate !== null && $usefulLifeEndDate < $referenceDate) {
-            $referenceDate = $usefulLifeEndDate;
+        $disposalDate = $this->isoDate((string)($asset['disposal_date'] ?? ''));
+        if ($disposalDate !== null) {
+            $referenceDate = $disposalDate;
+        } else {
+            $usefulLifeEndDate = $this->usefulLifeEndDate($purchaseDate, (int)($asset['useful_life_years'] ?? 1));
+            if ($usefulLifeEndDate !== null && $usefulLifeEndDate < $referenceDate) {
+                $referenceDate = $usefulLifeEndDate;
+            }
         }
         if ($purchaseDate > $referenceDate) {
             return '0';
@@ -585,6 +599,16 @@ final class _asset_registerCard extends CardBaseFramework
     private function disposalMethodLabel(string $method): string
     {
         return $method === 'at_nil_value' ? 'No Value' : 'Sold Asset';
+    }
+
+    private function disposalEventLabel(string $eventType): string
+    {
+        $eventType = trim($eventType);
+        if ($eventType === 'sale_receipt') {
+            return 'Sale receipt';
+        }
+
+        return (string)(\eel_accounts\Service\AssetService::nilDisposalEventOptions()[$eventType] ?? '');
     }
 
 }

@@ -116,8 +116,10 @@ $harness->run(_asset_registerCard::class, static function (GeneratedServiceClass
         $harness->assertTrue(str_contains($html, 'Test asset'));
         $harness->assertTrue(str_contains($html, '$ 100.00'));
         $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="csv"'));
-        $harness->assertTrue(str_contains($html, '<th class="asset-register-actions-heading">Disposal Method</th>'));
-        $harness->assertTrue(str_contains($html, '<th class="asset-register-actions-heading">Asset Disposal</th>'));
+        $harness->assertTrue(str_contains($html, '<th class="asset-register-method-heading">Disposal Method</th>'));
+        $harness->assertTrue(str_contains($html, '<th class="asset-register-disposal-heading">Asset Disposal</th>'));
+        $harness->assertTrue(str_contains($html, '<td class="asset-register-method-cell">'));
+        $harness->assertTrue(str_contains($html, '<td class="asset-register-disposal-cell">'));
         $harness->assertTrue(str_contains($html, 'class="asset-disposal-method-form" method="post" action="?page=assets" data-ajax="true"'));
         $harness->assertTrue(str_contains($html, 'name="card_action" value="Asset"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="set_asset_disposal_method"'));
@@ -130,6 +132,49 @@ $harness->run(_asset_registerCard::class, static function (GeneratedServiceClass
         $harness->assertSame(false, str_contains($html, 'Dispose of at Nil Value'));
         $harness->assertSame(false, str_contains($html, 'name="intent" value="run_asset_depreciation"'));
         $harness->assertSame(false, str_contains($html, 'Run Depreciation'));
+    });
+
+    $harness->check(_asset_registerCard::class, 'uses disposal date when calculating disposed asset age', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'page' => [
+                'page_id' => 'assets',
+                'page_cards' => ['asset_register'],
+            ],
+            'accounting_period' => [
+                'period_end' => '2020-01-10',
+            ],
+            'company' => [
+                'id' => 7,
+                'accounting_period_id' => 22,
+                'settings' => [
+                    'default_currency_symbol' => '&#36;',
+                ],
+            ],
+            'services' => [
+                'assetPageData' => [
+                    'assets' => [[
+                        'id' => 44,
+                        'asset_code' => 'FA-7-1',
+                        'description' => 'Disposed asset',
+                        'purchase_date' => '2020-01-01',
+                        'disposal_date' => '2020-01-05',
+                        'disposal_event_type' => 'broken_beyond_economical_repair',
+                        'disposal_reason' => 'In a Cavity Wall now',
+                        'period_depreciation' => 12.34,
+                        'resale_value' => 87.66,
+                        'residual_value' => 10.00,
+                        'useful_life_years' => 3,
+                        'cost' => 100,
+                        'status' => 'disposed',
+                    ]],
+                ],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, '<td>01/01/20</td><td class="numeric">5</td><td class="numeric">3</td><td>FA-7-1</td><td><div>Disposed asset</div></td>'));
+        $harness->assertTrue(str_contains($html, 'Disposed on 05/01/20'));
+        $harness->assertTrue(str_contains($html, 'Reason: Broken; Beyond economical repair'));
+        $harness->assertTrue(str_contains($html, 'Note: In a Cavity Wall now'));
     });
 
     $harness->check(_asset_registerCard::class, 'renders locked periods read only without disposal forms', static function () use ($harness, $card): void {
@@ -202,6 +247,8 @@ $harness->run(_asset_registerCard::class, static function (GeneratedServiceClass
         $harness->assertTrue(str_contains($html, 'name="asset_disposal_method" value="sell_asset"'));
         $harness->assertTrue(str_contains($html, 'type="date" name="disposal_date"'));
         $harness->assertTrue(str_contains((string)file_get_contents(APP_CSS . 'project.css'), '.asset-disposal-controls [name="disposal_date"]'));
+        $harness->assertTrue(str_contains((string)file_get_contents(APP_CSS . 'project.css'), '.asset-register-disposal-cell'));
+        $harness->assertTrue(str_contains((string)file_get_contents(APP_CSS . 'project.css'), 'flex-wrap: wrap;'));
         $harness->assertTrue(str_contains($html, 'name="disposal_event_type"'));
         $harness->assertTrue(str_contains($html, 'name="disposal_event_type" aria-label="Nil value disposal reason" data-no-submit-on-change="true"'));
         $harness->assertTrue(str_contains($html, 'value="scrapped_no_proceeds"'));

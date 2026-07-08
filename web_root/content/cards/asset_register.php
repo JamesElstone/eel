@@ -16,6 +16,11 @@ final class _asset_registerCard extends CardBaseFramework
         return 'asset_register';
     }
 
+    public function helper(array $context): string
+    {
+        return 'AIA eligibility check: owned by the business, used for the business, bought in the period claimed, and not a car, gift, leased item, land, building, or structure.';
+    }
+
     public function services(): array
     {
         return [
@@ -97,8 +102,7 @@ final class _asset_registerCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        return $this->capitalAllowanceEligibilityHelperHtml()
-            . $this->configuredTable($context)->render(
+        return $this->configuredTable($context)->render(
             $context,
             [
                 'cards[]' => (array)($context['page']['page_cards'] ?? []),
@@ -272,11 +276,6 @@ final class _asset_registerCard extends CardBaseFramework
             (array)($assetsPageData['assets'] ?? []),
             static fn(mixed $asset): bool => is_array($asset)
         ));
-    }
-
-    private function capitalAllowanceEligibilityHelperHtml(): string
-    {
-        return '<div class="helper">AIA eligibility check: owned by the business, used for the business, bought in the period claimed, and not a car, gift, leased item, land, building, or structure.</div>';
     }
 
     private function descriptionHtml(array $asset): string

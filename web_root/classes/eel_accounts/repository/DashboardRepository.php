@@ -451,7 +451,7 @@ final class DashboardRepository
             $params['month_end'] = $monthEnd->format('Y-m-d');
         }
 
-        $hasInterAccountMarkers = $this->tableExists('transaction_inter_ac_marker');
+        $hasInterAccountMarkers = \InterfaceDB::tableExists('transaction_inter_ac_marker');
         if ($categoryFilter === 'not_posted') {
             $where[] = "NOT EXISTS(
                 SELECT 1

@@ -72,11 +72,14 @@ final class _year_end_checklistCard extends CardBaseFramework
             ]
         );
         $status = $this->sectionStatus($checks);
-        $statusClass = $this->badgeClass($status);
         $monthTiles = (array)($checklist['month_tiles'] ?? []);
         $totalMonths = count($monthTiles);
         $okMonths = count(array_filter($monthTiles, static fn(array $tile): bool => in_array((string)($tile['status'] ?? ''), ['green', 'complete', 'pass', 'ok'], true)));
         $coverageValue = $totalMonths > 0 ? $okMonths . ' of ' . $totalMonths : '';
+        if ($totalMonths > 0 && $okMonths < $totalMonths && $status === 'pass') {
+            $status = 'warning';
+        }
+        $statusClass = $this->badgeClass($status);
 
         return '<section class="panel-soft settings-stack">
             <h3 class="card-title">A. Bookkeeping completeness</h3>

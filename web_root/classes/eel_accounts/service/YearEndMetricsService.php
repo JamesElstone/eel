@@ -147,21 +147,28 @@ final class YearEndMetricsService
     }
 
     public function uncategorisedTransactionsCount(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): int {
-        $noPostExclusionSql = $this->tableExists('transaction_inter_ac_marker')
-            ? 'AND NOT EXISTS (
-                   SELECT 1
-                   FROM transaction_inter_ac_marker tiam
-                   WHERE tiam.matched_transaction_id = transactions.id
-               )'
-            : '';
+        $splitStatusJoin = $this->transactionSplitStatusJoin('t');
+        $readySplitPredicate = $splitStatusJoin !== ''
+            ? 'COALESCE(split_status.is_ready, 0) = 1'
+            : '0 = 1';
+        $validTransferPredicate = $this->validTransferPredicate('t');
+        $interAccountNoPostPredicate = $this->interAccountNoPostPredicate('t');
 
         return (int)\InterfaceDB::fetchColumn( 'SELECT COUNT(*)
-             FROM transactions
-             WHERE company_id = :company_id
-               AND accounting_period_id = :accounting_period_id
-               AND txn_date BETWEEN :period_start AND :period_end
-               AND (category_status = :category_status OR nominal_account_id IS NULL)
-               ' . $noPostExclusionSql, [
+             FROM transactions t
+             ' . $splitStatusJoin . '
+             WHERE t.company_id = :company_id
+               AND t.accounting_period_id = :accounting_period_id
+               AND t.txn_date BETWEEN :period_start AND :period_end
+               AND NOT (' . $interAccountNoPostPredicate . ')
+               AND (
+                    t.category_status = :category_status
+                    OR (
+                        t.nominal_account_id IS NULL
+                        AND NOT (' . $readySplitPredicate . ')
+                        AND NOT (' . $validTransferPredicate . ')
+                    )
+               )', [
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
             'period_start' => $periodStart,
@@ -791,21 +798,31 @@ final class YearEndMetricsService
 
     private function fetchTransactionCountsByMonth(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array {
         $result = [];
-        $noPostPredicate = $this->tableExists('transaction_inter_ac_marker')
-            ? "EXISTS (
-                   SELECT 1
-                   FROM transaction_inter_ac_marker tiam
-                   WHERE tiam.matched_transaction_id = transactions.id
-               )"
+        $splitStatusJoin = $this->transactionSplitStatusJoin('t');
+        $readySplitPredicate = $splitStatusJoin !== ''
+            ? 'COALESCE(split_status.is_ready, 0) = 1'
             : '0 = 1';
-        foreach (\InterfaceDB::fetchAll( 'SELECT DATE_FORMAT(txn_date, \'%Y-%m-01\') AS month_key,
+        $validTransferPredicate = $this->validTransferPredicate('t');
+        $interAccountNoPostPredicate = $this->interAccountNoPostPredicate('t');
+        foreach (\InterfaceDB::fetchAll( 'SELECT DATE_FORMAT(t.txn_date, \'%Y-%m-01\') AS month_key,
                     COUNT(*) AS transaction_count,
-                    SUM(CASE WHEN NOT (' . $noPostPredicate . ') AND (category_status = :category_status OR nominal_account_id IS NULL) THEN 1 ELSE 0 END) AS uncategorised_count
-             FROM transactions
-             WHERE company_id = :company_id
-               AND accounting_period_id = :accounting_period_id
-               AND txn_date BETWEEN :period_start AND :period_end
-             GROUP BY DATE_FORMAT(txn_date, \'%Y-%m-01\')', [
+                    SUM(
+                        CASE
+                            WHEN ' . $interAccountNoPostPredicate . ' THEN 0
+                            WHEN t.category_status = :category_status THEN 1
+                            WHEN t.nominal_account_id IS NULL
+                             AND NOT (' . $readySplitPredicate . ')
+                             AND NOT (' . $validTransferPredicate . ')
+                            THEN 1
+                            ELSE 0
+                        END
+                    ) AS uncategorised_count
+             FROM transactions t
+             ' . $splitStatusJoin . '
+             WHERE t.company_id = :company_id
+               AND t.accounting_period_id = :accounting_period_id
+               AND t.txn_date BETWEEN :period_start AND :period_end
+             GROUP BY DATE_FORMAT(t.txn_date, \'%Y-%m-01\')', [
             'category_status' => 'uncategorised',
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
@@ -819,6 +836,59 @@ final class YearEndMetricsService
         }
 
         return $result;
+    }
+
+    private function transactionSplitStatusJoin(string $transactionAlias): string
+    {
+        if (!$this->tableExists('transaction_splits') || !$this->tableExists('transaction_split_lines')) {
+            return '';
+        }
+
+        return 'LEFT JOIN (
+                    SELECT ts.transaction_id,
+                           CASE
+                               WHEN SUM(CASE WHEN COALESCE(tsl.is_deferred, 0) = 0 THEN 1 ELSE 0 END) >= 2
+                                AND SUM(CASE WHEN COALESCE(tsl.is_deferred, 0) = 1 THEN 1 ELSE 0 END) = 0
+                                AND SUM(
+                                    CASE
+                                        WHEN COALESCE(tsl.is_deferred, 0) = 0
+                                         AND (tsl.amount IS NULL OR tsl.amount <= 0 OR tsl.nominal_account_id IS NULL)
+                                        THEN 1
+                                        ELSE 0
+                                    END
+                                ) = 0
+                                AND ABS(ROUND(ABS(st.amount) - COALESCE(SUM(CASE WHEN COALESCE(tsl.is_deferred, 0) = 0 THEN tsl.amount ELSE 0 END), 0), 2)) < 0.005
+                               THEN 1
+                               ELSE 0
+                           END AS is_ready
+                    FROM transaction_splits ts
+                    INNER JOIN transactions st
+                       ON st.id = ts.transaction_id
+                    INNER JOIN transaction_split_lines tsl
+                       ON tsl.split_id = ts.id
+                    GROUP BY ts.id, ts.transaction_id, st.amount
+                ) split_status
+                   ON split_status.transaction_id = ' . $transactionAlias . '.id';
+    }
+
+    private function validTransferPredicate(string $transactionAlias): string
+    {
+        return '(COALESCE(' . $transactionAlias . '.is_internal_transfer, 0) = 1'
+            . ' AND COALESCE(' . $transactionAlias . '.transfer_account_id, 0) > 0'
+            . ' AND ' . $transactionAlias . ".category_status = 'manual')";
+    }
+
+    private function interAccountNoPostPredicate(string $transactionAlias): string
+    {
+        if (!$this->tableExists('transaction_inter_ac_marker')) {
+            return '0 = 1';
+        }
+
+        return 'EXISTS (
+                   SELECT 1
+                   FROM transaction_inter_ac_marker tiam
+                   WHERE tiam.matched_transaction_id = ' . $transactionAlias . '.id
+               )';
     }
 
     private function fetchPostedJournalCountsByMonth(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array {

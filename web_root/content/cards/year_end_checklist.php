@@ -69,6 +69,7 @@ final class _year_end_checklistCard extends CardBaseFramework
             [
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
+                'show_card' => 'year_end_empty_month_confirmations',
             ]
         );
         $status = $this->sectionStatus($checks);

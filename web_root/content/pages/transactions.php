@@ -39,6 +39,8 @@ final class _transactions extends PageContextFramework
             'transactions_rules',
             'transactions_rule_form',
             'nominals_add_account',
+            'year_end_empty_month_confirmations',
+            'year_end_transaction_tail',
         ];
     }
 
@@ -75,6 +77,13 @@ final class _transactions extends PageContextFramework
                 'tab' => 'Add Nominal',
                 'cards' => [
                     'nominals_add_account',
+                ],
+            ],
+            [
+                'tab' => 'Year End Confirmation',
+                'cards' => [
+                    'year_end_empty_month_confirmations',
+                    'year_end_transaction_tail',
                 ],
             ],
         ];

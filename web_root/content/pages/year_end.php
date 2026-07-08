@@ -33,15 +33,7 @@ final class _year_end extends PageContextFramework
     {
         return [
             'year_end_checklist',
-            'year_end_director_loan_offset',
-            'year_end_expenses_confirmation',
-            'year_end_retained_earnings',
             'year_end_tax_readiness',
-            'year_end_companies_house_comparison',
-            'year_end_empty_month_confirmations',
-            'year_end_transaction_tail',
-            'year_end_prepayment_approvals',
-            'journal_cut_off_confirmation',
             'year_end_notes',
             'year_end_state',
             'year_end_audit_log',
@@ -58,52 +50,9 @@ final class _year_end extends PageContextFramework
                 ],
             ],
             [
-                'tab' => 'Director',
-                'cards' => [
-                    'year_end_director_loan_offset',
-                ],
-            ],
-            [
-                'tab' => 'Expenses',
-                'cards' => [
-                    'year_end_expenses_confirmation',
-                ],
-            ],
-            [
-                'tab' => 'Retained Earnings',
-                'cards' => [
-                    'year_end_retained_earnings',
-                ],
-            ],
-            [
                 'tab' => 'Tax',
                 'cards' => [
                     'year_end_tax_readiness',
-                ],
-            ],
-            [
-                'tab' => 'Companies House',
-                'cards' => [
-                    'year_end_companies_house_comparison',
-                ],
-            ],
-            [
-                'tab' => 'Transactions',
-                'cards' => [
-                    'year_end_empty_month_confirmations',
-                    'year_end_transaction_tail',
-                ],
-            ],
-            [
-                'tab' => 'Prepayment',
-                'cards' => [
-                    'year_end_prepayment_approvals',
-                ],
-            ],
-            [
-                'tab' => 'Journal',
-                'cards' => [
-                    'journal_cut_off_confirmation',
                 ],
             ],
             [

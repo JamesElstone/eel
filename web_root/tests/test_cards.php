@@ -46,10 +46,10 @@ final class TestCardsHarness
         $this->assertTrialBalanceStateDoesNotShowPerfectGaugeBeforeReady();
         $this->assertTrialBalanceValidationUsesCompanyCurrency();
         $this->assertTrialBalanceLossesRendersCtPeriodTotals();
-        $this->assertCompaniesHousePageIncludesCompaniesHouseSnapshot();
+        $this->assertCompaniesHousePageIncludesSnapshotAndConfirmation();
         $this->assertCompaniesHouseSnapshotUsesSelectedCompanyContext();
         $this->assertJournalPageIncludesCutOffJournalsAdjustments();
-        $this->assertYearEndPageIncludesCompaniesHouseComparison();
+        $this->assertYearEndConfirmationCardsLiveOnRelatedPages();
         $this->assertYearEndCompaniesHouseComparisonRendersMismatchAcknowledgement();
         $this->assertYearEndTransactionTailRendersBalanceColumn();
     }
@@ -353,15 +353,17 @@ final class TestCardsHarness
         test_output_line('Cards: trial_balance_losses renders CT-period tax totals and unavailable state.');
     }
 
-    private function assertCompaniesHousePageIncludesCompaniesHouseSnapshot(): void
+    private function assertCompaniesHousePageIncludesSnapshotAndConfirmation(): void
     {
         $trialBalancePage = new _trial_balance();
         $companiesHousePage = new _companies_house();
 
         $this->assertSame(['trial_balance_state', 'trial_balance_validation', 'trial_balance_losses'], $trialBalancePage->cards());
-        $this->assertSame(['companies_house_snapshot'], $companiesHousePage->cards());
+        $this->assertSame(['companies_house_snapshot', 'year_end_companies_house_comparison'], $companiesHousePage->cards());
+        $this->assertPageTabContains($companiesHousePage, 'Snapshot', ['companies_house_snapshot']);
+        $this->assertPageTabContains($companiesHousePage, 'Year End Confirmation', ['year_end_companies_house_comparison']);
 
-        test_output_line('Cards: companies_house page includes the Companies House snapshot card.');
+        test_output_line('Cards: companies_house page includes snapshot and Year End Confirmation tabs.');
     }
 
     private function assertCompaniesHouseSnapshotUsesSelectedCompanyContext(): void
@@ -409,35 +411,36 @@ final class TestCardsHarness
         test_output_line('Cards: companies_house_snapshot uses selected company context and renders balance sheet fields.');
     }
 
-    private function assertYearEndPageIncludesCompaniesHouseComparison(): void
+    private function assertYearEndConfirmationCardsLiveOnRelatedPages(): void
     {
         $yearEndPage = new _year_end();
-        $this->assertTrue(in_array('year_end_companies_house_comparison', $yearEndPage->cards(), true));
-        $this->assertSame(false, in_array('prepayments_review', $yearEndPage->cards(), true));
-        $this->assertTrue(in_array('year_end_prepayment_approvals', $yearEndPage->cards(), true));
-        $this->assertTrue(in_array('journal_cut_off_confirmation', $yearEndPage->cards(), true));
+        $movedCards = [
+            'year_end_director_loan_offset',
+            'year_end_expenses_confirmation',
+            'year_end_companies_house_comparison',
+            'year_end_empty_month_confirmations',
+            'year_end_transaction_tail',
+            'year_end_prepayment_approvals',
+            'journal_cut_off_confirmation',
+            'year_end_retained_earnings',
+        ];
 
-        $layout = $yearEndPage->cardLayout();
-        $hasCompaniesHouseTab = false;
-        $hasPrepaymentsTab = false;
-        $hasJournalTab = false;
-        foreach ($layout as $tab) {
-            if (($tab['tab'] ?? '') === 'Companies House' && in_array('year_end_companies_house_comparison', (array)($tab['cards'] ?? []), true)) {
-                $hasCompaniesHouseTab = true;
-            }
-            if (($tab['tab'] ?? '') === 'Prepayment' && in_array('year_end_prepayment_approvals', (array)($tab['cards'] ?? []), true)) {
-                $hasPrepaymentsTab = true;
-            }
-            if (($tab['tab'] ?? '') === 'Journal' && in_array('journal_cut_off_confirmation', (array)($tab['cards'] ?? []), true)) {
-                $hasJournalTab = true;
+        foreach ($movedCards as $cardKey) {
+            $this->assertSame(false, in_array($cardKey, $yearEndPage->cards(), true));
+            foreach ($yearEndPage->cardLayout() as $tab) {
+                $this->assertSame(false, in_array($cardKey, (array)($tab['cards'] ?? []), true));
             }
         }
 
-        $this->assertSame(true, $hasCompaniesHouseTab);
-        $this->assertSame(true, $hasPrepaymentsTab);
-        $this->assertSame(true, $hasJournalTab);
+        $this->assertPageFinalTabContains(new _director_loans(), 'Year End Confirmation', ['year_end_director_loan_offset']);
+        $this->assertPageFinalTabContains(new _expense_claims(), 'Year End Confirmation', ['year_end_expenses_confirmation']);
+        $this->assertPageFinalTabContains(new _companies_house(), 'Year End Confirmation', ['year_end_companies_house_comparison']);
+        $this->assertPageFinalTabContains(new _transactions(), 'Year End Confirmation', ['year_end_empty_month_confirmations', 'year_end_transaction_tail']);
+        $this->assertPageFinalTabContains(new _prepayments(), 'Year End Confirmation', ['year_end_prepayment_approvals']);
+        $this->assertPageFinalTabContains(new _journal(), 'Year End Confirmation', ['journal_cut_off_confirmation']);
+        $this->assertPageFinalTabContains(new _profit_loss(), 'Year End Confirmation', ['year_end_retained_earnings']);
 
-        test_output_line('Cards: year_end page includes Companies House, Prepayment, and Journal tabs.');
+        test_output_line('Cards: year-end confirmation cards live on their related workflow pages.');
     }
 
     private function assertJournalPageIncludesCutOffJournalsAdjustments(): void
@@ -455,6 +458,7 @@ final class TestCardsHarness
         }
 
         $this->assertSame(true, $hasCutOffJournalsAdjustment);
+        $this->assertPageFinalTabContains($journalPage, 'Year End Confirmation', ['journal_cut_off_confirmation']);
 
         test_output_line('Cards: journal page includes Cut-off Journals under Adjustments.');
     }
@@ -573,6 +577,35 @@ final class TestCardsHarness
     {
         if (!$condition) {
             throw new RuntimeException('Assertion failed. Expected condition to be true.');
+        }
+    }
+
+    private function assertPageTabContains(PageInterfaceFramework $page, string $tabName, array $expectedCards): void
+    {
+        $found = false;
+        foreach ((array)$page->cardLayout() as $tab) {
+            if ((string)($tab['tab'] ?? '') !== $tabName) {
+                continue;
+            }
+
+            $found = true;
+            $cards = (array)($tab['cards'] ?? []);
+            foreach ($expectedCards as $cardKey) {
+                $this->assertTrue(in_array($cardKey, $cards, true));
+            }
+        }
+
+        $this->assertSame(true, $found);
+    }
+
+    private function assertPageFinalTabContains(PageInterfaceFramework $page, string $tabName, array $expectedCards): void
+    {
+        $layout = array_values((array)$page->cardLayout());
+        $finalTab = (array)($layout[count($layout) - 1] ?? []);
+
+        $this->assertSame($tabName, (string)($finalTab['tab'] ?? ''));
+        foreach ($expectedCards as $cardKey) {
+            $this->assertTrue(in_array($cardKey, (array)($finalTab['cards'] ?? []), true));
         }
     }
 }

@@ -38,6 +38,16 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
                     'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
+            [
+                'key' => 'companiesHouseMismatchAcknowledgement',
+                'service' => \eel_accounts\Service\YearEndChecklistService::class,
+                'method' => 'fetchReviewAcknowledgement',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                    'checkCode' => self::CHECK_CODE,
+                ],
+            ],
         ];
     }
 
@@ -136,6 +146,11 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
 
     private function acknowledgement(array $context): ?array
     {
+        $acknowledgement = $context['services']['companiesHouseMismatchAcknowledgement'] ?? null;
+        if (is_array($acknowledgement)) {
+            return $acknowledgement;
+        }
+
         $acknowledgement = ((array)(($context['year_end'] ?? [])['checklist'] ?? []))['review_acknowledgements'][self::CHECK_CODE] ?? null;
         return is_array($acknowledgement) ? $acknowledgement : null;
     }

@@ -994,7 +994,7 @@ final class YearEndChecklistService
                 ? 'Some months inside the accounting period have no uploads or transactions and should be reviewed.'
                 : 'Every month inside the accounting period has at least some source activity.',
             $missingMonths > 0 ? $missingMonths . ' missing month' . ($missingMonths === 1 ? '' : 's') : 'All months covered',
-            '?page=uploads'
+            '?page=transactions&show_card=year_end_empty_month_confirmations'
         );
 
         $sections['categorisation_suspense'][] = $this->makeCheck(
@@ -1112,7 +1112,7 @@ final class YearEndChecklistService
                     ? 'Director loan closing balance has been acknowledged for this period.'
                     : 'Review whether the period-end director loan balance is expected before filing.'),
             empty($directorLoan['available']) ? '' : $this->money($settings, $dlaClosing),
-            '?page=year_end&show_card=year_end_director_loan_offset'
+            '?page=director_loans&show_card=year_end_director_loan_offset'
         );
         $directorLoanTaxReviewRequired = !empty($directorLoanTaxReview['available']) && !empty($directorLoanTaxReview['review_required']);
         $directorLoanTaxReviewAcknowledged = isset($reviewAcknowledgements['director_loan_tax_review']);
@@ -1130,7 +1130,7 @@ final class YearEndChecklistService
             empty($directorLoanTaxReview['available'])
                 ? ''
                 : ($directorLoanTaxReviewRequired ? $this->money($settings, $directorLoanTaxReview['exposure_amount'] ?? 0) : 'No exposure flagged'),
-            '?page=year_end&show_card=year_end_director_loan_offset'
+            '?page=director_loans&show_card=year_end_director_loan_offset'
         ), $reviewAcknowledgements);
         $expensePositionAcknowledged = trim((string)($review['expense_position_acknowledged_at'] ?? '')) !== '';
         $expensePositionBalance = (float)((($expensePosition['totals'] ?? [])['carried_forward'] ?? 0));
@@ -1147,7 +1147,7 @@ final class YearEndChecklistService
             empty($expensePosition['available'])
                 ? ''
                 : $this->expensePositionMetric($settings, $expensePositionBalance),
-            '?page=year_end&show_card=year_end_expenses_confirmation'
+            '?page=expense_claims&show_card=year_end_expenses_confirmation'
         );
         $sections['director_loan_expenses'][] = $this->makeCheck(
             'duplicate_repayment_protection',
@@ -1197,7 +1197,7 @@ final class YearEndChecklistService
                 ? 'Current profit/loss has not yet been carried into retained earnings for this period.'
                 : 'Opening equity, profit, and closing equity look internally consistent.',
             $this->money($settings, $financialStatements['retained_earnings']['unexplained_movement'] ?? 0),
-            '?page=year_end&show_card=year_end_retained_earnings'
+            '?page=profit_loss&show_card=year_end_retained_earnings'
         );
         $retainedEarningsMovementCheck['formula_text'] = $this->balanceEquationText(
             $settings,
@@ -1223,7 +1223,7 @@ final class YearEndChecklistService
             !$retainedEarningsCloseAvailable
                 ? ''
                 : (!empty($retainedEarningsClose['acknowledgement_stale']) ? 'Figures changed' : ($retainedEarningsCloseCurrent ? 'Agreed' : 'Pending')),
-            '?page=year_end&show_card=year_end_retained_earnings'
+            '?page=profit_loss&show_card=year_end_retained_earnings'
         );
         $incorporationShareStatus = (string)($incorporationShares['status'] ?? '');
         $sections['year_end_accounts_review'][] = $this->makeCheck(
@@ -1284,7 +1284,7 @@ final class YearEndChecklistService
             empty($transactionTail['available'])
                 ? ''
                 : ((int)($transactionTail['accounts_with_transactions'] ?? 0) . ' of ' . (int)($transactionTail['account_count'] ?? 0)),
-            '?page=year_end&show_card=year_end_transaction_tail'
+            '?page=transactions&show_card=year_end_transaction_tail'
         ), $reviewAcknowledgements);
 
         $prepaymentPendingCount = (int)($prepaymentReview['pending_count'] ?? 0);
@@ -1315,7 +1315,7 @@ final class YearEndChecklistService
                 ? 'The prepayment position has been approved for this accounting period.'
                 : 'Approve the prepayment review before closing this accounting period.',
             $prepaymentApprovalsAcknowledged ? 'Approved' : 'Pending',
-            '?page=year_end&show_card=year_end_prepayment_approvals'
+            '?page=prepayments&show_card=year_end_prepayment_approvals'
         ), $reviewAcknowledgements);
 
         $cutOffJournalsAcknowledged = isset($reviewAcknowledgements['cut_off_journals_review']);
@@ -1328,7 +1328,7 @@ final class YearEndChecklistService
                 ? 'Accruals, deferred income, prepayments, and other cut-off journals have been reviewed for this period.'
                 : 'Review whether any accruals, deferred income, prepayments, or other year-end cut-off journals are required.',
             $cutOffJournalsAcknowledged ? 'Reviewed' : 'Pending',
-            '?page=year_end&show_card=journal_cut_off_confirmation'
+            '?page=journal&show_card=journal_cut_off_confirmation'
         ), $reviewAcknowledgements);
 
         $taxPeriodDisplay = $this->taxPeriodDisplay($taxReadiness);
@@ -1458,7 +1458,7 @@ final class YearEndChecklistService
                 ? (string)($chComparison['comparison_note'] ?? '')
                 : 'No Companies House comparison is available yet.',
             '',
-            '?page=companies_house#companies-house-comparison'
+            '?page=companies_house&show_card=year_end_companies_house_comparison#companies-house-comparison'
         );
         $sections['companies_house_comparison'][] = $this->applyReviewAcknowledgement($this->makeCheck(
             'companies_house_mismatch_acknowledgement',
@@ -1471,7 +1471,7 @@ final class YearEndChecklistService
                     : 'App-computed balance sheet values match the stored filed accounts.')
                 : 'No comparison metrics are available.',
             !empty($chComparison['available']) ? (string)$comparisonFailures : '',
-            '?page=year_end&show_card=year_end_companies_house_comparison#companies-house-mismatch-acknowledgement'
+            '?page=companies_house&show_card=year_end_companies_house_comparison#companies-house-mismatch-acknowledgement'
         ), $reviewAcknowledgements);
 
         $blockingChecksPass = $uncategorisedCount === 0

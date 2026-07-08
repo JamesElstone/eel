@@ -41,7 +41,7 @@ final class YearEndApprovalRenderer
         }
 
         return '<section class="panel-soft success settings-stack">
-            <div class="eyebrow">Approval</div>
+            <div class="eyebrow">Year End Confirmation</div>
             ' . ($note !== '' ? '<div class="summary-value">' . \HelperFramework::escape($note) . '</div>' : '') . '
             <div class="stat-foot">' . \HelperFramework::escape(self::approvedFoot(
                 (string)($options['approvedAt'] ?? $options['acknowledgedAt'] ?? ''),
@@ -84,7 +84,7 @@ final class YearEndApprovalRenderer
             : ' disabled data-year-end-ack-submit';
 
         return '<section class="panel-soft warn full settings-stack">
-            <div class="eyebrow">Approval</div>
+            <div class="eyebrow">Year End Confirmation</div>
             <form method="post" data-ajax="true" class="form-grid" data-year-end-ack-form="true">
                 ' . self::commonFields($companyId, $accountingPeriodId, $intent) . '
                 ' . self::hiddenFields($approveFields) . '
@@ -122,7 +122,7 @@ final class YearEndApprovalRenderer
 
         $noteId = trim((string)($options['noteId'] ?? self::fieldId($noteName)));
         return '<div class="form-row full">
-            <label for="' . \HelperFramework::escape($noteId) . '">Approval notes</label>
+            <label for="' . \HelperFramework::escape($noteId) . '">Confirmation notes</label>
             <textarea class="input" id="' . \HelperFramework::escape($noteId) . '" name="' . \HelperFramework::escape($noteName) . '" rows="3"' . ($noteMode === self::NOTE_REQUIRED ? ' required' : '') . ($disabled ? ' disabled' : '') . '></textarea>
         </div>';
     }

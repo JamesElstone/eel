@@ -25,7 +25,7 @@ $harness->run(\eel_accounts\Renderer\YearEndApprovalRenderer::class, static func
             'noteId' => 'test-approval-note',
         ]);
 
-        $harness->assertSame(true, str_contains($html, '<div class="eyebrow">Approval</div>'));
+        $harness->assertSame(true, str_contains($html, '<div class="eyebrow">Year End Confirmation</div>'));
         $harness->assertSame(true, str_contains($html, 'I confirm that I have reviewed the test position shown above and approve it as accurate for Year End.'));
         $harness->assertSame(true, str_contains($html, 'name="review_acknowledgement_note"'));
         $harness->assertSame(true, str_contains($html, 'id="test-approval-note"'));

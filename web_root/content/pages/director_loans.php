@@ -31,6 +31,27 @@ final class _director_loans extends PageContextFramework
 
     public function cards(): array
     {
-        return ['director_loan_state'];
+        return [
+            'director_loan_state',
+            'year_end_director_loan_offset',
+        ];
+    }
+
+    public function cardLayout(): array
+    {
+        return [
+            [
+                'tab' => 'Summary',
+                'cards' => [
+                    'director_loan_state',
+                ],
+            ],
+            [
+                'tab' => 'Year End Confirmation',
+                'cards' => [
+                    'year_end_director_loan_offset',
+                ],
+            ],
+        ];
     }
 }

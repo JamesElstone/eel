@@ -31,6 +31,27 @@ final class _companies_house extends PageContextFramework
 
     public function cards(): array
     {
-        return ['companies_house_snapshot'];
+        return [
+            'companies_house_snapshot',
+            'year_end_companies_house_comparison',
+        ];
+    }
+
+    public function cardLayout(): array
+    {
+        return [
+            [
+                'tab' => 'Snapshot',
+                'cards' => [
+                    'companies_house_snapshot',
+                ],
+            ],
+            [
+                'tab' => 'Year End Confirmation',
+                'cards' => [
+                    'year_end_companies_house_comparison',
+                ],
+            ],
+        ];
     }
 }

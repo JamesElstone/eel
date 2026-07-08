@@ -33,6 +33,25 @@ final class _prepayments extends PageContextFramework
     {
         return [
             'prepayments_review',
+            'year_end_prepayment_approvals',
+        ];
+    }
+
+    public function cardLayout(): array
+    {
+        return [
+            [
+                'tab' => 'Review',
+                'cards' => [
+                    'prepayments_review',
+                ],
+            ],
+            [
+                'tab' => 'Year End Confirmation',
+                'cards' => [
+                    'year_end_prepayment_approvals',
+                ],
+            ],
         ];
     }
 }

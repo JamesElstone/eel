@@ -31,7 +31,7 @@ final class _expense_claims extends PageContextFramework
 
     public function cards(): array
     {
-        return ['expense_statistics', 'expense_claimants', 'expense_add_claimant', 'expense_claim_create', 'expenses_state', 'expense_claim_editor', 'expense_search'];
+        return ['expense_statistics', 'expense_claimants', 'expense_add_claimant', 'expense_claim_create', 'expenses_state', 'expense_claim_editor', 'expense_search', 'year_end_expenses_confirmation'];
     }
 
     public function cardLayout(): array
@@ -67,6 +67,12 @@ final class _expense_claims extends PageContextFramework
                 'tab' => 'Search',
                 'cards' => [
                     'expense_search',
+                ],
+            ],
+            [
+                'tab' => 'Year End Confirmation',
+                'cards' => [
+                    'year_end_expenses_confirmation',
                 ],
             ],
         ];

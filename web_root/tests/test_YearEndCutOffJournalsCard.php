@@ -40,14 +40,14 @@ $harness->run(_journal_cut_off_confirmationCard::class, static function (Generat
 
         $html = $card->render(yearEndJournalCutOffCardContext(null));
 
-        $harness->assertSame(true, strpos($html, 'Posted cut-off journals') < strpos($html, '<div class="eyebrow">Approval</div>'));
+        $harness->assertSame(true, strpos($html, 'Posted cut-off journals') < strpos($html, '<div class="eyebrow">Year End Confirmation</div>'));
         $harness->assertSame(true, str_contains($html, '<th>Date</th><th>Description</th><th>Type</th><th>Lines</th>'));
         $harness->assertSame(true, str_contains($html, 'Accrual fixture'));
         $harness->assertSame(true, str_contains($html, '<td>2</td>'));
         $harness->assertSame(true, str_contains($html, 'name="intent" value="acknowledge_review_check"'));
         $harness->assertSame(true, str_contains($html, 'name="check_code" value="cut_off_journals_review"'));
         $harness->assertSame(true, str_contains($html, '<section class="panel-soft warn full settings-stack">'));
-        $harness->assertSame(true, str_contains($html, '<div class="eyebrow">Approval</div>'));
+        $harness->assertSame(true, str_contains($html, '<div class="eyebrow">Year End Confirmation</div>'));
         $harness->assertSame(true, str_contains($html, 'class="form-grid"'));
         $harness->assertSame(true, str_contains($html, 'name="review_acknowledgement_note"'));
         $harness->assertSame(true, str_contains($html, 'Approve for Year End'));

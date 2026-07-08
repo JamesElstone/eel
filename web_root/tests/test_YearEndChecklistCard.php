@@ -27,7 +27,7 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
                                 'status' => 'warning',
                                 'detail_text' => 'Review whether any cut-off journals are required.',
                                 'metric_value' => 'Pending',
-                                'action_url' => '?page=year_end&company_id=12&accounting_period_id=34&show_card=journal_cut_off_confirmation',
+                                'action_url' => '?page=journal&company_id=12&accounting_period_id=34&show_card=journal_cut_off_confirmation',
                                 'review_clearable' => true,
                             ],
                             [
@@ -49,7 +49,7 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
                                 'status' => 'warning',
                                 'detail_text' => 'Approve the prepayment review before closing this accounting period.',
                                 'metric_value' => 'Pending',
-                                'action_url' => '?page=year_end&company_id=12&accounting_period_id=34&show_card=year_end_prepayment_approvals',
+                                'action_url' => '?page=prepayments&company_id=12&accounting_period_id=34&show_card=year_end_prepayment_approvals',
                                 'review_clearable' => true,
                             ],
                         ],
@@ -59,6 +59,8 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
         ]);
 
         $harness->assertSame(true, str_contains($html, 'Open Related Workflow'));
+        $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=journal" data-ajax="true"'));
+        $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=prepayments" data-ajax="true"'));
         $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=year_end" data-ajax="true"'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="show_card" value="journal_cut_off_confirmation">'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="show_card" value="year_end_prepayment_approvals">'));
@@ -137,6 +139,7 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
         $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=transactions" data-ajax="true"'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="company_id" value="12">'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="accounting_period_id" value="34">'));
+        $harness->assertSame(true, str_contains($html, '<input type="hidden" name="show_card" value="year_end_empty_month_confirmations">'));
         $harness->assertSame(false, str_contains($html, 'company_id=12'));
         $harness->assertSame(false, str_contains($html, 'accounting_period_id=34'));
     });
@@ -278,7 +281,7 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
                                 'status' => 'warning',
                                 'detail_text' => 'Review the expense claim balance brought forward, claims, payments, and carried-forward position before closing this accounting period.',
                                 'metric_value' => 'UNPAID £ 225.00',
-                                'action_url' => '?page=year_end&company_id=12&accounting_period_id=34&show_card=year_end_expenses_confirmation',
+                                'action_url' => '?page=expense_claims&company_id=12&accounting_period_id=34&show_card=year_end_expenses_confirmation',
                             ],
                             [
                                 'check_code' => 'expense_position_acknowledgement',
@@ -286,7 +289,7 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
                                 'status' => 'pass',
                                 'detail_text' => 'Expense claim position has been acknowledged for this period.',
                                 'metric_value' => 'OWED -£ 42.00',
-                                'action_url' => '?page=year_end&company_id=12&accounting_period_id=34&show_card=year_end_expenses_confirmation',
+                                'action_url' => '?page=expense_claims&company_id=12&accounting_period_id=34&show_card=year_end_expenses_confirmation',
                             ],
                         ],
                     ],
@@ -298,7 +301,7 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
         $harness->assertSame(true, str_contains($html, 'Expense position acknowledgement'));
         $harness->assertSame(true, str_contains($html, 'UNPAID £ 225.00'));
         $harness->assertSame(true, str_contains($html, 'OWED -£ 42.00'));
-        $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=year_end" data-ajax="true"'));
+        $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=expense_claims" data-ajax="true"'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="show_card" value="year_end_expenses_confirmation">'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="company_id" value="12">'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="accounting_period_id" value="34">'));

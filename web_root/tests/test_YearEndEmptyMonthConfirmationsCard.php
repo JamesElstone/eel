@@ -99,7 +99,7 @@ $harness->run(_year_end_empty_month_confirmationsCard::class, static function (
         $harness->assertSame(true, str_contains($html, 'name="month_start[]" value="2022-09-01"'));
         $harness->assertSame(true, str_contains($html, 'name="month_start[]" value="2022-11-01"'));
         $harness->assertSame(true, str_contains($html, 'empty-month confirmations for 09/2022 and 11/2022'));
-        $harness->assertSame(true, str_contains($html, '<div class="eyebrow">Approval</div>'));
+        $harness->assertSame(true, str_contains($html, '<div class="eyebrow">Year End Confirmation</div>'));
         $harness->assertSame(true, str_contains($html, '<section class="panel-soft success settings-stack">'));
         $harness->assertSame(true, str_contains($html, '<div class="summary-value">Bank account was not open.</div>'));
         $harness->assertSame(true, str_contains($html, '<div class="stat-foot">Approved at 2026-07-02 10:00:00 by unit_test.</div>'));

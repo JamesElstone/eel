@@ -57,6 +57,13 @@ final class YearEndAction implements ActionInterfaceFramework
                     (string)$request->input('confirmation_notes', ''),
                     $actor
                 ),
+                'confirm_empty_months' => (new \eel_accounts\Service\EmptyMonthConfirmationService())->confirmMonths(
+                    $companyId,
+                    $accountingPeriodId,
+                    $this->monthStartPayload($request),
+                    (string)$request->input('confirmation_notes', ''),
+                    $actor
+                ),
                 'revoke_empty_month' => (new \eel_accounts\Service\EmptyMonthConfirmationService())->revokeMonth(
                     $companyId,
                     $accountingPeriodId,
@@ -199,6 +206,7 @@ final class YearEndAction implements ActionInterfaceFramework
             'unlock_period' => 'Accounting period unlocked.',
             'save_notes' => 'Year-end notes saved.',
             'confirm_empty_month' => 'Empty month confirmation saved.',
+            'confirm_empty_months' => 'Empty month confirmations saved.',
             'revoke_empty_month' => 'Empty month confirmation revoked.',
             'save_opening_balance' => 'Opening balance journal saved.',
             'create_adjustment' => 'Year-end adjustment posted.',
@@ -255,6 +263,7 @@ final class YearEndAction implements ActionInterfaceFramework
             'recalculate',
             'save_notes',
             'confirm_empty_month',
+            'confirm_empty_months',
             'revoke_empty_month',
             'save_opening_balance',
             'create_adjustment',
@@ -326,6 +335,21 @@ final class YearEndAction implements ActionInterfaceFramework
             'auto_reverse' => $this->truthy($request->input('adjustment_auto_reverse', '0')),
             'lines' => $this->linePayloads($request, 'adjustment', 8),
         ];
+    }
+
+    private function monthStartPayload(RequestFramework $request): array
+    {
+        $value = $request->input('month_start', $request->input('month_starts', []));
+        if (is_array($value)) {
+            return array_values(array_map(static fn (mixed $item): string => (string)$item, $value));
+        }
+
+        $value = trim((string)$value);
+        if ($value === '') {
+            return [];
+        }
+
+        return array_values(array_filter(array_map('trim', explode(',', $value)), static fn (string $item): bool => $item !== ''));
     }
 
     private function linePayloads(RequestFramework $request, string $prefix, int $maxRows): array

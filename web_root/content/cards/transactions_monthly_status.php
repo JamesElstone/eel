@@ -81,18 +81,14 @@ final class _transactions_monthly_statusCard extends CardBaseFramework
             $confirmedEmptyHtml = !empty($month['empty_month_confirmed'])
                 ? '<div class="helper">Confirmed no activity</div>'
                 : '';
-
-            $monthsHtml .= '<form class="month-card-form" method="post" action="?page=transactions" data-ajax="true">
-                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
-                <input type="hidden" name="card_action" value="Transaction">
-                <input type="hidden" name="global_action" value="select_transaction_month">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <input type="hidden" name="month_key" value="' . HelperFramework::escape((string)($month['month_key'] ?? '')) . '">
-                <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
-                <input type="hidden" name="account_filter" value="' . $selectedAccountFilter . '">
-                <button class="' . HelperFramework::escape($this->monthStatusClass((string)($month['status'] ?? 'idle'))) . '" type="submit" data-page-card-switch-tab="Categorise">
-                <div class="month-head">
+            $monthKey = (string)($month['month_key'] ?? '');
+            $canConfirmEmpty = !empty($month['can_confirm_empty_month'])
+                && empty($month['empty_month_confirmed'])
+                && $companyId > 0
+                && $accountingPeriodId > 0;
+            $confirmEmptyHtml = $canConfirmEmpty ? $this->confirmEmptyMonthHtml($monthKey, $companyId, $accountingPeriodId) : '';
+            $monthCardClass = $this->monthStatusClass((string)($month['status'] ?? 'idle'));
+            $monthContentHtml = '<div class="month-head">
                     <div>
                         <div class="month-name">' . HelperFramework::escape((string)($month['month'] ?? '')) . '</div>
                         ' . $monthYearHtml . '
@@ -105,12 +101,55 @@ final class _transactions_monthly_statusCard extends CardBaseFramework
                 <div class="helper">' . (int)($month['ready_to_post'] ?? 0) . ' unposted</div>
                 <div class="helper">' . (int)($month['staged'] ?? 0) . ' staged</div>
                 <div class="helper">' . (int)($month['raw_rows'] ?? 0) . ' raw rows</div>
-                ' . $confirmedEmptyHtml . '
-                </button>
-            </form>';
+                ' . $confirmedEmptyHtml;
+
+            $monthsHtml .= '<div class="month-card-stack">
+            <div class="' . HelperFramework::escape($monthCardClass) . '">
+                ' . $this->monthSelectFormHtml($monthKey, $companyId, $accountingPeriodId, $selectedTransactionFilter, $selectedAccountFilter, $monthContentHtml) . '
+                ' . $confirmEmptyHtml . '
+            </div>
+            </div>';
         }
 
         return '<div class="month-grid">' . $monthsHtml . '</div>';
+    }
+
+    private function monthSelectFormHtml(
+        string $monthKey,
+        int $companyId,
+        int $accountingPeriodId,
+        string $selectedTransactionFilter,
+        int $selectedAccountFilter,
+        string $monthContentHtml
+    ): string {
+        return '<form class="month-card-form month-card-select-form" method="post" action="?page=transactions" data-ajax="true">
+            ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
+            <input type="hidden" name="card_action" value="Transaction">
+            <input type="hidden" name="global_action" value="select_transaction_month">
+            <input type="hidden" name="company_id" value="' . $companyId . '">
+            <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+            <input type="hidden" name="month_key" value="' . HelperFramework::escape($monthKey) . '">
+            <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+            <input type="hidden" name="account_filter" value="' . $selectedAccountFilter . '">
+            <button class="month-card-select" type="submit" data-page-card-switch-tab="Categorise">' . $monthContentHtml . '</button>
+        </form>';
+    }
+
+    private function confirmEmptyMonthHtml(string $monthKey, int $companyId, int $accountingPeriodId): string
+    {
+        if ($monthKey === '') {
+            return '';
+        }
+
+        return '<form class="month-card-form month-card-confirm-form" method="post" action="?page=transactions" data-ajax="true">
+            ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
+            <input type="hidden" name="card_action" value="YearEnd">
+            <input type="hidden" name="intent" value="confirm_empty_month">
+            <input type="hidden" name="company_id" value="' . $companyId . '">
+            <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+            <input type="hidden" name="month_start" value="' . HelperFramework::escape($monthKey) . '">
+            <button class="button" type="submit">Confirm no activity</button>
+        </form>';
     }
 
     private function monthStatusClass(string $status): string

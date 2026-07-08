@@ -284,8 +284,9 @@ final class UploadsAction implements ActionInterfaceFramework
             return $locked;
         }
 
+        $companyId = (new \eel_accounts\Service\AccountingContextService())->authCompanyId();
         $result = $this->statementUploadService($services)->commitUpload(
-            (new \eel_accounts\Service\AccountingContextService())->authCompanyId(),
+            $companyId,
             max(0, (int)$request->input('upload_id', 0))
         );
         [$flashMessages, $flashErrors] = $this->messagesFromResult($result);
@@ -301,6 +302,13 @@ final class UploadsAction implements ActionInterfaceFramework
                 (int)($documentSummary['pending'] ?? 0) + (int)($documentSummary['skipped'] ?? 0),
                 (int)($documentSummary['failed'] ?? 0)
             );
+            $clearedMonths = $this->clearEmptyMonthConfirmationsForCommittedRows(
+                $companyId,
+                (array)($result['inserted_months_by_period'] ?? [])
+            );
+            if ($clearedMonths !== []) {
+                $flashMessages[] = 'Empty month confirmation cleared for ' . implode(', ', $clearedMonths) . ' because transactions were imported.';
+            }
         }
 
         return $this->actionResult(
@@ -309,9 +317,53 @@ final class UploadsAction implements ActionInterfaceFramework
             $flashMessages,
             $flashErrors,
             ['upload_id' => (int)($result['statement_upload_id'] ?? 0)],
-            ['page.context', 'uploads.details'],
+            $this->commitChangedFacts(),
             ['show_card' => 'uploads_details']
         );
+    }
+
+    private function clearEmptyMonthConfirmationsForCommittedRows(int $companyId, array $insertedMonthsByPeriod): array
+    {
+        if ($companyId <= 0 || $insertedMonthsByPeriod === []) {
+            return [];
+        }
+
+        $cleared = [];
+        $service = new \eel_accounts\Service\EmptyMonthConfirmationService();
+        foreach ($insertedMonthsByPeriod as $periodId => $monthStarts) {
+            $result = $service->revokeActiveConfirmationsForMonths(
+                $companyId,
+                (int)$periodId,
+                (array)$monthStarts,
+                'upload_import'
+            );
+
+            foreach ((array)($result['months'] ?? []) as $month) {
+                if (!is_array($month)) {
+                    continue;
+                }
+
+                $label = trim((string)($month['month_label'] ?? ''));
+                if ($label !== '') {
+                    $cleared[$label] = true;
+                }
+            }
+        }
+
+        return array_keys($cleared);
+    }
+
+    private function commitChangedFacts(): array
+    {
+        return [
+            'page.context',
+            'uploads.details',
+            'transactions.imported',
+            TransactionAction::CATEGORISATION_SUMMARY_FACT,
+            'year.end.state',
+            'year.end.checklist',
+            'year.end.empty.month.confirmations',
+        ];
     }
 
     private function exportCsvUpload(RequestFramework $request, PageServiceFramework $services): never

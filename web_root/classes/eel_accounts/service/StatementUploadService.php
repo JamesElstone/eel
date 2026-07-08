@@ -1186,6 +1186,7 @@ final class StatementUploadService
         $mapping = $this->fetchUploadMapping($uploadId);
         $parsedMapping = is_array($mapping) ? $this->decodeJsonObject((string)($mapping['mapping_json'] ?? '')) : [];
         $insertedTransactionIds = [];
+        $insertedMonthsByPeriod = [];
         $rowsInserted = 0;
 
         try {
@@ -1343,6 +1344,9 @@ final class StatementUploadService
                 ]);
 
                 $insertedTransactionIds[] = $transactionId;
+                $periodId = (int)$row['accounting_period_id'];
+                $monthStart = (new \DateTimeImmutable((string)$row['chosen_txn_date']))->format('Y-m-01');
+                $insertedMonthsByPeriod[$periodId][$monthStart] = true;
                 $rowsInserted++;
             }
 
@@ -1399,6 +1403,10 @@ final class StatementUploadService
         }
 
         $this->updateUploadWorkflow($uploadId, self::WORKFLOW_COMPLETED);
+        $insertedMonthMap = [];
+        foreach ($insertedMonthsByPeriod as $periodId => $monthMap) {
+            $insertedMonthMap[(string)$periodId] = array_keys((array)$monthMap);
+        }
 
         return [
             'http_status' => 200,
@@ -1411,6 +1419,7 @@ final class StatementUploadService
             'warnings' => $warnings,
             'errors' => [],
             'document_summary' => $documentSummary,
+            'inserted_months_by_period' => $insertedMonthMap,
         ];
     }
 
@@ -3660,6 +3669,7 @@ final class StatementUploadService
 
         $confirmedEmptyMonths = (new \eel_accounts\Service\EmptyMonthConfirmationService())
             ->activeConfirmationMap($companyId, $accountingPeriodId);
+        $emptyMonthCandidates = $this->emptyMonthCandidateMap($companyId, $accountingPeriodId);
 
         $months = [];
         $cursor = new \DateTime((string)$accountingPeriod['period_start']);
@@ -3679,7 +3689,12 @@ final class StatementUploadService
             $stagedCount = (int)($importRowSummary['staged_count'] ?? 0);
             $rawRowCount = (int)($importRowSummary['raw_row_count'] ?? 0)
                 + (int)($unstagedUploadSummary['raw_row_count'] ?? 0);
+            $emptyMonthCandidate = (array)($emptyMonthCandidates[$monthKey] ?? []);
             $isConfirmedEmpty = isset($confirmedEmptyMonths[$monthKey])
+                && $txnCount === 0
+                && $rawRowCount === 0
+                && (string)($emptyMonthCandidate['status'] ?? 'confirmed') === 'confirmed';
+            $canConfirmEmpty = !empty($emptyMonthCandidate['can_confirm'])
                 && $txnCount === 0
                 && $rawRowCount === 0;
 
@@ -3705,12 +3720,42 @@ final class StatementUploadService
                 'raw_rows' => $rawRowCount,
                 'empty_month_confirmed' => $isConfirmedEmpty,
                 'empty_month_confirmation' => $isConfirmedEmpty ? $confirmedEmptyMonths[$monthKey] : null,
+                'can_confirm_empty_month' => $canConfirmEmpty,
+                'empty_month_confirmation_reason' => (string)($emptyMonthCandidate['reason'] ?? ''),
+                'empty_month_confirmation_basis' => (string)($emptyMonthCandidate['confirmation_basis'] ?? ''),
             ];
 
             $cursor->modify('+1 month');
         }
 
         return $months;
+    }
+
+    private function emptyMonthCandidateMap(int $companyId, int $accountingPeriodId): array
+    {
+        try {
+            $context = (new \eel_accounts\Service\EmptyMonthConfirmationService())->fetchContext($companyId, $accountingPeriodId);
+        } catch (\Throwable) {
+            return [];
+        }
+
+        if (empty($context['available'])) {
+            return [];
+        }
+
+        $map = [];
+        foreach ((array)($context['months'] ?? []) as $month) {
+            if (!is_array($month)) {
+                continue;
+            }
+
+            $monthStart = trim((string)($month['month_start'] ?? ''));
+            if ($monthStart !== '') {
+                $map[$monthStart] = $month;
+            }
+        }
+
+        return $map;
     }
 
     public function buildUniqueUploadedRowsByMonth(?int $companyId = null, ?int $accountingPeriodId = null): array

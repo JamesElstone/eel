@@ -123,6 +123,62 @@ $harness->run(_uploads_validate_commitCard::class, static function (
 
         uploadMappingAssertNoMissingParamErrors($harness, $cardContext);
     });
+
+    $harness->check(_uploads_validate_commitCard::class, 'warns when ready rows affect empty-month confirmations', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => [
+                'id' => 12,
+                'accounting_period_id' => 34,
+            ],
+            'uploads' => [
+                'id' => 56,
+                'filter' => 'ready',
+                'page' => 1,
+            ],
+            'services' => [
+                'selected_upload_preview' => [
+                    'upload' => [
+                        'id' => 56,
+                        'account_id' => 78,
+                        'original_filename' => 'march.csv',
+                    ],
+                    'summary' => [
+                        'rows_parsed' => 1,
+                        'rows_valid' => 1,
+                        'rows_invalid' => 0,
+                        'rows_duplicate_within_upload' => 0,
+                        'rows_duplicate_existing' => 0,
+                        'rows_ready_to_import' => 1,
+                    ],
+                    'rows' => [
+                        [
+                            'row_number' => 1,
+                            'chosen_txn_date' => '2026-03-12',
+                            'accounting_period_label' => '2026',
+                            'normalised_description' => 'Receipt',
+                            'normalised_amount' => '12.34',
+                            'normalised_balance' => '12.34',
+                            'normalised_currency' => 'GBP',
+                            'source_account' => 'Current account',
+                            'source_category' => '',
+                            'validation_status' => 'valid',
+                        ],
+                    ],
+                ],
+                'empty_month_upload_impact' => [
+                    [
+                        'month_start' => '2026-03-01',
+                        'month_label' => '03/2026',
+                        'row_count' => 1,
+                    ],
+                ],
+                'accounting_guidance' => [],
+            ],
+        ]);
+
+        $harness->assertSame(true, str_contains($html, 'This import will clear no-activity confirmation'));
+        $harness->assertSame(true, str_contains($html, '03/2026 - 1 ready row'));
+    });
 });
 
 function uploadMappingInvokeModuleContext(

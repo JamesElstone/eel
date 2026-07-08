@@ -34,6 +34,16 @@ final class _uploads_validate_commitCard extends CardBaseFramework
                     'companyId' => ':company.id',
                 ],
             ],
+            [
+                'key' => 'empty_month_upload_impact',
+                'service' => \eel_accounts\Service\EmptyMonthConfirmationService::class,
+                'method' => 'activeConfirmationsAffectedByUpload',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                    'uploadId' => ':uploads.id',
+                ],
+            ],
         ];
     }
 
@@ -122,6 +132,7 @@ final class _uploads_validate_commitCard extends CardBaseFramework
         $readyToImport = (int)($summary['rows_ready_to_import'] ?? 0);
         $accountId = (int)($upload['account_id'] ?? 0);
         $importButtonDisabled = $readyToImport <= 0 ? ' disabled' : '';
+        $emptyMonthImpactHtml = $this->emptyMonthImpactHtml((array)($context['services']['empty_month_upload_impact'] ?? []));
 
         $importForm = '<form method="post" action="?page=uploads">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
@@ -284,7 +295,35 @@ final class _uploads_validate_commitCard extends CardBaseFramework
                 <div class="summary-card"><div class="summary-label">Ready to import</div><div class="summary-value">' . $readyToImport . '</div></div>
             </div>
             
-            ' . $importForm . $missingAccountingPeriodHtml . $tableHtml . $importForm;
+            ' . $emptyMonthImpactHtml . $importForm . $missingAccountingPeriodHtml . $tableHtml . $emptyMonthImpactHtml . $importForm;
+    }
+
+    private function emptyMonthImpactHtml(array $impactMonths): string
+    {
+        if ($impactMonths === []) {
+            return '';
+        }
+
+        $items = '';
+        foreach ($impactMonths as $month) {
+            if (!is_array($month)) {
+                continue;
+            }
+
+            $rowCount = (int)($month['row_count'] ?? 0);
+            $items .= '<li>' . HelperFramework::escape((string)($month['month_label'] ?? '')) . ' - '
+                . $rowCount . ' ready row' . ($rowCount === 1 ? '' : 's') . '</li>';
+        }
+
+        if ($items === '') {
+            return '';
+        }
+
+        return '<div class="panel-soft warn full">
+            <h4 class="card-title">This import will clear no-activity confirmation</h4>
+            <div class="helper">Ready-to-import rows fall in month(s) currently approved as having no financial activity. Importing the rows will revoke those empty-month confirmations.</div>
+            <ul class="helper">' . $items . '</ul>
+        </div>';
     }
 
     private function resolveSuggestedPeriodForDate(array $periods, string $chosenTxnDate): array

@@ -53,12 +53,12 @@ final class _year_end_empty_month_confirmationsCard extends CardBaseFramework
     {
         $data = (array)($context['services']['emptyMonthConfirmations'] ?? []);
         if (empty($data['available'])) {
-            return '<div class="helper">' . HelperFramework::escape((string)($data['errors'][0] ?? 'Empty month confirmations are not available.')) . '</div>';
+            return '<section class="panel-soft"><div class="helper">' . HelperFramework::escape((string)($data['errors'][0] ?? 'Empty month confirmations are not available.')) . '</div></section>';
         }
 
         $months = (array)($data['months'] ?? []);
         if ($months === []) {
-            return '<div class="helper">No first-month empty activity confirmations are available for this accounting period.</div>';
+            return '<section class="panel-soft"><div class="helper">' . HelperFramework::escape((string)($data['empty_message'] ?? 'No empty-month confirmations are available for this accounting period.')) . '</div></section>';
         }
 
         $company = (array)($context['company'] ?? []);
@@ -66,14 +66,21 @@ final class _year_end_empty_month_confirmationsCard extends CardBaseFramework
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $html = '<div class="settings-stack">';
+        $confirmableMonths = [];
 
         foreach ($months as $month) {
             if (!is_array($month)) {
                 continue;
             }
 
+            if (!empty($month['can_confirm'])) {
+                $confirmableMonths[] = $month;
+            }
+
             $html .= $this->renderMonth($month, $companyId, $accountingPeriodId, $companySettings);
         }
+
+        $html .= $this->batchActionHtml($confirmableMonths, $companyId, $accountingPeriodId);
 
         return $html . '</div>';
     }
@@ -82,18 +89,13 @@ final class _year_end_empty_month_confirmationsCard extends CardBaseFramework
     {
         $status = (string)($month['status'] ?? 'not_available');
         $confirmation = (array)($month['confirmation'] ?? []);
-        $badgeLabel = $this->statusLabel($status, !empty($month['can_confirm']));
-        $action = $this->actionHtml($month, $confirmation, $companyId, $accountingPeriodId);
+        $action = $this->confirmedActionHtml($month, $confirmation, $companyId, $accountingPeriodId);
 
-        return '<section class="settings-stack">
-            <div class="status-head">
-                <h3 class="card-title">' . HelperFramework::escape((string)($month['month_label'] ?? '')) . '</h3>
-                <span class="badge ' . HelperFramework::escape($this->badgeClass($status, !empty($month['can_confirm']))) . '">' . HelperFramework::escape($badgeLabel) . '</span>
-            </div>
-            <div class="helper">' . HelperFramework::escape((string)($month['reason'] ?? '')) . '</div>
+        return '<div class="panel-soft">
+            <h3 class="card-title">' . HelperFramework::escape($this->issueTitle($month)) . '</h3>
             ' . $this->evidenceHtml((array)($month['evidence'] ?? []), $companySettings) . '
-            ' . $action . '
-        </section>';
+        </div>
+        ' . $action;
     }
 
     private function evidenceHtml(array $evidence, array $companySettings): string
@@ -101,18 +103,25 @@ final class _year_end_empty_month_confirmationsCard extends CardBaseFramework
         $counts = (array)($evidence['activity_counts'] ?? []);
         $statement = (array)($evidence['first_later_statement'] ?? []);
         $rows = [
-            'Incorporation date' => (string)($evidence['incorporation_date'] ?? ''),
+            'Basis' => (string)($evidence['confirmation_basis_label'] ?? ''),
             'Transactions' => (string)(int)($counts['transactions'] ?? 0),
-            'Uploads' => (string)(int)($counts['uploads'] ?? 0),
+            'Raw rows' => (string)(int)($counts['raw_rows'] ?? $counts['uploads'] ?? 0),
             'Posted journals' => (string)(int)($counts['posted_journals'] ?? 0),
         ];
+
+        if ((string)($evidence['confirmation_basis'] ?? '') === 'initial_opening_month') {
+            $rows = array_merge(
+                ['Incorporation date' => (string)($evidence['incorporation_date'] ?? '')],
+                $rows
+            );
+        }
 
         if ($statement !== []) {
             $rows['First later statement'] = trim((string)($statement['chosen_txn_date'] ?? '') . ' ' . (string)($statement['original_filename'] ?? ''));
             $rows['Opening balance'] = $this->money($companySettings, $statement['opening_balance'] ?? 0);
         }
 
-        $html = '<div class="summary-grid">';
+        $html = '<div class="summary-grid four">';
         foreach ($rows as $label => $value) {
             if (trim($value) === '') {
                 continue;
@@ -129,28 +138,46 @@ final class _year_end_empty_month_confirmationsCard extends CardBaseFramework
         return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 
-    private function actionHtml(array $month, array $confirmation, int $companyId, int $accountingPeriodId): string
+    private function batchActionHtml(array $months, int $companyId, int $accountingPeriodId): string
+    {
+        $monthStarts = [];
+        $confirmableMonths = [];
+        foreach ($months as $month) {
+            if (!is_array($month) || empty($month['can_confirm'])) {
+                continue;
+            }
+
+            $monthStart = (string)($month['month_start'] ?? '');
+            if ($monthStart === '') {
+                continue;
+            }
+
+            $monthStarts[] = $monthStart;
+            $confirmableMonths[] = $month;
+        }
+
+        if ($monthStarts === []) {
+            return '';
+        }
+
+        return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
+            'subject' => $this->batchApprovalSubject($confirmableMonths),
+            'companyId' => $companyId,
+            'accountingPeriodId' => $accountingPeriodId,
+            'acknowledged' => false,
+            'intent' => 'confirm_empty_months',
+            'approveFields' => ['month_start' => $monthStarts],
+            'noteName' => 'confirmation_notes',
+            'noteId' => 'empty-month-notes-batch',
+        ]);
+    }
+
+    private function confirmedActionHtml(array $month, array $confirmation, int $companyId, int $accountingPeriodId): string
     {
         $monthStart = (string)($month['month_start'] ?? '');
-        $canConfirm = !empty($month['can_confirm']);
         $status = (string)($month['status'] ?? '');
-        $subject = 'no financial activity for ' . (string)($month['month_label'] ?? 'this month');
+        $subject = $this->approvalSubject($month);
         $noteId = 'empty-month-notes-' . str_replace('-', '', $monthStart);
-
-        if ($canConfirm) {
-            return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
-                'subject' => $subject,
-                'companyId' => $companyId,
-                'accountingPeriodId' => $accountingPeriodId,
-                'acknowledged' => false,
-                'intent' => 'confirm_empty_month',
-                'revokeIntent' => 'revoke_empty_month',
-                'approveFields' => ['month_start' => $monthStart],
-                'revokeFields' => ['month_start' => $monthStart],
-                'noteName' => 'confirmation_notes',
-                'noteId' => $noteId,
-            ]);
-        }
 
         if ($status === 'confirmed') {
             return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
@@ -171,6 +198,98 @@ final class _year_end_empty_month_confirmationsCard extends CardBaseFramework
         }
 
         return '';
+    }
+
+    private function basisLabel(array $month): string
+    {
+        $basisLabel = trim((string)($month['basis_label'] ?? ''));
+        if ($basisLabel !== '') {
+            return $basisLabel;
+        }
+
+        return (string)($month['confirmation_basis'] ?? '') === 'initial_opening_month'
+            ? 'First-period initial month'
+            : 'No-activity month';
+    }
+
+    private function approvalSubject(array $month): string
+    {
+        $monthLabel = $this->shortMonthLabel($month);
+        if ($monthLabel === '') {
+            $monthLabel = (string)($month['month_label'] ?? 'this month');
+        }
+
+        return (string)($month['confirmation_basis'] ?? '') === 'initial_opening_month'
+            ? 'first-period initial no activity for ' . $monthLabel
+            : 'no financial activity for ' . $monthLabel;
+    }
+
+    private function batchApprovalSubject(array $months): string
+    {
+        $labels = [];
+        $basis = [];
+        foreach ($months as $month) {
+            if (!is_array($month)) {
+                continue;
+            }
+
+            $label = $this->shortMonthLabel($month);
+            if ($label !== '') {
+                $labels[] = $label;
+            }
+            $basis[(string)($month['confirmation_basis'] ?? '')] = true;
+        }
+
+        $labelText = $this->joinLabels($labels);
+        if ($labelText === '') {
+            $labelText = 'the selected month(s)';
+        }
+
+        if (count($basis) === 1 && isset($basis['initial_opening_month'])) {
+            return 'first-period initial no activity for ' . $labelText;
+        }
+
+        if (count($basis) === 1 && isset($basis['no_activity_month'])) {
+            return 'no financial activity for ' . $labelText;
+        }
+
+        return 'empty-month confirmations for ' . $labelText;
+    }
+
+    private function issueTitle(array $month): string
+    {
+        $monthLabel = $this->shortMonthLabel($month);
+        if ($monthLabel === '') {
+            $monthLabel = trim((string)($month['month_label'] ?? 'this month'));
+        }
+
+        return 'No activity in Month: ' . $monthLabel;
+    }
+
+    private function shortMonthLabel(array $month): string
+    {
+        $monthStart = trim((string)($month['month_start'] ?? ''));
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $monthStart)) {
+            return (new DateTimeImmutable($monthStart))->format('m/Y');
+        }
+
+        return trim((string)($month['month_label'] ?? ''));
+    }
+
+    private function joinLabels(array $labels): string
+    {
+        $labels = array_values(array_filter(array_map(static fn (mixed $label): string => trim((string)$label), $labels), static fn (string $label): bool => $label !== ''));
+        $count = count($labels);
+        if ($count === 0) {
+            return '';
+        }
+        if ($count === 1) {
+            return $labels[0];
+        }
+
+        $last = array_pop($labels);
+
+        return implode(', ', $labels) . ' and ' . $last;
     }
 
     private function statusLabel(string $status, bool $canConfirm): string

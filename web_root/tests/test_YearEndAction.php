@@ -485,6 +485,42 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             ]));
         });
     });
+
+    $harness->check('YearEndAction', 'confirms multiple empty months from one approval', static function () use ($harness): void {
+        yearEndActionEmptyMonthTestWithFixture($harness, static function (array $fixture) use ($harness): void {
+            $instance = yearEndActionTestInstanceWithDirectorCount(2);
+
+            $confirm = $instance->handle(
+                yearEndActionEmptyMonthTestRequest(
+                    (int)$fixture['company_id'],
+                    (int)$fixture['accounting_period_id'],
+                    'confirm_empty_months',
+                    ['2022-09-01', '2022-11-01']
+                ),
+                createTestPageServiceFramework()
+            );
+
+            $harness->assertSame(true, $confirm->isSuccess());
+            $harness->assertSame(true, str_contains((string)($confirm->flashMessages()[0]['message'] ?? ''), 'confirmations saved'));
+            $harness->assertSame(2, InterfaceDB::countWhere('accounting_period_month_confirmations', [
+                'company_id' => (int)$fixture['company_id'],
+                'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                'revoked_at' => null,
+            ]));
+            $harness->assertSame(1, InterfaceDB::countWhere('accounting_period_month_confirmations', [
+                'company_id' => (int)$fixture['company_id'],
+                'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                'month_start' => '2022-09-01',
+                'revoked_at' => null,
+            ]));
+            $harness->assertSame(1, InterfaceDB::countWhere('accounting_period_month_confirmations', [
+                'company_id' => (int)$fixture['company_id'],
+                'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                'month_start' => '2022-11-01',
+                'revoked_at' => null,
+            ]));
+        });
+    });
 });
 
 function yearEndActionDirectorLoanTestWithFixture(GeneratedServiceClassTestHarness $harness, callable $callback): void
@@ -772,7 +808,7 @@ function yearEndActionEmptyMonthInsertStatement(string $marker, int $companyId, 
     );
 }
 
-function yearEndActionEmptyMonthTestRequest(int $companyId, int $accountingPeriodId, string $intent): RequestFramework
+function yearEndActionEmptyMonthTestRequest(int $companyId, int $accountingPeriodId, string $intent, string|array $monthStart = '2022-09-01'): RequestFramework
 {
     return new RequestFramework(
         [],
@@ -781,7 +817,7 @@ function yearEndActionEmptyMonthTestRequest(int $companyId, int $accountingPerio
             'intent' => $intent,
             'company_id' => (string)$companyId,
             'accounting_period_id' => (string)$accountingPeriodId,
-            'month_start' => '2022-09-01',
+            'month_start' => $monthStart,
             'confirmation_notes' => 'No financial activity before bank account opening.',
         ],
         ['REQUEST_METHOD' => 'POST', 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest', 'HTTP_ACCEPT' => 'application/json'],

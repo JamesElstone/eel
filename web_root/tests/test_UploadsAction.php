@@ -66,11 +66,11 @@ $harness->run(UploadsAction::class, static function (GeneratedServiceClassTestHa
             [],
             [],
             ['upload_id' => 7],
-            ['page.context', 'uploads.details'],
+            ['page.context', 'uploads.details', 'transactions.imported'],
             ['show_card' => 'uploads_details']
         );
 
-        $harness->assertSame(['page.context', 'uploads.details'], $result->changedFacts());
+        $harness->assertSame(['page.context', 'uploads.details', 'transactions.imported'], $result->changedFacts());
         $harness->assertSame(['show_card' => 'uploads_details'], $result->query());
         $harness->assertSame([
             'uploads' => [
@@ -90,7 +90,18 @@ $harness->run(UploadsAction::class, static function (GeneratedServiceClassTestHa
             $method->getEndLine() - $method->getStartLine() + 1
         ));
 
-        $harness->assertTrue(str_contains($source, "['page.context', 'uploads.details']"));
+        $harness->assertTrue(str_contains($source, '$this->commitChangedFacts()'));
         $harness->assertTrue(str_contains($source, "['show_card' => 'uploads_details']"));
+    });
+
+    $harness->check(UploadsAction::class, 'commit refresh facts include transaction and year-end surfaces', static function () use ($harness): void {
+        $action = new UploadsAction();
+        $method = new ReflectionMethod(UploadsAction::class, 'commitChangedFacts');
+        $method->setAccessible(true);
+        $facts = $method->invoke($action);
+
+        $harness->assertTrue(in_array('transactions.imported', $facts, true));
+        $harness->assertTrue(in_array('year.end.empty.month.confirmations', $facts, true));
+        $harness->assertTrue(in_array(TransactionAction::CATEGORISATION_SUMMARY_FACT, $facts, true));
     });
 });

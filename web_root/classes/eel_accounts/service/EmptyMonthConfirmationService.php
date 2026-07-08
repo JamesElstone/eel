@@ -34,9 +34,15 @@ final class EmptyMonthConfirmationService
             ];
         }
 
+        $initialMonthChecksEnabled = $this->isEarliestAccountingPeriod($companyId, $accountingPeriodId);
+
         return [
             'available' => true,
             'accounting_period' => $period,
+            'initial_month_checks_enabled' => $initialMonthChecksEnabled,
+            'empty_message' => $initialMonthChecksEnabled
+                ? 'No initial/opening or ordinary empty-month confirmations are available for this accounting period.'
+                : 'No empty-month confirmations are available for this accounting period.',
             'months' => $this->reviewMonths($companyId, $accountingPeriodId, $period),
         ];
     }
@@ -56,6 +62,128 @@ final class EmptyMonthConfirmationService
         }
 
         return $map;
+    }
+
+    public function activeConfirmationsAffectedByUpload(int $companyId, int $accountingPeriodId, int $uploadId): array
+    {
+        $companyId = max(0, $companyId);
+        $accountingPeriodId = max(0, $accountingPeriodId);
+        $uploadId = max(0, $uploadId);
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || $uploadId <= 0 || !$this->tableAvailable()) {
+            return [];
+        }
+
+        $activeConfirmations = $this->activeConfirmationMap($companyId, $accountingPeriodId);
+        if ($activeConfirmations === []) {
+            return [];
+        }
+
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT sir.chosen_txn_date
+             FROM statement_import_rows sir
+             INNER JOIN statement_uploads su
+                ON su.id = sir.upload_id
+             WHERE su.company_id = :company_id
+               AND sir.upload_id = :upload_id
+               AND sir.accounting_period_id = :accounting_period_id
+               AND sir.validation_status = :validation_status
+               AND COALESCE(sir.is_duplicate_within_upload, 0) = 0
+               AND COALESCE(sir.is_duplicate_existing, 0) = 0
+               AND sir.committed_transaction_id IS NULL
+               AND sir.chosen_txn_date IS NOT NULL
+             ORDER BY sir.chosen_txn_date ASC, sir.row_number ASC, sir.id ASC',
+            [
+                'company_id' => $companyId,
+                'upload_id' => $uploadId,
+                'accounting_period_id' => $accountingPeriodId,
+                'validation_status' => 'valid',
+            ]
+        );
+
+        $affected = [];
+        foreach ($rows as $row) {
+            $monthStart = $this->normaliseMonthStart((string)($row['chosen_txn_date'] ?? ''));
+            if ($monthStart === '' || !isset($activeConfirmations[$monthStart])) {
+                continue;
+            }
+
+            if (!isset($affected[$monthStart])) {
+                $affected[$monthStart] = [
+                    'month_start' => $monthStart,
+                    'month_label' => \HelperFramework::displayMonthYear(new \DateTimeImmutable($monthStart)),
+                    'row_count' => 0,
+                    'confirmation' => $this->normaliseConfirmation((array)$activeConfirmations[$monthStart]),
+                ];
+            }
+
+            $affected[$monthStart]['row_count']++;
+        }
+
+        return array_values($affected);
+    }
+
+    public function revokeActiveConfirmationsForMonths(
+        int $companyId,
+        int $accountingPeriodId,
+        array $monthStarts,
+        string $revokedBy = 'web_app'
+    ): array {
+        if (!$this->tableAvailable()) {
+            return $this->failure('Empty month confirmations are not available until the database migration has been applied.');
+        }
+
+        $normalisedMonths = [];
+        foreach ($monthStarts as $monthStart) {
+            $monthStart = $this->normaliseMonthStart((string)$monthStart);
+            if ($monthStart !== '') {
+                $normalisedMonths[$monthStart] = true;
+            }
+        }
+
+        if ($normalisedMonths === []) {
+            return [
+                'success' => true,
+                'revoked_count' => 0,
+                'months' => [],
+            ];
+        }
+
+        $activeConfirmations = $this->activeConfirmationMap($companyId, $accountingPeriodId);
+        $revokedMonths = [];
+        foreach (array_keys($normalisedMonths) as $monthStart) {
+            if (!isset($activeConfirmations[$monthStart])) {
+                continue;
+            }
+
+            \InterfaceDB::prepareExecute(
+                'UPDATE ' . self::TABLE . '
+                 SET revoked_at = CURRENT_TIMESTAMP,
+                     revoked_by = :revoked_by
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id
+                   AND month_start = :month_start
+                   AND confirmation_type = :confirmation_type
+                   AND revoked_at IS NULL',
+                [
+                    'revoked_by' => $this->actorValue($revokedBy),
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'month_start' => $monthStart,
+                    'confirmation_type' => self::CONFIRMATION_TYPE_NO_ACTIVITY,
+                ]
+            );
+
+            $revokedMonths[] = [
+                'month_start' => $monthStart,
+                'month_label' => \HelperFramework::displayMonthYear(new \DateTimeImmutable($monthStart)),
+            ];
+        }
+
+        return [
+            'success' => true,
+            'revoked_count' => count($revokedMonths),
+            'months' => $revokedMonths,
+        ];
     }
 
     public function confirmMonth(
@@ -84,6 +212,83 @@ final class EmptyMonthConfirmationService
             return $this->failure((string)($candidate['reason'] ?? 'This month is not eligible for empty activity confirmation.'));
         }
 
+        $this->storeConfirmation($companyId, $accountingPeriodId, $monthStart, $candidate, $notes, $confirmedBy);
+
+        return [
+            'success' => true,
+            'month_start' => $monthStart,
+        ];
+    }
+
+    public function confirmMonths(
+        int $companyId,
+        int $accountingPeriodId,
+        array $monthStarts,
+        string $notes = '',
+        string $confirmedBy = 'web_app'
+    ): array {
+        if (!$this->tableAvailable()) {
+            return $this->failure('Empty month confirmations are not available until the database migration has been applied.');
+        }
+
+        $period = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($period === null) {
+            return $this->failure('The selected accounting period could not be found.');
+        }
+
+        $normalisedMonths = [];
+        foreach ($monthStarts as $monthStart) {
+            $monthStart = $this->normaliseMonthStart((string)$monthStart);
+            if ($monthStart !== '') {
+                $normalisedMonths[$monthStart] = true;
+            }
+        }
+
+        if ($normalisedMonths === []) {
+            return $this->failure('Select at least one valid month before confirming no financial activity.');
+        }
+
+        $candidates = [];
+        $errors = [];
+        foreach (array_keys($normalisedMonths) as $monthStart) {
+            $candidate = $this->candidateForMonth($companyId, $accountingPeriodId, $period, $monthStart);
+            if (empty($candidate['can_confirm'])) {
+                $monthLabel = (string)($candidate['month_label'] ?? $monthStart);
+                $errors[] = $monthLabel . ': ' . (string)($candidate['reason'] ?? 'This month is not eligible for empty activity confirmation.');
+                continue;
+            }
+
+            $candidates[$monthStart] = $candidate;
+        }
+
+        if ($errors !== []) {
+            return [
+                'success' => false,
+                'errors' => $errors,
+            ];
+        }
+
+        \InterfaceDB::transaction(function () use ($companyId, $accountingPeriodId, $candidates, $notes, $confirmedBy): void {
+            foreach ($candidates as $monthStart => $candidate) {
+                $this->storeConfirmation($companyId, $accountingPeriodId, (string)$monthStart, $candidate, $notes, $confirmedBy);
+            }
+        });
+
+        return [
+            'success' => true,
+            'month_starts' => array_keys($candidates),
+            'confirmed_count' => count($candidates),
+        ];
+    }
+
+    private function storeConfirmation(
+        int $companyId,
+        int $accountingPeriodId,
+        string $monthStart,
+        array $candidate,
+        string $notes,
+        string $confirmedBy
+    ): void {
         $evidenceJson = json_encode((array)($candidate['evidence'] ?? []), JSON_UNESCAPED_SLASHES);
         if (!is_string($evidenceJson) || $evidenceJson === '') {
             $evidenceJson = '{}';
@@ -146,11 +351,6 @@ final class EmptyMonthConfirmationService
                 'confirmed_by' => $this->actorValue($confirmedBy),
             ]
         );
-
-        return [
-            'success' => true,
-            'month_start' => $monthStart,
-        ];
     }
 
     public function revokeMonth(
@@ -195,9 +395,13 @@ final class EmptyMonthConfirmationService
     private function reviewMonths(int $companyId, int $accountingPeriodId, array $period): array
     {
         $months = [];
-        $candidate = $this->candidateForIncorporationMonth($companyId, $accountingPeriodId, $period);
-        if ($candidate !== null) {
-            $months[(string)$candidate['month_start']] = $candidate;
+        $isFirstAccountingPeriod = $this->isEarliestAccountingPeriod($companyId, $accountingPeriodId);
+
+        foreach ($this->periodMonthStarts($period) as $monthStart) {
+            $candidate = $this->candidateForMonth($companyId, $accountingPeriodId, $period, $monthStart, $isFirstAccountingPeriod);
+            if ($this->shouldRenderCandidate($candidate)) {
+                $months[(string)$candidate['month_start']] = $candidate;
+            }
         }
 
         foreach ($this->fetchConfirmations($companyId, $accountingPeriodId) as $confirmation) {
@@ -206,8 +410,12 @@ final class EmptyMonthConfirmationService
                 continue;
             }
 
+            if (!$this->monthWithinPeriod($monthStart, $period)) {
+                continue;
+            }
+
             if (!isset($months[$monthStart])) {
-                $months[$monthStart] = $this->candidateForMonth($companyId, $accountingPeriodId, $period, $monthStart);
+                $months[$monthStart] = $this->candidateForMonth($companyId, $accountingPeriodId, $period, $monthStart, $isFirstAccountingPeriod);
             }
 
             $months[$monthStart]['confirmation'] = $this->normaliseConfirmation($confirmation);
@@ -228,27 +436,35 @@ final class EmptyMonthConfirmationService
         return array_values($months);
     }
 
-    private function candidateForIncorporationMonth(int $companyId, int $accountingPeriodId, array $period): ?array
+    private function shouldRenderCandidate(array $candidate): bool
     {
-        $incorporationDate = trim((string)($period['incorporation_date'] ?? ''));
-        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $incorporationDate)) {
-            return null;
+        if (!empty($candidate['can_confirm'])) {
+            return true;
         }
 
-        $monthStart = (new \DateTimeImmutable($incorporationDate))->modify('first day of this month')->format('Y-m-01');
-
-        return $this->candidateForMonth($companyId, $accountingPeriodId, $period, $monthStart);
+        return (string)($candidate['confirmation_basis'] ?? '') === 'initial_opening_month'
+            && $this->countsAreEmpty((array)($candidate['counts'] ?? []));
     }
 
-    private function candidateForMonth(int $companyId, int $accountingPeriodId, array $period, string $monthStart): array
+    private function candidateForMonth(
+        int $companyId,
+        int $accountingPeriodId,
+        array $period,
+        string $monthStart,
+        ?bool $isFirstAccountingPeriod = null
+    ): array
     {
         $monthStart = $this->normaliseMonthStart($monthStart);
         $monthEnd = $monthStart !== ''
             ? (new \DateTimeImmutable($monthStart))->modify('last day of this month')->format('Y-m-d')
             : '';
         $incorporationMonth = $this->incorporationMonth($period);
+        $isFirstAccountingPeriod = $isFirstAccountingPeriod ?? $this->isEarliestAccountingPeriod($companyId, $accountingPeriodId);
+        $isInitialOpeningMonth = $isFirstAccountingPeriod && $incorporationMonth !== '' && $monthStart === $incorporationMonth;
+        $basis = $isInitialOpeningMonth ? 'initial_opening_month' : 'no_activity_month';
+        $basisLabel = $isInitialOpeningMonth ? 'First-period initial month' : 'No-activity month';
         $counts = $monthStart !== '' ? $this->activityCounts($companyId, $accountingPeriodId, $monthStart, $monthEnd) : [];
-        $evidence = $monthStart !== '' ? $this->firstLaterStatementOpeningEvidence($companyId, $monthEnd) : null;
+        $evidence = $isInitialOpeningMonth && $monthStart !== '' ? $this->firstLaterStatementOpeningEvidence($companyId, $monthEnd) : null;
         $canConfirm = false;
         $reason = '';
 
@@ -256,28 +472,31 @@ final class EmptyMonthConfirmationService
             $reason = 'The month is not valid.';
         } elseif (!$this->monthWithinPeriod($monthStart, $period)) {
             $reason = 'The month is outside the selected accounting period.';
-        } elseif ($incorporationMonth === '' || $monthStart !== $incorporationMonth) {
-            $reason = 'Only the incorporation month can be confirmed through this first-month workflow.';
         } elseif (!$this->countsAreEmpty($counts)) {
             $reason = 'Source activity already exists for this month.';
-        } elseif ($evidence === null) {
+        } elseif ($isInitialOpeningMonth && $evidence === null) {
             $reason = 'No later statement row with opening balance evidence is available.';
-        } elseif (!$this->moneyMatches((float)$evidence['opening_balance'], 0.0)) {
+        } elseif ($isInitialOpeningMonth && !$this->moneyMatches((float)$evidence['opening_balance'], 0.0)) {
             $reason = 'The first later statement does not open at 0.00.';
         } else {
             $canConfirm = true;
-            $reason = 'First-month no-activity confirmation is available.';
+            $reason = $isInitialOpeningMonth
+                ? 'First-period initial-month no-activity confirmation is available.'
+                : 'No-activity month confirmation is available.';
         }
 
         return [
             'month_start' => $monthStart,
             'month_label' => $monthStart !== '' ? \HelperFramework::displayMonthYear(new \DateTimeImmutable($monthStart)) : '',
+            'confirmation_basis' => $basis,
+            'basis_label' => $basisLabel,
             'status' => $canConfirm ? 'available' : 'not_available',
             'can_confirm' => $canConfirm,
             'reason' => $reason,
             'counts' => $counts,
             'evidence' => [
-                'confirmation_basis' => 'incorporation_month_first_later_statement_opening_zero',
+                'confirmation_basis' => $basis,
+                'confirmation_basis_label' => $basisLabel,
                 'incorporation_date' => (string)($period['incorporation_date'] ?? ''),
                 'month_start' => $monthStart,
                 'month_end' => $monthEnd,
@@ -314,6 +533,8 @@ final class EmptyMonthConfirmationService
 
     private function activityCounts(int $companyId, int $accountingPeriodId, string $monthStart, string $monthEnd): array
     {
+        $rawRows = $this->rawRowCount($companyId, $accountingPeriodId, $monthStart, $monthEnd);
+
         return [
             'transactions' => (int)\InterfaceDB::fetchColumn(
                 'SELECT COUNT(*)
@@ -328,19 +549,8 @@ final class EmptyMonthConfirmationService
                     'month_end' => $monthEnd,
                 ]
             ),
-            'uploads' => (int)\InterfaceDB::fetchColumn(
-                'SELECT COUNT(*)
-                 FROM statement_uploads
-                 WHERE company_id = :company_id
-                   AND accounting_period_id = :accounting_period_id
-                   AND COALESCE(date_range_start, statement_month, date_range_end) BETWEEN :month_start AND :month_end',
-                [
-                    'company_id' => $companyId,
-                    'accounting_period_id' => $accountingPeriodId,
-                    'month_start' => $monthStart,
-                    'month_end' => $monthEnd,
-                ]
-            ),
+            'raw_rows' => $rawRows,
+            'uploads' => $rawRows,
             'posted_journals' => (int)\InterfaceDB::fetchColumn(
                 'SELECT COUNT(*)
                  FROM journals
@@ -356,6 +566,48 @@ final class EmptyMonthConfirmationService
                 ]
             ),
         ];
+    }
+
+    private function rawRowCount(int $companyId, int $accountingPeriodId, string $monthStart, string $monthEnd): int
+    {
+        $stagedRows = (int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*)
+             FROM statement_import_rows sir
+             INNER JOIN statement_uploads su
+                ON su.id = sir.upload_id
+               AND su.company_id = :company_id
+             WHERE sir.accounting_period_id = :accounting_period_id
+               AND sir.chosen_txn_date BETWEEN :month_start AND :month_end',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'month_start' => $monthStart,
+                'month_end' => $monthEnd,
+            ]
+        );
+
+        $unstagedRows = (int)\InterfaceDB::fetchColumn(
+            'SELECT COALESCE(SUM(su.rows_parsed), 0)
+             FROM statement_uploads su
+             LEFT JOIN statement_import_rows sir
+                ON sir.upload_id = su.id
+             WHERE su.company_id = :company_id
+               AND sir.id IS NULL
+               AND su.rows_parsed > 0
+               AND (
+                    su.accounting_period_id = :accounting_period_id
+                    OR su.accounting_period_id IS NULL
+               )
+               AND su.statement_month BETWEEN :month_start AND :month_end',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'month_start' => $monthStart,
+                'month_end' => $monthEnd,
+            ]
+        );
+
+        return $stagedRows + $unstagedRows;
     }
 
     private function firstLaterStatementOpeningEvidence(int $companyId, string $monthEnd): ?array
@@ -471,7 +723,7 @@ final class EmptyMonthConfirmationService
     private function countsAreEmpty(array $counts): bool
     {
         return (int)($counts['transactions'] ?? 0) === 0
-            && (int)($counts['uploads'] ?? 0) === 0
+            && (int)($counts['raw_rows'] ?? $counts['uploads'] ?? 0) === 0
             && (int)($counts['posted_journals'] ?? 0) === 0;
     }
 
@@ -496,6 +748,39 @@ final class EmptyMonthConfirmationService
         $monthEnd = (new \DateTimeImmutable($monthStart))->modify('last day of this month')->format('Y-m-d');
 
         return $monthEnd >= $periodStart && $monthStart <= $periodEnd;
+    }
+
+    private function periodMonthStarts(array $period): array
+    {
+        $periodStart = trim((string)($period['period_start'] ?? ''));
+        $periodEnd = trim((string)($period['period_end'] ?? ''));
+        if ($periodStart === '' || $periodEnd === '') {
+            return [];
+        }
+
+        $months = [];
+        $cursor = (new \DateTimeImmutable($periodStart))->modify('first day of this month');
+        $end = (new \DateTimeImmutable($periodEnd))->modify('first day of this month');
+        while ($cursor <= $end) {
+            $months[] = $cursor->format('Y-m-01');
+            $cursor = $cursor->modify('+1 month');
+        }
+
+        return $months;
+    }
+
+    private function isEarliestAccountingPeriod(int $companyId, int $accountingPeriodId): bool
+    {
+        $earliestId = (int)(\InterfaceDB::fetchColumn(
+            'SELECT id
+             FROM accounting_periods
+             WHERE company_id = :company_id
+             ORDER BY period_start ASC, id ASC
+             LIMIT 1',
+            ['company_id' => $companyId]
+        ) ?: 0);
+
+        return $earliestId > 0 && $earliestId === $accountingPeriodId;
     }
 
     private function normaliseMonthStart(string $monthStart): string

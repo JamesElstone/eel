@@ -283,6 +283,7 @@ $harness->run(\eel_accounts\Service\StatementUploadService::class, function (Gen
 
             $result = $service->commitUpload($companyId, $uploadId);
             $harness->assertSame(true, $result['success'] ?? false);
+            $harness->assertSame(['2022-10-01'], (array)($result['inserted_months_by_period'][(string)$periodId] ?? []));
 
             $transaction = InterfaceDB::fetchOne(
                 'SELECT txn_type, description, reference, counterparty_name, card, amount, balance

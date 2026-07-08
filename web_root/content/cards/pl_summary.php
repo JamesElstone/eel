@@ -25,7 +25,7 @@ final class _pl_summaryCard extends CardBaseFramework
 
         $hasJournals = !empty($summary['has_journals']);
         $hasTransactions = !empty($summary['has_transactions']);
-        $netProfit = (float)($summary['net_profit'] ?? 0);
+        $netProfit = (float)($summary['profit_after_estimated_tax'] ?? ($summary['net_profit'] ?? 0));
         $chart = $this->incomeFlowChart((array)($context['profit_loss']['breakdown'] ?? []), $companySettings);
         $notice = '';
         if (!$hasJournals && $hasTransactions) {
@@ -44,8 +44,12 @@ final class _pl_summaryCard extends CardBaseFramework
                 ' . $this->summaryCard('Income', $summary['income_total'] ?? 0, $companySettings) . '
                 ' . $this->summaryCard('Cost of sales', $summary['cost_of_sales_total'] ?? 0, $companySettings) . '
                 ' . $this->summaryCard('Gross profit', $summary['gross_profit'] ?? 0, $companySettings) . '
-                ' . $this->summaryCard('Expenses', $summary['expense_total'] ?? 0, $companySettings) . '
-                ' . $this->summaryCard('Net profit / loss', $summary['net_profit'] ?? 0, $companySettings) . '
+                ' . $this->summaryCard('Operating expenses', $summary['operating_expense_total'] ?? ($summary['expense_total'] ?? 0), $companySettings) . '
+                ' . $this->summaryCard('Profit before tax', $summary['profit_before_tax'] ?? ($summary['net_profit'] ?? 0), $companySettings) . '
+                ' . $this->summaryCard('Posted CT charge', $summary['posted_corporation_tax_charge'] ?? 0, $companySettings) . '
+                ' . $this->summaryCard('Estimated CT', $summary['estimated_corporation_tax'] ?? 0, $companySettings) . '
+                ' . $this->summaryCard('Unposted CT adjustment', $summary['unposted_corporation_tax_adjustment'] ?? 0, $companySettings) . '
+                ' . $this->summaryCard('Profit after estimated tax', $summary['profit_after_estimated_tax'] ?? ($summary['net_profit'] ?? 0), $companySettings) . '
                 <div class="summary-card"><div class="summary-label">Profit margin</div><div class="summary-value">' . HelperFramework::escape(number_format((float)($summary['profit_margin_percent'] ?? 0), 1)) . '%</div></div>
             </div>
             ' . $this->healthMetrics($context) . '

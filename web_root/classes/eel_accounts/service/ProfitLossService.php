@@ -22,9 +22,20 @@ final class ProfitLossService
         $totals = $this->profitLossTotals($companyId, $accountingPeriodId, (string)$accountingPeriod['period_start'], (string)$accountingPeriod['period_end']);
         $incomeTotal = round((float)$totals['income_total'], 2);
         $costOfSalesTotal = round((float)$totals['cost_of_sales_total'], 2);
-        $expenseTotal = round((float)$totals['expense_total'], 2);
+        $operatingExpenseTotal = round((float)$totals['operating_expense_total'], 2);
+        $postedCorporationTaxCharge = round((float)$totals['corporation_tax_expense_total'], 2);
+        $expenseTotal = round($operatingExpenseTotal + $postedCorporationTaxCharge, 2);
         $grossProfit = round($incomeTotal - $costOfSalesTotal, 2);
-        $netProfit = round($grossProfit - $expenseTotal, 2);
+        $profitBeforeTax = round($grossProfit - $operatingExpenseTotal, 2);
+        $netProfit = round($profitBeforeTax - $postedCorporationTaxCharge, 2);
+        $provision = $this->corporationTaxProvisionPosition($companyId, $accountingPeriodId);
+        $estimatedCorporationTax = !empty($provision['available'])
+            ? round((float)($provision['estimated_corporation_tax'] ?? 0), 2)
+            : $postedCorporationTaxCharge;
+        $unpostedCorporationTaxAdjustment = !empty($provision['available'])
+            ? round((float)($provision['unposted_corporation_tax_adjustment'] ?? 0), 2)
+            : 0.0;
+        $profitAfterEstimatedTax = round($profitBeforeTax - $estimatedCorporationTax, 2);
 
         return [
             'available' => true,
@@ -37,10 +48,19 @@ final class ProfitLossService
             'income_total' => $incomeTotal,
             'cost_of_sales_total' => $costOfSalesTotal,
             'gross_profit' => $grossProfit,
+            'operating_expense_total' => $operatingExpenseTotal,
             'expense_total' => $expenseTotal,
+            'profit_before_tax' => $profitBeforeTax,
+            'corporation_tax_expense_total' => $postedCorporationTaxCharge,
+            'posted_corporation_tax_charge' => $postedCorporationTaxCharge,
+            'estimated_corporation_tax' => $estimatedCorporationTax,
+            'unposted_corporation_tax_adjustment' => $unpostedCorporationTaxAdjustment,
+            'profit_after_posted_tax' => $netProfit,
+            'profit_after_estimated_tax' => $profitAfterEstimatedTax,
+            'corporation_tax_provision' => $provision,
             'net_profit' => $netProfit,
-            'profit_margin_percent' => $incomeTotal > 0 ? round(($netProfit / $incomeTotal) * 100, 1) : 0.0,
-            'has_loss' => $netProfit < 0,
+            'profit_margin_percent' => $incomeTotal > 0 ? round(($profitAfterEstimatedTax / $incomeTotal) * 100, 1) : 0.0,
+            'has_loss' => $profitAfterEstimatedTax < 0,
             'has_journals' => $this->journalCount($companyId, $accountingPeriodId, (string)$accountingPeriod['period_start'], (string)$accountingPeriod['period_end']) > 0,
             'has_transactions' => $this->transactionCount($companyId, $accountingPeriodId, (string)$accountingPeriod['period_start'], (string)$accountingPeriod['period_end']) > 0,
         ];
@@ -54,6 +74,7 @@ final class ProfitLossService
                 'income' => [],
                 'cost_of_sales' => [],
                 'expense' => [],
+                'tax_charge' => [],
                 'positive_non_income_receipts' => [],
             ];
         }
@@ -100,6 +121,7 @@ final class ProfitLossService
             'income' => [],
             'cost_of_sales' => [],
             'expense' => [],
+            'tax_charge' => [],
             'positive_non_income_receipts' => [],
         ];
 
@@ -119,11 +141,15 @@ final class ProfitLossService
                 continue;
             }
 
-            $breakdown[$accountType][] = [
+            $groupKey = $accountType === 'expense' && $this->isCorporationTaxExpenseRow((array)$row)
+                ? 'tax_charge'
+                : $accountType;
+
+            $breakdown[$groupKey][] = [
                 'nominal_account_id' => (int)($row['nominal_account_id'] ?? 0),
                 'code' => (string)($row['code'] ?? ''),
                 'name' => (string)($row['name'] ?? ''),
-                'account_type' => $accountType,
+                'account_type' => $groupKey,
                 'account_subtype_code' => (string)($row['account_subtype_code'] ?? ''),
                 'account_subtype_name' => (string)($row['account_subtype_name'] ?? ''),
                 'amount' => $amount,
@@ -163,6 +189,9 @@ final class ProfitLossService
         $months = $this->periodMonths((string)$accountingPeriod['period_start'], (string)$accountingPeriod['period_end']);
         $rows = \InterfaceDB::fetchAll(
             'SELECT DATE_FORMAT(j.journal_date, \'%Y-%m-01\') AS month_start,
+                    na.id AS nominal_account_id,
+                    COALESCE(na.code, \'\') AS code,
+                    COALESCE(na.name, \'\') AS name,
                     na.account_type,
                     COALESCE(SUM(jl.debit), 0) AS total_debit,
                     COALESCE(SUM(jl.credit), 0) AS total_credit
@@ -176,12 +205,14 @@ final class ProfitLossService
                AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
                AND j.journal_date BETWEEN :period_start AND :period_end
+               AND COALESCE(j.source_type, \'\') <> :asset_depreciation_source_type
                AND jem_close.id IS NULL
                AND na.account_type IN (:income_type, :cost_type, :expense_type)
-             GROUP BY DATE_FORMAT(j.journal_date, \'%Y-%m-01\'), na.account_type
+             GROUP BY DATE_FORMAT(j.journal_date, \'%Y-%m-01\'), na.id, na.code, na.name, na.account_type
              ORDER BY month_start ASC',
             [
                 'close_journal_tag' => \eel_accounts\Service\RetainedEarningsCloseService::JOURNAL_TAG,
+                'asset_depreciation_source_type' => \eel_accounts\Service\YearEndClosePreviewService::ASSET_DEPRECIATION_SOURCE_TYPE,
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
                 'period_start' => (string)$accountingPeriod['period_start'],
@@ -206,15 +237,24 @@ final class ProfitLossService
             } elseif ($accountType === 'cost_of_sales') {
                 $months[$month]['cost_of_sales_total'] += round($debit - $credit, 2);
             } elseif ($accountType === 'expense') {
-                $months[$month]['expense_total'] += round($debit - $credit, 2);
+                $amount = round($debit - $credit, 2);
+                if ($this->isCorporationTaxExpenseRow((array)$row)) {
+                    $months[$month]['corporation_tax_expense_total'] += $amount;
+                } else {
+                    $months[$month]['operating_expense_total'] += $amount;
+                }
             }
         }
 
         foreach ($months as &$month) {
             $month['income_total'] = round((float)$month['income_total'], 2);
             $month['cost_of_sales_total'] = round((float)$month['cost_of_sales_total'], 2);
-            $month['expense_total'] = round((float)$month['expense_total'], 2);
-            $month['net_profit'] = round($month['income_total'] - $month['cost_of_sales_total'] - $month['expense_total'], 2);
+            $month['operating_expense_total'] = round((float)$month['operating_expense_total'], 2);
+            $month['corporation_tax_expense_total'] = round((float)$month['corporation_tax_expense_total'], 2);
+            $month['expense_total'] = round($month['operating_expense_total'] + $month['corporation_tax_expense_total'], 2);
+            $month['profit_before_tax'] = round($month['income_total'] - $month['cost_of_sales_total'] - $month['operating_expense_total'], 2);
+            $month['profit_after_tax'] = round($month['profit_before_tax'] - $month['corporation_tax_expense_total'], 2);
+            $month['net_profit'] = $month['profit_after_tax'];
         }
         unset($month);
 
@@ -447,7 +487,16 @@ final class ProfitLossService
             'income_total' => 0.0,
             'cost_of_sales_total' => 0.0,
             'gross_profit' => 0.0,
+            'operating_expense_total' => 0.0,
             'expense_total' => 0.0,
+            'profit_before_tax' => 0.0,
+            'corporation_tax_expense_total' => 0.0,
+            'posted_corporation_tax_charge' => 0.0,
+            'estimated_corporation_tax' => 0.0,
+            'unposted_corporation_tax_adjustment' => 0.0,
+            'profit_after_posted_tax' => 0.0,
+            'profit_after_estimated_tax' => 0.0,
+            'corporation_tax_provision' => ['available' => false, 'errors' => []],
             'net_profit' => 0.0,
             'profit_margin_percent' => 0.0,
             'has_loss' => false,
@@ -467,10 +516,41 @@ final class ProfitLossService
         return (new \eel_accounts\Repository\AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId);
     }
 
+    private function corporationTaxProvisionPosition(int $companyId, int $accountingPeriodId): array
+    {
+        try {
+            return (new \eel_accounts\Service\CorporationTaxProvisionService())->fetchAccountingPeriodPosition($companyId, $accountingPeriodId);
+        } catch (\Throwable $exception) {
+            return [
+                'available' => false,
+                'errors' => [$exception->getMessage()],
+                'estimated_corporation_tax' => 0.0,
+                'posted_corporation_tax_charge' => 0.0,
+                'unposted_corporation_tax_adjustment' => 0.0,
+                'status' => 'unavailable',
+            ];
+        }
+    }
+
+    private function isCorporationTaxExpenseRow(array $row): bool
+    {
+        if ((string)($row['account_type'] ?? '') !== 'expense') {
+            return false;
+        }
+
+        $code = trim((string)($row['code'] ?? ''));
+        $name = strtolower(trim((string)($row['name'] ?? '')));
+
+        return $code === '8500' || str_contains($name, 'corporation tax');
+    }
+
     private function profitLossTotals(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array
     {
         $rows = \InterfaceDB::fetchAll(
-            'SELECT na.account_type,
+            'SELECT na.id AS nominal_account_id,
+                    COALESCE(na.code, \'\') AS code,
+                    COALESCE(na.name, \'\') AS name,
+                    na.account_type,
                     COALESCE(SUM(jl.debit), 0) AS total_debit,
                     COALESCE(SUM(jl.credit), 0) AS total_credit
              FROM journals j
@@ -486,7 +566,7 @@ final class ProfitLossService
                AND COALESCE(j.source_type, \'\') <> :asset_depreciation_source_type
                AND jem_close.id IS NULL
                AND na.account_type IN (:income_type, :cost_type, :expense_type)
-             GROUP BY na.account_type',
+             GROUP BY na.id, na.code, na.name, na.account_type',
             [
                 'close_journal_tag' => \eel_accounts\Service\RetainedEarningsCloseService::JOURNAL_TAG,
                 'asset_depreciation_source_type' => \eel_accounts\Service\YearEndClosePreviewService::ASSET_DEPRECIATION_SOURCE_TYPE,
@@ -503,6 +583,8 @@ final class ProfitLossService
         $totals = [
             'income_total' => 0.0,
             'cost_of_sales_total' => 0.0,
+            'operating_expense_total' => 0.0,
+            'corporation_tax_expense_total' => 0.0,
             'expense_total' => 0.0,
         ];
         foreach ($rows as $row) {
@@ -515,13 +597,20 @@ final class ProfitLossService
             } elseif ($accountType === 'cost_of_sales') {
                 $totals['cost_of_sales_total'] += round($debit - $credit, 2);
             } elseif ($accountType === 'expense') {
-                $totals['expense_total'] += round($debit - $credit, 2);
+                $amount = round($debit - $credit, 2);
+                if ($this->isCorporationTaxExpenseRow((array)$row)) {
+                    $totals['corporation_tax_expense_total'] += $amount;
+                } else {
+                    $totals['operating_expense_total'] += $amount;
+                }
             }
         }
-        $totals['expense_total'] = round(
-            $totals['expense_total'] + (new \eel_accounts\Service\YearEndClosePreviewService())->depreciationExpenseForPeriod($companyId, $accountingPeriodId, $periodStart, $periodEnd),
+        $totals['operating_expense_total'] = round(
+            $totals['operating_expense_total'] + (new \eel_accounts\Service\YearEndClosePreviewService())->depreciationExpenseForPeriod($companyId, $accountingPeriodId, $periodStart, $periodEnd),
             2
         );
+        $totals['corporation_tax_expense_total'] = round((float)$totals['corporation_tax_expense_total'], 2);
+        $totals['expense_total'] = round($totals['operating_expense_total'] + $totals['corporation_tax_expense_total'], 2);
 
         return $totals;
     }
@@ -638,7 +727,11 @@ final class ProfitLossService
                 'month_label' => \HelperFramework::displayMonthYear($cursor),
                 'income_total' => 0.0,
                 'cost_of_sales_total' => 0.0,
+                'operating_expense_total' => 0.0,
+                'corporation_tax_expense_total' => 0.0,
                 'expense_total' => 0.0,
+                'profit_before_tax' => 0.0,
+                'profit_after_tax' => 0.0,
                 'net_profit' => 0.0,
                 'transaction_count' => 0,
                 'uncategorised_count' => 0,

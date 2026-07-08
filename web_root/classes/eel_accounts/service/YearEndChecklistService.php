@@ -449,6 +449,18 @@ final class YearEndChecklistService
             ];
         }
 
+        $taxProvision = (array)(((array)($checklist['tax_readiness'] ?? []))['provision'] ?? []);
+        $taxProvisionStatus = (string)($taxProvision['status'] ?? '');
+        if (empty($taxProvision['available']) || !in_array($taxProvisionStatus, ['posted', 'not_required'], true)) {
+            return [
+                'success' => false,
+                'status' => 422,
+                'errors' => ['Post or refresh the Corporation Tax provision before locking this accounting period.'],
+                'checklist' => $checklist,
+                'corporation_tax_provision' => $taxProvision,
+            ];
+        }
+
         $depreciationPreview = ($this->assetService ?? new \eel_accounts\Service\AssetService())->previewDepreciationRun($companyId, $accountingPeriodId);
         if (empty($depreciationPreview['success'])) {
             return [
@@ -1365,6 +1377,27 @@ final class YearEndChecklistService
             $taxEstimateCheck['formula_text'] = 'CT periods: ' . $taxPeriodDisplay;
         }
         $sections['corporation_tax_readiness'][] = $taxEstimateCheck;
+        $taxProvision = (array)($taxReadiness['provision'] ?? []);
+        $taxProvisionStatus = (string)($taxProvision['status'] ?? '');
+        $taxProvisionCurrent = !empty($taxReadiness['available'])
+            && !empty($taxProvision['available'])
+            && in_array($taxProvisionStatus, ['posted', 'not_required'], true);
+        $sections['corporation_tax_readiness'][] = $this->makeCheck(
+            'corporation_tax_provision_posted',
+            'Corporation tax provision posted',
+            'fail',
+            empty($taxReadiness['available']) ? 'not_applicable' : ($taxProvisionCurrent ? 'pass' : 'fail'),
+            empty($taxReadiness['available'])
+                ? 'A Corporation Tax estimate is needed before the provision can be checked.'
+                : ($taxProvisionCurrent
+                    ? 'The 8500 Corporation Tax Expense / 2200 Corporation Tax provision matches the current CT estimate.'
+                    : 'Post or refresh the CT provision so Companies House figures and retained earnings include the tax charge.'),
+            empty($taxReadiness['available'])
+                ? ''
+                : ('Posted ' . $this->money($settings, $taxProvision['posted_corporation_tax_charge'] ?? 0)
+                    . ' / estimate ' . $this->money($settings, $taxProvision['estimated_corporation_tax'] ?? 0)),
+            '?page=year_end&show_card=year_end_tax_readiness#tax-readiness'
+        );
         $taxConfidenceStatus = (string)($taxReadiness['confidence_status'] ?? 'review_required');
         $taxWarningCount = count((array)($taxReadiness['warnings'] ?? []));
         $sections['corporation_tax_readiness'][] = $this->makeCheck(
@@ -1464,6 +1497,7 @@ final class YearEndChecklistService
             && $journalIntegrityIssues === 0
             && $unpostedSourceWorkCount === 0
             && $retainedEarningsCloseCurrent
+            && $taxProvisionCurrent
             && $prepaymentApprovalsAcknowledged
             && $directorLoanTaxReviewCleared;
         $sections['final_review_lock'][] = $this->makeCheck(

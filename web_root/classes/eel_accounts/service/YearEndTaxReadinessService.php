@@ -15,6 +15,7 @@ final class YearEndTaxReadinessService
     public function __construct(
         private readonly ?\eel_accounts\Service\YearEndMetricsService $metricsService = null,
         private readonly ?\eel_accounts\Service\CorporationTaxComputationService $taxComputationService = null,
+        private readonly ?\eel_accounts\Service\CorporationTaxProvisionService $provisionService = null,
     ) {
     }
 
@@ -107,6 +108,8 @@ final class YearEndTaxReadinessService
         $totals = $this->totals($periodSummaries);
         $warnings = $this->warnings($periodSummaries);
         $confidenceStatus = $warnings === [] ? 'ready_for_review' : 'review_required';
+        $provision = ($this->provisionService ?? new \eel_accounts\Service\CorporationTaxProvisionService())
+            ->fetchAccountingPeriodPosition($companyId, $accountingPeriodId);
 
         return array_merge($totals, [
             'available' => true,
@@ -114,6 +117,7 @@ final class YearEndTaxReadinessService
             'periods' => $periodSummaries,
             'totals' => $totals,
             'warnings' => $warnings,
+            'provision' => $provision,
             'calculation_status' => 'estimate',
             'confidence_status' => $confidenceStatus,
             'confidence_label' => $confidenceStatus === 'ready_for_review' ? 'Ready for review' : 'Review required',

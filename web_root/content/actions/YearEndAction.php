@@ -89,6 +89,11 @@ final class YearEndAction implements ActionInterfaceFramework
                     $actor,
                     (string)$request->input('approval_note', '')
                 ),
+                'post_ct_provisions' => (new \eel_accounts\Service\CorporationTaxProvisionService())->postProvisionsForAccountingPeriod(
+                    $companyId,
+                    $accountingPeriodId,
+                    $actor
+                ),
                 'save_expense_position_acknowledgement' => (new \eel_accounts\Service\YearEndChecklistService())->saveExpensePositionAcknowledgement(
                     $companyId,
                     $accountingPeriodId,
@@ -199,6 +204,7 @@ final class YearEndAction implements ActionInterfaceFramework
             'create_adjustment' => 'Year-end adjustment posted.',
             'save_director_loan_offset_acknowledgement' => 'Director loan offset approval saved.',
             'save_tax_readiness_acknowledgement' => 'Tax readiness approval saved.',
+            'post_ct_provisions' => 'Corporation Tax provision journals updated.',
             'save_expense_position_acknowledgement' => 'Expense position approval saved.',
             'save_retained_earnings_close_acknowledgement' => 'Retained earnings approval saved.',
             'save_transaction_tail_acknowledgement' => 'Transaction cut-off approval saved.',
@@ -218,6 +224,7 @@ final class YearEndAction implements ActionInterfaceFramework
             'create_adjustment',
             'save_director_loan_offset_acknowledgement',
             'save_tax_readiness_acknowledgement',
+            'post_ct_provisions',
             'save_expense_position_acknowledgement',
             'save_retained_earnings_close_acknowledgement',
             'save_transaction_tail_acknowledgement',
@@ -234,6 +241,7 @@ final class YearEndAction implements ActionInterfaceFramework
             'create_adjustment',
             'save_director_loan_offset_acknowledgement',
             'save_tax_readiness_acknowledgement',
+            'post_ct_provisions',
             'save_expense_position_acknowledgement',
             'save_retained_earnings_close_acknowledgement',
             'save_transaction_tail_acknowledgement',
@@ -252,6 +260,7 @@ final class YearEndAction implements ActionInterfaceFramework
             'create_adjustment',
             'save_director_loan_offset_acknowledgement',
             'save_tax_readiness_acknowledgement',
+            'post_ct_provisions',
             'save_expense_position_acknowledgement',
             'save_retained_earnings_close_acknowledgement',
             'save_transaction_tail_acknowledgement',

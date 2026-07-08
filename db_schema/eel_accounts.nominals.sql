@@ -34,6 +34,7 @@ INSERT INTO `nominal_accounts` (`id`,`code`,`name`,`account_type`,`account_subty
 (4,'2000','VAT Control','liability',4,'allowable',1,40,'2026-03-25 14:48:09'),
 (5,'2100','Director Loan Liability','liability',5,'allowable',1,50,'2026-03-25 14:48:09'),
 (6,'2200','Corporation Tax','liability',6,'allowable',1,60,'2026-03-25 14:48:09'),
+(53,'2210','HMRC Penalties & Interest Payable','liability',19,'other',1,61,'2026-07-08 00:00:00'),
 (7,'4000','Sales','income',7,'allowable',1,100,'2026-03-25 14:48:09'),
 (8,'5000','Materials','cost_of_sales',8,'allowable',1,200,'2026-03-25 14:48:09'),
 (9,'6000','Misc Motor Expenses','expense',9,'allowable',1,300,'2026-03-25 14:48:09'),
@@ -70,6 +71,8 @@ INSERT INTO `nominal_accounts` (`id`,`code`,`name`,`account_type`,`account_subty
 (38,'4200','Profit on Disposal','income',14,'other',1,420,'2026-04-09 12:48:13'),
 (39,'6200','Depreciation Expense','expense',15,'disallowable',1,620,'2026-04-09 12:48:13'),
 (40,'6210','Loss on Disposal','expense',16,'other',1,621,'2026-04-09 12:48:13'),
+(54,'6230','HMRC Penalties','expense',9,'disallowable',1,623,'2026-07-08 00:00:00'),
+(55,'6231','HMRC Interest','expense',9,'other',1,624,'2026-07-08 00:00:00'),
 (44,'2300','Trade Creditors','liability',12,'allowable',1,70,'2026-05-27 11:08:15'),
 (45,'3010','Ordinary Share Capital','equity',13,'other',1,65,'2026-06-30 00:00:00'),
 (46,'2150','Dividends Payable','liability',17,'other',1,56,'2026-06-30 00:00:00'),
@@ -104,7 +107,8 @@ INSERT INTO `nominal_account_subtypes` VALUES
 (15,'depreciation_expense','Depreciation Expense','expense',620,1),
 (16,'asset_disposal_loss','Asset Disposal Loss','expense',621,1),
 (17,'dividends_payable','Dividends Payable','liability',56,1),
-(18,'asset_disposal_clearing','Asset Disposal Clearing','asset',149,1);
+(18,'asset_disposal_clearing','Asset Disposal Clearing','asset',149,1),
+(19,'hmrc_payable','HMRC Penalties & Interest Payable','liability',61,1);
 /*!40000 ALTER TABLE `nominal_account_subtypes` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;

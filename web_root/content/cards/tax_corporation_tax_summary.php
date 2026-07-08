@@ -45,7 +45,7 @@ final class _tax_corporation_tax_summaryCard extends CardBaseFramework
         $ctPeriodId = (int)($tax['selected_ct_period_id'] ?? 0);
         $estimate = round((float)($provision['estimated_corporation_tax'] ?? 0), 2);
         $unposted = round((float)($provision['unposted_corporation_tax_adjustment'] ?? 0), 2);
-        if ($companyId <= 0 || $accountingPeriodId <= 0 || $ctPeriodId <= 0 || $estimate <= 0 || abs($unposted) < 0.005) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || $ctPeriodId <= 0 || abs($unposted) < 0.005) {
             return '';
         }
 

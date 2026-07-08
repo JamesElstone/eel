@@ -569,6 +569,10 @@ final class YearEndMetricsService
 
         foreach ($rows as $row) {
             $accountType = (string)($row['account_type'] ?? '');
+            if ($this->isCorporationTaxExpenseRow((array)$row)) {
+                continue;
+            }
+
             $treatmentResult = $taxTreatmentRules->resolveTaxTreatment($row, $periodStart, $periodEnd);
             $taxTreatment = trim((string)($treatmentResult['tax_treatment'] ?? ''));
             $debit = (float)($row['total_debit'] ?? 0);
@@ -604,6 +608,18 @@ final class YearEndMetricsService
             'other_treatment_count' => $otherTreatmentCount,
             'unknown_treatment_count' => $unknownTreatmentCount,
         ];
+    }
+
+    private function isCorporationTaxExpenseRow(array $row): bool
+    {
+        if ((string)($row['account_type'] ?? '') !== 'expense') {
+            return false;
+        }
+
+        $code = trim((string)($row['code'] ?? ''));
+        $name = strtolower(trim((string)($row['name'] ?? '')));
+
+        return $code === '8500' || str_contains($name, 'corporation tax');
     }
 
     private function countTransactions(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): int {

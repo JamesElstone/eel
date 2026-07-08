@@ -26,6 +26,7 @@ final class HmrcObligationAction implements ActionInterfaceFramework
                     'company_id' => $companyId,
                     'accounting_period_id' => (int)$request->input('accounting_period_id', 0),
                     'obligation_type' => (string)$request->input('obligation_type', 'hmrc_penalty'),
+                    'notice_date' => (string)$request->input('notice_date', ''),
                     'due_date' => (string)$request->input('due_date', ''),
                     'amount_due' => (string)$request->input('amount_due', ''),
                     'source_reference' => (string)$request->input('source_reference', ''),

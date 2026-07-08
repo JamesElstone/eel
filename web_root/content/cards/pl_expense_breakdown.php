@@ -23,6 +23,7 @@ final class _pl_expense_breakdownCard extends CardBaseFramework
         return '<div class="settings-stack">
             ' . $this->group('Cost of sales', (array)($breakdown['cost_of_sales'] ?? []), 'No cost of sales journals have been posted for this period.', $companySettings) . '
             ' . $this->group('Expenses', (array)($breakdown['expense'] ?? []), 'No expense journals have been posted for this period.', $companySettings) . '
+            ' . $this->group('Tax Charge', (array)($breakdown['tax_charge'] ?? []), 'No Corporation Tax charge has been posted for this period.', $companySettings) . '
         </div>';
     }
 

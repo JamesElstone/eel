@@ -53,6 +53,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
         $warningCount = count((array)($taxReadiness['warnings'] ?? []));
         $confidenceStatus = (string)($taxReadiness['confidence_status'] ?? 'review_required');
         $confidenceLabel = (string)($taxReadiness['confidence_label'] ?? 'Review required');
+        $provision = (array)($taxReadiness['provision'] ?? []);
         $taxWorkflowButton = \eel_accounts\Renderer\WorkflowHandoffRenderer::button(
             'tax',
             'Open Tax Workflow',
@@ -79,6 +80,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             <div class="status-head">
                 <span class="badge info">Estimate</span>
                 <span class="badge ' . HelperFramework::escape($confidenceStatus === 'ready_for_review' ? 'success' : 'warning') . '">' . HelperFramework::escape($confidenceLabel) . '</span>
+                <span class="badge ' . HelperFramework::escape($this->provisionBadgeClass((string)($provision['status'] ?? 'not_posted'))) . '">' . HelperFramework::escape($this->provisionLabel((string)($provision['status'] ?? 'not_posted'))) . '</span>
                 <span class="badge ' . HelperFramework::escape($acknowledged ? 'success' : 'warning') . '">' . HelperFramework::escape($acknowledged ? 'Approved' : 'Approval pending') . '</span>
             </div>
             ' . ($warningHtml !== '' ? '<section class="panel-soft stack"><h3 class="card-title">Review warnings</h3>' . $warningHtml . '</section>' : '') . '
@@ -89,6 +91,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
                 <div class="summary-card"><div class="summary-label">Warnings</div><div class="summary-value">' . $warningCount . '</div></div>
                 <div class="summary-card"><div class="summary-label">Losses carried forward (c/f)</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $taxReadiness['losses_carried_forward'] ?? 0)) . '</div></div>
             </div>
+            ' . $this->provisionHtml($companySettings, $provision, $companyId, $accountingPeriodId) . '
             <div class="actions-row">' . $taxWorkflowButton . '</div>
             ' . $acknowledgementForm . '
         </section>';
@@ -115,6 +118,63 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
     private function money(array $companySettings, float|int|string|null $value): string
     {
         return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
+    }
+
+    private function provisionHtml(array $companySettings, array $provision, int $companyId, int $accountingPeriodId): string
+    {
+        if (empty($provision['available'])) {
+            return '<section class="panel-soft stack">
+                <h3 class="card-title">CT Provision</h3>
+                <div class="helper">' . HelperFramework::escape((string)($provision['errors'][0] ?? 'Corporation Tax provision status is not available.')) . '</div>
+            </section>';
+        }
+
+        $status = (string)($provision['status'] ?? 'not_posted');
+        $unposted = round((float)($provision['unposted_corporation_tax_adjustment'] ?? 0), 2);
+        $statusHelp = in_array($status, ['posted', 'not_required'], true)
+            ? 'The ledger provision is current for the latest CT estimate.'
+            : 'Post or refresh the CT provision before agreeing retained earnings and locking the period.';
+
+        return '<section class="panel-soft stack">
+            <h3 class="card-title">CT Provision</h3>
+            <div class="summary-grid">
+                <div class="summary-card"><div class="summary-label">Estimated CT</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $provision['estimated_corporation_tax'] ?? 0)) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Posted to 8500/2200</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $provision['posted_corporation_tax_charge'] ?? 0)) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Unposted adjustment</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $unposted)) . '</div></div>
+                <div class="summary-card"><div class="summary-label">Status</div><div class="summary-value"><span class="badge ' . HelperFramework::escape($this->provisionBadgeClass($status)) . '">' . HelperFramework::escape($this->provisionLabel($status)) . '</span></div></div>
+            </div>
+            <div class="helper">' . HelperFramework::escape($statusHelp) . '</div>
+            <div class="actions-row">
+                <form method="post" data-ajax="true">
+                    ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
+                    <input type="hidden" name="card_action" value="YearEnd">
+                    <input type="hidden" name="intent" value="post_ct_provisions">
+                    <input type="hidden" name="company_id" value="' . $companyId . '">
+                    <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                    <button class="button primary" type="submit">Post / Update CT Provisions</button>
+                </form>
+            </div>
+        </section>';
+    }
+
+    private function provisionBadgeClass(string $status): string
+    {
+        return match ($status) {
+            'posted', 'not_required' => 'success',
+            'out_of_date' => 'warning',
+            default => 'danger',
+        };
+    }
+
+    private function provisionLabel(string $status): string
+    {
+        return match ($status) {
+            'posted' => 'Provision posted',
+            'not_required' => 'No provision needed',
+            'out_of_date' => 'Provision stale',
+            'not_posted' => 'Provision missing',
+            default => HelperFramework::labelFromKey($status, '_'),
+        };
     }
 
     private function periodSnapshots(array $companySettings, array $taxReadiness): string

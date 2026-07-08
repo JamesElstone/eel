@@ -34,13 +34,14 @@ final class _hmrc_fines_tableCard extends CardBaseFramework
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <div class="form-row"><label>Type</label><select class="select" name="obligation_type"><option value="hmrc_penalty">HMRC penalty</option><option value="hmrc_interest">HMRC interest</option><option value="other">Other HMRC balance</option></select></div>
+                <div class="form-row"><label>Notice date</label><input class="input" type="date" name="notice_date"></div>
                 <div class="form-row"><label>Due date</label><input class="input" type="date" name="due_date"></div>
                 <div class="form-row"><label>Amount due</label><input class="input" type="number" step="0.01" min="0" name="amount_due"></div>
                 <div class="form-row"><label>HMRC reference</label><input class="input" name="source_reference"></div>
                 <div class="form-row"><label>Notes / evidence path</label><input class="input" name="notes"></div>
                 <div class="actions-row"><button class="button primary" type="submit">Record Notice</button></div>
             </form>
-            <div class="helper">HMRC fines and penalties are normally disallowable for Corporation Tax. Record the notice here, then post/link journals separately when available.</div>
+            <div class="helper">HMRC penalties post to 6230 and HMRC interest posts to 6231, with the unpaid balance held in 2210 HMRC Penalties & Interest Payable. Later bank payments should clear 2210.</div>
         </section>';
 
         if ($items === []) {
@@ -52,15 +53,17 @@ final class _hmrc_fines_tableCard extends CardBaseFramework
             $rows .= '<tr>
                 <td>' . HelperFramework::escape((string)($item['accounting_period_label'] ?? '')) . '</td>
                 <td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($item['obligation_type'] ?? ''), '_')) . '</td>
+                <td>' . HelperFramework::escape((string)($item['notice_date'] ?? '')) . '</td>
                 <td>' . HelperFramework::escape((string)($item['due_date'] ?? '')) . '</td>
                 <td>' . HelperFramework::escape($item['amount_due'] === null ? 'Not set' : $this->money($companySettings, $item['amount_due'])) . '</td>
                 <td>' . HelperFramework::escape($this->money($companySettings, $item['amount_paid'] ?? 0)) . '</td>
                 <td><span class="badge ' . HelperFramework::escape($this->badgeClass((string)($item['effective_status'] ?? ''))) . '">' . HelperFramework::escape(HelperFramework::labelFromKey((string)($item['effective_status'] ?? ''), '_')) . '</span></td>
+                <td>' . HelperFramework::escape((int)($item['related_journal_id'] ?? 0) > 0 ? 'Accrued' : 'No accrual') . '</td>
                 <td>' . HelperFramework::escape((string)($item['source_reference'] ?? '')) . '</td>
             </tr>';
         }
 
-        return '<div class="settings-stack">' . $form . '<div class="table-scroll"><table><thead><tr><th>Period</th><th>Type</th><th>Due date</th><th>Due</th><th>Paid</th><th>Status</th><th>Reference</th></tr></thead><tbody>' . $rows . '</tbody></table></div></div>';
+        return '<div class="settings-stack">' . $form . '<div class="table-scroll"><table><thead><tr><th>Period</th><th>Type</th><th>Notice date</th><th>Due date</th><th>Due</th><th>Paid</th><th>Status</th><th>Accrual</th><th>Reference</th></tr></thead><tbody>' . $rows . '</tbody></table></div></div>';
     }
 
     private function badgeClass(string $status): string

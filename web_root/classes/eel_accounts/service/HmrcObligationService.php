@@ -52,9 +52,9 @@ final class HmrcObligationService
 
             \InterfaceDB::prepareExecute(
                 'INSERT INTO hmrc_obligations (
-                    company_id, accounting_period_id, obligation_type, period_start, period_end, due_date,
+                    company_id, accounting_period_id, obligation_type, period_start, period_end, notice_date, due_date,
                     amount_due, amount_paid, status, source, source_reference, notes
-                 ) VALUES (?, ?, ?, ?, ?, ?, NULL, 0.00, ?, ?, ?, ?)',
+                 ) VALUES (?, ?, ?, ?, ?, NULL, ?, NULL, 0.00, ?, ?, ?, ?)',
                 [
                     $companyId,
                     $accountingPeriodId,
@@ -74,6 +74,55 @@ final class HmrcObligationService
         }
 
         return ['success' => true, 'errors' => [], 'created' => $created];
+    }
+
+    public function syncCtPaymentAmountForAccountingPeriod(int $companyId, int $accountingPeriodId, float $amountDue): array
+    {
+        $this->ensureSchema();
+        $accountingPeriod = (new \eel_accounts\Repository\AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null) {
+            return ['success' => false, 'errors' => ['The selected accounting period could not be found.']];
+        }
+
+        $sync = $this->syncObligationsForAccountingPeriod($companyId, $accountingPeriodId);
+        if (empty($sync['success'])) {
+            return ['success' => false, 'errors' => (array)($sync['errors'] ?? ['Corporation Tax payment obligation could not be prepared.'])];
+        }
+
+        \InterfaceDB::prepareExecute(
+            'UPDATE hmrc_obligations
+             SET amount_due = :amount_due,
+                 source = CASE WHEN source IN (:calculated_source, :journal_source) THEN :calculated_source_update ELSE source END,
+                 source_reference = CASE
+                    WHEN COALESCE(source_reference, \'\') = \'\' OR source = :calculated_source_ref
+                    THEN :source_reference
+                    ELSE source_reference
+                 END,
+                 notes = CASE
+                    WHEN COALESCE(notes, \'\') = \'\' OR source = :calculated_source_notes
+                    THEN :notes
+                    ELSE notes
+                 END,
+                 checked_at = CURRENT_TIMESTAMP
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+               AND obligation_type = :obligation_type',
+            [
+                'amount_due' => number_format(max(0.0, round($amountDue, 2)), 2, '.', ''),
+                'calculated_source' => 'calculated',
+                'journal_source' => 'journal',
+                'calculated_source_update' => 'calculated',
+                'calculated_source_ref' => 'calculated',
+                'source_reference' => 'corporation_tax_provision:accounting_period_' . $accountingPeriodId,
+                'calculated_source_notes' => 'calculated',
+                'notes' => 'Calculated Corporation Tax payment amount from the current CT provision estimate. The ledger liability is held in nominal 2200 Corporation Tax.',
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'obligation_type' => 'ct_payment',
+            ]
+        );
+
+        return ['success' => true, 'errors' => []];
     }
 
     public function listObligations(int $companyId, array $filters = []): array
@@ -223,47 +272,115 @@ final class HmrcObligationService
         $companyId = (int)($input['company_id'] ?? 0);
         $accountingPeriodId = (int)($input['accounting_period_id'] ?? 0);
         $type = $this->normaliseType((string)($input['obligation_type'] ?? 'hmrc_penalty'));
+        $noticeDate = trim((string)($input['notice_date'] ?? ''));
         $dueDate = trim((string)($input['due_date'] ?? ''));
         $amountDue = trim((string)($input['amount_due'] ?? ''));
         $sourceReference = trim((string)($input['source_reference'] ?? ''));
         $notes = trim((string)($input['notes'] ?? ''));
         $accountingPeriod = (new \eel_accounts\Repository\AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        $postsNoticeAccrual = $this->postsNoticeAccrual($type);
 
         $errors = [];
         if ($accountingPeriod === null) {
             $errors[] = 'Select a valid company and accounting period.';
         }
+        if ($postsNoticeAccrual && !$this->isDate($noticeDate)) {
+            $errors[] = 'Enter the HMRC notice or assessment date.';
+        } elseif (!$postsNoticeAccrual && $noticeDate !== '' && !$this->isDate($noticeDate)) {
+            $errors[] = 'Enter a valid notice date or leave it blank.';
+        }
         if (!$this->isDate($dueDate)) {
             $errors[] = 'Enter a valid HMRC due date.';
         }
-        if ($amountDue !== '' && (float)$amountDue < 0) {
+        if ($postsNoticeAccrual && ($amountDue === '' || (float)$amountDue <= 0)) {
+            $errors[] = 'Enter the HMRC notice amount before posting the accrual.';
+        } elseif ($amountDue !== '' && (float)$amountDue < 0) {
             $errors[] = 'Amount due cannot be negative.';
+        }
+        if ($postsNoticeAccrual && $errors === []) {
+            $noticePeriod = $this->accountingPeriodForDate($companyId, $noticeDate);
+            if ($noticePeriod === null) {
+                $errors[] = 'The notice date does not fall inside any accounting period for this company.';
+            } else {
+                $accountingPeriod = $noticePeriod;
+                $accountingPeriodId = (int)$noticePeriod['id'];
+            }
         }
         if ($errors !== []) {
             return ['success' => false, 'errors' => $errors];
         }
 
-        \InterfaceDB::prepareExecute(
-            'INSERT INTO hmrc_obligations (
-                company_id, accounting_period_id, obligation_type, period_start, period_end, due_date,
-                amount_due, amount_paid, status, source, source_reference, notes
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, 0.00, ?, ?, ?, ?)',
-            [
-                $companyId,
-                $accountingPeriodId,
-                $type,
-                (string)$accountingPeriod['period_start'],
-                (string)$accountingPeriod['period_end'],
-                $dueDate,
-                $amountDue !== '' ? number_format((float)$amountDue, 2, '.', '') : null,
-                'not_started',
-                in_array($type, ['hmrc_penalty', 'hmrc_interest'], true) ? 'hmrc_notice' : 'manual',
-                $sourceReference !== '' ? $sourceReference : null,
-                $notes !== '' ? $notes : null,
-            ]
-        );
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
+        }
 
-        return ['success' => true, 'errors' => []];
+        try {
+            \InterfaceDB::prepareExecute(
+                'INSERT INTO hmrc_obligations (
+                    company_id, accounting_period_id, obligation_type, period_start, period_end, notice_date, due_date,
+                    amount_due, amount_paid, status, source, source_reference, notes
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.00, ?, ?, ?, ?)',
+                [
+                    $companyId,
+                    $accountingPeriodId,
+                    $type,
+                    (string)$accountingPeriod['period_start'],
+                    (string)$accountingPeriod['period_end'],
+                    $noticeDate !== '' ? $noticeDate : null,
+                    $dueDate,
+                    $amountDue !== '' ? number_format((float)$amountDue, 2, '.', '') : null,
+                    'not_started',
+                    $postsNoticeAccrual ? 'hmrc_notice' : 'manual',
+                    $sourceReference !== '' ? $sourceReference : null,
+                    $notes !== '' ? $notes : null,
+                ]
+            );
+
+            $obligationId = $this->lastInsertedId();
+            if ($obligationId <= 0) {
+                throw new \RuntimeException('The HMRC obligation could not be reloaded after insert.');
+            }
+
+            $warnings = [];
+            if ($postsNoticeAccrual) {
+                $obligation = $this->rawObligation($obligationId, $companyId);
+                if ($obligation === null) {
+                    throw new \RuntimeException('The HMRC obligation could not be found after insert.');
+                }
+
+                $journalResult = $this->postNoticeAccrualJournal($obligation);
+                if (empty($journalResult['success'])) {
+                    throw new \RuntimeException(implode(' ', (array)($journalResult['errors'] ?? ['The HMRC notice accrual journal could not be posted.'])));
+                }
+
+                $journalId = (int)(($journalResult['journal'] ?? [])['id'] ?? 0);
+                if ($journalId <= 0) {
+                    throw new \RuntimeException('The HMRC notice accrual journal could not be linked.');
+                }
+
+                \InterfaceDB::prepareExecute(
+                    'UPDATE hmrc_obligations
+                     SET related_journal_id = :journal_id,
+                         checked_at = CURRENT_TIMESTAMP
+                     WHERE id = :id',
+                    ['journal_id' => $journalId, 'id' => $obligationId]
+                );
+                $warnings[] = 'Accrual posted to the HMRC expense nominal and 2210 HMRC Penalties & Interest Payable.';
+            }
+
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+
+            return ['success' => false, 'errors' => [$exception->getMessage()]];
+        }
+
+        return ['success' => true, 'errors' => [], 'warnings' => $warnings ?? []];
     }
 
     public function calculateDueDates(array $accountingPeriod): array
@@ -429,6 +546,16 @@ final class HmrcObligationService
     public function ensureSchema(): void
     {
         if (\InterfaceDB::tableExists('hmrc_obligations')) {
+            if (!\InterfaceDB::columnExists('hmrc_obligations', 'notice_date')) {
+                \InterfaceDB::prepareExecute('ALTER TABLE hmrc_obligations ADD COLUMN notice_date DATE NULL AFTER period_end');
+                \InterfaceDB::prepareExecute(
+                    'UPDATE hmrc_obligations
+                     SET notice_date = due_date
+                     WHERE notice_date IS NULL
+                       AND obligation_type IN (:penalty_type, :interest_type)',
+                    ['penalty_type' => 'hmrc_penalty', 'interest_type' => 'hmrc_interest']
+                );
+            }
             return;
         }
 
@@ -440,6 +567,7 @@ final class HmrcObligationService
                 obligation_type ENUM('ct_payment','ct600_filing','hmrc_penalty','hmrc_interest','other') NOT NULL,
                 period_start DATE NOT NULL,
                 period_end DATE NOT NULL,
+                notice_date DATE NULL,
                 due_date DATE NOT NULL,
                 amount_due DECIMAL(12,2) NULL,
                 amount_paid DECIMAL(12,2) NOT NULL DEFAULT 0.00,
@@ -463,6 +591,124 @@ final class HmrcObligationService
                 CONSTRAINT fk_hmrc_obligations_journal FOREIGN KEY (related_journal_id) REFERENCES journals(id) ON DELETE SET NULL ON UPDATE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
         );
+    }
+
+    private function postsNoticeAccrual(string $type): bool
+    {
+        return in_array($type, ['hmrc_penalty', 'hmrc_interest'], true);
+    }
+
+    private function accountingPeriodForDate(int $companyId, string $date): ?array
+    {
+        if ($companyId <= 0 || !$this->isDate($date)) {
+            return null;
+        }
+
+        $row = \InterfaceDB::fetchOne(
+            'SELECT *
+             FROM accounting_periods
+             WHERE company_id = :company_id
+               AND :notice_date BETWEEN period_start AND period_end
+             ORDER BY period_start DESC, id DESC
+             LIMIT 1',
+            ['company_id' => $companyId, 'notice_date' => $date]
+        );
+
+        return is_array($row) ? $row : null;
+    }
+
+    private function rawObligation(int $id, int $companyId): ?array
+    {
+        $row = \InterfaceDB::fetchOne(
+            'SELECT *
+             FROM hmrc_obligations
+             WHERE id = :id
+               AND company_id = :company_id
+             LIMIT 1',
+            ['id' => $id, 'company_id' => $companyId]
+        );
+
+        return is_array($row) ? $row : null;
+    }
+
+    private function lastInsertedId(): int
+    {
+        $sql = \InterfaceDB::driverName() === 'sqlite'
+            ? 'SELECT last_insert_rowid()'
+            : 'SELECT LAST_INSERT_ID()';
+
+        return (int)(\InterfaceDB::fetchColumn($sql) ?: 0);
+    }
+
+    private function postNoticeAccrualJournal(array $obligation): array
+    {
+        $type = $this->normaliseType((string)($obligation['obligation_type'] ?? ''));
+        if (!$this->postsNoticeAccrual($type)) {
+            return ['success' => true, 'errors' => [], 'skipped' => true];
+        }
+
+        if ((int)($obligation['related_journal_id'] ?? 0) > 0) {
+            return ['success' => true, 'errors' => [], 'skipped' => true];
+        }
+
+        $amount = round((float)($obligation['amount_due'] ?? 0), 2);
+        if ($amount <= 0) {
+            return ['success' => false, 'errors' => ['HMRC penalty or interest notices need a positive amount before the accrual can be posted.']];
+        }
+
+        $noticeDate = trim((string)($obligation['notice_date'] ?? ''));
+        if (!$this->isDate($noticeDate)) {
+            return ['success' => false, 'errors' => ['HMRC penalty or interest notices need a valid notice date before the accrual can be posted.']];
+        }
+
+        $expenseNominalId = $this->nominalId([$type === 'hmrc_interest' ? '6231' : '6230'], 'expense');
+        $payableNominalId = $this->nominalId(['2210'], 'liability');
+        if ($expenseNominalId <= 0 || $payableNominalId <= 0) {
+            return ['success' => false, 'errors' => ['HMRC penalty/interest expense and payable nominal accounts are required before posting the accrual.']];
+        }
+
+        $label = $type === 'hmrc_interest' ? 'HMRC interest' : 'HMRC penalty';
+        $reference = trim((string)($obligation['source_reference'] ?? ''));
+        $lineDescription = $label . ($reference !== '' ? ' - ' . $reference : '');
+        $description = $label . ' notice accrual' . ($reference !== '' ? ' - ' . $reference : '');
+
+        return (new \eel_accounts\Service\ManualJournalService())->saveTaggedJournal(
+            (int)$obligation['company_id'],
+            (int)$obligation['accounting_period_id'],
+            'hmrc_obligation_accrual',
+            'obligation_' . (int)$obligation['id'],
+            $noticeDate,
+            $description,
+            [
+                ['nominal_account_id' => $expenseNominalId, 'debit' => $amount, 'credit' => 0.0, 'line_description' => $lineDescription],
+                ['nominal_account_id' => $payableNominalId, 'debit' => 0.0, 'credit' => $amount, 'line_description' => $lineDescription],
+            ],
+            'system_generated',
+            null,
+            null,
+            'Posted from HMRC obligation #' . (int)$obligation['id'] . '. Later bank payments should clear nominal 2210, not the expense nominal.',
+            'web_app'
+        );
+    }
+
+    private function nominalId(array $codes, string $accountType): int
+    {
+        foreach ($codes as $code) {
+            $id = (int)\InterfaceDB::fetchColumn(
+                'SELECT id
+                 FROM nominal_accounts
+                 WHERE code = :code
+                   AND account_type = :account_type
+                   AND is_active = 1
+                 LIMIT 1',
+                ['code' => $code, 'account_type' => $accountType]
+            );
+            if ($id > 0) {
+                return $id;
+            }
+        }
+
+        return 0;
     }
 
     private function obligationExists(int $companyId, int $accountingPeriodId, string $type): bool

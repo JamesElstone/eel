@@ -26,8 +26,12 @@ final class _pl_net_profit_bridgeCard extends CardBaseFramework
             ['Income', $summary['income_total'] ?? 0, ''],
             ['Less cost of sales', -1 * (float)($summary['cost_of_sales_total'] ?? 0), ''],
             ['Gross profit', $summary['gross_profit'] ?? 0, 'strong'],
-            ['Less expenses', -1 * (float)($summary['expense_total'] ?? 0), ''],
-            ['Net profit / loss', $summary['net_profit'] ?? 0, 'strong'],
+            ['Less operating expenses', -1 * (float)($summary['operating_expense_total'] ?? ($summary['expense_total'] ?? 0)), ''],
+            ['Profit before tax', $summary['profit_before_tax'] ?? 0, 'strong'],
+            ['Posted Corporation Tax charge', -1 * (float)($summary['posted_corporation_tax_charge'] ?? 0), ''],
+            ['Profit after posted tax', $summary['profit_after_posted_tax'] ?? ($summary['net_profit'] ?? 0), 'strong'],
+            ['Estimated CT still to post', -1 * (float)($summary['unposted_corporation_tax_adjustment'] ?? 0), ''],
+            ['Profit after estimated tax', $summary['profit_after_estimated_tax'] ?? ($summary['net_profit'] ?? 0), 'strong'],
         ];
         $html = '';
         foreach ($rows as $row) {

@@ -399,6 +399,7 @@ final class _transactions_importedCard extends CardBaseFramework
                     'month_key' => $selectedTransactionMonth,
                 ]
             )
+            ->column('id', 'ID', exportType: 'number')
             ->column(
                 'txn_date',
                 'Date',

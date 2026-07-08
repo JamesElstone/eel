@@ -236,6 +236,37 @@
   min-width: max-content;
 }
 
+.asset-register-wrap-heading {
+  line-height: 1.15;
+  min-width: 0;
+  white-space: normal;
+}
+
+.asset-register-wrap-heading .table-sort-button,
+.asset-register-wrap-heading .table-sort-label {
+  white-space: normal;
+}
+
+.asset-register-purchase-date-heading {
+  max-width: 8ch;
+  width: 8ch;
+}
+
+.asset-register-age-heading {
+  max-width: 6ch;
+  width: 6ch;
+}
+
+.asset-register-useful-life-heading {
+  max-width: 8ch;
+  width: 8ch;
+}
+
+.asset-register-period-depreciation-heading {
+  max-width: 12ch;
+  width: 12ch;
+}
+
 .asset-disposal-panel,
 .asset-disposal-form {
   min-width: max-content;

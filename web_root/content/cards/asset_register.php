@@ -162,25 +162,28 @@ final class _asset_registerCard extends CardBaseFramework
             ->empty('No assets have been recorded yet.')
             ->column(
                 'purchase_date',
-                'Purchase<br>Date',
+                'Purchase Date',
                 html: fn(array $row): string => HelperFramework::escape($this->displayDate((string)($row['purchase_date'] ?? ''))),
                 export: static fn(array $row): string => trim((string)($row['purchase_date'] ?? '')),
+                headerClass: 'asset-register-wrap-heading asset-register-purchase-date-heading',
                 exportType: 'date'
             )
             ->column(
                 'age_days',
-                'Age<br>(days)',
+                'Age (days)',
                 html: fn(array $row): string => HelperFramework::escape($this->ageDays($row, $ageReferenceDate)),
                 export: fn(array $row): string => $this->ageDays($row, $ageReferenceDate),
                 cellClass: 'numeric',
+                headerClass: 'asset-register-wrap-heading asset-register-age-heading',
                 exportType: 'number'
             )
             ->column(
                 'useful_life_years',
-                'Useful<br>Life (years)',
+                'Useful Life (years)',
                 html: static fn(array $row): string => HelperFramework::escape((string)max(1, (int)($row['useful_life_years'] ?? 1))),
                 export: static fn(array $row): string => (string)max(1, (int)($row['useful_life_years'] ?? 1)),
                 cellClass: 'numeric',
+                headerClass: 'asset-register-wrap-heading asset-register-useful-life-heading',
                 exportType: 'number'
             )
             ->textColumn('asset_code', 'Code')
@@ -200,10 +203,11 @@ final class _asset_registerCard extends CardBaseFramework
             )
             ->column(
                 'period_depreciation',
-                'Depreciation<br>in Period',
+                'Depreciation in Period',
                 html: fn(array $row): string => HelperFramework::escape($this->money($settings, (float)($row['period_depreciation'] ?? 0))),
                 export: static fn(array $row): string => number_format((float)($row['period_depreciation'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',
+                headerClass: 'asset-register-wrap-heading asset-register-period-depreciation-heading',
                 exportType: 'number'
             )
             ->column(

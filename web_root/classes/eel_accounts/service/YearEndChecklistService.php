@@ -168,7 +168,7 @@ final class YearEndChecklistService
             !empty($trialBalance['exists'])
                 ? 'A trial balance can be generated from posted journals in this period.'
                 : 'No posted journal data exists to generate a trial balance for this period.',
-            (string)($trialBalance['line_count'] ?? 0),
+            $this->trialBalanceMetric($trialBalance),
             '?page=journal'
         );
         $checks[] = $this->makeCheck(
@@ -182,15 +182,7 @@ final class YearEndChecklistService
             $this->money($settings, $trialBalance['difference'] ?? 0),
             '?page=journal'
         );
-        $checks[] = $this->makeCheck(
-            'posted_only_period_integrity',
-            'Posted-only period integrity',
-            'fail',
-            $unpostedSourceWorkCount > 0 ? 'fail' : 'pass',
-            $this->postedSourceWorkDetail($postedSourceWork),
-            $this->postedSourceWorkMetric($postedSourceWork),
-            $this->postedSourceWorkActionUrl($postedSourceWork)
-        );
+        array_push($checks, ...$this->postedSourceWorkChecks($postedSourceWork));
 
         return [
             'has_source_data' => $hasSourceData,
@@ -1045,7 +1037,7 @@ final class YearEndChecklistService
             !empty($trialBalance['exists'])
                 ? 'A trial balance can be generated from posted journals in this period.'
                 : 'No posted journal data exists to generate a trial balance for this period.',
-            (string)($trialBalance['line_count'] ?? 0),
+            $this->trialBalanceMetric($trialBalance),
             '?page=journal'
         );
         $sections['ledger_integrity'][] = $this->makeCheck(
@@ -1072,15 +1064,7 @@ final class YearEndChecklistService
             (string)$journalIntegrityIssues,
             '?page=journal'
         );
-        $sections['ledger_integrity'][] = $this->makeCheck(
-            'posted_only_period_integrity',
-            'Posted-only period integrity',
-            'fail',
-            $unpostedSourceWorkCount > 0 ? 'fail' : 'pass',
-            $this->postedSourceWorkDetail($postedSourceWork),
-            $this->postedSourceWorkMetric($postedSourceWork),
-            $this->postedSourceWorkActionUrl($postedSourceWork)
-        );
+        array_push($sections['ledger_integrity'], ...$this->postedSourceWorkChecks($postedSourceWork));
 
         $continuityWarningCount = (int)$statementContinuity['continuity_warnings'] + (int)$statementContinuity['ledger_warnings'];
         $sections['bank_source_completeness'][] = $this->makeCheck(
@@ -1091,7 +1075,7 @@ final class YearEndChecklistService
             $continuityWarningCount > 0
                 ? 'At least one bank account has running-balance or continuity breaks.'
                 : 'Statement continuity checks passed where statement balance data exists.',
-            (string)$continuityWarningCount,
+            $continuityWarningCount . ' continuity issue(s)',
             '?page=source_accounts'
         );
         $sections['bank_source_completeness'][] = $this->makeCheck(
@@ -1645,51 +1629,68 @@ final class YearEndChecklistService
             . $this->money($settings, $summary['equity'] ?? 0) . ')';
     }
 
-    private function postedSourceWorkDetail(array $postedSourceWork): string
+    private function trialBalanceMetric(array $trialBalance): string
     {
-        if ((int)($postedSourceWork['total_unposted'] ?? 0) <= 0) {
-            return 'All postable transactions, expense claims, and fixed assets have posted journals for this period.';
-        }
-
-        return 'Post or confirm the remaining source records before locking this period: '
-            . $this->postedSourceWorkBreakdown($postedSourceWork) . '.';
+        return (int)($trialBalance['line_count'] ?? 0) . ' trial balance line(s)';
     }
 
-    private function postedSourceWorkMetric(array $postedSourceWork): string
+    private function postedSourceWorkChecks(array $postedSourceWork): array
     {
-        if ((int)($postedSourceWork['total_unposted'] ?? 0) <= 0) {
-            return 'All posted';
-        }
-
-        return $this->postedSourceWorkBreakdown($postedSourceWork);
-    }
-
-    private function postedSourceWorkBreakdown(array $postedSourceWork): string
-    {
-        $parts = [
-            (int)($postedSourceWork['unposted_transactions'] ?? 0) . ' transaction(s)',
-            (int)($postedSourceWork['unposted_expense_claims'] ?? 0) . ' expense claim(s)',
-            (int)($postedSourceWork['unposted_assets'] ?? 0) . ' asset(s)',
+        return [
+            $this->postedSourceWorkTypeCheck(
+                $postedSourceWork,
+                'posted_transactions_integrity',
+                'Posted transactions',
+                'unposted_transactions',
+                'transaction(s)',
+                'All postable transactions have posted journals for this period.',
+                'Post or confirm the remaining transactions before locking this period.',
+                '?page=transactions&show_card=transactions_imported&category_filter=not_posted'
+            ),
+            $this->postedSourceWorkTypeCheck(
+                $postedSourceWork,
+                'posted_expense_claims_integrity',
+                'Posted expense claims',
+                'unposted_expense_claims',
+                'expense claim(s)',
+                'All postable expense claims have posted journals for this period.',
+                'Post or confirm the remaining expense claims before locking this period.',
+                '?page=expense_claims'
+            ),
+            $this->postedSourceWorkTypeCheck(
+                $postedSourceWork,
+                'posted_assets_integrity',
+                'Posted assets',
+                'unposted_assets',
+                'asset(s)',
+                'All fixed assets have posted journals for this period.',
+                'Post or confirm the remaining fixed assets before locking this period.',
+                '?page=assets'
+            ),
         ];
-
-        return implode(', ', $parts);
     }
 
-    private function postedSourceWorkActionUrl(array $postedSourceWork): string
-    {
-        if ((int)($postedSourceWork['unposted_transactions'] ?? 0) > 0) {
-            return '?page=transactions&show_card=transactions_imported&category_filter=not_posted';
-        }
+    private function postedSourceWorkTypeCheck(
+        array $postedSourceWork,
+        string $code,
+        string $title,
+        string $countKey,
+        string $unit,
+        string $passDetail,
+        string $failDetail,
+        string $actionUrl
+    ): array {
+        $count = (int)($postedSourceWork[$countKey] ?? 0);
 
-        if ((int)($postedSourceWork['unposted_expense_claims'] ?? 0) > 0) {
-            return '?page=expense_claims';
-        }
-
-        if ((int)($postedSourceWork['unposted_assets'] ?? 0) > 0) {
-            return '?page=assets';
-        }
-
-        return '?page=year_end&show_card=year_end_state';
+        return $this->makeCheck(
+            $code,
+            $title,
+            'fail',
+            $count > 0 ? 'fail' : 'pass',
+            $count > 0 ? $failDetail : $passDetail,
+            $count . ' ' . $unit,
+            $actionUrl
+        );
     }
 
     private function makeCheck(string $code, string $title, string $severity, string $status, string $detail, string $metricValue = '', ?string $actionUrl = null): array {

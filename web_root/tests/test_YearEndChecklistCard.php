@@ -141,6 +141,94 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
         $harness->assertSame(false, str_contains($html, 'accounting_period_id=34'));
     });
 
+    $harness->check(_year_end_checklistCard::class, 'bookkeeping summary warns when visible coverage is incomplete', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'year_end' => [
+                'checklist' => [
+                    'company_id' => 12,
+                    'accounting_period' => ['id' => 34],
+                    'overall_status' => 'in_progress',
+                    'sections' => [
+                        'bookkeeping_completeness' => [
+                            [
+                                'check_code' => 'source_data_present',
+                                'title' => 'Source data present',
+                                'status' => 'pass',
+                                'detail_text' => 'Source data is present.',
+                                'metric_value' => '1',
+                            ],
+                            [
+                                'check_code' => 'missing_month_warning',
+                                'title' => 'Expected month coverage',
+                                'status' => 'pass',
+                                'detail_text' => 'Every month inside the accounting period has at least some source activity.',
+                                'metric_value' => 'All months covered',
+                            ],
+                        ],
+                    ],
+                    'month_tiles' => [
+                        ['month_key' => '2025-08-01', 'status' => 'green'],
+                        ['month_key' => '2025-09-01', 'status' => 'amber'],
+                    ],
+                ],
+            ],
+        ]);
+
+        $harness->assertSame(true, str_contains($html, '1 of 2'));
+        $harness->assertSame(true, str_contains($html, 'year-end-check-panel-warning'));
+        $harness->assertSame(true, str_contains($html, '>Warning</span>'));
+        $harness->assertSame(false, str_contains($html, '>Pass</span>'));
+    });
+
+    $harness->check(_year_end_checklistCard::class, 'renders posted-only integrity as separate source cards', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'year_end' => [
+                'checklist' => [
+                    'company_id' => 12,
+                    'accounting_period' => ['id' => 34],
+                    'overall_status' => 'needs_attention',
+                    'sections' => [
+                        'ledger_integrity' => [
+                            [
+                                'check_code' => 'posted_transactions_integrity',
+                                'title' => 'Posted transactions',
+                                'status' => 'pass',
+                                'detail_text' => 'All postable transactions have posted journals for this period.',
+                                'metric_value' => '0 transaction(s)',
+                                'action_url' => '?page=transactions&show_card=transactions_imported&category_filter=not_posted',
+                            ],
+                            [
+                                'check_code' => 'posted_expense_claims_integrity',
+                                'title' => 'Posted expense claims',
+                                'status' => 'fail',
+                                'detail_text' => 'Post or confirm the remaining expense claims before locking this period.',
+                                'metric_value' => '7 expense claim(s)',
+                                'action_url' => '?page=expense_claims',
+                            ],
+                            [
+                                'check_code' => 'posted_assets_integrity',
+                                'title' => 'Posted assets',
+                                'status' => 'pass',
+                                'detail_text' => 'All fixed assets have posted journals for this period.',
+                                'metric_value' => '0 asset(s)',
+                                'action_url' => '?page=assets',
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $harness->assertSame(true, str_contains($html, 'C. Ledger integrity'));
+        $harness->assertSame(true, str_contains($html, 'Posted transactions'));
+        $harness->assertSame(true, str_contains($html, '0 transaction(s)'));
+        $harness->assertSame(true, str_contains($html, 'Posted expense claims'));
+        $harness->assertSame(true, str_contains($html, '7 expense claim(s)'));
+        $harness->assertSame(true, str_contains($html, 'Posted assets'));
+        $harness->assertSame(true, str_contains($html, '0 asset(s)'));
+        $harness->assertSame(false, str_contains($html, 'Posted-only period integrity'));
+    });
+
     $harness->check(_year_end_checklistCard::class, 'renders tax readiness acknowledgement in corporation tax section', static function () use ($harness, $card): void {
         $html = $card->render([
             'year_end' => [

@@ -86,9 +86,13 @@ final class _dividend_capacityCard extends CardBaseFramework
         $html = '';
         foreach ($warnings as $warning) {
             $severity = (string)($warning['severity'] ?? 'info');
+            $metricValue = trim((string)($warning['metric_value'] ?? ''));
             $html .= '<div class="summary-card">
                 <div class="summary-label">' . HelperFramework::escape((string)($warning['title'] ?? 'Warning')) . '</div>
-                <div class="summary-value"><span class="badge ' . HelperFramework::escape($this->badgeClass($severity)) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($severity, '_')) . '</span></div>
+                <div class="summary-value">' . ($metricValue !== ''
+                    ? HelperFramework::escape($metricValue)
+                    : '<span class="badge ' . HelperFramework::escape($this->badgeClass($severity)) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($severity, '_')) . '</span>') . '</div>
+                ' . ($metricValue !== '' ? '<div><span class="badge ' . HelperFramework::escape($this->badgeClass($severity)) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($severity, '_')) . '</span></div>' : '') . '
                 <div class="helper">' . HelperFramework::escape((string)($warning['detail'] ?? '')) . '</div>
             </div>';
         }

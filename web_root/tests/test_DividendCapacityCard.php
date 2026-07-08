@@ -98,6 +98,42 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
         $harness->assertTrue(str_contains($html, 'Unposted Corporation Tax deducted'));
         $harness->assertTrue(str_contains($html, 'Estimated Corporation Tax &#163; 2,475.00 - posted Corporation Tax &#163; 475.00 = &#163; 2,000.00'));
     });
+
+    $harness->check(_dividend_capacityCard::class, 'renders warning metric values separately from warning severity', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => [
+                'settings' => [],
+            ],
+            'dividends' => [
+                'capacity' => [
+                    'available' => true,
+                    'as_at_date' => '2026-07-04',
+                    'reserves_reliable' => false,
+                    'reserve_basis_detail' => 'Reserve basis is blocked.',
+                    'distributable_reserves_brought_forward' => 100.00,
+                    'current_year_profit_loss_after_tax' => 50.00,
+                    'dividends_declared' => 10.00,
+                    'available_distributable_reserves' => 140.00,
+                    'ledger_current_year_profit_loss' => 50.00,
+                    'classified_current_year_profit_loss' => 50.00,
+                    'estimated_corporation_tax' => 0.00,
+                    'unposted_corporation_tax_adjustment' => 0.00,
+                ],
+                'warnings' => [[
+                    'severity' => 'warning',
+                    'title' => 'Uncategorised transactions affect capacity',
+                    'metric_value' => '12 transaction(s)',
+                    'detail' => 'Transactions dated on or before the capacity date are uncategorised or missing a nominal account.',
+                ]],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, 'Uncategorised transactions affect capacity'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-value">12 transaction(s)</div>'));
+        $harness->assertTrue(str_contains($html, '<span class="badge warning">Warning</span>'));
+        $harness->assertTrue(str_contains($html, 'Transactions dated on or before the capacity date are uncategorised or missing a nominal account.'));
+        $harness->assertTrue(!str_contains($html, '12 transaction(s) dated on or before'));
+    });
 });
 
 function dividend_card_assert_context_service(GeneratedServiceClassTestHarness $harness, CardInterfaceFramework $card): void

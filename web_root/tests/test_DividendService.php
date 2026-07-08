@@ -564,14 +564,18 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
 
     $harness->check(\eel_accounts\Service\DividendService::class, 'reliability warnings link to upload and transaction workflows', function () use ($harness, $service): void {
         dividend_service_require_reserve_schema($harness);
-        if (!InterfaceDB::tableExists('transactions') || !InterfaceDB::tableExists('statement_uploads')) {
-            $harness->skip('Transaction and upload tables are not available.');
+        foreach (['transactions', 'statement_uploads', 'company_accounts', 'transaction_splits', 'transaction_split_lines'] as $table) {
+            if (!InterfaceDB::tableExists($table)) {
+                $harness->skip($table . ' table is not available.');
+            }
         }
 
         InterfaceDB::beginTransaction();
         try {
             $fixture = dividend_service_manual_fixture($service, 100.00);
             dividend_service_add_uncategorised_transaction($fixture['company_id'], $fixture['accounting_period_id'], $fixture['marker'], '2022-11-15');
+            dividend_service_add_valid_transfer_transaction($fixture['company_id'], $fixture['accounting_period_id'], $fixture['marker'], '2022-11-16');
+            dividend_service_add_ready_split_transaction($fixture['company_id'], $fixture['accounting_period_id'], $fixture['marker'], '2022-11-17');
 
             $warnings = $service->getDividendReliabilityWarnings($fixture['company_id'], $fixture['accounting_period_id'], '2022-11-30');
             $byCode = [];
@@ -591,6 +595,8 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
             $harness->assertSame('transactions', (string)($byCode['uncategorised_transactions']['workflow_page'] ?? ''));
             $harness->assertSame('uncategorised', (string)(($byCode['uncategorised_transactions']['workflow_fields'] ?? [])['category_filter'] ?? ''));
             $harness->assertSame(false, str_contains((string)($byCode['uncategorised_transactions']['action_url'] ?? ''), 'company_id='));
+            $harness->assertSame('1 transaction(s)', (string)($byCode['uncategorised_transactions']['metric_value'] ?? ''));
+            $harness->assertSame('Transactions dated on or before the capacity date are uncategorised or missing a nominal account.', (string)($byCode['uncategorised_transactions']['detail'] ?? ''));
         } finally {
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();
@@ -1153,6 +1159,105 @@ function dividend_service_add_corporation_tax_provision(int $companyId, int $acc
 
 function dividend_service_add_uncategorised_transaction(int $companyId, int $accountingPeriodId, string $marker, string $date): void
 {
+    dividend_service_insert_transaction(
+        $companyId,
+        $accountingPeriodId,
+        dividend_service_add_statement_upload($companyId, $accountingPeriodId, $marker, $date, 'uncategorised'),
+        $date,
+        'Uncategorised dividend warning fixture',
+        '-12.34',
+        hash('sha256', $marker . '-uncategorised-transaction'),
+        null,
+        'uncategorised',
+        null,
+        0
+    );
+}
+
+function dividend_service_add_valid_transfer_transaction(int $companyId, int $accountingPeriodId, string $marker, string $date): void
+{
+    $nominalId = dividend_service_fixture_nominal('1' . substr($marker, -10), 'Fixture Bank ' . $marker, 'asset');
+    InterfaceDB::prepareExecute(
+        'INSERT INTO company_accounts (company_id, account_name, account_type, nominal_account_id, is_active)
+         VALUES (:company_id, :account_name, :account_type, :nominal_account_id, 1)',
+        [
+            'company_id' => $companyId,
+            'account_name' => 'Dividend Transfer Account ' . $marker,
+            'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
+            'nominal_account_id' => $nominalId,
+        ]
+    );
+    $transferAccountId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM company_accounts WHERE company_id = :company_id AND account_name = :account_name ORDER BY id DESC LIMIT 1',
+        [
+            'company_id' => $companyId,
+            'account_name' => 'Dividend Transfer Account ' . $marker,
+        ]
+    );
+
+    dividend_service_insert_transaction(
+        $companyId,
+        $accountingPeriodId,
+        dividend_service_add_statement_upload($companyId, $accountingPeriodId, $marker, $date, 'transfer'),
+        $date,
+        'Valid transfer dividend warning fixture',
+        '-20.00',
+        hash('sha256', $marker . '-transfer-transaction'),
+        null,
+        'manual',
+        $transferAccountId,
+        1
+    );
+}
+
+function dividend_service_add_ready_split_transaction(int $companyId, int $accountingPeriodId, string $marker, string $date): void
+{
+    $nominalId = dividend_service_fixture_nominal('6' . substr($marker, -10), 'Fixture Expense ' . $marker, 'expense');
+    $dedupeHash = hash('sha256', $marker . '-split-transaction');
+    dividend_service_insert_transaction(
+        $companyId,
+        $accountingPeriodId,
+        dividend_service_add_statement_upload($companyId, $accountingPeriodId, $marker, $date, 'split'),
+        $date,
+        'Ready split dividend warning fixture',
+        '-30.00',
+        $dedupeHash,
+        null,
+        'manual',
+        null,
+        0
+    );
+
+    $transactionId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM transactions WHERE dedupe_hash = :dedupe_hash ORDER BY id DESC LIMIT 1',
+        ['dedupe_hash' => $dedupeHash]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO transaction_splits (transaction_id)
+         VALUES (:transaction_id)',
+        ['transaction_id' => $transactionId]
+    );
+    $splitId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM transaction_splits WHERE transaction_id = :transaction_id ORDER BY id DESC LIMIT 1',
+        ['transaction_id' => $transactionId]
+    );
+    foreach ([[1, '15.00'], [2, '15.00']] as $line) {
+        InterfaceDB::prepareExecute(
+            'INSERT INTO transaction_split_lines (split_id, line_number, amount, nominal_account_id, is_deferred)
+             VALUES (:split_id, :line_number, :amount, :nominal_account_id, 0)',
+            [
+                'split_id' => $splitId,
+                'line_number' => (int)$line[0],
+                'amount' => (string)$line[1],
+                'nominal_account_id' => $nominalId,
+            ]
+        );
+    }
+}
+
+function dividend_service_add_statement_upload(int $companyId, int $accountingPeriodId, string $marker, string $date, string $suffix): int
+{
+    $filename = $marker . '-' . $suffix . '.csv';
     InterfaceDB::prepareExecute(
         'INSERT INTO statement_uploads (
             company_id,
@@ -1175,20 +1280,35 @@ function dividend_service_add_uncategorised_transaction(int $companyId, int $acc
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
             'statement_month' => substr($date, 0, 7) . '-01',
-            'original_filename' => $marker . '-uncategorised.csv',
-            'stored_filename' => $marker . '-uncategorised.csv',
-            'file_sha256' => hash('sha256', $marker . '-uncategorised'),
+            'original_filename' => $filename,
+            'stored_filename' => $filename,
+            'file_sha256' => hash('sha256', $marker . '-' . $suffix),
             'workflow_status' => 'committed',
         ]
     );
-    $uploadId = (int)InterfaceDB::fetchColumn(
+
+    return (int)InterfaceDB::fetchColumn(
         'SELECT id FROM statement_uploads WHERE company_id = :company_id AND original_filename = :filename ORDER BY id DESC LIMIT 1',
         [
             'company_id' => $companyId,
-            'filename' => $marker . '-uncategorised.csv',
+            'filename' => $filename,
         ]
     );
+}
 
+function dividend_service_insert_transaction(
+    int $companyId,
+    int $accountingPeriodId,
+    int $uploadId,
+    string $date,
+    string $description,
+    string $amount,
+    string $dedupeHash,
+    ?int $nominalAccountId,
+    string $categoryStatus,
+    ?int $transferAccountId,
+    int $isInternalTransfer
+): void {
     InterfaceDB::prepareExecute(
         'INSERT INTO transactions (
             company_id,
@@ -1202,6 +1322,8 @@ function dividend_service_add_uncategorised_transaction(int $companyId, int $acc
             source_account_label,
             dedupe_hash,
             nominal_account_id,
+            transfer_account_id,
+            is_internal_transfer,
             category_status
          ) VALUES (
             :company_id,
@@ -1214,7 +1336,9 @@ function dividend_service_add_uncategorised_transaction(int $companyId, int $acc
             :currency,
             :source_account_label,
             :dedupe_hash,
-            NULL,
+            :nominal_account_id,
+            :transfer_account_id,
+            :is_internal_transfer,
             :category_status
          )',
         [
@@ -1223,12 +1347,15 @@ function dividend_service_add_uncategorised_transaction(int $companyId, int $acc
             'statement_upload_id' => $uploadId,
             'txn_date' => $date,
             'txn_type' => 'FP',
-            'description' => 'Uncategorised dividend warning fixture',
-            'amount' => '-12.34',
+            'description' => $description,
+            'amount' => $amount,
             'currency' => 'GBP',
             'source_account_label' => 'Fixture Current Account',
-            'dedupe_hash' => hash('sha256', $marker . '-uncategorised-transaction'),
-            'category_status' => 'uncategorised',
+            'dedupe_hash' => $dedupeHash,
+            'nominal_account_id' => $nominalAccountId,
+            'transfer_account_id' => $transferAccountId,
+            'is_internal_transfer' => $isInternalTransfer,
+            'category_status' => $categoryStatus,
         ]
     );
 }

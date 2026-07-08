@@ -217,6 +217,36 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
         $harness->assertSame(false, (bool)$method->invoke($service, 'locked'));
     });
 
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'posted source work checks are split by source type', static function () use ($harness): void {
+        $service = new \eel_accounts\Service\YearEndChecklistService();
+        $postedChecks = new ReflectionMethod($service, 'postedSourceWorkChecks');
+        $postedChecks->setAccessible(true);
+        $trialBalanceMetric = new ReflectionMethod($service, 'trialBalanceMetric');
+        $trialBalanceMetric->setAccessible(true);
+
+        $checks = $postedChecks->invoke($service, [
+            'unposted_transactions' => 0,
+            'unposted_expense_claims' => 7,
+            'unposted_assets' => 0,
+        ]);
+
+        $harness->assertSame(3, count($checks));
+        $harness->assertSame('posted_transactions_integrity', (string)($checks[0]['check_code'] ?? ''));
+        $harness->assertSame('Posted transactions', (string)($checks[0]['title'] ?? ''));
+        $harness->assertSame('pass', (string)($checks[0]['status'] ?? ''));
+        $harness->assertSame('0 transaction(s)', (string)($checks[0]['metric_value'] ?? ''));
+        $harness->assertSame('posted_expense_claims_integrity', (string)($checks[1]['check_code'] ?? ''));
+        $harness->assertSame('Posted expense claims', (string)($checks[1]['title'] ?? ''));
+        $harness->assertSame('fail', (string)($checks[1]['status'] ?? ''));
+        $harness->assertSame('7 expense claim(s)', (string)($checks[1]['metric_value'] ?? ''));
+        $harness->assertSame('expense_claims', (string)($checks[1]['workflow_page'] ?? ''));
+        $harness->assertSame('posted_assets_integrity', (string)($checks[2]['check_code'] ?? ''));
+        $harness->assertSame('Posted assets', (string)($checks[2]['title'] ?? ''));
+        $harness->assertSame('pass', (string)($checks[2]['status'] ?? ''));
+        $harness->assertSame('0 asset(s)', (string)($checks[2]['metric_value'] ?? ''));
+        $harness->assertSame('26 trial balance line(s)', (string)$trialBalanceMetric->invoke($service, ['line_count' => 26]));
+    });
+
     $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'review acknowledgement clears advisory warning checks only', static function () use ($harness): void {
         $service = new \eel_accounts\Service\YearEndChecklistService();
         $method = new ReflectionMethod($service, 'applyReviewAcknowledgement');
@@ -421,6 +451,44 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
         }
     });
 
+    $harness->check(\eel_accounts\Service\YearEndMetricsService::class, 'transaction coverage accepts valid transfers and ready splits with null header nominal', static function () use ($harness): void {
+        yearEndChecklistServiceRequireTransactionCoverageSchema($harness);
+
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = yearEndChecklistServiceCreateTransactionCoverageFixture();
+            $metrics = new \eel_accounts\Service\YearEndMetricsService();
+
+            $uncategorisedCount = $metrics->uncategorisedTransactionsCount(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                '2026-01-01',
+                '2026-12-31'
+            );
+            $harness->assertSame(1, $uncategorisedCount);
+
+            $tiles = $metrics->buildMonthTiles(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                '2026-01-01',
+                '2026-12-31'
+            );
+            $tilesByMonth = [];
+            foreach ($tiles as $tile) {
+                $tilesByMonth[(string)($tile['month_key'] ?? '')] = $tile;
+            }
+
+            $harness->assertSame('amber', (string)(($tilesByMonth['2026-01-01'] ?? [])['status'] ?? ''));
+            $harness->assertSame(1, (int)(($tilesByMonth['2026-01-01'] ?? [])['uncategorised_count'] ?? 0));
+            $harness->assertSame('green', (string)(($tilesByMonth['2026-02-01'] ?? [])['status'] ?? ''));
+            $harness->assertSame(0, (int)(($tilesByMonth['2026-02-01'] ?? [])['uncategorised_count'] ?? -1));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
     $harness->check(\eel_accounts\Service\YearEndMetricsService::class, 'posted source work summary tracks unposted transactions expenses and assets', static function () use ($harness): void {
         yearEndChecklistServiceRequirePostedSourceWorkSchema($harness);
 
@@ -571,6 +639,19 @@ function yearEndChecklistServiceRequirePostedSourceWorkSchema(GeneratedServiceCl
     }
 }
 
+function yearEndChecklistServiceRequireTransactionCoverageSchema(GeneratedServiceClassTestHarness $harness): void
+{
+    foreach (['companies', 'accounting_periods', 'company_accounts', 'statement_uploads', 'transactions', 'transaction_splits', 'transaction_split_lines', 'nominal_accounts'] as $table) {
+        if (!InterfaceDB::tableExists($table)) {
+            $harness->skip($table . ' table is not available.');
+        }
+    }
+
+    if (yearEndChecklistServiceNominalId('6200') <= 0) {
+        $harness->skip('Nominal 6200 is not available.');
+    }
+}
+
 function yearEndChecklistServiceCreateDepreciationLockFixture(): array
 {
     $marker = (string)random_int(100000, 999999);
@@ -687,6 +768,227 @@ function yearEndChecklistServiceCreateDepreciationLockFixture(): array
         'accounting_period_id' => $accountingPeriodId,
         'asset_id' => $assetId,
     ];
+}
+
+function yearEndChecklistServiceCreateTransactionCoverageFixture(): array
+{
+    $marker = (string)random_int(100000, 999999);
+    $companyId = (int)('74' . $marker);
+    $accountingPeriodId = (int)('75' . $marker);
+    $sourceAccountId = (int)('76' . $marker);
+    $transferAccountId = (int)('77' . $marker);
+    $uploadId = (int)('78' . $marker);
+    $uncategorisedTransactionId = (int)('79' . $marker);
+    $transferTransactionId = (int)('80' . $marker);
+    $splitTransactionId = (int)('81' . $marker);
+    $nominalId = yearEndChecklistServiceNominalId('6200');
+
+    InterfaceDB::prepareExecute(
+        'INSERT INTO companies (id, company_name, company_number, is_active)
+         VALUES (:id, :company_name, :company_number, 1)',
+        [
+            'id' => $companyId,
+            'company_name' => 'Year End Coverage Fixture ' . $marker,
+            'company_number' => 'YEC' . substr($marker, 0, 5),
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end)
+         VALUES (:id, :company_id, :label, :period_start, :period_end)',
+        [
+            'id' => $accountingPeriodId,
+            'company_id' => $companyId,
+            'label' => 'YEC FY ' . $marker,
+            'period_start' => '2026-01-01',
+            'period_end' => '2026-12-31',
+        ]
+    );
+    foreach ([
+        [$sourceAccountId, 'Coverage Source Account'],
+        [$transferAccountId, 'Coverage Transfer Account'],
+    ] as $account) {
+        InterfaceDB::prepareExecute(
+            'INSERT INTO company_accounts (id, company_id, account_name, account_type, nominal_account_id, is_active)
+             VALUES (:id, :company_id, :account_name, :account_type, :nominal_account_id, 1)',
+            [
+                'id' => (int)$account[0],
+                'company_id' => $companyId,
+                'account_name' => (string)$account[1] . ' ' . $marker,
+                'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
+                'nominal_account_id' => $nominalId,
+            ]
+        );
+    }
+    InterfaceDB::prepareExecute(
+        'INSERT INTO statement_uploads (
+            id,
+            company_id,
+            accounting_period_id,
+            account_id,
+            statement_month,
+            original_filename,
+            stored_filename,
+            file_sha256,
+            workflow_status
+         ) VALUES (
+            :id,
+            :company_id,
+            :accounting_period_id,
+            :account_id,
+            :statement_month,
+            :original_filename,
+            :stored_filename,
+            :file_sha256,
+            :workflow_status
+         )',
+        [
+            'id' => $uploadId,
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'account_id' => $sourceAccountId,
+            'statement_month' => '2026-02-01',
+            'original_filename' => 'coverage-' . $marker . '.csv',
+            'stored_filename' => 'coverage-' . $marker . '.csv',
+            'file_sha256' => hash('sha256', 'coverage-upload-' . $marker),
+            'workflow_status' => 'committed',
+        ]
+    );
+
+    yearEndChecklistServiceInsertCoverageTransaction(
+        $uncategorisedTransactionId,
+        $companyId,
+        $accountingPeriodId,
+        $uploadId,
+        $sourceAccountId,
+        '2026-01-15',
+        'Coverage uncategorised fixture',
+        '-10.00',
+        'uncategorised',
+        null,
+        null,
+        0,
+        $marker . '-uncategorised'
+    );
+    yearEndChecklistServiceInsertCoverageTransaction(
+        $transferTransactionId,
+        $companyId,
+        $accountingPeriodId,
+        $uploadId,
+        $sourceAccountId,
+        '2026-02-10',
+        'Coverage transfer fixture',
+        '-50.00',
+        'manual',
+        null,
+        $transferAccountId,
+        1,
+        $marker . '-transfer'
+    );
+    yearEndChecklistServiceInsertCoverageTransaction(
+        $splitTransactionId,
+        $companyId,
+        $accountingPeriodId,
+        $uploadId,
+        $sourceAccountId,
+        '2026-02-20',
+        'Coverage split fixture',
+        '-120.00',
+        'manual',
+        null,
+        null,
+        0,
+        $marker . '-split'
+    );
+
+    InterfaceDB::prepareExecute(
+        'INSERT INTO transaction_splits (transaction_id)
+         VALUES (:transaction_id)',
+        ['transaction_id' => $splitTransactionId]
+    );
+    $splitId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM transaction_splits WHERE transaction_id = :transaction_id LIMIT 1',
+        ['transaction_id' => $splitTransactionId]
+    );
+    foreach ([[1, '60.00'], [2, '60.00']] as $line) {
+        InterfaceDB::prepareExecute(
+            'INSERT INTO transaction_split_lines (split_id, line_number, amount, nominal_account_id, is_deferred)
+             VALUES (:split_id, :line_number, :amount, :nominal_account_id, 0)',
+            [
+                'split_id' => $splitId,
+                'line_number' => (int)$line[0],
+                'amount' => (string)$line[1],
+                'nominal_account_id' => $nominalId,
+            ]
+        );
+    }
+
+    return [
+        'company_id' => $companyId,
+        'accounting_period_id' => $accountingPeriodId,
+    ];
+}
+
+function yearEndChecklistServiceInsertCoverageTransaction(
+    int $transactionId,
+    int $companyId,
+    int $accountingPeriodId,
+    int $uploadId,
+    int $accountId,
+    string $date,
+    string $description,
+    string $amount,
+    string $categoryStatus,
+    ?int $nominalAccountId,
+    ?int $transferAccountId,
+    int $isInternalTransfer,
+    string $dedupeSeed
+): void {
+    InterfaceDB::prepareExecute(
+        'INSERT INTO transactions (
+            id,
+            company_id,
+            accounting_period_id,
+            statement_upload_id,
+            account_id,
+            txn_date,
+            description,
+            amount,
+            dedupe_hash,
+            nominal_account_id,
+            transfer_account_id,
+            is_internal_transfer,
+            category_status
+         ) VALUES (
+            :id,
+            :company_id,
+            :accounting_period_id,
+            :statement_upload_id,
+            :account_id,
+            :txn_date,
+            :description,
+            :amount,
+            :dedupe_hash,
+            :nominal_account_id,
+            :transfer_account_id,
+            :is_internal_transfer,
+            :category_status
+         )',
+        [
+            'id' => $transactionId,
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'statement_upload_id' => $uploadId,
+            'account_id' => $accountId,
+            'txn_date' => $date,
+            'description' => $description,
+            'amount' => $amount,
+            'dedupe_hash' => hash('sha256', 'year-end-coverage-' . $dedupeSeed),
+            'nominal_account_id' => $nominalAccountId,
+            'transfer_account_id' => $transferAccountId,
+            'is_internal_transfer' => $isInternalTransfer,
+            'category_status' => $categoryStatus,
+        ]
+    );
 }
 
 function yearEndChecklistServiceCreateDirectorLoanOffsetFixture(): array

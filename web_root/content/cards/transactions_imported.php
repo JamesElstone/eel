@@ -442,7 +442,8 @@ final class _transactions_importedCard extends CardBaseFramework
                     return $label === ''
                         ? ''
                         : '<span class="badge ' . HelperFramework::escape($this->transactionCategorisationStatusBadgeClass($row)) . '">' . HelperFramework::escape($label) . '</span>';
-                }
+                },
+                cellClass: 'transactions-imported-pill-cell'
             )
             ->column(
                 'auto_approval',
@@ -453,7 +454,8 @@ final class _transactions_importedCard extends CardBaseFramework
             ->column(
                 'flags',
                 'Flags',
-                html: fn(array $row): string => $this->flagsHtml($row)
+                html: fn(array $row): string => $this->flagsHtml($row),
+                cellClass: 'transactions-imported-pill-cell'
             )
             ->column(
                 'journal',
@@ -463,7 +465,8 @@ final class _transactions_importedCard extends CardBaseFramework
                     return $label === ''
                         ? ''
                         : '<span class="badge ' . HelperFramework::escape($this->transactionJournalStatusBadgeClass($row)) . '">' . HelperFramework::escape($label) . '</span>';
-                }
+                },
+                cellClass: 'transactions-imported-pill-cell'
             )
             ->column(
                 'notes',
@@ -570,7 +573,7 @@ final class _transactions_importedCard extends CardBaseFramework
             $helperLines[] = 'Ref: ' . HelperFramework::escape($reference);
         }
 
-        if ((int)($transaction['auto_rule_id'] ?? 0) > 0) {
+        if (!$this->transactionHasInterAccountMarker($transaction) && (int)($transaction['auto_rule_id'] ?? 0) > 0) {
             $matchValue = trim((string)($transaction['auto_rule_match_value'] ?? ''));
             $helperLines[] = 'Matched by rule #' . (int)($transaction['auto_rule_id'] ?? 0)
                 . ($matchValue !== '' ? ' (' . HelperFramework::escape($matchValue) . ')' : '');
@@ -724,10 +727,18 @@ final class _transactions_importedCard extends CardBaseFramework
         $role = trim((string)($transaction['inter_ac_marker_role'] ?? ''));
         if ((int)($transaction['inter_ac_marker_id'] ?? 0) > 0) {
             $label = $this->interAccountPeerLabel($transaction);
-            $roleLabel = $role === 'matched' ? 'Matched evidence' : 'Posting source';
+            $roleLabel = $role === 'matched' ? 'Inter A/C Dest' : 'Posting Source';
+            $cancelButtonHtml = '';
+            if ($role === 'source') {
+                $buttonAttributes = $isPeriodLocked
+                    ? ' type="button" disabled title="Period locked"'
+                    : ' type="submit" form="' . HelperFramework::escape($transactionFormId) . '" name="global_action" value="cancel_inter_ac_transaction" data-chicken-check="true" data-chicken-title="Cancel inter-account match" data-chicken-message="This will remove the inter-account link and its bank-derived journals.<br><br>Continue?" data-chicken-confirm-text="Cancel match" data-chicken-button-class="button primary"';
+                $cancelButtonHtml = '<button class="button button-inline"' . $buttonAttributes . '>cancel</button>';
+            }
 
-            return '<div class="document-stack">
+            return '<div class="transactions-imported-inter-ac-summary">
                     <span class="badge info">' . HelperFramework::escape($roleLabel) . '</span>
+                    ' . $cancelButtonHtml . '
                     <span class="helper">' . HelperFramework::escape($label) . '</span>
                 </div>';
         }
@@ -812,23 +823,24 @@ final class _transactions_importedCard extends CardBaseFramework
             return '';
         }
 
-        $flagsHtml = '<div class="document-stack">';
-        if ((int)($transaction['is_auto_excluded'] ?? 0) === 1) {
+        $hasInterAccountMarker = $this->transactionHasInterAccountMarker($transaction);
+        $flagsHtml = '<div class="transactions-imported-pill-wrap">';
+        if (!$hasInterAccountMarker && (int)($transaction['is_auto_excluded'] ?? 0) === 1) {
             $flagsHtml .= '<span class="badge warning">Deferred</span>';
         }
         if ((int)($transaction['has_transaction_split'] ?? 0) === 1 && $this->transactionRowType($transaction) === 'transaction') {
             $flagsHtml .= '<span class="badge info">Split</span>';
         }
-        if ((int)($transaction['inter_ac_marker_id'] ?? 0) > 0) {
+        if ($hasInterAccountMarker) {
             $flagsHtml .= '<span class="badge info">Inter A/C</span>';
         }
         if ($this->transactionRowType($transaction) === 'split_line' && (int)($transaction['split_line_is_deferred'] ?? 0) === 1) {
             $flagsHtml .= '<span class="badge warning">Deferred</span>';
         }
-        if ($this->autoApprovalConfirmedCurrent($transaction)) {
+        if (!$hasInterAccountMarker && $this->autoApprovalConfirmedCurrent($transaction)) {
             $flagsHtml .= '<span class="badge success">Auto Correct</span>';
         }
-        if (!$this->transactionIsTransferMode($transaction) && (int)($transaction['auto_rule_id'] ?? 0) > 0) {
+        if (!$hasInterAccountMarker && !$this->transactionIsTransferMode($transaction) && (int)($transaction['auto_rule_id'] ?? 0) > 0) {
             $flagsHtml .= '<span class="badge info">Rule #' . (int)($transaction['auto_rule_id'] ?? 0) . '</span>';
         }
         if ((int)($transaction['has_dividend_declaration'] ?? 0) === 1) {
@@ -956,6 +968,16 @@ final class _transactions_importedCard extends CardBaseFramework
 
         $transactionId = (int)($transaction['id'] ?? 0);
         $transactionFormId = 'transaction-form-' . $transactionId;
+        if ($this->transactionHasInterAccountMarker($transaction)) {
+            return $this->interAccountMarkedActionsHtml(
+                $transactionFormId,
+                $transactionId,
+                $companyId,
+                $accountingPeriodId,
+                $selectedTransactionMonth,
+                $selectedTransactionFilter
+            );
+        }
         $assetFormId = 'transaction-asset-form-' . $transactionId;
         $dividendFormId = 'transaction-dividend-form-' . $transactionId;
         $isTransferRow = $this->transactionIsTransferMode($transaction);
@@ -1027,6 +1049,25 @@ final class _transactions_importedCard extends CardBaseFramework
                     <button class="button primary"' . $lockedButtonAttributes . ' name="global_action" value="defer_transaction"' . $journalRebuildAttributes . '>Defer</button>
                     <button class="button"' . $createAssetAttributes . '>Asset</button>
                 </div>
+            </form>';
+    }
+
+    private function interAccountMarkedActionsHtml(
+        string $transactionFormId,
+        int $transactionId,
+        int $companyId,
+        int $accountingPeriodId,
+        string $selectedTransactionMonth,
+        string $selectedTransactionFilter
+    ): string {
+        return '<form method="post" action="?page=transactions" id="' . HelperFramework::escape($transactionFormId) . '" data-ajax="true">
+                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
+                <input type="hidden" name="card_action" value="Transaction">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <input type="hidden" name="transaction_id" value="' . $transactionId . '">
+                <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
+                <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
             </form>';
     }
 
@@ -1336,8 +1377,14 @@ final class _transactions_importedCard extends CardBaseFramework
     private function isRuleBasedAutoTransaction(array $transaction): bool
     {
         return strtolower(trim((string)($transaction['category_status'] ?? ''))) === 'auto'
+            && !$this->transactionHasInterAccountMarker($transaction)
             && !$this->transactionIsTransferMode($transaction)
             && (int)($transaction['auto_rule_id'] ?? 0) > 0;
+    }
+
+    private function transactionHasInterAccountMarker(array $transaction): bool
+    {
+        return (int)($transaction['inter_ac_marker_id'] ?? 0) > 0;
     }
 
     private function autoApprovalCheckedCurrent(array $transaction): bool
@@ -1440,10 +1487,10 @@ final class _transactions_importedCard extends CardBaseFramework
 
         $interAcRole = trim((string)($transaction['inter_ac_marker_role'] ?? ''));
         if ($interAcRole === 'matched') {
-            return 'Matched evidence';
+            return 'Inter A/C Dest';
         }
         if ($interAcRole === 'source') {
-            return 'Inter A/C source';
+            return 'Inter A/C Src';
         }
 
         $status = strtolower(trim((string)($transaction['category_status'] ?? 'uncategorised')));

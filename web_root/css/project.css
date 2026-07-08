@@ -2871,6 +2871,25 @@
   white-space: nowrap;
 }
 
+.transactions-imported-pill-cell .badge,
+.transactions-imported-pill-wrap .badge {
+  overflow-wrap: normal;
+  white-space: nowrap;
+  word-break: normal;
+}
+
+.transactions-imported-pill-wrap,
+.transactions-imported-inter-ac-summary {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.transactions-imported-inter-ac-summary .helper {
+  flex-basis: 100%;
+}
+
 @media (max-width: 760px) {
   .transaction-search-table-footer {
     justify-content: center;

@@ -223,9 +223,27 @@ $harness->run(_transactions_importedCard::class, static function (GeneratedServi
     $savedContext['services']['transactions_by_month'][0]['inter_ac_peer_txn_date'] = '2026-01-09';
     $savedContext['services']['transactions_by_month'][0]['inter_ac_peer_description'] = 'Example Trade Supplier payment received';
     $savedContext['services']['transactions_by_month'][0]['inter_ac_peer_amount'] = '241.46';
+    $savedContext['services']['transactions_by_month'][0]['category_status'] = 'auto';
+    $savedContext['services']['transactions_by_month'][0]['auto_rule_id'] = 3;
+    $savedContext['services']['transactions_by_month'][0]['auto_rule_match_value'] = 'Example Trade Supplier';
+    $savedContext['services']['transactions_by_month'][0]['auto_approval_checked_current'] = 0;
+    $savedContext['services']['transactions_by_month'][0]['auto_approval_confirmed_current'] = 0;
     $savedHtml = $card->render($savedContext);
     $harness->assertTrue(str_contains($savedHtml, 'Example Trade Supplier 09/01/26 Example Trade Supplier payment received 241.46'));
-    $harness->assertTrue(str_contains($savedHtml, 'Posting source'));
+    $harness->assertTrue(str_contains($savedHtml, 'Posting Source'));
+    $harness->assertTrue(str_contains($savedHtml, 'Inter A/C Src'));
+    $harness->assertTrue(str_contains($savedHtml, 'name="global_action" value="cancel_inter_ac_transaction"'));
+    $harness->assertFalse(str_contains($savedHtml, 'Matched by rule #3'));
+    $harness->assertFalse(str_contains($savedHtml, 'Rule #3'));
+    $harness->assertFalse(str_contains($savedHtml, 'Unconfirmed'));
+    $harness->assertFalse(str_contains($savedHtml, 'name="global_action" value="mark_director_loan"'));
+    $harness->assertFalse(str_contains($savedHtml, 'name="global_action" value="defer_transaction"'));
+    $harness->assertFalse(str_contains($savedHtml, 'transaction-asset-form-5802'));
+
+    $matchedContext = $savedContext;
+    $matchedContext['services']['transactions_by_month'][0]['inter_ac_marker_role'] = 'matched';
+    $matchedHtml = $card->render($matchedContext);
+    $harness->assertTrue(str_contains($matchedHtml, 'Inter A/C Dest'));
 
     $splitTransaction = [
         'id' => 92,

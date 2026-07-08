@@ -307,6 +307,57 @@ $harness->run(\eel_accounts\Service\TransactionAutoApprovalService::class, stati
             }
         }
     });
+
+    $harness->check(\eel_accounts\Service\TransactionAutoApprovalService::class, 'inter-account marked rows do not contribute to pending post confirmations', static function () use ($harness, $service): void {
+        transactionAutoApprovalRequireSchema($harness);
+        if (!InterfaceDB::tableExists('transaction_inter_ac_marker')) {
+            $harness->skip('transaction_inter_ac_marker table is not available.');
+        }
+
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = transactionAutoApprovalCreateFixture();
+            $matchedTransactionId = transactionAutoApprovalInsertFixtureTransaction($fixture, 1, 'AUTO APPROVAL MATCHED EVIDENCE');
+
+            $set = $service->setTransactionApprovalState(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                (int)$fixture['transaction_id'],
+                true,
+                null
+            );
+            $harness->assertSame(true, (bool)($set['success'] ?? false));
+            $harness->assertSame(1, $service->pendingPostConfirmationCount(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                null
+            ));
+
+            InterfaceDB::prepareExecute(
+                'INSERT INTO transaction_inter_ac_marker
+                    (company_id, accounting_period_id, transaction_id, matched_transaction_id, created_by)
+                 VALUES
+                    (:company_id, :accounting_period_id, :transaction_id, :matched_transaction_id, :created_by)',
+                [
+                    'company_id' => (int)$fixture['company_id'],
+                    'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                    'transaction_id' => (int)$fixture['transaction_id'],
+                    'matched_transaction_id' => $matchedTransactionId,
+                    'created_by' => 'test',
+                ]
+            );
+
+            $harness->assertSame(0, $service->pendingPostConfirmationCount(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                null
+            ));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
 });
 
 function transactionAutoApprovalRequireSchema(GeneratedServiceClassTestHarness $harness): void

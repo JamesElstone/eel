@@ -769,6 +769,10 @@ final class AssetService
             return ['success' => false, 'errors' => ['This transaction is already linked to an asset.']];
         }
 
+        if ($this->transactionHasInterAccountMarker($transactionId)) {
+            return ['success' => false, 'errors' => ['Cancel the inter-account match before creating an asset from this transaction.']];
+        }
+
         if ($defaultBankNominalId <= 0) {
             return ['success' => false, 'errors' => ['Set the default bank nominal before creating an asset from a transaction.']];
         }
@@ -1114,6 +1118,9 @@ final class AssetService
         ), true);
         if (!isset($candidateIds[$transactionId])) {
             return ['success' => false, 'errors' => ['Choose a matching unreconciled outgoing transaction for this manual asset.']];
+        }
+        if ($this->transactionHasInterAccountMarker($transactionId)) {
+            return ['success' => false, 'errors' => ['Cancel the inter-account match before reconciling this asset transaction.']];
         }
 
         $ownsTransaction = !\InterfaceDB::inTransaction();
@@ -1466,6 +1473,9 @@ final class AssetService
         }
         if ($transactionValidation !== []) {
             return ['success' => false, 'errors' => $transactionValidation];
+        }
+        if ($this->transactionHasInterAccountMarker($transactionId)) {
+            return ['success' => false, 'errors' => ['Cancel the inter-account match before posting an asset disposal from this transaction.']];
         }
 
         $disposalDate = (string)$transaction['txn_date'];
@@ -2540,6 +2550,11 @@ final class AssetService
         }
 
         return $cache[$table];
+    }
+
+    private function transactionHasInterAccountMarker(int $transactionId): bool
+    {
+        return (new TransactionInterAccountMarkerService())->fetchMarkerForTransaction($transactionId) !== null;
     }
 }
 

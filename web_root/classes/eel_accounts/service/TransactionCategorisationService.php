@@ -235,6 +235,71 @@ final class TransactionCategorisationService
         ];
     }
 
+    public function applyInterAccountMatchState(int $sourceTransactionId, int $matchedTransactionId, string $changedBy): array
+    {
+        $sourceTransaction = $this->fetchTransaction($sourceTransactionId);
+        $matchedTransaction = $this->fetchTransaction($matchedTransactionId);
+
+        if ($sourceTransaction === null || $matchedTransaction === null) {
+            return [
+                'success' => false,
+                'changed' => false,
+                'errors' => ['Both inter-account transactions must exist before the match can be saved.'],
+            ];
+        }
+
+        $this->assertPeriodUnlocked($sourceTransaction, 'save inter-account transaction match');
+        $this->assertPeriodUnlocked($matchedTransaction, 'save inter-account transaction match');
+
+        $errors = $this->validateInterAccountStatePair($sourceTransaction, $matchedTransaction);
+        if ($errors !== []) {
+            return [
+                'success' => false,
+                'changed' => false,
+                'errors' => $errors,
+            ];
+        }
+
+        $sourceState = $this->buildInterAccountSourceState($sourceTransaction, $matchedTransaction);
+        $matchedState = $this->buildInterAccountEvidenceState($matchedTransaction, $sourceTransaction);
+
+        return $this->persistInterAccountStates(
+            $sourceTransaction,
+            $sourceState,
+            $matchedTransaction,
+            $matchedState,
+            $changedBy
+        );
+    }
+
+    public function clearInterAccountMatchState(int $sourceTransactionId, int $matchedTransactionId, string $changedBy): array
+    {
+        $sourceTransaction = $this->fetchTransaction($sourceTransactionId);
+        $matchedTransaction = $this->fetchTransaction($matchedTransactionId);
+
+        if ($sourceTransaction === null || $matchedTransaction === null) {
+            return [
+                'success' => false,
+                'changed' => false,
+                'errors' => ['Both inter-account transactions must exist before the match can be cancelled.'],
+            ];
+        }
+
+        $this->assertPeriodUnlocked($sourceTransaction, 'cancel inter-account transaction match');
+        $this->assertPeriodUnlocked($matchedTransaction, 'cancel inter-account transaction match');
+
+        $sourceState = $this->buildUncategorisedReviewState($sourceTransaction, 'inter-account match cancelled');
+        $matchedState = $this->buildUncategorisedReviewState($matchedTransaction, 'inter-account match cancelled');
+
+        return $this->persistInterAccountStates(
+            $sourceTransaction,
+            $sourceState,
+            $matchedTransaction,
+            $matchedState,
+            $changedBy
+        );
+    }
+
     public function approveAutoCategorisationsBatch(
         int $companyId,
         ?int $accountingPeriodId = null,
@@ -534,6 +599,152 @@ final class TransactionCategorisationService
         ];
     }
 
+    private function buildInterAccountSourceState(array $sourceTransaction, array $matchedTransaction): array
+    {
+        return [
+            'nominal_account_id' => null,
+            'transfer_account_id' => (int)$matchedTransaction['account_id'],
+            'is_internal_transfer' => 1,
+            'category_status' => 'manual',
+            'auto_rule_id' => null,
+            'is_auto_excluded' => 0,
+            'reason' => 'inter-account source linked to transaction #' . (int)$matchedTransaction['id'],
+            'reason_code' => 'inter_account_source',
+        ];
+    }
+
+    private function buildInterAccountEvidenceState(array $matchedTransaction, array $sourceTransaction): array
+    {
+        return [
+            'nominal_account_id' => null,
+            'transfer_account_id' => null,
+            'is_internal_transfer' => 0,
+            'category_status' => 'uncategorised',
+            'auto_rule_id' => null,
+            'is_auto_excluded' => 0,
+            'reason' => 'inter-account evidence only linked to transaction #' . (int)$sourceTransaction['id'],
+            'reason_code' => 'inter_account_evidence',
+        ];
+    }
+
+    private function buildUncategorisedReviewState(array $transaction, string $reason): array
+    {
+        return [
+            'nominal_account_id' => null,
+            'transfer_account_id' => null,
+            'is_internal_transfer' => 0,
+            'category_status' => 'uncategorised',
+            'auto_rule_id' => null,
+            'is_auto_excluded' => 0,
+            'reason' => $reason,
+            'reason_code' => 'inter_account_clear',
+        ];
+    }
+
+    private function validateInterAccountStatePair(array $sourceTransaction, array $matchedTransaction): array
+    {
+        $errors = [];
+
+        if ((int)$sourceTransaction['id'] === (int)$matchedTransaction['id']) {
+            $errors[] = 'An inter-account match needs two different transactions.';
+        }
+        if ((int)$sourceTransaction['company_id'] !== (int)$matchedTransaction['company_id']) {
+            $errors[] = 'Inter-account transactions must belong to the same company.';
+        }
+        if ((int)$sourceTransaction['accounting_period_id'] !== (int)$matchedTransaction['accounting_period_id']) {
+            $errors[] = 'Inter-account transactions must belong to the same accounting period.';
+        }
+        if ((int)$matchedTransaction['account_id'] <= 0) {
+            $errors[] = 'The matched transaction is missing its account.';
+        }
+        if ((int)$sourceTransaction['account_id'] === (int)$matchedTransaction['account_id']) {
+            $errors[] = 'Inter-account transactions must be between different accounts.';
+        }
+
+        return $errors;
+    }
+
+    private function persistInterAccountStates(
+        array $sourceTransaction,
+        array $sourceState,
+        array $matchedTransaction,
+        array $matchedState,
+        string $changedBy
+    ): array {
+        $changed = $this->categorisationFieldsChanged($sourceTransaction, $sourceState)
+            || $this->categorisationFieldsChanged($matchedTransaction, $matchedState);
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
+        }
+
+        try {
+            $statements = $this->prepareCategorisationStatements();
+            $this->persistCategorisationWithStatements(
+                $sourceTransaction,
+                $sourceState,
+                $changedBy,
+                $sourceState['reason'],
+                $statements['update'],
+                $statements['audit']
+            );
+            $this->persistCategorisationWithStatements(
+                $matchedTransaction,
+                $matchedState,
+                $changedBy,
+                $matchedState['reason'],
+                $statements['update'],
+                $statements['audit']
+            );
+            $this->deleteAutoApprovalStates([(int)$sourceTransaction['id'], (int)$matchedTransaction['id']]);
+
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+
+            throw $exception;
+        }
+
+        return [
+            'success' => true,
+            'changed' => $changed,
+            'source_transaction' => $this->fetchTransaction((int)$sourceTransaction['id']),
+            'matched_transaction' => $this->fetchTransaction((int)$matchedTransaction['id']),
+            'errors' => [],
+        ];
+    }
+
+    private function deleteAutoApprovalStates(array $transactionIds): void
+    {
+        $transactionIds = array_values(array_unique(array_filter(
+            array_map(static fn(mixed $id): int => (int)$id, $transactionIds),
+            static fn(int $id): bool => $id > 0
+        )));
+
+        if ($transactionIds === [] || !\InterfaceDB::tableExists('transaction_auto_approvals')) {
+            return;
+        }
+
+        $placeholders = [];
+        $params = [];
+        foreach ($transactionIds as $index => $transactionId) {
+            $key = 'transaction_id_' . $index;
+            $placeholders[] = ':' . $key;
+            $params[$key] = $transactionId;
+        }
+
+        \InterfaceDB::prepareExecute(
+            'DELETE FROM transaction_auto_approvals
+             WHERE transaction_id IN (' . implode(', ', $placeholders) . ')',
+            $params
+        );
+    }
+
     private function manualAuditReason(array $transaction, ?int $nominalAccountId, bool $isAutoExcluded): string {
         $oldNominalAccountId = $transaction['nominal_account_id'] !== null ? (int)$transaction['nominal_account_id'] : null;
         $oldStatus = trim((string)($transaction['category_status'] ?? 'uncategorised'));
@@ -676,6 +887,10 @@ final class TransactionCategorisationService
     }
 
     private function isEligibleForAuto(array $transaction, bool $reapplyExistingAuto): bool {
+        if ((new \eel_accounts\Service\TransactionInterAccountMarkerService())->fetchMarkerForTransaction((int)($transaction['id'] ?? 0)) !== null) {
+            return false;
+        }
+
         if ($this->isTransferTransaction($transaction)) {
             return false;
         }

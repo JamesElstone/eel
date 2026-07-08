@@ -259,6 +259,16 @@ final class TransactionAutoApprovalService
             $placeholders[] = ':' . $key;
             $params[$key] = $transactionId;
         }
+        $markerExclusionSql = '';
+        if (\InterfaceDB::tableExists('transaction_inter_ac_marker')) {
+            $markerExclusionSql = '
+               AND NOT EXISTS (
+                    SELECT 1
+                    FROM transaction_inter_ac_marker tiam
+                    WHERE tiam.transaction_id = transactions.id
+                       OR tiam.matched_transaction_id = transactions.id
+               )';
+        }
 
         $rows = \InterfaceDB::fetchAll(
             'SELECT id, company_id, accounting_period_id, category_status, auto_rule_id, updated_at
@@ -268,7 +278,7 @@ final class TransactionAutoApprovalService
                AND accounting_period_id = :accounting_period_id
                AND category_status = :category_status
                AND auto_rule_id IS NOT NULL
-               AND auto_rule_id > 0',
+               AND auto_rule_id > 0' . $markerExclusionSql,
             $params
         );
 
@@ -298,6 +308,14 @@ final class TransactionAutoApprovalService
             'taa.state = :checked_state',
             'taa.state_change_transaction_updated_at = t.updated_at',
         ];
+        if (\InterfaceDB::tableExists('transaction_inter_ac_marker')) {
+            $where[] = 'NOT EXISTS (
+                SELECT 1
+                FROM transaction_inter_ac_marker tiam
+                WHERE tiam.transaction_id = t.id
+                   OR tiam.matched_transaction_id = t.id
+            )';
+        }
         $params = [
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,

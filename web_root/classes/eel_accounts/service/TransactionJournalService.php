@@ -211,6 +211,50 @@ final class TransactionJournalService
         ]) > 0;
     }
 
+    public function removeJournalForTransaction(int $transactionId): array
+    {
+        if ($transactionId <= 0) {
+            return [
+                'success' => false,
+                'removed' => false,
+                'errors' => ['A valid transaction is required before a journal can be removed.'],
+            ];
+        }
+
+        $transaction = $this->fetchTransactionForPosting($transactionId);
+        if ($transaction === null) {
+            return [
+                'success' => false,
+                'removed' => false,
+                'errors' => ['The selected transaction could not be found.'],
+            ];
+        }
+
+        (new \eel_accounts\Service\YearEndLockService())->assertUnlocked(
+            (int)($transaction['company_id'] ?? 0),
+            (int)($transaction['accounting_period_id'] ?? 0),
+            'remove journals in this period'
+        );
+
+        $sourceRef = $this->sourceRefForTransaction((int)$transaction['id']);
+        $existingJournal = $this->fetchJournalBySourceRef((int)$transaction['company_id'], $sourceRef);
+        if ($existingJournal === null) {
+            return [
+                'success' => true,
+                'removed' => false,
+                'errors' => [],
+            ];
+        }
+
+        $this->deleteJournal((int)$existingJournal['id']);
+
+        return [
+            'success' => true,
+            'removed' => true,
+            'errors' => [],
+        ];
+    }
+
     public function fetchJournals(int $companyId, int $accountingPeriodId, int $limit = 200, array $filters = []): array {
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return [];

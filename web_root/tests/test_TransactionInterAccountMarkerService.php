@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'PageServiceTestFactory.php';
 
 (new GeneratedServiceClassTestHarness())->run(\eel_accounts\Service\TransactionInterAccountMarkerService::class, static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\TransactionInterAccountMarkerService $service): void {
     $harness->check(\eel_accounts\Service\TransactionInterAccountMarkerService::class, 'creates 5802 to 4516 marker and filters candidates', static function () use ($harness, $service): void {
@@ -51,6 +52,113 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $clearResult = $service->clearMarkerForTransaction((int)$fixture['matched_transaction_id']);
             $harness->assertSame(true, (bool)($clearResult['removed'] ?? false));
             $harness->assertSame(false, $service->isMatchedNoPostTransaction((int)$fixture['matched_transaction_id']));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
+    $harness->check(TransactionAction::class, 'save and cancel inter-account match clean backend state', static function () use ($harness): void {
+        foreach (['companies', 'accounting_periods', 'nominal_accounts', 'company_accounts', 'statement_uploads', 'transactions', 'transaction_inter_ac_marker', 'transaction_auto_approvals', 'transaction_category_audit', 'journals'] as $table) {
+            if (!InterfaceDB::tableExists($table)) {
+                $harness->skip($table . ' table is not available.');
+            }
+        }
+
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = transactionInterAccountMarkerCreateFixture();
+            transactionInterAccountMarkerPrepareStaleAutoState($fixture);
+            transactionInterAccountMarkerInsertJournal(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                (int)$fixture['matched_transaction_id'],
+                'stale matched evidence journal'
+            );
+
+            $action = new TransactionAction();
+            $saveResult = $action->handle(
+                new RequestFramework(
+                    [],
+                    [
+                        'card_action' => 'Transaction',
+                        'global_action' => 'save_inter_ac_transaction',
+                        'company_id' => (string)$fixture['company_id'],
+                        'accounting_period_id' => (string)$fixture['accounting_period_id'],
+                        'transaction_id' => (string)$fixture['source_transaction_id'],
+                        'matched_transaction_id' => (string)$fixture['matched_transaction_id'],
+                    ],
+                    ['REQUEST_METHOD' => 'POST'],
+                    [],
+                    [],
+                    null
+                ),
+                createTestPageServiceFramework()
+            );
+
+            $harness->assertSame(true, $saveResult->isSuccess());
+            $saveMessages = transactionInterAccountMarkerFlashMessages($saveResult);
+            $harness->assertTrue(in_array('Inter-account transaction match saved.', $saveMessages, true));
+            $harness->assertFalse(in_array('The matched transaction journal was removed because it is evidence only.', $saveMessages, true));
+
+            $source = InterfaceDB::fetchOne('SELECT nominal_account_id, transfer_account_id, is_internal_transfer, category_status, auto_rule_id, is_auto_excluded FROM transactions WHERE id = :id', ['id' => (int)$fixture['source_transaction_id']]);
+            $matched = InterfaceDB::fetchOne('SELECT nominal_account_id, transfer_account_id, is_internal_transfer, category_status, auto_rule_id, is_auto_excluded FROM transactions WHERE id = :id', ['id' => (int)$fixture['matched_transaction_id']]);
+
+            $harness->assertSame(null, $source['nominal_account_id'] ?? null);
+            $harness->assertSame((int)$fixture['trade_account_id'], (int)($source['transfer_account_id'] ?? 0));
+            $harness->assertSame(1, (int)($source['is_internal_transfer'] ?? 0));
+            $harness->assertSame('manual', (string)($source['category_status'] ?? ''));
+            $harness->assertSame(null, $source['auto_rule_id'] ?? null);
+            $harness->assertSame(0, (int)($source['is_auto_excluded'] ?? 1));
+
+            $harness->assertSame(null, $matched['nominal_account_id'] ?? null);
+            $harness->assertSame(null, $matched['transfer_account_id'] ?? null);
+            $harness->assertSame(0, (int)($matched['is_internal_transfer'] ?? 1));
+            $harness->assertSame('uncategorised', (string)($matched['category_status'] ?? ''));
+            $harness->assertSame(null, $matched['auto_rule_id'] ?? null);
+            $harness->assertSame(0, (int)($matched['is_auto_excluded'] ?? 1));
+
+            $harness->assertSame(0, InterfaceDB::countWhere('transaction_auto_approvals', ['transaction_id' => (int)$fixture['source_transaction_id']]));
+            $harness->assertSame(0, InterfaceDB::countWhere('transaction_auto_approvals', ['transaction_id' => (int)$fixture['matched_transaction_id']]));
+            $harness->assertSame(1, InterfaceDB::countWhere('journals', ['source_type' => 'bank_csv', 'source_ref' => 'transaction:' . (int)$fixture['source_transaction_id']]));
+            $harness->assertSame(0, InterfaceDB::countWhere('journals', ['source_type' => 'bank_csv', 'source_ref' => 'transaction:' . (int)$fixture['matched_transaction_id']]));
+            $harness->assertSame(2, InterfaceDB::countWhere('transaction_category_audit', ['changed_by' => 'inter_ac_marker']));
+
+            $cancelResult = $action->handle(
+                new RequestFramework(
+                    [],
+                    [
+                        'card_action' => 'Transaction',
+                        'global_action' => 'cancel_inter_ac_transaction',
+                        'company_id' => (string)$fixture['company_id'],
+                        'accounting_period_id' => (string)$fixture['accounting_period_id'],
+                        'transaction_id' => (string)$fixture['source_transaction_id'],
+                    ],
+                    ['REQUEST_METHOD' => 'POST'],
+                    [],
+                    [],
+                    null
+                ),
+                createTestPageServiceFramework()
+            );
+
+            $harness->assertSame(true, $cancelResult->isSuccess());
+            $harness->assertSame(0, InterfaceDB::countWhere('transaction_inter_ac_marker', ['transaction_id' => (int)$fixture['source_transaction_id']]));
+            $harness->assertSame(0, InterfaceDB::countWhere('journals', ['source_type' => 'bank_csv', 'source_ref' => 'transaction:' . (int)$fixture['source_transaction_id']]));
+            $harness->assertSame(0, InterfaceDB::countWhere('journals', ['source_type' => 'bank_csv', 'source_ref' => 'transaction:' . (int)$fixture['matched_transaction_id']]));
+
+            $sourceAfterCancel = InterfaceDB::fetchOne('SELECT nominal_account_id, transfer_account_id, is_internal_transfer, category_status, auto_rule_id, is_auto_excluded FROM transactions WHERE id = :id', ['id' => (int)$fixture['source_transaction_id']]);
+            $matchedAfterCancel = InterfaceDB::fetchOne('SELECT nominal_account_id, transfer_account_id, is_internal_transfer, category_status, auto_rule_id, is_auto_excluded FROM transactions WHERE id = :id', ['id' => (int)$fixture['matched_transaction_id']]);
+            foreach ([$sourceAfterCancel, $matchedAfterCancel] as $row) {
+                $harness->assertSame(null, $row['nominal_account_id'] ?? null);
+                $harness->assertSame(null, $row['transfer_account_id'] ?? null);
+                $harness->assertSame(0, (int)($row['is_internal_transfer'] ?? 1));
+                $harness->assertSame('uncategorised', (string)($row['category_status'] ?? ''));
+                $harness->assertSame(null, $row['auto_rule_id'] ?? null);
+                $harness->assertSame(0, (int)($row['is_auto_excluded'] ?? 1));
+            }
+            $harness->assertSame(2, InterfaceDB::countWhere('transaction_category_audit', ['changed_by' => 'inter_ac_cancel']));
         } finally {
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();
@@ -147,7 +255,85 @@ function transactionInterAccountMarkerCreateFixture(): array
         'same_account_transaction_id' => $sameAccountTransactionId,
         'wrong_amount_transaction_id' => $wrongAmountTransactionId,
         'too_late_transaction_id' => $tooLateTransactionId,
+        'company_id' => $companyId,
+        'accounting_period_id' => $accountingPeriodId,
+        'bank_nominal_id' => $bankNominalId,
+        'trade_nominal_id' => $tradeNominalId,
+        'bank_account_id' => $bankAccountId,
+        'trade_account_id' => $tradeAccountId,
     ];
+}
+
+function transactionInterAccountMarkerPrepareStaleAutoState(array $fixture): void
+{
+    foreach ([(int)$fixture['source_transaction_id'], (int)$fixture['matched_transaction_id']] as $transactionId) {
+        InterfaceDB::prepareExecute(
+            'UPDATE transactions
+             SET nominal_account_id = :nominal_account_id,
+                 category_status = :category_status,
+                 auto_rule_id = :auto_rule_id,
+                 is_auto_excluded = 1
+             WHERE id = :id',
+            [
+                'id' => $transactionId,
+                'nominal_account_id' => (int)$fixture['bank_nominal_id'],
+                'category_status' => 'auto',
+                'auto_rule_id' => 9001,
+            ]
+        );
+        (new \eel_accounts\Service\TransactionAutoApprovalService())->setTransactionApprovalState(
+            (int)$fixture['company_id'],
+            (int)$fixture['accounting_period_id'],
+            $transactionId,
+            true,
+            null
+        );
+    }
+}
+
+function transactionInterAccountMarkerInsertJournal(int $companyId, int $accountingPeriodId, int $transactionId, string $description): void
+{
+    InterfaceDB::prepareExecute(
+        'INSERT INTO journals (
+            company_id,
+            accounting_period_id,
+            source_type,
+            source_ref,
+            journal_date,
+            description,
+            is_posted
+         ) VALUES (
+            :company_id,
+            :accounting_period_id,
+            :source_type,
+            :source_ref,
+            :journal_date,
+            :description,
+            1
+         )',
+        [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'source_type' => 'bank_csv',
+            'source_ref' => 'transaction:' . $transactionId,
+            'journal_date' => '2026-03-16',
+            'description' => $description,
+        ]
+    );
+}
+
+function transactionInterAccountMarkerFlashMessages(ActionResultFramework $result): array
+{
+    $messages = [];
+    foreach ($result->flashMessages() as $flashMessage) {
+        if (is_array($flashMessage)) {
+            $messages[] = (string)($flashMessage['message'] ?? '');
+            continue;
+        }
+        $messages[] = (string)$flashMessage;
+    }
+
+    return $messages;
 }
 
 function transactionInterAccountMarkerInsertNominal(int $id, string $code, string $name, string $accountType, string $taxTreatment): void

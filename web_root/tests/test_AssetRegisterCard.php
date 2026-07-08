@@ -80,13 +80,13 @@ $harness->run(_asset_registerCard::class, static function (GeneratedServiceClass
         $harness->assertTrue(str_contains($html, 'class="asset-disposal-controls"'));
         $harness->assertTrue(str_contains($html, 'class="table-scroll asset-register-table"'));
         $harness->assertTrue(str_contains($html, 'AIA eligibility check'));
-        $purchaseDateHeaderPosition = strpos($html, '<th>Purchase Date</th>');
-        $ageHeaderPosition = strpos($html, '<th>Age (days)</th>');
-        $usefulLifeHeaderPosition = strpos($html, '<th>Useful Life</th>');
+        $purchaseDateHeaderPosition = strpos($html, '<th>Purchase<br>Date</th>');
+        $ageHeaderPosition = strpos($html, '<th>Age<br>(days)</th>');
+        $usefulLifeHeaderPosition = strpos($html, '<th>Useful<br>Life (years)</th>');
         $codeHeaderPosition = strpos($html, '<th>Code</th>');
         $descriptionHeaderPosition = strpos($html, '<th>Description</th>');
         $costHeaderPosition = strpos($html, '<th>Cost</th>');
-        $periodDepreciationHeaderPosition = strpos($html, '<th>Depreciation in Period</th>');
+        $periodDepreciationHeaderPosition = strpos($html, '<th>Depreciation<br>in Period</th>');
         $resaleValueHeaderPosition = strpos($html, '<th>Resale Value</th>');
         $residualValueHeaderPosition = strpos($html, '<th>EOL Value</th>');
         $statusHeaderPosition = strpos($html, '<th>Status</th>');

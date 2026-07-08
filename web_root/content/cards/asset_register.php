@@ -162,14 +162,14 @@ final class _asset_registerCard extends CardBaseFramework
             ->empty('No assets have been recorded yet.')
             ->column(
                 'purchase_date',
-                'Purchase Date',
+                'Purchase<br>Date',
                 html: fn(array $row): string => HelperFramework::escape($this->displayDate((string)($row['purchase_date'] ?? ''))),
                 export: static fn(array $row): string => trim((string)($row['purchase_date'] ?? '')),
                 exportType: 'date'
             )
             ->column(
                 'age_days',
-                'Age (days)',
+                'Age<br>(days)',
                 html: fn(array $row): string => HelperFramework::escape($this->ageDays($row, $ageReferenceDate)),
                 export: fn(array $row): string => $this->ageDays($row, $ageReferenceDate),
                 cellClass: 'numeric',
@@ -177,7 +177,7 @@ final class _asset_registerCard extends CardBaseFramework
             )
             ->column(
                 'useful_life_years',
-                'Useful Life',
+                'Useful<br>Life (years)',
                 html: static fn(array $row): string => HelperFramework::escape((string)max(1, (int)($row['useful_life_years'] ?? 1))),
                 export: static fn(array $row): string => (string)max(1, (int)($row['useful_life_years'] ?? 1)),
                 cellClass: 'numeric',
@@ -200,7 +200,7 @@ final class _asset_registerCard extends CardBaseFramework
             )
             ->column(
                 'period_depreciation',
-                'Depreciation in Period',
+                'Depreciation<br>in Period',
                 html: fn(array $row): string => HelperFramework::escape($this->money($settings, (float)($row['period_depreciation'] ?? 0))),
                 export: static fn(array $row): string => number_format((float)($row['period_depreciation'] ?? 0), 2, '.', ''),
                 cellClass: 'numeric',

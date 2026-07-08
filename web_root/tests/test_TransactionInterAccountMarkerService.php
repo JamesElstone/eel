@@ -12,7 +12,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 (new GeneratedServiceClassTestHarness())->run(\eel_accounts\Service\TransactionInterAccountMarkerService::class, static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\TransactionInterAccountMarkerService $service): void {
     $harness->check(\eel_accounts\Service\TransactionInterAccountMarkerService::class, 'creates 5802 to 4516 marker and filters candidates', static function () use ($harness, $service): void {
-        foreach (['companies', 'accounting_periods', 'nominal_accounts', 'company_accounts', 'statement_uploads', 'transactions', 'transaction_inter_ac_marker'] as $table) {
+        foreach (['companies', 'accounting_periods', 'nominal_accounts', 'company_accounts', 'statement_uploads', 'transactions', 'transaction_inter_ac_marker', 'transaction_category_audit', 'journals', 'journal_lines'] as $table) {
             if (!InterfaceDB::tableExists($table)) {
                 $harness->skip($table . ' table is not available.');
             }
@@ -46,12 +46,44 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(false, $service->isMatchedNoPostTransaction((int)$fixture['source_transaction_id']));
             $harness->assertSame(true, $service->isMatchedNoPostTransaction((int)$fixture['matched_transaction_id']));
 
+            $source = InterfaceDB::fetchOne('SELECT nominal_account_id, transfer_account_id, is_internal_transfer, category_status, auto_rule_id, is_auto_excluded FROM transactions WHERE id = :id', ['id' => (int)$fixture['source_transaction_id']]);
+            $matched = InterfaceDB::fetchOne('SELECT nominal_account_id, transfer_account_id, is_internal_transfer, category_status, auto_rule_id, is_auto_excluded FROM transactions WHERE id = :id', ['id' => (int)$fixture['matched_transaction_id']]);
+
+            $harness->assertSame(null, $source['nominal_account_id'] ?? null);
+            $harness->assertSame((int)$fixture['trade_account_id'], (int)($source['transfer_account_id'] ?? 0));
+            $harness->assertSame(1, (int)($source['is_internal_transfer'] ?? 0));
+            $harness->assertSame('manual', (string)($source['category_status'] ?? ''));
+            $harness->assertSame(null, $source['auto_rule_id'] ?? null);
+            $harness->assertSame(0, (int)($source['is_auto_excluded'] ?? 1));
+
+            $harness->assertSame(null, $matched['nominal_account_id'] ?? null);
+            $harness->assertSame((int)$fixture['bank_account_id'], (int)($matched['transfer_account_id'] ?? 0));
+            $harness->assertSame(1, (int)($matched['is_internal_transfer'] ?? 0));
+            $harness->assertSame('manual', (string)($matched['category_status'] ?? ''));
+            $harness->assertSame(null, $matched['auto_rule_id'] ?? null);
+            $harness->assertSame(0, (int)($matched['is_auto_excluded'] ?? 1));
+
+            $harness->assertSame(1, InterfaceDB::countWhere('journals', ['source_type' => 'bank_csv', 'source_ref' => 'transaction:' . (int)$fixture['source_transaction_id']]));
+            $harness->assertSame(0, InterfaceDB::countWhere('journals', ['source_type' => 'bank_csv', 'source_ref' => 'transaction:' . (int)$fixture['matched_transaction_id']]));
+
             $secondResult = $service->saveMarker((int)$fixture['same_account_transaction_id'], (int)$fixture['source_transaction_id'], 'test');
             $harness->assertSame(false, (bool)($secondResult['success'] ?? true));
 
             $clearResult = $service->clearMarkerForTransaction((int)$fixture['matched_transaction_id']);
             $harness->assertSame(true, (bool)($clearResult['removed'] ?? false));
             $harness->assertSame(false, $service->isMatchedNoPostTransaction((int)$fixture['matched_transaction_id']));
+            $harness->assertSame(0, InterfaceDB::countWhere('journals', ['source_type' => 'bank_csv', 'source_ref' => 'transaction:' . (int)$fixture['source_transaction_id']]));
+
+            $sourceAfterClear = InterfaceDB::fetchOne('SELECT nominal_account_id, transfer_account_id, is_internal_transfer, category_status, auto_rule_id, is_auto_excluded FROM transactions WHERE id = :id', ['id' => (int)$fixture['source_transaction_id']]);
+            $matchedAfterClear = InterfaceDB::fetchOne('SELECT nominal_account_id, transfer_account_id, is_internal_transfer, category_status, auto_rule_id, is_auto_excluded FROM transactions WHERE id = :id', ['id' => (int)$fixture['matched_transaction_id']]);
+            foreach ([$sourceAfterClear, $matchedAfterClear] as $row) {
+                $harness->assertSame(null, $row['nominal_account_id'] ?? null);
+                $harness->assertSame(null, $row['transfer_account_id'] ?? null);
+                $harness->assertSame(0, (int)($row['is_internal_transfer'] ?? 1));
+                $harness->assertSame('uncategorised', (string)($row['category_status'] ?? ''));
+                $harness->assertSame(null, $row['auto_rule_id'] ?? null);
+                $harness->assertSame(0, (int)($row['is_auto_excluded'] ?? 1));
+            }
         } finally {
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();
@@ -60,7 +92,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
     });
 
     $harness->check(TransactionAction::class, 'save and cancel inter-account match clean backend state', static function () use ($harness): void {
-        foreach (['companies', 'accounting_periods', 'nominal_accounts', 'company_accounts', 'statement_uploads', 'transactions', 'transaction_inter_ac_marker', 'transaction_auto_approvals', 'transaction_category_audit', 'journals'] as $table) {
+        foreach (['companies', 'accounting_periods', 'nominal_accounts', 'company_accounts', 'statement_uploads', 'transactions', 'transaction_inter_ac_marker', 'transaction_auto_approvals', 'transaction_category_audit', 'journals', 'journal_lines'] as $table) {
             if (!InterfaceDB::tableExists($table)) {
                 $harness->skip($table . ' table is not available.');
             }
@@ -113,9 +145,9 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(0, (int)($source['is_auto_excluded'] ?? 1));
 
             $harness->assertSame(null, $matched['nominal_account_id'] ?? null);
-            $harness->assertSame(null, $matched['transfer_account_id'] ?? null);
-            $harness->assertSame(0, (int)($matched['is_internal_transfer'] ?? 1));
-            $harness->assertSame('uncategorised', (string)($matched['category_status'] ?? ''));
+            $harness->assertSame((int)$fixture['bank_account_id'], (int)($matched['transfer_account_id'] ?? 0));
+            $harness->assertSame(1, (int)($matched['is_internal_transfer'] ?? 0));
+            $harness->assertSame('manual', (string)($matched['category_status'] ?? ''));
             $harness->assertSame(null, $matched['auto_rule_id'] ?? null);
             $harness->assertSame(0, (int)($matched['is_auto_excluded'] ?? 1));
 

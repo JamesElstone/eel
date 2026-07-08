@@ -389,7 +389,6 @@ final class TransactionAction implements ActionInterfaceFramework
     private function saveInterAccountTransaction(RequestFramework $request, PageServiceFramework $services): ActionResultFramework
     {
         $context = $this->filterContext($request);
-        $companyId = $this->selectedCompanyId($request);
         $transactionId = $this->positiveInt($request->post('transaction_id', 0));
         $matchedTransactionId = $this->positiveInt($request->post('matched_transaction_id', 0));
         $errors = [];
@@ -402,63 +401,19 @@ final class TransactionAction implements ActionInterfaceFramework
 
         if ($errors === []) {
             try {
-                InterfaceDB::beginTransaction();
-
-                $markerService = self::service($services, \eel_accounts\Service\TransactionInterAccountMarkerService::class);
-                $saveResult = $markerService->saveMarker(
+                $saveResult = self::service($services, \eel_accounts\Service\TransactionInterAccountMarkerService::class)->saveMarker(
                     $transactionId,
                     $matchedTransactionId,
-                    'user:' . $this->currentUserId()
+                    'user:' . $this->currentUserId(),
+                    'inter_ac_marker'
                 );
                 $errors = array_merge($errors, array_map('strval', (array)($saveResult['errors'] ?? [])));
 
                 if ($errors === []) {
-                    $stateResult = self::service($services, \eel_accounts\Service\TransactionCategorisationService::class)->applyInterAccountMatchState(
-                        $transactionId,
-                        $matchedTransactionId,
-                        'inter_ac_marker'
-                    );
-                    if (!empty($stateResult['errors'])) {
-                        $errors = array_merge($errors, array_map('strval', (array)$stateResult['errors']));
-                    }
-                }
-
-                if ($errors === []) {
-                    $journalService = self::service($services, \eel_accounts\Service\TransactionJournalService::class);
-                    $sourceJournalResult = $journalService->syncJournalForTransaction(
-                        $transactionId,
-                        $this->defaultBankNominalId($companyId),
-                        'inter_ac_marker',
-                        true
-                    );
-                    if (!empty($sourceJournalResult['errors'])) {
-                        $errors = array_merge($errors, array_map('strval', (array)$sourceJournalResult['errors']));
-                    }
-                }
-
-                if ($errors === []) {
-                    $matchedJournalResult = self::service($services, \eel_accounts\Service\TransactionJournalService::class)->syncJournalForTransaction(
-                        $matchedTransactionId,
-                        $this->defaultBankNominalId($companyId),
-                        'inter_ac_marker',
-                        true
-                    );
-                    if (!empty($matchedJournalResult['errors'])) {
-                        $errors = array_merge($errors, array_map('strval', (array)$matchedJournalResult['errors']));
-                    }
-                }
-
-                if ($errors !== []) {
-                    InterfaceDB::rollBack();
-                } else {
-                    InterfaceDB::commit();
                     $context['inter_ac_transaction_id'] = 0;
                     $messages[] = 'Inter-account transaction match saved.';
                 }
             } catch (Throwable $exception) {
-                if (InterfaceDB::inTransaction()) {
-                    InterfaceDB::rollBack();
-                }
                 $errors[] = 'The inter-account transaction match could not be saved: ' . $exception->getMessage();
             }
         }
@@ -480,54 +435,21 @@ final class TransactionAction implements ActionInterfaceFramework
 
         if ($errors === []) {
             try {
-                InterfaceDB::beginTransaction();
+                $clearMarkerResult = self::service($services, \eel_accounts\Service\TransactionInterAccountMarkerService::class)->clearMarkerForTransaction(
+                    $transactionId,
+                    'inter_ac_cancel'
+                );
+                $errors = array_merge($errors, array_map('strval', (array)($clearMarkerResult['errors'] ?? [])));
 
-                $markerService = self::service($services, \eel_accounts\Service\TransactionInterAccountMarkerService::class);
-                $marker = $markerService->fetchMarkerForTransaction($transactionId);
-                if ($marker === null) {
+                if ($errors === [] && empty($clearMarkerResult['removed'])) {
                     $errors[] = 'No inter-account match needed cancelling.';
-                } else {
-                    $sourceTransactionId = (int)$marker['transaction_id'];
-                    $matchedTransactionId = (int)$marker['matched_transaction_id'];
-                    $journalService = self::service($services, \eel_accounts\Service\TransactionJournalService::class);
-
-                    foreach ([$sourceTransactionId, $matchedTransactionId] as $journalTransactionId) {
-                        $journalResult = $journalService->removeJournalForTransaction((int)$journalTransactionId);
-                        if (!empty($journalResult['errors'])) {
-                            $errors = array_merge($errors, array_map('strval', (array)$journalResult['errors']));
-                        }
-                    }
-
-                    if ($errors === []) {
-                        $clearMarkerResult = $markerService->clearMarkerForTransaction($transactionId);
-                        if (!empty($clearMarkerResult['errors'])) {
-                            $errors = array_merge($errors, array_map('strval', (array)$clearMarkerResult['errors']));
-                        }
-                    }
-
-                    if ($errors === []) {
-                        $stateResult = self::service($services, \eel_accounts\Service\TransactionCategorisationService::class)->clearInterAccountMatchState(
-                            $sourceTransactionId,
-                            $matchedTransactionId,
-                            'inter_ac_cancel'
-                        );
-                        if (!empty($stateResult['errors'])) {
-                            $errors = array_merge($errors, array_map('strval', (array)$stateResult['errors']));
-                        }
-                    }
                 }
 
-                if ($errors !== []) {
-                    InterfaceDB::rollBack();
-                } else {
-                    InterfaceDB::commit();
+                if ($errors === []) {
                     $context['inter_ac_transaction_id'] = 0;
                     $messages[] = 'Inter-account transaction match cancelled.';
                 }
             } catch (Throwable $exception) {
-                if (InterfaceDB::inTransaction()) {
-                    InterfaceDB::rollBack();
-                }
                 $errors[] = 'The inter-account transaction match could not be cancelled: ' . $exception->getMessage();
             }
         }

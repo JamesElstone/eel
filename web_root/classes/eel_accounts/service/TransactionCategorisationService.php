@@ -617,13 +617,13 @@ final class TransactionCategorisationService
     {
         return [
             'nominal_account_id' => null,
-            'transfer_account_id' => null,
-            'is_internal_transfer' => 0,
-            'category_status' => 'uncategorised',
+            'transfer_account_id' => (int)$sourceTransaction['account_id'],
+            'is_internal_transfer' => 1,
+            'category_status' => 'manual',
             'auto_rule_id' => null,
             'is_auto_excluded' => 0,
-            'reason' => 'inter-account evidence only linked to transaction #' . (int)$sourceTransaction['id'],
-            'reason_code' => 'inter_account_evidence',
+            'reason' => 'inter-account destination linked to transaction #' . (int)$sourceTransaction['id'],
+            'reason_code' => 'inter_account_destination',
         ];
     }
 

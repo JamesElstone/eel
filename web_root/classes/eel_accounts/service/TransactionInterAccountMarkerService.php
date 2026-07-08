@@ -129,7 +129,12 @@ final class TransactionInterAccountMarkerService
         return is_array($rows) ? $rows : [];
     }
 
-    public function saveMarker(int $transactionId, int $matchedTransactionId, string $createdBy = 'web_app'): array
+    public function saveMarker(
+        int $transactionId,
+        int $matchedTransactionId,
+        string $createdBy = 'web_app',
+        string $changedBy = 'inter_ac_marker'
+    ): array
     {
         if (!$this->hasSchema()) {
             return [
@@ -160,19 +165,74 @@ final class TransactionInterAccountMarkerService
             'mark an inter-account transaction'
         );
 
-        \InterfaceDB::prepareExecute(
-            'INSERT INTO transaction_inter_ac_marker
-                (company_id, accounting_period_id, transaction_id, matched_transaction_id, created_by)
-             VALUES
-                (:company_id, :accounting_period_id, :transaction_id, :matched_transaction_id, :created_by)',
-            [
-                'company_id' => (int)$transaction['company_id'],
-                'accounting_period_id' => (int)$transaction['accounting_period_id'],
-                'transaction_id' => $transactionId,
-                'matched_transaction_id' => $matchedTransactionId,
-                'created_by' => $createdBy !== '' ? substr($createdBy, 0, 100) : 'web_app',
-            ]
-        );
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
+        }
+
+        try {
+            \InterfaceDB::prepareExecute(
+                'INSERT INTO transaction_inter_ac_marker
+                    (company_id, accounting_period_id, transaction_id, matched_transaction_id, created_by)
+                 VALUES
+                    (:company_id, :accounting_period_id, :transaction_id, :matched_transaction_id, :created_by)',
+                [
+                    'company_id' => (int)$transaction['company_id'],
+                    'accounting_period_id' => (int)$transaction['accounting_period_id'],
+                    'transaction_id' => $transactionId,
+                    'matched_transaction_id' => $matchedTransactionId,
+                    'created_by' => $createdBy !== '' ? substr($createdBy, 0, 100) : 'web_app',
+                ]
+            );
+
+            $stateResult = (new \eel_accounts\Service\TransactionCategorisationService())->applyInterAccountMatchState(
+                $transactionId,
+                $matchedTransactionId,
+                $changedBy
+            );
+            if (!empty($stateResult['errors'])) {
+                if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                    \InterfaceDB::rollBack();
+                }
+
+                return [
+                    'success' => false,
+                    'errors' => array_map('strval', (array)$stateResult['errors']),
+                ];
+            }
+
+            $journalService = new \eel_accounts\Service\TransactionJournalService();
+            $defaultBankNominalId = $this->defaultBankNominalId((int)$transaction['company_id']);
+            foreach ([$transactionId, $matchedTransactionId] as $journalTransactionId) {
+                $journalResult = $journalService->syncJournalForTransaction(
+                    (int)$journalTransactionId,
+                    $defaultBankNominalId,
+                    $changedBy,
+                    true
+                );
+                if (!empty($journalResult['errors'])) {
+                    if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                        \InterfaceDB::rollBack();
+                    }
+
+                    return [
+                        'success' => false,
+                        'errors' => array_map('strval', (array)$journalResult['errors']),
+                    ];
+                }
+            }
+
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+
+            throw $exception;
+        }
 
         return [
             'success' => true,
@@ -181,7 +241,7 @@ final class TransactionInterAccountMarkerService
         ];
     }
 
-    public function clearMarkerForTransaction(int $transactionId): array
+    public function clearMarkerForTransaction(int $transactionId, string $changedBy = 'inter_ac_cancel'): array
     {
         if ($transactionId <= 0 || !$this->hasSchema()) {
             return [
@@ -206,10 +266,63 @@ final class TransactionInterAccountMarkerService
             'remove an inter-account transaction marker'
         );
 
-        \InterfaceDB::prepareExecute(
-            'DELETE FROM transaction_inter_ac_marker WHERE id = :id',
-            ['id' => (int)$marker['id']]
-        );
+        $sourceTransactionId = (int)$marker['transaction_id'];
+        $matchedTransactionId = (int)$marker['matched_transaction_id'];
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
+        }
+
+        try {
+            $journalService = new \eel_accounts\Service\TransactionJournalService();
+            foreach ([$sourceTransactionId, $matchedTransactionId] as $journalTransactionId) {
+                $journalResult = $journalService->removeJournalForTransaction((int)$journalTransactionId);
+                if (!empty($journalResult['errors'])) {
+                    if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                        \InterfaceDB::rollBack();
+                    }
+
+                    return [
+                        'success' => false,
+                        'removed' => false,
+                        'errors' => array_map('strval', (array)$journalResult['errors']),
+                    ];
+                }
+            }
+
+            \InterfaceDB::prepareExecute(
+                'DELETE FROM transaction_inter_ac_marker WHERE id = :id',
+                ['id' => (int)$marker['id']]
+            );
+
+            $stateResult = (new \eel_accounts\Service\TransactionCategorisationService())->clearInterAccountMatchState(
+                $sourceTransactionId,
+                $matchedTransactionId,
+                $changedBy
+            );
+            if (!empty($stateResult['errors'])) {
+                if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                    \InterfaceDB::rollBack();
+                }
+
+                return [
+                    'success' => false,
+                    'removed' => false,
+                    'errors' => array_map('strval', (array)$stateResult['errors']),
+                ];
+            }
+
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+
+            throw $exception;
+        }
 
         return [
             'success' => true,
@@ -294,6 +407,15 @@ final class TransactionInterAccountMarkerService
         $row = $stmt->fetch();
 
         return is_array($row) ? $row : null;
+    }
+
+    private function defaultBankNominalId(int $companyId): int
+    {
+        if ($companyId <= 0) {
+            return 0;
+        }
+
+        return (int)((new \eel_accounts\Store\CompanySettingsStore($companyId))->all()['default_bank_nominal_id'] ?? 0);
     }
 
     private function dateDistanceDays(string $left, string $right): ?int

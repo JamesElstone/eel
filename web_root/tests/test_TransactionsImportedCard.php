@@ -240,10 +240,23 @@ $harness->run(_transactions_importedCard::class, static function (GeneratedServi
     $harness->assertFalse(str_contains($savedHtml, 'name="global_action" value="defer_transaction"'));
     $harness->assertFalse(str_contains($savedHtml, 'transaction-asset-form-5802'));
 
+    $lockedSavedContext = $savedContext;
+    $lockedSavedContext['services']['year_end_review']['is_locked'] = true;
+    $lockedSavedHtml = $card->render($lockedSavedContext);
+    $harness->assertTrue(str_contains($lockedSavedHtml, 'Posting Source'));
+    $harness->assertTrue(str_contains($lockedSavedHtml, 'disabled title="Period locked"'));
+
     $matchedContext = $savedContext;
     $matchedContext['services']['transactions_by_month'][0]['inter_ac_marker_role'] = 'matched';
     $matchedHtml = $card->render($matchedContext);
     $harness->assertTrue(str_contains($matchedHtml, 'Inter A/C Dest'));
+    $harness->assertTrue(str_contains($matchedHtml, 'name="global_action" value="cancel_inter_ac_transaction"'));
+
+    $lockedMatchedContext = $matchedContext;
+    $lockedMatchedContext['services']['year_end_review']['is_locked'] = true;
+    $lockedMatchedHtml = $card->render($lockedMatchedContext);
+    $harness->assertTrue(str_contains($lockedMatchedHtml, 'Inter A/C Dest'));
+    $harness->assertTrue(str_contains($lockedMatchedHtml, 'disabled title="Period locked"'));
 
     $splitTransaction = [
         'id' => 92,

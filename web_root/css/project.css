@@ -751,10 +751,24 @@
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
+.tax-period-selector-summary-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.tax-period-selector-summary-grid .summary-card {
+  min-width: 0;
+}
+
 .tax-period-selector-summary-card {
+  grid-column: span 2;
   display: grid;
   gap: 8px;
   align-content: start;
+}
+
+.tax-period-selector-summary-card .select {
+  min-width: 0;
+  width: 100%;
 }
 
 .trial-balance-summary-layout {
@@ -2406,6 +2420,10 @@
   .month-grid,
   .path-meta {
   grid-template-columns: 1fr;
+  }
+
+  .tax-period-selector-summary-card {
+    grid-column: auto;
   }
 
   .pl-summary-topline {

@@ -861,6 +861,7 @@ final class _transactions_importedCard extends CardBaseFramework
     private function interAccountPeerLabel(array $transaction): string
     {
         return $this->interAccountCandidateLabel([
+            'id' => (int)($transaction['inter_ac_peer_transaction_id'] ?? 0),
             'account_name' => (string)($transaction['inter_ac_peer_account_name'] ?? ''),
             'txn_date' => (string)($transaction['inter_ac_peer_txn_date'] ?? ''),
             'description' => (string)($transaction['inter_ac_peer_description'] ?? ''),
@@ -877,7 +878,10 @@ final class _transactions_importedCard extends CardBaseFramework
             number_format((float)($transaction['amount'] ?? 0), 2, '.', ''),
         ];
 
-        return trim(implode(' ', array_filter($parts, static fn(string $part): bool => $part !== '')));
+        $label = trim(implode(' ', array_filter($parts, static fn(string $part): bool => $part !== '')));
+        $transactionId = (int)($transaction['id'] ?? 0);
+
+        return $transactionId > 0 ? $transactionId . ': ' . $label : $label;
     }
 
     private function splitLineCategorisationHtml(array $transaction, array $nominalAccounts, bool $isPeriodLocked): string

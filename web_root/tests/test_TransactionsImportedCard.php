@@ -219,6 +219,7 @@ $harness->run(_transactions_importedCard::class, static function (GeneratedServi
     $savedContext = $twoAccountContext;
     $savedContext['services']['transactions_by_month'][0]['inter_ac_marker_id'] = 77;
     $savedContext['services']['transactions_by_month'][0]['inter_ac_marker_role'] = 'source';
+    $savedContext['services']['transactions_by_month'][0]['inter_ac_peer_transaction_id'] = 5803;
     $savedContext['services']['transactions_by_month'][0]['inter_ac_peer_account_name'] = 'Example Trade Supplier';
     $savedContext['services']['transactions_by_month'][0]['inter_ac_peer_txn_date'] = '2026-01-09';
     $savedContext['services']['transactions_by_month'][0]['inter_ac_peer_description'] = 'Example Trade Supplier payment received';
@@ -229,7 +230,7 @@ $harness->run(_transactions_importedCard::class, static function (GeneratedServi
     $savedContext['services']['transactions_by_month'][0]['auto_approval_checked_current'] = 0;
     $savedContext['services']['transactions_by_month'][0]['auto_approval_confirmed_current'] = 0;
     $savedHtml = $card->render($savedContext);
-    $harness->assertTrue(str_contains($savedHtml, 'Example Trade Supplier 09/01/26 Example Trade Supplier payment received 241.46'));
+    $harness->assertTrue(str_contains($savedHtml, '5803: Example Trade Supplier 09/01/26 Example Trade Supplier payment received 241.46'));
     $harness->assertTrue(str_contains($savedHtml, 'Posting Source'));
     $harness->assertTrue(str_contains($savedHtml, 'Inter A/C Src'));
     $harness->assertTrue(str_contains($savedHtml, 'name="global_action" value="cancel_inter_ac_transaction"'));
@@ -257,6 +258,19 @@ $harness->run(_transactions_importedCard::class, static function (GeneratedServi
     $lockedMatchedHtml = $card->render($lockedMatchedContext);
     $harness->assertTrue(str_contains($lockedMatchedHtml, 'Inter A/C Dest'));
     $harness->assertTrue(str_contains($lockedMatchedHtml, 'disabled title="Period locked"'));
+
+    $candidateLabelMethod = new ReflectionMethod($card, 'interAccountCandidateLabel');
+    $candidateLabelMethod->setAccessible(true);
+    $harness->assertSame(
+        '5804: Example Bank - Current Account 10/01/26 matched transfer -241.46',
+        $candidateLabelMethod->invoke($card, [
+            'id' => 5804,
+            'account_name' => 'Example Bank - Current Account',
+            'txn_date' => '2026-01-10',
+            'description' => 'matched transfer',
+            'amount' => '-241.46',
+        ])
+    );
 
     $splitTransaction = [
         'id' => 92,

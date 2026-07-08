@@ -3562,6 +3562,10 @@ final class StatementUploadService
                                                 OR {$readySplitPredicate}
                                                 OR {$validTransferPredicate}
                                             )";
+        $autoRulePredicate = "(t.category_status = 'auto'
+                                                AND t.auto_rule_id IS NOT NULL
+                                                AND t.auto_rule_id > 0
+                                                AND NOT ({$interAccountNoPostPredicate}))";
 
         $summaryStmt = \InterfaceDB::prepare("SELECT DATE_FORMAT(t.txn_date, '%Y-%m-01') AS month_key,
                                              COUNT(*) AS txn_count,
@@ -3579,6 +3583,29 @@ final class StatementUploadService
                                              SUM(CASE WHEN t.is_auto_excluded = 1 THEN 1 ELSE 0 END) AS deferred_count,
                                              SUM(
                                                  CASE
+                                                     WHEN {$autoRulePredicate}
+                                                     THEN 1
+                                                     ELSE 0
+                                                 END
+                                             ) AS auto_rule_count,
+                                             SUM(
+                                                 CASE
+                                                     WHEN {$autoRulePredicate}
+                                                       AND " . \eel_accounts\Service\TransactionAutoApprovalService::currentCheckedSql('taa', 't') . "
+                                                     THEN 1
+                                                     ELSE 0
+                                                 END
+                                             ) AS auto_confirmed_count,
+                                             SUM(
+                                                 CASE
+                                                     WHEN {$autoRulePredicate}
+                                                       AND " . \eel_accounts\Service\TransactionAutoApprovalService::currentApprovalSql('taa', 't') . "
+                                                     THEN 1
+                                                     ELSE 0
+                                                 END
+                                             ) AS auto_confirmed_posted_count,
+                                             SUM(
+                                                 CASE
                                                      WHEN {$readyToPostPredicate}
                                                        AND NOT ({$interAccountNoPostPredicate})
                                                        AND NOT EXISTS (
@@ -3592,6 +3619,8 @@ final class StatementUploadService
                                                  END
                                              ) AS ready_to_post_count
                                       FROM transactions t
+                                      LEFT JOIN transaction_auto_approvals taa
+                                        ON taa.transaction_id = t.id
                                       {$splitStatusJoin}
                                       WHERE t.company_id = ?
                                         AND t.txn_date BETWEEN ? AND ?
@@ -3684,6 +3713,9 @@ final class StatementUploadService
             $uncatCount = (int)($summary['uncategorised_count'] ?? 0);
             $deferredCount = (int)($summary['deferred_count'] ?? 0);
             $readyToPostCount = (int)($summary['ready_to_post_count'] ?? 0);
+            $autoRuleCount = (int)($summary['auto_rule_count'] ?? 0);
+            $autoConfirmedCount = (int)($summary['auto_confirmed_count'] ?? 0);
+            $autoConfirmedPostedCount = (int)($summary['auto_confirmed_posted_count'] ?? 0);
             $importRowSummary = is_array($importRowSummaries[$monthKey] ?? null) ? $importRowSummaries[$monthKey] : [];
             $unstagedUploadSummary = is_array($unstagedUploadSummaries[$monthKey] ?? null) ? $unstagedUploadSummaries[$monthKey] : [];
             $stagedCount = (int)($importRowSummary['staged_count'] ?? 0);
@@ -3716,6 +3748,9 @@ final class StatementUploadService
                 'uncategorised' => $uncatCount,
                 'deferred' => $deferredCount,
                 'ready_to_post' => $readyToPostCount,
+                'auto_rows' => $autoRuleCount,
+                'auto_confirmed' => $autoConfirmedCount,
+                'auto_confirmed_posted' => $autoConfirmedPostedCount,
                 'staged' => $stagedCount,
                 'raw_rows' => $rawRowCount,
                 'empty_month_confirmed' => $isConfirmedEmpty,

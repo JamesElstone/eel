@@ -364,7 +364,7 @@ final class DashboardRepository
     {
         $filter = strtolower(trim((string)$filter));
 
-        return in_array($filter, ['all', 'not_posted', 'uncategorised', 'auto', 'manual'], true) ? $filter : 'all';
+        return in_array($filter, ['all', 'not_posted', 'uncategorised', 'manual', 'auto_assigned', 'auto_unreviewed', 'auto_unposted', 'auto_confirmed'], true) ? $filter : 'all';
     }
 
     public function normaliseTransactionAccountFilter(mixed $filter): int
@@ -476,6 +476,31 @@ final class DashboardRepository
                     SELECT 1
                     FROM transaction_inter_ac_marker filter_tiam
                     WHERE filter_tiam.matched_transaction_id = t.id
+                )';
+            }
+        } elseif (in_array($categoryFilter, ['auto_assigned', 'auto_unreviewed', 'auto_unposted', 'auto_confirmed'], true)) {
+            $where[] = 't.category_status = :category_status';
+            $where[] = 't.auto_rule_id IS NOT NULL';
+            $where[] = 't.auto_rule_id > 0';
+            $params['category_status'] = 'auto';
+            if ($categoryFilter === 'auto_unreviewed') {
+                $where[] = 'NOT (' . \eel_accounts\Service\TransactionAutoApprovalService::currentCheckedSql('taa', 't') . ')';
+            } elseif ($categoryFilter === 'auto_unposted') {
+                $where[] = "NOT EXISTS(
+                    SELECT 1
+                    FROM journals auto_filter_j
+                    WHERE auto_filter_j.source_type = 'bank_csv'
+                      AND auto_filter_j.source_ref = CONCAT('transaction:', t.id)
+                )";
+            } elseif ($categoryFilter === 'auto_confirmed') {
+                $where[] = \eel_accounts\Service\TransactionAutoApprovalService::currentApprovalSql('taa', 't');
+            }
+            if ($hasInterAccountMarkers) {
+                $where[] = 'NOT EXISTS (
+                    SELECT 1
+                    FROM transaction_inter_ac_marker filter_tiam
+                    WHERE filter_tiam.transaction_id = t.id
+                       OR filter_tiam.matched_transaction_id = t.id
                 )';
             }
         } elseif ($categoryFilter !== 'all') {

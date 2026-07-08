@@ -96,6 +96,7 @@ final class _transactions_monthly_statusCard extends CardBaseFramework
                     <span class="month-dot"></span>
                 </div>
                 <div class="helper"><strong>' . (int)($month['transactions'] ?? 0) . ' transactions</strong></div>
+                <div class="helper">' . (int)($month['auto_rows'] ?? 0) . ' auto rows, ' . (int)($month['auto_confirmed'] ?? 0) . ' confirmed, ' . (int)($month['auto_confirmed_posted'] ?? 0) . ' posted</div>
                 <div class="helper">' . (int)($month['uncategorised'] ?? 0) . ' uncategorised</div>
                 <div class="helper">' . (int)($month['deferred'] ?? 0) . ' deferred</div>
                 <div class="helper">' . (int)($month['ready_to_post'] ?? 0) . ' unposted</div>

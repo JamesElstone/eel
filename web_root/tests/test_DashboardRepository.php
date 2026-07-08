@@ -18,6 +18,11 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
         $harness->assertSame('', $repository->normaliseTransactionMonthFilter('2026-03-15'));
         $harness->assertSame('manual', $repository->normaliseTransactionCategoryFilter('manual'));
         $harness->assertSame('not_posted', $repository->normaliseTransactionCategoryFilter('not_posted'));
+        $harness->assertSame('auto_assigned', $repository->normaliseTransactionCategoryFilter('auto_assigned'));
+        $harness->assertSame('auto_unreviewed', $repository->normaliseTransactionCategoryFilter('auto_unreviewed'));
+        $harness->assertSame('auto_unposted', $repository->normaliseTransactionCategoryFilter('auto_unposted'));
+        $harness->assertSame('auto_confirmed', $repository->normaliseTransactionCategoryFilter('auto_confirmed'));
+        $harness->assertSame('all', $repository->normaliseTransactionCategoryFilter('auto'));
         $harness->assertSame('all', $repository->normaliseTransactionCategoryFilter('unexpected'));
         $harness->assertSame('pending', $repository->normaliseAutoApprovalFilter('pending'));
         $harness->assertSame('pending', $repository->normaliseAutoApprovalFilter('unconfirmed'));

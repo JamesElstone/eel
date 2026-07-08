@@ -44,6 +44,9 @@ $harness->run(_transactions_monthly_statusCard::class, static function (Generate
                         'uncategorised' => 2,
                         'deferred' => 1,
                         'ready_to_post' => 4,
+                        'auto_rows' => 7,
+                        'auto_confirmed' => 5,
+                        'auto_confirmed_posted' => 3,
                         'staged' => 0,
                         'raw_rows' => 5,
                     ],
@@ -72,6 +75,7 @@ $harness->run(_transactions_monthly_statusCard::class, static function (Generate
         $harness->assertTrue(str_contains($html, 'name="month_start" value="2026-03-01"'));
         $harness->assertTrue(str_contains($html, '<strong>0 transactions</strong>'));
         $harness->assertTrue(str_contains($html, '<strong>5 transactions</strong>'));
+        $harness->assertTrue(str_contains($html, '7 auto rows, 5 confirmed, 3 posted'));
         $harness->assertTrue(str_contains($html, '2 uncategorised'));
         $harness->assertTrue(str_contains($html, '1 deferred'));
         $harness->assertTrue(str_contains($html, '4 unposted'));

@@ -308,6 +308,124 @@ $harness->run(\eel_accounts\Service\TransactionAutoApprovalService::class, stati
         }
     });
 
+    $harness->check(\eel_accounts\Repository\DashboardRepository::class, 'transaction month filters split auto decision states', static function () use ($harness, $service): void {
+        transactionAutoApprovalRequireSchema($harness);
+
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = transactionAutoApprovalCreateFixture();
+            $confirmedTransactionId = (int)$fixture['transaction_id'];
+            $checkedTransactionId = transactionAutoApprovalInsertFixtureTransaction($fixture, 1, 'AUTO APPROVAL CHECKED MONTH FILTER');
+            $staleCheckedTransactionId = transactionAutoApprovalInsertFixtureTransaction($fixture, 2, 'AUTO APPROVAL STALE MONTH FILTER');
+
+            $setConfirmed = $service->setTransactionApprovalState(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                $confirmedTransactionId,
+                true,
+                null
+            );
+            $harness->assertSame(true, (bool)($setConfirmed['success'] ?? false));
+            $confirmed = $service->confirmPostableAutoTransactions(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                null,
+                null
+            );
+            $harness->assertSame(true, (bool)($confirmed['success'] ?? false));
+
+            $setChecked = $service->setTransactionApprovalState(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                $checkedTransactionId,
+                true,
+                null
+            );
+            $harness->assertSame(true, (bool)($setChecked['success'] ?? false));
+            $setStale = $service->setTransactionApprovalState(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                $staleCheckedTransactionId,
+                true,
+                null
+            );
+            $harness->assertSame(true, (bool)($setStale['success'] ?? false));
+            InterfaceDB::prepareExecute(
+                'UPDATE transactions
+                 SET notes = :notes,
+                     updated_at = ' . transactionAutoApprovalUpdatedAtPlusTwoSecondsSql() . '
+                 WHERE id = :id',
+                [
+                    'id' => $staleCheckedTransactionId,
+                    'notes' => 'Changed after checkbox decision',
+                ]
+            );
+            InterfaceDB::prepareExecute(
+                'INSERT INTO journals (company_id, accounting_period_id, source_type, source_ref, journal_date, description, is_posted)
+                 VALUES (:company_id, :accounting_period_id, :source_type, :source_ref, :journal_date, :description, 1)',
+                [
+                    'company_id' => (int)$fixture['company_id'],
+                    'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                    'source_type' => 'bank_csv',
+                    'source_ref' => 'transaction:' . $confirmedTransactionId,
+                    'journal_date' => '2026-03-15',
+                    'description' => 'Posted auto approval fixture',
+                ]
+            );
+
+            $repository = new \eel_accounts\Repository\DashboardRepository();
+            $assignedRows = $repository->fetchTransactionsForMonth(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                '2026-03-01',
+                'auto_assigned'
+            );
+            $unreviewedRows = $repository->fetchTransactionsForMonth(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                '2026-03-01',
+                'auto_unreviewed'
+            );
+            $unpostedRows = $repository->fetchTransactionsForMonth(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                '2026-03-01',
+                'auto_unposted'
+            );
+            $confirmedRows = $repository->fetchTransactionsForMonth(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                '2026-03-01',
+                'auto_confirmed'
+            );
+
+            $harness->assertSame([$staleCheckedTransactionId, $checkedTransactionId, $confirmedTransactionId], array_map(static fn(array $row): int => (int)($row['id'] ?? 0), $assignedRows));
+            $harness->assertSame([$staleCheckedTransactionId], array_map(static fn(array $row): int => (int)($row['id'] ?? 0), $unreviewedRows));
+            $harness->assertSame([$staleCheckedTransactionId, $checkedTransactionId], array_map(static fn(array $row): int => (int)($row['id'] ?? 0), $unpostedRows));
+            $harness->assertSame([$confirmedTransactionId], array_map(static fn(array $row): int => (int)($row['id'] ?? 0), $confirmedRows));
+
+            $monthStatus = (new \eel_accounts\Service\StatementUploadService(sys_get_temp_dir()))->buildMonthStatus(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id']
+            );
+            $march = null;
+            foreach ($monthStatus as $month) {
+                if ((string)($month['month_key'] ?? '') === '2026-03-01') {
+                    $march = $month;
+                    break;
+                }
+            }
+            $harness->assertTrue(is_array($march));
+            $harness->assertSame(3, (int)($march['auto_rows'] ?? -1));
+            $harness->assertSame(2, (int)($march['auto_confirmed'] ?? -1));
+            $harness->assertSame(1, (int)($march['auto_confirmed_posted'] ?? -1));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
     $harness->check(\eel_accounts\Service\TransactionAutoApprovalService::class, 'inter-account marked rows do not contribute to pending post confirmations', static function () use ($harness, $service): void {
         transactionAutoApprovalRequireSchema($harness);
         if (!InterfaceDB::tableExists('transaction_inter_ac_marker')) {
@@ -362,7 +480,7 @@ $harness->run(\eel_accounts\Service\TransactionAutoApprovalService::class, stati
 
 function transactionAutoApprovalRequireSchema(GeneratedServiceClassTestHarness $harness): void
 {
-    foreach (['companies', 'accounting_periods', 'statement_uploads', 'nominal_accounts', 'categorisation_rules', 'transactions', 'transaction_auto_approvals'] as $table) {
+    foreach (['companies', 'accounting_periods', 'statement_uploads', 'nominal_accounts', 'categorisation_rules', 'transactions', 'transaction_auto_approvals', 'journals'] as $table) {
         if (!InterfaceDB::tableExists($table)) {
             $harness->skip($table . ' table is not available.');
         }

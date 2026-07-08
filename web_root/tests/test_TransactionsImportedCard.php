@@ -51,6 +51,10 @@ $harness->run(_transactions_importedCard::class, static function (GeneratedServi
     $harness->assertTrue(str_contains($html, 'name="card_action" value="Transaction"'));
     $harness->assertTrue(str_contains($html, 'name="global_action" value="sync_auto_approval_state"'));
     $harness->assertTrue(str_contains($html, 'name="csrf_token"'));
+    $harness->assertTrue(str_contains($html, '<option value="auto_assigned">Auto - Assigned</option>'));
+    $harness->assertTrue(str_contains($html, '<option value="auto_unreviewed">Auto - Not Reviewed</option>'));
+    $harness->assertTrue(str_contains($html, '<option value="auto_unposted">Auto - Not posted</option>'));
+    $harness->assertTrue(str_contains($html, '<option value="auto_confirmed">Auto - Confirmed</option>'));
 
     $transactions = [];
     for ($i = 1; $i <= 21; $i++) {

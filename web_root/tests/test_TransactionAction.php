@@ -703,7 +703,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         $harness->assertSame(true, str_contains(transactionActionFlashText($result), 'locked'));
     });
 
-    $harness->check('TransactionAction', 'save_transaction_split_line records drafts without repainting imported transactions', function () use ($harness, $createDirectorLoanFixture, $saveTransactionSplitLine): void {
+    $harness->check('TransactionAction', 'save_transaction_split_line repaints imported transactions and records drafts', function () use ($harness, $createDirectorLoanFixture, $saveTransactionSplitLine): void {
         foreach (['transaction_splits', 'transaction_split_lines'] as $table) {
             if (!InterfaceDB::tableExists($table)) {
                 $harness->skip($table . ' table is not available.');
@@ -734,7 +734,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         );
 
         $harness->assertSame(true, $result->isSuccess());
-        $harness->assertSame([TransactionAction::CATEGORISATION_SUMMARY_FACT], $result->changedFacts());
+        $harness->assertSame(['transactions.imported', TransactionAction::CATEGORISATION_SUMMARY_FACT], $result->changedFacts());
         $harness->assertSame('', transactionActionFlashText($result));
         $harness->assertSame('AMZNMKTPLACE materials', (string)($line['description'] ?? ''));
         $harness->assertSame('56.37', (string)($line['amount'] ?? ''));
@@ -759,7 +759,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         );
 
         $harness->assertSame(true, $draftResult->isSuccess());
-        $harness->assertSame([TransactionAction::CATEGORISATION_SUMMARY_FACT], $draftResult->changedFacts());
+        $harness->assertSame(['transactions.imported', TransactionAction::CATEGORISATION_SUMMARY_FACT], $draftResult->changedFacts());
         $harness->assertSame('', transactionActionFlashText($draftResult));
         $harness->assertSame('Test', (string)($draftLine['description'] ?? ''));
         $harness->assertSame(null, $draftLine['amount'] ?? null);
@@ -774,7 +774,7 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
         );
 
         $harness->assertSame(false, $invalidResult->isSuccess());
-        $harness->assertSame([TransactionAction::CATEGORISATION_SUMMARY_FACT], $invalidResult->changedFacts());
+        $harness->assertSame(['transactions.imported', TransactionAction::CATEGORISATION_SUMMARY_FACT], $invalidResult->changedFacts());
         $harness->assertSame(true, str_contains(transactionActionFlashText($invalidResult), 'exactly 2 decimal places'));
         $harness->assertSame('Test', (string)($unchangedDraftLine['description'] ?? ''));
         $harness->assertSame(null, $unchangedDraftLine['amount'] ?? null);

@@ -526,7 +526,7 @@ final class TransactionAction implements ActionInterfaceFramework
     private function changedFactsForTransactionSplitResult(bool $success, string $globalAction): array
     {
         if ($globalAction === 'save_transaction_split_line') {
-            return [self::CATEGORISATION_SUMMARY_FACT];
+            return [self::TRANSACTIONS_IMPORTED_FACT, self::CATEGORISATION_SUMMARY_FACT];
         }
 
         if (!$success) {

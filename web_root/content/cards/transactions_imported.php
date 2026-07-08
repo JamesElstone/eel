@@ -1205,7 +1205,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
                 ' . $this->accountFilterHiddenInput($selectedAccountFilter) . '
-                <button class="js-transaction-split-line-autosave-submit" type="submit" name="global_action" value="save_transaction_split_line" hidden>Autosave split line</button>
+                <button class="js-transaction-split-line-autosave-submit" type="submit" name="global_action" value="save_transaction_split_line" data-blur-scope="none" hidden>Autosave split line</button>
                 <div class="actions-row">
                     <button class="button primary"' . $lockedButtonAttributes . ' name="global_action" value="defer_transaction_split_line">Defer</button>
                     <button class="button"' . $lockedButtonAttributes . ' name="global_action" value="remove_transaction_split_line">Remove</button>

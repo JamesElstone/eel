@@ -357,6 +357,7 @@ $harness->run(_transactions_importedCard::class, static function (GeneratedServi
     $harness->assertTrue(str_contains($splitHtml, '<select class="select transaction-split-line-nominal" name="nominal_account_id" form="transaction-split-line-form-9001" data-autosave-submit-target=".js-transaction-split-line-autosave-submit" data-autosave-require-value="1">'));
     $harness->assertTrue(str_contains($splitHtml, 'name="transaction_split_line_id" value="9001"'));
     $harness->assertTrue(str_contains($splitHtml, 'name="global_action" value="save_transaction_split_line"'));
+    $harness->assertTrue(str_contains($splitHtml, 'value="save_transaction_split_line" data-blur-scope="none" hidden>Autosave split line</button>'));
     $harness->assertTrue(str_contains($splitHtml, 'name="global_action" value="defer_transaction_split_line"'));
     $harness->assertTrue(str_contains($splitHtml, 'name="global_action" value="remove_transaction_split_line"'));
     $harness->assertTrue(str_contains($splitHtml, 'Difference:'));

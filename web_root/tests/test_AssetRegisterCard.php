@@ -203,6 +203,7 @@ $harness->run(_asset_registerCard::class, static function (GeneratedServiceClass
         $harness->assertTrue(str_contains($html, 'name="disposal_event_type"'));
         $harness->assertTrue(str_contains($html, 'name="disposal_event_type" aria-label="Nil value disposal reason" data-no-submit-on-change="true"'));
         $harness->assertTrue(str_contains($html, 'value="scrapped_no_proceeds"'));
+        $harness->assertTrue(str_contains($html, 'value="broken_beyond_economical_repair">Broken; Beyond economical repair</option>'));
         $harness->assertTrue(str_contains($html, 'value="stolen_no_compensation">Stolen</option>'));
         $harness->assertTrue(str_contains($html, 'name="disposal_reason"'));
         $harness->assertTrue(str_contains($html, 'maxlength="20"'));

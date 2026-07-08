@@ -87,6 +87,7 @@ final class AssetService
     {
         return [
             'scrapped_no_proceeds' => 'Scrapped with no proceeds',
+            'broken_beyond_economical_repair' => 'Broken; Beyond economical repair',
             'abandoned_no_value' => 'Abandoned with no value',
             'stolen_no_compensation' => 'Stolen',
             'lost_or_destroyed_no_compensation' => 'Lost or destroyed with no compensation',

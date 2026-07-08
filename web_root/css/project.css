@@ -2845,6 +2845,10 @@
   width: 8rem;
 }
 
+.non-asset-convert-form .button {
+  white-space: nowrap;
+}
+
 .transaction-categorisation-control,
 .transaction-split-parent-actions {
   align-items: center;

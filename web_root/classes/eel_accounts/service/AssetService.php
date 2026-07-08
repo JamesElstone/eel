@@ -524,7 +524,7 @@ final class AssetService
                  WHERE t.company_id = :company_id
                    AND t.accounting_period_id = :accounting_period_id
                    AND t.nominal_account_id = :nominal_account_id
-                   AND CAST(ABS(t.amount) AS REAL) > :threshold
+                   AND ABS(t.amount) > :threshold
                    AND COALESCE(t.is_internal_transfer, 0) = 0
                    AND t.transfer_account_id IS NULL
                    AND NOT EXISTS (
@@ -606,7 +606,7 @@ final class AssetService
                  WHERE ec.company_id = :company_id
                    AND ec.accounting_period_id = :accounting_period_id
                    AND ecl.nominal_account_id = :nominal_account_id
-                   AND CAST(ecl.amount AS REAL) > :threshold
+                   AND ecl.amount > :threshold
                    AND NOT EXISTS (
                        SELECT 1
                        FROM asset_register linked_asset

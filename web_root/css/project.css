@@ -198,8 +198,12 @@
   flex-wrap: nowrap;
 }
 
+.prepayment-review-form,
 .prepayment-date-actions {
-  align-items: center;
+  align-items: flex-end;
+}
+
+.prepayment-date-actions {
   display: inline-flex;
   flex-wrap: nowrap;
   gap: 10px;
@@ -208,6 +212,13 @@
 
 .prepayment-date-actions .input {
   width: auto;
+}
+
+.prepayment-date-field {
+  display: grid;
+  gap: 4px;
+  font-size: 0.75rem;
+  color: var(--muted);
 }
 
 .prepayment-date-actions[hidden] {

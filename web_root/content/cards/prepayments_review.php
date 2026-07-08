@@ -122,7 +122,7 @@ final class _prepayments_reviewCard extends CardBaseFramework
             <td class="numeric">' . HelperFramework::escape($this->money($companySettings, $item['amount'] ?? 0)) . '</td>
             <td>
                 ' . ($isLocked ? '<span class="badge ' . ($status === 'prepaid' ? 'success' : 'info') . '">' . HelperFramework::escape($this->statusLabel($status)) . '</span>' : '
-                <form id="' . HelperFramework::escape($formId) . '" method="post" data-ajax="true" class="actions-row actions-row-nowrap">
+                <form id="' . HelperFramework::escape($formId) . '" method="post" data-ajax="true" class="actions-row actions-row-nowrap prepayment-review-form">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                     <input type="hidden" name="card_action" value="Prepayments">
                     <input type="hidden" name="intent" value="save_review">
@@ -133,8 +133,12 @@ final class _prepayments_reviewCard extends CardBaseFramework
                     <input type="hidden" name="prepayment_notes" value="' . HelperFramework::escape((string)($review['notes'] ?? '')) . '">
                     <select class="select" id="' . HelperFramework::escape($formId) . '-status" name="prepayment_status">' . $this->statusOptions($status) . '</select>
                     <span class="prepayment-date-actions" data-visible-when-field="prepayment_status" data-visible-when-value="prepaid"' . ($status === 'prepaid' ? '' : ' hidden aria-hidden="true"') . '>
-                        <input class="input" type="date" name="service_start_date" value="' . HelperFramework::escape($serviceStart) . '" data-dirty-action-target=".' . HelperFramework::escape($saveButtonClass) . '" data-initial-value="' . HelperFramework::escape($serviceStart) . '" data-dirty-require-value="1">
-                        <input class="input" type="date" name="service_end_date" value="' . HelperFramework::escape($serviceEnd) . '" data-dirty-action-target=".' . HelperFramework::escape($saveButtonClass) . '" data-initial-value="' . HelperFramework::escape($serviceEnd) . '" data-dirty-require-value="1">
+                        <label class="prepayment-date-field" for="' . HelperFramework::escape($formId) . '-service-start-date">Service start
+                            <input class="input" id="' . HelperFramework::escape($formId) . '-service-start-date" type="date" name="service_start_date" value="' . HelperFramework::escape($serviceStart) . '" data-dirty-action-target=".' . HelperFramework::escape($saveButtonClass) . '" data-initial-value="' . HelperFramework::escape($serviceStart) . '" data-dirty-require-value="1">
+                        </label>
+                        <label class="prepayment-date-field" for="' . HelperFramework::escape($formId) . '-service-end-date">Service end
+                            <input class="input" id="' . HelperFramework::escape($formId) . '-service-end-date" type="date" name="service_end_date" value="' . HelperFramework::escape($serviceEnd) . '" data-dirty-action-target=".' . HelperFramework::escape($saveButtonClass) . '" data-initial-value="' . HelperFramework::escape($serviceEnd) . '" data-dirty-require-value="1">
+                        </label>
                         <button class="button button-inline primary ' . HelperFramework::escape($saveButtonClass) . '" type="submit" data-dirty-enable-mode="changed" disabled>Save</button>
                     </span>
                 </form>') . '

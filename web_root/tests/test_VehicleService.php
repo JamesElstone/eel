@@ -20,6 +20,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(\eel_accounts\Service\VehicleService::class, 'saving car details updates linked transaction asset and journal nominal', static function () use ($harness, $service): void {
             vehicleServiceFixture('car-transaction', static function (array $fixture) use ($harness, $service): void {
+                \InterfaceDB::prepareExecute(
+                    'UPDATE asset_register SET linked_journal_id = NULL WHERE id = :id',
+                    ['id' => $fixture['transaction_asset_id']]
+                );
+
                 $result = $service->saveVehicleDetails(
                     (int)$fixture['company_id'],
                     (int)$fixture['transaction_asset_id'],
@@ -46,6 +51,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     ]
                 );
                 $harness->assertSame($carNominalId, (int)\InterfaceDB::fetchColumn('SELECT nominal_account_id FROM asset_register WHERE id = :id', ['id' => $fixture['transaction_asset_id']]));
+                $harness->assertSame($rebuiltJournalId, (int)\InterfaceDB::fetchColumn('SELECT linked_journal_id FROM asset_register WHERE id = :id', ['id' => $fixture['transaction_asset_id']]));
                 $harness->assertSame($carNominalId, (int)\InterfaceDB::fetchColumn('SELECT nominal_account_id FROM transactions WHERE id = :id', ['id' => $fixture['transaction_id']]));
                 $harness->assertSame($carNominalId, (int)\InterfaceDB::fetchColumn('SELECT nominal_account_id FROM journal_lines WHERE journal_id = :id AND debit = 20000.00 LIMIT 1', ['id' => $rebuiltJournalId]));
                 $harness->assertSame('AB12 CDE', (string)\InterfaceDB::fetchColumn('SELECT registration_mark FROM asset_vehicle_details WHERE asset_id = :id', ['id' => $fixture['transaction_asset_id']]));
@@ -55,6 +61,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
         $harness->check(\eel_accounts\Service\VehicleService::class, 'saving van details updates linked expense line asset and journal nominal', static function () use ($harness, $service): void {
             vehicleServiceFixture('van-expense', static function (array $fixture) use ($harness, $service): void {
+                \InterfaceDB::prepareExecute(
+                    'UPDATE asset_register SET linked_journal_id = NULL WHERE id = :id',
+                    ['id' => $fixture['expense_asset_id']]
+                );
+
                 $result = $service->saveVehicleDetails(
                     (int)$fixture['company_id'],
                     (int)$fixture['expense_asset_id'],
@@ -72,8 +83,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame(true, (bool)($result['success'] ?? false));
                 $vanNominalId = vehicleServiceNominalId('1322');
                 $harness->assertSame($vanNominalId, (int)\InterfaceDB::fetchColumn('SELECT nominal_account_id FROM asset_register WHERE id = :id', ['id' => $fixture['expense_asset_id']]));
+                $harness->assertSame((int)$fixture['expense_journal_id'], (int)\InterfaceDB::fetchColumn('SELECT linked_journal_id FROM asset_register WHERE id = :id', ['id' => $fixture['expense_asset_id']]));
                 $harness->assertSame($vanNominalId, (int)\InterfaceDB::fetchColumn('SELECT nominal_account_id FROM expense_claim_lines WHERE id = :id', ['id' => $fixture['expense_line_id']]));
                 $harness->assertSame($vanNominalId, (int)\InterfaceDB::fetchColumn('SELECT nominal_account_id FROM journal_lines WHERE journal_id = :id AND debit = 18000.00 LIMIT 1', ['id' => $fixture['expense_journal_id']]));
+                $harness->assertSame('posted', (string)\InterfaceDB::fetchColumn('SELECT status FROM expense_claims WHERE id = :id', ['id' => $fixture['expense_claim_id']]));
             });
         });
 

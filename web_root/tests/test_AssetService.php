@@ -427,15 +427,17 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
             $harness->assertSame(true, (bool)($result['success'] ?? false));
             $asset = InterfaceDB::fetchOne(
-                'SELECT manual_addition_reason, manual_offset_nominal_id, linked_transaction_id
+                'SELECT manual_addition_reason, manual_offset_nominal_id, linked_transaction_id, linked_journal_id
                  FROM asset_register
                  WHERE id = :id',
                 ['id' => (int)($result['asset']['id'] ?? 0)]
             );
+            $bankJournalId = assetServiceTestJournalId($fixture['company_id'], 'bank_csv', 'transaction:' . $transactionId);
 
             $harness->assertSame('', (string)($asset['manual_addition_reason'] ?? ''));
             $harness->assertSame(0, (int)($asset['manual_offset_nominal_id'] ?? 0));
             $harness->assertSame($transactionId, (int)($asset['linked_transaction_id'] ?? 0));
+            $harness->assertSame($bankJournalId, (int)($asset['linked_journal_id'] ?? 0));
         });
 
         $harness->check(\eel_accounts\Service\AssetService::class, 'split-line asset prefill and creation link exact split line', static function () use ($harness, $service): void {

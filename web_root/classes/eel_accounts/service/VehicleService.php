@@ -455,59 +455,134 @@ final class VehicleService
     {
         $transactionId = (int)($asset['linked_transaction_id'] ?? 0);
         if ($transactionId > 0) {
-            $result = (new \eel_accounts\Service\TransactionCategorisationService())->saveManualCategorisation(
-                $transactionId,
-                $targetNominalId,
-                null,
-                false,
-                'vehicle_register',
-                true
-            );
-            if (empty($result['success'])) {
-                throw new \RuntimeException(implode(' ', array_map('strval', (array)($result['errors'] ?? ['Transaction nominal could not be updated.']))));
-            }
-            if ($defaultBankNominalId > 0) {
-                (new \eel_accounts\Service\TransactionJournalService())->syncJournalForTransaction($transactionId, $defaultBankNominalId, 'vehicle_register', true);
-            }
+            $this->syncLinkedTransactionSourceNominal($asset, $transactionId, $targetNominalId, $oldNominalId, $defaultBankNominalId);
+            return;
         }
 
         $lineId = (int)($asset['linked_expense_claim_line_id'] ?? 0);
         if ($lineId > 0) {
-            \InterfaceDB::prepareExecute(
-                'UPDATE expense_claim_lines
-                 SET nominal_account_id = :nominal_account_id,
-                     updated_at = CURRENT_TIMESTAMP
-                 WHERE id = :id',
-                ['nominal_account_id' => $targetNominalId, 'id' => $lineId]
-            );
-            \InterfaceDB::prepareExecute(
-                'UPDATE expense_claim_line_assets
-                 SET category = :category,
-                     updated_at = CURRENT_TIMESTAMP
-                 WHERE expense_claim_line_id = :line_id',
-                [
-                    'category' => $this->assetCategoryForNominalId($targetNominalId),
-                    'line_id' => $lineId,
-                ]
-            );
+            $this->syncLinkedExpenseClaimSourceNominal($asset, $lineId, $targetNominalId);
+            return;
         }
 
         $journalId = (int)($asset['linked_journal_id'] ?? 0);
         if ($journalId > 0) {
-            \InterfaceDB::prepareExecute(
-                'UPDATE journal_lines
-                 SET nominal_account_id = :new_nominal_id
-                 WHERE journal_id = :journal_id
-                   AND nominal_account_id = :old_nominal_id
-                   AND ABS(debit - :cost) <= 0.01',
-                [
-                    'new_nominal_id' => $targetNominalId,
-                    'journal_id' => $journalId,
-                    'old_nominal_id' => $oldNominalId,
-                    'cost' => round((float)($asset['cost'] ?? 0), 2),
-                ]
-            );
+            $this->updateLinkedJournalLineNominal($journalId, $targetNominalId, $oldNominalId, (float)($asset['cost'] ?? 0));
         }
+    }
+
+    private function syncLinkedTransactionSourceNominal(array $asset, int $transactionId, int $targetNominalId, int $oldNominalId, int $defaultBankNominalId): void
+    {
+        $result = (new \eel_accounts\Service\TransactionCategorisationService())->saveManualCategorisation(
+            $transactionId,
+            $targetNominalId,
+            null,
+            false,
+            'vehicle_register',
+            true
+        );
+        if (empty($result['success'])) {
+            throw new \RuntimeException(implode(' ', array_map('strval', (array)($result['errors'] ?? ['Transaction nominal could not be updated.']))));
+        }
+
+        if ($defaultBankNominalId > 0) {
+            $journalResult = (new \eel_accounts\Service\TransactionJournalService())->syncJournalForTransaction(
+                $transactionId,
+                $defaultBankNominalId,
+                'vehicle_register',
+                true
+            );
+            if (empty($journalResult['success'])) {
+                throw new \RuntimeException(implode(' ', array_map('strval', (array)($journalResult['errors'] ?? ['Transaction journal could not be rebuilt.']))));
+            }
+        }
+
+        $journalId = $this->findPostedTransactionJournalId((int)($asset['company_id'] ?? 0), $transactionId);
+        if ($journalId <= 0) {
+            $journalId = (int)($asset['linked_journal_id'] ?? 0);
+        }
+
+        if ($journalId <= 0) {
+            throw new \RuntimeException('The transaction journal could not be found after vehicle recategorisation.');
+        }
+
+        if ($defaultBankNominalId <= 0) {
+            $this->updateLinkedJournalLineNominal($journalId, $targetNominalId, $oldNominalId, (float)($asset['cost'] ?? 0));
+        }
+
+        $this->persistAssetLinkedJournal((int)($asset['id'] ?? 0), $journalId);
+    }
+
+    private function syncLinkedExpenseClaimSourceNominal(array $asset, int $lineId, int $targetNominalId): void
+    {
+        $result = (new \eel_accounts\Service\ExpenseClaimService())->syncPostedAssetLineSource(
+            (int)($asset['company_id'] ?? 0),
+            $lineId,
+            $targetNominalId,
+            $this->assetCategoryForNominalId($targetNominalId)
+        );
+        if (empty($result['success'])) {
+            throw new \RuntimeException(implode(' ', array_map('strval', (array)($result['errors'] ?? ['Expense claim asset journal could not be rebuilt.']))));
+        }
+    }
+
+    private function findPostedTransactionJournalId(int $companyId, int $transactionId): int
+    {
+        if ($companyId <= 0 || $transactionId <= 0) {
+            return 0;
+        }
+
+        return (int)\InterfaceDB::fetchColumn(
+            'SELECT id
+             FROM journals
+             WHERE company_id = :company_id
+               AND source_type = :source_type
+               AND source_ref = :source_ref
+               AND is_posted = 1
+             ORDER BY id DESC
+             LIMIT 1',
+            [
+                'company_id' => $companyId,
+                'source_type' => 'bank_csv',
+                'source_ref' => 'transaction:' . $transactionId,
+            ]
+        );
+    }
+
+    private function persistAssetLinkedJournal(int $assetId, int $journalId): void
+    {
+        if ($assetId <= 0 || $journalId <= 0) {
+            return;
+        }
+
+        \InterfaceDB::prepareExecute(
+            'UPDATE asset_register
+             SET linked_journal_id = :journal_id,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = :asset_id',
+            ['journal_id' => $journalId, 'asset_id' => $assetId]
+        );
+    }
+
+    private function updateLinkedJournalLineNominal(int $journalId, int $targetNominalId, int $oldNominalId, float $cost): void
+    {
+        if ($journalId <= 0 || $targetNominalId <= 0 || $oldNominalId <= 0) {
+            return;
+        }
+
+        \InterfaceDB::prepareExecute(
+            'UPDATE journal_lines
+             SET nominal_account_id = :new_nominal_id
+             WHERE journal_id = :journal_id
+               AND nominal_account_id = :old_nominal_id
+               AND ABS(debit - :cost) <= 0.01',
+            [
+                'new_nominal_id' => $targetNominalId,
+                'journal_id' => $journalId,
+                'old_nominal_id' => $oldNominalId,
+                'cost' => round($cost, 2),
+            ]
+        );
     }
 
     private function nominalIdForVehicleType(string $vehicleType): int

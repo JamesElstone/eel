@@ -1331,10 +1331,10 @@ final class StatementUploadService
                     throw new \RuntimeException('A committed transaction could not be reloaded after insert.');
                 }
 
-                if ($this->categorisationService !== null) {
-                    if (!$isInternalTransfer) {
+                if ($isInternalTransfer) {
+                    (new \eel_accounts\Service\TransactionInterAccountMarkerService())->autoMatchTransferMarkerTransaction($transactionId);
+                } elseif ($this->categorisationService !== null) {
                         $this->categorisationService->applyAutoCategoryToTransaction($transactionId);
-                    }
                 }
 
                 $updateStagedRow->execute([

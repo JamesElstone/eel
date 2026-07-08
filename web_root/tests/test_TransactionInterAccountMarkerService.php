@@ -91,6 +91,108 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         }
     });
 
+    $harness->check(\eel_accounts\Service\TransactionInterAccountMarkerService::class, 'auto matches same-day transfer marker pair through inter-account flow', static function () use ($harness, $service): void {
+        foreach (['companies', 'accounting_periods', 'nominal_accounts', 'company_accounts', 'statement_uploads', 'transactions', 'transaction_inter_ac_marker', 'transaction_category_audit', 'journals', 'journal_lines'] as $table) {
+            if (!InterfaceDB::tableExists($table)) {
+                $harness->skip($table . ' table is not available.');
+            }
+        }
+
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = transactionInterAccountMarkerCreateP2PFixture();
+
+            $result = $service->autoMatchTransferMarkerTransaction((int)$fixture['incoming_transaction_id']);
+            $harness->assertSame(true, (bool)($result['success'] ?? false));
+            $harness->assertSame(true, (bool)($result['matched'] ?? false));
+            $harness->assertSame((int)$fixture['outgoing_transaction_id'], (int)($result['source_transaction_id'] ?? 0));
+            $harness->assertSame((int)$fixture['incoming_transaction_id'], (int)($result['matched_transaction_id'] ?? 0));
+
+            $marker = InterfaceDB::fetchOne(
+                'SELECT transaction_id, matched_transaction_id, created_by
+                 FROM transaction_inter_ac_marker
+                 WHERE transaction_id = :transaction_id
+                 LIMIT 1',
+                ['transaction_id' => (int)$fixture['outgoing_transaction_id']]
+            );
+            $harness->assertSame((int)$fixture['outgoing_transaction_id'], (int)($marker['transaction_id'] ?? 0));
+            $harness->assertSame((int)$fixture['incoming_transaction_id'], (int)($marker['matched_transaction_id'] ?? 0));
+            $harness->assertSame('transfer_marker:auto', (string)($marker['created_by'] ?? ''));
+
+            $outgoing = InterfaceDB::fetchOne('SELECT transfer_account_id, is_internal_transfer, category_status FROM transactions WHERE id = :id', ['id' => (int)$fixture['outgoing_transaction_id']]);
+            $incoming = InterfaceDB::fetchOne('SELECT transfer_account_id, is_internal_transfer, category_status FROM transactions WHERE id = :id', ['id' => (int)$fixture['incoming_transaction_id']]);
+            $harness->assertSame((int)$fixture['savings_account_id'], (int)($outgoing['transfer_account_id'] ?? 0));
+            $harness->assertSame((int)$fixture['current_account_id'], (int)($incoming['transfer_account_id'] ?? 0));
+            $harness->assertSame(1, (int)($outgoing['is_internal_transfer'] ?? 0));
+            $harness->assertSame(1, (int)($incoming['is_internal_transfer'] ?? 0));
+            $harness->assertSame('manual', (string)($outgoing['category_status'] ?? ''));
+            $harness->assertSame('manual', (string)($incoming['category_status'] ?? ''));
+
+            $harness->assertSame(1, InterfaceDB::countWhere('journals', ['source_type' => 'bank_csv', 'source_ref' => 'transaction:' . (int)$fixture['outgoing_transaction_id']]));
+            $harness->assertSame(0, InterfaceDB::countWhere('journals', ['source_type' => 'bank_csv', 'source_ref' => 'transaction:' . (int)$fixture['incoming_transaction_id']]));
+            $lines = InterfaceDB::fetchAll(
+                'SELECT jl.nominal_account_id, jl.company_account_id, jl.debit, jl.credit
+                 FROM journals j
+                 INNER JOIN journal_lines jl ON jl.journal_id = j.id
+                 WHERE j.source_type = :source_type
+                   AND j.source_ref = :source_ref
+                 ORDER BY jl.id ASC',
+                [
+                    'source_type' => 'bank_csv',
+                    'source_ref' => 'transaction:' . (int)$fixture['outgoing_transaction_id'],
+                ]
+            );
+            $harness->assertSame((int)$fixture['savings_nominal_id'], (int)($lines[0]['nominal_account_id'] ?? 0));
+            $harness->assertSame((int)$fixture['savings_account_id'], (int)($lines[0]['company_account_id'] ?? 0));
+            $harness->assertSame('270.00', (string)($lines[0]['debit'] ?? ''));
+            $harness->assertSame((int)$fixture['current_nominal_id'], (int)($lines[1]['nominal_account_id'] ?? 0));
+            $harness->assertSame((int)$fixture['current_account_id'], (int)($lines[1]['company_account_id'] ?? 0));
+            $harness->assertSame('270.00', (string)($lines[1]['credit'] ?? ''));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
+    $harness->check(\eel_accounts\Service\TransactionInterAccountMarkerService::class, 'does not auto match ambiguous or unsafe transfer marker pairs', static function () use ($harness, $service): void {
+        foreach (['companies', 'accounting_periods', 'nominal_accounts', 'company_accounts', 'statement_uploads', 'transactions', 'transaction_inter_ac_marker', 'journals', 'journal_lines'] as $table) {
+            if (!InterfaceDB::tableExists($table)) {
+                $harness->skip($table . ' table is not available.');
+            }
+        }
+
+        $scenarios = [
+            'extra_candidate' => 'ambiguous',
+            'same_sign' => 'no_candidate',
+            'missing_marker' => 'no_candidate',
+            'existing_marker' => 'no_candidate',
+            'posted_journal' => 'no_candidate',
+            'split_transaction' => 'no_candidate',
+        ];
+        if (!InterfaceDB::tableExists('transaction_splits')) {
+            unset($scenarios['split_transaction']);
+        }
+
+        foreach ($scenarios as $scenario => $expectedReason) {
+            InterfaceDB::beginTransaction();
+            try {
+                $fixture = transactionInterAccountMarkerCreateP2PFixture(['scenario' => $scenario]);
+                $result = $service->autoMatchTransferMarkerTransaction((int)$fixture['outgoing_transaction_id']);
+
+                $harness->assertSame(true, (bool)($result['success'] ?? false));
+                $harness->assertSame(false, (bool)($result['matched'] ?? true));
+                $harness->assertSame($expectedReason, (string)($result['skipped_reason'] ?? ''));
+                $harness->assertSame(0, InterfaceDB::countWhere('transaction_inter_ac_marker', ['transaction_id' => (int)$fixture['outgoing_transaction_id']]));
+                $harness->assertSame(0, InterfaceDB::countWhere('journals', ['source_type' => 'bank_csv', 'source_ref' => 'transaction:' . (int)$fixture['outgoing_transaction_id']]));
+            } finally {
+                if (InterfaceDB::inTransaction()) {
+                    InterfaceDB::rollBack();
+                }
+            }
+        }
+    });
+
     $harness->check(TransactionAction::class, 'save and cancel inter-account match clean backend state', static function () use ($harness): void {
         foreach (['companies', 'accounting_periods', 'nominal_accounts', 'company_accounts', 'statement_uploads', 'transactions', 'transaction_inter_ac_marker', 'transaction_auto_approvals', 'transaction_category_audit', 'journals', 'journal_lines'] as $table) {
             if (!InterfaceDB::tableExists($table)) {
@@ -321,6 +423,222 @@ function transactionInterAccountMarkerPrepareStaleAutoState(array $fixture): voi
             null
         );
     }
+}
+
+function transactionInterAccountMarkerCreateP2PFixture(array $options = []): array
+{
+    $marker = (string)random_int(100000, 999999);
+    $companyId = (int)('71' . $marker);
+    $accountingPeriodId = (int)('72' . $marker);
+    $currentNominalId = (int)('73' . $marker);
+    $savingsNominalId = (int)('74' . $marker);
+    $extraNominalId = (int)('75' . $marker);
+    $currentAccountId = (int)('76' . $marker);
+    $savingsAccountId = (int)('77' . $marker);
+    $extraAccountId = (int)('78' . $marker);
+    $uploadId = (int)('79' . $marker);
+    $outgoingTransactionId = (int)('80' . $marker);
+    $incomingTransactionId = (int)('81' . $marker);
+    $extraTransactionId = (int)('82' . $marker);
+    $scenario = (string)($options['scenario'] ?? '');
+
+    InterfaceDB::prepareExecute(
+        'INSERT INTO companies (id, company_name, company_number, is_active)
+         VALUES (:id, :company_name, :company_number, 1)',
+        [
+            'id' => $companyId,
+            'company_name' => 'P2P Fixture ' . $marker,
+            'company_number' => 'P2P' . substr($marker, 0, 5),
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end)
+         VALUES (:id, :company_id, :label, :period_start, :period_end)',
+        [
+            'id' => $accountingPeriodId,
+            'company_id' => $companyId,
+            'label' => 'P2P FY ' . $marker,
+            'period_start' => '2026-01-01',
+            'period_end' => '2026-12-31',
+        ]
+    );
+
+    transactionInterAccountMarkerInsertNominal($currentNominalId, 'PC' . substr($marker, 0, 4), 'P2P Current ' . $marker, 'asset', 'other');
+    transactionInterAccountMarkerInsertNominal($savingsNominalId, 'PS' . substr($marker, 0, 4), 'P2P Savings ' . $marker, 'asset', 'other');
+    transactionInterAccountMarkerInsertNominal($extraNominalId, 'PX' . substr($marker, 0, 4), 'P2P Extra ' . $marker, 'asset', 'other');
+
+    transactionInterAccountMarkerInsertBankAccount($currentAccountId, $companyId, 'Example Bank - Current Account', $currentNominalId, 'Example Bank', 'P2P');
+    transactionInterAccountMarkerInsertBankAccount(
+        $savingsAccountId,
+        $companyId,
+        'Example Bank - Saving Pot',
+        $savingsNominalId,
+        'Example Bank',
+        $scenario === 'missing_marker' ? '' : 'P2P'
+    );
+    transactionInterAccountMarkerInsertBankAccount($extraAccountId, $companyId, 'Example Bank - Extra Pot', $extraNominalId, 'Example Bank', 'P2P');
+
+    InterfaceDB::prepareExecute(
+        'INSERT INTO statement_uploads (id, company_id, accounting_period_id, statement_month, original_filename, stored_filename, file_sha256)
+         VALUES (:id, :company_id, :accounting_period_id, :statement_month, :original_filename, :stored_filename, :file_sha256)',
+        [
+            'id' => $uploadId,
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'statement_month' => '2026-03-01',
+            'original_filename' => 'p2p-' . $marker . '.csv',
+            'stored_filename' => 'p2p-' . $marker . '.csv',
+            'file_sha256' => hash('sha256', 'p2p-upload-' . $marker),
+        ]
+    );
+
+    transactionInterAccountMarkerInsertP2PTransaction($outgoingTransactionId, $companyId, $accountingPeriodId, $uploadId, $currentAccountId, '2026-03-20', 'Transfer to Pot', '-270.00', 'P2P', $marker . '-outgoing');
+    transactionInterAccountMarkerInsertP2PTransaction(
+        $incomingTransactionId,
+        $companyId,
+        $accountingPeriodId,
+        $uploadId,
+        $savingsAccountId,
+        '2026-03-20',
+        'Deposit',
+        $scenario === 'same_sign' ? '-270.00' : '270.00',
+        'P2P',
+        $marker . '-incoming'
+    );
+
+    if ($scenario === 'extra_candidate') {
+        transactionInterAccountMarkerInsertP2PTransaction($extraTransactionId, $companyId, $accountingPeriodId, $uploadId, $extraAccountId, '2026-03-20', 'Deposit', '270.00', 'P2P', $marker . '-extra');
+    } elseif ($scenario === 'existing_marker') {
+        transactionInterAccountMarkerInsertP2PTransaction($extraTransactionId, $companyId, $accountingPeriodId, $uploadId, $extraAccountId, '2026-03-19', 'Earlier transfer', '-270.00', 'P2P', $marker . '-extra');
+        InterfaceDB::prepareExecute(
+            'INSERT INTO transaction_inter_ac_marker (company_id, accounting_period_id, transaction_id, matched_transaction_id, created_by)
+             VALUES (:company_id, :accounting_period_id, :transaction_id, :matched_transaction_id, :created_by)',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'transaction_id' => $extraTransactionId,
+                'matched_transaction_id' => $incomingTransactionId,
+                'created_by' => 'test_existing_marker',
+            ]
+        );
+    } elseif ($scenario === 'posted_journal') {
+        transactionInterAccountMarkerInsertJournal($companyId, $accountingPeriodId, $incomingTransactionId, 'existing incoming journal');
+    } elseif ($scenario === 'split_transaction' && InterfaceDB::tableExists('transaction_splits')) {
+        InterfaceDB::prepareExecute(
+            'INSERT INTO transaction_splits (transaction_id) VALUES (:transaction_id)',
+            ['transaction_id' => $incomingTransactionId]
+        );
+    }
+
+    return [
+        'company_id' => $companyId,
+        'accounting_period_id' => $accountingPeriodId,
+        'current_nominal_id' => $currentNominalId,
+        'savings_nominal_id' => $savingsNominalId,
+        'current_account_id' => $currentAccountId,
+        'savings_account_id' => $savingsAccountId,
+        'outgoing_transaction_id' => $outgoingTransactionId,
+        'incoming_transaction_id' => $incomingTransactionId,
+    ];
+}
+
+function transactionInterAccountMarkerInsertBankAccount(
+    int $id,
+    int $companyId,
+    string $accountName,
+    int $nominalAccountId,
+    string $institutionName,
+    string $internalTransferMarker
+): void {
+    InterfaceDB::prepareExecute(
+        'INSERT INTO company_accounts (
+            id,
+            company_id,
+            account_name,
+            account_type,
+            institution_name,
+            nominal_account_id,
+            internal_transfer_marker,
+            is_active
+         ) VALUES (
+            :id,
+            :company_id,
+            :account_name,
+            :account_type,
+            :institution_name,
+            :nominal_account_id,
+            :internal_transfer_marker,
+            1
+         )',
+        [
+            'id' => $id,
+            'company_id' => $companyId,
+            'account_name' => $accountName,
+            'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
+            'institution_name' => $institutionName,
+            'nominal_account_id' => $nominalAccountId,
+            'internal_transfer_marker' => $internalTransferMarker !== '' ? $internalTransferMarker : null,
+        ]
+    );
+}
+
+function transactionInterAccountMarkerInsertP2PTransaction(
+    int $id,
+    int $companyId,
+    int $accountingPeriodId,
+    int $uploadId,
+    int $accountId,
+    string $txnDate,
+    string $description,
+    string $amount,
+    string $txnType,
+    string $dedupeSuffix
+): void {
+    InterfaceDB::prepareExecute(
+        'INSERT INTO transactions (
+            id,
+            company_id,
+            accounting_period_id,
+            statement_upload_id,
+            account_id,
+            txn_date,
+            txn_type,
+            description,
+            amount,
+            source_account_label,
+            dedupe_hash,
+            is_internal_transfer,
+            category_status
+         ) VALUES (
+            :id,
+            :company_id,
+            :accounting_period_id,
+            :statement_upload_id,
+            :account_id,
+            :txn_date,
+            :txn_type,
+            :description,
+            :amount,
+            :source_account_label,
+            :dedupe_hash,
+            1,
+            :category_status
+         )',
+        [
+            'id' => $id,
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'statement_upload_id' => $uploadId,
+            'account_id' => $accountId,
+            'txn_date' => $txnDate,
+            'txn_type' => $txnType,
+            'description' => $description,
+            'amount' => $amount,
+            'source_account_label' => 'P2P Fixture',
+            'dedupe_hash' => hash('sha256', 'p2p-transaction-' . $dedupeSuffix),
+            'category_status' => 'uncategorised',
+        ]
+    );
 }
 
 function transactionInterAccountMarkerInsertJournal(int $companyId, int $accountingPeriodId, int $transactionId, string $description): void

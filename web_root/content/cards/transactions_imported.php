@@ -822,7 +822,10 @@ final class _transactions_importedCard extends CardBaseFramework
         $role = trim((string)($transaction['inter_ac_marker_role'] ?? ''));
         if ((int)($transaction['inter_ac_marker_id'] ?? 0) > 0) {
             $label = $this->interAccountPeerLabel($transaction);
-            $roleLabel = $role === 'matched' ? 'Inter A/C Dest' : 'Posting Source';
+            $createdBy = trim((string)($transaction['inter_ac_created_by'] ?? ''));
+            $roleLabel = (new \eel_accounts\Service\TransactionInterAccountMarkerService())->isTransferMarkerCreatedBy($createdBy)
+                ? 'Matched by transfer marker'
+                : ($role === 'matched' ? 'Inter A/C Dest' : 'Posting Source');
             $buttonAttributes = $isPeriodLocked
                 ? ' type="button" disabled title="Period locked"'
                 : ' type="submit" form="' . HelperFramework::escape($transactionFormId) . '" name="global_action" value="cancel_inter_ac_transaction" data-chicken-check="true" data-chicken-title="Cancel inter-account match" data-chicken-message="This will remove the inter-account link and its bank-derived journals.<br><br>Continue?" data-chicken-confirm-text="Cancel match" data-chicken-button-class="button primary"';

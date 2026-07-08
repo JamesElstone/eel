@@ -11,6 +11,8 @@ namespace eel_accounts\Service;
 
 final class TransactionInterAccountMarkerService
 {
+    private const TRANSFER_MARKER_CREATED_BY = 'transfer_marker:auto';
+
     public function hasSchema(): bool
     {
         static $hasSchema = null;
@@ -65,6 +67,72 @@ final class TransactionInterAccountMarkerService
         return \InterfaceDB::countWhere('transaction_inter_ac_marker', [
             'matched_transaction_id' => $transactionId,
         ]) > 0;
+    }
+
+    public function autoMatchTransferMarkerTransaction(int $transactionId, string $changedBy = 'transfer_marker_auto'): array
+    {
+        if ($transactionId <= 0 || !$this->hasSchema()) {
+            return [
+                'success' => true,
+                'matched' => false,
+                'skipped_reason' => 'schema_unavailable',
+                'errors' => [],
+            ];
+        }
+
+        if ($this->fetchMarkerForTransaction($transactionId) !== null) {
+            return [
+                'success' => true,
+                'matched' => false,
+                'skipped_reason' => 'already_matched',
+                'errors' => [],
+            ];
+        }
+
+        $transaction = $this->fetchTransferMarkerTransaction($transactionId);
+        if ($transaction === null || !$this->transactionCanAutoMatch($transaction)) {
+            return [
+                'success' => true,
+                'matched' => false,
+                'skipped_reason' => 'not_eligible',
+                'errors' => [],
+            ];
+        }
+
+        $candidates = $this->fetchTransferMarkerAutoMatchCandidates($transaction);
+        if (count($candidates) !== 1) {
+            return [
+                'success' => true,
+                'matched' => false,
+                'skipped_reason' => count($candidates) > 1 ? 'ambiguous' : 'no_candidate',
+                'candidate_count' => count($candidates),
+                'errors' => [],
+            ];
+        }
+
+        $candidate = $candidates[0];
+        $sourceTransactionId = (float)($transaction['amount'] ?? 0) < 0
+            ? (int)$transaction['id']
+            : (int)$candidate['id'];
+        $matchedTransactionId = $sourceTransactionId === (int)$transaction['id']
+            ? (int)$candidate['id']
+            : (int)$transaction['id'];
+
+        $result = $this->saveMarker($sourceTransactionId, $matchedTransactionId, self::TRANSFER_MARKER_CREATED_BY, $changedBy);
+
+        return [
+            'success' => empty($result['errors']),
+            'matched' => empty($result['errors']),
+            'source_transaction_id' => $sourceTransactionId,
+            'matched_transaction_id' => $matchedTransactionId,
+            'marker' => $result['marker'] ?? null,
+            'errors' => array_map('strval', (array)($result['errors'] ?? [])),
+        ];
+    }
+
+    public function isTransferMarkerCreatedBy(?string $createdBy): bool
+    {
+        return str_starts_with(trim((string)$createdBy), 'transfer_marker:');
     }
 
     public function fetchCandidates(int $transactionId, int $limit = 50): array
@@ -387,6 +455,161 @@ final class TransactionInterAccountMarkerService
         }
 
         return $errors;
+    }
+
+    private function fetchTransferMarkerTransaction(int $transactionId): ?array
+    {
+        $splitSelect = \InterfaceDB::tableExists('transaction_splits')
+            ? "EXISTS (SELECT 1 FROM transaction_splits ts WHERE ts.transaction_id = t.id)"
+            : '0';
+        $journalSelect = "EXISTS (
+                SELECT 1
+                FROM journals j
+                WHERE j.company_id = t.company_id
+                  AND j.source_type = 'bank_csv'
+                  AND j.source_ref = CONCAT('transaction:', t.id)
+            )";
+
+        $stmt = \InterfaceDB::prepare(
+            'SELECT t.id,
+                    t.company_id,
+                    t.accounting_period_id,
+                    t.account_id,
+                    t.txn_date,
+                    t.txn_type,
+                    t.description,
+                    t.amount,
+                    t.nominal_account_id,
+                    t.transfer_account_id,
+                    t.is_internal_transfer,
+                    t.category_status,
+                    t.is_auto_excluded,
+                    ca.account_type,
+                    COALESCE(ca.institution_name, \'\') AS institution_name,
+                    COALESCE(ca.internal_transfer_marker, \'\') AS internal_transfer_marker,
+                    ' . $splitSelect . ' AS has_split,
+                    ' . $journalSelect . ' AS has_journal
+             FROM transactions t
+             INNER JOIN company_accounts ca ON ca.id = t.account_id
+             WHERE t.id = :id
+             LIMIT 1'
+        );
+        $stmt->execute(['id' => $transactionId]);
+        $row = $stmt->fetch();
+
+        return is_array($row) ? $row : null;
+    }
+
+    private function fetchTransferMarkerAutoMatchCandidates(array $transaction): array
+    {
+        $splitPredicate = \InterfaceDB::tableExists('transaction_splits')
+            ? 'AND NOT EXISTS (SELECT 1 FROM transaction_splits candidate_ts WHERE candidate_ts.transaction_id = candidate.id)'
+            : '';
+        $institutionName = $this->normalisedText((string)($transaction['institution_name'] ?? ''));
+
+        $stmt = \InterfaceDB::prepare(
+            "SELECT candidate.id,
+                    candidate.account_id,
+                    candidate.txn_date,
+                    candidate.description,
+                    candidate.amount,
+                    COALESCE(candidate_ca.account_name, '') AS account_name
+             FROM transactions candidate
+             INNER JOIN company_accounts candidate_ca ON candidate_ca.id = candidate.account_id
+             WHERE candidate.company_id = :company_id
+               AND candidate.accounting_period_id = :accounting_period_id
+               AND candidate.id <> :transaction_id
+               AND candidate.account_id <> :account_id
+               AND candidate.txn_date = :txn_date
+               AND ROUND(candidate.amount + :signed_amount, 2) = 0.00
+               AND candidate.nominal_account_id IS NULL
+               AND candidate.transfer_account_id IS NULL
+               AND COALESCE(candidate.is_internal_transfer, 0) = 1
+               AND candidate.category_status = 'uncategorised'
+               AND COALESCE(candidate.is_auto_excluded, 0) = 0
+               AND candidate_ca.account_type = :bank_account_type
+               AND LOWER(TRIM(COALESCE(candidate_ca.institution_name, ''))) = :institution_name
+               AND LOWER(TRIM(COALESCE(candidate.txn_type, ''))) = LOWER(TRIM(COALESCE(candidate_ca.internal_transfer_marker, '')))
+               AND TRIM(COALESCE(candidate_ca.internal_transfer_marker, '')) <> ''
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM transaction_inter_ac_marker existing_marker
+                   WHERE existing_marker.transaction_id IN (:source_transaction_id, candidate.id)
+                      OR existing_marker.matched_transaction_id IN (:matched_transaction_id, candidate.id)
+               )
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM journals candidate_j
+                   WHERE candidate_j.company_id = candidate.company_id
+                     AND candidate_j.source_type = 'bank_csv'
+                     AND candidate_j.source_ref = CONCAT('transaction:', candidate.id)
+               )
+               {$splitPredicate}
+             ORDER BY candidate.id ASC"
+        );
+        $stmt->execute([
+            'company_id' => (int)$transaction['company_id'],
+            'accounting_period_id' => (int)$transaction['accounting_period_id'],
+            'transaction_id' => (int)$transaction['id'],
+            'account_id' => (int)$transaction['account_id'],
+            'txn_date' => (string)$transaction['txn_date'],
+            'signed_amount' => number_format((float)$transaction['amount'], 2, '.', ''),
+            'bank_account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
+            'institution_name' => $institutionName,
+            'source_transaction_id' => (int)$transaction['id'],
+            'matched_transaction_id' => (int)$transaction['id'],
+        ]);
+
+        return $stmt->fetchAll();
+    }
+
+    private function transactionCanAutoMatch(array $transaction): bool
+    {
+        if ((int)($transaction['company_id'] ?? 0) <= 0
+            || (int)($transaction['accounting_period_id'] ?? 0) <= 0
+            || (int)($transaction['account_id'] ?? 0) <= 0
+        ) {
+            return false;
+        }
+
+        if ((string)($transaction['account_type'] ?? '') !== \eel_accounts\Service\CompanyAccountService::TYPE_BANK) {
+            return false;
+        }
+
+        if ($this->normalisedText((string)($transaction['institution_name'] ?? '')) === '') {
+            return false;
+        }
+
+        if (!$this->transactionMatchesOwnTransferMarker($transaction)) {
+            return false;
+        }
+
+        if (round(abs((float)($transaction['amount'] ?? 0)), 2) <= 0.0) {
+            return false;
+        }
+
+        if ((int)($transaction['has_split'] ?? 0) === 1 || (int)($transaction['has_journal'] ?? 0) === 1) {
+            return false;
+        }
+
+        return ($transaction['nominal_account_id'] ?? null) === null
+            && ($transaction['transfer_account_id'] ?? null) === null
+            && (int)($transaction['is_internal_transfer'] ?? 0) === 1
+            && (string)($transaction['category_status'] ?? '') === 'uncategorised'
+            && (int)($transaction['is_auto_excluded'] ?? 0) === 0;
+    }
+
+    private function transactionMatchesOwnTransferMarker(array $transaction): bool
+    {
+        $txnType = $this->normalisedText((string)($transaction['txn_type'] ?? ''));
+        $marker = $this->normalisedText((string)($transaction['internal_transfer_marker'] ?? ''));
+
+        return $txnType !== '' && $marker !== '' && $txnType === $marker;
+    }
+
+    private function normalisedText(string $value): string
+    {
+        return strtolower(trim($value));
     }
 
     private function fetchTransaction(int $transactionId): ?array

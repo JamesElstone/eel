@@ -245,6 +245,12 @@ $harness->run(_transactions_importedCard::class, static function (GeneratedServi
     $harness->assertFalse(str_contains($savedHtml, 'name="global_action" value="defer_transaction"'));
     $harness->assertFalse(str_contains($savedHtml, 'transaction-asset-form-5802'));
 
+    $markerMatchedContext = $savedContext;
+    $markerMatchedContext['services']['transactions_by_month'][0]['inter_ac_created_by'] = 'transfer_marker:auto';
+    $markerMatchedHtml = $card->render($markerMatchedContext);
+    $harness->assertTrue(str_contains($markerMatchedHtml, 'Matched by transfer marker'));
+    $harness->assertFalse(str_contains($markerMatchedHtml, 'Posting Source'));
+
     $lockedSavedContext = $savedContext;
     $lockedSavedContext['services']['year_end_review']['is_locked'] = true;
     $lockedSavedHtml = $card->render($lockedSavedContext);

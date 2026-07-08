@@ -62,6 +62,7 @@ final class _transactions_monthly_statusCard extends CardBaseFramework
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $selectedTransactionFilter = (string)($page['selected_transaction_filter'] ?? $page['category_filter'] ?? 'all');
+        $selectedAccountFilter = max(0, (int)($page['selected_account_filter'] ?? $page['account_filter'] ?? 0));
 
         if ($monthStatus === []) {
             return '<div class="helper">Select a company and accounting period to see monthly transaction status.</div>';
@@ -89,6 +90,7 @@ final class _transactions_monthly_statusCard extends CardBaseFramework
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="month_key" value="' . HelperFramework::escape((string)($month['month_key'] ?? '')) . '">
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                <input type="hidden" name="account_filter" value="' . $selectedAccountFilter . '">
                 <button class="' . HelperFramework::escape($this->monthStatusClass((string)($month['status'] ?? 'idle'))) . '" type="submit" data-page-card-switch-tab="Categorise">
                 <div class="month-head">
                     <div>

@@ -86,11 +86,14 @@ final class DividendAction implements ActionInterfaceFramework
             }
         }
 
+        $accountFilter = (new \eel_accounts\Repository\DashboardRepository())
+            ->normaliseTransactionAccountFilter($request->input('account_filter', 0));
         $context = [
             'month_key' => (string)$request->input('month_key', ''),
             'category_filter' => (string)$request->input('category_filter', ''),
+            'account_filter' => $accountFilter,
         ];
-        $query = array_filter($context, static fn(string $value): bool => trim($value) !== '');
+        $query = array_filter($context, static fn(mixed $value): bool => trim((string)$value) !== '' && trim((string)$value) !== '0');
         $query['company_id'] = (int)$request->input('company_id', 0);
         $query['accounting_period_id'] = (int)$request->input('accounting_period_id', 0);
 

@@ -49,7 +49,7 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
     });
 
     $harness->check(\eel_accounts\Repository\DashboardRepository::class, 'fetches imported transaction notes for month rows', function () use ($harness): void {
-        if (!InterfaceDB::tableExists('companies') || !InterfaceDB::tableExists('accounting_periods') || !InterfaceDB::tableExists('statement_uploads') || !InterfaceDB::tableExists('transactions')) {
+        if (!InterfaceDB::tableExists('companies') || !InterfaceDB::tableExists('accounting_periods') || !InterfaceDB::tableExists('company_accounts') || !InterfaceDB::tableExists('statement_uploads') || !InterfaceDB::tableExists('transactions')) {
             $harness->skip('Transaction fixture tables are not available on the default InterfaceDB connection.');
         }
 
@@ -86,6 +86,40 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
                 [
                     'company_id' => $companyId,
                     'label' => 'FY ' . $marker,
+                ]
+            );
+
+            InterfaceDB::prepareExecute(
+                'INSERT INTO company_accounts (company_id, account_name, account_type, is_active)
+                 VALUES (:company_id, :account_name, :account_type, 1)',
+                [
+                    'company_id' => $companyId,
+                    'account_name' => 'Fixture current account ' . $marker,
+                    'account_type' => 'bank',
+                ]
+            );
+            $currentAccountId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM company_accounts WHERE company_id = :company_id AND account_name = :account_name ORDER BY id DESC LIMIT 1',
+                [
+                    'company_id' => $companyId,
+                    'account_name' => 'Fixture current account ' . $marker,
+                ]
+            );
+
+            InterfaceDB::prepareExecute(
+                'INSERT INTO company_accounts (company_id, account_name, account_type, is_active)
+                 VALUES (:company_id, :account_name, :account_type, 1)',
+                [
+                    'company_id' => $companyId,
+                    'account_name' => 'Fixture reserve account ' . $marker,
+                    'account_type' => 'bank',
+                ]
+            );
+            $reserveAccountId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM company_accounts WHERE company_id = :company_id AND account_name = :account_name ORDER BY id DESC LIMIT 1',
+                [
+                    'company_id' => $companyId,
+                    'account_name' => 'Fixture reserve account ' . $marker,
                 ]
             );
 
@@ -129,6 +163,7 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
                 'INSERT INTO transactions (
                     company_id,
                     accounting_period_id,
+                    account_id,
                     statement_upload_id,
                     txn_date,
                     description,
@@ -142,6 +177,7 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
                  ) VALUES (
                     :company_id,
                     :accounting_period_id,
+                    :account_id,
                     :statement_upload_id,
                     :txn_date,
                     :description,
@@ -156,6 +192,7 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
                 [
                     'company_id' => $companyId,
                     'accounting_period_id' => $accountingPeriodId,
+                    'account_id' => $currentAccountId,
                     'statement_upload_id' => $uploadId,
                     'txn_date' => '2022-11-02',
                     'description' => 'Dashboard note fixture',
@@ -169,10 +206,64 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
                 ]
             );
 
-            $rows = $repository->fetchTransactionsForMonth($companyId, $accountingPeriodId, '2022-11-01', 'all');
+            InterfaceDB::prepareExecute(
+                'INSERT INTO transactions (
+                    company_id,
+                    accounting_period_id,
+                    account_id,
+                    statement_upload_id,
+                    txn_date,
+                    description,
+                    reference,
+                    amount,
+                    currency,
+                    source_account_label,
+                    dedupe_hash,
+                    category_status,
+                    notes
+                 ) VALUES (
+                    :company_id,
+                    :accounting_period_id,
+                    :account_id,
+                    :statement_upload_id,
+                    :txn_date,
+                    :description,
+                    :reference,
+                    :amount,
+                    :currency,
+                    :source_account_label,
+                    :dedupe_hash,
+                    :category_status,
+                    :notes
+                 )',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'account_id' => $reserveAccountId,
+                    'statement_upload_id' => $uploadId,
+                    'txn_date' => '2022-11-03',
+                    'description' => 'Dashboard account filter fixture',
+                    'reference' => 'FILTER',
+                    'amount' => '-42.00',
+                    'currency' => 'GBP',
+                    'source_account_label' => 'Fixture reserve account',
+                    'dedupe_hash' => hash('sha256', 'dashboard-filter-' . $marker),
+                    'category_status' => 'manual',
+                    'notes' => 'Other account row.',
+                ]
+            );
 
-            $harness->assertSame(1, count($rows));
-            $harness->assertSame('Retain this note after AJAX refresh.', (string)($rows[0]['notes'] ?? ''));
+            $rows = $repository->fetchTransactionsForMonth($companyId, $accountingPeriodId, '2022-11-01', 'all');
+            $currentAccountRows = $repository->fetchTransactionsForMonth($companyId, $accountingPeriodId, '2022-11-01', 'all', 500, $currentAccountId);
+            $reserveAccountRows = $repository->fetchTransactionsForMonth($companyId, $accountingPeriodId, '2022-11-01', 'all', 500, $reserveAccountId);
+            $missingAccountRows = $repository->fetchTransactionsForMonth($companyId, $accountingPeriodId, '2022-11-01', 'all', 500, $reserveAccountId + $currentAccountId + 999999);
+
+            $harness->assertSame(2, count($rows));
+            $harness->assertSame(1, count($currentAccountRows));
+            $harness->assertSame('Retain this note after AJAX refresh.', (string)($currentAccountRows[0]['notes'] ?? ''));
+            $harness->assertSame(1, count($reserveAccountRows));
+            $harness->assertSame('Other account row.', (string)($reserveAccountRows[0]['notes'] ?? ''));
+            $harness->assertSame(0, count($missingAccountRows));
         } finally {
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();

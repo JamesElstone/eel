@@ -150,6 +150,10 @@ final class TransactionAction implements ActionInterfaceFramework
             $context['category_filter']
             ?? $request->input('category_filter', $request->query('category_filter', 'not_posted'))
         ));
+        $accountFilter = $dashboardRepository->normaliseTransactionAccountFilter(
+            $context['account_filter']
+            ?? $request->input('account_filter', $request->query('account_filter', 0))
+        );
         $editingRuleId = max(0, (int)($context['editing_rule_id'] ?? 0));
         if ($editingRuleId <= 0 && isset($context['editing_rule_id'])) {
             $editingRuleId = 0;
@@ -162,6 +166,8 @@ final class TransactionAction implements ActionInterfaceFramework
             'month_key' => $monthKey,
             'category_filter' => $categoryFilter,
             'selected_transaction_filter' => $categoryFilter,
+            'account_filter' => $accountFilter,
+            'selected_account_filter' => $accountFilter,
             'editing_rule_id' => $editingRuleId,
             'inter_ac_transaction_id' => max(0, (int)($context['inter_ac_transaction_id'] ?? $request->input('inter_ac_transaction_id', 0))),
         ]);
@@ -921,6 +927,7 @@ final class TransactionAction implements ActionInterfaceFramework
         return [
             'month_key' => $dashboardRepository->normaliseTransactionMonthFilter((string)$request->input('month_key', '')),
             'category_filter' => $dashboardRepository->normaliseTransactionCategoryFilter((string)$request->input('category_filter', 'not_posted')),
+            'account_filter' => $dashboardRepository->normaliseTransactionAccountFilter($request->input('account_filter', 0)),
             'editing_rule_id' => $this->positiveInt($request->input('rule_id', 0)),
         ];
     }
@@ -935,6 +942,7 @@ final class TransactionAction implements ActionInterfaceFramework
             'accounting_period_id' => $accountingPeriodId > 0 ? $accountingPeriodId : null,
             'month_key' => (string)($context['month_key'] ?? '') !== '' ? (string)$context['month_key'] : null,
             'category_filter' => (string)($context['category_filter'] ?? '') !== '' ? (string)$context['category_filter'] : null,
+            'account_filter' => (int)($context['account_filter'] ?? 0) > 0 ? (int)$context['account_filter'] : null,
             'rule_id' => (int)($context['editing_rule_id'] ?? 0) > 0 ? (int)$context['editing_rule_id'] : null,
         ];
     }

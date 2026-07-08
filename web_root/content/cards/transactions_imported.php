@@ -37,6 +37,7 @@ final class _transactions_importedCard extends CardBaseFramework
                     'accountingPeriodId' => ':company.accounting_period_id',
                     'monthKey' => ':page.month_key',
                     'categoryFilter' => ':page.category_filter',
+                    'accountFilter' => ':page.account_filter',
                 ],
             ],
             [
@@ -112,11 +113,13 @@ final class _transactions_importedCard extends CardBaseFramework
         $transactionsByMonth = (array)($services['transactions_by_month'] ?? []);
         $monthStatus = (array)($services['month_status'] ?? []);
         $nominalAccounts = (array)($services['nominal_accounts'] ?? []);
+        $companyAccounts = $this->companyAccounts($services);
         $activeTransferCompanyAccounts = $this->activeTransferCompanyAccounts($services);
         $isPeriodLocked = $this->isPeriodLocked($services);
         $settings = (array)($company['settings'] ?? []);
         $selectedTransactionMonth = (string)($page['month_key'] ?? '');
         $selectedTransactionFilter = (string)($page['category_filter'] ?? 'not_posted');
+        $selectedAccountFilter = max(0, (int)($page['account_filter'] ?? 0));
         $interAcActiveTransactionId = max(0, (int)($page['inter_ac_transaction_id'] ?? 0));
         $selectedMonthSummary = $this->buildSelectedMonthSummary($transactionsByMonth);
         $pendingAutoApprovalCount = (int)($services['pending_auto_approval_count'] ?? $selectedMonthSummary['pending_auto_approval']);
@@ -136,7 +139,9 @@ final class _transactions_importedCard extends CardBaseFramework
             $accountingPeriodId,
             $selectedTransactionMonth,
             $selectedTransactionFilter,
+            $selectedAccountFilter,
             $nominalAccounts,
+            $companyAccounts,
             $activeTransferCompanyAccounts,
             $settings,
             $isPeriodLocked,
@@ -146,14 +151,19 @@ final class _transactions_importedCard extends CardBaseFramework
             $context,
             [
                 'cards[]' => (array)($context['page']['page_cards'] ?? []),
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'month_key' => $selectedTransactionMonth,
+                'category_filter' => $selectedTransactionFilter,
+                'account_filter' => $selectedAccountFilter,
             ]
         );
 
         return '
-            ' . $this->autoApprovalBatchFormHtml($companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter) . '
+            ' . $this->autoApprovalBatchFormHtml($companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $selectedAccountFilter) . '
             <div class="card-toolbar transactions-imported-controls">
                 <div class="transactions-imported-primary-controls">
-                    ' . $this->monthNavigationButtonHtml('<', (string)($monthNavigation['previous'] ?? ''), $companyId, $accountingPeriodId, $selectedTransactionFilter, 'previous') . '
+                    ' . $this->monthNavigationButtonHtml('<', (string)($monthNavigation['previous'] ?? ''), $companyId, $accountingPeriodId, $selectedTransactionFilter, $selectedAccountFilter, 'previous') . '
                     <form class="toolbar" method="post" action="?page=transactions" data-ajax="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                         <input type="hidden" name="card_action" value="Transaction">
@@ -162,13 +172,14 @@ final class _transactions_importedCard extends CardBaseFramework
                         <input type="hidden" name="company_id" value="' . $companyId . '">
                         <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                         <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                        ' . $this->accountFilterHiddenInput($selectedAccountFilter) . '
                         <div class="mini-field">
                             <label for="transaction_month_key">Month</label>
                             <select class="select" id="transaction_month_key" name="month_key">' . $monthOptions . '</select>
                         </div>
                     </form>
-                    ' . $this->monthNavigationButtonHtml('>', (string)($monthNavigation['next'] ?? ''), $companyId, $accountingPeriodId, $selectedTransactionFilter, 'next') . '
-                    ' . $this->bulkToolbarActionsHtml($companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $isPeriodLocked, $pendingAutoApprovalCount) . '
+                    ' . $this->monthNavigationButtonHtml('>', (string)($monthNavigation['next'] ?? ''), $companyId, $accountingPeriodId, $selectedTransactionFilter, $selectedAccountFilter, 'next') . '
+                    ' . $this->bulkToolbarActionsHtml($companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $selectedAccountFilter, $isPeriodLocked, $pendingAutoApprovalCount) . '
                 </div>
                 ' . $this->lockedPeriodNoticeHtml($isPeriodLocked) . '
                 <div class="pill-row transactions-imported-summary">
@@ -197,7 +208,9 @@ final class _transactions_importedCard extends CardBaseFramework
                 (int)($company['accounting_period_id'] ?? 0),
                 (string)($page['month_key'] ?? ''),
                 (string)($page['category_filter'] ?? 'not_posted'),
+                max(0, (int)($page['account_filter'] ?? 0)),
                 (array)($services['nominal_accounts'] ?? []),
+                $this->companyAccounts($services),
                 $this->activeTransferCompanyAccounts($services),
                 (array)($company['settings'] ?? []),
                 $isPeriodLocked,
@@ -212,7 +225,9 @@ final class _transactions_importedCard extends CardBaseFramework
         int $accountingPeriodId,
         string $selectedTransactionMonth,
         string $selectedTransactionFilter,
+        int $selectedAccountFilter,
         array $nominalAccounts,
+        array $companyAccounts,
         array $activeTransferCompanyAccounts,
         array $settings,
         bool $isPeriodLocked,
@@ -230,7 +245,9 @@ final class _transactions_importedCard extends CardBaseFramework
             $accountingPeriodId,
             $selectedTransactionMonth,
             $selectedTransactionFilter,
+            $selectedAccountFilter,
             $nominalAccounts,
+            $companyAccounts,
             $activeTransferCompanyAccounts,
             $settings,
             $isPeriodLocked,
@@ -250,6 +267,7 @@ final class _transactions_importedCard extends CardBaseFramework
                     'accounting_period_id' => $accountingPeriodId,
                     'month_key' => $selectedTransactionMonth,
                     'category_filter' => $selectedTransactionFilter,
+                    'account_filter' => $selectedAccountFilter,
                 ]
             );
     }
@@ -259,6 +277,7 @@ final class _transactions_importedCard extends CardBaseFramework
         int $accountingPeriodId,
         string $selectedTransactionMonth,
         string $selectedTransactionFilter,
+        int $selectedAccountFilter,
         bool $isPeriodLocked,
         int $pendingAutoApprovalCount = 0
     ): string
@@ -290,6 +309,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                ' . $this->accountFilterHiddenInput($selectedAccountFilter) . '
                 <input type="hidden" name="auto_scope" value="uncategorised">
                 <input type="hidden" name="global_action" value="run_auto_rules">
                 <button class="button"' . $autoButtonAttributes . '>Run Auto Rules</button>
@@ -301,6 +321,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                ' . $this->accountFilterHiddenInput($selectedAccountFilter) . '
                 <input type="hidden" name="global_action" value="post_categorised_transactions">
                 <input type="hidden" name="confirm_auto_categorisations" value="0">
                 <button class="button primary"' . $postButtonAttributes . '>Post Categorised Transactions</button>
@@ -341,6 +362,7 @@ final class _transactions_importedCard extends CardBaseFramework
         int $companyId,
         int $accountingPeriodId,
         string $selectedTransactionFilter,
+        int $selectedAccountFilter,
         string $direction
     ): string {
         $buttonText = HelperFramework::escape($label);
@@ -356,6 +378,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                ' . $this->accountFilterHiddenInput($selectedAccountFilter) . '
                 <input type="hidden" name="month_key" value="' . HelperFramework::escape($monthKey) . '">
                 <button class="button"' . $buttonAttributes . '>' . $buttonText . '</button>
             </form>';
@@ -367,7 +390,9 @@ final class _transactions_importedCard extends CardBaseFramework
         int $accountingPeriodId,
         string $selectedTransactionMonth,
         string $selectedTransactionFilter,
+        int $selectedAccountFilter,
         array $nominalAccounts,
+        array $companyAccounts,
         array $activeTransferCompanyAccounts,
         array $settings,
         bool $isPeriodLocked = false,
@@ -397,6 +422,22 @@ final class _transactions_importedCard extends CardBaseFramework
                     'company_id' => $companyId,
                     'accounting_period_id' => $accountingPeriodId,
                     'month_key' => $selectedTransactionMonth,
+                    'account_filter' => $selectedAccountFilter,
+                ]
+            )
+            ->filterSelect(
+                'account_filter',
+                'Account Filter',
+                $this->accountFilterOptions($companyAccounts),
+                (string)$selectedAccountFilter,
+                [
+                    'card_action' => 'Transaction',
+                    'global_action' => 'select_transaction_month',
+                    'selection_source' => 'transactions_imported_filters',
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'month_key' => $selectedTransactionMonth,
+                    'category_filter' => $selectedTransactionFilter,
                 ]
             )
             ->column('id', 'ID', exportType: 'number')
@@ -428,7 +469,7 @@ final class _transactions_importedCard extends CardBaseFramework
             ->column(
                 'document',
                 'Document',
-                html: fn(array $row): string => $this->isSyntheticSplitRow($row) ? '' : $this->documentHtml($row, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter)
+                html: fn(array $row): string => $this->isSyntheticSplitRow($row) ? '' : $this->documentHtml($row, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $selectedAccountFilter)
             )
             ->column(
                 'categorisation',
@@ -449,7 +490,7 @@ final class _transactions_importedCard extends CardBaseFramework
             ->column(
                 'auto_approval',
                 'Auto Decision',
-                html: fn(array $row): string => $this->autoApprovalHtml($row, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $isPeriodLocked),
+                html: fn(array $row): string => $this->autoApprovalHtml($row, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $selectedAccountFilter, $isPeriodLocked),
                 export: fn(array $row): string => $this->autoApprovalExport($row)
             )
             ->column(
@@ -478,9 +519,51 @@ final class _transactions_importedCard extends CardBaseFramework
             ->column(
                 'actions',
                 'Create / Set',
-                html: fn(array $row): string => $this->actionsHtml($row, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $settings, $isPeriodLocked, $activeTransferCompanyAccounts, $interAcActiveTransactionId),
+                html: fn(array $row): string => $this->actionsHtml($row, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $selectedAccountFilter, $settings, $isPeriodLocked, $activeTransferCompanyAccounts, $interAcActiveTransactionId),
                 exportable: false
             );
+    }
+
+    private function companyAccounts(array $services): array
+    {
+        return array_values(array_filter(
+            (array)($services['company_accounts'] ?? []),
+            static fn(mixed $account): bool => is_array($account)
+        ));
+    }
+
+    private function accountFilterOptions(array $companyAccounts): array
+    {
+        $options = ['0' => 'Any'];
+
+        foreach ($companyAccounts as $account) {
+            if (!is_array($account)) {
+                continue;
+            }
+
+            $accountId = (int)($account['id'] ?? 0);
+            if ($accountId <= 0) {
+                continue;
+            }
+
+            $options[(string)$accountId] = $this->companyAccountLabel($account);
+        }
+
+        return $options;
+    }
+
+    private function companyAccountLabel(array $account): string
+    {
+        $name = trim((string)($account['account_name'] ?? ''));
+        $accountType = (string)($account['account_type'] ?? '');
+        $accountTypeLabel = \eel_accounts\Service\CompanyAccountService::accountTypes()[$accountType] ?? ucfirst($accountType);
+
+        return trim(($name !== '' ? $name : 'Account ' . (int)($account['id'] ?? 0)) . ' [' . $accountTypeLabel . ']');
+    }
+
+    private function accountFilterHiddenInput(int $selectedAccountFilter): string
+    {
+        return '<input type="hidden" name="account_filter" value="' . max(0, $selectedAccountFilter) . '">';
     }
 
     private function activeTransferCompanyAccounts(array $services): array
@@ -620,7 +703,14 @@ final class _transactions_importedCard extends CardBaseFramework
             <div class="helper">' . HelperFramework::escape($sourceCategory !== '' ? $sourceCategory : 'No source category') . '</div>';
     }
 
-    private function documentHtml(array $transaction, int $companyId, int $accountingPeriodId, string $selectedTransactionMonth, string $selectedTransactionFilter): string
+    private function documentHtml(
+        array $transaction,
+        int $companyId,
+        int $accountingPeriodId,
+        string $selectedTransactionMonth,
+        string $selectedTransactionFilter,
+        int $selectedAccountFilter
+    ): string
     {
         $transactionId = (int)($transaction['id'] ?? 0);
         $documentHtml = '<div class="document-stack">
@@ -640,6 +730,7 @@ final class _transactions_importedCard extends CardBaseFramework
                     <input type="hidden" name="transaction_id" value="' . $transactionId . '">
                     <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
                     <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                    ' . $this->accountFilterHiddenInput($selectedAccountFilter) . '
                     <input type="hidden" name="global_action" value="retry_receipt_download">
                     <button class="button button-inline" type="submit">Retry receipt</button>
                 </form>';
@@ -883,6 +974,7 @@ final class _transactions_importedCard extends CardBaseFramework
         int $accountingPeriodId,
         string $selectedTransactionMonth,
         string $selectedTransactionFilter,
+        int $selectedAccountFilter,
         bool $isPeriodLocked
     ): string {
         if ($this->isSyntheticSplitRow($transaction)) {
@@ -917,7 +1009,8 @@ final class _transactions_importedCard extends CardBaseFramework
         int $companyId,
         int $accountingPeriodId,
         string $selectedTransactionMonth,
-        string $selectedTransactionFilter
+        string $selectedTransactionFilter,
+        int $selectedAccountFilter
     ): string {
         return '<form method="post" action="?page=transactions" data-ajax="true" data-auto-approval-batch-form="true" hidden>
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
@@ -927,6 +1020,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                ' . $this->accountFilterHiddenInput($selectedAccountFilter) . '
                 <button type="submit" data-auto-approval-batch-submit hidden>Save auto approvals</button>
             </form>';
     }
@@ -950,6 +1044,7 @@ final class _transactions_importedCard extends CardBaseFramework
         int $accountingPeriodId,
         string $selectedTransactionMonth,
         string $selectedTransactionFilter,
+        int $selectedAccountFilter,
         array $settings,
         bool $isPeriodLocked,
         array $activeTransferCompanyAccounts,
@@ -961,7 +1056,7 @@ final class _transactions_importedCard extends CardBaseFramework
             return '';
         }
         if ($rowType === 'split_line') {
-            return $this->splitLineActionsHtml($transaction, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $isPeriodLocked);
+            return $this->splitLineActionsHtml($transaction, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $selectedAccountFilter, $isPeriodLocked);
         }
 
         $transactionId = (int)($transaction['id'] ?? 0);
@@ -973,7 +1068,8 @@ final class _transactions_importedCard extends CardBaseFramework
                 $companyId,
                 $accountingPeriodId,
                 $selectedTransactionMonth,
-                $selectedTransactionFilter
+                $selectedTransactionFilter,
+                $selectedAccountFilter
             );
         }
         $assetFormId = 'transaction-asset-form-' . $transactionId;
@@ -1008,6 +1104,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="transaction_id" value="' . $transactionId . '">
                 <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                ' . $this->accountFilterHiddenInput($selectedAccountFilter) . '
                 <input type="hidden" name="confirm_rebuild_journal" value="0">
             </form>';
         }
@@ -1026,6 +1123,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="transaction_id" value="' . $transactionId . '">
                 <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                ' . $this->accountFilterHiddenInput($selectedAccountFilter) . '
             </form>
             <form method="post" action="?page=transactions" id="' . HelperFramework::escape($transactionFormId) . '" data-ajax="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
@@ -1035,6 +1133,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="transaction_id" value="' . $transactionId . '">
                 <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                ' . $this->accountFilterHiddenInput($selectedAccountFilter) . '
                 <input type="hidden" name="confirm_rebuild_journal" value="0">
                 ' . $autosaveSubmitHtml . '
                 ' . $interAcAutosaveSubmitHtml . '
@@ -1056,7 +1155,8 @@ final class _transactions_importedCard extends CardBaseFramework
         int $companyId,
         int $accountingPeriodId,
         string $selectedTransactionMonth,
-        string $selectedTransactionFilter
+        string $selectedTransactionFilter,
+        int $selectedAccountFilter
     ): string {
         return '<form method="post" action="?page=transactions" id="' . HelperFramework::escape($transactionFormId) . '" data-ajax="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
@@ -1066,6 +1166,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="transaction_id" value="' . $transactionId . '">
                 <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                ' . $this->accountFilterHiddenInput($selectedAccountFilter) . '
             </form>';
     }
 
@@ -1075,6 +1176,7 @@ final class _transactions_importedCard extends CardBaseFramework
         int $accountingPeriodId,
         string $selectedTransactionMonth,
         string $selectedTransactionFilter,
+        int $selectedAccountFilter,
         bool $isPeriodLocked
     ): string {
         $transactionId = (int)($transaction['id'] ?? 0);
@@ -1098,6 +1200,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 <input type="hidden" name="transaction_split_line_id" value="' . $lineId . '">
                 <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
                 <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                ' . $this->accountFilterHiddenInput($selectedAccountFilter) . '
                 <button class="js-transaction-split-line-autosave-submit" type="submit" name="global_action" value="save_transaction_split_line" hidden>Autosave split line</button>
                 <div class="actions-row">
                     <button class="button primary"' . $lockedButtonAttributes . ' name="global_action" value="defer_transaction_split_line">Defer</button>

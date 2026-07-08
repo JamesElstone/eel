@@ -68,6 +68,7 @@ final class _transactions_rulesCard extends CardBaseFramework
         $ruleImportJson = (string)($page['rule_import_json'] ?? '');
         $selectedTransactionMonth = (string)($page['month_key'] ?? '');
         $selectedTransactionFilter = (string)($page['category_filter'] ?? 'all');
+        $selectedAccountFilter = max(0, (int)($page['account_filter'] ?? 0));
 
         $rulesSection = $this->configuredRulesTable(
             $categorisationRules,
@@ -75,6 +76,7 @@ final class _transactions_rulesCard extends CardBaseFramework
             $accountingPeriodId,
             $selectedTransactionMonth,
             $selectedTransactionFilter,
+            $selectedAccountFilter,
             $context
         )->render($context, [
                 'cards[]' => (array)($context['page']['page_cards'] ?? []),
@@ -94,6 +96,7 @@ final class _transactions_rulesCard extends CardBaseFramework
                     <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                     <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
                     <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                    <input type="hidden" name="account_filter" value="' . $selectedAccountFilter . '">
                     <input type="hidden" name="global_action" value="import_categorisation_rules">
                     <div class="form-row">
                         <label for="rules_import_json" class="sr-only">Exported rules JSON</label>
@@ -120,19 +123,20 @@ final class _transactions_rulesCard extends CardBaseFramework
                 (int)($company['id'] ?? 0),
                 (int)($company['accounting_period_id'] ?? 0),
                 (string)($page['month_key'] ?? ''),
-                (string)($page['category_filter'] ?? 'all')
+                (string)($page['category_filter'] ?? 'all'),
+                max(0, (int)($page['account_filter'] ?? 0))
             ),
         ];
     }
 
-    private function configuredRulesTable(array $rules, int $companyId, int $accountingPeriodId, string $selectedTransactionMonth, string $selectedTransactionFilter, array $context): TableFramework
+    private function configuredRulesTable(array $rules, int $companyId, int $accountingPeriodId, string $selectedTransactionMonth, string $selectedTransactionFilter, int $selectedAccountFilter, array $context): TableFramework
     {
         $rows = array_values(array_filter($rules, static fn(mixed $rule): bool => is_array($rule)));
         $pagination = HelperFramework::paginateArray($rows, $this->paginationPage($context), self::PAGE_SIZE);
 
-        return $this->rulesTable($rules, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter)
+        return $this->rulesTable($rules, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $selectedAccountFilter)
             ->visibleRows((array)$pagination['items'])
-            ->toolbarActions($this->exportRulesToolbarAction($companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter))
+            ->toolbarActions($this->exportRulesToolbarAction($companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $selectedAccountFilter))
             ->pagination(
                 $pagination,
                 'Categorisation rules',
@@ -142,11 +146,14 @@ final class _transactions_rulesCard extends CardBaseFramework
                     '_pagination' => '1',
                     '_invalidate_fact' => $this->tableInvalidationFact(),
                     'cards[]' => [$this->key()],
+                    'month_key' => $selectedTransactionMonth,
+                    'category_filter' => $selectedTransactionFilter,
+                    'account_filter' => $selectedAccountFilter,
                 ]
             );
     }
 
-    private function rulesTable(array $rules, int $companyId, int $accountingPeriodId, string $selectedTransactionMonth, string $selectedTransactionFilter): TableFramework
+    private function rulesTable(array $rules, int $companyId, int $accountingPeriodId, string $selectedTransactionMonth, string $selectedTransactionFilter, int $selectedAccountFilter): TableFramework
     {
         $rows = array_values(array_filter($rules, static fn(mixed $rule): bool => is_array($rule)));
 
@@ -175,12 +182,12 @@ final class _transactions_rulesCard extends CardBaseFramework
             ->column(
                 'actions',
                 '',
-                html: fn(array $row): string => $this->ruleActionsHtml($row, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter),
+                html: fn(array $row): string => $this->ruleActionsHtml($row, $companyId, $accountingPeriodId, $selectedTransactionMonth, $selectedTransactionFilter, $selectedAccountFilter),
                 exportable: false
             );
     }
 
-    private function exportRulesToolbarAction(int $companyId, int $accountingPeriodId, string $selectedTransactionMonth, string $selectedTransactionFilter): string
+    private function exportRulesToolbarAction(int $companyId, int $accountingPeriodId, string $selectedTransactionMonth, string $selectedTransactionFilter, int $selectedAccountFilter): string
     {
         return '<form method="post" action="?page=transactions">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
@@ -189,12 +196,13 @@ final class _transactions_rulesCard extends CardBaseFramework
             <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
             <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
             <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+            <input type="hidden" name="account_filter" value="' . $selectedAccountFilter . '">
             <input type="hidden" name="global_action" value="export_categorisation_rules">
             <button class="button" type="submit">Export Rules</button>
         </form>';
     }
 
-    private function ruleActionsHtml(array $rule, int $companyId, int $accountingPeriodId, string $selectedTransactionMonth, string $selectedTransactionFilter): string
+    private function ruleActionsHtml(array $rule, int $companyId, int $accountingPeriodId, string $selectedTransactionMonth, string $selectedTransactionFilter, int $selectedAccountFilter): string
     {
         $ruleId = (int)($rule['id'] ?? 0);
         $isActive = (int)($rule['is_active'] ?? 0) === 1;
@@ -203,6 +211,7 @@ final class _transactions_rulesCard extends CardBaseFramework
             <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
             <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
             <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+            <input type="hidden" name="account_filter" value="' . $selectedAccountFilter . '">
             <input type="hidden" name="rule_id" value="' . $ruleId . '">';
 
         return '<div class="actions-row">

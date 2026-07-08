@@ -367,6 +367,11 @@ final class DashboardRepository
         return in_array($filter, ['all', 'not_posted', 'uncategorised', 'auto', 'manual'], true) ? $filter : 'all';
     }
 
+    public function normaliseTransactionAccountFilter(mixed $filter): int
+    {
+        return max(0, (int)$filter);
+    }
+
     public function normaliseSearchCategoryStatus(?string $filter): string
     {
         $filter = trim((string)$filter);
@@ -418,7 +423,8 @@ final class DashboardRepository
         int $accountingPeriodId,
         string $monthKey,
         string $categoryFilter = 'all',
-        int $limit = 500
+        int $limit = 500,
+        int $accountFilter = 0
     ): array {
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return [];
@@ -431,6 +437,7 @@ final class DashboardRepository
 
         $monthKey = $this->normaliseTransactionMonthFilter($monthKey);
         $categoryFilter = $this->normaliseTransactionCategoryFilter($categoryFilter);
+        $accountFilter = $this->normaliseTransactionAccountFilter($accountFilter);
         $limit = max(1, min($limit, 1000));
 
         $where = [
@@ -449,6 +456,11 @@ final class DashboardRepository
             $where[] = 't.txn_date BETWEEN :month_start AND :month_end';
             $params['month_start'] = $monthStart->format('Y-m-d');
             $params['month_end'] = $monthEnd->format('Y-m-d');
+        }
+
+        if ($accountFilter > 0) {
+            $where[] = 't.account_id = :account_filter';
+            $params['account_filter'] = $accountFilter;
         }
 
         $hasInterAccountMarkers = \InterfaceDB::tableExists('transaction_inter_ac_marker');

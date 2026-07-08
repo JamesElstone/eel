@@ -103,6 +103,7 @@ final class _transactions_rule_formCard extends CardBaseFramework
             'Any Account'
         );
         $selectedTransactionFilter = (string)($page['category_filter'] ?? 'all');
+        $selectedAccountFilter = max(0, (int)($page['account_filter'] ?? 0));
         $cancelFormId = 'transactions-rule-cancel-form';
         $descMatchType = (string)($ruleForm['desc_match_type'] ?? $ruleForm['match_type'] ?? 'contains');
         $descMatchValue = (string)($ruleForm['desc_match_value'] ?? $ruleForm['match_value'] ?? '');
@@ -126,6 +127,7 @@ final class _transactions_rule_formCard extends CardBaseFramework
                     <input type="hidden" name="global_action" value="cancel_categorisation_rule">
                     <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
                     <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                    <input type="hidden" name="account_filter" value="' . $selectedAccountFilter . '">
                 </form>'
                 : '') . '
             <form method="post" action="?page=transactions" data-ajax="true">
@@ -134,7 +136,8 @@ final class _transactions_rule_formCard extends CardBaseFramework
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <input type="hidden" name="month_key" value="' . HelperFramework::escape($selectedTransactionMonth) . '">
-                <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">'
+                <input type="hidden" name="category_filter" value="' . HelperFramework::escape($selectedTransactionFilter) . '">
+                <input type="hidden" name="account_filter" value="' . $selectedAccountFilter . '">'
                 . ($editingRuleId > 0
                     ? '<input type="hidden" name="rule_id" value="' . $editingRuleId . '">'
                     : '') . '

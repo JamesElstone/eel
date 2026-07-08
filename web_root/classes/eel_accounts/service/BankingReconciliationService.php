@@ -51,7 +51,7 @@ final class BankingReconciliationService
             $uploadAnalyses = [];
             $ledgerNominalId = $accountNominalId > 0 ? $accountNominalId : $bankNominalId;
             $ledgerDeltas = $accountType === \eel_accounts\Service\CompanyAccountService::TYPE_BANK && $ledgerNominalId > 0
-                ? $this->fetchLedgerBankDeltas($companyId, $accountingPeriodId, $ledgerNominalId)
+                ? $this->fetchLedgerBankDeltas($companyId, $ledgerNominalId)
                 : [];
 
             if ($accountType === \eel_accounts\Service\CompanyAccountService::TYPE_BANK) {
@@ -366,20 +366,18 @@ final class BankingReconciliationService
         return $grouped;
     }
 
-    private function fetchLedgerBankDeltas(int $companyId, int $accountingPeriodId, int $bankNominalId): array {
+    private function fetchLedgerBankDeltas(int $companyId, int $bankNominalId): array {
         $rows = \InterfaceDB::fetchAll( 'SELECT j.journal_date,
                     COALESCE(SUM(COALESCE(jl.debit, 0) - COALESCE(jl.credit, 0)), 0.00) AS day_delta,
                     SUM(CASE WHEN COALESCE(j.source_type, \'\') <> \'bank_csv\' THEN 1 ELSE 0 END) AS non_csv_lines
              FROM journals j
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
              WHERE j.company_id = :company_id
-               AND j.accounting_period_id = :accounting_period_id
                AND jl.nominal_account_id = :bank_nominal_id
                AND j.is_posted = 1
              GROUP BY j.journal_date
              ORDER BY j.journal_date ASC', [
             'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
             'bank_nominal_id' => $bankNominalId,
         ]);
 
@@ -539,7 +537,7 @@ final class BankingReconciliationService
                 'difference' => null,
                 'note' => 'No statement closing balance is available yet for this bank account.',
                 'scope_note' => $bankNominalId > 0
-                    ? ($usesAccountNominal ? 'Ledger reconciliation uses this company account nominal.' : 'Ledger reconciliation is using the default Bank nominal fallback.')
+                    ? ($usesAccountNominal ? 'Ledger reconciliation uses the cumulative posted balance for this company account nominal.' : 'Ledger reconciliation is using the cumulative posted balance for the default Bank nominal fallback.')
                     : 'Set the default Bank nominal to enable ledger reconciliation.',
             ];
         }
@@ -566,7 +564,7 @@ final class BankingReconciliationService
                 'ledger_balance' => 0.0,
                 'difference' => $latestStatement['closing_balance'] !== null ? $this->roundMoney(0.0 - (float)$latestStatement['closing_balance']) : null,
                 'note' => 'No posted ledger activity hits the configured Bank nominal by the statement closing date.',
-                'scope_note' => $usesAccountNominal ? 'Ledger reconciliation uses this company account nominal.' : 'Ledger reconciliation is using the default Bank nominal fallback.',
+                'scope_note' => $usesAccountNominal ? 'Ledger reconciliation uses the cumulative posted balance for this company account nominal.' : 'Ledger reconciliation is using the cumulative posted balance for the default Bank nominal fallback.',
             ];
         }
 
@@ -587,7 +585,7 @@ final class BankingReconciliationService
             'ledger_balance' => $ledgerPoint['balance'],
             'difference' => $difference,
             'note' => $note,
-            'scope_note' => $usesAccountNominal ? 'Ledger reconciliation uses this company account nominal.' : 'Ledger reconciliation is using the default Bank nominal fallback.',
+            'scope_note' => $usesAccountNominal ? 'Ledger reconciliation uses the cumulative posted balance for this company account nominal.' : 'Ledger reconciliation is using the cumulative posted balance for the default Bank nominal fallback.',
         ];
     }
 

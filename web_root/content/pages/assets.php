@@ -21,7 +21,7 @@ final class _assets extends PageContextFramework
 
     public function subtitle(): string
     {
-        return 'Manage the fixed asset register, additions, and tax view for the selected accounting period.';
+        return 'Manage the fixed asset register and additions for the selected accounting period.';
     }
 
     public function ajaxPendingBlurScope(): string
@@ -31,7 +31,7 @@ final class _assets extends PageContextFramework
 
     public function cards(): array
     {
-        return ['asset_create', 'asset_reconcile_manual', 'asset_register', 'asset_tax', 'not_an_asset'];
+        return ['asset_create', 'asset_reconcile_manual', 'asset_register', 'not_an_asset'];
     }
 
     public function cardLayout(): array
@@ -41,7 +41,6 @@ final class _assets extends PageContextFramework
                 'tab' => 'Asset Register',
                 'cards' => [
                     'asset_register',
-                    'asset_tax',
                 ],
             ],
             [

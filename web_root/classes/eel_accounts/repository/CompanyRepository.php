@@ -22,6 +22,8 @@ final class CompanyRepository
         'director_loan_liability_nominal_id',
         'vat_nominal_id',
         'uncategorised_nominal_id',
+        'corporation_tax_expense_nominal_id',
+        'corporation_tax_liability_nominal_id',
     ];
 
     public function fetchCompanies(): array

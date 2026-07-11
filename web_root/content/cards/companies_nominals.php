@@ -76,6 +76,8 @@ final class _companies_nominalsCard extends CardBaseFramework
                 'director_loan_liability_nominal_id' => 'Director Loan Liability nominal',
                 'vat_nominal_id' => 'VAT control nominal',
                 'uncategorised_nominal_id' => 'Fallback uncategorised nominal',
+                'corporation_tax_expense_nominal_id' => 'Corporation Tax expense nominal',
+                'corporation_tax_liability_nominal_id' => 'Corporation Tax liability nominal',
             ];
 
             foreach ($suggestionLabels as $key => $label) {
@@ -117,7 +119,7 @@ final class _companies_nominalsCard extends CardBaseFramework
                 <input type="hidden" name="intent" value="save_nominals">
                 <input type="hidden" name="company_id" value="' . HelperFramework::escape((string)($context['company']['id'] ?? 0)) . '">
                 <div class="panel-soft">
-                    <section data-state-fields="default_bank_nominal_id,default_trade_nominal_id,default_expense_nominal_id,tools_small_equipment_nominal_id,director_loan_asset_nominal_id,director_loan_liability_nominal_id,vat_nominal_id,uncategorised_nominal_id" data-state-target="save_default_nominals">
+                    <section data-state-fields="default_bank_nominal_id,default_trade_nominal_id,default_expense_nominal_id,tools_small_equipment_nominal_id,director_loan_asset_nominal_id,director_loan_liability_nominal_id,vat_nominal_id,uncategorised_nominal_id,corporation_tax_expense_nominal_id,corporation_tax_liability_nominal_id" data-state-target="save_default_nominals">
                     <div class="form-flex-flow">
                         <div class="form-row">
                             <label for="default_bank_nominal_id">Default Bank nominal</label>
@@ -173,6 +175,20 @@ final class _companies_nominalsCard extends CardBaseFramework
                             <select class="select" id="uncategorised_nominal_id" name="uncategorised_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['uncategorised_nominal_id'] ?? '')) . '">
                                 <option value="">Select nominal account</option>
                                 ' . $this->nominalOptions($nominalAccounts, (string)($settings['uncategorised_nominal_id'] ?? '')) . '
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <label for="corporation_tax_expense_nominal_id">Corporation Tax Expense nominal</label>
+                            <select class="select" id="corporation_tax_expense_nominal_id" name="corporation_tax_expense_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['corporation_tax_expense_nominal_id'] ?? '')) . '">
+                                <option value="">Select nominal account</option>
+                                ' . $this->nominalOptions($nominalAccounts, (string)($settings['corporation_tax_expense_nominal_id'] ?? '')) . '
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <label for="corporation_tax_liability_nominal_id">Corporation Tax Liability nominal</label>
+                            <select class="select" id="corporation_tax_liability_nominal_id" name="corporation_tax_liability_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['corporation_tax_liability_nominal_id'] ?? '')) . '">
+                                <option value="">Select nominal account</option>
+                                ' . $this->nominalOptions($nominalAccounts, (string)($settings['corporation_tax_liability_nominal_id'] ?? '')) . '
                             </select>
                         </div>
                     </div>
@@ -299,6 +315,12 @@ final class _companies_nominalsCard extends CardBaseFramework
                     $name = strtolower($row['name']);
                     return $row['id'] > 0 && ($row['code'] === '9999' || str_contains($name, 'uncategorised') || str_contains($name, 'unclassified'));
                 })
+                : null,
+            'corporation_tax_expense_nominal_id' => !$this->hasAssignedNominal($settings, 'corporation_tax_expense_nominal_id')
+                ? $this->firstMatchingNominal($normalised, static fn(array $row): bool => $row['id'] > 0 && $row['account_type'] === 'expense' && $row['subtype_code'] === 'corp_tax_expense')
+                : null,
+            'corporation_tax_liability_nominal_id' => !$this->hasAssignedNominal($settings, 'corporation_tax_liability_nominal_id')
+                ? $this->firstMatchingNominal($normalised, static fn(array $row): bool => $row['id'] > 0 && $row['account_type'] === 'liability' && $row['subtype_code'] === 'corp_tax')
                 : null,
         ], static fn(?array $row): bool => $row !== null);
     }

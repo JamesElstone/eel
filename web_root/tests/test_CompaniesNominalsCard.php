@@ -31,6 +31,8 @@ $harness->run(_companies_nominalsCard::class, static function (GeneratedServiceC
                 ['id' => 17, 'code' => '1330', 'name' => 'Accumulated Depreciation - Tools', 'account_type' => 'asset', 'subtype_code' => ''],
                 ['id' => 18, 'code' => '6070', 'name' => 'Tools & Small Equipment', 'account_type' => 'expense', 'subtype_code' => 'overhead'],
                 ['id' => 20, 'code' => '5000', 'name' => 'Materials', 'account_type' => 'expense', 'subtype_code' => ''],
+                ['id' => 21, 'code' => '8500', 'name' => 'Tax charge renamed safely', 'account_type' => 'expense', 'subtype_code' => 'corp_tax_expense'],
+                ['id' => 22, 'code' => '2200', 'name' => 'Tax creditor renamed safely', 'account_type' => 'liability', 'subtype_code' => 'corp_tax'],
             ],
         ],
     ];
@@ -40,8 +42,15 @@ $harness->run(_companies_nominalsCard::class, static function (GeneratedServiceC
     $harness->check(_companies_nominalsCard::class, 'renders default trade nominal field', static function () use ($harness, $html): void {
         $harness->assertTrue(str_contains($html, 'default_trade_nominal_id'));
         $harness->assertTrue(str_contains($html, '<label for="default_trade_nominal_id">Default Trade nominal</label>'));
-        $harness->assertTrue(str_contains($html, 'data-state-fields="default_bank_nominal_id,default_trade_nominal_id,default_expense_nominal_id,tools_small_equipment_nominal_id,director_loan_asset_nominal_id,director_loan_liability_nominal_id,vat_nominal_id,uncategorised_nominal_id"'));
+        $harness->assertTrue(str_contains($html, 'data-state-fields="default_bank_nominal_id,default_trade_nominal_id,default_expense_nominal_id,tools_small_equipment_nominal_id,director_loan_asset_nominal_id,director_loan_liability_nominal_id,vat_nominal_id,uncategorised_nominal_id,corporation_tax_expense_nominal_id,corporation_tax_liability_nominal_id"'));
         $harness->assertTrue(str_contains($html, '<option value="15" selected>2300 Trade Creditors</option>'));
+    });
+
+    $harness->check(_companies_nominalsCard::class, 'renders and suggests explicit Corporation Tax nominal mappings', static function () use ($harness, $html): void {
+        $harness->assertTrue(str_contains($html, 'name="corporation_tax_expense_nominal_id"'));
+        $harness->assertTrue(str_contains($html, 'name="corporation_tax_liability_nominal_id"'));
+        $harness->assertTrue(str_contains($html, '<strong>Corporation Tax expense nominal</strong><span>8500 Tax charge renamed safely</span>'));
+        $harness->assertTrue(str_contains($html, '<strong>Corporation Tax liability nominal</strong><span>2200 Tax creditor renamed safely</span>'));
     });
 
     $harness->check(_companies_nominalsCard::class, 'suggests expense claims payable as the default expense nominal', static function () use ($harness, $html): void {

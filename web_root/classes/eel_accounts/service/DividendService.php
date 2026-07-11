@@ -128,7 +128,9 @@ final class DividendService
         $periodStart = (string)$accountingPeriod['period_start'];
         $periodEnd = (string)$accountingPeriod['period_end'];
         $effectiveDate = $this->effectiveAsAtDate($asAtDate, $periodStart, $periodEnd);
-        $ledgerProfit = $this->profitForPeriod($companyId, $accountingPeriodId, $periodStart, $effectiveDate);
+        $preTaxService = new \eel_accounts\Service\PreTaxProfitLossService();
+        $preTaxProfitLoss = $preTaxService->calculate($companyId, $accountingPeriodId, $effectiveDate);
+        $ledgerProfit = round((float)($preTaxProfitLoss['profit_before_tax'] ?? 0), 2);
         $dividendsDeclared = $this->dividendsDeclaredForPeriod($companyId, $accountingPeriodId, $periodStart, $effectiveDate);
         $retainedEarningsPosition = $this->retainedEarningsBroughtForward($companyId, $accountingPeriodId, $periodStart);
         $retainedEarningsBroughtForward = (float)($retainedEarningsPosition['amount'] ?? 0.0);
@@ -139,7 +141,7 @@ final class DividendService
         $classifiedProfit = $reserveReviewReliable
             ? round((float)($reserveSnapshot['distributable_current_profit'] ?? 0), 2)
             : 0.0;
-        $taxPosition = $this->corporationTaxCapacityPosition($companyId, $accountingPeriodId, $accountingPeriod, $ledgerProfit, $effectiveDate);
+        $taxPosition = $this->corporationTaxCapacityPosition($companyId, $accountingPeriodId, $accountingPeriod, $ledgerProfit, $effectiveDate, $preTaxService, $preTaxProfitLoss);
         $currentYearProfitAfterTax = round($classifiedProfit - (float)($taxPosition['unposted_corporation_tax_adjustment'] ?? 0), 2);
         $availableReserves = round($retainedEarningsBroughtForward + $currentYearProfitAfterTax - $dividendsDeclared, 2);
         $reservesReliable = !empty($retainedEarningsPosition['reliable'])
@@ -1116,7 +1118,7 @@ final class DividendService
         return 'Reserve basis is based on locked prior distributable reserves, reviewed current-year reserve classifications, and Corporation Tax capacity checks.';
     }
 
-    private function corporationTaxCapacityPosition(int $companyId, int $accountingPeriodId, array $accountingPeriod, float $ledgerProfit, string $asAtDate): array
+    private function corporationTaxCapacityPosition(int $companyId, int $accountingPeriodId, array $accountingPeriod, float $ledgerProfit, string $asAtDate, PreTaxProfitLossService $preTaxService, array $preTaxProfitLoss): array
     {
         $postedCharge = $this->postedCorporationTaxChargeForPeriod(
             $companyId,
@@ -1130,7 +1132,30 @@ final class DividendService
         $result = [];
 
         try {
-            $result = (new \eel_accounts\Service\YearEndTaxReadinessService())->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
+            $metrics = new YearEndMetricsService(null, null, null, null, $preTaxService);
+            $computation = new CorporationTaxComputationService($metrics);
+            if ($asAtDate < (string)($accountingPeriod['period_end'] ?? $asAtDate)) {
+                $asAtPeriod = $accountingPeriod;
+                $asAtPeriod['period_end'] = $asAtDate;
+                $result = $computation->fetchCurrentPeriodEstimate(
+                    $companyId,
+                    $accountingPeriodId,
+                    $asAtPeriod,
+                    [
+                        'profit_before_tax' => (float)($preTaxProfitLoss['profit_before_tax'] ?? 0),
+                        'disallowable_add_backs' => (float)($preTaxProfitLoss['disallowable_add_backs'] ?? 0),
+                        'capital_add_backs' => (float)($preTaxProfitLoss['capital_add_backs'] ?? 0),
+                        'other_treatment_count' => (int)($preTaxProfitLoss['other_treatment_count'] ?? 0),
+                        'unknown_treatment_count' => (int)($preTaxProfitLoss['unknown_treatment_count'] ?? 0),
+                    ]
+                );
+                if (!empty($result['available'])) {
+                    $result['periods'] = [$result];
+                    $result['totals'] = $result;
+                }
+            } else {
+                $result = (new YearEndTaxReadinessService($metrics, $computation))->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
+            }
             $estimateAvailable = !empty($result['available']);
             if ($estimateAvailable) {
                 $estimate = max(0.0, round((float)($result['estimated_corporation_tax'] ?? 0), 2));
@@ -1174,42 +1199,27 @@ final class DividendService
             return 0.0;
         }
 
+        $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
+        $expenseNominalId = (int)($settings['corporation_tax_expense_nominal_id'] ?? 0);
+        if ($expenseNominalId <= 0) {
+            return 0.0;
+        }
+
         return max(0.0, round((float)\InterfaceDB::fetchColumn(
             'SELECT COALESCE(SUM(pjl.debit - pjl.credit), 0)
              FROM journals j
              INNER JOIN journal_lines pjl ON pjl.journal_id = j.id
-             INNER JOIN nominal_accounts pna ON pna.id = pjl.nominal_account_id
              WHERE j.company_id = :company_id
                AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
                AND j.journal_date BETWEEN :period_start AND :period_end
-               AND pna.account_type IN (:expense_type, :cost_type)
-               AND (
-                    LOWER(pna.name) LIKE :corporation_tax_name
-                    OR EXISTS (
-                        SELECT 1
-                        FROM journal_lines ctl
-                        INNER JOIN nominal_accounts ctna ON ctna.id = ctl.nominal_account_id
-                        LEFT JOIN nominal_account_subtypes cts ON cts.id = ctna.account_subtype_id
-                        WHERE ctl.journal_id = j.id
-                          AND (
-                            ctna.code = :corporation_tax_code
-                            OR LOWER(ctna.name) LIKE :corporation_tax_name_exists
-                            OR cts.code = :corporation_tax_subtype
-                          )
-                    )
-               )',
+               AND pjl.nominal_account_id = :expense_nominal_id',
             [
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
                 'period_start' => $periodStart,
                 'period_end' => $periodEnd,
-                'expense_type' => 'expense',
-                'cost_type' => 'cost_of_sales',
-                'corporation_tax_name' => '%corporation tax%',
-                'corporation_tax_name_exists' => '%corporation tax%',
-                'corporation_tax_code' => '2200',
-                'corporation_tax_subtype' => 'corp_tax',
+                'expense_nominal_id' => $expenseNominalId,
             ]
         ), 2));
     }
@@ -1802,54 +1812,6 @@ final class DividendService
                 'account_type' => $accountType,
             ]
         ) ?: 0);
-    }
-
-    private function profitForPeriod(int $companyId, int $accountingPeriodId, string $periodStart, string $asAtDate): float
-    {
-        $rows = \InterfaceDB::fetchAll(
-            'SELECT na.account_type,
-                    COALESCE(SUM(jl.debit), 0) AS total_debit,
-                    COALESCE(SUM(jl.credit), 0) AS total_credit
-             FROM journals j
-             INNER JOIN journal_lines jl ON jl.journal_id = j.id
-             INNER JOIN nominal_accounts na ON na.id = jl.nominal_account_id
-             LEFT JOIN journal_entry_metadata jem_close
-               ON jem_close.journal_id = j.id
-              AND jem_close.journal_tag = :close_journal_tag
-             WHERE j.company_id = :company_id
-               AND j.accounting_period_id = :accounting_period_id
-               AND j.is_posted = 1
-               AND j.journal_date BETWEEN :period_start AND :as_at_date
-               AND jem_close.id IS NULL
-               AND na.account_type IN (:income_type, :cost_type, :expense_type)
-             GROUP BY na.account_type',
-            [
-                'close_journal_tag' => \eel_accounts\Service\RetainedEarningsCloseService::JOURNAL_TAG,
-                'company_id' => $companyId,
-                'accounting_period_id' => $accountingPeriodId,
-                'period_start' => $periodStart,
-                'as_at_date' => $asAtDate,
-                'income_type' => 'income',
-                'cost_type' => 'cost_of_sales',
-                'expense_type' => 'expense',
-            ]
-        );
-
-        $income = 0.0;
-        $expenses = 0.0;
-        foreach ($rows as $row) {
-            $accountType = (string)($row['account_type'] ?? '');
-            $debit = (float)($row['total_debit'] ?? 0);
-            $credit = (float)($row['total_credit'] ?? 0);
-
-            if ($accountType === 'income') {
-                $income += round($credit - $debit, 2);
-            } elseif ($accountType === 'expense' || $accountType === 'cost_of_sales') {
-                $expenses += round($debit - $credit, 2);
-            }
-        }
-
-        return round($income - $expenses, 2);
     }
 
     private function dividendsDeclaredForPeriod(int $companyId, int $accountingPeriodId, string $periodStart, string $asAtDate): float

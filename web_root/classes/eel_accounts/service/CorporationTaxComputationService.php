@@ -622,7 +622,12 @@ final class CorporationTaxComputationService
 
         $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
         $accountingPeriods = array_reverse($metrics->fetchAccountingPeriods($companyId));
-        $lossPool = [];
+        $checkpoint = $stopAtCtPeriodId !== null
+            ? $this->lockedLossCheckpointBefore($companyId, $stopAtCtPeriodId)
+            : null;
+        $checkpointEnd = is_array($checkpoint) ? (string)($checkpoint['period_end'] ?? '') : '';
+        $checkpointLoss = is_array($checkpoint) ? max(0.0, (float)($checkpoint['losses_carried_forward'] ?? 0)) : 0.0;
+        $lossPool = $checkpointLoss > 0 ? [['amount_remaining' => $checkpointLoss]] : [];
         $schedule = [];
 
         foreach ($accountingPeriods as $accountingPeriod) {
@@ -631,6 +636,9 @@ final class CorporationTaxComputationService
             foreach ($ctPeriods as $ctPeriod) {
                 $ctPeriodId = (int)($ctPeriod['id'] ?? 0);
                 if ($ctPeriodId <= 0) {
+                    continue;
+                }
+                if ($checkpointEnd !== '' && (string)($ctPeriod['period_end'] ?? '') <= $checkpointEnd) {
                     continue;
                 }
 
@@ -682,6 +690,90 @@ final class CorporationTaxComputationService
 
         $this->ctPeriodLossScheduleCompleteCache[$companyId] = true;
         return $this->ctPeriodLossScheduleCache[$companyId] = $schedule;
+    }
+
+    /**
+     * Returns the latest valid checkpoint from the consecutive locked prefix
+     * before the requested CT period. Locked periods are immutable and Year End
+     * persists their final CT summaries before applying the lock.
+     */
+    private function lockedLossCheckpointBefore(int $companyId, int $targetCtPeriodId): ?array
+    {
+        $target = $this->fetchCtPeriod($companyId, $targetCtPeriodId);
+        $targetStart = trim((string)($target['period_start'] ?? ''));
+        if ($targetStart === '' || !$this->tableExists('year_end_reviews') || !$this->tableExists('corporation_tax_computation_runs')) {
+            return null;
+        }
+
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT ap.id AS accounting_period_id,
+                    ap.period_start AS accounting_period_start,
+                    COALESCE(yer.is_locked, 0) AS is_locked,
+                    ctp.id AS ct_period_id,
+                    ctp.period_end,
+                    ctp.latest_computation_run_id,
+                    cr.summary_json
+             FROM accounting_periods ap
+             LEFT JOIN year_end_reviews yer
+               ON yer.company_id = ap.company_id
+              AND yer.accounting_period_id = ap.id
+             LEFT JOIN corporation_tax_periods ctp
+               ON ctp.accounting_period_id = ap.id
+              AND ctp.company_id = ap.company_id
+              AND ctp.status <> :superseded_status
+              AND ctp.period_end < :target_start
+             LEFT JOIN corporation_tax_computation_runs cr
+               ON cr.id = ctp.latest_computation_run_id
+              AND cr.company_id = ap.company_id
+              AND cr.accounting_period_id = ap.id
+              AND cr.ct_period_id = ctp.id
+             WHERE ap.company_id = :company_id
+               AND ap.period_start < :target_start_filter
+             ORDER BY ap.period_start ASC, ctp.period_start ASC, ctp.id ASC',
+            [
+                'superseded_status' => 'superseded',
+                'target_start' => $targetStart,
+                'company_id' => $companyId,
+                'target_start_filter' => $targetStart,
+            ]
+        );
+
+        $periods = [];
+        foreach ($rows as $row) {
+            $periods[(int)($row['accounting_period_id'] ?? 0)][] = $row;
+        }
+
+        $checkpoint = null;
+        foreach ($periods as $periodRows) {
+            $first = (array)($periodRows[0] ?? []);
+            if ((int)($first['is_locked'] ?? 0) !== 1) {
+                break;
+            }
+
+            $periodCheckpoint = null;
+            foreach ($periodRows as $row) {
+                if ((int)($row['ct_period_id'] ?? 0) <= 0 || (int)($row['latest_computation_run_id'] ?? 0) <= 0) {
+                    $periodCheckpoint = null;
+                    break;
+                }
+                $summary = json_decode((string)($row['summary_json'] ?? ''), true);
+                if (!is_array($summary) || !array_key_exists('losses_carried_forward', $summary)) {
+                    $periodCheckpoint = null;
+                    break;
+                }
+                $periodCheckpoint = [
+                    'ct_period_id' => (int)$row['ct_period_id'],
+                    'period_end' => (string)$row['period_end'],
+                    'losses_carried_forward' => round((float)$summary['losses_carried_forward'], 2),
+                ];
+            }
+            if ($periodCheckpoint === null) {
+                break;
+            }
+            $checkpoint = $periodCheckpoint;
+        }
+
+        return $checkpoint;
     }
 
     private function summaryFromRows(array $current, array $schedule): array {

@@ -53,4 +53,23 @@ final class DividendViewDataService
             'is_locked' => $hasPeriod && ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId),
         ];
     }
+
+    public function fetchCapacityContext(int $companyId, int $accountingPeriodId): array
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return [
+                'capacity' => ['available' => false, 'errors' => ['Select a company and accounting period before reviewing dividends.']],
+                'warnings' => [],
+            ];
+        }
+
+        $dividends = $this->dividendService ?? new \eel_accounts\Service\DividendService();
+        $context = $dividends->getDividendCapacityContext($companyId, $accountingPeriodId);
+        $capacity = (array)($context['capacity'] ?? []);
+
+        return [
+            'capacity' => $capacity,
+            'warnings' => $dividends->getDividendWarningsForCapacity($companyId, $accountingPeriodId, $capacity),
+        ];
+    }
 }

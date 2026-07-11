@@ -13,23 +13,34 @@ final class CorporationTaxProvisionService
 {
     public const JOURNAL_TAG = 'corporation_tax_provision';
 
-    public function fetchPosition(int $companyId, int $accountingPeriodId, int $ctPeriodId): array
+    public function __construct(private readonly ?CorporationTaxComputationService $computationService = null)
+    {
+    }
+
+    public function fetchPosition(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        ?CorporationTaxComputationService $computationService = null
+    ): array
     {
         $ctPeriod = $this->validCtPeriod($companyId, $accountingPeriodId, $ctPeriodId);
         if ($ctPeriod === null) {
             return ['available' => false, 'errors' => ['Select a valid CT period.']];
         }
 
-        $summary = (new \eel_accounts\Service\CorporationTaxComputationService())->fetchSummaryForCtPeriodId($companyId, $ctPeriodId);
+        $summary = ($computationService ?? $this->computationService ?? new CorporationTaxComputationService())->fetchSummaryForCtPeriodId($companyId, $ctPeriodId);
         if (empty($summary['available'])) {
             return ['available' => false, 'errors' => (array)($summary['errors'] ?? ['The CT estimate is not available.'])];
         }
 
         $estimate = round((float)($summary['estimated_corporation_tax'] ?? 0), 2);
         $journals = $this->fetchProvisionJournals($companyId, $accountingPeriodId, $ctPeriodId);
+        $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
+        $expenseNominalId = (int)($settings['corporation_tax_expense_nominal_id'] ?? 0);
         $posted = 0.0;
         foreach ($journals as $journal) {
-            $posted += $this->journalChargeAmount($journal);
+            $posted += $this->journalChargeAmount($journal, $expenseNominalId);
         }
         $posted = round($posted, 2);
         $unposted = round($estimate - $posted, 2);
@@ -53,7 +64,7 @@ final class CorporationTaxProvisionService
             return ['available' => false, 'errors' => ['Select a company and accounting period before reviewing Corporation Tax provisions.'], 'periods' => []];
         }
 
-        $computation = new \eel_accounts\Service\CorporationTaxComputationService();
+        $computation = $this->computationService ?? new CorporationTaxComputationService();
         $activePeriods = $computation->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId);
         $ctPeriods = (array)($activePeriods['periods'] ?? []);
         if ($ctPeriods === []) {
@@ -70,7 +81,7 @@ final class CorporationTaxProvisionService
                 continue;
             }
 
-            $position = $this->fetchPosition($companyId, $accountingPeriodId, $ctPeriodId);
+            $position = $this->fetchPosition($companyId, $accountingPeriodId, $ctPeriodId, $computation);
             if (empty($position['available'])) {
                 foreach ((array)($position['errors'] ?? ['The CT provision position could not be calculated.']) as $error) {
                     $errors[] = (string)($ctPeriod['display_label'] ?? ('CT period ' . (int)($ctPeriod['sequence_no'] ?? 0))) . ': ' . (string)$error;
@@ -121,8 +132,9 @@ final class CorporationTaxProvisionService
             return ['success' => true, 'errors' => [], 'skipped' => true, 'position' => $position];
         }
 
-        $expenseNominalId = $this->nominalId(['8500'], 'expense', 'corporation tax');
-        $liabilityNominalId = $this->nominalId(['2200'], 'liability', 'corporation tax');
+        $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
+        $expenseNominalId = (int)($settings['corporation_tax_expense_nominal_id'] ?? 0);
+        $liabilityNominalId = (int)($settings['corporation_tax_liability_nominal_id'] ?? 0);
         if ($expenseNominalId <= 0 || $liabilityNominalId <= 0) {
             return ['success' => false, 'errors' => ['Corporation Tax expense and liability nominal accounts are required before posting the provision.']];
         }
@@ -159,7 +171,7 @@ final class CorporationTaxProvisionService
                 'system_generated',
                 null,
                 null,
-                'Posted as a delta so nominal 8500/2200 matches the latest CT estimate at CT period end.',
+                'Posted as a delta so the configured Corporation Tax expense and liability nominals match the latest CT estimate at CT period end.',
                 $changedBy
             );
             if (empty($result['success'])) {
@@ -316,14 +328,11 @@ final class CorporationTaxProvisionService
         return $rows;
     }
 
-    private function journalChargeAmount(array $journal): float
+    private function journalChargeAmount(array $journal, int $expenseNominalId): float
     {
         $amount = 0.0;
         foreach ((array)($journal['lines'] ?? []) as $line) {
-            $type = (string)($line['nominal_account_type'] ?? $line['account_type'] ?? '');
-            $code = (string)($line['nominal_code'] ?? '');
-            $name = strtolower((string)($line['nominal_name'] ?? ''));
-            if ($code === '8500' || ($type === 'expense' && str_contains($name, 'corporation tax'))) {
+            if ($expenseNominalId > 0 && (int)($line['nominal_account_id'] ?? 0) === $expenseNominalId) {
                 $amount += (float)($line['debit'] ?? 0) - (float)($line['credit'] ?? 0);
             }
         }
@@ -352,27 +361,4 @@ final class CorporationTaxProvisionService
         return trim($start . ' to ' . $end) !== 'to' ? trim($start . ' to ' . $end) : 'CT period';
     }
 
-    private function nominalId(array $codes, string $accountType, string $nameContains): int
-    {
-        foreach ($codes as $code) {
-            $id = (int)\InterfaceDB::fetchColumn(
-                'SELECT id FROM nominal_accounts WHERE code = :code AND account_type = :account_type AND is_active = 1 LIMIT 1',
-                ['code' => $code, 'account_type' => $accountType]
-            );
-            if ($id > 0) {
-                return $id;
-            }
-        }
-
-        return (int)\InterfaceDB::fetchColumn(
-            'SELECT id
-             FROM nominal_accounts
-             WHERE account_type = :account_type
-               AND is_active = 1
-               AND LOWER(name) LIKE :name
-             ORDER BY code ASC
-             LIMIT 1',
-            ['account_type' => $accountType, 'name' => '%' . strtolower($nameContains) . '%']
-        );
-    }
 }

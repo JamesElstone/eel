@@ -35,6 +35,8 @@ final class CompanySettingsStore
             'director_loan_liability_nominal_id' => ['type' => 'int', 'default' => ''],
             'vat_nominal_id' => ['type' => 'int', 'default' => ''],
             'uncategorised_nominal_id' => ['type' => 'int', 'default' => ''],
+            'corporation_tax_expense_nominal_id' => ['type' => 'int', 'default' => ''],
+            'corporation_tax_liability_nominal_id' => ['type' => 'int', 'default' => ''],
             'potential_asset_threshold' => ['type' => 'int', 'default' => '250'],
             'uploads_path' => ['type' => 'char', 'default' => '/var/eel_accounts/uploads'],
             'date_format' => ['type' => 'char', 'default' => 'd/m/Y'],

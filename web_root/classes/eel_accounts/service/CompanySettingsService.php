@@ -195,6 +195,8 @@ final class CompanySettingsService
         $settingsStore->set('director_loan_nominal_id', $directorLoanLiabilityNominalId, 'int');
         $settingsStore->set('vat_nominal_id', $settings['vat_nominal_id'] ?? '', 'int');
         $settingsStore->set('uncategorised_nominal_id', $settings['uncategorised_nominal_id'] ?? '', 'int');
+        $settingsStore->set('corporation_tax_expense_nominal_id', $settings['corporation_tax_expense_nominal_id'] ?? '', 'int');
+        $settingsStore->set('corporation_tax_liability_nominal_id', $settings['corporation_tax_liability_nominal_id'] ?? '', 'int');
         $settingsStore->flush();
     }
 
@@ -221,6 +223,8 @@ final class CompanySettingsService
             'director_loan_liability_nominal_id',
             'vat_nominal_id',
             'uncategorised_nominal_id',
+            'corporation_tax_expense_nominal_id',
+            'corporation_tax_liability_nominal_id',
         ] as $key) {
             if ($this->hasAssignedNominal($settings, $key)) {
                 continue;
@@ -412,6 +416,14 @@ final class CompanySettingsService
                         || str_contains($name, 'uncategorised')
                         || str_contains($name, 'unclassified'));
             }),
+            'corporation_tax_expense_nominal_id' => $this->firstMatchingNominal(
+                $normalised,
+                static fn(array $row): bool => $row['id'] > 0 && $row['account_type'] === 'expense' && $row['subtype_code'] === 'corp_tax_expense'
+            ),
+            'corporation_tax_liability_nominal_id' => $this->firstMatchingNominal(
+                $normalised,
+                static fn(array $row): bool => $row['id'] > 0 && $row['account_type'] === 'liability' && $row['subtype_code'] === 'corp_tax'
+            ),
         ], static fn(?array $row): bool => $row !== null);
     }
 

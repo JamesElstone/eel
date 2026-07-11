@@ -159,6 +159,8 @@ final class SetupHealthService
             'director_loan_liability_nominal_id' => 'Director loan liability',
             'vat_nominal_id' => 'VAT control',
             'uncategorised_nominal_id' => 'Fallback uncategorised',
+            'corporation_tax_expense_nominal_id' => 'Corporation Tax expense',
+            'corporation_tax_liability_nominal_id' => 'Corporation Tax liability',
         ];
         $validNominalIds = [];
 

@@ -24,7 +24,7 @@ $harness->run(\eel_accounts\Service\ProfitLossService::class, static function (G
             $bankNominalId = profitLossTestEnsureNominal('1000', 'Bank', 'asset', 'allowable');
             $incomeNominalId = profitLossTestEnsureNominal('4000', 'Sales', 'income', 'allowable');
             $expenseNominalId = profitLossTestEnsureNominal('6090', 'Sundry Expenses', 'expense', 'allowable');
-            $taxExpenseNominalId = profitLossTestEnsureNominal('8500', 'Corporation Tax Expense', 'expense', 'disallowable');
+            $taxExpenseNominalId = profitLossTestEnsureNominal('8511', 'Current tax charge renamed', 'expense', 'disallowable');
             $taxLiabilityNominalId = profitLossTestEnsureNominal('2200', 'Corporation Tax', 'liability', 'allowable');
 
             $marker = substr(hash('sha256', __FILE__ . microtime(true) . random_int(1, PHP_INT_MAX)), 0, 10);
@@ -34,6 +34,10 @@ $harness->run(\eel_accounts\Service\ProfitLossService::class, static function (G
                 ['company_name' => 'P and L Fixture ' . $marker, 'company_number' => 'PL' . $marker]
             );
             $companyId = (int)InterfaceDB::fetchColumn('SELECT id FROM companies WHERE company_number = :company_number', ['company_number' => 'PL' . $marker]);
+            $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
+            $settings->set('corporation_tax_expense_nominal_id', $taxExpenseNominalId, 'int');
+            $settings->set('corporation_tax_liability_nominal_id', $taxLiabilityNominalId, 'int');
+            $settings->flush();
             InterfaceDB::prepareExecute(
                 'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
                  VALUES (:company_id, :label, :period_start, :period_end)',
@@ -69,7 +73,15 @@ $harness->run(\eel_accounts\Service\ProfitLossService::class, static function (G
             $breakdown = $service->getProfitLossBreakdown($companyId, $periodId);
             $harness->assertSame(1, count((array)($breakdown['expense'] ?? [])));
             $harness->assertSame(1, count((array)($breakdown['tax_charge'] ?? [])));
-            $harness->assertSame('8500', (string)($breakdown['tax_charge'][0]['code'] ?? ''));
+            $harness->assertSame('8511', (string)($breakdown['tax_charge'][0]['code'] ?? ''));
+
+            profitLossTestJournal($companyId, $periodId, '2026-01-01', 'Outside as-at range', [
+                [$expenseNominalId, 999.00, 0.00],
+                [$bankNominalId, 0.00, 999.00],
+            ]);
+            $interim = $service->getProfitLossSummary($companyId, $periodId, '2025-06-30');
+            $harness->assertSame('800.00', number_format((float)($interim['profit_before_tax'] ?? 0), 2, '.', ''));
+            $harness->assertSame('2025-06-30', (string)($interim['as_at_date'] ?? ''));
 
             $trend = $service->getMonthlyProfitLossTrend($companyId, $periodId);
             $december = array_values(array_filter($trend, static fn(array $row): bool => (string)($row['month_start'] ?? '') === '2025-12-01'))[0] ?? [];

@@ -21,7 +21,15 @@ final class _dividend_vouchersCard extends CardBaseFramework
 
     public function services(): array
     {
-        return [$this->dividendContextService()];
+        return [[
+            'key' => 'dividendVouchers',
+            'service' => \eel_accounts\Service\DividendService::class,
+            'method' => 'listDividendVouchers',
+            'params' => [
+                'companyId' => ':company.id',
+                'accountingPeriodId' => ':company.accounting_period_id',
+            ],
+        ]];
     }
 
     protected function additionalInvalidationFacts(): array
@@ -31,7 +39,7 @@ final class _dividend_vouchersCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $rows = (array)($this->dividendsContext($context)['vouchers'] ?? []);
+        $rows = $this->voucherRows($context);
         $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
         if ($rows === []) {
             return '<div class="helper">No dividend vouchers have been issued for the selected company and accounting period.</div>';
@@ -88,26 +96,13 @@ final class _dividend_vouchersCard extends CardBaseFramework
         </details>';
     }
 
-    private function dividendContextService(): array
+    private function voucherRows(array $context): array
     {
-        return [
-            'key' => 'dividendContext',
-            'service' => \eel_accounts\Service\DividendViewDataService::class,
-            'method' => 'fetchContext',
-            'params' => [
-                'companyId' => ':company.id',
-                'accountingPeriodId' => ':company.accounting_period_id',
-            ],
-        ];
-    }
-
-    private function dividendsContext(array $context): array
-    {
-        $serviceContext = $context['services']['dividendContext'] ?? null;
-        if (is_array($serviceContext)) {
-            return $serviceContext;
+        $serviceRows = $context['services']['dividendVouchers'] ?? null;
+        if (is_array($serviceRows)) {
+            return $serviceRows;
         }
 
-        return (array)($context['dividends'] ?? []);
+        return (array)(($context['dividends'] ?? [])['vouchers'] ?? []);
     }
 }

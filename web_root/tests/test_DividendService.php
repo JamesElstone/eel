@@ -1092,6 +1092,10 @@ function dividend_service_add_corporation_tax_provision(int $companyId, int $acc
 
     $expenseNominalId = dividend_service_fixture_nominal('8' . substr($marker, -10), 'Corporation Tax Expense ' . $marker, 'expense');
     $liabilityNominalId = dividend_service_fixture_nominal('2200', 'Corporation Tax', 'liability');
+    $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
+    $settings->set('corporation_tax_expense_nominal_id', $expenseNominalId, 'int');
+    $settings->set('corporation_tax_liability_nominal_id', $liabilityNominalId, 'int');
+    $settings->flush();
     $sourceRef = 'fixture:ct:' . $marker . ':' . str_replace('.', '_', number_format($amount, 2, '.', ''));
 
     InterfaceDB::prepareExecute(

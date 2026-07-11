@@ -17,6 +17,7 @@ final class YearEndMetricsService
         private readonly ?\eel_accounts\Service\DirectorLoanService $directorLoanService = null,
         private readonly ?\eel_accounts\Service\ExpenseClaimService $expenseClaimService = null,
         private readonly ?\eel_accounts\Service\EmptyMonthConfirmationService $emptyMonthConfirmationService = null,
+        private readonly ?\eel_accounts\Service\PreTaxProfitLossService $preTaxProfitLossService = null,
     ) {
     }
 
@@ -655,99 +656,19 @@ final class YearEndMetricsService
     }
 
     public function profitAndLossSummary(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array {
-        $rows = \InterfaceDB::fetchAll( 'SELECT na.id,
-                    na.code,
-                    na.name,
-                    na.account_type,
-                    COALESCE(na.tax_treatment, \'allowable\') AS tax_treatment,
-                    SUM(COALESCE(jl.debit, 0)) AS total_debit,
-                    SUM(COALESCE(jl.credit, 0)) AS total_credit
-             FROM journals j
-             INNER JOIN journal_lines jl ON jl.journal_id = j.id
-             INNER JOIN nominal_accounts na ON na.id = jl.nominal_account_id
-             LEFT JOIN journal_entry_metadata jem_close
-               ON jem_close.journal_id = j.id
-              AND jem_close.journal_tag = :close_journal_tag
-             WHERE j.company_id = :company_id
-               AND j.accounting_period_id = :accounting_period_id
-               AND j.is_posted = 1
-               AND j.journal_date BETWEEN :period_start AND :period_end
-               AND COALESCE(j.source_type, \'\') <> :asset_depreciation_source_type
-               AND jem_close.id IS NULL
-               AND (na.account_type = :income_type OR na.account_type = :cost_type OR na.account_type = :expense_type)
-             GROUP BY na.id, na.code, na.name, na.account_type, na.tax_treatment', [
-            'close_journal_tag' => \eel_accounts\Service\RetainedEarningsCloseService::JOURNAL_TAG,
-            'asset_depreciation_source_type' => \eel_accounts\Service\YearEndClosePreviewService::ASSET_DEPRECIATION_SOURCE_TYPE,
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-            'period_start' => $periodStart,
-            'period_end' => $periodEnd,
-            'income_type' => 'income',
-            'cost_type' => 'cost_of_sales',
-            'expense_type' => 'expense',
-        ]);
-
-        $income = 0.0;
-        $expenses = 0.0;
-        $disallowableAddBacks = 0.0;
-        $capitalAddBacks = 0.0;
-        $otherTreatmentCount = 0;
-        $unknownTreatmentCount = 0;
-        $taxTreatmentRules = new \eel_accounts\Service\CorporationTaxTreatmentRuleService();
-
-        foreach ($rows as $row) {
-            $accountType = (string)($row['account_type'] ?? '');
-            if ($this->isCorporationTaxExpenseRow((array)$row)) {
-                continue;
-            }
-
-            $treatmentResult = $taxTreatmentRules->resolveTaxTreatment($row, $periodStart, $periodEnd);
-            $taxTreatment = trim((string)($treatmentResult['tax_treatment'] ?? ''));
-            $debit = (float)($row['total_debit'] ?? 0);
-            $credit = (float)($row['total_credit'] ?? 0);
-
-            if ($accountType === 'income') {
-                $income += round($credit - $debit, 2);
-            } else {
-                $amount = round($debit - $credit, 2);
-                $expenses += $amount;
-
-                if ($taxTreatment === 'disallowable') {
-                    $disallowableAddBacks += abs($amount);
-                } elseif ($taxTreatment === 'capital') {
-                    $capitalAddBacks += abs($amount);
-                } elseif ($taxTreatment === 'other') {
-                    $otherTreatmentCount++;
-                } elseif (!in_array($taxTreatment, ['allowable', 'disallowable', 'capital', 'other'], true)) {
-                    $unknownTreatmentCount++;
-                }
-            }
-        }
-        $depreciationExpense = (new \eel_accounts\Service\YearEndClosePreviewService())->depreciationExpenseForPeriod($companyId, $accountingPeriodId, $periodStart, $periodEnd);
-        $expenses = round($expenses + $depreciationExpense, 2);
+        $result = ($this->preTaxProfitLossService ?? new \eel_accounts\Service\PreTaxProfitLossService())
+            ->calculate($companyId, $accountingPeriodId, $periodEnd, $periodStart);
 
         return [
-            'income' => round($income, 2),
-            'expenses' => round($expenses, 2),
-            'profit_before_tax' => round($income - $expenses, 2),
-            'disallowable_add_backs' => round($disallowableAddBacks, 2),
-            'capital_add_backs' => round($capitalAddBacks, 2),
-            'depreciation_expense' => round($depreciationExpense, 2),
-            'other_treatment_count' => $otherTreatmentCount,
-            'unknown_treatment_count' => $unknownTreatmentCount,
+            'income' => round((float)$result['income_total'], 2),
+            'expenses' => round((float)$result['cost_of_sales_total'] + (float)$result['operating_expense_total'], 2),
+            'profit_before_tax' => round((float)$result['profit_before_tax'], 2),
+            'disallowable_add_backs' => round((float)$result['disallowable_add_backs'], 2),
+            'capital_add_backs' => round((float)$result['capital_add_backs'], 2),
+            'depreciation_expense' => round((float)$result['depreciation_expense'], 2),
+            'other_treatment_count' => (int)$result['other_treatment_count'],
+            'unknown_treatment_count' => (int)$result['unknown_treatment_count'],
         ];
-    }
-
-    private function isCorporationTaxExpenseRow(array $row): bool
-    {
-        if ((string)($row['account_type'] ?? '') !== 'expense') {
-            return false;
-        }
-
-        $code = trim((string)($row['code'] ?? ''));
-        $name = strtolower(trim((string)($row['name'] ?? '')));
-
-        return $code === '8500' || str_contains($name, 'corporation tax');
     }
 
     private function countTransactions(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): int {

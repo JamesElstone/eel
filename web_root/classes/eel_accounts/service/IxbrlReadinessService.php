@@ -206,6 +206,8 @@ final class IxbrlReadinessService
             'director_loan_asset_nominal_id' => 'director loan asset nominal',
             'director_loan_liability_nominal_id' => 'director loan liability nominal',
             'vat_nominal_id' => 'VAT nominal',
+            'corporation_tax_expense_nominal_id' => 'Corporation Tax expense nominal',
+            'corporation_tax_liability_nominal_id' => 'Corporation Tax liability nominal',
         ];
         $missing = [];
         foreach ($labels as $key => $label) {

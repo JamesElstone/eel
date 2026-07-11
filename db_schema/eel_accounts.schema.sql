@@ -948,6 +948,7 @@ INSERT INTO `nominal_account_subtypes` (`code`, `name`, `parent_account_type`, `
   ('overhead', 'Overhead', 'expense', 600, 1),
   ('hmrc_payable', 'HMRC Penalties & Interest Payable', 'liability', 610, 1),
   ('corp_tax', 'Corporation Tax', 'liability', 650, 1),
+  ('corp_tax_expense', 'Corporation Tax Expense', 'expense', 625, 1),
   ('asset_disposal_gain', 'Asset Disposal Gain', 'income', 420, 1),
   ('depreciation_expense', 'Depreciation Expense', 'expense', 620, 1),
   ('asset_disposal_loss', 'Asset Disposal Loss', 'expense', 621, 1);

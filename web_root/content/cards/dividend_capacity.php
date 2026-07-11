@@ -204,7 +204,7 @@ final class _dividend_capacityCard extends CardBaseFramework
         return [
             'key' => 'dividendContext',
             'service' => \eel_accounts\Service\DividendViewDataService::class,
-            'method' => 'fetchContext',
+            'method' => 'fetchCapacityContext',
             'params' => [
                 'companyId' => ':company.id',
                 'accountingPeriodId' => ':company.accounting_period_id',

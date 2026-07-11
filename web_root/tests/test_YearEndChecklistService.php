@@ -321,6 +321,81 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
         $harness->assertSame('£ 0.00', $method->invoke($service, $settings, 0.0));
     });
 
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'statement continuity detail names first statement without previous comparator', static function () use ($harness): void {
+        $service = new \eel_accounts\Service\YearEndChecklistService();
+        $detail = new ReflectionMethod($service, 'statementContinuityDetail');
+        $detail->setAccessible(true);
+        $metric = new ReflectionMethod($service, 'statementContinuityMetric');
+        $metric->setAccessible(true);
+        $settings = ['default_currency_symbol' => '&#163;', 'date_format' => 'd/m/Y'];
+
+        $text = $detail->invoke($service, [
+            'issue_count' => 1,
+            'issues' => [
+                [
+                    'type' => 'statement_continuity',
+                    'status' => 'warning',
+                    'account_id' => 58,
+                    'account_name' => 'Example Bank - Saving Pot (20%)',
+                    'upload_id' => 313,
+                    'upload_filename' => 'BANK_010925_300925.csv',
+                    'statement_month' => '2025-09-01',
+                    'date_range_start' => '2025-09-20',
+                    'date_range_end' => '2025-09-25',
+                    'opening_balance' => 0.0,
+                    'closing_balance' => 681.44,
+                    'previous_statement_closing_balance' => null,
+                    'note' => 'No previous statement exists to compare against.',
+                ],
+            ],
+        ], $settings);
+
+        $harness->assertSame('1 statement continuity issue', $metric->invoke($service, 1));
+        $harness->assertTrue(str_contains((string)$text, 'Example Bank - Saving Pot (20%): first statement BANK_010925_300925.csv covers 20/09/2025 to 25/09/2025 and opens at £ 0.00'));
+        $harness->assertTrue(str_contains((string)$text, 'no previous statement exists to compare against'));
+        $harness->assertFalse(str_contains((string)$text, 'At least one bank account has running-balance'));
+    });
+
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'statement continuity detail distinguishes boundary mismatch and running balance breaks', static function () use ($harness): void {
+        $service = new \eel_accounts\Service\YearEndChecklistService();
+        $detail = new ReflectionMethod($service, 'statementContinuityDetail');
+        $detail->setAccessible(true);
+        $metric = new ReflectionMethod($service, 'statementContinuityMetric');
+        $metric->setAccessible(true);
+        $settings = ['default_currency_symbol' => '&#163;', 'date_format' => 'd/m/Y'];
+
+        $text = $detail->invoke($service, [
+            'issue_count' => 2,
+            'issues' => [
+                [
+                    'type' => 'statement_continuity',
+                    'status' => 'fail',
+                    'account_name' => 'Example Bank - Saving Pot (20%)',
+                    'upload_filename' => 'BANK_011025_311025.csv',
+                    'date_range_start' => '2025-10-01',
+                    'date_range_end' => '2025-10-05',
+                    'opening_balance' => 600.0,
+                    'previous_statement_closing_balance' => 681.44,
+                    'note' => 'Opening/closing mismatch.',
+                ],
+                [
+                    'type' => 'running_balance',
+                    'status' => 'fail',
+                    'account_name' => 'Example Bank - Current Account',
+                    'upload_filename' => 'BANK_010925_300925.csv',
+                    'balance_check_rows_tested' => 10,
+                    'balance_check_rows_failed' => 2,
+                    'failed_row_numbers' => [12, 15],
+                ],
+            ],
+        ], $settings);
+
+        $harness->assertSame('2 statement continuity issues', $metric->invoke($service, 2));
+        $harness->assertTrue(str_contains((string)$text, 'and opens at £ 600.00, but the previous statement closed at £ 681.44'));
+        $harness->assertTrue(str_contains((string)$text, 'opening/closing mismatch'));
+        $harness->assertTrue(str_contains((string)$text, 'has 2 running-balance breaks across 10 checked row(s); first failed row(s): 12, 15'));
+    });
+
     $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'workflow URLs omit selected site context ids', static function () use ($harness): void {
         $service = new \eel_accounts\Service\YearEndChecklistService();
         $makeCheck = new ReflectionMethod($service, 'makeCheck');

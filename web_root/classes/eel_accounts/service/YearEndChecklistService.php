@@ -1073,16 +1073,16 @@ final class YearEndChecklistService
         );
         array_push($sections['ledger_integrity'], ...$this->postedSourceWorkChecks($postedSourceWork));
 
-        $continuityWarningCount = (int)$statementContinuity['continuity_warnings'] + (int)$statementContinuity['ledger_warnings'];
+        $continuityWarningCount = $this->statementContinuityIssueCount($statementContinuity);
         $sections['bank_source_completeness'][] = $this->makeCheck(
             'statement_continuity',
             'Statement continuity',
             'warning',
             $continuityWarningCount > 0 ? 'warning' : 'pass',
             $continuityWarningCount > 0
-                ? 'At least one bank account has running-balance or continuity breaks.'
+                ? $this->statementContinuityDetail($statementContinuity, $settings)
                 : 'Statement continuity checks passed where statement balance data exists.',
-            $continuityWarningCount . ' continuity issue(s)',
+            $this->statementContinuityMetric($continuityWarningCount),
             '?page=source_accounts'
         );
         $sections['bank_source_completeness'][] = $this->makeCheck(
@@ -1628,6 +1628,202 @@ final class YearEndChecklistService
     private function money(array $settings, float|int|string|null $value): string
     {
         return (new \eel_accounts\Service\CompanySettingsService())->money($settings, $value);
+    }
+
+    private function statementContinuityIssueCount(array $summary): int
+    {
+        if (array_key_exists('issue_count', $summary)) {
+            return (int)$summary['issue_count'];
+        }
+
+        $issues = array_values(array_filter((array)($summary['issues'] ?? []), static fn(mixed $issue): bool => is_array($issue)));
+        if ($issues !== []) {
+            return count($issues);
+        }
+
+        return (int)($summary['continuity_warnings'] ?? 0)
+            + (int)($summary['running_balance_warnings'] ?? 0)
+            + (int)($summary['ledger_warnings'] ?? 0);
+    }
+
+    private function statementContinuityMetric(int $issueCount): string
+    {
+        return $issueCount . ' statement continuity ' . ($issueCount === 1 ? 'issue' : 'issues');
+    }
+
+    private function statementContinuityDetail(array $summary, array $settings): string
+    {
+        $issues = array_values(array_filter((array)($summary['issues'] ?? []), static fn(mixed $issue): bool => is_array($issue)));
+        if ($issues === []) {
+            return 'At least one bank account has running-balance, statement-boundary, or ledger reconciliation issues.';
+        }
+
+        $parts = [];
+        foreach (array_slice($issues, 0, 3) as $issue) {
+            $text = $this->statementContinuityIssueText($issue, $settings);
+            if ($text !== '') {
+                $parts[] = $text;
+            }
+        }
+
+        $remaining = count($issues) - count($parts);
+        if ($remaining > 0) {
+            $parts[] = $remaining . ' more bank/source ' . ($remaining === 1 ? 'issue' : 'issues') . ' need review on the Source Accounts workflow.';
+        }
+
+        return $parts !== []
+            ? implode(' ', $parts)
+            : 'At least one bank account has running-balance, statement-boundary, or ledger reconciliation issues.';
+    }
+
+    private function statementContinuityIssueText(array $issue, array $settings): string
+    {
+        $accountName = trim((string)($issue['account_name'] ?? ''));
+        if ($accountName === '') {
+            $accountId = (int)($issue['account_id'] ?? 0);
+            $accountName = $accountId > 0 ? 'Account #' . $accountId : 'Bank account';
+        }
+
+        return match ((string)($issue['type'] ?? '')) {
+            'statement_continuity' => $this->statementContinuityBoundaryText($accountName, $issue, $settings),
+            'running_balance' => $this->statementContinuityRunningBalanceText($accountName, $issue),
+            'ledger_reconciliation' => $this->statementContinuityLedgerText($accountName, $issue, $settings),
+            default => $accountName . ': source-account review issue.',
+        };
+    }
+
+    private function statementContinuityBoundaryText(string $accountName, array $issue, array $settings): string
+    {
+        $uploadLabel = $this->statementContinuityUploadLabel($issue);
+        $range = $this->statementContinuityDateRangeText($issue, $settings);
+        $openingBalance = $this->statementContinuityMoney($settings, $issue['opening_balance'] ?? null);
+        $previousBalance = $issue['previous_statement_closing_balance'] ?? null;
+        $note = $this->statementContinuityNoteFragment((string)($issue['note'] ?? ''));
+        $openingText = $range !== '' ? ' and opens at ' : ' opens at ';
+
+        if ($previousBalance === null || $previousBalance === '') {
+            return $accountName . ': first statement ' . $uploadLabel . $range . $openingText . $openingBalance . '; '
+                . ($note !== '' ? $note : 'no previous statement exists to compare against') . '.';
+        }
+
+        return $accountName . ': statement ' . $uploadLabel . $range . $openingText . $openingBalance
+            . ', but the previous statement closed at ' . $this->statementContinuityMoney($settings, $previousBalance) . '; '
+            . ($note !== '' ? $note : 'opening and previous closing balances do not match') . '.';
+    }
+
+    private function statementContinuityRunningBalanceText(string $accountName, array $issue): string
+    {
+        $uploadLabel = $this->statementContinuityUploadLabel($issue);
+        $failed = (int)($issue['balance_check_rows_failed'] ?? 0);
+        $tested = (int)($issue['balance_check_rows_tested'] ?? 0);
+        $rowNumbers = array_values(array_filter(
+            array_map('intval', (array)($issue['failed_row_numbers'] ?? [])),
+            static fn(int $rowNumber): bool => $rowNumber > 0
+        ));
+        $rowText = $rowNumbers !== [] ? '; first failed row(s): ' . implode(', ', $rowNumbers) : '';
+
+        return $accountName . ': statement ' . $uploadLabel . ' has ' . $failed . ' running-balance '
+            . ($failed === 1 ? 'break' : 'breaks') . ' across ' . $tested . ' checked row(s)' . $rowText . '.';
+    }
+
+    private function statementContinuityLedgerText(string $accountName, array $issue, array $settings): string
+    {
+        $date = $this->statementContinuityDate((string)($issue['statement_closing_date'] ?? ''), $settings);
+        $statementBalance = $this->statementContinuityMoney($settings, $issue['statement_closing_balance'] ?? null);
+        $ledgerBalance = $this->statementContinuityMoney($settings, $issue['ledger_balance'] ?? null);
+        $difference = $this->statementContinuityMoney($settings, $issue['difference'] ?? null);
+        $note = $this->statementContinuityNoteFragment((string)($issue['note'] ?? ''));
+
+        $text = $accountName . ': ledger reconciliation differs';
+        if ($date !== '') {
+            $text .= ' at ' . $date;
+        }
+
+        $text .= '; statement closes at ' . $statementBalance . ', ledger is ' . $ledgerBalance . ', difference ' . $difference;
+        if ($note !== '') {
+            $text .= '; ' . $note;
+        }
+
+        return $text . '.';
+    }
+
+    private function statementContinuityUploadLabel(array $issue): string
+    {
+        $filename = trim((string)($issue['upload_filename'] ?? ''));
+        if ($filename !== '') {
+            return $filename;
+        }
+
+        $uploadId = (int)($issue['upload_id'] ?? 0);
+        return $uploadId > 0 ? 'upload #' . $uploadId : 'statement upload';
+    }
+
+    private function statementContinuityDateRangeText(array $issue, array $settings): string
+    {
+        $start = trim((string)($issue['date_range_start'] ?? ''));
+        if ($start === '') {
+            $start = trim((string)($issue['statement_month'] ?? ''));
+        }
+
+        $end = trim((string)($issue['date_range_end'] ?? ''));
+        if ($end === '') {
+            $end = trim((string)($issue['closing_date'] ?? ''));
+        }
+
+        $displayStart = $this->statementContinuityDate($start, $settings);
+        $displayEnd = $this->statementContinuityDate($end, $settings);
+
+        if ($displayStart !== '' && $displayEnd !== '' && $displayStart !== $displayEnd) {
+            return ' covers ' . $displayStart . ' to ' . $displayEnd;
+        }
+
+        if ($displayStart !== '') {
+            return ' covers ' . $displayStart;
+        }
+
+        if ($displayEnd !== '') {
+            return ' closes ' . $displayEnd;
+        }
+
+        return '';
+    }
+
+    private function statementContinuityDate(string $date, array $settings): string
+    {
+        $date = trim($date);
+        if ($date === '') {
+            return '';
+        }
+
+        $format = trim((string)($settings['date_format'] ?? 'd/m/Y'));
+        if ($format === '') {
+            $format = 'd/m/Y';
+        }
+
+        try {
+            return (new \DateTimeImmutable($date))->format($format);
+        } catch (\Throwable) {
+            return $date;
+        }
+    }
+
+    private function statementContinuityMoney(array $settings, mixed $value): string
+    {
+        if ($value === null || $value === '') {
+            return 'unknown balance';
+        }
+
+        return $this->money($settings, $value);
+    }
+
+    private function statementContinuityNoteFragment(string $note): string
+    {
+        $note = rtrim(trim($note), '.');
+        if ($note === '') {
+            return '';
+        }
+
+        return strtolower(substr($note, 0, 1)) . substr($note, 1);
     }
 
     private function balanceEquationText(array $settings, array $summary): string

@@ -342,22 +342,143 @@ final class YearEndMetricsService
         $panels = $service->fetchBankAccountPanels($companyId, $accountingPeriodId, $bankNominalId);
 
         $continuityWarnings = 0;
+        $runningBalanceWarnings = 0;
         $ledgerWarnings = 0;
         foreach ($panels as $panel) {
             if (($panel['statement_continuity_status'] ?? '') !== 'pass' && ($panel['statement_continuity_status'] ?? '') !== 'not_available') {
                 $continuityWarnings++;
+            }
+            if (($panel['running_balance_status'] ?? '') !== 'pass' && ($panel['running_balance_status'] ?? '') !== 'not_available') {
+                $runningBalanceWarnings++;
             }
             if (($panel['ledger_reconciliation_status'] ?? '') !== 'pass' && ($panel['ledger_reconciliation_status'] ?? '') !== 'not_available') {
                 $ledgerWarnings++;
             }
         }
 
+        $issues = $this->statementContinuityIssues($panels);
+
         return [
             'account_count' => count($panels),
             'continuity_warnings' => $continuityWarnings,
+            'running_balance_warnings' => $runningBalanceWarnings,
             'ledger_warnings' => $ledgerWarnings,
+            'issue_count' => count($issues),
+            'issues' => $issues,
             'panels' => $panels,
         ];
+    }
+
+    private function statementContinuityIssues(array $panels): array
+    {
+        $issues = [];
+
+        foreach ($panels as $panel) {
+            if (!is_array($panel)) {
+                continue;
+            }
+
+            $account = is_array($panel['account'] ?? null) ? $panel['account'] : [];
+            $accountId = (int)($account['id'] ?? 0);
+            $accountName = trim((string)($account['account_name'] ?? ''));
+            if ($accountName === '') {
+                $accountName = $accountId > 0 ? 'Account #' . $accountId : 'Bank account';
+            }
+
+            foreach ((array)($panel['uploads'] ?? []) as $uploadCheck) {
+                if (!is_array($uploadCheck)) {
+                    continue;
+                }
+
+                $upload = is_array($uploadCheck['upload'] ?? null) ? $uploadCheck['upload'] : [];
+                $continuityStatus = trim((string)($uploadCheck['continuity_status'] ?? ''));
+                if ($this->isStatementIssueStatus($continuityStatus)) {
+                    $issues[] = [
+                        'type' => 'statement_continuity',
+                        'status' => $continuityStatus,
+                        'account_id' => $accountId,
+                        'account_name' => $accountName,
+                        'upload_id' => (int)($upload['id'] ?? 0),
+                        'upload_filename' => (string)($upload['original_filename'] ?? ''),
+                        'statement_month' => (string)($upload['statement_month'] ?? ''),
+                        'date_range_start' => (string)($upload['date_range_start'] ?? ''),
+                        'date_range_end' => (string)($upload['date_range_end'] ?? ''),
+                        'opening_balance' => $this->nullableFloat($uploadCheck['opening_balance'] ?? null),
+                        'closing_balance' => $this->nullableFloat($uploadCheck['closing_balance'] ?? null),
+                        'closing_date' => (string)($uploadCheck['closing_date'] ?? ''),
+                        'previous_statement_closing_balance' => $this->nullableFloat($uploadCheck['previous_statement_closing_balance'] ?? null),
+                        'note' => (string)($uploadCheck['continuity_note'] ?? ''),
+                    ];
+                }
+
+                $runningBalanceStatus = trim((string)($uploadCheck['running_balance_status'] ?? ''));
+                if ($this->isStatementIssueStatus($runningBalanceStatus)) {
+                    $failedRows = array_values(array_filter(
+                        (array)($uploadCheck['failed_rows'] ?? []),
+                        static fn(mixed $row): bool => is_array($row)
+                    ));
+                    $failedRowNumbers = [];
+                    foreach (array_slice($failedRows, 0, 5) as $failedRow) {
+                        $rowNumber = (int)($failedRow['row_number'] ?? 0);
+                        if ($rowNumber > 0) {
+                            $failedRowNumbers[] = $rowNumber;
+                        }
+                    }
+
+                    $issues[] = [
+                        'type' => 'running_balance',
+                        'status' => $runningBalanceStatus,
+                        'account_id' => $accountId,
+                        'account_name' => $accountName,
+                        'upload_id' => (int)($upload['id'] ?? 0),
+                        'upload_filename' => (string)($upload['original_filename'] ?? ''),
+                        'statement_month' => (string)($upload['statement_month'] ?? ''),
+                        'date_range_start' => (string)($upload['date_range_start'] ?? ''),
+                        'date_range_end' => (string)($upload['date_range_end'] ?? ''),
+                        'balance_check_rows_tested' => (int)($uploadCheck['balance_check_rows_tested'] ?? 0),
+                        'balance_check_rows_failed' => (int)($uploadCheck['balance_check_rows_failed'] ?? count($failedRows)),
+                        'failed_row_numbers' => $failedRowNumbers,
+                        'note' => (string)($uploadCheck['running_balance_note'] ?? ''),
+                    ];
+                }
+            }
+
+            $ledgerStatus = trim((string)($panel['ledger_reconciliation_status'] ?? ''));
+            if ($this->isStatementIssueStatus($ledgerStatus)) {
+                $ledgerSummary = is_array($panel['ledger_summary'] ?? null) ? $panel['ledger_summary'] : [];
+                if ($ledgerSummary === [] && is_array($panel['trade_summary'] ?? null)) {
+                    $ledgerSummary = $panel['trade_summary'];
+                }
+
+                $issues[] = [
+                    'type' => 'ledger_reconciliation',
+                    'status' => $ledgerStatus,
+                    'account_id' => $accountId,
+                    'account_name' => $accountName,
+                    'statement_closing_date' => (string)($ledgerSummary['statement_closing_date'] ?? ''),
+                    'statement_closing_balance' => $this->nullableFloat($ledgerSummary['statement_closing_balance'] ?? null),
+                    'ledger_balance' => $this->nullableFloat($ledgerSummary['ledger_balance'] ?? null),
+                    'difference' => $this->nullableFloat($ledgerSummary['difference'] ?? null),
+                    'note' => (string)($ledgerSummary['note'] ?? ''),
+                ];
+            }
+        }
+
+        return $issues;
+    }
+
+    private function isStatementIssueStatus(string $status): bool
+    {
+        return $status !== '' && $status !== 'pass' && $status !== 'not_available';
+    }
+
+    private function nullableFloat(mixed $value): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return (float)$value;
     }
 
     public function duplicateImportAudit(int $companyId, int $accountingPeriodId): array {

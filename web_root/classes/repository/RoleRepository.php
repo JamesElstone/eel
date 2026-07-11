@@ -14,14 +14,23 @@ final class RoleRepository
         return InterfaceDB::fetchAll(
             'SELECT r.id,
                     r.role_name,
-                    COUNT(DISTINCT u.id) AS assigned_user_count,
-                    COUNT(DISTINCT rcp.id) AS allowed_card_count
+                    COALESCE(u.assigned_user_count, 0) AS assigned_user_count,
+                    COALESCE(rcp.allowed_card_count, 0) AS allowed_card_count
              FROM roles r
-             LEFT JOIN users u
+             LEFT JOIN (
+                SELECT role_id,
+                       COUNT(*) AS assigned_user_count
+                FROM users
+                GROUP BY role_id
+             ) u
                ON u.role_id = r.id
-             LEFT JOIN role_card_permissions rcp
+             LEFT JOIN (
+                SELECT role_id,
+                       COUNT(*) AS allowed_card_count
+                FROM role_card_permissions
+                GROUP BY role_id
+             ) rcp
                ON rcp.role_id = r.id
-             GROUP BY r.id, r.role_name
              ORDER BY r.role_name ASC, r.id ASC'
         );
     }

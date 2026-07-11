@@ -85,10 +85,25 @@
             return;
         }
 
+        const collapsed = body.classList.contains('sidebar-collapsed');
+
         toggleButton.setAttribute(
             'aria-expanded',
-            body.classList.contains('sidebar-collapsed') ? 'false' : 'true'
+            collapsed ? 'false' : 'true'
         );
+
+        document.querySelectorAll('.nav-icon-wrap[data-nav-tooltip]').forEach((iconWrap) => {
+            if (!(iconWrap instanceof HTMLElement)) {
+                return;
+            }
+
+            if (collapsed) {
+                iconWrap.setAttribute('title', iconWrap.dataset.navTooltip || '');
+                return;
+            }
+
+            iconWrap.removeAttribute('title');
+        });
     }
 
     function updateNavScrollHints(shell) {

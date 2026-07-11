@@ -593,7 +593,7 @@ final class PageRendererFramework
             $iconHtml = $this->renderNavIcon($item);
 
             $html .= '<a class="nav-link' . $active . '" href="' . HelperFramework::escape((string)$item['url']) . '" data-ajax-link="true">
-                    <span class="nav-icon-wrap">' . $iconHtml . '</span>
+                    <span class="nav-icon-wrap" data-nav-tooltip="' . HelperFramework::escape((string)$item['label']) . '">' . $iconHtml . '</span>
                     <span class="nav-link-text">' . HelperFramework::escape((string)$item['label']) . '</span>
                     ' . ($showCollapsedLinkInitials ? '<span class="nav-link-short" aria-hidden="true">' . HelperFramework::escape((string)($item['short'] ?? '')) . '</span>' : '') . '
                 </a>';

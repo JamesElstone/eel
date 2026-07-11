@@ -23,11 +23,14 @@ final class AccountingPeriodCoverageService
         }
 
         $monthMap = $this->emptyMonthMap($periodStart, $periodEnd, $companyId);
-        foreach (\InterfaceDB::fetchAll( "SELECT DATE_FORMAT(txn_date, '%Y-%m-01') AS month_key, COUNT(*) AS txn_count
+        $monthExpression = \InterfaceDB::driverName() === 'sqlite'
+            ? "strftime('%Y-%m-01', txn_date)"
+            : "DATE_FORMAT(txn_date, '%Y-%m-01')";
+        foreach (\InterfaceDB::fetchAll( "SELECT {$monthExpression} AS month_key, COUNT(*) AS txn_count
              FROM transactions
              WHERE company_id = ?
                AND txn_date BETWEEN ? AND ?
-             GROUP BY DATE_FORMAT(txn_date, '%Y-%m-01')
+             GROUP BY {$monthExpression}
              ORDER BY month_key", [$companyId, $periodStart, $periodEnd]) as $row) {
             $monthKey = (string)$row['month_key'];
 

@@ -57,7 +57,7 @@ final class ManualJournalService
             }
         }
 
-        $sourceRef = $this->sourceRef(trim($journalTag), trim($journalKey));
+        $sourceRef = $this->sourceRef(trim($journalTag), $accountingPeriodId . ':' . trim($journalKey));
         $row = \InterfaceDB::fetchOne( 'SELECT id,
                     company_id,
                     accounting_period_id,
@@ -129,7 +129,7 @@ final class ManualJournalService
             $stmt->execute(array_merge([$companyId, $accountingPeriodId], $tags));
             $rows = $stmt->fetchAll() ?: [];
         } else {
-            $sourceRefs = array_map(fn(string $tag): string => $this->sourceRef($tag, ''), $tags);
+            $sourceRefs = array_map(fn(string $tag): string => $this->sourceRef($tag, $accountingPeriodId . ':'), $tags);
             $conditions = [];
             $params = [$companyId, $accountingPeriodId, 'manual'];
             foreach ($sourceRefs as $sourceRefPrefix) {
@@ -228,7 +228,7 @@ final class ManualJournalService
             if ($existing !== null) {
                 $storedJournalKey .= ':' . date('YmdHis') . ':' . bin2hex(random_bytes(3));
             }
-            $sourceRef = $this->sourceRef($journalTag, $storedJournalKey);
+            $sourceRef = $this->sourceRef($journalTag, $accountingPeriodId . ':' . $storedJournalKey);
             $insert = \InterfaceDB::prepare(
                 'INSERT INTO journals (
                     company_id,

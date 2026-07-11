@@ -665,8 +665,7 @@ final class YearEndChecklistService
         $note = trim($note);
 
         if ($acknowledged) {
-            \InterfaceDB::execute(
-                'INSERT INTO year_end_review_acknowledgements (
+            $upsertSql = 'INSERT INTO year_end_review_acknowledgements (
                     company_id,
                     accounting_period_id,
                     check_code,
@@ -684,12 +683,20 @@ final class YearEndChecklistService
                     :note,
                     :created_at,
                     :updated_at
-                 )
-                 ON DUPLICATE KEY UPDATE
+                 )';
+            $upsertSql .= \InterfaceDB::driverName() === 'sqlite'
+                ? ' ON CONFLICT(company_id, accounting_period_id, check_code) DO UPDATE SET
+                    acknowledged_at = excluded.acknowledged_at,
+                    acknowledged_by = excluded.acknowledged_by,
+                    note = excluded.note,
+                    updated_at = excluded.updated_at'
+                : ' ON DUPLICATE KEY UPDATE
                     acknowledged_at = VALUES(acknowledged_at),
                     acknowledged_by = VALUES(acknowledged_by),
                     note = VALUES(note),
-                    updated_at = VALUES(updated_at)',
+                    updated_at = VALUES(updated_at)';
+            \InterfaceDB::execute(
+                $upsertSql,
                 [
                     'company_id' => $companyId,
                     'accounting_period_id' => $accountingPeriodId,
@@ -790,8 +797,7 @@ final class YearEndChecklistService
         $note = trim($note);
 
         if ($acknowledged) {
-            \InterfaceDB::execute(
-                'INSERT INTO year_end_review_acknowledgements (
+            $upsertSql = 'INSERT INTO year_end_review_acknowledgements (
                     company_id,
                     accounting_period_id,
                     check_code,
@@ -809,12 +815,20 @@ final class YearEndChecklistService
                     :note,
                     :created_at,
                     :updated_at
-                 )
-                 ON DUPLICATE KEY UPDATE
+                 )';
+            $upsertSql .= \InterfaceDB::driverName() === 'sqlite'
+                ? ' ON CONFLICT(company_id, accounting_period_id, check_code) DO UPDATE SET
+                    acknowledged_at = excluded.acknowledged_at,
+                    acknowledged_by = excluded.acknowledged_by,
+                    note = excluded.note,
+                    updated_at = excluded.updated_at'
+                : ' ON DUPLICATE KEY UPDATE
                     acknowledged_at = VALUES(acknowledged_at),
                     acknowledged_by = VALUES(acknowledged_by),
                     note = VALUES(note),
-                    updated_at = VALUES(updated_at)',
+                    updated_at = VALUES(updated_at)';
+            \InterfaceDB::execute(
+                $upsertSql,
                 [
                     'company_id' => $companyId,
                     'accounting_period_id' => $accountingPeriodId,

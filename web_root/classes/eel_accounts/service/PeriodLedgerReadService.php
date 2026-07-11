@@ -44,6 +44,9 @@ final class PeriodLedgerReadService
             return $this->datasets[$key];
         }
 
+        $monthExpression = \InterfaceDB::driverName() === 'sqlite'
+            ? "strftime('%Y-%m-01', j.journal_date)"
+            : "DATE_FORMAT(j.journal_date, '%Y-%m-01')";
         $rows = \InterfaceDB::fetchAll(
             'SELECT na.id AS nominal_account_id,
                     COALESCE(na.code, \'\') AS code,
@@ -52,7 +55,7 @@ final class PeriodLedgerReadService
                     COALESCE(nas.code, \'\') AS account_subtype_code,
                     COALESCE(nas.name, \'\') AS account_subtype_name,
                     COALESCE(na.tax_treatment, \'allowable\') AS tax_treatment,
-                    DATE_FORMAT(j.journal_date, \'%Y-%m-01\') AS month_start,
+                    ' . $monthExpression . ' AS month_start,
                     COALESCE(SUM(jl.debit), 0) AS total_debit,
                     COALESCE(SUM(jl.credit), 0) AS total_credit
              FROM journals j
@@ -69,7 +72,7 @@ final class PeriodLedgerReadService
                AND COALESCE(j.source_type, \'\') <> :asset_depreciation_source_type
                AND jem_close.id IS NULL
                AND na.account_type IN (:income_type, :cost_type, :expense_type)
-             GROUP BY na.id, na.code, na.name, na.account_type, nas.code, nas.name, na.tax_treatment, DATE_FORMAT(j.journal_date, \'%Y-%m-01\')
+             GROUP BY na.id, na.code, na.name, na.account_type, nas.code, nas.name, na.tax_treatment, ' . $monthExpression . '
              ORDER BY month_start ASC, na.code ASC, na.id ASC',
             [
                 'close_journal_tag' => RetainedEarningsCloseService::JOURNAL_TAG,

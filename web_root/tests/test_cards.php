@@ -140,49 +140,38 @@ final class TestCardsHarness
                 'page' => ['page_id' => 'trial_balance'],
                 'trial_balance_view_mode' => 'summary',
                 'services' => [
-                    'trialBalancePageData' => [
-                        'available' => true,
-                        'company' => ['company_name' => 'Nested Metric Limited'],
-                        'accounting_period' => ['label' => '2025'],
-                        'filters' => [
-                            'search' => '',
-                            'account_type' => 'all',
-                            'focus' => 'all',
+                    'trialBalanceState' => [
+                        'trial_balance' => [
+                            'available' => true,
+                            'company' => ['company_name' => 'Nested Metric Limited'],
+                            'accounting_period' => ['label' => '2025'],
+                            'summary' => [
+                                'trial_balance_status' => ['is_balanced' => true, 'label' => 'Balanced'],
+                            ],
+                            'rows' => [],
                         ],
-                        'summary' => [
-                            'trial_balance_status' => ['is_balanced' => true, 'label' => 'Balanced'],
-                            'tax_computation' => ['available' => false, 'errors' => ['No tax computation.']],
-                        ],
-                        'rows' => [],
-                    ],
-                    'trialBalanceValidation' => [
-                        'available' => true,
-                        'ready_for_ct_working_papers' => 'Nearly ready',
-                        'checks' => [
-                            [
-                                'title' => 'Nested metric check',
-                                'status' => 'warning',
-                                'detail' => 'Contains nested metric arrays.',
-                                'metric_value' => [
-                                    'difference' => 0.0,
-                                    'bank_ledger_reasonableness' => [
-                                        'transaction_movement' => 100.0,
-                                        'ledger_movement' => 100.0,
-                                    ],
-                                    'month_tiles' => [
-                                        [
-                                            'month_key' => '2025-01',
-                                            'status' => 'green',
+                        'validation' => [
+                            'available' => true,
+                            'ready_for_ct_working_papers' => 'Nearly ready',
+                            'checks' => [
+                                [
+                                    'title' => 'Nested metric check',
+                                    'status' => 'warning',
+                                    'detail' => 'Contains nested metric arrays.',
+                                    'metric_value' => [
+                                        'difference' => 0.0,
+                                        'bank_ledger_reasonableness' => [
+                                            'transaction_movement' => 100.0,
+                                            'ledger_movement' => 100.0,
+                                        ],
+                                        'month_tiles' => [
+                                            ['month_key' => '2025-01', 'status' => 'green'],
                                         ],
                                     ],
                                 ],
                             ],
+                            'month_tiles' => [],
                         ],
-                        'month_tiles' => [],
-                    ],
-                    'trialBalanceComparison' => [
-                        'available' => false,
-                        'errors' => ['No comparison.'],
                     ],
                 ],
             ]);
@@ -204,19 +193,21 @@ final class TestCardsHarness
                 'settings' => ['default_currency_symbol' => '&pound;'],
             ],
             'services' => [
-                'trialBalancePageData' => [
-                    'available' => true,
-                    'summary' => [
-                        'trial_balance_status' => ['is_balanced' => true, 'label' => 'Balanced'],
+                'trialBalanceState' => [
+                    'trial_balance' => [
+                        'available' => true,
+                        'summary' => [
+                            'trial_balance_status' => ['is_balanced' => true, 'label' => 'Balanced'],
+                        ],
                     ],
-                ],
-                'trialBalanceValidation' => [
-                    'available' => true,
-                    'ready_for_ct_working_papers' => 'Nearly ready',
-                    'checks' => [
-                        ['code' => 'trial_balance_equality', 'title' => 'Trial balance equality', 'status' => 'pass'],
-                        ['code' => 'uncategorised_transactions', 'title' => 'Uncategorised and posting route check', 'status' => 'pass'],
-                        ['code' => 'suspense_check', 'title' => 'Suspense and uncategorised exposure', 'status' => 'pass'],
+                    'validation' => [
+                        'available' => true,
+                        'ready_for_ct_working_papers' => 'Nearly ready',
+                        'checks' => [
+                            ['code' => 'trial_balance_equality', 'title' => 'Trial balance equality', 'status' => 'pass'],
+                            ['code' => 'uncategorised_transactions', 'title' => 'Uncategorised and posting route check', 'status' => 'pass'],
+                            ['code' => 'suspense_check', 'title' => 'Suspense and uncategorised exposure', 'status' => 'pass'],
+                        ],
                     ],
                 ],
             ],

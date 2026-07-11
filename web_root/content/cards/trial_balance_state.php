@@ -18,21 +18,9 @@ final class _trial_balance_stateCard extends CardBaseFramework
     {
         return [
             [
-                'key' => 'trialBalancePageData',
-                'service' => \eel_accounts\Service\TrialBalanceService::class,
-                'method' => 'fetchTrialBalance',
-                'params' => [
-                    'companyId' => ':company.id',
-                    'accountingPeriodId' => ':company.accounting_period_id',
-                    'includeZero' => false,
-                    'includeUnposted' => false,
-                    'filters' => [],
-                ],
-            ],
-            [
-                'key' => 'trialBalanceValidation',
-                'service' => \eel_accounts\Service\TrialBalanceValidationService::class,
-                'method' => 'fetchValidation',
+                'key' => 'trialBalanceState',
+                'service' => \eel_accounts\Service\TrialBalanceStateService::class,
+                'method' => 'fetchState',
                 'params' => [
                     'companyId' => ':company.id',
                     'accountingPeriodId' => ':company.accounting_period_id',
@@ -53,12 +41,13 @@ final class _trial_balance_stateCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $trialBalance = (array)($context['services']['trialBalancePageData'] ?? []);
+        $state = (array)($context['services']['trialBalanceState'] ?? []);
+        $trialBalance = (array)($state['trial_balance'] ?? []);
         if (empty($trialBalance['available'])) {
             return $this->renderErrors((array)($trialBalance['errors'] ?? ['Trial balance is not available for the selected period.']));
         }
 
-        $validation = (array)($context['services']['trialBalanceValidation'] ?? []);
+        $validation = (array)($state['validation'] ?? []);
         $summary = (array)($trialBalance['summary'] ?? []);
         $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
 

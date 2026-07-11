@@ -18,7 +18,7 @@ final class TrialBalanceComparisonService
     ) {
     }
 
-    public function fetchComparison(int $companyId, int $accountingPeriodId): array {
+    public function fetchComparison(int $companyId, int $accountingPeriodId, ?array $balanceSheetMetrics = null): array {
         $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
         $accountingPeriod = $metrics->fetchAccountingPeriod($companyId, $accountingPeriodId);
         $company = $metrics->fetchCompanySummary($companyId);
@@ -49,7 +49,7 @@ final class TrialBalanceComparisonService
         }
 
         $facts = $this->fetchMetricFacts((int)$nearest['id']);
-        $ledger = $metrics->fetchBalanceSheetMetricValues(
+        $ledger = $balanceSheetMetrics ?? $metrics->fetchBalanceSheetMetricValues(
             $companyId,
             $accountingPeriodId,
             (string)$accountingPeriod['period_start'],

@@ -95,6 +95,39 @@ final class TrialBalanceService
         ];
     }
 
+    /**
+     * Build the reusable, tax-light snapshot used by the Trial Balance summary page.
+     * The full fetchTrialBalance()/fetchSummary() APIs continue to enrich their
+     * summaries with CT computation data for the Losses tab and exports.
+     */
+    public function fetchStateSnapshot(int $companyId, int $accountingPeriodId): array
+    {
+        $context = $this->fetchPageContext($companyId, $accountingPeriodId);
+        if ($context === null) {
+            return [
+                'available' => false,
+                'errors' => ['The selected company or accounting period could not be found.'],
+            ];
+        }
+
+        $rows = $this->fetchNominalTrialBalanceRows($companyId, $accountingPeriodId, false);
+        $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
+        $periodStart = (string)($context['accounting_period']['period_start'] ?? '');
+        $periodEnd = (string)($context['accounting_period']['period_end'] ?? '');
+        $profitAndLoss = $metrics->profitAndLossSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $balanceSheet = $metrics->fetchBalanceSheetMetricValues($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+
+        return [
+            'available' => true,
+            'context' => $context,
+            'rows' => $rows,
+            'totals' => $this->buildTotals($rows),
+            'summary' => $this->buildCoreSummary($context, $rows, $profitAndLoss, $balanceSheet),
+            'balance_sheet_metrics' => $balanceSheet,
+            'has_rows' => $rows !== [],
+        ];
+    }
+
     public function fetchNominalLedger(
         int $companyId,
         int $accountingPeriodId,
@@ -277,12 +310,34 @@ final class TrialBalanceService
     }
 
     private function buildSummary(array $context, array $rows): array {
-        $settings = (array)($context['settings'] ?? []);
         $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
         $companyId = (int)($context['company']['id'] ?? 0);
         $accountingPeriodId = (int)($context['accounting_period']['id'] ?? 0);
         $periodStart = (string)($context['accounting_period']['period_start'] ?? '');
         $periodEnd = (string)($context['accounting_period']['period_end'] ?? '');
+        $summary = $this->buildCoreSummary(
+            $context,
+            $rows,
+            $metrics->profitAndLossSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd),
+            $metrics->fetchBalanceSheetMetricValues($companyId, $accountingPeriodId, $periodStart, $periodEnd)
+        );
+        $taxComputation = (new \eel_accounts\Service\YearEndTaxReadinessService($metrics))->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
+        $reviewNotes = trim((string)($context['review']['review_notes'] ?? ''));
+
+        $summary['ct_adjustment_workings'] = [
+            'status' => !empty($taxComputation['available']) ? 'Calculated' : 'Warnings present',
+            'note' => !empty($taxComputation['available'])
+                ? 'Taxable profit now reflects ledger profit, disallowables, depreciation add-backs, capital allowances, and loss utilisation.'
+                : 'Tax computation is not available for this period yet.',
+            'review_notes_present' => $reviewNotes !== '',
+        ];
+        $summary['tax_computation'] = $taxComputation;
+
+        return $summary;
+    }
+
+    private function buildCoreSummary(array $context, array $rows, array $profitAndLoss, array $balanceSheet): array {
+        $settings = (array)($context['settings'] ?? []);
 
         $totalDebits = 0.0;
         $totalCredits = 0.0;
@@ -336,11 +391,6 @@ final class TrialBalanceService
 
         $difference = round($totalDebits - $totalCredits, 2);
         $isBalanced = abs($difference) < 0.005;
-        $profitAndLoss = $metrics->profitAndLossSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
-        $balanceSheet = $metrics->fetchBalanceSheetMetricValues($companyId, $accountingPeriodId, $periodStart, $periodEnd);
-        $taxComputation = (new \eel_accounts\Service\YearEndTaxReadinessService($metrics))->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
-        $reviewNotes = trim((string)($context['review']['review_notes'] ?? ''));
-
         return [
             'trial_balance_status' => [
                 'label' => $isBalanced ? 'Balanced' : 'Not balanced',
@@ -354,14 +404,6 @@ final class TrialBalanceService
             'vat_control_balance' => round($vatBalance, 2),
             'uncategorised_exposure' => round($uncategorisedExposure, 2),
             'corporation_tax_balance' => round($corporationTaxBalance, 2),
-            'ct_adjustment_workings' => [
-                'status' => !empty($taxComputation['available']) ? 'Calculated' : 'Warnings present',
-                'note' => !empty($taxComputation['available'])
-                    ? 'Taxable profit now reflects ledger profit, disallowables, depreciation add-backs, capital allowances, and loss utilisation.'
-                    : 'Tax computation is not available for this period yet.',
-                'review_notes_present' => $reviewNotes !== '',
-            ],
-            'tax_computation' => $taxComputation,
         ];
     }
 

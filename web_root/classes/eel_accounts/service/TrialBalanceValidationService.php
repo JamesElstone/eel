@@ -16,24 +16,44 @@ final class TrialBalanceValidationService
         private readonly ?\eel_accounts\Service\TrialBalanceService $trialBalanceService = null,
         private readonly ?\eel_accounts\Service\YearEndMetricsService $metricsService = null,
         private readonly ?\eel_accounts\Service\YearEndLockService $lockService = null,
+        private readonly ?\eel_accounts\Service\TrialBalanceComparisonService $comparisonService = null,
     ) {
     }
 
     public function fetchValidation(int $companyId, int $accountingPeriodId): array {
         $trialBalanceService = $this->trialBalanceService ?? new \eel_accounts\Service\TrialBalanceService();
-        $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
-        $context = $trialBalanceService->fetchPageContext($companyId, $accountingPeriodId);
+        $snapshot = $trialBalanceService->fetchStateSnapshot($companyId, $accountingPeriodId);
 
-        if ($context === null) {
+        return $this->fetchValidationFromSnapshot($companyId, $accountingPeriodId, $snapshot);
+    }
+
+    public function fetchValidationFromSnapshot(int $companyId, int $accountingPeriodId, array $snapshot): array
+    {
+        if (empty($snapshot['available']) || !is_array($snapshot['context'] ?? null)) {
             return [
                 'available' => false,
-                'errors' => ['The selected company or accounting period could not be found.'],
+                'errors' => (array)($snapshot['errors'] ?? ['The selected company or accounting period could not be found.']),
             ];
         }
 
+        $balanceSheetMetrics = is_array($snapshot['balance_sheet_metrics'] ?? null)
+            ? $snapshot['balance_sheet_metrics']
+            : null;
+
+        return $this->buildValidation(
+            $companyId,
+            $accountingPeriodId,
+            (array)$snapshot['context'],
+            $snapshot,
+            $balanceSheetMetrics
+        );
+    }
+
+    private function buildValidation(int $companyId, int $accountingPeriodId, array $context, array $tb, ?array $balanceSheetMetrics): array
+    {
+        $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
         $periodStart = (string)($context['accounting_period']['period_start'] ?? '');
         $periodEnd = (string)($context['accounting_period']['period_end'] ?? '');
-        $tb = $trialBalanceService->fetchTrialBalance($companyId, $accountingPeriodId, true, false);
         $summary = (array)($tb['summary'] ?? []);
         $totals = (array)($tb['totals'] ?? []);
         $uncategorisedCount = $metrics->uncategorisedTransactionsCount($companyId, $accountingPeriodId, $periodStart, $periodEnd);
@@ -48,7 +68,7 @@ final class TrialBalanceValidationService
         $monthAllGreen = $monthTiles !== [] && count(array_filter($monthTiles, static fn(array $tile): bool => (string)($tile['status'] ?? '') !== 'green')) === 0;
         $reviewWarningsAcknowledged = trim((string)($review['review_notes'] ?? '')) !== '';
         $filingComparisonDifferences = count(array_filter(
-            (array)((new \eel_accounts\Service\TrialBalanceComparisonService())->fetchComparison($companyId, $accountingPeriodId)['rows'] ?? []),
+            (array)(($this->comparisonService ?? new \eel_accounts\Service\TrialBalanceComparisonService($metrics))->fetchComparison($companyId, $accountingPeriodId, $balanceSheetMetrics)['rows'] ?? []),
             static fn(array $row): bool => (string)($row['status'] ?? '') === 'differs'
         ));
         $comparisonDifferences = 0;

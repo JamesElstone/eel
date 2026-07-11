@@ -86,6 +86,27 @@ foreach ($cardClasses as $className) {
                 $harness->assertTrue(str_contains($html, '$ 556.90'));
             });
         }
+
+        if ($className === _tax_corporation_tax_summaryCard::class) {
+            $harness->check($className, 'keeps CT provision posting as a year-end close task', static function () use ($harness, $card): void {
+                $context = taxWorkingsCardsContext();
+                $context['tax'] = ['selected_ct_period_id' => 56];
+                $context['services']['taxWorkings']['provision'] = [
+                    'available' => true,
+                    'estimated_corporation_tax' => 2280,
+                    'posted_corporation_tax_charge' => 0,
+                    'unposted_corporation_tax_adjustment' => 2280,
+                    'status' => 'not_posted',
+                ];
+
+                $html = $card->render($context);
+
+                $harness->assertSame(true, str_contains($html, 'Unposted P&amp;L impact'));
+                $harness->assertSame(false, str_contains($html, 'Post CT provision'));
+                $harness->assertSame(false, str_contains($html, 'post_ct_provision'));
+                $harness->assertSame(false, str_contains($html, '<form'));
+            });
+        }
     });
 }
 

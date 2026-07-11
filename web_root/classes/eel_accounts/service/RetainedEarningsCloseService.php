@@ -21,6 +21,7 @@ final class RetainedEarningsCloseService
         private readonly ?\eel_accounts\Service\ManualJournalService $journalService = null,
         private readonly ?\eel_accounts\Service\YearEndLockService $lockService = null,
         private readonly ?\eel_accounts\Service\AssetService $assetService = null,
+        private readonly ?\eel_accounts\Service\CorporationTaxProvisionService $corporationTaxProvisionService = null,
     ) {
     }
 
@@ -52,6 +53,9 @@ final class RetainedEarningsCloseService
         $plRows = $this->profitAndLossRows($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $depreciationPreview = ($this->assetService ?? new \eel_accounts\Service\AssetService())->previewDepreciationRun($companyId, $accountingPeriodId);
         $plRows = $this->includePendingDepreciationRows($plRows, $depreciationPreview);
+        $corporationTaxProvision = ($this->corporationTaxProvisionService ?? new \eel_accounts\Service\CorporationTaxProvisionService())
+            ->fetchAccountingPeriodPosition($companyId, $accountingPeriodId);
+        $plRows = $this->includePendingCorporationTaxProvisionRows($plRows, $corporationTaxProvision);
         $profitAndLoss = $this->profitAndLossTotals($plRows);
         $openingEquity = $this->equityBalanceUntilDate($companyId, $periodStart, true, false);
         $closingEquityBeforeClose = $this->equityBalanceUntilDate($companyId, $periodEnd, false, true);
@@ -89,6 +93,7 @@ final class RetainedEarningsCloseService
             'retained_earnings_nominal' => $retainedEarningsNominal,
             'summary' => $summary,
             'depreciation_preview' => $depreciationPreview,
+            'corporation_tax_provision' => $corporationTaxProvision,
             'profit_and_loss_rows' => $plRows,
             'journal_lines' => $journalLines,
             'existing_journal' => $existingJournal,
@@ -347,6 +352,51 @@ final class RetainedEarningsCloseService
             'total_debit' => number_format($amount, 2, '.', ''),
             'total_credit' => '0.00',
             'pending_year_end_depreciation' => number_format($amount, 2, '.', ''),
+        ];
+
+        return $plRows;
+    }
+
+    private function includePendingCorporationTaxProvisionRows(array $plRows, array $provision): array
+    {
+        if (empty($provision['available'])) {
+            return $plRows;
+        }
+
+        $amount = round((float)($provision['unposted_corporation_tax_adjustment'] ?? 0), 2);
+        if (abs($amount) < 0.005) {
+            return $plRows;
+        }
+
+        foreach ($plRows as $index => $row) {
+            if ((string)($row['code'] ?? '') !== '8500') {
+                continue;
+            }
+
+            if ($amount > 0) {
+                $plRows[$index]['total_debit'] = number_format(round((float)($row['total_debit'] ?? 0) + $amount, 2), 2, '.', '');
+            } else {
+                $plRows[$index]['total_credit'] = number_format(round((float)($row['total_credit'] ?? 0) + abs($amount), 2), 2, '.', '');
+            }
+            $plRows[$index]['pending_corporation_tax_provision'] = number_format($amount, 2, '.', '');
+
+            return $plRows;
+        }
+
+        $corporationTaxNominal = $this->nominalByCode('8500', 'expense');
+        if ($corporationTaxNominal === null) {
+            return $plRows;
+        }
+
+        $plRows[] = [
+            'id' => (int)$corporationTaxNominal['id'],
+            'code' => (string)($corporationTaxNominal['code'] ?? '8500'),
+            'name' => (string)($corporationTaxNominal['name'] ?? 'Corporation Tax Expense'),
+            'account_type' => (string)($corporationTaxNominal['account_type'] ?? 'expense'),
+            'tax_treatment' => (string)($corporationTaxNominal['tax_treatment'] ?? 'disallowable'),
+            'total_debit' => $amount > 0 ? number_format($amount, 2, '.', '') : '0.00',
+            'total_credit' => $amount < 0 ? number_format(abs($amount), 2, '.', '') : '0.00',
+            'pending_corporation_tax_provision' => number_format($amount, 2, '.', ''),
         ];
 
         return $plRows;

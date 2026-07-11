@@ -26,7 +26,6 @@ final class TaxAction implements ActionInterfaceFramework
 
         try {
             $result = match ($intent) {
-                'post_ct_provision' => (new \eel_accounts\Service\CorporationTaxProvisionService())->postProvision($companyId, $accountingPeriodId, $ctPeriodId),
                 default => ['success' => false, 'errors' => ['Unknown tax action.']],
             };
         } catch (Throwable $exception) {

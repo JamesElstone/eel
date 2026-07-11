@@ -19,19 +19,61 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
             'taxable_loss' => 12.34,
             'estimated_corporation_tax' => 2375,
             'losses_carried_forward' => 45.67,
+            'ct_period_count' => 2,
+            'provision' => [
+                'available' => true,
+                'status' => 'not_posted',
+                'estimated_corporation_tax' => 2375,
+                'posted_corporation_tax_charge' => 0,
+                'unposted_corporation_tax_adjustment' => 2375,
+            ],
             'periods' => [
                 [
+                    'ct_period_id' => 501,
+                    'ct_period_display_sequence_no' => 1,
                     'period_label' => '05/09/2022 to 04/09/2023',
+                    'accounting_profit' => 9000,
+                    'disallowable_add_backs' => 400,
+                    'depreciation_add_back' => 700,
+                    'capital_allowances' => 100,
+                    'taxable_before_losses' => 10000,
                     'taxable_profit' => 10000,
                     'estimated_corporation_tax' => 1900,
+                    'estimated_rate' => 0.19,
+                    'loss_brought_forward' => 0,
+                    'loss_created' => 0,
+                    'loss_utilised' => 0,
                     'losses_carried_forward' => 20,
+                    'ct_rate_bands' => [
+                        [
+                            'financial_year' => 'FY2023',
+                            'taxable_profit' => 10000,
+                            'main_rate' => 0.19,
+                            'small_profits_rate' => 0.19,
+                            'marginal_relief' => 0,
+                            'liability' => 1900,
+                            'basis' => 'small_profits_rate',
+                        ],
+                    ],
                     'warnings' => [],
                 ],
                 [
+                    'ct_period_id' => 502,
+                    'ct_period_display_sequence_no' => 2,
                     'period_label' => '05/09/2023 to 30/09/2023',
+                    'accounting_profit' => 2600,
+                    'disallowable_add_backs' => 50,
+                    'depreciation_add_back' => 0,
+                    'capital_allowances' => 150,
+                    'taxable_before_losses' => 2500,
                     'taxable_profit' => 2500,
                     'estimated_corporation_tax' => 475,
+                    'estimated_rate' => 0.19,
+                    'loss_brought_forward' => 20,
+                    'loss_created' => 0,
+                    'loss_utilised' => 20,
                     'losses_carried_forward' => 25.67,
+                    'ct_rate_bands' => [],
                     'warnings' => ['Review final period'],
                 ],
             ],
@@ -54,6 +96,24 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
 
         $harness->assertSame(true, str_contains($html, 'save_tax_readiness_acknowledgement'));
         $harness->assertSame(true, str_contains($html, 'Open Tax Workflow'));
+        $harness->assertSame(true, str_contains($html, 'Overall Tax Position'));
+        $harness->assertSame(true, str_contains($html, 'CT Periods In This Accounting Period'));
+        $harness->assertSame(true, str_contains($html, 'CT Period 1: 05/09/2022 to 04/09/2023'));
+        $harness->assertSame(true, str_contains($html, 'CT Period 2: 05/09/2023 to 30/09/2023'));
+        $harness->assertSame(true, str_contains($html, 'Taxable Profit Bridge'));
+        $harness->assertSame(true, str_contains($html, 'Accounting profit or loss'));
+        $harness->assertSame(true, str_contains($html, 'Deduct capital allowances'));
+        $harness->assertSame(true, str_contains($html, 'Loss Movement'));
+        $harness->assertSame(true, str_contains($html, 'Rate Bands'));
+        $harness->assertSame(true, str_contains($html, 'Financial Year (FY)'));
+        $harness->assertSame(true, str_contains($html, 'FY2023'));
+        $harness->assertSame(true, str_contains($html, 'Open this CT period in Tax Workflow'));
+        $harness->assertSame(true, str_contains($html, 'name="ct_period_id" value="501"'));
+        $harness->assertSame(true, str_contains($html, 'name="ct_period_id" value="502"'));
+        $harness->assertSame(true, str_contains($html, 'summary-grid four'));
+        $harness->assertSame(false, str_contains($html, 'Tax Readiness Snapshot'));
+        $harness->assertSame(false, str_contains($html, 'Post / Update CT Provisions'));
+        $harness->assertSame(false, str_contains($html, 'post_ct_provisions'));
         $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=tax" data-ajax="true"'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="company_id" value="33">'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="accounting_period_id" value="70">'));
@@ -68,15 +128,9 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame(true, str_contains($html, '$ 45.67'));
         $harness->assertSame(true, str_contains($html, '05/09/2022 to 04/09/2023'));
         $harness->assertSame(true, str_contains($html, '05/09/2023 to 30/09/2023'));
-        $harness->assertSame(true, str_contains($html, 'Estimated CT: $ 1,900.00'));
         $harness->assertSame(true, str_contains($html, '1 warning'));
         $harness->assertSame(false, str_contains($html, 'Corporation Tax Computation'));
         $harness->assertSame(false, str_contains($html, 'Loss schedule'));
-        $harness->assertSame(false, str_contains($html, 'Capital Allowances'));
-        $harness->assertSame(false, str_contains($html, '$ 100.00'));
-        $harness->assertSame(false, str_contains($html, '$ 200.00'));
-        $harness->assertSame(false, str_contains($html, '$ 300.00'));
-        $harness->assertSame(false, str_contains($html, '$ 400.00'));
     });
 
     $harness->check(_year_end_tax_readinessCard::class, 'renders tax readiness from year-end checklist context without a card service payload', static function () use ($harness, $card): void {
@@ -89,9 +143,17 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
             'confidence_label' => 'Ready for review',
             'periods' => [
                 [
+                    'ct_period_id' => 601,
+                    'ct_period_display_sequence_no' => 1,
                     'period_label' => '01/10/2025 to 30/09/2026',
+                    'accounting_profit' => 8000,
+                    'disallowable_add_backs' => 0,
+                    'depreciation_add_back' => 0,
+                    'capital_allowances' => 0,
+                    'taxable_before_losses' => 8000,
                     'taxable_profit' => 8000,
                     'estimated_corporation_tax' => 1520,
+                    'estimated_rate' => 0.19,
                     'losses_carried_forward' => 12.50,
                     'warnings' => [],
                 ],
@@ -105,6 +167,10 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame(true, str_contains($html, '01/10/2025 to 30/09/2026'));
         $harness->assertSame(true, str_contains($html, 'Ready for review'));
         $harness->assertSame(true, str_contains($html, 'Open Tax Workflow'));
+        $harness->assertSame(true, str_contains($html, 'Overall Tax Position'));
+        $harness->assertSame(true, str_contains($html, 'CT Period 1: 01/10/2025 to 30/09/2026'));
+        $harness->assertSame(true, str_contains($html, 'summary-grid four'));
+        $harness->assertSame(false, str_contains($html, 'Post / Update CT Provisions'));
     });
 });
 

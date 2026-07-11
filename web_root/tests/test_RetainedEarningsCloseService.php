@@ -115,6 +115,39 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
             }
         }
     });
+
+    $harness->check(\eel_accounts\Service\RetainedEarningsCloseService::class, 'includes pending CT provision in approval figures', static function () use ($harness): void {
+        $service = new \eel_accounts\Service\RetainedEarningsCloseService();
+        $method = new ReflectionMethod($service, 'includePendingCorporationTaxProvisionRows');
+        $method->setAccessible(true);
+        $rows = [
+            [
+                'id' => 8500,
+                'code' => '8500',
+                'name' => 'Corporation Tax Expense',
+                'account_type' => 'expense',
+                'tax_treatment' => 'disallowable',
+                'total_debit' => '100.00',
+                'total_credit' => '0.00',
+            ],
+        ];
+
+        $withCharge = $method->invoke($service, $rows, [
+            'available' => true,
+            'unposted_corporation_tax_adjustment' => 50.25,
+        ]);
+        $harness->assertSame('150.25', (string)$withCharge[0]['total_debit']);
+        $harness->assertSame('0.00', (string)$withCharge[0]['total_credit']);
+        $harness->assertSame('50.25', (string)$withCharge[0]['pending_corporation_tax_provision']);
+
+        $withReversal = $method->invoke($service, $rows, [
+            'available' => true,
+            'unposted_corporation_tax_adjustment' => -25.50,
+        ]);
+        $harness->assertSame('100.00', (string)$withReversal[0]['total_debit']);
+        $harness->assertSame('25.50', (string)$withReversal[0]['total_credit']);
+        $harness->assertSame('-25.50', (string)$withReversal[0]['pending_corporation_tax_provision']);
+    });
 });
 
 function retainedEarningsCloseRequireSchema(GeneratedServiceClassTestHarness $harness): void

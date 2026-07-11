@@ -27,6 +27,7 @@ final class YearEndChecklistService
         private readonly ?\eel_accounts\Service\YearEndLockService $lockService = null,
         private readonly ?\eel_accounts\Service\AssetService $assetService = null,
         private readonly ?\eel_accounts\Service\RetainedEarningsCloseService $retainedEarningsCloseService = null,
+        private readonly ?\eel_accounts\Service\CorporationTaxProvisionService $corporationTaxProvisionService = null,
     ) {
     }
 
@@ -344,6 +345,20 @@ final class YearEndChecklistService
                 ]);
             }
 
+            $ctProvisionResult = ($this->corporationTaxProvisionService ?? new \eel_accounts\Service\CorporationTaxProvisionService())
+                ->postProvisionsForAccountingPeriod($companyId, $accountingPeriodId, $lockedBy);
+            if (empty($ctProvisionResult['success'])) {
+                return $this->rollbackLockTransaction($transaction, [
+                    'success' => false,
+                    'status' => (int)($ctProvisionResult['status'] ?? 422),
+                    'errors' => (array)($ctProvisionResult['errors'] ?? ['Corporation Tax provisions could not be posted before locking this period.']),
+                    'checklist' => $checklist,
+                    'director_loan_offset' => $directorLoanOffsetResult,
+                    'depreciation' => $depreciationResult,
+                    'corporation_tax_provision' => $ctProvisionResult,
+                ]);
+            }
+
             $stagedRetainedEarningsContext = ($this->retainedEarningsCloseService ?? new \eel_accounts\Service\RetainedEarningsCloseService())
                 ->fetchContext($companyId, $accountingPeriodId);
             if (!empty($stagedRetainedEarningsContext['acknowledgement_stale'])) {
@@ -354,6 +369,7 @@ final class YearEndChecklistService
                     'checklist' => $checklist,
                     'director_loan_offset' => $directorLoanOffsetResult,
                     'depreciation' => $depreciationResult,
+                    'corporation_tax_provision' => $ctProvisionResult,
                     'retained_earnings_close' => ['success' => false, 'context' => $stagedRetainedEarningsContext],
                 ]);
             }
@@ -368,6 +384,7 @@ final class YearEndChecklistService
                     'checklist' => $checklist,
                     'director_loan_offset' => $directorLoanOffsetResult,
                     'depreciation' => $depreciationResult,
+                    'corporation_tax_provision' => $ctProvisionResult,
                     'retained_earnings_close' => $retainedEarningsCloseResult,
                 ]);
             }
@@ -382,6 +399,7 @@ final class YearEndChecklistService
                     'checklist' => $checklist,
                     'director_loan_offset' => $directorLoanOffsetResult,
                     'depreciation' => $depreciationResult,
+                    'corporation_tax_provision' => $ctProvisionResult,
                     'retained_earnings_close' => $retainedEarningsCloseResult,
                     'corporation_tax' => $taxPersistenceResult,
                 ]);
@@ -396,6 +414,7 @@ final class YearEndChecklistService
             $result += [
                 'depreciation' => $depreciationResult,
                 'director_loan_offset' => $directorLoanOffsetResult,
+                'corporation_tax_provision' => $ctProvisionResult,
                 'retained_earnings_close' => $retainedEarningsCloseResult,
                 'corporation_tax' => $taxPersistenceResult,
                 'checklist' => $this->fetchChecklist($companyId, $accountingPeriodId, true),
@@ -438,18 +457,6 @@ final class YearEndChecklistService
                 'errors' => ['The retained earnings figures have changed since acknowledgement. Review and agree the retained earnings close again.'],
                 'checklist' => $checklist,
                 'retained_earnings_close' => $retainedEarningsClose,
-            ];
-        }
-
-        $taxProvision = (array)(((array)($checklist['tax_readiness'] ?? []))['provision'] ?? []);
-        $taxProvisionStatus = (string)($taxProvision['status'] ?? '');
-        if (empty($taxProvision['available']) || !in_array($taxProvisionStatus, ['posted', 'not_required'], true)) {
-            return [
-                'success' => false,
-                'status' => 422,
-                'errors' => ['Post or refresh the Corporation Tax provision before locking this accounting period.'],
-                'checklist' => $checklist,
-                'corporation_tax_provision' => $taxProvision,
             ];
         }
 
@@ -1363,19 +1370,24 @@ final class YearEndChecklistService
         $sections['corporation_tax_readiness'][] = $taxEstimateCheck;
         $taxProvision = (array)($taxReadiness['provision'] ?? []);
         $taxProvisionStatus = (string)($taxProvision['status'] ?? '');
-        $taxProvisionCurrent = !empty($taxReadiness['available'])
-            && !empty($taxProvision['available'])
-            && in_array($taxProvisionStatus, ['posted', 'not_required'], true);
+        $taxProvisionAvailable = !empty($taxReadiness['available']) && !empty($taxProvision['available']);
+        $taxProvisionCurrent = $taxProvisionAvailable && in_array($taxProvisionStatus, ['posted', 'not_required'], true);
+        $taxProvisionCheckStatus = empty($taxReadiness['available'])
+            ? 'not_applicable'
+            : ($taxProvisionAvailable ? 'pass' : 'fail');
+        $taxProvisionDetail = empty($taxReadiness['available'])
+            ? 'A Corporation Tax estimate is needed before the provision can be prepared.'
+            : ($taxProvisionAvailable
+                ? ($taxProvisionCurrent
+                    ? 'The 8500 Corporation Tax Expense / 2200 Corporation Tax provision matches the current CT estimate.'
+                    : 'The final Year End close will post or refresh the CT provision before retained earnings are closed.')
+                : 'The CT provision position could not be prepared for the final Year End close.');
         $sections['corporation_tax_readiness'][] = $this->makeCheck(
             'corporation_tax_provision_posted',
-            'Corporation tax provision posted',
+            'Corporation tax provision close task',
             'fail',
-            empty($taxReadiness['available']) ? 'not_applicable' : ($taxProvisionCurrent ? 'pass' : 'fail'),
-            empty($taxReadiness['available'])
-                ? 'A Corporation Tax estimate is needed before the provision can be checked.'
-                : ($taxProvisionCurrent
-                    ? 'The 8500 Corporation Tax Expense / 2200 Corporation Tax provision matches the current CT estimate.'
-                    : 'Post or refresh the CT provision so Companies House figures and retained earnings include the tax charge.'),
+            $taxProvisionCheckStatus,
+            $taxProvisionDetail,
             empty($taxReadiness['available'])
                 ? ''
                 : ('Posted ' . $this->money($settings, $taxProvision['posted_corporation_tax_charge'] ?? 0)

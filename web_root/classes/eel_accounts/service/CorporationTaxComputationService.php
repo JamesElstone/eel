@@ -334,6 +334,121 @@ final class CorporationTaxComputationService
         }
     }
 
+    /**
+     * Lightweight live CT position for dividend capacity. For a single CT
+     * period, historical losses are only loaded when current taxable profit is
+     * positive and they can change the liability.
+     *
+     * @param array<string, mixed> $preTaxProfitLoss
+     */
+    public function fetchDividendCapacityEstimate(
+        int $companyId,
+        int $accountingPeriodId,
+        string $asAtDate,
+        array $preTaxProfitLoss
+    ): array {
+        $active = $this->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId);
+        $periods = array_values(array_filter(
+            (array)($active['periods'] ?? []),
+            static fn(array $period): bool => (string)($period['period_start'] ?? '') <= $asAtDate
+        ));
+        if (count($periods) !== 1) {
+            return $this->fullDividendCapacityEstimate($companyId, $accountingPeriodId, $periods, (array)($active['errors'] ?? []));
+        }
+
+        $ctPeriod = (array)$periods[0];
+        $ctPeriodId = (int)($ctPeriod['id'] ?? 0);
+        $periodStart = (string)($ctPeriod['period_start'] ?? '');
+        $periodEnd = min($asAtDate, (string)($ctPeriod['period_end'] ?? $asAtDate));
+        if ($ctPeriodId <= 0 || $periodStart === '' || $periodEnd < $periodStart) {
+            return ['available' => false, 'errors' => ['A valid CT period could not be resolved for dividend capacity.'], 'periods' => [], 'totals' => []];
+        }
+
+        $breakdown = $this->capitalAllowanceBreakdown($companyId, $accountingPeriodId, $ctPeriodId);
+        $capitalAllowances = $this->capitalAllowanceAmountFromBreakdown($breakdown);
+        $depreciationAddBack = round((float)($preTaxProfitLoss['depreciation_expense'] ?? 0), 2);
+        $taxableBeforeLosses = round(
+            (float)($preTaxProfitLoss['profit_before_tax'] ?? 0)
+            + (float)($preTaxProfitLoss['disallowable_add_backs'] ?? 0)
+            + $depreciationAddBack
+            - $capitalAllowances,
+            2
+        );
+
+        $lossesBroughtForward = 0.0;
+        $lossesUsed = 0.0;
+        $taxableProfit = 0.0;
+        if ($taxableBeforeLosses > 0) {
+            $lossPosition = $this->ctPeriodLossPosition($companyId, $ctPeriodId);
+            $lossesBroughtForward = round((float)($lossPosition['brought_forward'] ?? 0), 2);
+            $lossesUsed = min($taxableBeforeLosses, $lossesBroughtForward);
+            $taxableProfit = round($taxableBeforeLosses - $lossesUsed, 2);
+        }
+        $lossCreated = $taxableBeforeLosses < 0 ? abs($taxableBeforeLosses) : 0.0;
+        $lossesCarriedForward = round($lossesBroughtForward - $lossesUsed + $lossCreated, 2);
+        $rateCalculation = ($this->rateService ?? new CorporationTaxRateService())->calculate(
+            $periodStart,
+            $periodEnd,
+            $taxableProfit,
+            $this->associatedCompanyCount($companyId)
+        );
+        $warnings = array_values(array_filter(array_map(
+            'strval',
+            (array)($breakdown['warnings'] ?? [])
+        )));
+        $row = [
+            'available' => true,
+            'ct_period_id' => $ctPeriodId,
+            'accounting_period_id' => $accountingPeriodId,
+            'period_start' => $periodStart,
+            'period_end' => $periodEnd,
+            'accounting_profit' => round((float)($preTaxProfitLoss['profit_before_tax'] ?? 0), 2),
+            'disallowable_add_backs' => round((float)($preTaxProfitLoss['disallowable_add_backs'] ?? 0), 2),
+            'depreciation_add_back' => $depreciationAddBack,
+            'capital_allowances' => round($capitalAllowances, 2),
+            'taxable_before_losses' => $taxableBeforeLosses,
+            'taxable_profit' => $taxableProfit,
+            'taxable_loss' => round($lossCreated, 2),
+            'loss_created_in_period' => round($lossCreated, 2),
+            'losses_brought_forward' => $lossesBroughtForward,
+            'losses_used' => round($lossesUsed, 2),
+            'losses_carried_forward' => $lossesCarriedForward,
+            'estimated_corporation_tax' => round((float)($rateCalculation['liability'] ?? 0), 2),
+            'warnings' => $warnings,
+            'calculation_status' => 'estimate',
+            'summary_scope' => 'dividend_capacity',
+        ];
+
+        return $row + ['periods' => [$row], 'totals' => $row, 'errors' => []];
+    }
+
+    private function fullDividendCapacityEstimate(int $companyId, int $accountingPeriodId, array $periods, array $errors): array
+    {
+        $this->preloadCtPeriodLossPositionsForAccountingPeriod($companyId, $accountingPeriodId);
+        $summaries = [];
+        foreach ($periods as $period) {
+            $summary = $this->fetchSummaryForCtPeriodId($companyId, (int)($period['id'] ?? 0));
+            if (!empty($summary['available'])) {
+                $summaries[] = $summary;
+            } else {
+                $errors = array_merge($errors, (array)($summary['errors'] ?? []));
+            }
+        }
+        if ($summaries === []) {
+            return ['available' => false, 'errors' => $errors !== [] ? $errors : ['No CT estimate is available.'], 'periods' => [], 'totals' => []];
+        }
+        $estimated = round(array_sum(array_map(static fn(array $row): float => (float)($row['estimated_corporation_tax'] ?? 0), $summaries)), 2);
+
+        return [
+            'available' => true,
+            'errors' => $errors,
+            'estimated_corporation_tax' => $estimated,
+            'periods' => $summaries,
+            'totals' => ['estimated_corporation_tax' => $estimated],
+            'summary_scope' => 'dividend_capacity_full',
+        ];
+    }
+
     private function rebuildLossSchedule(int $companyId): array {
         if (isset($this->accountingPeriodLossScheduleCache[$companyId])) {
             return $this->accountingPeriodLossScheduleCache[$companyId];

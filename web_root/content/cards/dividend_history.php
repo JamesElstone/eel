@@ -21,7 +21,15 @@ final class _dividend_historyCard extends CardBaseFramework
 
     public function services(): array
     {
-        return [$this->dividendContextService()];
+        return [[
+            'key' => 'dividendHistory',
+            'service' => \eel_accounts\Service\DividendService::class,
+            'method' => 'listDividends',
+            'params' => [
+                'companyId' => ':company.id',
+                'accountingPeriodId' => ':company.accounting_period_id',
+            ],
+        ]];
     }
 
     protected function additionalInvalidationFacts(): array
@@ -31,7 +39,7 @@ final class _dividend_historyCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $rows = (array)($this->dividendsContext($context)['history'] ?? []);
+        $rows = $this->historyRows($context);
         $company = (array)($context['company'] ?? []);
         $companySettings = (array)($company['settings'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
@@ -120,26 +128,13 @@ final class _dividend_historyCard extends CardBaseFramework
         };
     }
 
-    private function dividendContextService(): array
+    private function historyRows(array $context): array
     {
-        return [
-            'key' => 'dividendContext',
-            'service' => \eel_accounts\Service\DividendViewDataService::class,
-            'method' => 'fetchContext',
-            'params' => [
-                'companyId' => ':company.id',
-                'accountingPeriodId' => ':company.accounting_period_id',
-            ],
-        ];
-    }
-
-    private function dividendsContext(array $context): array
-    {
-        $serviceContext = $context['services']['dividendContext'] ?? null;
-        if (is_array($serviceContext)) {
-            return $serviceContext;
+        $serviceRows = $context['services']['dividendHistory'] ?? null;
+        if (is_array($serviceRows)) {
+            return $serviceRows;
         }
 
-        return (array)($context['dividends'] ?? []);
+        return (array)(($context['dividends'] ?? [])['history'] ?? []);
     }
 }

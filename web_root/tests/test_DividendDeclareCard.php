@@ -12,15 +12,46 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 $harness = new GeneratedServiceClassTestHarness();
 
 $harness->run(_dividend_declareCard::class, static function (GeneratedServiceClassTestHarness $harness, _dividend_declareCard $card): void {
-    $harness->check(_dividend_declareCard::class, 'declares shared dividend context service', static function () use ($harness, $card): void {
-        $service = (array)($card->services()[0] ?? []);
+    $harness->check(_dividend_declareCard::class, 'declares shared capacity and focused reconciliation services', static function () use ($harness, $card): void {
+        $services = $card->services();
+        $service = (array)($services[0] ?? []);
         $params = (array)($service['params'] ?? []);
 
         $harness->assertSame('dividendContext', $service['key'] ?? null);
         $harness->assertSame(\eel_accounts\Service\DividendViewDataService::class, $service['service'] ?? null);
-        $harness->assertSame('fetchContext', $service['method'] ?? null);
+        $harness->assertSame('fetchCapacityContext', $service['method'] ?? null);
         $harness->assertSame(':company.id', $params['companyId'] ?? null);
         $harness->assertSame(':company.accounting_period_id', $params['accountingPeriodId'] ?? null);
+        $candidates = (array)($services[1] ?? []);
+        $harness->assertSame('dividendReconciliationCandidates', $candidates['key'] ?? null);
+        $harness->assertSame(\eel_accounts\Service\DividendService::class, $candidates['service'] ?? null);
+        $harness->assertSame('listDividendReconciliationCandidates', $candidates['method'] ?? null);
+    });
+
+    $harness->check(_dividend_declareCard::class, 'renders focused service results', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => ['id' => 7, 'accounting_period_id' => 22],
+            'services' => [
+                'dividendContext' => [
+                    'capacity' => [
+                        'available' => true,
+                        'reserves_reliable' => true,
+                        'as_at_date' => '2026-06-30',
+                        'available_distributable_reserves' => 100,
+                        'accounting_period' => ['period_start' => '2026-01-01', 'period_end' => '2026-12-31'],
+                    ],
+                    'is_locked' => false,
+                ],
+                'dividendReconciliationCandidates' => [[
+                    'id' => 92,
+                    'txn_date' => '2026-06-20',
+                    'amount' => -25,
+                    'description' => 'Focused candidate',
+                ]],
+            ],
+        ]);
+        $harness->assertTrue(str_contains($html, '<option value="92">'));
+        $harness->assertTrue(str_contains($html, 'Focused candidate'));
     });
 
     $baseContext = [

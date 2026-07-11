@@ -21,7 +21,18 @@ final class _dividend_declareCard extends CardBaseFramework
 
     public function services(): array
     {
-        return [$this->dividendContextService()];
+        return [
+            $this->dividendContextService(),
+            [
+                'key' => 'dividendReconciliationCandidates',
+                'service' => \eel_accounts\Service\DividendService::class,
+                'method' => 'listDividendReconciliationCandidates',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                ],
+            ],
+        ];
     }
 
     protected function additionalInvalidationFacts(): array
@@ -136,7 +147,7 @@ final class _dividend_declareCard extends CardBaseFramework
         return [
             'key' => 'dividendContext',
             'service' => \eel_accounts\Service\DividendViewDataService::class,
-            'method' => 'fetchContext',
+            'method' => 'fetchCapacityContext',
             'params' => [
                 'companyId' => ':company.id',
                 'accountingPeriodId' => ':company.accounting_period_id',
@@ -148,6 +159,7 @@ final class _dividend_declareCard extends CardBaseFramework
     {
         $serviceContext = $context['services']['dividendContext'] ?? null;
         if (is_array($serviceContext)) {
+            $serviceContext['reconciliation_candidates'] = (array)($context['services']['dividendReconciliationCandidates'] ?? []);
             return $serviceContext;
         }
 

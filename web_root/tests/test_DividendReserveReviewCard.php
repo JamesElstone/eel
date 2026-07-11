@@ -12,13 +12,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 $harness = new GeneratedServiceClassTestHarness();
 
 $harness->run(_dividend_reserve_reviewCard::class, static function (GeneratedServiceClassTestHarness $harness, _dividend_reserve_reviewCard $card): void {
-    $harness->check(_dividend_reserve_reviewCard::class, 'declares shared dividend context service', static function () use ($harness, $card): void {
+    $harness->check(_dividend_reserve_reviewCard::class, 'declares shared focused capacity context service', static function () use ($harness, $card): void {
         $service = (array)($card->services()[0] ?? []);
         $params = (array)($service['params'] ?? []);
 
         $harness->assertSame('dividendContext', $service['key'] ?? null);
         $harness->assertSame(\eel_accounts\Service\DividendViewDataService::class, $service['service'] ?? null);
-        $harness->assertSame('fetchContext', $service['method'] ?? null);
+        $harness->assertSame('fetchCapacityContext', $service['method'] ?? null);
         $harness->assertSame(':company.id', $params['companyId'] ?? null);
         $harness->assertSame(':company.accounting_period_id', $params['accountingPeriodId'] ?? null);
     });

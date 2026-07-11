@@ -1120,12 +1120,7 @@ final class DividendService
 
     private function corporationTaxCapacityPosition(int $companyId, int $accountingPeriodId, array $accountingPeriod, float $ledgerProfit, string $asAtDate, PreTaxProfitLossService $preTaxService, array $preTaxProfitLoss): array
     {
-        $postedCharge = $this->postedCorporationTaxChargeForPeriod(
-            $companyId,
-            $accountingPeriodId,
-            (string)($accountingPeriod['period_start'] ?? ''),
-            $asAtDate
-        );
+        $postedCharge = max(0.0, round((float)($preTaxProfitLoss['posted_corporation_tax_charge'] ?? 0), 2));
         $estimate = 0.0;
         $estimateAvailable = false;
         $errors = [];
@@ -1134,28 +1129,12 @@ final class DividendService
         try {
             $metrics = new YearEndMetricsService(null, null, null, null, $preTaxService);
             $computation = new CorporationTaxComputationService($metrics);
-            if ($asAtDate < (string)($accountingPeriod['period_end'] ?? $asAtDate)) {
-                $asAtPeriod = $accountingPeriod;
-                $asAtPeriod['period_end'] = $asAtDate;
-                $result = $computation->fetchCurrentPeriodEstimate(
-                    $companyId,
-                    $accountingPeriodId,
-                    $asAtPeriod,
-                    [
-                        'profit_before_tax' => (float)($preTaxProfitLoss['profit_before_tax'] ?? 0),
-                        'disallowable_add_backs' => (float)($preTaxProfitLoss['disallowable_add_backs'] ?? 0),
-                        'capital_add_backs' => (float)($preTaxProfitLoss['capital_add_backs'] ?? 0),
-                        'other_treatment_count' => (int)($preTaxProfitLoss['other_treatment_count'] ?? 0),
-                        'unknown_treatment_count' => (int)($preTaxProfitLoss['unknown_treatment_count'] ?? 0),
-                    ]
-                );
-                if (!empty($result['available'])) {
-                    $result['periods'] = [$result];
-                    $result['totals'] = $result;
-                }
-            } else {
-                $result = (new YearEndTaxReadinessService($metrics, $computation))->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
-            }
+            $result = $computation->fetchDividendCapacityEstimate(
+                $companyId,
+                $accountingPeriodId,
+                $asAtDate,
+                $preTaxProfitLoss
+            );
             $estimateAvailable = !empty($result['available']);
             if ($estimateAvailable) {
                 $estimate = max(0.0, round((float)($result['estimated_corporation_tax'] ?? 0), 2));
@@ -1191,37 +1170,6 @@ final class DividendService
                 ? 'Dividend capacity deducts estimated Corporation Tax across all CT periods that has not yet been posted into the ledger.'
                 : 'Corporation Tax across all CT periods is either nil by estimate or already reflected by posted ledger entries.',
         ];
-    }
-
-    private function postedCorporationTaxChargeForPeriod(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): float
-    {
-        if ($companyId <= 0 || $accountingPeriodId <= 0 || $periodStart === '' || $periodEnd === '') {
-            return 0.0;
-        }
-
-        $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
-        $expenseNominalId = (int)($settings['corporation_tax_expense_nominal_id'] ?? 0);
-        if ($expenseNominalId <= 0) {
-            return 0.0;
-        }
-
-        return max(0.0, round((float)\InterfaceDB::fetchColumn(
-            'SELECT COALESCE(SUM(pjl.debit - pjl.credit), 0)
-             FROM journals j
-             INNER JOIN journal_lines pjl ON pjl.journal_id = j.id
-             WHERE j.company_id = :company_id
-               AND j.accounting_period_id = :accounting_period_id
-               AND j.is_posted = 1
-               AND j.journal_date BETWEEN :period_start AND :period_end
-               AND pjl.nominal_account_id = :expense_nominal_id',
-            [
-                'company_id' => $companyId,
-                'accounting_period_id' => $accountingPeriodId,
-                'period_start' => $periodStart,
-                'period_end' => $periodEnd,
-                'expense_nominal_id' => $expenseNominalId,
-            ]
-        ), 2));
     }
 
     private function ensureVoucherForJournal(int $journalId, ?int $transactionId = null, string $changedBy = 'web_app'): ?array

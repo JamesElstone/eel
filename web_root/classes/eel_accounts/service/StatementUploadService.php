@@ -3611,7 +3611,8 @@ final class StatementUploadService
                                                        AND NOT EXISTS (
                                                            SELECT 1
                                                            FROM journals j
-                                                           WHERE j.source_type = 'bank_csv'
+                                                           WHERE j.company_id = t.company_id
+                                                             AND j.source_type = 'bank_csv'
                                                              AND j.source_ref = CONCAT('transaction:', t.id)
                                                        )
                                                      THEN 1

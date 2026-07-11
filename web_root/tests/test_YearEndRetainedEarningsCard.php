@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'PageServiceTestFactory.php';
 
 $harness = new GeneratedServiceClassTestHarness();
 
@@ -38,56 +39,110 @@ $harness->run(_year_end_retained_earningsCard::class, static function (Generated
         $harness->assertSame(true, str_contains($html, 'Figures have changed since the last agreement.'));
         $harness->assertSame(true, str_contains($html, 'disabled data-year-end-ack-submit'));
     });
+
+    $harness->check(_year_end_retained_earningsCard::class, 'renders deferred prompt before close figures are requested', static function () use ($harness, $card): void {
+        $html = $card->render(yearEndRetainedEarningsCardContext(false, false, [
+            'available' => true,
+            'preview_deferred' => true,
+            'summary' => [],
+            'journal_lines' => [],
+        ]));
+
+        $harness->assertSame(true, str_contains($html, 'Open the retained earnings confirmation to calculate the close figures.'));
+        $harness->assertSame(true, str_contains($html, '?page=profit_loss&amp;show_card=year_end_retained_earnings'));
+        $harness->assertSame(false, str_contains($html, 'Move 4000 Sales into retained earnings'));
+        $harness->assertSame(false, str_contains($html, 'Approve for Year End'));
+    });
+
+    $harness->check(_year_end_retained_earningsCard::class, 'loads full preview only when requested', static function () use ($harness, $card): void {
+        $baseContext = ['page' => ['page_id' => 'profit_loss']];
+        $services = createTestPageServiceFramework();
+
+        $defaultContext = $card->handle(
+            new RequestFramework(['page' => 'profit_loss'], [], ['REQUEST_METHOD' => 'GET'], [], []),
+            $services,
+            $baseContext,
+            ActionResultFramework::none()
+        );
+        $harness->assertSame(false, (bool)(($defaultContext[$card->key()] ?? [])['load_full_preview'] ?? true));
+
+        $selectedContext = $card->handle(
+            new RequestFramework(['page' => 'profit_loss', 'show_card' => 'year_end_retained_earnings'], [], ['REQUEST_METHOD' => 'GET'], [], []),
+            $services,
+            $baseContext,
+            ActionResultFramework::none()
+        );
+        $harness->assertSame(true, (bool)(($selectedContext[$card->key()] ?? [])['load_full_preview'] ?? false));
+
+        $approvalContext = $card->handle(
+            new RequestFramework(
+                ['page' => 'profit_loss'],
+                ['card_action' => 'YearEnd', 'intent' => 'save_retained_earnings_close_acknowledgement'],
+                ['REQUEST_METHOD' => 'POST'],
+                [],
+                []
+            ),
+            $services,
+            $baseContext,
+            ActionResultFramework::none()
+        );
+        $harness->assertSame(true, (bool)(($approvalContext[$card->key()] ?? [])['load_full_preview'] ?? false));
+    });
 });
 
-function yearEndRetainedEarningsCardContext(bool $acknowledged, bool $stale): array
+function yearEndRetainedEarningsCardContext(bool $acknowledged, bool $stale, array $closeOverrides = []): array
 {
+    $close = array_merge([
+        'available' => true,
+        'accounting_period' => [
+            'id' => 79,
+            'period_start' => '2022-09-05',
+            'period_end' => '2023-09-30',
+        ],
+        'acknowledged' => $acknowledged,
+        'acknowledgement_stale' => $stale,
+        'review' => [
+            'retained_earnings_close_acknowledged_at' => $acknowledged ? '2026-07-06 10:00:00' : '',
+            'retained_earnings_close_acknowledged_by' => $acknowledged ? 'Alex Example using the web_app' : '',
+        ],
+        'summary' => [
+            'opening_equity' => 0,
+            'current_profit_loss' => -396.91,
+            'closing_equity_before_close' => 0,
+            'retained_earnings_movement' => -396.91,
+            'assets' => 990.44,
+            'liabilities' => 1387.35,
+            'equity' => -396.91,
+        ],
+        'journal_lines' => [
+            [
+                'nominal_code' => '4000',
+                'nominal_name' => 'Sales',
+                'debit' => '9676.95',
+                'credit' => '0.00',
+                'line_description' => 'Move 4000 Sales into retained earnings',
+            ],
+            [
+                'nominal_code' => '3000',
+                'nominal_name' => 'Retained Earnings',
+                'debit' => '396.91',
+                'credit' => '0.00',
+                'line_description' => 'Carry loss into retained earnings',
+            ],
+        ],
+    ], $closeOverrides);
+
     return [
+        'page' => [
+            'page_id' => 'profit_loss',
+        ],
         'company' => [
             'id' => 49,
             'accounting_period_id' => 79,
             'settings' => ['default_currency_symbol' => '&#163;'],
         ],
         'services' => [
-            'yearEndRetainedEarnings' => [
-                'available' => true,
-                'accounting_period' => [
-                    'id' => 79,
-                    'period_start' => '2022-09-05',
-                    'period_end' => '2023-09-30',
-                ],
-                'acknowledged' => $acknowledged,
-                'acknowledgement_stale' => $stale,
-                'review' => [
-                    'retained_earnings_close_acknowledged_at' => $acknowledged ? '2026-07-06 10:00:00' : '',
-                    'retained_earnings_close_acknowledged_by' => $acknowledged ? 'Alex Example using the web_app' : '',
-                ],
-                'summary' => [
-                    'opening_equity' => 0,
-                    'current_profit_loss' => -396.91,
-                    'closing_equity_before_close' => 0,
-                    'retained_earnings_movement' => -396.91,
-                    'assets' => 990.44,
-                    'liabilities' => 1387.35,
-                    'equity' => -396.91,
-                ],
-                'journal_lines' => [
-                    [
-                        'nominal_code' => '4000',
-                        'nominal_name' => 'Sales',
-                        'debit' => '9676.95',
-                        'credit' => '0.00',
-                        'line_description' => 'Move 4000 Sales into retained earnings',
-                    ],
-                    [
-                        'nominal_code' => '3000',
-                        'nominal_name' => 'Retained Earnings',
-                        'debit' => '396.91',
-                        'credit' => '0.00',
-                        'line_description' => 'Carry loss into retained earnings',
-                    ],
-                ],
-            ],
+            'yearEndRetainedEarnings' => $close,
         ],
     ];
 }

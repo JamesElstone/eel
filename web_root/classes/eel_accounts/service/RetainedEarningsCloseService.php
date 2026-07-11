@@ -25,8 +25,22 @@ final class RetainedEarningsCloseService
     ) {
     }
 
-    public function fetchContext(int $companyId, int $accountingPeriodId): array
+    public function fetchContext(int $companyId, int $accountingPeriodId, bool $loadFullPreview = true): array
     {
+        if (!$loadFullPreview) {
+            return [
+                'available' => $companyId > 0 && $accountingPeriodId > 0,
+                'preview_deferred' => true,
+                'errors' => $companyId > 0 && $accountingPeriodId > 0
+                    ? []
+                    : ['Select a company and accounting period before reviewing the retained earnings close.'],
+                'company_id' => $companyId,
+                'accounting_period' => [
+                    'id' => $accountingPeriodId,
+                ],
+            ];
+        }
+
         $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
         $accountingPeriod = $metrics->fetchAccountingPeriod($companyId, $accountingPeriodId);
         if ($companyId <= 0 || $accountingPeriodId <= 0 || $accountingPeriod === null) {

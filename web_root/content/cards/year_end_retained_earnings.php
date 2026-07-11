@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 final class _year_end_retained_earningsCard extends CardBaseFramework
 {
+    private ?\eel_accounts\Service\CompanySettingsService $companySettingsService = null;
+
     public function key(): string
     {
         return 'year_end_retained_earnings';
@@ -29,9 +31,22 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
                 'params' => [
                     'companyId' => ':company.id',
                     'accountingPeriodId' => ':company.accounting_period_id',
+                    'loadFullPreview' => ':year_end_retained_earnings.load_full_preview',
                 ],
             ],
         ];
+    }
+
+    public function handle(
+        RequestFramework $request,
+        PageServiceFramework $services,
+        array $pageContext,
+        ActionResultFramework $actionResult
+    ): array {
+        $pageContext = parent::handle($request, $services, $pageContext, $actionResult);
+        $pageContext[$this->key()]['load_full_preview'] = $this->shouldLoadFullPreview($request, $actionResult);
+
+        return $pageContext;
     }
 
     protected function additionalInvalidationFacts(): array
@@ -52,6 +67,10 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
         $companySettings = (array)($company['settings'] ?? []);
         $accountingPeriod = (array)($close['accounting_period'] ?? []);
         $accountingPeriodId = (int)($accountingPeriod['id'] ?? ($company['accounting_period_id'] ?? 0));
+
+        if (!empty($close['preview_deferred']) && !empty($close['available'])) {
+            return $this->deferredPreviewHtml($context);
+        }
 
         if (empty($close['available'])) {
             return '<section class="settings-stack" id="year-end-retained-earnings">' . $this->renderErrors((array)($close['errors'] ?? ['Retained earnings close preview is not available.'])) . '</section>';
@@ -122,6 +141,46 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
         ]);
     }
 
+    private function shouldLoadFullPreview(RequestFramework $request, ActionResultFramework $actionResult): bool
+    {
+        if ($this->requestedCard($request, $actionResult) === $this->key()) {
+            return true;
+        }
+
+        if ($request->isAjax() && trim((string)$request->input('_card_refresh', '')) === '1') {
+            return in_array($this->key(), $request->cardKeys(), true);
+        }
+
+        return $request->isPost()
+            && trim((string)$request->input('card_action', '')) === 'YearEnd'
+            && trim((string)$request->input('intent', '')) === 'save_retained_earnings_close_acknowledgement';
+    }
+
+    private function requestedCard(RequestFramework $request, ActionResultFramework $actionResult): string
+    {
+        $requestedCard = trim((string)($actionResult->query()['show_card'] ?? ''));
+        if ($requestedCard !== '') {
+            return $requestedCard;
+        }
+
+        return trim((string)$request->input('show_card', ''));
+    }
+
+    private function deferredPreviewHtml(array $context): string
+    {
+        $pageId = trim((string)($context['page']['page_id'] ?? 'profit_loss'));
+        if ($pageId === '') {
+            $pageId = 'profit_loss';
+        }
+
+        $url = '?page=' . rawurlencode($pageId) . '&show_card=' . rawurlencode($this->key());
+
+        return '<section class="settings-stack" id="year-end-retained-earnings">
+            <div class="helper">Open the retained earnings confirmation to calculate the close figures.</div>
+            <div class="actions-row"><a class="button primary" data-ajax-link="true" href="' . HelperFramework::escape($url) . '">Open Year End Confirmation</a></div>
+        </section>';
+    }
+
     private function journalLinesHtml(array $journalLines, array $companySettings): string
     {
         if ($journalLines === []) {
@@ -161,7 +220,9 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
 
     private function money(array $companySettings, float|int|string|null $value): string
     {
-        return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
+        $this->companySettingsService ??= new \eel_accounts\Service\CompanySettingsService();
+
+        return $this->companySettingsService->money($companySettings, $value);
     }
 
     private function renderErrors(array $errors): string

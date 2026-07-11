@@ -22,6 +22,8 @@ $harness->run(_year_end_retained_earningsCard::class, static function (Generated
         $harness->assertSame(true, str_contains($html, 'Original transactions, expense claims, and source journals are not changed.'));
         $harness->assertSame(true, str_contains($html, 'I confirm that I have reviewed the retained earnings close shown above and approve it as accurate for Year End.'));
         $harness->assertSame(true, str_contains($html, 'disabled data-year-end-ack-submit'));
+        $harness->assertSame(false, str_contains($html, 'Open Year End Confirmation'));
+        $harness->assertSame(false, str_contains($html, 'preview_deferred'));
     });
 
     $harness->check(_year_end_retained_earningsCard::class, 'renders agreement details and revoke action when current', static function () use ($harness, $card): void {
@@ -40,53 +42,15 @@ $harness->run(_year_end_retained_earningsCard::class, static function (Generated
         $harness->assertSame(true, str_contains($html, 'disabled data-year-end-ack-submit'));
     });
 
-    $harness->check(_year_end_retained_earningsCard::class, 'renders deferred prompt before close figures are requested', static function () use ($harness, $card): void {
-        $html = $card->render(yearEndRetainedEarningsCardContext(false, false, [
-            'available' => true,
-            'preview_deferred' => true,
-            'summary' => [],
-            'journal_lines' => [],
-        ]));
+    $harness->check(_year_end_retained_earningsCard::class, 'reuses the profit and loss corporation tax provision', static function () use ($harness, $card): void {
+        $services = $card->services();
+        $params = (array)($services[0]['params'] ?? []);
 
-        $harness->assertSame(true, str_contains($html, 'Open the retained earnings confirmation to calculate the close figures.'));
-        $harness->assertSame(true, str_contains($html, '?page=profit_loss&amp;show_card=year_end_retained_earnings'));
-        $harness->assertSame(false, str_contains($html, 'Move 4000 Sales into retained earnings'));
-        $harness->assertSame(false, str_contains($html, 'Approve for Year End'));
-    });
-
-    $harness->check(_year_end_retained_earningsCard::class, 'loads full preview only when requested', static function () use ($harness, $card): void {
-        $baseContext = ['page' => ['page_id' => 'profit_loss']];
-        $services = createTestPageServiceFramework();
-
-        $defaultContext = $card->handle(
-            new RequestFramework(['page' => 'profit_loss'], [], ['REQUEST_METHOD' => 'GET'], [], []),
-            $services,
-            $baseContext,
-            ActionResultFramework::none()
+        $harness->assertSame(false, array_key_exists('loadFullPreview', $params));
+        $harness->assertSame(
+            ':profit_loss.summary.corporation_tax_provision',
+            (string)($params['corporationTaxProvision'] ?? '')
         );
-        $harness->assertSame(false, (bool)(($defaultContext[$card->key()] ?? [])['load_full_preview'] ?? true));
-
-        $selectedContext = $card->handle(
-            new RequestFramework(['page' => 'profit_loss', 'show_card' => 'year_end_retained_earnings'], [], ['REQUEST_METHOD' => 'GET'], [], []),
-            $services,
-            $baseContext,
-            ActionResultFramework::none()
-        );
-        $harness->assertSame(true, (bool)(($selectedContext[$card->key()] ?? [])['load_full_preview'] ?? false));
-
-        $approvalContext = $card->handle(
-            new RequestFramework(
-                ['page' => 'profit_loss'],
-                ['card_action' => 'YearEnd', 'intent' => 'save_retained_earnings_close_acknowledgement'],
-                ['REQUEST_METHOD' => 'POST'],
-                [],
-                []
-            ),
-            $services,
-            $baseContext,
-            ActionResultFramework::none()
-        );
-        $harness->assertSame(true, (bool)(($approvalContext[$card->key()] ?? [])['load_full_preview'] ?? false));
     });
 });
 

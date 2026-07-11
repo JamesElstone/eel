@@ -18,17 +18,34 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
         try {
             $fixture = retainedEarningsCloseCreateLossFixture();
             $service = new \eel_accounts\Service\RetainedEarningsCloseService();
-            $deferredContext = $service->fetchContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], false);
-            $harness->assertSame(true, (bool)($deferredContext['available'] ?? false));
-            $harness->assertSame(true, (bool)($deferredContext['preview_deferred'] ?? false));
-            $harness->assertSame(false, array_key_exists('journal_lines', $deferredContext));
-            $harness->assertSame(false, array_key_exists('depreciation_preview', $deferredContext));
-            $harness->assertSame(false, array_key_exists('corporation_tax_provision', $deferredContext));
+            $precomputedProvision = [
+                'available' => false,
+                'errors' => ['Precomputed provision unavailable for this fixture.'],
+                'unposted_corporation_tax_adjustment' => 0.0,
+            ];
+            $precomputedContext = $service->fetchContext(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                $precomputedProvision
+            );
+            $harness->assertSame(true, (bool)($precomputedContext['available'] ?? false));
+            $harness->assertSame($precomputedProvision, (array)($precomputedContext['corporation_tax_provision'] ?? []));
+            $harness->assertSame(true, array_key_exists('journal_lines', $precomputedContext));
+            $harness->assertSame(true, array_key_exists('depreciation_preview', $precomputedContext));
+            $harness->assertSame(false, array_key_exists('preview_deferred', $precomputedContext));
 
             $context = $service->fetchContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
 
             $harness->assertSame(true, (bool)($context['available'] ?? false));
             $harness->assertSame('-200.00', number_format((float)(($context['summary'] ?? [])['current_profit_loss'] ?? 0), 2, '.', ''));
+            $harness->assertSame(
+                (string)(($precomputedContext['summary'] ?? [])['current_profit_loss'] ?? ''),
+                (string)(($context['summary'] ?? [])['current_profit_loss'] ?? '')
+            );
+            $harness->assertSame(
+                (array)($precomputedContext['journal_lines'] ?? []),
+                (array)($context['journal_lines'] ?? [])
+            );
             $harness->assertSame(false, (bool)($context['acknowledged'] ?? true));
 
             $acknowledged = $service->saveAcknowledgement((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], true, 'test');

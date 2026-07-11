@@ -25,22 +25,8 @@ final class RetainedEarningsCloseService
     ) {
     }
 
-    public function fetchContext(int $companyId, int $accountingPeriodId, bool $loadFullPreview = true): array
+    public function fetchContext(int $companyId, int $accountingPeriodId, ?array $corporationTaxProvision = null): array
     {
-        if (!$loadFullPreview) {
-            return [
-                'available' => $companyId > 0 && $accountingPeriodId > 0,
-                'preview_deferred' => true,
-                'errors' => $companyId > 0 && $accountingPeriodId > 0
-                    ? []
-                    : ['Select a company and accounting period before reviewing the retained earnings close.'],
-                'company_id' => $companyId,
-                'accounting_period' => [
-                    'id' => $accountingPeriodId,
-                ],
-            ];
-        }
-
         $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
         $accountingPeriod = $metrics->fetchAccountingPeriod($companyId, $accountingPeriodId);
         if ($companyId <= 0 || $accountingPeriodId <= 0 || $accountingPeriod === null) {
@@ -67,7 +53,7 @@ final class RetainedEarningsCloseService
         $plRows = $this->profitAndLossRows($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $depreciationPreview = ($this->assetService ?? new \eel_accounts\Service\AssetService())->previewDepreciationRun($companyId, $accountingPeriodId);
         $plRows = $this->includePendingDepreciationRows($plRows, $depreciationPreview);
-        $corporationTaxProvision = ($this->corporationTaxProvisionService ?? new \eel_accounts\Service\CorporationTaxProvisionService())
+        $corporationTaxProvision ??= ($this->corporationTaxProvisionService ?? new \eel_accounts\Service\CorporationTaxProvisionService())
             ->fetchAccountingPeriodPosition($companyId, $accountingPeriodId);
         $plRows = $this->includePendingCorporationTaxProvisionRows($plRows, $corporationTaxProvision);
         $profitAndLoss = $this->profitAndLossTotals($plRows);

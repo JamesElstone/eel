@@ -1174,6 +1174,7 @@ CREATE TABLE `statement_uploads` (
   KEY `idx_statement_uploads_account` (`account_id`),
   KEY `idx_statement_uploads_company_file_hash` (`company_id`,`file_sha256`),
   KEY `idx_statement_uploads_company_uploaded` (`company_id`,`uploaded_at`),
+  KEY `idx_statement_uploads_company_account_source_uploaded` (`company_id`,`account_id`,`source_type`,`uploaded_at`,`id`),
   KEY `idx_statement_uploads_company_month_period_rows` (`company_id`,`statement_month`,`accounting_period_id`,`rows_parsed`),
   CONSTRAINT `fk_statement_uploads_account` FOREIGN KEY (`account_id`) REFERENCES `company_accounts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_statement_uploads_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,

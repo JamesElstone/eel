@@ -509,6 +509,10 @@ final class StatementUploadService
     }
 
     public function fetchUpload(int $companyId, int $uploadId): ?array {
+        if ($companyId <= 0 || $uploadId <= 0) {
+            return null;
+        }
+
         $internalTransferMarkerSelect = $this->internalTransferMarkerSelectSql('ca');
         $row = \InterfaceDB::fetchOne( 'SELECT su.*,
                     ty.period_start,
@@ -531,6 +535,10 @@ final class StatementUploadService
     }
 
     public function fetchUploadMapping(int $uploadId): ?array {
+        if ($uploadId <= 0) {
+            return null;
+        }
+
         $row = \InterfaceDB::fetchOne( 'SELECT id,
                     upload_id,
                     source_type,
@@ -549,13 +557,17 @@ final class StatementUploadService
     }
 
     public function fetchUploadPreview(int $companyId, int $uploadId): array {
+        if ($companyId <= 0 || $uploadId <= 0) {
+            return [];
+        }
+
         $upload = $this->fetchUpload($companyId, $uploadId);
-        $mapping = $this->fetchUploadMapping($uploadId);
 
         if ($upload === null) {
             return [];
         }
 
+        $mapping = $this->fetchUploadMapping($uploadId);
         $rows = \InterfaceDB::fetchAll( 'SELECT tir.id,
                     tir.`row_number`,
                     source_account,
@@ -592,26 +604,42 @@ final class StatementUploadService
             'mapping' => $mapping,
             'source_sample' => $this->readUploadSourceSample($upload, 2),
             'rows' => $rows,
-            'summary' => [
-                'rows_parsed' => (int)($upload['rows_parsed'] ?? 0),
-                'rows_valid' => (int)($upload['rows_valid'] ?? 0),
-                'rows_invalid' => (int)($upload['rows_invalid'] ?? 0),
-                'rows_duplicate_within_upload' => (int)($upload['rows_duplicate_within_upload'] ?? 0),
-                'rows_duplicate_existing' => (int)($upload['rows_duplicate_existing'] ?? 0),
-                'rows_ready_to_import' => (int)($upload['rows_ready_to_import'] ?? 0),
-                'rows_committed' => (int)($upload['rows_committed'] ?? 0),
-            ],
+            'summary' => $this->uploadPreviewSummary($upload),
+        ];
+    }
+
+    public function fetchUploadMappingPreview(int $companyId, int $uploadId): array {
+        if ($companyId <= 0 || $uploadId <= 0) {
+            return [];
+        }
+
+        $upload = $this->fetchUpload($companyId, $uploadId);
+
+        if ($upload === null) {
+            return [];
+        }
+
+        return [
+            'upload' => $upload,
+            'mapping' => $this->fetchUploadMapping($uploadId),
+            'source_sample' => $this->readUploadSourceSample($upload, 2),
+            'rows' => [],
+            'summary' => $this->uploadPreviewSummary($upload),
         ];
     }
 
     public function fetchAccountMappingPreview(int $companyId, int $accountId, string $sourceType = self::SOURCE_TYPE): array {
+        if ($companyId <= 0 || $accountId <= 0) {
+            return [];
+        }
+
         $uploadId = $this->findLatestMappedUploadIdForAccount($companyId, $accountId, $sourceType);
 
         if ($uploadId === null) {
             return [];
         }
 
-        return $this->fetchUploadPreview($companyId, $uploadId);
+        return $this->fetchUploadMappingPreview($companyId, $uploadId);
     }
 
     public function uploadHasAccountMapping(int $companyId, int $uploadId): bool {
@@ -619,18 +647,15 @@ final class StatementUploadService
     }
 
     public function describeUploadAccountMappingStatus(int $companyId, int $uploadId): array {
+        if ($companyId <= 0 || $uploadId <= 0) {
+            return $this->emptyAccountMappingStatus();
+        }
+
         $this->ensureProvisionalMappingForUpload($companyId, $uploadId);
         $upload = $this->fetchUpload($companyId, $uploadId);
 
         if ($upload === null) {
-            return [
-                'has_mapping' => false,
-                'mapping_origin' => '',
-                'mapping_label' => 'Needs Field Mapping',
-                'can_preview' => false,
-                'extra_headers' => [],
-                'mapping_errors' => [],
-            ];
+            return $this->emptyAccountMappingStatus();
         }
 
         $currentMappingRow = $this->fetchUploadMapping($uploadId);
@@ -710,6 +735,29 @@ final class StatementUploadService
 
     public static function committedMappingProtectedFields(): array {
         return self::COMMITTED_MAPPING_PROTECTED_FIELDS;
+    }
+
+    private function uploadPreviewSummary(array $upload): array {
+        return [
+            'rows_parsed' => (int)($upload['rows_parsed'] ?? 0),
+            'rows_valid' => (int)($upload['rows_valid'] ?? 0),
+            'rows_invalid' => (int)($upload['rows_invalid'] ?? 0),
+            'rows_duplicate_within_upload' => (int)($upload['rows_duplicate_within_upload'] ?? 0),
+            'rows_duplicate_existing' => (int)($upload['rows_duplicate_existing'] ?? 0),
+            'rows_ready_to_import' => (int)($upload['rows_ready_to_import'] ?? 0),
+            'rows_committed' => (int)($upload['rows_committed'] ?? 0),
+        ];
+    }
+
+    private function emptyAccountMappingStatus(): array {
+        return [
+            'has_mapping' => false,
+            'mapping_origin' => '',
+            'mapping_label' => 'Needs Field Mapping',
+            'can_preview' => false,
+            'extra_headers' => [],
+            'mapping_errors' => [],
+        ];
     }
 
     public static function autoMapHeaders(array $sourceHeaders): array {
@@ -2327,6 +2375,10 @@ final class StatementUploadService
     }
 
     public function ensureProvisionalMappingForUpload(int $companyId, int $uploadId): array {
+        if ($companyId <= 0 || $uploadId <= 0) {
+            return [];
+        }
+
         $upload = $this->fetchUpload($companyId, $uploadId);
 
         if ($upload === null || (int)($upload['rows_committed'] ?? 0) > 0) {

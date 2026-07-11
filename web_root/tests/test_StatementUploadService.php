@@ -124,6 +124,18 @@ $harness->run(\eel_accounts\Service\StatementUploadService::class, function (Gen
         $harness->assertTrue(str_contains($sql, 'COALESCE(su.date_range_end, su.statement_month) >= ?'));
     });
 
+    $harness->check(\eel_accounts\Service\StatementUploadService::class, 'preview helpers short circuit invalid identifiers', function () use ($harness, $service): void {
+        $harness->assertSame(null, $service->fetchUpload(0, 1));
+        $harness->assertSame(null, $service->fetchUploadMapping(0));
+        $harness->assertSame([], $service->fetchUploadPreview(1, 0));
+        $harness->assertSame([], $service->fetchUploadMappingPreview(1, 0));
+        $harness->assertSame([], $service->fetchAccountMappingPreview(1, 0));
+
+        $status = $service->describeUploadAccountMappingStatus(1, 0);
+        $harness->assertFalse((bool)($status['has_mapping'] ?? true));
+        $harness->assertSame('Needs Field Mapping', (string)($status['mapping_label'] ?? ''));
+    });
+
     $harness->check(\eel_accounts\Service\StatementUploadService::class, 'account mapping preview uses committed mappings without confirmed timestamp', function () use ($harness, $service): void {
         foreach (['companies', 'company_accounts', 'statement_uploads', 'statement_import_mappings', 'statement_import_rows'] as $table) {
             if (!InterfaceDB::tableExists($table)) {
@@ -242,8 +254,36 @@ $harness->run(\eel_accounts\Service\StatementUploadService::class, function (Gen
                 ]
             );
 
+            InterfaceDB::prepareExecute(
+                'INSERT INTO statement_import_rows (
+                    upload_id,
+                    `row_number`,
+                    raw_json,
+                    source_description,
+                    source_amount,
+                    validation_status
+                ) VALUES (
+                    :upload_id,
+                    1,
+                    :raw_json,
+                    :source_description,
+                    :source_amount,
+                    :validation_status
+                )',
+                [
+                    'upload_id' => $uploadId,
+                    'raw_json' => json_encode(['Date' => '2026-01-01', 'Description' => 'Fixture', 'Amount' => '10.00'], JSON_THROW_ON_ERROR),
+                    'source_description' => 'Fixture',
+                    'source_amount' => '10.00',
+                    'validation_status' => 'valid',
+                ]
+            );
+
+            $fullPreview = $service->fetchUploadPreview($companyId, $uploadId);
             $preview = $service->fetchAccountMappingPreview($companyId, $accountId);
 
+            $harness->assertSame(1, count((array)($fullPreview['rows'] ?? [])));
+            $harness->assertSame([], (array)($preview['rows'] ?? []));
             $harness->assertSame($uploadId, (int)($preview['upload']['id'] ?? 0));
             $harness->assertSame('committed-fixture.csv', (string)($preview['upload']['original_filename'] ?? ''));
             $harness->assertSame('auto', (string)($preview['mapping']['mapping_origin'] ?? ''));

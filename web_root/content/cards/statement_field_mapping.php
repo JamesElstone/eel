@@ -40,7 +40,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
             [
                 'key' => 'selected_upload_preview',
                 'service' => \eel_accounts\Service\StatementUploadService::class,
-                'method' => 'fetchUploadPreview',
+                'method' => 'fetchUploadMappingPreview',
                 'params' => [
                     'companyId' => ':company.id',
                     'uploadId' => ':uploads.id',

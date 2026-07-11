@@ -12,6 +12,9 @@ final class RoleAssignmentService
     public const ADMIN_ROLE_ID = -1;
     public const ADMIN_ROLE_NAME = 'Admin';
 
+    /** @var list<string>|null */
+    private ?array $knownCardKeys = null;
+
     public function __construct(
         private readonly RoleRepository $roleRepository = new RoleRepository(),
         private readonly UserAuthenticationService $userAuthenticationService = new UserAuthenticationService(),
@@ -156,13 +159,14 @@ final class RoleAssignmentService
 
     public function permissionMatrixForRole(int $roleId): array
     {
+        $cardKeys = $this->allKnownCardKeys();
         $allowedKeys = $roleId === self::ADMIN_ROLE_ID
-            ? $this->allKnownCardKeys()
+            ? $cardKeys
             : $this->roleRepository->allowedCardKeysForRole($roleId);
         $allowedLookup = array_fill_keys($allowedKeys, true);
         $rows = [];
 
-        foreach ($this->allKnownCardKeys() as $cardKey) {
+        foreach ($cardKeys as $cardKey) {
             $rows[] = [
                 'card_key' => $cardKey,
                 'card_label' => $this->labelFromCardKey($cardKey),
@@ -190,9 +194,14 @@ final class RoleAssignmentService
 
     public function allKnownCardKeys(): array
     {
+        if ($this->knownCardKeys !== null) {
+            return $this->knownCardKeys;
+        }
+
         $files = glob(APP_CARDS . '*.php');
         if ($files === false) {
-            return [];
+            $this->knownCardKeys = [];
+            return $this->knownCardKeys;
         }
 
         $keys = [];
@@ -206,7 +215,9 @@ final class RoleAssignmentService
 
         sort($keys);
 
-        return array_values(array_unique($keys));
+        $this->knownCardKeys = array_values(array_unique($keys));
+
+        return $this->knownCardKeys;
     }
 
     private function resolveSelectedRoleId(?int $selectedRoleId, array $roles): int

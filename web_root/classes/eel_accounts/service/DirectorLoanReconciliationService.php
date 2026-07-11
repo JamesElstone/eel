@@ -18,7 +18,19 @@ final class DirectorLoanReconciliationService
     public function __construct(
         private readonly ?\eel_accounts\Service\ManualJournalService $journalService = null,
         private readonly ?\eel_accounts\Service\YearEndMetricsService $metricsService = null,
+        private readonly ?\eel_accounts\Service\DirectorLoanService $directorLoanService = null,
     ) {
+    }
+
+    public function fetchYearEndConfirmationContext(int $companyId, int $accountingPeriodId): array
+    {
+        $context = $this->fetchContext($companyId, $accountingPeriodId);
+        if (!empty($context['available'])) {
+            $service = $this->directorLoanService ?? new \eel_accounts\Service\DirectorLoanService();
+            $context['tax_review'] = $service->fetchTaxReviewSummary($companyId, $accountingPeriodId);
+        }
+
+        return $context;
     }
 
     public function fetchContext(int $companyId, int $accountingPeriodId): array

@@ -63,6 +63,21 @@ $harness->run(\eel_accounts\Service\DirectorLoanReconciliationService::class, st
         });
     });
 
+    $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'confirmation context includes lightweight tax review', static function () use ($harness, $service): void {
+        directorLoanReconciliationTestWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 500.00, 0.00, 'director-owes-company');
+
+            $result = $service->fetchYearEndConfirmationContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+            $taxReview = (array)($result['tax_review'] ?? []);
+
+            $harness->assertSame(true, (bool)($result['available'] ?? false));
+            $harness->assertSame(true, (bool)($taxReview['available'] ?? false));
+            $harness->assertSame('review_required', (string)($taxReview['status'] ?? ''));
+            $harness->assertSame(500.00, (float)($taxReview['exposure_amount'] ?? 0));
+            $harness->assertSame(false, array_key_exists('statement', $taxReview));
+        });
+    });
+
     $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'excludes existing offset journal and identifies current status', static function () use ($harness, $service): void {
         directorLoanReconciliationTestWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
             directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 1000.00, 0.00, 'asset-receivable');

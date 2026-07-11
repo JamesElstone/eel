@@ -115,6 +115,25 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
             $harness->assertTrue(count((array)($review['review_items'] ?? [])) >= 4);
         });
     });
+
+    $harness->check(\eel_accounts\Service\DirectorLoanService::class, 'tax review summary matches full statement review without statement rows', static function () use ($harness, $service): void {
+        directorLoanStatementTestWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            directorLoanStatementTestInsertSetting($fixture, 'director_loan_asset_nominal_id', (string)$fixture['asset_nominal_id']);
+            directorLoanStatementTestInsertSetting($fixture, 'director_loan_liability_nominal_id', (string)$fixture['liability_nominal_id']);
+            directorLoanStatementTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 200.00, 0.00, '2026-03-01', 'asset-movement');
+            directorLoanStatementTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 50.00, 0.00, '2026-03-02', 'liability-reduction');
+
+            $full = $service->fetchTaxReview((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+            $summary = $service->fetchTaxReviewSummary((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+
+            $harness->assertSame(true, (bool)($summary['available'] ?? false));
+            $harness->assertSame((string)($full['status'] ?? ''), (string)($summary['status'] ?? ''));
+            $harness->assertSame((bool)($full['review_required'] ?? false), (bool)($summary['review_required'] ?? true));
+            $harness->assertSame((float)($full['closing_balance'] ?? 0), (float)($summary['closing_balance'] ?? 0));
+            $harness->assertSame((float)($full['exposure_amount'] ?? 0), (float)($summary['exposure_amount'] ?? 0));
+            $harness->assertSame(false, array_key_exists('statement', $summary));
+        });
+    });
 });
 
 function directorLoanStatementTestWithFixture(GeneratedServiceClassTestHarness $harness, callable $callback): void

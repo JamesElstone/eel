@@ -12,6 +12,15 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 $harness = new GeneratedServiceClassTestHarness();
 
 $harness->run(_year_end_director_loan_offsetCard::class, static function (GeneratedServiceClassTestHarness $harness, _year_end_director_loan_offsetCard $card): void {
+    $harness->check(_year_end_director_loan_offsetCard::class, 'uses one confirmation context service', static function () use ($harness, $card): void {
+        $services = $card->services();
+
+        $harness->assertCount(1, $services);
+        $harness->assertSame('directorLoanOffset', (string)($services[0]['key'] ?? ''));
+        $harness->assertSame(\eel_accounts\Service\DirectorLoanReconciliationService::class, (string)($services[0]['service'] ?? ''));
+        $harness->assertSame('fetchYearEndConfirmationContext', (string)($services[0]['method'] ?? ''));
+    });
+
     $harness->check(_year_end_director_loan_offsetCard::class, 'renders director loan approval details and revoke action', static function () use ($harness, $card): void {
         $html = $card->render(yearEndDirectorLoanOffsetCardContext([
             'available' => true,

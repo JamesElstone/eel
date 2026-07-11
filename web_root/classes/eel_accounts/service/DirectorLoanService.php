@@ -207,15 +207,125 @@ final class DirectorLoanService
         ];
     }
 
+    public function fetchPositionSummary(int $companyId, int $accountingPeriodId): array {
+        $validation = $this->validateCompany($companyId);
+        if ($validation !== null) {
+            return $validation;
+        }
+
+        $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null) {
+            return $this->errorResult('The selected accounting period could not be found for this company.', 'accounting_period_not_found', 404);
+        }
+
+        $settings = $this->fetchCompanySettings($companyId);
+        $assetNominal = $this->directorLoanNominal($settings, 'asset');
+        $liabilityNominal = $this->directorLoanNominal($settings, 'liability');
+        $errors = [];
+        if ($assetNominal === null) {
+            $errors[] = 'Director Loan Asset nominal could not be resolved from Company Settings, subtype director_loan_asset, or code 1200.';
+        }
+        if ($liabilityNominal === null) {
+            $errors[] = 'Director Loan Liability nominal could not be resolved from Company Settings, legacy Director Loan setting, subtype director_loan_liability, or code 2100.';
+        }
+        if ($errors !== []) {
+            return [
+                'success' => false,
+                'errors' => $errors,
+                'error_code' => 'director_loan_nominal_missing',
+                'status' => 422,
+                'accounting_period' => [
+                    'id' => (int)$accountingPeriod['id'],
+                    'label' => (string)$accountingPeriod['label'],
+                    'period_start' => (string)$accountingPeriod['period_start'],
+                    'period_end' => (string)$accountingPeriod['period_end'],
+                ],
+                'asset_nominal' => $assetNominal,
+                'liability_nominal' => $liabilityNominal,
+            ];
+        }
+
+        $assetNominal = (array)$assetNominal;
+        $liabilityNominal = (array)$liabilityNominal;
+        $periodStart = (string)$accountingPeriod['period_start'];
+        $periodEnd = (string)$accountingPeriod['period_end'];
+        $assetOpeningReceivable = round(-1 * $this->fetchOpeningBalance($companyId, (int)$assetNominal['id'], $periodStart), 2);
+        $liabilityOpeningPayable = round($this->fetchOpeningBalance($companyId, (int)$liabilityNominal['id'], $periodStart), 2);
+        $movementTotals = $this->fetchMovementTotals(
+            $companyId,
+            (int)$assetNominal['id'],
+            (int)$liabilityNominal['id'],
+            $periodStart,
+            $periodEnd
+        );
+        $assetMovementReceivable = round((float)($movementTotals['asset_movement_receivable'] ?? 0), 2);
+        $liabilityMovementPayable = round((float)($movementTotals['liability_movement_payable'] ?? 0), 2);
+        $movementInPeriod = round(((float)($movementTotals['liability_signed_movement'] ?? 0)) + ((float)($movementTotals['asset_signed_movement'] ?? 0)), 2);
+        $assetReceivable = round($assetOpeningReceivable + $assetMovementReceivable, 2);
+        $liabilityPayable = round($liabilityOpeningPayable + $liabilityMovementPayable, 2);
+        $closingBalance = round($liabilityPayable - $assetReceivable, 2);
+        $currencySymbol = (new \eel_accounts\Service\CompanySettingsService())->defaultCurrencySymbol($settings);
+
+        return [
+            'success' => true,
+            'summary_only' => true,
+            'accounting_period' => [
+                'id' => (int)$accountingPeriod['id'],
+                'label' => (string)$accountingPeriod['label'],
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
+            ],
+            'director_loan_nominal' => [
+                'id' => (int)($liabilityNominal['id'] ?? 0),
+                'code' => (string)($liabilityNominal['code'] ?? ''),
+                'name' => (string)($liabilityNominal['name'] ?? ''),
+                'account_type' => (string)($liabilityNominal['account_type'] ?? ''),
+            ],
+            'asset_nominal' => $assetNominal,
+            'liability_nominal' => $liabilityNominal,
+            'asset_opening_receivable' => $assetOpeningReceivable,
+            'liability_opening_payable' => $liabilityOpeningPayable,
+            'asset_movement_receivable' => $assetMovementReceivable,
+            'liability_movement_payable' => $liabilityMovementPayable,
+            'asset_receivable' => $assetReceivable,
+            'liability_payable' => $liabilityPayable,
+            'net_position' => $closingBalance,
+            'net_position_label' => $this->balanceDirectionLabel($closingBalance),
+            'opening_balance' => round($liabilityOpeningPayable - $assetOpeningReceivable, 2),
+            'movement_in_period' => $movementInPeriod,
+            'closing_balance' => $closingBalance,
+            'balance_direction' => $this->balanceDirection($closingBalance),
+            'balance_direction_label' => $this->balanceDirectionLabel($closingBalance),
+            'has_movements_in_period' => (int)($movementTotals['line_count'] ?? 0) > 0,
+            'date_format' => (string)($settings['date_format'] ?? 'd/m/Y'),
+            'default_currency' => (string)($settings['default_currency'] ?? 'GBP'),
+            'default_currency_symbol' => $currencySymbol,
+        ];
+    }
+
     public function fetchTaxReview(int $companyId, int $accountingPeriodId): array {
         $statement = $this->fetchStatement($companyId, $accountingPeriodId);
+        return $this->buildTaxReviewFromStatement($statement, true);
+    }
+
+    public function fetchTaxReviewSummary(int $companyId, int $accountingPeriodId): array {
+        $statement = $this->fetchPositionSummary($companyId, $accountingPeriodId);
+        return $this->buildTaxReviewFromStatement($statement, false);
+    }
+
+    private function buildTaxReviewFromStatement(array $statement, bool $includeStatement): array {
         if (empty($statement['success'])) {
-            return [
+            $result = [
                 'available' => false,
                 'success' => false,
                 'errors' => (array)($statement['errors'] ?? ['Director loan statement is not available.']),
-                'statement' => $statement,
             ];
+
+            if ($includeStatement) {
+                $result['statement'] = $statement;
+            }
+
+            return $result;
         }
 
         $closingBalance = round((float)($statement['closing_balance'] ?? 0), 2);
@@ -260,7 +370,7 @@ final class DirectorLoanService
             ];
         }
 
-        return [
+        $result = [
             'available' => true,
             'success' => true,
             'status' => $directorOwesCompany ? 'review_required' : 'no_director_receivable',
@@ -276,8 +386,13 @@ final class DirectorLoanService
             'write_off_review_required' => $directorOwesCompany,
             'ct600_supplementary_review_required' => $directorOwesCompany,
             'review_items' => $reviewItems,
-            'statement' => $statement,
         ];
+
+        if ($includeStatement) {
+            $result['statement'] = $statement;
+        }
+
+        return $result;
     }
 
     private function fetchOpeningBalance(int $companyId, int $nominalAccountId, string $periodStart): float {
@@ -385,6 +500,65 @@ final class DirectorLoanService
         }
 
         return $rows;
+    }
+
+    private function fetchMovementTotals(
+        int $companyId,
+        int $assetNominalId,
+        int $liabilityNominalId,
+        string $periodStart,
+        string $periodEnd
+    ): array {
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT jl.nominal_account_id,
+                    COALESCE(SUM(jl.debit), 0) AS debit,
+                    COALESCE(SUM(jl.credit), 0) AS credit,
+                    COUNT(*) AS line_count
+             FROM journals j
+             INNER JOIN journal_lines jl ON jl.journal_id = j.id
+             WHERE j.company_id = :company_id
+               AND j.is_posted = 1
+               AND jl.nominal_account_id IN (:asset_nominal_id, :liability_nominal_id)
+               AND j.journal_date BETWEEN :period_start AND :period_end
+             GROUP BY jl.nominal_account_id',
+            [
+                'company_id' => $companyId,
+                'asset_nominal_id' => $assetNominalId,
+                'liability_nominal_id' => $liabilityNominalId,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
+            ]
+        );
+
+        $totals = [
+            'asset_movement_receivable' => 0.0,
+            'liability_movement_payable' => 0.0,
+            'asset_signed_movement' => 0.0,
+            'liability_signed_movement' => 0.0,
+            'line_count' => 0,
+        ];
+
+        foreach ($rows as $row) {
+            $nominalId = (int)($row['nominal_account_id'] ?? 0);
+            $debit = (float)($row['debit'] ?? 0);
+            $credit = (float)($row['credit'] ?? 0);
+            $lineCount = (int)($row['line_count'] ?? 0);
+
+            if ($nominalId === $assetNominalId) {
+                $totals['asset_movement_receivable'] = round($debit - $credit, 2);
+                $totals['asset_signed_movement'] = round($credit - $debit, 2);
+                $totals['line_count'] += $lineCount;
+                continue;
+            }
+
+            if ($nominalId === $liabilityNominalId) {
+                $totals['liability_movement_payable'] = round($credit - $debit, 2);
+                $totals['liability_signed_movement'] = round($credit - $debit, 2);
+                $totals['line_count'] += $lineCount;
+            }
+        }
+
+        return $totals;
     }
 
     private function directorLoanNominal(array $settings, string $role): ?array

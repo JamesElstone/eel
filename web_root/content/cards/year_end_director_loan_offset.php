@@ -25,16 +25,7 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
             [
                 'key' => 'directorLoanOffset',
                 'service' => \eel_accounts\Service\DirectorLoanReconciliationService::class,
-                'method' => 'fetchContext',
-                'params' => [
-                    'companyId' => ':company.id',
-                    'accountingPeriodId' => ':company.accounting_period_id',
-                ],
-            ],
-            [
-                'key' => 'directorLoanTaxReview',
-                'service' => \eel_accounts\Service\DirectorLoanService::class,
-                'method' => 'fetchTaxReview',
+                'method' => 'fetchYearEndConfirmationContext',
                 'params' => [
                     'companyId' => ':company.id',
                     'accountingPeriodId' => ':company.accounting_period_id',
@@ -56,7 +47,7 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
     public function render(array $context): string
     {
         $offset = (array)($context['services']['directorLoanOffset'] ?? []);
-        $taxReview = (array)($context['services']['directorLoanTaxReview'] ?? []);
+        $taxReview = (array)($offset['tax_review'] ?? ($context['services']['directorLoanTaxReview'] ?? []));
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriod = (array)($offset['accounting_period'] ?? []);

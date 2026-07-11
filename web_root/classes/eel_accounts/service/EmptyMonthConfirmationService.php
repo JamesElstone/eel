@@ -396,9 +396,18 @@ final class EmptyMonthConfirmationService
     {
         $months = [];
         $isFirstAccountingPeriod = $this->isEarliestAccountingPeriod($companyId, $accountingPeriodId);
+        $monthStarts = $this->periodMonthStarts($period);
+        $activityCountsByMonth = $this->activityCountsByMonth($companyId, $accountingPeriodId, $period, $monthStarts);
 
-        foreach ($this->periodMonthStarts($period) as $monthStart) {
-            $candidate = $this->candidateForMonth($companyId, $accountingPeriodId, $period, $monthStart, $isFirstAccountingPeriod);
+        foreach ($monthStarts as $monthStart) {
+            $candidate = $this->candidateForMonth(
+                $companyId,
+                $accountingPeriodId,
+                $period,
+                $monthStart,
+                $isFirstAccountingPeriod,
+                $activityCountsByMonth[$monthStart] ?? null
+            );
             if ($this->shouldRenderCandidate($candidate)) {
                 $months[(string)$candidate['month_start']] = $candidate;
             }
@@ -415,13 +424,21 @@ final class EmptyMonthConfirmationService
             }
 
             if (!isset($months[$monthStart])) {
-                $months[$monthStart] = $this->candidateForMonth($companyId, $accountingPeriodId, $period, $monthStart, $isFirstAccountingPeriod);
+                $months[$monthStart] = $this->candidateForMonth(
+                    $companyId,
+                    $accountingPeriodId,
+                    $period,
+                    $monthStart,
+                    $isFirstAccountingPeriod,
+                    $activityCountsByMonth[$monthStart] ?? null
+                );
             }
 
             $months[$monthStart]['confirmation'] = $this->normaliseConfirmation($confirmation);
+            $activityCounts = (array)($months[$monthStart]['counts'] ?? ($activityCountsByMonth[$monthStart] ?? []));
             if (!empty($confirmation['revoked_at'])) {
                 $months[$monthStart]['status'] = 'revoked';
-            } elseif (!$this->monthHasNoActivity($companyId, $accountingPeriodId, $monthStart)) {
+            } elseif (!$this->countsAreEmpty($activityCounts)) {
                 $months[$monthStart]['status'] = 'superseded';
                 $months[$monthStart]['can_confirm'] = false;
                 $months[$monthStart]['reason'] = 'Source activity now exists for this month, so the old confirmation is no longer used.';
@@ -451,7 +468,8 @@ final class EmptyMonthConfirmationService
         int $accountingPeriodId,
         array $period,
         string $monthStart,
-        ?bool $isFirstAccountingPeriod = null
+        ?bool $isFirstAccountingPeriod = null,
+        ?array $activityCounts = null
     ): array
     {
         $monthStart = $this->normaliseMonthStart($monthStart);
@@ -463,7 +481,9 @@ final class EmptyMonthConfirmationService
         $isInitialOpeningMonth = $isFirstAccountingPeriod && $incorporationMonth !== '' && $monthStart === $incorporationMonth;
         $basis = $isInitialOpeningMonth ? 'initial_opening_month' : 'no_activity_month';
         $basisLabel = $isInitialOpeningMonth ? 'First-period initial month' : 'No-activity month';
-        $counts = $monthStart !== '' ? $this->activityCounts($companyId, $accountingPeriodId, $monthStart, $monthEnd) : [];
+        $counts = $activityCounts !== null
+            ? $this->normaliseActivityCounts($activityCounts)
+            : ($monthStart !== '' ? $this->activityCounts($companyId, $accountingPeriodId, $monthStart, $monthEnd) : []);
         $evidence = $isInitialOpeningMonth && $monthStart !== '' ? $this->firstLaterStatementOpeningEvidence($companyId, $monthEnd) : null;
         $canConfirm = false;
         $reason = '';
@@ -535,7 +555,7 @@ final class EmptyMonthConfirmationService
     {
         $rawRows = $this->rawRowCount($companyId, $accountingPeriodId, $monthStart, $monthEnd);
 
-        return [
+        return $this->normaliseActivityCounts([
             'transactions' => (int)\InterfaceDB::fetchColumn(
                 'SELECT COUNT(*)
                  FROM transactions
@@ -565,6 +585,160 @@ final class EmptyMonthConfirmationService
                     'month_end' => $monthEnd,
                 ]
             ),
+        ]);
+    }
+
+    private function activityCountsByMonth(int $companyId, int $accountingPeriodId, array $period, array $monthStarts): array
+    {
+        $map = [];
+        foreach ($monthStarts as $monthStart) {
+            $monthStart = $this->normaliseMonthStart((string)$monthStart);
+            if ($monthStart !== '') {
+                $map[$monthStart] = $this->emptyActivityCounts();
+            }
+        }
+
+        if ($map === []) {
+            return [];
+        }
+
+        $periodStart = trim((string)($period['period_start'] ?? ''));
+        $periodEnd = trim((string)($period['period_end'] ?? ''));
+        if ($periodStart === '' || $periodEnd === '') {
+            return $map;
+        }
+
+        $transactionMonthExpression = $this->monthKeyExpression('txn_date');
+        foreach (\InterfaceDB::fetchAll(
+            "SELECT {$transactionMonthExpression} AS month_key,
+                    COUNT(*) AS row_count
+             FROM transactions
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+               AND txn_date BETWEEN :period_start AND :period_end
+             GROUP BY {$transactionMonthExpression}",
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
+            ]
+        ) as $row) {
+            $monthKey = (string)($row['month_key'] ?? '');
+            if (isset($map[$monthKey])) {
+                $map[$monthKey]['transactions'] = (int)($row['row_count'] ?? 0);
+            }
+        }
+
+        $importRowMonthExpression = $this->monthKeyExpression('sir.chosen_txn_date');
+        foreach (\InterfaceDB::fetchAll(
+            "SELECT {$importRowMonthExpression} AS month_key,
+                    COUNT(*) AS row_count
+             FROM statement_import_rows sir
+             INNER JOIN statement_uploads su
+                ON su.id = sir.upload_id
+               AND su.company_id = :company_id
+             WHERE sir.accounting_period_id = :accounting_period_id
+               AND sir.chosen_txn_date BETWEEN :period_start AND :period_end
+             GROUP BY {$importRowMonthExpression}",
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
+            ]
+        ) as $row) {
+            $monthKey = (string)($row['month_key'] ?? '');
+            if (isset($map[$monthKey])) {
+                $map[$monthKey]['raw_rows'] += (int)($row['row_count'] ?? 0);
+            }
+        }
+
+        $uploadMonthExpression = $this->monthKeyExpression('su.statement_month');
+        foreach (\InterfaceDB::fetchAll(
+            "SELECT {$uploadMonthExpression} AS month_key,
+                    COALESCE(SUM(su.rows_parsed), 0) AS row_count
+             FROM statement_uploads su
+             LEFT JOIN statement_import_rows sir
+                ON sir.upload_id = su.id
+             WHERE su.company_id = :company_id
+               AND sir.id IS NULL
+               AND su.rows_parsed > 0
+               AND (
+                    su.accounting_period_id = :accounting_period_id
+                    OR su.accounting_period_id IS NULL
+               )
+               AND su.statement_month BETWEEN :period_start AND :period_end
+             GROUP BY {$uploadMonthExpression}",
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
+            ]
+        ) as $row) {
+            $monthKey = (string)($row['month_key'] ?? '');
+            if (isset($map[$monthKey])) {
+                $map[$monthKey]['raw_rows'] += (int)($row['row_count'] ?? 0);
+            }
+        }
+
+        $journalMonthExpression = $this->monthKeyExpression('journal_date');
+        foreach (\InterfaceDB::fetchAll(
+            "SELECT {$journalMonthExpression} AS month_key,
+                    COUNT(*) AS row_count
+             FROM journals
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+               AND is_posted = 1
+               AND journal_date BETWEEN :period_start AND :period_end
+             GROUP BY {$journalMonthExpression}",
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
+            ]
+        ) as $row) {
+            $monthKey = (string)($row['month_key'] ?? '');
+            if (isset($map[$monthKey])) {
+                $map[$monthKey]['posted_journals'] = (int)($row['row_count'] ?? 0);
+            }
+        }
+
+        foreach ($map as $monthKey => $counts) {
+            $map[$monthKey]['uploads'] = (int)($counts['raw_rows'] ?? 0);
+        }
+
+        return $map;
+    }
+
+    private function monthKeyExpression(string $column): string
+    {
+        return \InterfaceDB::driverName() === 'sqlite'
+            ? "strftime('%Y-%m-01', {$column})"
+            : "DATE_FORMAT({$column}, '%Y-%m-01')";
+    }
+
+    private function emptyActivityCounts(): array
+    {
+        return [
+            'transactions' => 0,
+            'raw_rows' => 0,
+            'uploads' => 0,
+            'posted_journals' => 0,
+        ];
+    }
+
+    private function normaliseActivityCounts(array $counts): array
+    {
+        $rawRows = (int)($counts['raw_rows'] ?? $counts['uploads'] ?? 0);
+
+        return [
+            'transactions' => (int)($counts['transactions'] ?? 0),
+            'raw_rows' => $rawRows,
+            'uploads' => $rawRows,
+            'posted_journals' => (int)($counts['posted_journals'] ?? 0),
         ];
     }
 

@@ -545,6 +545,7 @@ CREATE TABLE `journals` (
   UNIQUE KEY `uq_journals_company_source_ref` (`company_id`,`source_type`,`source_ref`),
   KEY `idx_journals_company_date` (`company_id`,`journal_date`),
   KEY `idx_journals_accounting_period_date` (`accounting_period_id`,`journal_date`),
+  KEY `idx_journals_company_period_posted_date` (`company_id`,`accounting_period_id`,`is_posted`,`journal_date`),
   KEY `idx_journals_source_type` (`source_type`),
   CONSTRAINT `fk_journals_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_journals_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
@@ -1125,6 +1126,7 @@ CREATE TABLE `statement_import_rows` (
   KEY `idx_statement_import_rows_row_hash` (`row_hash`),
   KEY `idx_statement_import_rows_committed_transaction` (`committed_transaction_id`),
   KEY `idx_statement_import_rows_accounting_period` (`accounting_period_id`),
+  KEY `idx_statement_import_rows_period_date_upload` (`accounting_period_id`,`chosen_txn_date`,`upload_id`),
   CONSTRAINT `fk_statement_import_rows_committed_transaction` FOREIGN KEY (`committed_transaction_id`) REFERENCES `transactions` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_statement_import_rows_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_statement_import_rows_upload` FOREIGN KEY (`upload_id`) REFERENCES `statement_uploads` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
@@ -1172,6 +1174,7 @@ CREATE TABLE `statement_uploads` (
   KEY `idx_statement_uploads_account` (`account_id`),
   KEY `idx_statement_uploads_company_file_hash` (`company_id`,`file_sha256`),
   KEY `idx_statement_uploads_company_uploaded` (`company_id`,`uploaded_at`),
+  KEY `idx_statement_uploads_company_month_period_rows` (`company_id`,`statement_month`,`accounting_period_id`,`rows_parsed`),
   CONSTRAINT `fk_statement_uploads_account` FOREIGN KEY (`account_id`) REFERENCES `company_accounts` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_statement_uploads_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_statement_uploads_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
@@ -1569,6 +1572,7 @@ CREATE TABLE `transactions` (
   KEY `idx_transactions_nominal` (`nominal_account_id`),
   KEY `idx_transactions_category_status` (`category_status`),
   KEY `idx_transactions_company_month` (`company_id`,`txn_date`),
+  KEY `idx_transactions_company_period_date` (`company_id`,`accounting_period_id`,`txn_date`),
   KEY `idx_transactions_company_currency` (`company_id`,`accounting_period_id`,`currency`),
   KEY `idx_transactions_company_document_hash` (`company_id`,`document_url_hash`),
   KEY `idx_transactions_document_status` (`document_download_status`),

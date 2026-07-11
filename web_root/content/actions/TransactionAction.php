@@ -141,11 +141,9 @@ final class TransactionAction implements ActionInterfaceFramework
             $context['month_key']
             ?? $request->input('month_key', $request->query('month_key', ''))
         ));
-        $monthStatus = [];
         if ($monthKey === '' && $companyId > 0 && $accountingPeriodId > 0) {
-            $monthStatus = self::service($services, \eel_accounts\Service\StatementUploadService::class)->buildMonthStatus($companyId, $accountingPeriodId);
+            $monthKey = $dashboardRepository->defaultTransactionMonthForPeriod($companyId, $accountingPeriodId);
         }
-        $monthKey = $monthKey !== '' ? $monthKey : $dashboardRepository->defaultTransactionMonth($monthStatus);
         $categoryFilter = $dashboardRepository->normaliseTransactionCategoryFilter((string)(
             $context['category_filter']
             ?? $request->input('category_filter', $request->query('category_filter', 'not_posted'))

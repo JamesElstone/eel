@@ -65,6 +65,7 @@ final class StatementUploadService
     private ?\eel_accounts\Service\TransactionCategorisationService $categorisationService;
     private ?\eel_accounts\Service\ReceiptDownloadService $receiptDownloadService;
     private \eel_accounts\Service\FileCheckService $fileCheckService;
+    private array $monthStatusCache = [];
 
     public function __construct(
         string $defaultUploadDirectory,
@@ -3513,10 +3514,15 @@ final class StatementUploadService
             return [];
         }
 
+        $cacheKey = $companyId . ':' . $accountingPeriodId;
+        if (array_key_exists($cacheKey, $this->monthStatusCache)) {
+            return $this->monthStatusCache[$cacheKey];
+        }
+
         $accountingPeriod = (new \eel_accounts\Repository\AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId);
 
         if ($accountingPeriod === null || empty($accountingPeriod['period_start']) || empty($accountingPeriod['period_end'])) {
-            return [];
+            return $this->monthStatusCache[$cacheKey] = [];
         }
 
         $splitStatusJoin = '';
@@ -3764,7 +3770,7 @@ final class StatementUploadService
             $cursor->modify('+1 month');
         }
 
-        return $months;
+        return $this->monthStatusCache[$cacheKey] = $months;
     }
 
     private function emptyMonthCandidateMap(int $companyId, int $accountingPeriodId): array

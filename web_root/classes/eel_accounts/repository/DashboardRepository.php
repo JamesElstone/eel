@@ -418,6 +418,161 @@ final class DashboardRepository
         return isset($monthStatus[0]['month_key']) ? (string)$monthStatus[0]['month_key'] : '';
     }
 
+    public function defaultTransactionMonthForPeriod(int $companyId, int $accountingPeriodId): string
+    {
+        $companyId = \HelperFramework::sanitiseId($companyId);
+        $accountingPeriodId = \HelperFramework::sanitiseId($accountingPeriodId);
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return '';
+        }
+
+        $accountingPeriod = (new \eel_accounts\Repository\AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null || empty($accountingPeriod['period_start']) || empty($accountingPeriod['period_end'])) {
+            return '';
+        }
+
+        $periodStart = (string)$accountingPeriod['period_start'];
+        $periodEnd = (string)$accountingPeriod['period_end'];
+        $currentMonthKey = (new \DateTimeImmutable('first day of this month'))->format('Y-m-01');
+        if ($this->monthStartInPeriod($currentMonthKey, $periodStart, $periodEnd)) {
+            return $currentMonthKey;
+        }
+
+        $uncategorisedMonth = $this->firstUncategorisedTransactionMonth($companyId, $periodStart, $periodEnd);
+        if ($uncategorisedMonth !== '') {
+            return $uncategorisedMonth;
+        }
+
+        $transactionMonth = $this->firstTransactionMonth($companyId, $periodStart, $periodEnd);
+        if ($transactionMonth !== '') {
+            return $transactionMonth;
+        }
+
+        return $this->normalisedMonthStart($periodStart);
+    }
+
+    private function firstUncategorisedTransactionMonth(int $companyId, string $periodStart, string $periodEnd): string
+    {
+        $monthExpression = $this->monthKeyExpression('t.txn_date');
+        $splitStatusJoin = '';
+        $readySplitPredicate = '0 = 1';
+        if (\InterfaceDB::tableExists('transaction_splits') && \InterfaceDB::tableExists('transaction_split_lines')) {
+            $splitStatusJoin = "LEFT JOIN (
+                                    SELECT ts.transaction_id,
+                                           CASE
+                                               WHEN SUM(CASE WHEN COALESCE(tsl.is_deferred, 0) = 0 THEN 1 ELSE 0 END) >= 2
+                                                AND SUM(CASE WHEN COALESCE(tsl.is_deferred, 0) = 1 THEN 1 ELSE 0 END) = 0
+                                                AND SUM(
+                                                    CASE
+                                                        WHEN COALESCE(tsl.is_deferred, 0) = 0
+                                                         AND (tsl.amount IS NULL OR tsl.amount <= 0 OR tsl.nominal_account_id IS NULL)
+                                                        THEN 1
+                                                        ELSE 0
+                                                    END
+                                                ) = 0
+                                                AND ABS(ROUND(ABS(st.amount) - COALESCE(SUM(CASE WHEN COALESCE(tsl.is_deferred, 0) = 0 THEN tsl.amount ELSE 0 END), 0), 2)) < 0.005
+                                               THEN 1
+                                               ELSE 0
+                                           END AS is_ready
+                                    FROM transaction_splits ts
+                                    INNER JOIN transactions st
+                                       ON st.id = ts.transaction_id
+                                    INNER JOIN transaction_split_lines tsl
+                                       ON tsl.split_id = ts.id
+                                    GROUP BY ts.id, ts.transaction_id, st.amount
+                                ) split_status
+                                   ON split_status.transaction_id = t.id";
+            $readySplitPredicate = 'COALESCE(split_status.is_ready, 0) = 1';
+        }
+
+        $validTransferPredicate = "(COALESCE(t.is_internal_transfer, 0) = 1 AND COALESCE(t.transfer_account_id, 0) > 0 AND t.category_status = 'manual')";
+        $interAccountNoPostPredicate = \InterfaceDB::tableExists('transaction_inter_ac_marker')
+            ? "EXISTS (
+                  SELECT 1
+                  FROM transaction_inter_ac_marker tiam
+                  WHERE tiam.matched_transaction_id = t.id
+              )"
+            : '0 = 1';
+        $uncategorisedPredicate = "(
+            NOT ({$interAccountNoPostPredicate})
+            AND (
+                t.category_status = 'uncategorised'
+                OR (
+                    t.nominal_account_id IS NULL
+                    AND NOT ({$readySplitPredicate})
+                    AND NOT ({$validTransferPredicate})
+                )
+            )
+        )";
+
+        return (string)(\InterfaceDB::fetchColumn(
+            "SELECT {$monthExpression} AS month_key
+             FROM transactions t
+             {$splitStatusJoin}
+             WHERE t.company_id = :company_id
+               AND t.txn_date BETWEEN :period_start AND :period_end
+               AND {$uncategorisedPredicate}
+             GROUP BY {$monthExpression}
+             ORDER BY month_key ASC
+             LIMIT 1",
+            [
+                'company_id' => $companyId,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
+            ]
+        ) ?: '');
+    }
+
+    private function firstTransactionMonth(int $companyId, string $periodStart, string $periodEnd): string
+    {
+        $monthExpression = $this->monthKeyExpression('txn_date');
+
+        return (string)(\InterfaceDB::fetchColumn(
+            "SELECT {$monthExpression} AS month_key
+             FROM transactions
+             WHERE company_id = :company_id
+               AND txn_date BETWEEN :period_start AND :period_end
+             GROUP BY {$monthExpression}
+             ORDER BY month_key ASC
+             LIMIT 1",
+            [
+                'company_id' => $companyId,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
+            ]
+        ) ?: '');
+    }
+
+    private function monthStartInPeriod(string $monthStart, string $periodStart, string $periodEnd): bool
+    {
+        $monthStart = $this->normalisedMonthStart($monthStart);
+        $periodStart = $this->normalisedMonthStart($periodStart);
+        $periodEnd = $this->normalisedMonthStart($periodEnd);
+
+        return $monthStart !== ''
+            && $periodStart !== ''
+            && $periodEnd !== ''
+            && $monthStart >= $periodStart
+            && $monthStart <= $periodEnd;
+    }
+
+    private function normalisedMonthStart(string $date): string
+    {
+        $date = trim($date);
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            return '';
+        }
+
+        return (new \DateTimeImmutable($date))->modify('first day of this month')->format('Y-m-01');
+    }
+
+    private function monthKeyExpression(string $column): string
+    {
+        return \InterfaceDB::driverName() === 'sqlite'
+            ? "strftime('%Y-%m-01', {$column})"
+            : "DATE_FORMAT({$column}, '%Y-%m-01')";
+    }
+
     public function fetchTransactionsForMonth(
         int $companyId,
         int $accountingPeriodId,

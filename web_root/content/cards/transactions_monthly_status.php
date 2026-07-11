@@ -45,7 +45,11 @@ final class _transactions_monthly_statusCard extends CardBaseFramework
 
     protected function additionalInvalidationFacts(): array
     {
-        return ['page.context', TransactionAction::CATEGORISATION_SUMMARY_FACT];
+        return [
+            'transactions.imported',
+            TransactionAction::CATEGORISATION_SUMMARY_FACT,
+            'year.end.empty.month.confirmations',
+        ];
     }
 
     public function handleError(string $serviceKey, array $error, array $context): string

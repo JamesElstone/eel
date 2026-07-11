@@ -1930,6 +1930,7 @@ CREATE TABLE `asset_depreciation_entries` (
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_asset_depreciation_period` (`asset_id`,`accounting_period_id`,`period_start`,`period_end`),
+  KEY `idx_asset_depreciation_asset_period_end` (`asset_id`,`period_end`),
   KEY `idx_asset_depreciation_accounting_period` (`accounting_period_id`),
   KEY `idx_asset_depreciation_journal` (`journal_id`),
   CONSTRAINT `fk_asset_depreciation_asset` FOREIGN KEY (`asset_id`) REFERENCES `asset_register` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,

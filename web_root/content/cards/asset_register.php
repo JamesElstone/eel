@@ -10,6 +10,8 @@ declare(strict_types=1);
 final class _asset_registerCard extends CardBaseFramework
 {
     private const PAGE_SIZE = 10;
+    private ?\eel_accounts\Service\CompanySettingsService $companySettingsService = null;
+    private ?string $csrfHiddenInput = null;
 
     public function key(): string
     {
@@ -150,6 +152,8 @@ final class _asset_registerCard extends CardBaseFramework
         $disposalMethodAssetId = (int)($context['asset_disposal_method_asset_id'] ?? 0);
         $disposalMethod = $this->normaliseDisposalMethod((string)($context['asset_disposal_method'] ?? ''));
         $ageReferenceDate = $this->ageReferenceDate((string)($context['accounting_period']['period_end'] ?? ''));
+        $csrfHiddenInput = $this->csrfHiddenInput($context);
+        $nilReasonOptions = $this->nilReasonOptionsHtml();
         $isLocked = (bool)($context['services']['periodLockState'] ?? false);
         if (($context['service_errors']['periodLockState'] ?? null) !== null) {
             $isLocked = true;
@@ -246,7 +250,8 @@ final class _asset_registerCard extends CardBaseFramework
                     $accountingPeriodId,
                     $disposalMethodAssetId,
                     $disposalMethod,
-                    $isLocked
+                    $isLocked,
+                    $csrfHiddenInput
                 ),
                 headerClass: 'asset-register-method-heading',
                 cellClass: 'asset-register-method-cell',
@@ -264,7 +269,9 @@ final class _asset_registerCard extends CardBaseFramework
                     $settings,
                     $disposalMethodAssetId,
                     $disposalMethod,
-                    $isLocked
+                    $isLocked,
+                    $csrfHiddenInput,
+                    $nilReasonOptions
                 ),
                 headerClass: 'asset-register-disposal-heading',
                 cellClass: 'asset-register-disposal-cell',
@@ -299,7 +306,9 @@ final class _asset_registerCard extends CardBaseFramework
         array $settings,
         int $disposalMethodAssetId,
         string $disposalMethod,
-        bool $isLocked
+        bool $isLocked,
+        string $csrfHiddenInput,
+        string $nilReasonOptions
     ): string {
         $status = (string)($asset['status'] ?? 'active');
 
@@ -326,7 +335,9 @@ final class _asset_registerCard extends CardBaseFramework
             $disposalSearch,
             $settings,
             $this->disposalMethodForAsset((int)($asset['id'] ?? 0), $disposalMethodAssetId, $disposalMethod),
-            $isLocked
+            $isLocked,
+            $csrfHiddenInput,
+            $nilReasonOptions
         );
     }
 
@@ -336,7 +347,8 @@ final class _asset_registerCard extends CardBaseFramework
         int $accountingPeriodId,
         int $disposalMethodAssetId,
         string $disposalMethod,
-        bool $isLocked
+        bool $isLocked,
+        string $csrfHiddenInput
     ): string {
         if ((string)($asset['status'] ?? 'active') === 'disposed') {
             return '';
@@ -352,7 +364,7 @@ final class _asset_registerCard extends CardBaseFramework
         $nextLabel = $this->disposalMethodLabel($nextMethod);
 
         return '<form class="asset-disposal-method-form" method="post" action="?page=assets" data-ajax="true">
-                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
+                ' . $csrfHiddenInput . '
             <input type="hidden" name="card_action" value="Asset">
             <input type="hidden" name="intent" value="set_asset_disposal_method">
             <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -372,7 +384,9 @@ final class _asset_registerCard extends CardBaseFramework
         array $disposalSearch,
         array $settings,
         string $disposalMethod,
-        bool $isLocked
+        bool $isLocked,
+        string $csrfHiddenInput,
+        string $nilReasonOptions
     ): string {
         if ($isLocked) {
             return '<div class="helper"><span class="badge warning">Period locked</span> Asset disposals are read only.</div>';
@@ -383,14 +397,13 @@ final class _asset_registerCard extends CardBaseFramework
             ? (string)($disposalSearch['search_date'] ?? date('Y-m-d'))
             : date('Y-m-d');
         $candidateHtml = $selectedAssetId === $assetId
-            ? $this->disposalCandidates($companyId, $accountingPeriodId, $assetId, $defaultBankNominalId, $disposalSearch, $settings)
+            ? $this->disposalCandidates($companyId, $accountingPeriodId, $assetId, $defaultBankNominalId, $disposalSearch, $settings, $csrfHiddenInput)
             : '';
-        $nilReasonOptions = $this->nilReasonOptionsHtml();
 
         if ($disposalMethod === 'at_nil_value') {
             return '<div class="asset-disposal-panel">
                 <form class="asset-disposal-form" method="post" action="?page=assets" data-ajax="true">
-                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
+                ' . $csrfHiddenInput . '
                     <input type="hidden" name="card_action" value="Asset">
                     <input type="hidden" name="company_id" value="' . $companyId . '">
                     <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
@@ -411,7 +424,7 @@ final class _asset_registerCard extends CardBaseFramework
 
         return '<div class="asset-disposal-panel">
             <form class="asset-disposal-form" method="post" action="?page=assets" data-ajax="true">
-                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
+                ' . $csrfHiddenInput . '
                 <input type="hidden" name="card_action" value="Asset">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
@@ -435,7 +448,8 @@ final class _asset_registerCard extends CardBaseFramework
         int $assetId,
         int $defaultBankNominalId,
         array $disposalSearch,
-        array $settings
+        array $settings,
+        string $csrfHiddenInput
     ): string {
         $errors = (array)($disposalSearch['errors'] ?? []);
         if ($errors !== []) {
@@ -454,7 +468,7 @@ final class _asset_registerCard extends CardBaseFramework
                     <div class="helper">' . HelperFramework::escape((string)($candidate['description'] ?? '')) . '</div>
                 </div>
                 <form method="post" action="?page=assets" data-ajax="true">
-                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
+                ' . $csrfHiddenInput . '
                     <input type="hidden" name="card_action" value="Asset">
                     <input type="hidden" name="intent" value="dispose_asset_with_transaction">
                     <input type="hidden" name="company_id" value="' . $companyId . '">
@@ -492,7 +506,25 @@ final class _asset_registerCard extends CardBaseFramework
 
     private function money(array $settings, float|int|string|null $value): string
     {
-        return (new \eel_accounts\Service\CompanySettingsService())->money($settings, $value);
+        if ($this->companySettingsService === null) {
+            $this->companySettingsService = new \eel_accounts\Service\CompanySettingsService();
+        }
+
+        return $this->companySettingsService->money($settings, $value);
+    }
+
+    private function csrfHiddenInput(array $context): string
+    {
+        $contextInput = HelperFramework::csrfHiddenInput($context);
+        if ($contextInput !== '') {
+            return $contextInput;
+        }
+
+        if ($this->csrfHiddenInput === null) {
+            $this->csrfHiddenInput = HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken());
+        }
+
+        return $this->csrfHiddenInput;
     }
 
     private function tableInvalidationFact(): string

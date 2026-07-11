@@ -211,6 +211,122 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             }
         });
 
+        $harness->check(\eel_accounts\Service\AssetService::class, 'register period depreciation uses batched opening depreciation totals', static function () use ($harness, $service): void {
+            assetServiceTestRequireTaxViewSchema($harness);
+
+            InterfaceDB::beginTransaction();
+            try {
+                $marker = (string)random_int(100000, 999999);
+                $companyId = (int)('84' . $marker);
+                $priorPeriodId = (int)('85' . $marker);
+                $accountingPeriodId = (int)('86' . $marker);
+                $assetId = (int)('87' . $marker);
+                $assetNominalId = assetServiceTestInsertNominalWithTreatment('RBA', 'Reducing Balance Asset', 'asset', 'capital');
+                $accumNominalId = assetServiceTestInsertNominalWithTreatment('RBD', 'Reducing Balance Accumulated', 'asset', 'capital');
+
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO companies (id, company_name, company_number, is_active)
+                     VALUES (:id, :company_name, :company_number, 1)',
+                    [
+                        'id' => $companyId,
+                        'company_name' => 'Reducing Balance Fixture ' . $marker,
+                        'company_number' => 'RB' . $marker,
+                    ]
+                );
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end)
+                     VALUES (:id, :company_id, :label, :period_start, :period_end)',
+                    [
+                        'id' => $priorPeriodId,
+                        'company_id' => $companyId,
+                        'label' => 'Reducing Balance Prior FY ' . $marker,
+                        'period_start' => '2019-01-01',
+                        'period_end' => '2019-12-31',
+                    ]
+                );
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end)
+                     VALUES (:id, :company_id, :label, :period_start, :period_end)',
+                    [
+                        'id' => $accountingPeriodId,
+                        'company_id' => $companyId,
+                        'label' => 'Reducing Balance Current FY ' . $marker,
+                        'period_start' => '2020-01-01',
+                        'period_end' => '2020-12-31',
+                    ]
+                );
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO asset_register (
+                        id,
+                        company_id,
+                        asset_code,
+                        description,
+                        category,
+                        nominal_account_id,
+                        accum_dep_nominal_id,
+                        purchase_date,
+                        cost,
+                        useful_life_years,
+                        depreciation_method,
+                        residual_value,
+                        status
+                     ) VALUES (
+                        :id,
+                        :company_id,
+                        :asset_code,
+                        :description,
+                        :category,
+                        :nominal_account_id,
+                        :accum_dep_nominal_id,
+                        :purchase_date,
+                        :cost,
+                        :useful_life_years,
+                        :depreciation_method,
+                        :residual_value,
+                        :status
+                     )',
+                    [
+                        'id' => $assetId,
+                        'company_id' => $companyId,
+                        'asset_code' => 'RBD-' . $marker,
+                        'description' => 'Reducing balance register fixture ' . $marker,
+                        'category' => 'tools_equipment',
+                        'nominal_account_id' => $assetNominalId,
+                        'accum_dep_nominal_id' => $accumNominalId,
+                        'purchase_date' => '2019-01-01',
+                        'cost' => 1200.00,
+                        'useful_life_years' => 3,
+                        'depreciation_method' => 'reducing_balance',
+                        'residual_value' => 0.00,
+                        'status' => 'active',
+                    ]
+                );
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO asset_depreciation_entries (asset_id, accounting_period_id, period_start, period_end, amount)
+                     VALUES (:asset_id, :accounting_period_id, :period_start, :period_end, :amount)',
+                    [
+                        'asset_id' => $assetId,
+                        'accounting_period_id' => $priorPeriodId,
+                        'period_start' => '2019-01-01',
+                        'period_end' => '2019-12-31',
+                        'amount' => 400.00,
+                    ]
+                );
+
+                $pageData = $service->fetchPageData($companyId, $accountingPeriodId);
+                $asset = (array)(($pageData['assets'] ?? [])[0] ?? []);
+
+                $harness->assertSame($assetId, (int)($asset['id'] ?? 0));
+                $harness->assertSame('400.00', number_format((float)($asset['accumulated_depreciation'] ?? 0), 2, '.', ''));
+                $harness->assertSame('266.67', number_format((float)($asset['period_depreciation'] ?? 0), 2, '.', ''));
+                $harness->assertSame('533.33', number_format((float)($asset['resale_value'] ?? 0), 2, '.', ''));
+            } finally {
+                if (InterfaceDB::inTransaction()) {
+                    InterfaceDB::rollBack();
+                }
+            }
+        });
+
         $harness->check(\eel_accounts\Service\AssetService::class, 'open accounting period blocks depreciation posting', static function () use ($harness, $service): void {
             assetServiceTestRequireTaxViewSchema($harness);
             $marker = (string)random_int(100000, 999999);

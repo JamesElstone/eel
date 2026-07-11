@@ -192,7 +192,7 @@ final class AssetService
         }
 
         return [
-            'assets' => $this->fetchAssets($companyId, $accountingPeriodId),
+            'assets' => $this->fetchRegisterAssets($companyId, $accountingPeriodId),
             'accounting_period_id' => $accountingPeriodId,
             'default_bank_nominal_id' => $defaultBankNominalId,
             'disposal_search' => $this->fetchDisposalSearch($companyId, $disposalSearchDate, $disposalSearchAssetId),
@@ -272,22 +272,71 @@ final class AssetService
         }
 
         $assets = \InterfaceDB::fetchAll( 'SELECT ar.*,
-                    COALESCE(cost, 0) - COALESCE((
-                        SELECT SUM(ade.amount)
-                        FROM asset_depreciation_entries ade
-                        WHERE ade.asset_id = ar.id
-                    ), 0) AS nbv,
-                    COALESCE((
-                        SELECT SUM(ade.amount)
-                        FROM asset_depreciation_entries ade
-                        WHERE ade.asset_id = ar.id
-                    ), 0) AS accumulated_depreciation,
+                    COALESCE(ar.cost, 0) - COALESCE(dep.accumulated_depreciation, 0) AS nbv,
+                    COALESCE(dep.accumulated_depreciation, 0) AS accumulated_depreciation,
                     na.code AS nominal_code,
                     na.name AS nominal_name
              FROM asset_register ar
              LEFT JOIN nominal_accounts na ON na.id = ar.nominal_account_id
+             LEFT JOIN (
+                SELECT ade.asset_id, SUM(ade.amount) AS accumulated_depreciation
+                FROM asset_depreciation_entries ade
+                INNER JOIN asset_register dep_ar ON dep_ar.id = ade.asset_id
+                WHERE dep_ar.company_id = :depreciation_company_id
+                GROUP BY ade.asset_id
+             ) dep ON dep.asset_id = ar.id
              WHERE ar.company_id = :company_id
-             ORDER BY ar.purchase_date DESC, ar.id DESC', ['company_id' => $companyId]);
+             ORDER BY ar.purchase_date DESC, ar.id DESC', [
+                'company_id' => $companyId,
+                'depreciation_company_id' => $companyId,
+             ]);
+
+        return $this->assetsWithPeriodDepreciation($assets ?: [], $companyId, $accountingPeriodId);
+    }
+
+    private function fetchRegisterAssets(int $companyId, int $accountingPeriodId = 0): array {
+        if (!$this->hasRequiredSchema()) {
+            return [];
+        }
+
+        if ($companyId <= 0) {
+            return [];
+        }
+
+        $assets = \InterfaceDB::fetchAll(
+            'SELECT ar.id,
+                    ar.asset_code,
+                    ar.description,
+                    ar.nominal_account_id,
+                    ar.purchase_date,
+                    ar.cost,
+                    ar.useful_life_years,
+                    ar.depreciation_method,
+                    ar.residual_value,
+                    ar.status,
+                    ar.disposal_date,
+                    ar.disposal_event_type,
+                    ar.disposal_reason,
+                    COALESCE(ar.cost, 0) - COALESCE(dep.accumulated_depreciation, 0) AS nbv,
+                    COALESCE(dep.accumulated_depreciation, 0) AS accumulated_depreciation,
+                    na.code AS nominal_code,
+                    na.name AS nominal_name
+             FROM asset_register ar
+             LEFT JOIN nominal_accounts na ON na.id = ar.nominal_account_id
+             LEFT JOIN (
+                SELECT ade.asset_id, SUM(ade.amount) AS accumulated_depreciation
+                FROM asset_depreciation_entries ade
+                INNER JOIN asset_register dep_ar ON dep_ar.id = ade.asset_id
+                WHERE dep_ar.company_id = :depreciation_company_id
+                GROUP BY ade.asset_id
+             ) dep ON dep.asset_id = ar.id
+             WHERE ar.company_id = :company_id
+             ORDER BY ar.purchase_date DESC, ar.id DESC',
+            [
+                'company_id' => $companyId,
+                'depreciation_company_id' => $companyId,
+            ]
+        );
 
         return $this->assetsWithPeriodDepreciation($assets ?: [], $companyId, $accountingPeriodId);
     }
@@ -1884,9 +1933,16 @@ final class AssetService
             return $assets;
         }
 
+        $openingDepreciationByAssetId = $this->openingDepreciationByAsset($assets, $accountingPeriod);
+
         return array_map(
-            function (array $asset) use ($accountingPeriod): array {
-                $asset['period_depreciation'] = $this->calculatePeriodDepreciationAmount($asset, $accountingPeriod);
+            function (array $asset) use ($accountingPeriod, $openingDepreciationByAssetId): array {
+                $assetId = (int)($asset['id'] ?? 0);
+                $asset['period_depreciation'] = $this->calculatePeriodDepreciationAmount(
+                    $asset,
+                    $accountingPeriod,
+                    $openingDepreciationByAssetId[$assetId] ?? null
+                );
                 $asset['resale_value'] = $this->calculateResaleValue($asset, $accountingPeriod);
 
                 return $asset;
@@ -1895,7 +1951,63 @@ final class AssetService
         );
     }
 
-    private function calculatePeriodDepreciationAmount(array $asset, array $accountingPeriod): float {
+    private function openingDepreciationByAsset(array $assets, array $accountingPeriod): array {
+        $periodStart = trim((string)($accountingPeriod['period_start'] ?? ''));
+        if (!$this->isIsoDate($periodStart)) {
+            return [];
+        }
+
+        $cutoffByAssetId = [];
+        $maxCutoff = '';
+        foreach ($assets as $asset) {
+            $asset = is_array($asset) ? $asset : [];
+            $assetId = (int)($asset['id'] ?? 0);
+            $purchaseDate = trim((string)($asset['purchase_date'] ?? ''));
+            if ($assetId <= 0 || !$this->isIsoDate($purchaseDate)) {
+                continue;
+            }
+
+            $depreciationPeriodStart = max($periodStart, $purchaseDate);
+            $cutoff = (new \DateTimeImmutable($depreciationPeriodStart))->modify('-1 day')->format('Y-m-d');
+            $cutoffByAssetId[$assetId] = $cutoff;
+            $maxCutoff = $maxCutoff === '' ? $cutoff : max($maxCutoff, $cutoff);
+        }
+
+        if ($cutoffByAssetId === [] || $maxCutoff === '') {
+            return [];
+        }
+
+        $totals = array_fill_keys(array_keys($cutoffByAssetId), 0.0);
+        foreach (array_chunk(array_keys($cutoffByAssetId), 500) as $chunkIndex => $assetIds) {
+            $params = ['max_period_end' => $maxCutoff];
+            $placeholders = [];
+            foreach ($assetIds as $index => $assetId) {
+                $placeholder = 'asset_id_' . $chunkIndex . '_' . $index;
+                $placeholders[] = ':' . $placeholder;
+                $params[$placeholder] = $assetId;
+            }
+
+            foreach (\InterfaceDB::fetchAll(
+                'SELECT asset_id, period_end, amount
+                 FROM asset_depreciation_entries
+                 WHERE asset_id IN (' . implode(', ', $placeholders) . ')
+                   AND period_end <= :max_period_end',
+                $params
+            ) ?: [] as $row) {
+                $assetId = (int)($row['asset_id'] ?? 0);
+                $periodEnd = trim((string)($row['period_end'] ?? ''));
+                if ($assetId <= 0 || $periodEnd === '' || $periodEnd > (string)($cutoffByAssetId[$assetId] ?? '')) {
+                    continue;
+                }
+
+                $totals[$assetId] = round((float)($totals[$assetId] ?? 0.0) + (float)($row['amount'] ?? 0), 2);
+            }
+        }
+
+        return $totals;
+    }
+
+    private function calculatePeriodDepreciationAmount(array $asset, array $accountingPeriod, ?float $openingDepreciation = null): float {
         $periodStart = trim((string)($accountingPeriod['period_start'] ?? ''));
         $periodEnd = trim((string)($accountingPeriod['period_end'] ?? ''));
         $purchaseDate = trim((string)($asset['purchase_date'] ?? ''));
@@ -1914,10 +2026,12 @@ final class AssetService
             return 0.0;
         }
 
-        $openingDepreciation = $this->sumDepreciationToDate(
-            (int)($asset['id'] ?? 0),
-            (new \DateTimeImmutable($depreciationPeriodStart))->modify('-1 day')->format('Y-m-d')
-        );
+        if ($openingDepreciation === null) {
+            $openingDepreciation = $this->sumDepreciationToDate(
+                (int)($asset['id'] ?? 0),
+                (new \DateTimeImmutable($depreciationPeriodStart))->modify('-1 day')->format('Y-m-d')
+            );
+        }
 
         return $this->calculateDepreciationAmountFromOpening(
             $asset,

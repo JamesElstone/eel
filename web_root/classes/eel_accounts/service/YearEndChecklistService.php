@@ -558,6 +558,7 @@ final class YearEndChecklistService
     }
 
     public function saveNotes(int $companyId, int $accountingPeriodId, string $notes, string $changedBy = 'web_app'): array {
+        ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'change the year-end notes for this period');
         $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId, true);
         if (empty($checklistResult['success'])) {
             return $checklistResult;
@@ -575,6 +576,7 @@ final class YearEndChecklistService
     }
 
     public function saveDirectorLoanClosingAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array {
+        ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'change the director loan confirmation for this period');
         $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId, true);
         if (empty($checklistResult['success'])) {
             return $checklistResult;
@@ -592,6 +594,7 @@ final class YearEndChecklistService
     }
 
     public function saveTaxReadinessAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array {
+        ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'change the tax readiness confirmation for this period');
         $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId, true);
         if (empty($checklistResult['success'])) {
             return $checklistResult;
@@ -609,6 +612,7 @@ final class YearEndChecklistService
     }
 
     public function saveExpensePositionAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array {
+        ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'change the expense confirmation for this period');
         $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId, true);
         if (empty($checklistResult['success'])) {
             return $checklistResult;
@@ -626,6 +630,7 @@ final class YearEndChecklistService
     }
 
     public function saveRetainedEarningsCloseAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array {
+        ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'change the retained earnings confirmation for this period');
         $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId, true);
         if (empty($checklistResult['success'])) {
             return $checklistResult;
@@ -644,6 +649,7 @@ final class YearEndChecklistService
 
     public function saveTransactionTailAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $note = '', string $changedBy = 'web_app'): array
     {
+        ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'change the transaction-tail confirmation for this period');
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return [
                 'success' => false,
@@ -749,6 +755,7 @@ final class YearEndChecklistService
         string $note = '',
         string $changedBy = 'web_app'
     ): array {
+        ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'change the year-end review confirmation for this period');
         $checkCode = trim($checkCode);
         if (!in_array($checkCode, self::REVIEW_ACKNOWLEDGEABLE_CHECKS, true)) {
             return [
@@ -903,6 +910,7 @@ final class YearEndChecklistService
     }
 
     public function recalculateChecklist(int $companyId, int $accountingPeriodId, string $changedBy = 'web_app'): array {
+        ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'refresh the year-end checklist for this period');
         $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId, true);
         if (empty($checklistResult['success'])) {
             return $checklistResult;

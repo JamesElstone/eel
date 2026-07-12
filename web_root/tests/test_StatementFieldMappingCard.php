@@ -306,4 +306,27 @@ $harness->run(_statement_field_mappingCard::class, static function (GeneratedSer
         $harness->assertTrue(str_contains($html, 'Review mapping'));
         $harness->assertTrue(!str_contains($html, 'Select an upload from Review'));
     });
+
+    $harness->check(_statement_field_mappingCard::class, 'renders a locked upload mapping in view-only mode', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'page' => ['page_id' => 'uploads'],
+            'company' => ['id' => 42, 'accounting_period_id' => 61],
+            'uploads' => ['id' => 124],
+            'services' => [
+                'activeCompanyAccounts' => [['id' => 47, 'account_name' => 'Main Current Account', 'account_type' => 'bank']],
+                'selected_upload_preview' => [
+                    'upload' => ['id' => 124, 'account_id' => 47, 'account_name' => 'Main Current Account', 'original_filename' => 'locked.csv', 'source_headers_json' => json_encode(['Date', 'Description', 'Amount'])],
+                    'mapping' => ['mapping_json' => json_encode(\eel_accounts\Service\StatementUploadService::autoMapHeaders(['Date', 'Description', 'Amount']))],
+                    'source_sample' => ['headers' => ['Date', 'Description', 'Amount'], 'rows' => []],
+                ],
+                'selected_upload_mapping_status' => ['has_mapping' => true, 'extra_headers' => []],
+                'selected_upload_lock_state' => ['is_locked' => true],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, 'field mapping is view only'));
+        $harness->assertTrue(str_contains($html, 'name="mapping_description" disabled'));
+        $harness->assertFalse(str_contains($html, 'name="intent" value="save_account_mapping"'));
+        $harness->assertFalse(str_contains($html, 'Preview And Validate Rows'));
+    });
 });

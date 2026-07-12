@@ -81,4 +81,27 @@ $harness->run(_asset_reconcile_manualCard::class, static function (GeneratedServ
 
         $harness->assertTrue(str_contains($html, 'No manually created assets need reconciliation.'));
     });
+
+    $harness->check(_asset_reconcile_manualCard::class, 'disables reconciliation in a locked period and enables it in a later open period', static function () use ($harness, $card): void {
+        $context = [
+            'company' => ['id' => 7, 'accounting_period_id' => 22, 'settings' => ['default_bank_nominal_id' => 42]],
+            'services' => [
+                'selected_period_locked' => true,
+                'manualAssetReconciliation' => ['assets' => [[
+                    'id' => 15, 'asset_code' => 'FA-7-001', 'description' => 'Cordless drill', 'purchase_date' => '2026-06-18',
+                    'cost' => 240.00, 'manual_addition_reason_label' => 'Delayed bank CSV', 'manual_offset_nominal_label' => '2300 Supplier Clearing',
+                    'candidates' => [['id' => 91, 'txn_date' => '2026-06-20', 'description' => 'Tool supplier payment', 'amount' => 240.00]],
+                ]]],
+            ],
+        ];
+        $lockedHtml = $card->render($context);
+        $harness->assertTrue(str_contains($lockedHtml, 'Manual asset reconciliation is view only'));
+        $harness->assertTrue(str_contains($lockedHtml, 'disabled title="This accounting period is locked."'));
+
+        $context['company']['accounting_period_id'] = 23;
+        $context['services']['selected_period_locked'] = false;
+        $openHtml = $card->render($context);
+        $harness->assertFalse(str_contains($openHtml, 'disabled title="This accounting period is locked."'));
+        $harness->assertTrue(str_contains($openHtml, 'Link &amp; Reconcile'));
+    });
 });

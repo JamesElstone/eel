@@ -14,6 +14,17 @@ final class GoldenLedgerSpecification
         ];
     }
 
+    /** @return array<int, array<string, float|int|string>> */
+    public static function hmrcTaxFacts(): array
+    {
+        return [
+            9111 => ['period_start' => '2022-09-05', 'period_end' => '2023-09-30', 'accounting_profit' => 5307.95, 'disallowable_add_backs' => 0.00, 'depreciation_add_back' => 2192.05, 'capital_allowances' => 6300.00, 'associated_company_count' => 0],
+            9112 => ['period_start' => '2023-10-01', 'period_end' => '2024-09-30', 'accounting_profit' => 1868.22, 'disallowable_add_backs' => 600.00, 'depreciation_add_back' => 5031.78, 'capital_allowances' => 9000.00, 'associated_company_count' => 0],
+            9113 => ['period_start' => '2024-10-01', 'period_end' => '2025-09-30', 'accounting_profit' => 2416.00, 'disallowable_add_backs' => 0.00, 'depreciation_add_back' => 4994.00, 'capital_allowances' => 0.00, 'associated_company_count' => 0, 'hmrc_interest_amount' => 90.00, 'hmrc_interest_type' => 'corporation_tax_late_payment'],
+            9114 => ['period_start' => '2025-10-01', 'period_end' => '2026-09-30', 'accounting_profit' => 7500.00, 'disallowable_add_backs' => 0.00, 'depreciation_add_back' => 0.00, 'capital_allowances' => 0.00, 'associated_company_count' => 0],
+        ];
+    }
+
     /** @return array<int, array<string, mixed>> */
     public static function periods(): array
     {

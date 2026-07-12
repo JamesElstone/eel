@@ -37,6 +37,15 @@ final class _accounting_periodsCard extends CardBaseFramework
                 'method' => 'build',
                 'params' => ['companyId' => ':company.id'],
             ],
+            [
+                'key' => 'selected_period_locked',
+                'service' => \eel_accounts\Service\YearEndLockService::class,
+                'method' => 'isLocked',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                ],
+            ],
         ]
         ;
     }
@@ -80,6 +89,11 @@ final class _accounting_periodsCard extends CardBaseFramework
         $accountingPeriods = (array)($context['services']['accounting_periods'] ?? []);
         $selectedAccountingPeriod = $this->resolveSelectedAccountingPeriod($accountingPeriods, $accountingPeriodId);
         $selectedAccountingPeriodId = (int)($selectedAccountingPeriod['id'] ?? ($accountingPeriodId > 0 ? $accountingPeriodId : 0));
+        $selectedPeriodLocked = $selectedAccountingPeriodId > 0 && !empty($context['services']['selected_period_locked']);
+        $lockedFieldAttribute = $selectedPeriodLocked ? ' readonly aria-readonly="true"' : '';
+        $lockedHelp = $selectedPeriodLocked
+            ? '<div class="panel-soft warn"><div class="helper">This accounting period is locked. Its alias and dates are view only until the period is explicitly unlocked.</div></div>'
+            : '';
 
         $missingHtml = '';
         if (!empty($accountingGuidance['missing_suggested_periods'])) {
@@ -188,7 +202,8 @@ final class _accounting_periodsCard extends CardBaseFramework
                     </form>
                 </div>
             </div>
-            <form method="post" data-ajax="true" data-accounting-period-form="true">
+            ' . $lockedHelp . '
+            <form method="post" data-ajax="true" data-accounting-period-form="true" data-accounting-period-locked="' . ($selectedPeriodLocked ? 'true' : 'false') . '">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Company">
                 <input type="hidden" id="accounting_period_intent" name="intent" value="' . ($selectedAccountingPeriodId > 0 ? 'update_accounting_period' : 'add_accounting_period') . '">
@@ -198,18 +213,18 @@ final class _accounting_periodsCard extends CardBaseFramework
                 <div class="form-flex-flow">
                     <div class="form-row half">
                         <label for="financial_period_label">Period Alias Name</label>
-                        <input class="input" id="financial_period_label" name="financial_period_label" value="' . $this->escape((string)($selectedAccountingPeriod['label'] ?? '')) . '">
+                        <input class="input" id="financial_period_label" name="financial_period_label" value="' . $this->escape((string)($selectedAccountingPeriod['label'] ?? '')) . '"' . $lockedFieldAttribute . '>
                     </div>
                     <div class="form-row half">
                         <label for="period_start">Period start</label>
-                        <input class="input" type="date" id="period_start" name="period_start" value="' . $this->escape((string)($selectedAccountingPeriod['period_start'] ?? '')) . '">
+                        <input class="input" type="date" id="period_start" name="period_start" value="' . $this->escape((string)($selectedAccountingPeriod['period_start'] ?? '')) . '"' . $lockedFieldAttribute . '>
                     </div>
                     <div class="form-row half">
                         <label for="period_end">Period end</label>
-                        <input class="input" type="date" id="period_end" name="period_end" value="' . $this->escape((string)($selectedAccountingPeriod['period_end'] ?? '')) . '">
+                        <input class="input" type="date" id="period_end" name="period_end" value="' . $this->escape((string)($selectedAccountingPeriod['period_end'] ?? '')) . '"' . $lockedFieldAttribute . '>
                     </div>
                     <div class="form-row full">
-                        <button class="button primary" id="save_accounting_period_button" type="submit" disabled>Save Accounting Period Details</button>
+                        <button class="button primary" id="save_accounting_period_button" type="submit" disabled' . ($selectedPeriodLocked ? ' title="This accounting period is locked."' : '') . '>Save Accounting Period Details</button>
                     </div>
                 </div>
                 </section>

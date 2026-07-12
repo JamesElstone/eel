@@ -239,4 +239,27 @@ $harness->run(_uploads_detailsCard::class, static function (GeneratedServiceClas
         $harness->assertSame(false, str_contains($html, 'Field Mappings'));
         $harness->assertSame(false, str_contains($html, 'Preview And Validate'));
     });
+
+    $harness->check(_uploads_detailsCard::class, 'keeps locked upload history viewable while disabling staging and rescanning', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => ['id' => 12],
+            'uploads' => ['filter' => 'all', 'page' => 1],
+            'services' => [
+                'filter_terms' => ['all' => 'All uploads'],
+                'upload_history' => [[
+                    'id' => 92, 'uploaded_at' => '2026-05-01 13:09', 'filename' => 'locked.csv', 'month' => 'May 2026',
+                    'account_name' => 'Current Account', 'account_type' => 'bank', 'workflow_status' => 'mapped',
+                    'rows_parsed' => 12, 'rows_ready_to_import' => 12, 'inserted' => 0,
+                    'mapping_status' => ['can_preview' => true],
+                    'lock_state' => ['is_locked' => true, 'locked_accounting_period_ids' => [31]],
+                ]],
+                'upload_summary_by_accounting_period' => [],
+            ],
+        ]);
+
+        $harness->assertTrue(str_contains($html, 'Locked period: upload details are view only.'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="stage_account_upload"'));
+        $harness->assertTrue(str_contains($html, 'disabled title="This upload includes a locked accounting period."'));
+        $harness->assertTrue(str_contains($html, 'Field Mappings'));
+    });
 });

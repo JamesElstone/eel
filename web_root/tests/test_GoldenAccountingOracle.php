@@ -11,6 +11,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'GoldenAccountsFixture.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'GoldenLedgerSpecification.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'GoldenAccountingOracle.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'GoldenHmrcCorporationTaxOracle.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'GoldenCardComparisonRegistry.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'GoldenComparisonReporter.php';
 
@@ -18,12 +19,37 @@ $harness = new GeneratedServiceClassTestHarness();
 GoldenAccountsFixture::build();
 
 $harness->check(GoldenAccountingOracle::class, 'is independent from application services and database access', static function () use ($harness): void {
-    foreach ([GoldenLedgerSpecification::class, GoldenAccountingOracle::class] as $className) {
+    foreach ([GoldenLedgerSpecification::class, GoldenAccountingOracle::class, GoldenHmrcCorporationTaxOracle::class] as $className) {
         $reflection = new ReflectionClass($className);
         $source = (string)file_get_contents((string)$reflection->getFileName());
         $harness->assertFalse(str_contains($source, 'InterfaceDB::'));
         $harness->assertFalse(str_contains($source, '\\eel_accounts\\'));
     }
+});
+
+$harness->check(GoldenHmrcCorporationTaxOracle::class, 'independently applies HMRC add-backs, capital allowances, losses, and corporation-tax rates', static function () use ($harness): void {
+    $expected = [
+        9111 => ['taxable_before_losses' => 1200.00, 'losses_used' => 0.00, 'taxable_profit' => 1200.00, 'losses_carried_forward' => 0.00, 'corporation_tax' => 228.00],
+        9112 => ['taxable_before_losses' => -1500.00, 'losses_used' => 0.00, 'taxable_profit' => 0.00, 'losses_carried_forward' => 1500.00, 'corporation_tax' => 0.00],
+        9113 => ['taxable_before_losses' => 7410.00, 'losses_used' => 1500.00, 'taxable_profit' => 5910.00, 'losses_carried_forward' => 0.00, 'corporation_tax' => 1122.90],
+        9114 => ['taxable_before_losses' => 7500.00, 'losses_used' => 0.00, 'taxable_profit' => 7500.00, 'losses_carried_forward' => 0.00, 'corporation_tax' => 1425.00],
+    ];
+    $actual = GoldenHmrcCorporationTaxOracle::calculateSequence(GoldenLedgerSpecification::hmrcTaxFacts());
+    foreach ($expected as $periodId => $fields) {
+        foreach ($fields as $field => $value) {
+            $harness->assertSame(number_format($value, 2, '.', ''), number_format((float)($actual[$periodId][$field] ?? 0), 2, '.', ''));
+        }
+    }
+
+    $ambiguousFacts = GoldenLedgerSpecification::hmrcTaxFacts();
+    $ambiguousFacts[9113]['hmrc_interest_type'] = 'generic_hmrc_interest';
+    $rejected = false;
+    try {
+        GoldenHmrcCorporationTaxOracle::calculateSequence($ambiguousFacts);
+    } catch (InvalidArgumentException) {
+        $rejected = true;
+    }
+    $harness->assertTrue($rejected);
 });
 
 $harness->check(GoldenCardComparisonRegistry::class, 'classifies every selected card and explicitly excludes action-only cards', static function () use ($harness): void {
@@ -86,7 +112,7 @@ $harness->check(GoldenAccountingOracle::class, 'applies the year-two HMRC penalt
     $harness->assertSame('paid', (string)$obligations[1]['status']);
     $harness->assertSame(600.00, (float)$obligations[0]['amount_paid']);
     $harness->assertSame(90.00, (float)$obligations[1]['amount_paid']);
-    $harness->assertSame(true, (int)$obligations[1]['related_fine_id'] > 0);
+    $harness->assertSame(0, (int)($obligations[1]['related_fine_id'] ?? 0));
     $harness->assertSame(true, (int)$obligations[0]['related_journal_id'] > 0 && (int)$obligations[1]['related_journal_id'] > 0);
 });
 

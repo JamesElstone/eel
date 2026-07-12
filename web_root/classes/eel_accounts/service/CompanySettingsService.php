@@ -88,6 +88,11 @@ final class CompanySettingsService
     public function saveToDatabase(\eel_accounts\Store\CompanySettingsStore $settingsStore, array $settings): void
     {
         $settings = $this->normaliseDirectorLoanNominalSettings($settings);
+        (new YearEndLockService())->assertUnlocked(
+            (int)$settings['company_id'],
+            (int)$settings['accounting_period_id'],
+            'change the accounting period details'
+        );
         $companyRepository = new \eel_accounts\Repository\CompanyRepository();
         $accountingPeriodRepository = new \eel_accounts\Repository\AccountingPeriodRepository();
         \InterfaceDB::beginTransaction();
@@ -164,6 +169,11 @@ final class CompanySettingsService
                 );
                 $settings['accounting_period_id'] = $newPeriodId > 0 ? (string)$newPeriodId : '';
             } else {
+                (new YearEndLockService())->assertUnlocked(
+                    (int)$settings['company_id'],
+                    (int)$settings['accounting_period_id'],
+                    'change the accounting period details'
+                );
                 $accountingPeriodRepository->updatePeriod(
                     (int)$settings['company_id'],
                     (int)$settings['accounting_period_id'],

@@ -1151,6 +1151,20 @@ final class AssetService
             return ['success' => false, 'errors' => ['The selected manual asset could not be found.']];
         }
 
+        $lockService = new \eel_accounts\Service\YearEndLockService();
+        $assetAccountingPeriodId = (int)($asset['accounting_period_id'] ?? 0);
+        if ($assetAccountingPeriodId > 0) {
+            $lockService->assertUnlocked($companyId, $assetAccountingPeriodId, 'reconcile a manual asset in this period');
+        }
+
+        $candidateTransaction = $this->categorisationService->fetchTransaction($transactionId);
+        if (is_array($candidateTransaction) && (int)($candidateTransaction['company_id'] ?? 0) === $companyId) {
+            $candidateAccountingPeriodId = (int)($candidateTransaction['accounting_period_id'] ?? 0);
+            if ($candidateAccountingPeriodId > 0) {
+                $lockService->assertUnlocked($companyId, $candidateAccountingPeriodId, 'reconcile a transaction in this period');
+            }
+        }
+
         $manualOffsetNominalId = (int)($asset['manual_offset_nominal_id'] ?? 0);
         if (!$this->manualAssetRequiresReconciliation((string)($asset['manual_addition_reason'] ?? ''))) {
             return ['success' => false, 'errors' => ['This asset does not require manual reconciliation.']];

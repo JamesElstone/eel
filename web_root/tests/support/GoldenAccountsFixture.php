@@ -399,19 +399,15 @@ final class GoldenAccountsFixture
             'notice_date' => '2025-06-30',
             'due_date' => '2025-07-30',
             'amount_due' => '90.00',
-            'source_reference' => 'GOLDEN-HMRC-INTEREST-Y3',
-            'notes' => 'Synthetic late-payment interest related to the year-two penalty.',
+            'source_reference' => 'GOLDEN-HMRC-CT-INTEREST-Y3',
+            'notes' => 'Synthetic late-payment interest charged on overdue Corporation Tax.',
         ]);
         if (empty($interest['success'])) {
             throw new RuntimeException(implode(' ', (array)($interest['errors'] ?? ['Unable to seed HMRC interest.'])));
         }
         $interestId = (int)InterfaceDB::fetchColumn(
             'SELECT id FROM hmrc_obligations WHERE company_id = :company_id AND source_reference = :reference LIMIT 1',
-            ['company_id' => self::GOLDEN_COMPANY_ID, 'reference' => 'GOLDEN-HMRC-INTEREST-Y3']
-        );
-        InterfaceDB::execute(
-            'UPDATE hmrc_obligations SET related_fine_id = :penalty_id WHERE id = :interest_id',
-            ['penalty_id' => $penaltyId, 'interest_id' => $interestId]
+            ['company_id' => self::GOLDEN_COMPANY_ID, 'reference' => 'GOLDEN-HMRC-CT-INTEREST-Y3']
         );
 
         self::insert('transactions', [

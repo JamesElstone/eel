@@ -128,6 +128,7 @@ final class EmptyMonthConfirmationService
         array $monthStarts,
         string $revokedBy = 'web_app'
     ): array {
+        (new YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'revoke empty-month confirmations for this period');
         if (!$this->tableAvailable()) {
             return $this->failure('Empty month confirmations are not available until the database migration has been applied.');
         }
@@ -193,6 +194,7 @@ final class EmptyMonthConfirmationService
         string $notes = '',
         string $confirmedBy = 'web_app'
     ): array {
+        (new YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'confirm an empty month for this period');
         if (!$this->tableAvailable()) {
             return $this->failure('Empty month confirmations are not available until the database migration has been applied.');
         }
@@ -227,6 +229,7 @@ final class EmptyMonthConfirmationService
         string $notes = '',
         string $confirmedBy = 'web_app'
     ): array {
+        (new YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'confirm empty months for this period');
         if (!$this->tableAvailable()) {
             return $this->failure('Empty month confirmations are not available until the database migration has been applied.');
         }
@@ -359,6 +362,7 @@ final class EmptyMonthConfirmationService
         string $monthStart,
         string $revokedBy = 'web_app'
     ): array {
+        (new YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'revoke an empty-month confirmation for this period');
         if (!$this->tableAvailable()) {
             return $this->failure('Empty month confirmations are not available until the database migration has been applied.');
         }

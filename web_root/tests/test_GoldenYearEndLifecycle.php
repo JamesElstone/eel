@@ -10,7 +10,9 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'GoldenAccountsFixture.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'GoldenLedgerSpecification.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'GoldenHmrcCorporationTaxOracle.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'GoldenComparisonReporter.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'PageServiceTestFactory.php';
 
 $harness = new GeneratedServiceClassTestHarness();
 GoldenAccountsFixture::build();
@@ -18,6 +20,7 @@ GoldenAccountsFixture::build();
 $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves reporting semantics when completed periods are locked', static function () use ($harness): void {
     $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
     $periods = [9111, 9112, 9113];
+    $hmrcExpected = GoldenHmrcCorporationTaxOracle::calculateSequence(GoldenLedgerSpecification::hmrcTaxFacts());
 
     foreach ($periods as $periodId) {
         $expected = GoldenLedgerSpecification::yearEndAssetExpectations()[$periodId];
@@ -72,6 +75,9 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
         $harness->assertSame(number_format((float)$expected['capital_allowances'], 2, '.', ''), number_format($ctCapitalAllowances, 2, '.', ''));
         $harness->assertSame(number_format((float)$expected['taxable_profit'], 2, '.', ''), number_format($ctTaxableProfit, 2, '.', ''));
         $harness->assertSame(number_format((float)$expected['corporation_tax'], 2, '.', ''), number_format($ctTax, 2, '.', ''));
+        $harness->assertSame(number_format((float)$hmrcExpected[$periodId]['capital_allowances'], 2, '.', ''), number_format($ctCapitalAllowances, 2, '.', ''));
+        $harness->assertSame(number_format((float)$hmrcExpected[$periodId]['taxable_profit'], 2, '.', ''), number_format($ctTaxableProfit, 2, '.', ''));
+        $harness->assertSame(number_format((float)$hmrcExpected[$periodId]['corporation_tax'], 2, '.', ''), number_format($ctTax, 2, '.', ''));
 
         $beforeLock = goldenYearEndReportingSnapshot($companyId, $periodId);
         $lock = (new \eel_accounts\Service\YearEndLockService())
@@ -90,8 +96,149 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
                 'actual' => $afterLock,
             ]]));
         }
+
+        if ($periodId === 9111) {
+            goldenAssertFirstPeriodLockBoundary($harness, $companyId);
+        }
+    }
+
+    foreach ($periods as $periodId) {
+        $unlock = (new \eel_accounts\Service\YearEndLockService())
+            ->unlockPeriod($companyId, $periodId, 'golden_year_end_test_cleanup', 'Restore shared in-memory fixture state after lock assertions.');
+        $harness->assertTrue(!empty($unlock['success']));
     }
 });
+
+function goldenAssertFirstPeriodLockBoundary(GeneratedServiceClassTestHarness $harness, int $companyId): void
+{
+    $lockService = new \eel_accounts\Service\YearEndLockService();
+    $harness->assertTrue($lockService->isLocked($companyId, 9111));
+    foreach ([9112, 9113, 9114] as $openPeriodId) {
+        $harness->assertFalse($lockService->isLocked($companyId, $openPeriodId));
+        $lockService->assertUnlocked($companyId, $openPeriodId, 'edit this later golden period');
+    }
+
+    $periodRepository = new \eel_accounts\Repository\AccountingPeriodRepository();
+    $lockedPeriodBefore = $periodRepository->fetchAccountingPeriod($companyId, 9111);
+    $periodEditRejected = false;
+    try {
+        $periodRepository->updatePeriod($companyId, 9111, 'Tampered locked period', '2022-09-06', '2023-09-29');
+    } catch (RuntimeException $exception) {
+        $periodEditRejected = str_contains($exception->getMessage(), 'locked');
+    }
+    $harness->assertTrue($periodEditRejected);
+    $harness->assertSame($lockedPeriodBefore, $periodRepository->fetchAccountingPeriod($companyId, 9111));
+
+    $openPeriodBefore = $periodRepository->fetchAccountingPeriod($companyId, 9112);
+    $periodRepository->updatePeriod(
+        $companyId,
+        9112,
+        (string)$openPeriodBefore['label'] . ' edit check',
+        (string)$openPeriodBefore['period_start'],
+        (string)$openPeriodBefore['period_end']
+    );
+    $harness->assertSame((string)$openPeriodBefore['label'] . ' edit check', (string)$periodRepository->fetchAccountingPeriod($companyId, 9112)['label']);
+    $periodRepository->updatePeriod(
+        $companyId,
+        9112,
+        (string)$openPeriodBefore['label'],
+        (string)$openPeriodBefore['period_start'],
+        (string)$openPeriodBefore['period_end']
+    );
+
+    $reviewBefore = $lockService->fetchReview($companyId, 9111);
+    foreach ([
+        static fn(): array => $lockService->saveNotes($companyId, 9111, 'Tampered notes', 'golden_lock_test'),
+        static fn(): array => (new \eel_accounts\Service\YearEndChecklistService())->recalculateChecklist($companyId, 9111, 'golden_lock_test'),
+    ] as $lockedMutation) {
+        $rejected = false;
+        try {
+            $lockedMutation();
+        } catch (RuntimeException $exception) {
+            $rejected = str_contains($exception->getMessage(), 'locked');
+        }
+        $harness->assertTrue($rejected);
+    }
+    $harness->assertSame($reviewBefore, $lockService->fetchReview($companyId, 9111));
+
+    $uploadBase = testPageServiceUploadBasePath();
+    $csvPath = tempnam(sys_get_temp_dir(), 'golden-lock-');
+    if (!is_string($csvPath)) {
+        throw new RuntimeException('Unable to create the golden upload control file.');
+    }
+    file_put_contents($csvPath, "Date,Description,Amount,Balance\n2023-10-12,Unlocked upload control,12.34,12.34\n");
+    $file = ['name' => 'golden-lock-control.csv', 'tmp_name' => $csvPath, 'error' => UPLOAD_ERR_OK, 'size' => filesize($csvPath), 'type' => 'text/csv'];
+    $uploadService = new \eel_accounts\Service\StatementUploadService($uploadBase);
+    $lockedUpload = $uploadService->createUploadFromHttpRequest(
+        ['company_id' => $companyId, 'account_id' => 9120, 'accounting_period_id' => 9111],
+        ['statement_file' => $file]
+    );
+    $harness->assertFalse(!empty($lockedUpload['success']));
+    $harness->assertSame(409, (int)($lockedUpload['http_status'] ?? 0));
+
+    $openUpload = $uploadService->createUploadFromHttpRequest(
+        ['company_id' => $companyId, 'account_id' => 9120, 'accounting_period_id' => 9112],
+        ['statement_file' => $file]
+    );
+    @unlink($csvPath);
+    $harness->assertTrue(!empty($openUpload['success']));
+    $openUploadId = (int)($openUpload['statement_upload_id'] ?? 0);
+    $harness->assertTrue($openUploadId > 0);
+    $harness->assertFalse(!empty($uploadService->fetchUploadLockState($companyId, $openUploadId)['is_locked']));
+
+    InterfaceDB::execute(
+        'INSERT INTO statement_import_rows (upload_id, `row_number`, raw_json, accounting_period_id, chosen_txn_date, normalised_description, normalised_amount, normalised_currency, row_hash, validation_status, is_duplicate_within_upload, is_duplicate_existing)
+         VALUES (:upload_id, 999, :raw_json, 9111, :txn_date, :description, :amount, :currency, :row_hash, :status, 0, 0)',
+        [
+            'upload_id' => $openUploadId,
+            'raw_json' => '{}',
+            'txn_date' => '2023-09-20',
+            'description' => 'Locked mixed-period row',
+            'amount' => '1.00',
+            'currency' => 'GBP',
+            'row_hash' => hash('sha256', 'golden-locked-mixed-period-row'),
+            'status' => 'valid',
+        ]
+    );
+    $mixedLockState = $uploadService->fetchUploadLockState($companyId, $openUploadId);
+    $harness->assertTrue(!empty($mixedLockState['is_locked']));
+    $harness->assertSame([9111, 9112], array_map('intval', (array)$mixedLockState['accounting_period_ids']));
+    $mixedCommit = $uploadService->commitUpload($companyId, $openUploadId);
+    $harness->assertFalse(!empty($mixedCommit['success']));
+    $harness->assertSame(409, (int)($mixedCommit['http_status'] ?? 0));
+    $harness->assertSame(0, (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM transactions WHERE statement_upload_id = :upload_id', ['upload_id' => $openUploadId]));
+    $checksumBefore = (string)InterfaceDB::fetchColumn(
+        'SELECT row_hash FROM statement_import_rows WHERE upload_id = :upload_id AND `row_number` = 999',
+        ['upload_id' => $openUploadId]
+    );
+    $checksumResult = $uploadService->recalculateCompanyChecksums($companyId);
+    $harness->assertTrue((int)($checksumResult['rows_locked_skipped'] ?? 0) >= 1);
+    $harness->assertSame(
+        $checksumBefore,
+        (string)InterfaceDB::fetchColumn('SELECT row_hash FROM statement_import_rows WHERE upload_id = :upload_id AND `row_number` = 999', ['upload_id' => $openUploadId])
+    );
+
+    InterfaceDB::execute('DELETE FROM statement_import_rows WHERE upload_id = :upload_id', ['upload_id' => $openUploadId]);
+    InterfaceDB::execute('DELETE FROM statement_import_mappings WHERE upload_id = :upload_id', ['upload_id' => $openUploadId]);
+    InterfaceDB::execute('DELETE FROM statement_uploads WHERE id = :upload_id', ['upload_id' => $openUploadId]);
+
+    $cardLockMechanisms = [
+        'accounting_periods' => 'selected_period_locked', 'uploads_bank_transactions' => 'isLocked', 'uploads_details' => 'lock_state',
+        'uploads_validate_commit' => 'selected_upload_lock_state', 'transactions_imported' => 'is_locked',
+        'year_end_empty_month_confirmations' => 'YearEndApprovalRenderer', 'year_end_transaction_tail' => 'YearEndApprovalRenderer',
+        'expense_claim_editor' => 'isLocked', 'expense_claim_create' => 'isLocked', 'year_end_expenses_confirmation' => 'YearEndApprovalRenderer',
+        'year_end_director_loan_offset' => 'locked', 'dividend_declare' => 'locked', 'dividend_reserve_review' => 'locked',
+        'asset_create' => 'isLocked', 'asset_reconcile_manual' => 'selected_period_locked', 'not_an_asset' => 'isLocked',
+        'prepayments_review' => 'isLocked', 'year_end_prepayment_approvals' => 'locked', 'journal_cut_offs' => 'isLocked',
+        'journal_cut_off_confirmation' => 'YearEndApprovalRenderer', 'year_end_retained_earnings' => 'locked',
+        'year_end_companies_house_comparison' => 'YearEndApprovalRenderer', 'year_end_tax_readiness' => 'YearEndApprovalRenderer',
+        'year_end_notes' => 'isLocked', 'year_end_state' => 'isLocked',
+    ];
+    foreach ($cardLockMechanisms as $cardKey => $mechanism) {
+        $source = (string)file_get_contents(APP_CARDS . $cardKey . '.php');
+        $harness->assertTrue(str_contains($source, $mechanism));
+    }
+}
 
 /** @return array<string, mixed> */
 function goldenYearEndReportingSnapshot(int $companyId, int $periodId): array

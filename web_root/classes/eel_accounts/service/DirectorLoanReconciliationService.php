@@ -93,6 +93,7 @@ final class DirectorLoanReconciliationService
 
     public function postOffset(int $companyId, int $accountingPeriodId, string $changedBy = 'web_app'): array
     {
+        (new YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'post a director loan offset in this period');
         $context = $this->fetchContext($companyId, $accountingPeriodId);
         if (empty($context['available'])) {
             return [

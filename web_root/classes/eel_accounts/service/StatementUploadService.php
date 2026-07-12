@@ -204,6 +204,10 @@ final class StatementUploadService
             return $this->failureResult(404, ['The selected accounting period could not be found for this company.'], $warnings);
         }
 
+        if ($accountingPeriodId > 0 && (new YearEndLockService())->isLocked($companyId, $accountingPeriodId)) {
+            return $this->failureResult(409, ['This accounting period is locked, so you cannot upload a statement to it.'], $warnings);
+        }
+
         $uploadedFile = $this->validateUploadedFile($upload, $errors);
 
         if ($errors !== []) {
@@ -373,6 +377,11 @@ final class StatementUploadService
             return $this->failureResult(404, ['The selected staged upload could not be found.'], $warnings);
         }
 
+        $lockState = $this->fetchUploadLockState($companyId, $uploadId);
+        if (!empty($lockState['is_locked'])) {
+            return $this->failureResult(409, ['This upload includes a locked accounting period, so its field mapping cannot be changed.'], $warnings);
+        }
+
         $isCommittedUpload = (int)($upload['rows_committed'] ?? 0) > 0;
 
         if ($isCommittedUpload && !$allowCommittedMappingUpdate) {
@@ -532,6 +541,50 @@ final class StatementUploadService
         ]);
 
         return is_array($row) ? $row : null;
+    }
+
+    /** @return array{is_locked: bool, accounting_period_ids: list<int>, locked_accounting_period_ids: list<int>} */
+    public function fetchUploadLockState(int $companyId, int $uploadId): array
+    {
+        $periodIds = [];
+        $upload = $this->fetchUpload($companyId, $uploadId);
+        if ($upload === null) {
+            return ['is_locked' => false, 'accounting_period_ids' => [], 'locked_accounting_period_ids' => []];
+        }
+
+        $uploadAccountingPeriodId = (int)($upload['accounting_period_id'] ?? 0);
+        if ($uploadAccountingPeriodId > 0) {
+            $periodIds[$uploadAccountingPeriodId] = true;
+        }
+
+        foreach (\InterfaceDB::fetchAll(
+            'SELECT DISTINCT sir.accounting_period_id
+             FROM statement_import_rows sir
+             INNER JOIN statement_uploads su ON su.id = sir.upload_id
+             WHERE su.company_id = :company_id
+               AND sir.upload_id = :upload_id
+               AND sir.accounting_period_id IS NOT NULL',
+            ['company_id' => $companyId, 'upload_id' => $uploadId]
+        ) as $row) {
+            $periodId = (int)($row['accounting_period_id'] ?? 0);
+            if ($periodId > 0) {
+                $periodIds[$periodId] = true;
+            }
+        }
+
+        $allPeriodIds = array_map('intval', array_keys($periodIds));
+        sort($allPeriodIds);
+        $lockService = new YearEndLockService();
+        $lockedPeriodIds = array_values(array_filter(
+            $allPeriodIds,
+            static fn(int $periodId): bool => $lockService->isLocked($companyId, $periodId)
+        ));
+
+        return [
+            'is_locked' => $lockedPeriodIds !== [],
+            'accounting_period_ids' => $allPeriodIds,
+            'locked_accounting_period_ids' => $lockedPeriodIds,
+        ];
     }
 
     public function fetchUploadMapping(int $uploadId): ?array {
@@ -902,6 +955,10 @@ final class StatementUploadService
             return $this->failureResult(404, ['The selected staged upload could not be found.'], $warnings);
         }
 
+        if (!empty($this->fetchUploadLockState($companyId, $uploadId)['is_locked'])) {
+            return $this->failureResult(409, ['This upload includes a locked accounting period and cannot be staged.'], $warnings);
+        }
+
         if ((int)($upload['rows_committed'] ?? 0) > 0) {
             return $this->failureResult(409, ['This upload has already been committed and cannot be restaged.'], $warnings);
         }
@@ -1051,6 +1108,21 @@ final class StatementUploadService
             $preparedRows,
             static fn(array $row): bool => (int)$row['is_duplicate_within_upload'] === 1 || (int)$row['is_duplicate_existing'] === 1
         ));
+
+        $lockedResolvedPeriodIds = [];
+        $lockService = new YearEndLockService();
+        foreach (array_map('intval', array_keys($summary['resolved_accounting_period_ids'])) as $resolvedPeriodId) {
+            if ($resolvedPeriodId > 0 && $lockService->isLocked($companyId, $resolvedPeriodId)) {
+                $lockedResolvedPeriodIds[] = $resolvedPeriodId;
+            }
+        }
+        if ($lockedResolvedPeriodIds !== []) {
+            return $this->failureResult(
+                409,
+                ['This upload contains transaction rows for a locked accounting period and cannot be staged.'],
+                $warnings
+            );
+        }
 
         if ($summary['rows_parsed'] === 0) {
             $warnings[] = 'This CSV contains headers but no transaction rows, so there is nothing to preview or import.';
@@ -1231,7 +1303,22 @@ final class StatementUploadService
             return $this->failureResult(404, ['The selected staged upload could not be found.'], $warnings);
         }
 
+        if (!empty($this->fetchUploadLockState($companyId, $uploadId)['is_locked'])) {
+            return $this->failureResult(409, ['This upload includes a locked accounting period and cannot be committed.'], $warnings);
+        }
+
         $eligibleRows = $this->fetchEligibleRowsForCommit($uploadId);
+        $lockService = new YearEndLockService();
+        foreach ($eligibleRows as $eligibleRow) {
+            $resolvedPeriodId = (int)($eligibleRow['accounting_period_id'] ?? 0);
+            if ($resolvedPeriodId > 0 && $lockService->isLocked($companyId, $resolvedPeriodId)) {
+                return $this->failureResult(
+                    409,
+                    ['This upload contains transaction rows for a locked accounting period and cannot be committed.'],
+                    $warnings
+                );
+            }
+        }
         $mapping = $this->fetchUploadMapping($uploadId);
         $parsedMapping = is_array($mapping) ? $this->decodeJsonObject((string)($mapping['mapping_json'] ?? '')) : [];
         $insertedTransactionIds = [];
@@ -1563,6 +1650,7 @@ final class StatementUploadService
 
         $rows = \InterfaceDB::fetchAll( 'SELECT id,
                     upload_id,
+                    accounting_period_id,
                     source_account,
                     chosen_txn_date,
                     normalised_description,
@@ -1604,11 +1692,18 @@ final class StatementUploadService
 
         $rowsUpdated = 0;
         $transactionsUpdated = 0;
+        $rowsLockedSkipped = 0;
+        $lockService = new YearEndLockService();
 
         try {
             \InterfaceDB::beginTransaction();
 
             foreach ($rows as $row) {
+                $rowAccountingPeriodId = (int)($row['accounting_period_id'] ?? 0);
+                if ($rowAccountingPeriodId > 0 && $lockService->isLocked($companyId, $rowAccountingPeriodId)) {
+                    $rowsLockedSkipped++;
+                    continue;
+                }
                 $chosenTxnDate = trim((string)($row['chosen_txn_date'] ?? ''));
                 $normalisedDescription = self::normaliseText((string)($row['normalised_description'] ?? ''));
                 $normalisedAmount = self::normaliseMoneyValue((string)($row['normalised_amount'] ?? ''));
@@ -1667,6 +1762,7 @@ final class StatementUploadService
             'already_uploaded' => false,
             'rows_updated' => $rowsUpdated,
             'transactions_updated' => $transactionsUpdated,
+            'rows_locked_skipped' => $rowsLockedSkipped,
             'warnings' => $warnings,
             'errors' => [],
         ];
@@ -1993,6 +2089,7 @@ final class StatementUploadService
         $internalTransferMarkerSelect = $this->internalTransferMarkerSelectSql('ca');
         $stmt = \InterfaceDB::prepare(
             'SELECT t.id,
+                    t.accounting_period_id,
                     t.txn_type,
                     t.reference,
                     t.counterparty_name,
@@ -2035,6 +2132,11 @@ final class StatementUploadService
         try {
             foreach ($rows as $row) {
                 try {
+                    $accountingPeriodId = (int)($row['accounting_period_id'] ?? 0);
+                    if ($accountingPeriodId > 0 && (new YearEndLockService())->isLocked($companyId, $accountingPeriodId)) {
+                        $summary['rows_skipped']++;
+                        continue;
+                    }
                     $mapping = $this->decodeJsonObject((string)($row['mapping_json'] ?? ''));
                     $updates = $this->mappedTransactionBackfillUpdates($row, $mapping);
 
@@ -2382,6 +2484,10 @@ final class StatementUploadService
         $upload = $this->fetchUpload($companyId, $uploadId);
 
         if ($upload === null || (int)($upload['rows_committed'] ?? 0) > 0) {
+            return [];
+        }
+
+        if (!empty($this->fetchUploadLockState($companyId, $uploadId)['is_locked'])) {
             return [];
         }
 
@@ -2889,6 +2995,11 @@ final class StatementUploadService
     private function applyOfflineRowUpdate(array $target, array $row, array $sourceHeaders, array $nominalIndex): array {
         $warnings = [];
         $changed = false;
+        $companyId = (int)($target['company_id'] ?? 0);
+        $accountingPeriodId = (int)($target['accounting_period_id'] ?? 0);
+        if ($companyId > 0 && $accountingPeriodId > 0 && (new YearEndLockService())->isLocked($companyId, $accountingPeriodId)) {
+            return ['updated' => false, 'warnings' => ['The matching transaction belongs to a locked accounting period and was ignored.']];
+        }
         $description = $this->offlineColumnValue($row, $sourceHeaders, 'description');
         $category = $this->offlineColumnValue($row, $sourceHeaders, 'category');
         $rowId = (int)($target['statement_import_row_id'] ?? 0);
@@ -2955,6 +3066,8 @@ final class StatementUploadService
     private function buildOfflineRowKeyLookup(int $companyId): array {
         $rows = \InterfaceDB::fetchAll(
             'SELECT sir.id AS statement_import_row_id,
+                    su.company_id,
+                    COALESCE(t.accounting_period_id, sir.accounting_period_id, su.accounting_period_id) AS accounting_period_id,
                     sir.upload_id,
                     sir.`row_number`,
                     sir.source_created,
@@ -2991,6 +3104,8 @@ final class StatementUploadService
             $legacyKey = \eel_accounts\Service\StatementCsvExportService::legacyExportRowKey($companyId, (int)($row['upload_id'] ?? 0), (int)($row['row_number'] ?? 0), $exportRow);
 
             $target = [
+                'company_id' => (int)($row['company_id'] ?? 0),
+                'accounting_period_id' => (int)($row['accounting_period_id'] ?? 0),
                 'statement_import_row_id' => (int)($row['statement_import_row_id'] ?? 0),
                 'transaction_id' => $transactionId,
                 'description' => $exportRow['description'],
@@ -4118,6 +4233,7 @@ final class StatementUploadService
         $offset = max(0, $offset);
        
         $sql = "SELECT su.id,
+                       su.accounting_period_id,
                        su.uploaded_at AS uploaded_at_sort,
                        DATE_FORMAT(su.uploaded_at, '%Y-%m-%d %H:%i') AS uploaded_at,
                        su.source_type,
@@ -4189,6 +4305,7 @@ final class StatementUploadService
             }
 
             $row['mapping_status'] = $this->describeUploadAccountMappingStatus($companyId, (int)($row['id'] ?? 0));
+            $row['lock_state'] = $this->fetchUploadLockState($companyId, (int)($row['id'] ?? 0));
         }
         unset($row);
 

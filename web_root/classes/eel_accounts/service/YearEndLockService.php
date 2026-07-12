@@ -132,6 +132,13 @@ final class YearEndLockService
             ];
         }
 
+        if ($this->isLocked($companyId, $accountingPeriodId)) {
+            return [
+                'success' => true,
+                'review' => $this->fetchReview($companyId, $accountingPeriodId),
+            ];
+        }
+
         $status = $this->normaliseStatus($status);
         $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
         $existing = $this->fetchReview($companyId, $accountingPeriodId);
@@ -250,6 +257,7 @@ final class YearEndLockService
     }
 
     public function saveNotes(int $companyId, int $accountingPeriodId, string $notes, string $changedBy = 'web_app'): array {
+        $this->assertUnlocked($companyId, $accountingPeriodId, 'change the year-end notes for this period');
         if (!$this->hasReviewTable()) {
             return [
                 'success' => false,
@@ -289,6 +297,7 @@ final class YearEndLockService
     }
 
     public function saveDirectorLoanClosingAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array {
+        $this->assertUnlocked($companyId, $accountingPeriodId, 'change the director loan confirmation for this period');
         if (!$this->hasReviewTable()) {
             return [
                 'success' => false,
@@ -337,6 +346,7 @@ final class YearEndLockService
     }
 
     public function saveTaxReadinessAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array {
+        $this->assertUnlocked($companyId, $accountingPeriodId, 'change the tax readiness confirmation for this period');
         if (!$this->hasReviewTable()) {
             return [
                 'success' => false,
@@ -385,6 +395,7 @@ final class YearEndLockService
     }
 
     public function saveExpensePositionAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array {
+        $this->assertUnlocked($companyId, $accountingPeriodId, 'change the expense confirmation for this period');
         if (!$this->hasReviewTable()) {
             return [
                 'success' => false,
@@ -440,6 +451,7 @@ final class YearEndLockService
         string $changedBy = 'web_app',
         string $note = ''
     ): array {
+        $this->assertUnlocked($companyId, $accountingPeriodId, 'change the retained earnings confirmation for this period');
         if (!$this->hasReviewTable()) {
             return [
                 'success' => false,

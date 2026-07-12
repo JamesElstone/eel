@@ -576,11 +576,42 @@ final class UploadsAction implements ActionInterfaceFramework
 
     private function uploadIsLocked(int $companyId, ?array $upload): bool
     {
-        $accountingPeriodId = max(0, (int)($upload['accounting_period_id'] ?? 0));
+        if ($companyId <= 0 || !is_array($upload)) {
+            return false;
+        }
 
-        return $companyId > 0
-            && $accountingPeriodId > 0
-            && (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);
+        $periodIds = [];
+        $accountingPeriodId = max(0, (int)($upload['accounting_period_id'] ?? 0));
+        if ($accountingPeriodId > 0) {
+            $periodIds[$accountingPeriodId] = true;
+        }
+
+        $uploadId = max(0, (int)($upload['id'] ?? 0));
+        if ($uploadId > 0) {
+            foreach (\InterfaceDB::fetchAll(
+                'SELECT DISTINCT sir.accounting_period_id
+                 FROM statement_import_rows sir
+                 INNER JOIN statement_uploads su ON su.id = sir.upload_id
+                 WHERE su.company_id = :company_id
+                   AND sir.upload_id = :upload_id
+                   AND sir.accounting_period_id IS NOT NULL',
+                ['company_id' => $companyId, 'upload_id' => $uploadId]
+            ) as $row) {
+                $periodId = (int)($row['accounting_period_id'] ?? 0);
+                if ($periodId > 0) {
+                    $periodIds[$periodId] = true;
+                }
+            }
+        }
+
+        $lockService = new \eel_accounts\Service\YearEndLockService();
+        foreach (array_keys($periodIds) as $periodId) {
+            if ($lockService->isLocked($companyId, (int)$periodId)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function flashMessages(array $flashMessages = [], array $flashErrors = []): array

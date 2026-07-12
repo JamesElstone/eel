@@ -110,4 +110,22 @@ $harness->run(_accounting_periodsCard::class, static function (GeneratedServiceC
         $harness->assertTrue(str_contains($csv, '01/10/2018 to 30/09/2019'));
         $harness->assertTrue(str_contains($csv, '01/10/2018'));
     });
+
+    $harness->check(_accounting_periodsCard::class, 'renders a locked selected period as view only while leaving the selector available', static function () use ($harness, $card, $context): void {
+        $lockedContext = $context;
+        $lockedContext['services']['selected_period_locked'] = true;
+        $html = $card->render($lockedContext);
+
+        $harness->assertTrue(str_contains($html, 'data-accounting-period-locked="true"'));
+        $harness->assertTrue(str_contains($html, 'This accounting period is locked. Its alias and dates are view only'));
+        $harness->assertTrue(str_contains($html, 'name="financial_period_label" value="01/10/2023 to 30/09/2024" readonly'));
+        $harness->assertTrue(str_contains($html, 'id="save_accounting_period_button" type="submit" disabled title="This accounting period is locked."'));
+        $harness->assertTrue(str_contains($html, 'data-accounting-period-selector="true"'));
+
+        $unlockedContext = $context;
+        $unlockedContext['services']['selected_period_locked'] = false;
+        $unlockedHtml = $card->render($unlockedContext);
+        $harness->assertTrue(str_contains($unlockedHtml, 'data-accounting-period-locked="false"'));
+        $harness->assertFalse(str_contains($unlockedHtml, 'aria-readonly="true"'));
+    });
 });

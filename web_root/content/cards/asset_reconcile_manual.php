@@ -25,6 +25,15 @@ final class _asset_reconcile_manualCard extends CardBaseFramework
                     'companyId' => ':company.id',
                 ],
             ],
+            [
+                'key' => 'selected_period_locked',
+                'service' => \eel_accounts\Service\YearEndLockService::class,
+                'method' => 'isLocked',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                ],
+            ],
         ];
     }
 
@@ -47,6 +56,7 @@ final class _asset_reconcile_manualCard extends CardBaseFramework
         $defaultBankNominalId = (int)($settings['default_bank_nominal_id'] ?? 0);
         $data = (array)($context['services']['manualAssetReconciliation'] ?? []);
         $assets = is_array($data['assets'] ?? null) ? $data['assets'] : [];
+        $selectedPeriodLocked = !empty($context['services']['selected_period_locked']);
 
         if ($assets === []) {
             return '<div class="asset-reconcile-manual">
@@ -70,7 +80,7 @@ final class _asset_reconcile_manualCard extends CardBaseFramework
                 <td>' . HelperFramework::escape($this->displayDate((string)($asset['purchase_date'] ?? ''))) . '</td>
                 <td class="numeric">' . HelperFramework::escape($this->money($settings, $asset['cost'] ?? 0)) . '</td>
                 <td>' . HelperFramework::escape((string)($asset['manual_offset_nominal_label'] ?? '')) . '</td>
-                <td>' . $this->candidateRows($companyId, $accountingPeriodId, (int)($asset['id'] ?? 0), $defaultBankNominalId, (array)($asset['candidates'] ?? []), $settings) . '</td>
+                <td>' . $this->candidateRows($companyId, $accountingPeriodId, (int)($asset['id'] ?? 0), $defaultBankNominalId, (array)($asset['candidates'] ?? []), $settings, $selectedPeriodLocked) . '</td>
             </tr>';
         }
 
@@ -80,6 +90,7 @@ final class _asset_reconcile_manualCard extends CardBaseFramework
 
         return '<div class="asset-reconcile-manual">
             <h3>Reconcile Manually Created Assets</h3>
+            ' . ($selectedPeriodLocked ? '<div class="panel-soft warn"><div class="helper">This accounting period is locked. Manual asset reconciliation is view only.</div></div>' : '') . '
             <div class="table-scroll">
                 <table>
                     <thead>
@@ -104,7 +115,8 @@ final class _asset_reconcile_manualCard extends CardBaseFramework
         int $assetId,
         int $defaultBankNominalId,
         array $candidates,
-        array $settings
+        array $settings,
+        bool $selectedPeriodLocked
     ): string {
         $candidateRows = '';
         foreach ($candidates as $candidate) {
@@ -128,7 +140,7 @@ final class _asset_reconcile_manualCard extends CardBaseFramework
                     <input type="hidden" name="transaction_id" value="' . (int)($candidate['id'] ?? 0) . '">
                     <input type="hidden" name="default_bank_nominal_id" value="' . $defaultBankNominalId . '">
                     <input type="hidden" name="confirm_rebuild_journal" value="0">
-                    <button class="button button-inline primary" type="submit"' . $this->journalRebuildAttributes($candidate) . '>Link &amp; Reconcile</button>
+                    <button class="button button-inline primary" type="submit"' . $this->journalRebuildAttributes($candidate) . ($selectedPeriodLocked ? ' disabled title="This accounting period is locked."' : '') . '>Link &amp; Reconcile</button>
                 </form>
             </div>';
         }

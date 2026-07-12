@@ -92,7 +92,7 @@ final class _year_end_stateCard extends CardBaseFramework
                 ' . $this->backupFreshnessHelp($latestBackupAt, $checklistChangedAt, $isLocked) . '
                 <div class="helper">' . HelperFramework::escape($this->statusHelp($status, $isLocked)) . '</div>
                 <div class="actions-row">
-                    ' . $this->actionForm($companyId, $accountingPeriodId, 'recalculate', 'Refresh Year-End Checklist', false, 'Re-checks the year-end readiness checklist using the latest ledger, review, tax, and confirmation data.') . '
+                    ' . $this->actionForm($companyId, $accountingPeriodId, 'recalculate', 'Refresh Year-End Checklist', $isLocked, $isLocked ? 'This accounting period is locked.' : 'Re-checks the year-end readiness checklist using the latest ledger, review, tax, and confirmation data.') . '
                     ' . $this->backupForm($context) . '
                     ' . $this->actionForm(
                         $companyId,

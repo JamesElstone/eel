@@ -44,6 +44,15 @@ final class _uploads_validate_commitCard extends CardBaseFramework
                     'uploadId' => ':uploads.id',
                 ],
             ],
+            [
+                'key' => 'selected_upload_lock_state',
+                'service' => \eel_accounts\Service\StatementUploadService::class,
+                'method' => 'fetchUploadLockState',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'uploadId' => ':uploads.id',
+                ],
+            ],
         ];
     }
 
@@ -131,7 +140,9 @@ final class _uploads_validate_commitCard extends CardBaseFramework
 
         $readyToImport = (int)($summary['rows_ready_to_import'] ?? 0);
         $accountId = (int)($upload['account_id'] ?? 0);
-        $importButtonDisabled = $readyToImport <= 0 ? ' disabled' : '';
+        $uploadLocked = !empty($context['services']['selected_upload_lock_state']['is_locked']);
+        $importButtonDisabled = $readyToImport <= 0 || $uploadLocked ? ' disabled' : '';
+        $importButtonTitle = $uploadLocked ? ' title="This upload includes a locked accounting period."' : '';
         $emptyMonthImpactHtml = $this->emptyMonthImpactHtml((array)($context['services']['empty_month_upload_impact'] ?? []));
 
         $importForm = '<form method="post" action="?page=uploads">
@@ -144,8 +155,12 @@ final class _uploads_validate_commitCard extends CardBaseFramework
                 <input type="hidden" name="filter" value="' . HelperFramework::escape($uploadHistoryFilter) . '">
                 <input type="hidden" name="page" value="' . $uploadHistoryPage . '">
                 <input type="hidden" name="account_id" value="' . $accountId . '">
-                <button class="button primary" type="submit"' . $importButtonDisabled . '>Import Transactions</button>
+                <button class="button primary" type="submit"' . $importButtonDisabled . $importButtonTitle . '>Import Transactions</button>
             </form>';
+
+        if ($uploadLocked) {
+            $importForm = '<div class="panel-soft warn"><div class="helper">This upload includes a locked accounting period. The preview is view only and no transactions can be imported.</div></div>' . $importForm;
+        }
 
         $rowsHtml = '';
         foreach ($rows as $row) {

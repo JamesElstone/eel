@@ -133,6 +133,7 @@ final class _uploads_detailsCard extends CardBaseFramework
                 $accountType = (string)($upload['account_type'] ?? '');
                 $hasParsedRows = (int)($upload['rows_parsed'] ?? 0) > 0;
                 $isDuplicateFile = !empty($upload['duplicate_file']);
+                $uploadLocked = !empty($upload['lock_state']['is_locked']);
                 $canPreviewAndValidate = $hasParsedRows && !$isDuplicateFile && !empty($mappingStatus['can_preview']);
                 $statusLabel = $this->uploadWorkflowStatusLabel($upload, $mappingStatus);
                 $statusClass = $this->uploadWorkflowStatusClass($upload, $mappingStatus);
@@ -157,8 +158,12 @@ final class _uploads_detailsCard extends CardBaseFramework
                             <input type="hidden" name="upload_id" value="' . (int)($upload['id'] ?? 0) . '">
                             <input type="hidden" name="filter" value="' . HelperFramework::escape($selectedUploadHistoryFilter) . '">
                             <input type="hidden" name="page" value="' . $selectedUploadHistoryPage . '">
-                            <button class="button primary" type="submit" data-show-card="uploads_validate_commit" data-processing-text="Preparing import..." data-processing-state="disabled"' . ($canPreviewAndValidate ? '' : ' disabled title="Save field mappings before previewing and validating rows."') . '>Import Transactions</button>
+                            <button class="button primary" type="submit" data-show-card="uploads_validate_commit" data-processing-text="Preparing import..." data-processing-state="disabled"' . ($canPreviewAndValidate && !$uploadLocked ? '' : ' disabled title="' . ($uploadLocked ? 'This upload includes a locked accounting period.' : 'Save field mappings before previewing and validating rows.') . '"') . '>Import Transactions</button>
                         </form>');
+
+                if ($uploadLocked) {
+                    $previewActions = '<span class="helper">Locked period: upload details are view only.</span>' . $previewActions;
+                }
 
                 if ($developerOptions) {
                     $previewActions .= '<form method="post" action="?page=uploads" data-ajax="true">
@@ -168,7 +173,7 @@ final class _uploads_detailsCard extends CardBaseFramework
                         <input type="hidden" name="upload_id" value="' . (int)($upload['id'] ?? 0) . '">
                         <input type="hidden" name="filter" value="' . HelperFramework::escape($selectedUploadHistoryFilter) . '">
                         <input type="hidden" name="page" value="' . $selectedUploadHistoryPage . '">
-                        <button class="button danger" type="submit">Rescan</button>
+                        <button class="button danger" type="submit"' . ($uploadLocked ? ' disabled title="This upload includes a locked accounting period."' : '') . '>Rescan</button>
                     </form>';
                 }
 

@@ -104,6 +104,7 @@ final class DividendReserveClassificationService
 
     public function saveReview(int $companyId, int $accountingPeriodId, array $treatments, string $reviewedBy = 'web_app', ?string $asAtDate = null): array
     {
+        (new YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'change the dividend reserve review for this period');
         $context = $this->fetchReviewContext($companyId, $accountingPeriodId, $asAtDate);
         if (empty($context['available'])) {
             return $context + ['success' => false];

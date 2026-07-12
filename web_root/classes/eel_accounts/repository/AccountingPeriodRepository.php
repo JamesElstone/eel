@@ -49,6 +49,11 @@ final class AccountingPeriodRepository
     }
     public function updatePeriod(int $companyId, int $accountingPeriodId, string $label, string $periodStart, string $periodEnd): void
     {
+        (new \eel_accounts\Service\YearEndLockService())->assertUnlocked(
+            $companyId,
+            $accountingPeriodId,
+            'change the accounting period details'
+        );
         $label = trim($label) !== ''
             ? trim($label)
             : \eel_accounts\Service\TaxPeriodService::accountingPeriodLabel($periodStart, $periodEnd);

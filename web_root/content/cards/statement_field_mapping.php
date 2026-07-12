@@ -56,6 +56,15 @@ final class _statement_field_mappingCard extends CardBaseFramework
                 ],
             ],
             [
+                'key' => 'selected_upload_lock_state',
+                'service' => \eel_accounts\Service\StatementUploadService::class,
+                'method' => 'fetchUploadLockState',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'uploadId' => ':uploads.id',
+                ],
+            ],
+            [
                 'key' => 'account_mapping_preview',
                 'service' => \eel_accounts\Service\StatementUploadService::class,
                 'method' => 'fetchAccountMappingPreview',
@@ -118,7 +127,9 @@ final class _statement_field_mappingCard extends CardBaseFramework
                     $companyId,
                     $accountingPeriodId,
                     $action,
-                    $cardAction
+                    $cardAction,
+                    'upload',
+                    false
                 );
             }
 
@@ -143,6 +154,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
         $extraHeaders = array_values((array)($mappingStatus['extra_headers'] ?? []));
         $uploadId = (int)($upload['id'] ?? $selectedUploadId);
         $accountId = (int)($upload['account_id'] ?? $bankingMappingAccountId);
+        $uploadLocked = $mode === 'upload' && !empty($context['services']['selected_upload_lock_state']['is_locked']);
 
         return $this->renderUploadMappingInterface(
             $upload,
@@ -162,6 +174,7 @@ final class _statement_field_mappingCard extends CardBaseFramework
             $action,
             $cardAction,
             $mode,
+            $uploadLocked,
         );
     }
 
@@ -182,7 +195,8 @@ final class _statement_field_mappingCard extends CardBaseFramework
         int $accountingPeriodId,
         string $action,
         string $cardAction,
-        string $mode = 'upload'
+        string $mode = 'upload',
+        bool $uploadLocked = false
     ): string {
         $summaryHtml = $upload !== []
             ? $this->renderSummary(
@@ -198,13 +212,22 @@ final class _statement_field_mappingCard extends CardBaseFramework
             )
             : '';
         $sampleHtml = $this->renderSourceSample($sourceSample);
-        $mappingDisabled = $mode === 'upload' && ($uploadId <= 0 || $accountId <= 0);
+        $mappingDisabled = $mode === 'upload' && ($uploadId <= 0 || $accountId <= 0 || $uploadLocked);
         $committedMappingProtectedFields = $mode === 'account' && (int)($upload['rows_committed'] ?? 0) > 0
             ? \eel_accounts\Service\StatementUploadService::committedMappingProtectedFields()
             : [];
         $mappingFieldsHtml = $this->renderMappingFields($mappingView, $sourceHeaders, $mode, $mappingDisabled, $committedMappingProtectedFields);
-        $accountSelectHtml = $mode === 'upload' ? $this->renderAccountSelector($activeCompanyAccounts, $accountId, $mode) : '';
-        $buttonsHtml = $this->renderButtons($mode, $hasConfirmedMapping, $uploadId, $companyId, $accountingPeriodId, $accountId);
+        $accountSelectHtml = $mode === 'upload' && !$uploadLocked ? $this->renderAccountSelector($activeCompanyAccounts, $accountId, $mode) : '';
+        $buttonsHtml = $this->renderButtons($mode, $hasConfirmedMapping, $uploadId, $companyId, $accountingPeriodId, $accountId, $uploadLocked);
+
+        if ($uploadLocked) {
+            return '<div class="stack">
+                <div class="panel-soft warn"><div class="helper">This upload includes a locked accounting period. Its field mapping is view only.</div></div>
+                ' . $summaryHtml . '
+                ' . $sampleHtml . '
+                <div class="form-grid flow statement-mapping-fields">' . $mappingFieldsHtml . '</div>
+            </div>';
+        }
 
         return '
             <div class="stack">
@@ -466,9 +489,10 @@ final class _statement_field_mappingCard extends CardBaseFramework
         int $uploadId,
         int $companyId,
         int $accountingPeriodId,
-        int $accountId
+        int $accountId,
+        bool $uploadLocked = false
     ): string {
-        if ($mode !== 'upload' || $uploadId <= 0 || !$hasConfirmedMapping) {
+        if ($mode !== 'upload' || $uploadId <= 0 || !$hasConfirmedMapping || $uploadLocked) {
             return '';
         }
 

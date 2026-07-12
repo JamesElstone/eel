@@ -535,8 +535,13 @@ try {
         $harness->assertTrue(str_contains($script, 'payload.site_context_values'));
         $harness->assertTrue(str_contains($script, 'payload[selection.inputName]'));
         $harness->assertTrue(str_contains($script, "field.dataset.siteContextSubmitField !== 'true'"));
-        $harness->assertTrue(str_contains($script, 'data-accounting-period-summary-button="true"'));
-        $harness->assertTrue(str_contains($script, 'accountingPeriodSelect.dispatchEvent'));
+        $projectScript = file_get_contents(APP_JS . 'project.js');
+        if (!is_string($projectScript)) {
+            throw new RuntimeException('Unable to read project frontend script.');
+        }
+
+        $harness->assertTrue(str_contains($projectScript, 'data-accounting-period-summary-button="true"'));
+        $harness->assertTrue(str_contains($projectScript, 'accountingPeriodSelect.dispatchEvent'));
     });
 } finally {
     AppConfigurationStore::config(true);

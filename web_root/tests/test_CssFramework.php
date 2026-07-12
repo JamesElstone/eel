@@ -12,7 +12,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'testFramework' . DIRECTORY_SEPARAT
 $harness = new GeneratedServiceClassTestHarness();
 
 $harness->check('CssFramework', 'keeps flash messages as a protected viewport overlay', function () use ($harness): void {
-    $css = str_replace("\r\n", "\n", (string)file_get_contents(APP_CSS . 'index.css'));
+    $css = (string)file_get_contents(APP_CSS . 'index.css');
 
     $harness->assertSame(1, preg_match('/#flash-messages\.flash-messages\s*\{(?P<body>.*?)\n\}/s', $css, $matches));
     $body = (string)($matches['body'] ?? '');
@@ -45,7 +45,7 @@ $harness->check('CssFramework', 'styles warning alerts as advisory messages', fu
 });
 
 $harness->check('CssFramework', 'defines target card reveal scroll offset', function () use ($harness): void {
-    $css = str_replace("\r\n", "\n", (string)file_get_contents(APP_CSS . 'index.css'));
+    $css = (string)file_get_contents(APP_CSS . 'index.css');
 
     $harness->assertTrue(str_contains($css, '--page-card-reveal-offset: 96px;'));
     $harness->assertSame(1, preg_match('/\.page-stack-card\s*,\s*\.card\s*\{/', $css));

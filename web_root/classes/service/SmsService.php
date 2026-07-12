@@ -52,7 +52,7 @@ final class SmsService
             $headers[$authHeader] = $authToken;
         }
 
-        $response = \ApiHelperOutbound::request([
+        $response = ApiHelperOutbound::request([
             'url' => $url,
             'method' => $this->method(),
             'headers' => $headers,

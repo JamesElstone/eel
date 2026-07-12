@@ -2478,6 +2478,88 @@
                 node.hidden = node !== panel;
             }
         });
+
+        loadOnDemandTabPanel(panel);
+    }
+
+    async function loadOnDemandTabPanel(panel) {
+        if (!(panel instanceof HTMLElement) || panel.dataset.pageCardOnDemand !== 'true') {
+            return;
+        }
+
+        const state = String(panel.dataset.pageCardOnDemandState || 'idle');
+        if (state === 'loading' || state === 'loaded') {
+            return;
+        }
+
+        let cards = [];
+        try {
+            const parsed = JSON.parse(String(panel.dataset.pageCardOnDemandCards || '[]'));
+            cards = Array.isArray(parsed) ? parsed.filter((key) => typeof key === 'string' && key !== '') : [];
+        } catch (error) {
+            console.error('Unable to parse on-demand tab cards.', error);
+        }
+
+        if (cards.length === 0) {
+            panel.dataset.pageCardOnDemandState = 'error';
+            updateOnDemandTabStatus(panel, 'Unable to determine which cards to load.', true);
+            return;
+        }
+
+        panel.dataset.pageCardOnDemandState = 'loading';
+        panel.setAttribute('aria-busy', 'true');
+        updateOnDemandTabStatus(panel, 'Loading…', false);
+
+        const payload = {
+            _ajax: '1',
+            _on_demand_cards: '1',
+            cards,
+        };
+        appendSiteContextSelectionsToPayload(payload);
+
+        try {
+            const response = await sendAjax(window.location.href, {
+                method: 'POST',
+                body: JSON.stringify(payload),
+                headers: { 'Content-Type': 'application/json' },
+            });
+
+            if (response?.on_demand?.success !== true) {
+                throw new Error('The server rejected the on-demand card request.');
+            }
+
+            applyAjaxPayloadFragment('site context', () => replaceSiteContextSlots(response.site_context_html));
+            applyAjaxPayloadFragment('cards', () => replaceCards(response.cards));
+            panel.dataset.pageCardOnDemandState = 'loaded';
+            panel.removeAttribute('data-page-card-on-demand');
+        } catch (error) {
+            panel.dataset.pageCardOnDemandState = 'error';
+            updateOnDemandTabStatus(panel, 'Unable to load this tab.', true);
+            console.error('Failed to load on-demand tab cards.', error);
+        } finally {
+            panel.setAttribute('aria-busy', 'false');
+        }
+    }
+
+    function updateOnDemandTabStatus(panel, message, retry) {
+        panel.querySelectorAll('.card-on-demand-placeholder').forEach((placeholder) => {
+            if (!(placeholder instanceof HTMLElement)) {
+                return;
+            }
+            placeholder.setAttribute('aria-busy', retry ? 'false' : 'true');
+            const status = placeholder.querySelector('.card-on-demand-status');
+            if (status instanceof HTMLElement) {
+                status.textContent = message;
+                if (retry) {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'button card-on-demand-retry';
+                    button.textContent = 'Retry';
+                    button.addEventListener('click', () => loadOnDemandTabPanel(panel));
+                    status.append(' ', button);
+                }
+            }
+        });
     }
 
     function prefersReducedMotion() {
@@ -3254,34 +3336,6 @@
 
         return false;
     }
-
-    function syncAccountingPeriodSummaryButton(target) {
-        if (!(target instanceof Element)) {
-            return;
-        }
-
-        const button = target.closest('[data-accounting-period-summary-button="true"]');
-        if (!(button instanceof HTMLElement)) {
-            return;
-        }
-
-        const accountingPeriodId = String(button.dataset.accountingPeriodId || button.getAttribute('value') || '').trim();
-        if (accountingPeriodId === '') {
-            return;
-        }
-
-        const accountingPeriodSelect = document.querySelector('select[name="accounting_period_id"]');
-        if (!(accountingPeriodSelect instanceof HTMLSelectElement)) {
-            return;
-        }
-
-        accountingPeriodSelect.value = accountingPeriodId;
-        accountingPeriodSelect.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-
-    document.addEventListener('click', (event) => {
-        syncAccountingPeriodSummaryButton(event.target);
-    });
 
     document.addEventListener('submit', async (event) => {
         const form = event.target;

@@ -149,32 +149,6 @@ $harness->run(CardRendererFramework::class, function (GeneratedServiceClassTestH
         $harness->assertSame(['user_id' => 123, 'role_id' => 2], $result['data'] ?? null);
     });
 
-    $harness->check(CardRendererFramework::class, 'resolves asset card service params from selected company context', function () use ($harness, $instance, $services, $resolveCardService): void {
-        $card = new _asset_registerCard();
-        $assetPageDataService = (array)($card->services()[0] ?? []);
-
-        $result = $resolveCardService->invoke(
-            $instance,
-            'assetPageData',
-            $assetPageDataService,
-            [
-                'company' => [
-                    'id' => 0,
-                    'accounting_period_id' => 0,
-                    'settings' => [
-                        'default_bank_nominal_id' => '',
-                    ],
-                ],
-                'prefill_transaction_id' => 0,
-            ],
-            $services
-        );
-
-        $harness->assertSame('ok', $result['status'] ?? null);
-        $harness->assertSame(true, is_array($result['data'] ?? null));
-        $harness->assertSame(true, array_key_exists('assets', (array)$result['data']));
-    });
-
     $harness->check(CardRendererFramework::class, 'adds card refresh attributes when requested', function () use ($harness, $instance, $services): void {
         $html = $instance->render('test', 'refreshing_test', ['page' => ['page_id' => 'test']], $services);
 

@@ -38,6 +38,7 @@ final class PageRendererCardLayoutTestPage extends PageRendererLegacyLayoutTestP
             [
                 'tab' => 'Review',
                 'layout' => 'split',
+                'on_demand' => true,
                 'cards' => ['gamma', 'denied'],
             ],
             [
@@ -115,6 +116,7 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
                 'layout' => 'stack',
                 'cards' => ['alpha', 'beta'],
                 'explicit' => false,
+                'on_demand' => false,
             ],
         ], $layout);
         $harness->assertSame(false, $shouldRenderTabs->invoke($instance, $layout));
@@ -133,18 +135,21 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
                 'layout' => 'stack',
                 'cards' => ['alpha', 'beta', 'epsilon'],
                 'explicit' => true,
+                'on_demand' => false,
             ],
             [
                 'tab' => 'Review',
                 'layout' => 'split',
                 'cards' => ['gamma'],
                 'explicit' => true,
+                'on_demand' => true,
             ],
             [
                 'tab' => 'Unsupported',
                 'layout' => 'stack',
                 'cards' => ['delta'],
                 'explicit' => true,
+                'on_demand' => false,
             ],
         ], $layout);
         $harness->assertSame(true, $shouldRenderTabs->invoke($instance, $layout));
@@ -187,6 +192,7 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
                 'layout' => 'split',
                 'cards' => ['gamma'],
                 'explicit' => true,
+                'on_demand' => true,
             ],
         ];
         $request = new RequestFramework(
@@ -440,6 +446,24 @@ $harness->run(PageRendererFramework::class, function (GeneratedServiceClassTestH
             $script,
             "current.replaceWith(replacement);\n                    initialisePageCardTabs(replacement);"
         ));
+    });
+
+    $harness->check(PageRendererFramework::class, 'frontend loads on-demand tab cards once with retry support', function () use ($harness): void {
+        $script = file_get_contents(APP_JS . 'index.js');
+
+        if (!is_string($script)) {
+            throw new RuntimeException('Unable to read frontend script.');
+        }
+
+        foreach ([
+            "loadOnDemandTabPanel(panel);",
+            "_on_demand_cards: '1'",
+            "state === 'loading' || state === 'loaded'",
+            "panel.dataset.pageCardOnDemandState = 'error';",
+            "button.textContent = 'Retry';",
+        ] as $expected) {
+            $harness->assertTrue(str_contains($script, $expected));
+        }
     });
 
     $harness->check(PageRendererFramework::class, 'frontend syncs collapsed sidebar navigation icon titles', function () use ($harness): void {

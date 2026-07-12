@@ -367,11 +367,35 @@ $harness->run(\eel_accounts\Service\StatementUploadService::class, static functi
         $method->setAccessible(true);
         $errors = [];
 
-        $filename = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'example_data' . DIRECTORY_SEPARATOR . 'example_2026-02-BANK_010226_280226.csv';
-        $count = $method->invokeArgs($service, [$filename, &$errors]);
+        $filename = tempnam(sys_get_temp_dir(), 'eel-upload-row-count-');
+        if (!is_string($filename) || $filename === '') {
+            throw new RuntimeException('Unable to create the synthetic CSV fixture.');
+        }
 
-        $harness->assertSame([], $errors);
-        $harness->assertSame(93, $count);
+        $handle = fopen($filename, 'wb');
+        if ($handle === false) {
+            @unlink($filename);
+            throw new RuntimeException('Unable to open the synthetic CSV fixture.');
+        }
+
+        try {
+            fputcsv($handle, ['date', 'type', 'description', 'reference', 'amount', 'balance', 'name', 'card'], ',', '"', '\\');
+            for ($row = 1; $row <= 93; $row++) {
+                fputcsv($handle, ['01/02/2026', 'POS', 'Synthetic transaction ' . $row, '', '-1.00', '100.00', 'Alex Example', 'TEST-CARD'], ',', '"', '\\');
+            }
+            fclose($handle);
+            $handle = null;
+
+            $count = $method->invokeArgs($service, [$filename, &$errors]);
+
+            $harness->assertSame([], $errors);
+            $harness->assertSame(93, $count);
+        } finally {
+            if (is_resource($handle)) {
+                fclose($handle);
+            }
+            @unlink($filename);
+        }
     });
 
     $harness->check(\eel_accounts\Service\StatementUploadService::class, 'counts only importable unimported CSVs as outstanding in period summary', static function () use ($harness, $service): void {

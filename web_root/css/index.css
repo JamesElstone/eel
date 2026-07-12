@@ -3315,6 +3315,17 @@ label {
   transition: filter 0.18s ease, opacity 0.18s ease;
 }
 
+.card-on-demand-placeholder .card-body {
+  min-height: 7rem;
+  display: grid;
+  place-items: center;
+}
+
+.card-on-demand-status {
+  color: var(--muted);
+  text-align: center;
+}
+
 .page-stack.is-ajax-pending {
   filter: blur(2px);
   opacity: 0.72;

@@ -181,7 +181,18 @@ abstract class PageBaseFramework implements PageInterfaceFramework
 
         $cardFactory = new CardFactoryFramework();
 
-        foreach ((array)$context['page']['page_cards'] as $cardKey) {
+        $cardsToHandle = (array)$context['page']['page_cards'];
+        if ((string)$request->input('_on_demand_cards', '') === '1') {
+            $cardsToHandle = array_values(array_intersect(
+                $cardsToHandle,
+                $request->cardKeys(),
+                $this->declaredOnDemandCardKeys()
+            ));
+        } elseif (!$request->isAjax() && method_exists($this, 'cardLayout')) {
+            $cardsToHandle = $this->initiallyRenderedCardKeys($request, $actionResult, $cardsToHandle);
+        }
+
+        foreach ($cardsToHandle as $cardKey) {
             $card = $cardFactory->create((string)$cardKey);
             $updatedContext = $card->handle($request, $services, $context, $actionResult);
 
@@ -191,6 +202,64 @@ abstract class PageBaseFramework implements PageInterfaceFramework
         }
 
         return $context;
+    }
+
+    private function initiallyRenderedCardKeys(
+        RequestFramework $request,
+        ActionResultFramework $actionResult,
+        array $allowedCards
+    ): array {
+        $layout = array_values(array_filter((array)$this->cardLayout(), 'is_array'));
+        if ($layout === []) {
+            return $allowedCards;
+        }
+
+        $placedCards = [];
+        foreach ($layout as $entry) {
+            $placedCards = array_merge($placedCards, array_map('strval', (array)($entry['cards'] ?? [])));
+        }
+        $layout[0]['cards'] = array_values(array_merge(
+            array_map('strval', (array)($layout[0]['cards'] ?? [])),
+            array_diff($allowedCards, $placedCards)
+        ));
+
+        $showCard = trim((string)($actionResult->query()['show_card'] ?? $request->input('show_card', '')));
+        $selectedIndex = 0;
+        if ($showCard !== '') {
+            foreach ($layout as $index => $entry) {
+                if (in_array($showCard, array_map('strval', (array)($entry['cards'] ?? [])), true)) {
+                    $selectedIndex = $index;
+                    break;
+                }
+            }
+        }
+
+        $handled = [];
+        foreach ($layout as $index => $entry) {
+            if (($entry['on_demand'] ?? false) === true && $index !== $selectedIndex) {
+                continue;
+            }
+            $handled = array_merge($handled, array_map('strval', (array)($entry['cards'] ?? [])));
+        }
+
+        return array_values(array_intersect($allowedCards, array_unique($handled)));
+    }
+
+    private function declaredOnDemandCardKeys(): array
+    {
+        if (!method_exists($this, 'cardLayout')) {
+            return [];
+        }
+
+        $cards = [];
+        foreach ((array)$this->cardLayout() as $entry) {
+            if (!is_array($entry) || ($entry['on_demand'] ?? false) !== true) {
+                continue;
+            }
+            $cards = array_merge($cards, array_map('strval', (array)($entry['cards'] ?? [])));
+        }
+
+        return array_values(array_unique($cards));
     }
 
     private function requestedCardKeys(): array

@@ -1,5 +1,45 @@
 # eelKit Changes
 
+## On-demand tab cards
+
+Feature name: `on_demand_tab_cards`.
+
+Pages that use `cardLayout()` can now defer the cards in an inactive tab until the user opens that tab. This is opt-in per tab; existing tab layouts remain eagerly handled and rendered by default.
+
+```php
+public function cardLayout(): array
+{
+    return [
+        [
+            'tab' => 'Summary',
+            'cards' => ['account_summary'],
+        ],
+        [
+            'tab' => 'History',
+            'on_demand' => true,
+            'cards' => ['audit_history', 'login_history'],
+        ],
+    ];
+}
+```
+
+On the initial request, eelKit renders the selected tab normally. An inactive tab with `on_demand => true` receives stable placeholder cards instead, and eelKit does not call those cards' `handle()`, `services()`, `helper()`, or `render()` methods. Page-level context and page services still run normally, so expensive tab-specific reads should remain in card services rather than being moved into the page context.
+
+When the tab is first activated, `web_root/js/index.js` sends one read-only AJAX request containing the tab's permitted card keys. The server intersects those keys with both the page's role-authorized cards and the cards declared in an on-demand tab, then renders them through the normal `CardRendererFramework` pipeline. The browser replaces the placeholders through the existing AJAX card replacement path, reinitializes card controls, and marks the tab as loaded.
+
+On-demand tabs have the following lifecycle behaviour:
+
+- A tab is loaded at most once during the current page visit; switching away and back does not request it again.
+- Repeated clicks while loading are coalesced into the current request.
+- A failed request leaves the placeholders in place and shows a retry control.
+- Keyboard tab activation uses the same loading path as pointer activation.
+- Card auto-refresh starts only after the real card markup has been loaded.
+- A full navigation or reload clears the client-side loaded state.
+
+`show_card` remains compatible with on-demand tabs. If the initial request or an action-result query targets a card in an on-demand tab, eelKit selects and renders that tab eagerly so the requested card is immediately available for reveal and focus. Cards returned by `cards()` but omitted from `cardLayout()` retain the existing behavior of being appended to the first tab and follow that tab's loading mode.
+
+The AJAX load uses the internal `_on_demand_cards` request marker. Downstream cards and actions should not submit this marker themselves; applications opt in only through `on_demand => true` in `cardLayout()`.
+
 ## Table pagination preservation for row AJAX forms
 
 Feature name: `table_ajax_pagination_preservation`.

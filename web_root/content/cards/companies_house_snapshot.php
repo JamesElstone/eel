@@ -31,15 +31,6 @@ final class _companies_house_snapshotCard extends CardBaseFramework
                     'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
-            [
-                'key' => 'yearEndCompaniesHouseComparison',
-                'service' => \eel_accounts\Service\YearEndCompaniesHouseComparisonService::class,
-                'method' => 'fetchComparison',
-                'params' => [
-                    'companyId' => ':company.id',
-                    'accountingPeriodId' => ':company.accounting_period_id',
-                ],
-            ],
         ];
     }
 
@@ -51,7 +42,6 @@ final class _companies_house_snapshotCard extends CardBaseFramework
     public function render(array $context): string
     {
         $snapshot = (array)($context['services']['companiesHouseSnapshot'] ?? []);
-        $comparison = (array)($context['services']['yearEndCompaniesHouseComparison'] ?? []);
         $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
         if (empty($snapshot['available'])) {
             return $this->panel('Companies House Snapshot', $this->renderErrors((array)($snapshot['errors'] ?? ['Companies House snapshot is not available.'])));
@@ -122,7 +112,6 @@ final class _companies_house_snapshotCard extends CardBaseFramework
                 ' . ($assumptionsHtml !== '' ? '<div class="helper"><ul>' . $assumptionsHtml . '</ul></div>' : '') . '
                 <div class="helper">Current assets exclude fixed assets. Bank balances are current assets; asset register values should flow through fixed-asset and depreciation ledger postings.</div>
             </section>
-            ' . $this->renderComparisonPanel($comparison, $companySettings) . '
         </div>';
     }
 
@@ -134,52 +123,6 @@ final class _companies_house_snapshotCard extends CardBaseFramework
     private function panel(string $title, string $body): string
     {
         return '<section class="panel-soft"><div class="status-head"><h3 class="card-title">' . HelperFramework::escape($title) . '</h3></div>' . $body . '</section>';
-    }
-
-    private function renderComparisonPanel(array $comparison, array $companySettings): string
-    {
-        if (empty($comparison['available'])) {
-            return $this->panel('Companies House Comparison', $this->renderErrors((array)($comparison['errors'] ?? [])));
-        }
-
-        $rowsHtml = '';
-        foreach ((array)($comparison['rows'] ?? []) as $row) {
-            $status = (string)($row['status'] ?? '');
-            $rowsHtml .= '<tr>
-                <td>' . HelperFramework::escape((string)($row['label'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape($this->nullableMoney($companySettings, $row['app_value'] ?? null)) . '</td>
-                <td>' . HelperFramework::escape($this->nullableMoney($companySettings, $row['filed_value'] ?? null)) . '</td>
-                <td>' . HelperFramework::escape($this->nullableMoney($companySettings, $row['variance'] ?? null)) . '</td>
-                <td><span class="badge ' . $this->badgeClass($status) . '">' . HelperFramework::escape(HelperFramework::labelFromKey($status, '_')) . '</span></td>
-            </tr>';
-        }
-
-        return '<section class="panel-soft" id="companies-house-comparison">
-            <div class="status-head"><h3 class="card-title">Companies House Comparison</h3></div>
-            <div class="helper">' . HelperFramework::escape((string)($comparison['comparison_note'] ?? '')) . '</div>
-            <div class="helper">Stored filing date: ' . HelperFramework::escape((string)($comparison['filing']['filing_date'] ?? '')) . '</div>
-            <div class="table-scroll">
-                <table>
-                    <thead><tr><th>Metric</th><th>App</th><th>Filed</th><th>Variance</th><th>Status</th></tr></thead>
-                    <tbody>' . $rowsHtml . '</tbody>
-                </table>
-            </div>
-        </section>';
-    }
-
-    private function badgeClass(string $status): string
-    {
-        return match ($status) {
-            'pass', 'success', 'matches' => 'success',
-            'fail', 'danger', 'differs' => 'danger',
-            'warning' => 'warning',
-            default => 'info',
-        };
-    }
-
-    private function nullableMoney(array $companySettings, mixed $value): string
-    {
-        return $value === null || $value === '' ? '-' : $this->money($companySettings, $value);
     }
 
     private function money(array $companySettings, mixed $value): string

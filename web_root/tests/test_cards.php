@@ -361,6 +361,7 @@ final class TestCardsHarness
     {
         $card = new _companies_house_snapshotCard();
         $this->assertSame('Companies House Snapshot', $card->title());
+        $this->assertSame(['companiesHouseSnapshot'], array_column($card->services(), 'key'));
 
         foreach ($card->services() as $definition) {
             $params = (array)($definition['params'] ?? []);
@@ -396,7 +397,8 @@ final class TestCardsHarness
 
         $this->assertTrue(str_contains($html, 'Manual Companies House balance-sheet entry only.'));
         $this->assertTrue(str_contains($html, 'Snapshot Limited'));
-        $this->assertTrue(substr_count($html, 'class="panel-soft"') >= 4);
+        $this->assertSame(3, substr_count($html, 'class="panel-soft"'));
+        $this->assertSame(false, str_contains($html, 'Companies House Comparison'));
         $this->assertSame(false, str_contains($html, 'Profit and loss figures remain') && str_contains($html, 'Expenses</td>'));
 
         test_output_line('Cards: companies_house_snapshot uses selected company context and renders balance sheet fields.');

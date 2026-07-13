@@ -20,6 +20,8 @@ final class TaxGuidanceService
         'business_cars' => 'https://www.gov.uk/capital-allowances/business-cars',
         'losses' => 'https://www.gov.uk/guidance/corporation-tax-calculating-and-claiming-a-loss',
         'marginal_relief' => 'https://www.gov.uk/guidance/corporation-tax-marginal-relief',
+        'bim35201' => 'https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim35201',
+        'ctm01405' => 'https://www.gov.uk/hmrc-internal-manuals/company-taxation-manual/ctm01405',
     ];
 
     public static function url(string $key): string

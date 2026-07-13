@@ -45,11 +45,13 @@ final class TaxCardRenderer
         return \HelperFramework::escape((string)($tax['selected_ct_period_helper'] ?? ''));
     }
 
-    public static function guidanceLink(string $key): string
+    public static function guidanceLink(string $key, string $label = 'His Majesty\'s Revenue and Customs (HMRC) guidance'): string
     {
         $url = \eel_accounts\Service\TaxGuidanceService::url($key);
 
-        return '<a class="button button-inline" href="' . \HelperFramework::escape($url) . '" target="_blank" rel="noopener noreferrer">His Majesty\'s Revenue and Customs (HMRC) guidance</a>';
+        return '<a class="button button-inline" href="' . \HelperFramework::escape($url) . '" target="_blank" rel="noopener noreferrer">'
+            . \HelperFramework::escape($label)
+            . '</a>';
     }
 
     public static function money(array $context, float|int|string|null $value): string
@@ -81,9 +83,14 @@ final class TaxCardRenderer
         return '<span class="badge ' . \HelperFramework::escape($class) . '">' . \HelperFramework::escape($label) . '</span>';
     }
 
-    public static function header(string $guidanceKey): string
+    public static function header(string $guidanceKey, array $additionalGuidance = []): string
     {
-        return '<div class="actions-row">' . self::guidanceLink($guidanceKey) . '</div>';
+        $links = self::guidanceLink($guidanceKey);
+        foreach ($additionalGuidance as $key => $label) {
+            $links .= self::guidanceLink((string)$key, (string)$label);
+        }
+
+        return '<div class="actions-row">' . $links . '</div>';
     }
 
     public static function table(array $headers, array $rows, string $empty = 'No rows to show.'): string

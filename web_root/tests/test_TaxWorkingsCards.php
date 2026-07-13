@@ -87,6 +87,17 @@ foreach ($cardClasses as $className) {
             });
         }
 
+        if ($className === _tax_taxable_profit_bridgeCard::class) {
+            $harness->check($className, 'renders depreciation and apportionment guidance beside the general HMRC link', static function () use ($harness, $card): void {
+                $html = $card->render(taxWorkingsCardsContext());
+
+                $harness->assertTrue(str_contains($html, 'HMRC BIM35201: depreciation'));
+                $harness->assertTrue(str_contains($html, 'HMRC CTM01405: apportionment'));
+                $harness->assertTrue(str_contains($html, 'https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim35201'));
+                $harness->assertTrue(str_contains($html, 'https://www.gov.uk/hmrc-internal-manuals/company-taxation-manual/ctm01405'));
+            });
+        }
+
         if ($className === _tax_corporation_tax_summaryCard::class) {
             $harness->check($className, 'keeps CT provision posting as a year-end close task', static function () use ($harness, $card): void {
                 $context = taxWorkingsCardsContext();

@@ -40,12 +40,22 @@ final class _not_an_assetCard extends CardBaseFramework
                     'threshold' => ':company.settings.potential_asset_threshold',
                 ],
             ],
+            [
+                'key' => 'fixedAssetYearEndAcknowledgement',
+                'service' => \eel_accounts\Service\YearEndChecklistService::class,
+                'method' => 'fetchReviewAcknowledgement',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                    'checkCode' => 'fixed_asset_review_placeholder',
+                ],
+            ],
         ];
     }
 
     protected function additionalInvalidationFacts(): array
     {
-        return ['asset.not_an_asset', 'page.context'];
+        return ['asset.not_an_asset', 'page.context', 'year.end.state', 'year.end.checklist'];
     }
 
     public function handleError(string $serviceKey, array $error, array $context): string
@@ -73,11 +83,36 @@ final class _not_an_assetCard extends CardBaseFramework
                 . '<div class="helper">Set the Tools &amp; Small Equipment nominal on Company Nominals before reviewing potential assets.</div>';
         }
 
-        return $this->renderTableWithThresholdToolbar(
+        $tableHtml = $this->renderTableWithThresholdToolbar(
             $this->configuredTable($context),
             $context,
             $isLocked ? '<div class="helper"><span class="badge warning">Period locked</span> Non-asset thresholds and conversions are read only.</div>' : $this->thresholdForm($companyId, $accountingPeriodId, $threshold, $settings)
         );
+        $acknowledgement = $context['services']['fixedAssetYearEndAcknowledgement'] ?? null;
+
+        return $tableHtml . (!empty($data['rows']) || is_array($acknowledgement)
+            ? $this->yearEndAcknowledgementHtml(is_array($acknowledgement) ? $acknowledgement : null, $companyId, $accountingPeriodId)
+            : '');
+    }
+
+    private function yearEndAcknowledgementHtml(?array $acknowledgement, int $companyId, int $accountingPeriodId): string
+    {
+        return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
+            'subject' => 'fixed asset candidate position',
+            'companyId' => $companyId,
+            'accountingPeriodId' => $accountingPeriodId,
+            'acknowledged' => !empty($acknowledgement['current']),
+            'acknowledgementState' => (string)($acknowledgement['state'] ?? 'absent'),
+            'acknowledgedAt' => (string)($acknowledgement['acknowledged_at'] ?? ''),
+            'acknowledgedBy' => (string)($acknowledgement['acknowledged_by'] ?? ''),
+            'note' => (string)($acknowledgement['note'] ?? ''),
+            'intent' => 'acknowledge_review_check',
+            'revokeIntent' => 'reopen_review_check',
+            'approveFields' => ['check_code' => 'fixed_asset_review_placeholder'],
+            'revokeFields' => ['check_code' => 'fixed_asset_review_placeholder'],
+            'noteName' => 'review_acknowledgement_note',
+            'noteId' => 'fixed-asset-review-note',
+        ]);
     }
 
     public function tables(array $context): array

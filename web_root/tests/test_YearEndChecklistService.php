@@ -153,7 +153,10 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
                 $service,
                 (int)$fixture['company_id'],
                 (int)$fixture['accounting_period_id'],
-                ['review' => ['director_loan_closing_acknowledged_at' => '2026-07-03 12:00:00']],
+                ['checks_flat' => [[
+                    'check_code' => 'director_loan_closing_balance',
+                    'acknowledgement_current' => true,
+                ]]],
                 'test'
             );
 
@@ -257,12 +260,19 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
             'status' => 'warning',
             'metric_value' => '',
             'detail_text' => 'Fixed asset treatment should be reviewed.',
+            'basis_data' => (new \eel_accounts\Service\YearEndAcknowledgementService())->buildBasis(
+                'fixed_asset_review_placeholder',
+                ['candidate_count' => 1, 'candidate_ids' => [42]]
+            ),
         ];
+        $basisService = new \eel_accounts\Service\YearEndAcknowledgementService();
         $acknowledged = $method->invoke($service, $warning, [
             'fixed_asset_review_placeholder' => [
                 'acknowledged_at' => '2026-07-03 12:00:00',
                 'acknowledged_by' => 'test',
                 'note' => null,
+                'basis_version' => \eel_accounts\Service\YearEndAcknowledgementService::BASIS_VERSION,
+                'basis_hash' => $basisService->hashBasis((array)$warning['basis_data']),
             ],
         ]);
 
@@ -496,7 +506,7 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
             $settingsStore->flush();
 
             $service = new \eel_accounts\Service\YearEndChecklistService();
-            $warningChecklist = $service->fetchChecklist((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], false);
+            $warningChecklist = $service->fetchChecklist((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
             $warningCheck = yearEndChecklistServiceFindCheck((array)$warningChecklist, 'fixed_asset_review_placeholder');
 
             $harness->assertSame('warning', (string)($warningCheck['status'] ?? ''));
@@ -504,6 +514,48 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
             $harness->assertSame('?page=assets&show_card=not_an_asset', (string)($warningCheck['action_url'] ?? ''));
             $harness->assertSame('assets', (string)($warningCheck['workflow_page'] ?? ''));
             $harness->assertSame('not_an_asset', (string)(($warningCheck['workflow_fields'] ?? [])['show_card'] ?? ''));
+
+            if (InterfaceDB::tableExists('year_end_review_acknowledgements')
+                && InterfaceDB::columnExists('year_end_review_acknowledgements', 'basis_hash')) {
+                $approval = $service->acknowledgeReviewCheck(
+                    (int)$fixture['company_id'],
+                    (int)$fixture['accounting_period_id'],
+                    'fixed_asset_review_placeholder',
+                    true,
+                    'Reviewed candidate.',
+                    'test'
+                );
+                $harness->assertSame(true, (bool)($approval['success'] ?? false));
+                $currentCheck = yearEndChecklistServiceFindCheck(
+                    (array)$service->fetchChecklist((int)$fixture['company_id'], (int)$fixture['accounting_period_id']),
+                    'fixed_asset_review_placeholder'
+                );
+                $harness->assertSame('pass', (string)($currentCheck['status'] ?? ''));
+                $harness->assertSame('current', (string)($currentCheck['acknowledgement_state'] ?? ''));
+
+                InterfaceDB::prepareExecute(
+                    'UPDATE transactions SET amount = :amount WHERE id = :id',
+                    ['amount' => '-650.00', 'id' => (int)$fixture['transaction_id']]
+                );
+                $staleCheck = yearEndChecklistServiceFindCheck(
+                    (array)$service->fetchChecklist((int)$fixture['company_id'], (int)$fixture['accounting_period_id']),
+                    'fixed_asset_review_placeholder'
+                );
+                $harness->assertSame('warning', (string)($staleCheck['status'] ?? ''));
+                $harness->assertSame('stale', (string)($staleCheck['acknowledgement_state'] ?? ''));
+                $harness->assertSame(true, str_contains((string)($staleCheck['detail_text'] ?? ''), 'Review required — underlying data changed'));
+
+                InterfaceDB::prepareExecute(
+                    'UPDATE transactions SET amount = :amount WHERE id = :id',
+                    ['amount' => '-600.00', 'id' => (int)$fixture['transaction_id']]
+                );
+                $restoredCheck = yearEndChecklistServiceFindCheck(
+                    (array)$service->fetchChecklist((int)$fixture['company_id'], (int)$fixture['accounting_period_id']),
+                    'fixed_asset_review_placeholder'
+                );
+                $harness->assertSame('pass', (string)($restoredCheck['status'] ?? ''));
+                $harness->assertSame('current', (string)($restoredCheck['acknowledgement_state'] ?? ''));
+            }
 
             InterfaceDB::prepareExecute(
                 'UPDATE transactions
@@ -514,7 +566,7 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
                     'id' => (int)$fixture['transaction_id'],
                 ]
             );
-            $passChecklist = $service->fetchChecklist((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], false);
+            $passChecklist = $service->fetchChecklist((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
             $passCheck = yearEndChecklistServiceFindCheck((array)$passChecklist, 'fixed_asset_review_placeholder');
 
             $harness->assertSame('pass', (string)($passCheck['status'] ?? ''));
@@ -672,9 +724,14 @@ function yearEndChecklistServiceRequireDepreciationLockSchema(GeneratedServiceCl
 
 function yearEndChecklistServiceRequireDepreciationLockTables(GeneratedServiceClassTestHarness $harness): void
 {
-    foreach (['companies', 'accounting_periods', 'journals', 'journal_lines', 'journal_entry_metadata', 'nominal_accounts', 'asset_register', 'asset_depreciation_entries', 'year_end_reviews', 'year_end_check_results', 'year_end_audit_log', 'capital_allowance_pool_runs', 'capital_allowance_asset_calculations', 'tax_loss_carryforwards'] as $table) {
+    foreach (['companies', 'accounting_periods', 'journals', 'journal_lines', 'journal_entry_metadata', 'nominal_accounts', 'asset_register', 'asset_depreciation_entries', 'year_end_reviews', 'year_end_review_acknowledgements', 'year_end_audit_log', 'capital_allowance_pool_runs', 'capital_allowance_asset_calculations', 'tax_loss_carryforwards'] as $table) {
         if (!InterfaceDB::tableExists($table)) {
             $harness->skip($table . ' table is not available.');
+        }
+    }
+    foreach (['basis_version', 'basis_hash', 'basis_json'] as $column) {
+        if (!InterfaceDB::columnExists('year_end_review_acknowledgements', $column)) {
+            $harness->skip($column . ' column is not available.');
         }
     }
 }

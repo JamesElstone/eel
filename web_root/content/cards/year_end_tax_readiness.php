@@ -57,13 +57,15 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             'button primary'
         );
 
-        $review = (array)((($context['year_end'] ?? [])['checklist'] ?? [])['review'] ?? []);
-        $acknowledged = trim((string)($review['tax_readiness_acknowledged_at'] ?? '')) !== '';
+        $check = $this->check((array)((($context['year_end'] ?? [])['checklist'] ?? [])['checks_flat'] ?? []), 'tax_readiness_acknowledgement');
+        $acknowledgement = (array)($check['review_acknowledgement'] ?? $check['previous_acknowledgement'] ?? []);
+        $acknowledged = !empty($check['acknowledgement_current']);
         $acknowledgementForm = $this->acknowledgementHtml(
             $acknowledged,
-            (string)($review['tax_readiness_acknowledged_at'] ?? ''),
-            (string)($review['tax_readiness_acknowledged_by'] ?? ''),
-            (string)($review['tax_readiness_approval_note'] ?? ''),
+            (string)($check['acknowledgement_state'] ?? 'absent'),
+            (string)($acknowledgement['acknowledged_at'] ?? ''),
+            (string)($acknowledgement['acknowledged_by'] ?? ''),
+            (string)($acknowledgement['note'] ?? ''),
             $companyId,
             $accountingPeriodId
         );
@@ -77,13 +79,24 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
         </section>';
     }
 
-    private function acknowledgementHtml(bool $acknowledged, string $acknowledgedAt, string $acknowledgedBy, string $note, int $companyId, int $accountingPeriodId): string
+    private function check(array $checks, string $checkCode): array
+    {
+        foreach ($checks as $check) {
+            if (is_array($check) && (string)($check['check_code'] ?? '') === $checkCode) {
+                return $check;
+            }
+        }
+        return [];
+    }
+
+    private function acknowledgementHtml(bool $acknowledged, string $state, string $acknowledgedAt, string $acknowledgedBy, string $note, int $companyId, int $accountingPeriodId): string
     {
         return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
             'subject' => 'corporation tax readiness',
             'companyId' => $companyId,
             'accountingPeriodId' => $accountingPeriodId,
             'acknowledged' => $acknowledged,
+            'acknowledgementState' => $state,
             'acknowledgedAt' => $acknowledgedAt,
             'acknowledgedBy' => $acknowledgedBy,
             'note' => $note,

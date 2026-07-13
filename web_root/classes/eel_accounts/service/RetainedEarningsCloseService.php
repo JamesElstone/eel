@@ -22,6 +22,7 @@ final class RetainedEarningsCloseService
         private readonly ?\eel_accounts\Service\YearEndLockService $lockService = null,
         private readonly ?\eel_accounts\Service\AssetService $assetService = null,
         private readonly ?\eel_accounts\Service\CorporationTaxProvisionService $corporationTaxProvisionService = null,
+        private readonly ?\eel_accounts\Service\YearEndAcknowledgementService $acknowledgementService = null,
     ) {
     }
 
@@ -39,14 +40,12 @@ final class RetainedEarningsCloseService
         $periodStart = (string)$accountingPeriod['period_start'];
         $periodEnd = (string)$accountingPeriod['period_end'];
         $settings = $metrics->fetchCompanySettings($companyId);
-        $review = ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->fetchReview($companyId, $accountingPeriodId) ?? [];
         $retainedEarningsNominal = $this->retainedEarningsNominal();
         if ($retainedEarningsNominal === null) {
             return [
                 'available' => false,
                 'errors' => ['Retained Earnings nominal 3000 is missing.'],
                 'accounting_period' => $accountingPeriod,
-                'review' => $review,
             ];
         }
 
@@ -81,15 +80,12 @@ final class RetainedEarningsCloseService
             'equity' => round((float)($balanceSheet['equity_capital_reserves'] ?? 0), 2),
         ];
 
-        return [
+        $context = [
             'available' => true,
             'errors' => [],
             'company_id' => $companyId,
             'accounting_period' => $accountingPeriod,
             'settings' => $settings,
-            'review' => $review,
-            'acknowledged' => $this->isAcknowledged($review),
-            'acknowledgement_stale' => $this->acknowledgementIsStale($review, $summary),
             'retained_earnings_nominal' => $retainedEarningsNominal,
             'summary' => $summary,
             'depreciation_preview' => $depreciationPreview,
@@ -98,19 +94,27 @@ final class RetainedEarningsCloseService
             'journal_lines' => $journalLines,
             'existing_journal' => $existingJournal,
         ];
+        $service = $this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService();
+        $acknowledgement = $service->fetch($companyId, $accountingPeriodId, 'retained_earnings_close_confirmation');
+        $evaluation = $service->evaluate(
+            $acknowledgement,
+            $this->acknowledgementBasis($service, $context),
+            ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId)
+        );
+
+        return $context + [
+            'acknowledged' => !empty($evaluation['current']),
+            'acknowledgement_stale' => in_array((string)($evaluation['state'] ?? ''), ['stale', 'unverifiable'], true),
+            'acknowledgement_state' => (string)($evaluation['state'] ?? 'absent'),
+            'acknowledgement' => $acknowledgement,
+        ];
     }
 
     public function saveAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array
     {
         if (!$acknowledged) {
-            return ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->saveRetainedEarningsCloseAcknowledgement(
-                $companyId,
-                $accountingPeriodId,
-                false,
-                [],
-                $changedBy,
-                ''
-            );
+            return ($this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService())
+                ->revoke($companyId, $accountingPeriodId, 'retained_earnings_close_confirmation');
         }
 
         $context = $this->fetchContext($companyId, $accountingPeriodId);
@@ -118,24 +122,25 @@ final class RetainedEarningsCloseService
             return $context + ['success' => false];
         }
 
-        return ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->saveRetainedEarningsCloseAcknowledgement(
+        $service = $this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService();
+        return $service->save(
             $companyId,
             $accountingPeriodId,
-            true,
-            (array)$context['summary'],
+            'retained_earnings_close_confirmation',
+            $this->acknowledgementBasis($service, $context),
             $changedBy,
             $note
         );
     }
 
-    public function postClose(int $companyId, int $accountingPeriodId, string $changedBy = 'web_app'): array
+    public function postClose(int $companyId, int $accountingPeriodId, string $changedBy = 'web_app', bool $acknowledgementPrevalidated = false): array
     {
         $context = $this->fetchContext($companyId, $accountingPeriodId);
         if (empty($context['available'])) {
             return $context + ['success' => false];
         }
 
-        if (empty($context['acknowledged'])) {
+        if (!$acknowledgementPrevalidated && empty($context['acknowledged'])) {
             return [
                 'success' => false,
                 'status' => 422,
@@ -144,7 +149,7 @@ final class RetainedEarningsCloseService
             ];
         }
 
-        if (!empty($context['acknowledgement_stale'])) {
+        if (!$acknowledgementPrevalidated && !empty($context['acknowledgement_stale'])) {
             return [
                 'success' => false,
                 'status' => 422,
@@ -193,36 +198,12 @@ final class RetainedEarningsCloseService
         return ['success' => true, 'deleted' => false, 'skipped' => true];
     }
 
-    public function acknowledgementIsCurrent(array $review, array $summary): bool
+    private function acknowledgementBasis(YearEndAcknowledgementService $service, array $context): array
     {
-        return $this->isAcknowledged($review) && !$this->acknowledgementIsStale($review, $summary);
-    }
-
-    private function isAcknowledged(array $review): bool
-    {
-        return trim((string)($review['retained_earnings_close_acknowledged_at'] ?? '')) !== '';
-    }
-
-    private function acknowledgementIsStale(array $review, array $summary): bool
-    {
-        if (!$this->isAcknowledged($review)) {
-            return false;
-        }
-
-        $checks = [
-            'retained_earnings_close_opening_equity' => 'opening_equity',
-            'retained_earnings_close_current_profit_loss' => 'current_profit_loss',
-            'retained_earnings_close_closing_equity_before' => 'closing_equity_before_close',
-            'retained_earnings_close_amount' => 'retained_earnings_movement',
-        ];
-
-        foreach ($checks as $reviewKey => $summaryKey) {
-            if (abs(round((float)($review[$reviewKey] ?? 0) - (float)($summary[$summaryKey] ?? 0), 2)) >= 0.005) {
-                return true;
-            }
-        }
-
-        return false;
+        return $service->buildBasis('retained_earnings_close_confirmation', [
+            'summary' => (array)($context['summary'] ?? []),
+            'journal_lines' => (array)($context['journal_lines'] ?? []),
+        ]);
     }
 
     private function retainedEarningsNominal(): ?array

@@ -480,12 +480,11 @@ $harness->run(TransactionAction::class, function (GeneratedServiceClassTestHarne
 
         if ($locked && InterfaceDB::tableExists('year_end_reviews')) {
             InterfaceDB::prepareExecute(
-                'INSERT INTO year_end_reviews (company_id, accounting_period_id, status, is_locked, locked_at, locked_by)
-                 VALUES (:company_id, :accounting_period_id, :status, 1, CURRENT_TIMESTAMP, :locked_by)',
+                'INSERT INTO year_end_reviews (company_id, accounting_period_id, is_locked, locked_at, locked_by)
+                 VALUES (:company_id, :accounting_period_id, 1, CURRENT_TIMESTAMP, :locked_by)',
                 [
                     'company_id' => $companyId,
                     'accounting_period_id' => $accountingPeriodId,
-                    'status' => 'locked',
                     'locked_by' => 'test',
                 ]
             );

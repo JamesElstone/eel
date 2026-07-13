@@ -16,6 +16,7 @@ final class YearEndExpenseConfirmationService
         private readonly ?\eel_accounts\Service\YearEndMetricsService $metricsService = null,
         private readonly ?\eel_accounts\Service\ExpenseClaimService $expenseClaimService = null,
         private readonly ?\eel_accounts\Service\YearEndLockService $lockService = null,
+        private readonly ?\eel_accounts\Service\YearEndAcknowledgementService $acknowledgementService = null,
     ) {
     }
 
@@ -79,17 +80,26 @@ final class YearEndExpenseConfirmationService
             $totals[$key] = round((float)$value, 2);
         }
 
-        $review = (array)(($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->fetchReview($companyId, $accountingPeriodId) ?? []);
-
-        return [
+        $context = [
             'available' => true,
             'accounting_period' => $accountingPeriod,
             'claimants' => $claimants,
             'totals' => $totals,
-            'expense_position_acknowledged' => trim((string)($review['expense_position_acknowledged_at'] ?? '')) !== '',
-            'expense_position_acknowledged_at' => (string)($review['expense_position_acknowledged_at'] ?? ''),
-            'expense_position_acknowledged_by' => (string)($review['expense_position_acknowledged_by'] ?? ''),
-            'expense_position_approval_note' => (string)($review['expense_position_approval_note'] ?? ''),
+        ];
+        $service = $this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService();
+        $acknowledgement = $service->fetch($companyId, $accountingPeriodId, 'expense_position_acknowledgement');
+        $evaluation = $service->evaluate(
+            $acknowledgement,
+            $service->buildBasis('expense_position_acknowledgement', $context),
+            ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId)
+        );
+
+        return $context + [
+            'expense_position_acknowledged' => !empty($evaluation['current']),
+            'expense_position_acknowledgement_state' => (string)($evaluation['state'] ?? 'absent'),
+            'expense_position_acknowledged_at' => (string)($acknowledgement['acknowledged_at'] ?? ''),
+            'expense_position_acknowledged_by' => (string)($acknowledgement['acknowledged_by'] ?? ''),
+            'expense_position_approval_note' => (string)($acknowledgement['note'] ?? ''),
         ];
     }
 

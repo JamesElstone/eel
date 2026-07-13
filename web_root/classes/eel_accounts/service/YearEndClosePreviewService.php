@@ -226,19 +226,9 @@ final class YearEndClosePreviewService
             return [];
         }
 
-        $review = (new \eel_accounts\Service\YearEndLockService())->fetchReview($companyId, $accountingPeriodId);
-        if (!is_array($review) || trim((string)($review['retained_earnings_close_acknowledged_at'] ?? '')) === '') {
-            return [];
-        }
-
         $periodStart = (string)($accountingPeriod['period_start'] ?? '');
         $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
         $profitLoss = $this->profitBeforeTaxIncludingDepreciation($companyId, $accountingPeriodId, $periodStart, $periodEnd);
-        $storedProfitLoss = round((float)($review['retained_earnings_close_current_profit_loss'] ?? 0), 2);
-        $storedMovement = round((float)($review['retained_earnings_close_amount'] ?? 0), 2);
-        if (abs($storedProfitLoss - $profitLoss) >= 0.005 || abs($storedMovement - $profitLoss) >= 0.005) {
-            return [];
-        }
 
         $nominal = $this->nominalByCode(\eel_accounts\Service\RetainedEarningsCloseService::RETAINED_EARNINGS_CODE, 'equity');
         if ($nominal === null || abs($profitLoss) < 0.005) {

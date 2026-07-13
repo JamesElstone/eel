@@ -176,21 +176,14 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
 
 function retainedEarningsCloseRequireSchema(GeneratedServiceClassTestHarness $harness): void
 {
-    foreach (['companies', 'accounting_periods', 'journals', 'journal_lines', 'journal_entry_metadata', 'nominal_accounts', 'year_end_reviews', 'year_end_audit_log'] as $table) {
+    foreach (['companies', 'accounting_periods', 'journals', 'journal_lines', 'journal_entry_metadata', 'nominal_accounts', 'year_end_reviews', 'year_end_review_acknowledgements', 'year_end_audit_log'] as $table) {
         if (!InterfaceDB::tableExists($table)) {
             $harness->skip($table . ' table is not available.');
         }
     }
 
-    foreach ([
-        'retained_earnings_close_acknowledged_at',
-        'retained_earnings_close_acknowledged_by',
-        'retained_earnings_close_opening_equity',
-        'retained_earnings_close_current_profit_loss',
-        'retained_earnings_close_closing_equity_before',
-        'retained_earnings_close_amount',
-    ] as $column) {
-        if (!InterfaceDB::columnExists('year_end_reviews', $column)) {
+    foreach (['basis_version', 'basis_hash', 'basis_json'] as $column) {
+        if (!InterfaceDB::columnExists('year_end_review_acknowledgements', $column)) {
             $harness->skip($column . ' column is not available.');
         }
     }
@@ -204,21 +197,14 @@ function retainedEarningsCloseRequireSchema(GeneratedServiceClassTestHarness $ha
 
 function retainedEarningsCloseRequireDepreciationSchema(GeneratedServiceClassTestHarness $harness): void
 {
-    foreach (['companies', 'accounting_periods', 'journals', 'journal_lines', 'journal_entry_metadata', 'nominal_accounts', 'year_end_reviews', 'year_end_audit_log', 'asset_register', 'asset_depreciation_entries'] as $table) {
+    foreach (['companies', 'accounting_periods', 'journals', 'journal_lines', 'journal_entry_metadata', 'nominal_accounts', 'year_end_reviews', 'year_end_review_acknowledgements', 'year_end_audit_log', 'asset_register', 'asset_depreciation_entries'] as $table) {
         if (!InterfaceDB::tableExists($table)) {
             $harness->skip($table . ' table is not available.');
         }
     }
 
-    foreach ([
-        'retained_earnings_close_acknowledged_at',
-        'retained_earnings_close_acknowledged_by',
-        'retained_earnings_close_opening_equity',
-        'retained_earnings_close_current_profit_loss',
-        'retained_earnings_close_closing_equity_before',
-        'retained_earnings_close_amount',
-    ] as $column) {
-        if (!InterfaceDB::columnExists('year_end_reviews', $column)) {
+    foreach (['basis_version', 'basis_hash', 'basis_json'] as $column) {
+        if (!InterfaceDB::columnExists('year_end_review_acknowledgements', $column)) {
             $harness->skip($column . ' column is not available.');
         }
     }

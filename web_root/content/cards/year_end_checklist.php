@@ -153,6 +153,7 @@ final class _year_end_checklistCard extends CardBaseFramework
         $actionsHtml = trim($workflowHtml . $reviewActionHtml) !== ''
             ? '<div class="year-end-related-workflow">' . $workflowHtml . $reviewActionHtml . '</div>'
             : '';
+        $previousAcknowledgementHtml = $this->previousAcknowledgementHtml($check);
 
         return '<div class="summary-card year-end-check-panel year-end-check-panel-' . HelperFramework::escape($statusClass) . '">
             <div class="status-head">
@@ -162,8 +163,37 @@ final class _year_end_checklistCard extends CardBaseFramework
             ' . ($metricValue !== '' ? '<div class="summary-value">' . HelperFramework::escape($metricValue) . '</div>' : '') . '
             <div class="helper">' . HelperFramework::escape((string)($check['detail_text'] ?? '')) . '</div>
             ' . ($formulaText !== '' ? '<div class="helper">' . HelperFramework::escape($formulaText) . '</div>' : '') . '
+            ' . $previousAcknowledgementHtml . '
             ' . $actionsHtml . '
         </div>';
+    }
+
+    private function previousAcknowledgementHtml(array $check): string
+    {
+        if (!in_array((string)($check['acknowledgement_state'] ?? ''), ['stale', 'unverifiable'], true)) {
+            return '';
+        }
+
+        $acknowledgement = $check['previous_acknowledgement'] ?? null;
+        if (!is_array($acknowledgement)) {
+            return '';
+        }
+
+        $parts = [];
+        $approvedAt = trim((string)($acknowledgement['acknowledged_at'] ?? ''));
+        $approvedBy = trim((string)($acknowledgement['acknowledged_by'] ?? ''));
+        $note = trim((string)($acknowledgement['note'] ?? ''));
+        if ($approvedAt !== '') {
+            $parts[] = 'approved at ' . $approvedAt;
+        }
+        if ($approvedBy !== '') {
+            $parts[] = 'by ' . $approvedBy;
+        }
+
+        return '<div class="helper"><strong>Previous approval:</strong> '
+            . HelperFramework::escape($parts !== [] ? implode(' ', $parts) . '.' : 'Recorded approval requires re-review.')
+            . ($note !== '' ? ' ' . HelperFramework::escape('Original note: ' . $note) : '')
+            . '</div>';
     }
 
     private function reviewActionHtml(array $check, int $companyId, int $accountingPeriodId): string

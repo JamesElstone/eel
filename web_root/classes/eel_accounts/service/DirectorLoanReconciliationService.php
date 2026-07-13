@@ -19,6 +19,8 @@ final class DirectorLoanReconciliationService
         private readonly ?\eel_accounts\Service\ManualJournalService $journalService = null,
         private readonly ?\eel_accounts\Service\YearEndMetricsService $metricsService = null,
         private readonly ?\eel_accounts\Service\DirectorLoanService $directorLoanService = null,
+        private readonly ?\eel_accounts\Service\YearEndAcknowledgementService $acknowledgementService = null,
+        private readonly ?\eel_accounts\Service\YearEndLockService $lockService = null,
     ) {
     }
 
@@ -27,7 +29,20 @@ final class DirectorLoanReconciliationService
         $context = $this->fetchContext($companyId, $accountingPeriodId);
         if (!empty($context['available'])) {
             $service = $this->directorLoanService ?? new \eel_accounts\Service\DirectorLoanService();
-            $context['tax_review'] = $service->fetchTaxReviewSummary($companyId, $accountingPeriodId);
+            $taxReview = $service->fetchTaxReviewSummary($companyId, $accountingPeriodId);
+            if (!empty($taxReview['available'])) {
+                $acknowledgements = $this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService();
+                $acknowledgement = $acknowledgements->fetch($companyId, $accountingPeriodId, 'director_loan_tax_review');
+                $evaluation = $acknowledgements->evaluate(
+                    $acknowledgement,
+                    $acknowledgements->buildBasis('director_loan_tax_review', $taxReview),
+                    ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId)
+                );
+                $taxReview['acknowledgement'] = $acknowledgement;
+                $taxReview['acknowledgement_state'] = (string)($evaluation['state'] ?? 'absent');
+                $taxReview['acknowledgement_current'] = !empty($evaluation['current']);
+            }
+            $context['tax_review'] = $taxReview;
         }
 
         return $context;
@@ -78,15 +93,25 @@ final class DirectorLoanReconciliationService
         );
 
         $summary = $this->buildSummary($assetNominal, $liabilityNominal, $balances, is_array($existingOffset) ? $existingOffset : null);
-        $review = (new \eel_accounts\Service\YearEndLockService())->fetchReview($companyId, $accountingPeriodId);
-        $acknowledgedAt = trim((string)($review['director_loan_closing_acknowledged_at'] ?? ''));
         $summary['available'] = true;
         $summary['errors'] = [];
         $summary['accounting_period'] = $accountingPeriod;
-        $summary['closing_balance_acknowledged'] = $acknowledgedAt !== '';
-        $summary['closing_balance_acknowledged_at'] = $acknowledgedAt;
-        $summary['closing_balance_acknowledged_by'] = (string)($review['director_loan_closing_acknowledged_by'] ?? '');
-        $summary['director_loan_closing_approval_note'] = (string)($review['director_loan_closing_approval_note'] ?? '');
+        $service = $this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService();
+        $acknowledgement = $service->fetch($companyId, $accountingPeriodId, 'director_loan_closing_balance');
+        $directorLoanSummary = $metrics->directorLoanSummary($companyId, $accountingPeriodId);
+        $basis = $service->buildBasis('director_loan_closing_balance', [
+            'closing_balance' => number_format((float)($directorLoanSummary['closing_balance'] ?? 0), 2, '.', ''),
+        ]);
+        $evaluation = $service->evaluate(
+            $acknowledgement,
+            $basis,
+            ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId)
+        );
+        $summary['closing_balance_acknowledged'] = !empty($evaluation['current']);
+        $summary['closing_balance_acknowledgement_state'] = (string)($evaluation['state'] ?? 'absent');
+        $summary['closing_balance_acknowledged_at'] = (string)($acknowledgement['acknowledged_at'] ?? '');
+        $summary['closing_balance_acknowledged_by'] = (string)($acknowledgement['acknowledged_by'] ?? '');
+        $summary['director_loan_closing_approval_note'] = (string)($acknowledgement['note'] ?? '');
 
         return $summary;
     }

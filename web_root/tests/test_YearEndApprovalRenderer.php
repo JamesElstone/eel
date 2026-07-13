@@ -18,6 +18,7 @@ $harness->run(\eel_accounts\Renderer\YearEndApprovalRenderer::class, static func
             'companyId' => 12,
             'accountingPeriodId' => 34,
             'acknowledged' => false,
+            'locked' => false,
             'intent' => 'acknowledge_review_check',
             'approveFields' => ['check_code' => 'test_check'],
             'noteMode' => \eel_accounts\Renderer\YearEndApprovalRenderer::NOTE_REQUIRED,
@@ -39,6 +40,7 @@ $harness->run(\eel_accounts\Renderer\YearEndApprovalRenderer::class, static func
             'companyId' => 12,
             'accountingPeriodId' => 34,
             'acknowledged' => false,
+            'locked' => false,
             'intent' => 'save_director_loan_offset_acknowledgement',
             'checkboxName' => 'director_loan_offset_acknowledgement',
             'approveFields' => ['director_loan_offset_acknowledgement' => '1'],
@@ -54,6 +56,7 @@ $harness->run(\eel_accounts\Renderer\YearEndApprovalRenderer::class, static func
             'companyId' => 12,
             'accountingPeriodId' => 34,
             'acknowledged' => true,
+            'locked' => false,
             'acknowledgedAt' => '2026-07-06 12:00:00',
             'acknowledgedBy' => 'unit_test',
             'note' => 'Evidence reviewed.',
@@ -66,5 +69,26 @@ $harness->run(\eel_accounts\Renderer\YearEndApprovalRenderer::class, static func
         $harness->assertSame(true, str_contains($html, 'Approved at 2026-07-06 12:00:00 by unit_test.'));
         $harness->assertSame(true, str_contains($html, 'name="intent" value="reopen_review_check"'));
         $harness->assertSame(true, str_contains($html, 'Revoke approval'));
+    });
+
+    $harness->check(\eel_accounts\Renderer\YearEndApprovalRenderer::class, 'shows stale evidence while requiring a fresh approval', static function () use ($harness): void {
+        $html = \eel_accounts\Renderer\YearEndApprovalRenderer::render([
+            'subject' => 'test position',
+            'companyId' => 12,
+            'accountingPeriodId' => 34,
+            'acknowledged' => false,
+            'acknowledgementState' => 'stale',
+            'acknowledgedAt' => '2026-07-06 12:00:00',
+            'acknowledgedBy' => 'unit_test',
+            'note' => 'Original evidence note.',
+            'intent' => 'acknowledge_review_check',
+            'locked' => false,
+        ]);
+
+        $harness->assertSame(true, str_contains($html, 'Review required — underlying data changed.'));
+        $harness->assertSame(true, str_contains($html, 'Original note: Original evidence note.'));
+        $harness->assertSame(true, str_contains($html, 'Approved at 2026-07-06 12:00:00 by unit_test.'));
+        $harness->assertSame(true, str_contains($html, 'Approve for Year End'));
+        $harness->assertSame(false, str_contains($html, 'Revoke approval'));
     });
 });

@@ -116,12 +116,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             try {
                 $fixture = transactionSplitTestCreateFixture('locked');
                 \InterfaceDB::prepareExecute(
-                    'INSERT INTO year_end_reviews (company_id, accounting_period_id, status, is_locked, review_notes, last_recalculated_at)
-                     VALUES (:company_id, :accounting_period_id, :status, 1, NULL, CURRENT_TIMESTAMP)',
+                    'INSERT INTO year_end_reviews (company_id, accounting_period_id, is_locked, review_notes)
+                     VALUES (:company_id, :accounting_period_id, 1, NULL)',
                     [
                         'company_id' => $fixture['company_id'],
                         'accounting_period_id' => $fixture['accounting_period_id'],
-                        'status' => 'locked',
                     ]
                 );
 

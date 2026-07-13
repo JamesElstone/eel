@@ -61,6 +61,8 @@ $harness->run(_journal_cut_off_confirmationCard::class, static function (Generat
             'acknowledged_at' => '2026-07-06 10:00:00',
             'acknowledged_by' => 'James using the web_app',
             'note' => 'Reviewed the year-end cut-off position.',
+            'current' => true,
+            'state' => 'current',
         ]));
 
         $harness->assertSame(true, str_contains($html, 'name="intent" value="reopen_review_check"'));

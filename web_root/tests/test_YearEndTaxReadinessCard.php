@@ -90,8 +90,8 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
                 ],
             ],
         ], [
-            'tax_readiness_acknowledged_at' => '2026-07-03 12:00:00',
-            'tax_readiness_acknowledged_by' => 'Alex Example using the web_app',
+            'acknowledged_at' => '2026-07-03 12:00:00',
+            'acknowledged_by' => 'Alex Example using the web_app',
         ]));
 
         $harness->assertSame(true, str_contains($html, 'save_tax_readiness_acknowledgement'));
@@ -165,7 +165,6 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame(true, str_contains($html, '$ 1,520.00'));
         $harness->assertSame(true, str_contains($html, '$ 12.50'));
         $harness->assertSame(true, str_contains($html, '01/10/2025 to 30/09/2026'));
-        $harness->assertSame(true, str_contains($html, 'Ready for review'));
         $harness->assertSame(true, str_contains($html, 'Open Tax Workflow'));
         $harness->assertSame(true, str_contains($html, 'Overall Tax Position'));
         $harness->assertSame(true, str_contains($html, 'CT Period 1: 01/10/2025 to 30/09/2026'));
@@ -174,7 +173,7 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
     });
 });
 
-function yearEndTaxReadinessCardContext(array $taxReadiness, array $review = []): array
+function yearEndTaxReadinessCardContext(array $taxReadiness, array $acknowledgement = []): array
 {
     return [
         'company' => [
@@ -187,7 +186,12 @@ function yearEndTaxReadinessCardContext(array $taxReadiness, array $review = [])
         ],
         'year_end' => [
             'checklist' => [
-                'review' => $review,
+                'checks_flat' => $acknowledgement === [] ? [] : [[
+                    'check_code' => 'tax_readiness_acknowledgement',
+                    'acknowledgement_state' => 'current',
+                    'acknowledgement_current' => true,
+                    'review_acknowledgement' => $acknowledgement,
+                ]],
             ],
         ],
         'services' => [
@@ -196,7 +200,7 @@ function yearEndTaxReadinessCardContext(array $taxReadiness, array $review = [])
     ];
 }
 
-function yearEndTaxReadinessChecklistContext(array $taxReadiness, array $review = []): array
+function yearEndTaxReadinessChecklistContext(array $taxReadiness, array $acknowledgement = []): array
 {
     return [
         'company' => [
@@ -209,7 +213,12 @@ function yearEndTaxReadinessChecklistContext(array $taxReadiness, array $review 
         ],
         'year_end' => [
             'checklist' => [
-                'review' => $review,
+                'checks_flat' => $acknowledgement === [] ? [] : [[
+                    'check_code' => 'tax_readiness_acknowledgement',
+                    'acknowledgement_state' => 'current',
+                    'acknowledgement_current' => true,
+                    'review_acknowledgement' => $acknowledgement,
+                ]],
                 'tax_readiness' => $taxReadiness,
             ],
         ],

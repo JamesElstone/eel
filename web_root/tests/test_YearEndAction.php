@@ -75,12 +75,11 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             yearEndActionDirectorLoanTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 1000.00, 0.00, 'asset');
             yearEndActionDirectorLoanTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 0.00, 1500.00, 'liability');
             InterfaceDB::prepareExecute(
-                'INSERT INTO year_end_reviews (company_id, accounting_period_id, status, is_locked, locked_at, locked_by)
-                 VALUES (:company_id, :accounting_period_id, :status, 1, CURRENT_TIMESTAMP, :locked_by)',
+                'INSERT INTO year_end_reviews (company_id, accounting_period_id, is_locked, locked_at, locked_by)
+                 VALUES (:company_id, :accounting_period_id, 1, CURRENT_TIMESTAMP, :locked_by)',
                 [
                     'company_id' => (int)$fixture['company_id'],
                     'accounting_period_id' => (int)$fixture['accounting_period_id'],
-                    'status' => 'locked',
                     'locked_by' => 'test',
                 ]
             );
@@ -115,12 +114,11 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
                 ['id' => $accountingPeriodId, 'company_id' => $companyId, 'label' => 'Locked Notes FY', 'period_start' => '2025-01-01', 'period_end' => '2025-12-31']
             );
             InterfaceDB::prepareExecute(
-                'INSERT INTO year_end_reviews (company_id, accounting_period_id, status, is_locked, locked_at, locked_by)
-                 VALUES (:company_id, :accounting_period_id, :status, 1, CURRENT_TIMESTAMP, :locked_by)',
+                'INSERT INTO year_end_reviews (company_id, accounting_period_id, is_locked, locked_at, locked_by)
+                 VALUES (:company_id, :accounting_period_id, 1, CURRENT_TIMESTAMP, :locked_by)',
                 [
                     'company_id' => $companyId,
                     'accounting_period_id' => $accountingPeriodId,
-                    'status' => 'locked',
                     'locked_by' => 'test',
                 ]
             );
@@ -146,7 +144,7 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
     $harness->check('YearEndAction', 'saves director loan offset acknowledgement', static function () use ($harness): void {
         yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness): void {
             $instance = yearEndActionTestInstanceWithDirectorCount(1);
-            if (!InterfaceDB::tableExists('year_end_reviews') || !InterfaceDB::columnExists('year_end_reviews', 'director_loan_closing_acknowledged_at')) {
+            if (!InterfaceDB::tableExists('year_end_review_acknowledgements') || !InterfaceDB::columnExists('year_end_review_acknowledgements', 'basis_hash')) {
                 $harness->skip('Director loan year-end acknowledgement schema is not available on the default InterfaceDB connection.');
             }
 
@@ -166,38 +164,37 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             $harness->assertSame(true, $result->isSuccess());
             $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'approval saved'));
             $acknowledgedAt = (string)InterfaceDB::fetchColumn(
-                'SELECT COALESCE(director_loan_closing_acknowledged_at, \'\')
-                 FROM year_end_reviews
+                'SELECT COALESCE(acknowledged_at, \'\')
+                 FROM year_end_review_acknowledgements
                  WHERE company_id = :company_id
                    AND accounting_period_id = :accounting_period_id
+                   AND check_code = :check_code
                  LIMIT 1',
                 [
                     'company_id' => (int)$fixture['company_id'],
                     'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                    'check_code' => 'director_loan_closing_balance',
                 ]
             );
 
             $harness->assertSame(false, $acknowledgedAt === '');
-            if (InterfaceDB::columnExists('year_end_reviews', 'director_loan_closing_approval_note')) {
-                $harness->assertSame('Approval note from action test.', (string)InterfaceDB::fetchColumn(
-                    'SELECT COALESCE(director_loan_closing_approval_note, \'\')
-                     FROM year_end_reviews
-                     WHERE company_id = :company_id
-                       AND accounting_period_id = :accounting_period_id
-                     LIMIT 1',
-                    [
-                        'company_id' => (int)$fixture['company_id'],
-                        'accounting_period_id' => (int)$fixture['accounting_period_id'],
-                    ]
-                ));
-            }
+            $harness->assertSame('Approval note from action test.', (string)InterfaceDB::fetchColumn(
+                'SELECT COALESCE(note, \'\') FROM year_end_review_acknowledgements
+                 WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id AND check_code = :check_code',
+                ['company_id' => (int)$fixture['company_id'], 'accounting_period_id' => (int)$fixture['accounting_period_id'], 'check_code' => 'director_loan_closing_balance']
+            ));
+            $harness->assertSame(64, strlen((string)InterfaceDB::fetchColumn(
+                'SELECT COALESCE(basis_hash, \'\') FROM year_end_review_acknowledgements
+                 WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id AND check_code = :check_code',
+                ['company_id' => (int)$fixture['company_id'], 'accounting_period_id' => (int)$fixture['accounting_period_id'], 'check_code' => 'director_loan_closing_balance']
+            )));
         });
     });
 
     $harness->check('YearEndAction', 'saves tax readiness acknowledgement', static function () use ($harness): void {
         yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness): void {
             $instance = yearEndActionTestInstanceWithDirectorCount(1);
-            if (!InterfaceDB::tableExists('year_end_reviews') || !InterfaceDB::columnExists('year_end_reviews', 'tax_readiness_acknowledged_at')) {
+            if (!InterfaceDB::tableExists('year_end_review_acknowledgements') || !InterfaceDB::columnExists('year_end_review_acknowledgements', 'basis_hash')) {
                 $harness->skip('Tax readiness year-end acknowledgement schema is not available on the default InterfaceDB connection.');
             }
 
@@ -209,38 +206,32 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             $harness->assertSame(true, $result->isSuccess());
             $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'Tax readiness approval saved'));
             $acknowledgedAt = (string)InterfaceDB::fetchColumn(
-                'SELECT COALESCE(tax_readiness_acknowledged_at, \'\')
-                 FROM year_end_reviews
+                'SELECT COALESCE(acknowledged_at, \'\')
+                 FROM year_end_review_acknowledgements
                  WHERE company_id = :company_id
                    AND accounting_period_id = :accounting_period_id
+                   AND check_code = :check_code
                  LIMIT 1',
                 [
                     'company_id' => (int)$fixture['company_id'],
                     'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                    'check_code' => 'tax_readiness_acknowledgement',
                 ]
             );
 
             $harness->assertSame(false, $acknowledgedAt === '');
-            if (InterfaceDB::columnExists('year_end_reviews', 'tax_readiness_approval_note')) {
-                $harness->assertSame('Approval note from action test.', (string)InterfaceDB::fetchColumn(
-                    'SELECT COALESCE(tax_readiness_approval_note, \'\')
-                     FROM year_end_reviews
-                     WHERE company_id = :company_id
-                       AND accounting_period_id = :accounting_period_id
-                     LIMIT 1',
-                    [
-                        'company_id' => (int)$fixture['company_id'],
-                        'accounting_period_id' => (int)$fixture['accounting_period_id'],
-                    ]
-                ));
-            }
+            $harness->assertSame('Approval note from action test.', (string)InterfaceDB::fetchColumn(
+                'SELECT COALESCE(note, \'\') FROM year_end_review_acknowledgements
+                 WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id AND check_code = :check_code',
+                ['company_id' => (int)$fixture['company_id'], 'accounting_period_id' => (int)$fixture['accounting_period_id'], 'check_code' => 'tax_readiness_acknowledgement']
+            ));
         });
     });
 
     $harness->check('YearEndAction', 'saves expense position acknowledgement', static function () use ($harness): void {
         yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness): void {
             $instance = yearEndActionTestInstanceWithDirectorCount(1);
-            if (!InterfaceDB::tableExists('year_end_reviews') || !InterfaceDB::columnExists('year_end_reviews', 'expense_position_acknowledged_at')) {
+            if (!InterfaceDB::tableExists('year_end_review_acknowledgements') || !InterfaceDB::columnExists('year_end_review_acknowledgements', 'basis_hash')) {
                 $harness->skip('Expense position year-end acknowledgement schema is not available on the default InterfaceDB connection.');
             }
 
@@ -252,31 +243,25 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             $harness->assertSame(true, $result->isSuccess());
             $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'Expense position approval saved'));
             $acknowledgedAt = (string)InterfaceDB::fetchColumn(
-                'SELECT COALESCE(expense_position_acknowledged_at, \'\')
-                 FROM year_end_reviews
+                'SELECT COALESCE(acknowledged_at, \'\')
+                 FROM year_end_review_acknowledgements
                  WHERE company_id = :company_id
                    AND accounting_period_id = :accounting_period_id
+                   AND check_code = :check_code
                  LIMIT 1',
                 [
                     'company_id' => (int)$fixture['company_id'],
                     'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                    'check_code' => 'expense_position_acknowledgement',
                 ]
             );
 
             $harness->assertSame(false, $acknowledgedAt === '');
-            if (InterfaceDB::columnExists('year_end_reviews', 'expense_position_approval_note')) {
-                $harness->assertSame('Approval note from action test.', (string)InterfaceDB::fetchColumn(
-                    'SELECT COALESCE(expense_position_approval_note, \'\')
-                     FROM year_end_reviews
-                     WHERE company_id = :company_id
-                       AND accounting_period_id = :accounting_period_id
-                     LIMIT 1',
-                    [
-                        'company_id' => (int)$fixture['company_id'],
-                        'accounting_period_id' => (int)$fixture['accounting_period_id'],
-                    ]
-                ));
-            }
+            $harness->assertSame('Approval note from action test.', (string)InterfaceDB::fetchColumn(
+                'SELECT COALESCE(note, \'\') FROM year_end_review_acknowledgements
+                 WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id AND check_code = :check_code',
+                ['company_id' => (int)$fixture['company_id'], 'accounting_period_id' => (int)$fixture['accounting_period_id'], 'check_code' => 'expense_position_acknowledgement']
+            ));
         });
     });
 
@@ -539,8 +524,8 @@ function yearEndActionDirectorLoanTestWithFixture(GeneratedServiceClassTestHarne
     try {
         $marker = substr(hash('sha256', __FILE__ . microtime(true) . random_int(1, PHP_INT_MAX)), 0, 12);
         InterfaceDB::prepareExecute(
-            'INSERT INTO companies (company_name, company_number) VALUES (:company_name, :company_number)',
-            ['company_name' => 'Year End Action DLO Fixture Limited', 'company_number' => 'YEA' . $marker]
+            'INSERT INTO companies (company_name, company_number, incorporation_date) VALUES (:company_name, :company_number, :incorporation_date)',
+            ['company_name' => 'Year End Action DLO Fixture Limited', 'company_number' => 'YEA' . $marker, 'incorporation_date' => '2025-01-01']
         );
         $companyId = (int)InterfaceDB::fetchColumn('SELECT id FROM companies WHERE company_number = :company_number', ['company_number' => 'YEA' . $marker]);
         InterfaceDB::prepareExecute(
@@ -557,6 +542,9 @@ function yearEndActionDirectorLoanTestWithFixture(GeneratedServiceClassTestHarne
             'SELECT id FROM accounting_periods WHERE company_id = :company_id AND label = :label',
             ['company_id' => $companyId, 'label' => 'YEA ' . $marker]
         );
+        if (InterfaceDB::tableExists('corporation_tax_periods')) {
+            (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $accountingPeriodId);
+        }
 
         $callback([
             'marker' => $marker,

@@ -457,7 +457,6 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
             $fixture = dividend_service_two_period_fixture($service);
             dividend_service_lock_prior_close($fixture);
             dividend_service_add_profit_journal($fixture['company_id'], $fixture['prior_period_id'], $fixture['marker'] . 'STALE', 10.00, '2021-12-15');
-            dividend_service_save_reserve_review($fixture['company_id'], $fixture['prior_period_id']);
 
             $result = $service->declareDividend([
                 'company_id' => $fixture['company_id'],
@@ -469,7 +468,7 @@ $harness->run(\eel_accounts\Service\DividendService::class, function (GeneratedS
             ]);
 
             $harness->assertSame(false, (bool)($result['success'] ?? true));
-            $harness->assertTrue(str_contains(implode(' ', (array)($result['errors'] ?? [])), 'prior period retained earnings close is stale'));
+            $harness->assertTrue(str_contains(implode(' ', (array)($result['errors'] ?? [])), 'prior period distributable reserve review is stale'));
         } finally {
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();
@@ -643,18 +642,6 @@ function dividend_service_require_year_end_schema(GeneratedServiceClassTestHarne
     foreach (['year_end_reviews', 'journal_entry_metadata'] as $table) {
         if (!InterfaceDB::tableExists($table)) {
             $harness->skip($table . ' table is not available.');
-        }
-    }
-    foreach ([
-        'retained_earnings_close_acknowledged_at',
-        'retained_earnings_close_acknowledged_by',
-        'retained_earnings_close_opening_equity',
-        'retained_earnings_close_current_profit_loss',
-        'retained_earnings_close_closing_equity_before',
-        'retained_earnings_close_amount',
-    ] as $column) {
-        if (!InterfaceDB::columnExists('year_end_reviews', $column)) {
-            $harness->skip($column . ' column is not available.');
         }
     }
 }

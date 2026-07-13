@@ -26,6 +26,15 @@ final class _dashboard_action_queueCard extends CardBaseFramework
                     'accountingPeriodId' => ':company.accounting_period_id',
                 ],
             ],
+            [
+                'key' => 'year_end_dashboard_summary',
+                'service' => \eel_accounts\Service\YearEndChecklistService::class,
+                'method' => 'fetchDashboardSummary',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                ],
+            ],
         ];
     }
 
@@ -62,6 +71,22 @@ final class _dashboard_action_queueCard extends CardBaseFramework
         $services = (array)($context['services'] ?? []);
         $dashboardData = (array)($services['dashboard_data'] ?? []);
         $actionQueue = (array)($services['dashboard_action_queue'] ?? ($dashboardData['activity'] ?? (($context['page'] ?? [])['action_queue'] ?? [])));
+        $yearEndSummary = (array)($services['year_end_dashboard_summary'] ?? (($context['page'] ?? [])['year_end_dashboard_summary'] ?? []));
+        $yearEndAction = $this->yearEndAction($yearEndSummary);
+        $yearEndError = (($context['service_errors'] ?? [])['year_end_dashboard_summary'] ?? null) !== null;
+
+        if ($yearEndAction !== null || $yearEndError) {
+            $actionQueue = array_values(array_filter(
+                $actionQueue,
+                fn(mixed $item): bool => !$this->isEmptyStateAction($item)
+            ));
+            array_unshift($actionQueue, $yearEndAction ?? [
+                'title' => 'Year-end status unavailable',
+                'detail' => 'The dashboard could not check year-end readiness for the selected accounting period. Open Year End to review the detailed checklist.',
+                'state' => 'warn',
+            ]);
+        }
+
         $itemsHtml = '';
 
         foreach ($actionQueue as $item) {
@@ -92,6 +117,51 @@ final class _dashboard_action_queueCard extends CardBaseFramework
         }
 
         return '<div class="list">' . $itemsHtml . '</div>';
+    }
+
+    private function yearEndAction(array $summary): ?array
+    {
+        $topIssues = array_values(array_filter(
+            (array)($summary['top_issues'] ?? []),
+            static fn(mixed $issue): bool => is_array($issue)
+        ));
+        $issueCount = count($topIssues);
+
+        if ($issueCount === 0) {
+            return null;
+        }
+
+        $hasFailure = false;
+        foreach ($topIssues as $issue) {
+            if (strtolower(trim((string)($issue['status'] ?? ''))) === 'fail') {
+                $hasFailure = true;
+                break;
+            }
+        }
+
+        $periodLabel = trim((string)($summary['period_label'] ?? ''));
+        $detail = $issueCount . ' year-end check' . ($issueCount === 1 ? '' : 's') . ' need' . ($issueCount === 1 ? 's' : '') . ' attention';
+        if ($periodLabel !== '') {
+            $detail .= ' for ' . $periodLabel;
+        }
+        $detail .= '. Open Year End to review the detailed checklist.';
+
+        return [
+            'title' => 'Complete year-end review',
+            'detail' => $detail,
+            'state' => $hasFailure ? 'bad' : 'warn',
+        ];
+    }
+
+    private function isEmptyStateAction(mixed $item): bool
+    {
+        if (!is_array($item)) {
+            return false;
+        }
+
+        $title = strtolower(trim((string)($item['title'] ?? '')));
+
+        return str_contains($title, 'no immediate actions') || str_contains($title, 'no queued actions');
     }
 
     private function actionState(array $item): string

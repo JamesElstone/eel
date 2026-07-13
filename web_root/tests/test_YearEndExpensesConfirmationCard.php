@@ -32,6 +32,7 @@ $harness->run(_year_end_expenses_confirmationCard::class, static function (Gener
                 ],
             ],
             'expense_position_acknowledged' => true,
+            'expense_position_acknowledgement_state' => 'current',
             'expense_position_acknowledged_at' => '2026-07-06 10:00:00',
             'expense_position_acknowledged_by' => 'Alex Example using the web_app',
         ]));
@@ -57,7 +58,7 @@ $harness->run(_year_end_expenses_confirmationCard::class, static function (Gener
         ]));
 
         $harness->assertSame(true, str_contains($uncheckedHtml, 'No expense claim balances were found'));
-        $harness->assertSame(true, str_contains($uncheckedHtml, 'I acknowledge that the year-end expense claim position has been reviewed'));
+        $harness->assertSame(true, str_contains($uncheckedHtml, 'I confirm that I have reviewed the expense position shown above'));
         $harness->assertSame(true, str_contains($uncheckedHtml, 'disabled data-year-end-ack-submit'));
         $harness->assertSame(false, str_contains($uncheckedHtml, 'checked required'));
     });

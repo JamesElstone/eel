@@ -73,6 +73,7 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
                 'companyId' => $companyId,
                 'accountingPeriodId' => $accountingPeriodId,
                 'acknowledged' => $acknowledged,
+                'acknowledgementState' => (string)($offset['closing_balance_acknowledgement_state'] ?? ''),
                 'acknowledgedAt' => (string)($offset['closing_balance_acknowledged_at'] ?? ''),
                 'acknowledgedBy' => (string)($offset['closing_balance_acknowledged_by'] ?? ''),
                 'note' => (string)($offset['director_loan_closing_approval_note'] ?? ''),
@@ -106,7 +107,7 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
                 </table>
             </div>
             ' . $warningsHtml . '
-            ' . $this->taxReviewHtml($taxReview, $companySettings) . '
+            ' . $this->taxReviewHtml($taxReview, $companySettings, $companyId, $accountingPeriodId) . '
             ' . (empty($offset['can_post']) ? '<div class="helper">' . HelperFramework::escape((string)($offset['post_blocked_reason'] ?? '')) . '</div>' : '') . '
             ' . $acknowledgementForm . '
         </section>';
@@ -122,7 +123,7 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
         return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
     }
 
-    private function taxReviewHtml(array $taxReview, array $companySettings): string
+    private function taxReviewHtml(array $taxReview, array $companySettings, int $companyId, int $accountingPeriodId): string
     {
         if (empty($taxReview['available'])) {
             $errors = (array)($taxReview['errors'] ?? []);
@@ -143,6 +144,25 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
         }
 
         $repaymentDate = trim((string)($taxReview['repayment_review_date'] ?? ''));
+        $acknowledgement = (array)($taxReview['acknowledgement'] ?? []);
+        $approvalHtml = !empty($taxReview['review_required']) || $acknowledgement !== []
+            ? \eel_accounts\Renderer\YearEndApprovalRenderer::render([
+                'subject' => 'director loan tax position',
+                'companyId' => $companyId,
+                'accountingPeriodId' => $accountingPeriodId,
+                'acknowledged' => !empty($taxReview['acknowledgement_current']),
+                'acknowledgementState' => (string)($taxReview['acknowledgement_state'] ?? 'absent'),
+                'acknowledgedAt' => (string)($acknowledgement['acknowledged_at'] ?? ''),
+                'acknowledgedBy' => (string)($acknowledgement['acknowledged_by'] ?? ''),
+                'note' => (string)($acknowledgement['note'] ?? ''),
+                'intent' => 'acknowledge_review_check',
+                'revokeIntent' => 'reopen_review_check',
+                'approveFields' => ['check_code' => 'director_loan_tax_review'],
+                'revokeFields' => ['check_code' => 'director_loan_tax_review'],
+                'noteName' => 'review_acknowledgement_note',
+                'noteId' => 'director-loan-tax-review-note',
+            ])
+            : '';
 
         return '<div class="panel-soft stack">
             <div class="status-head">
@@ -153,6 +173,7 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
                 ' . $this->summaryCard('Repayment review date', $repaymentDate !== '' ? HelperFramework::displayDate($repaymentDate) : 'Not applicable') . '
             </div>
             <ul class="settings-list">' . $itemsHtml . '</ul>
+            ' . $approvalHtml . '
         </div>';
     }
 

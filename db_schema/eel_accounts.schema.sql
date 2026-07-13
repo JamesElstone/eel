@@ -2302,31 +2302,6 @@ CREATE TABLE `year_end_audit_log` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Table structure for table `year_end_check_results`
---
-
-DROP TABLE IF EXISTS `year_end_check_results`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `year_end_check_results` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `company_id` int(11) NOT NULL,
-  `accounting_period_id` int(11) NOT NULL,
-  `check_code` varchar(100) NOT NULL,
-  `severity` enum('info','warning','fail') NOT NULL DEFAULT 'info',
-  `status` enum('pass','warning','fail','not_applicable') NOT NULL DEFAULT 'pass',
-  `title` varchar(255) NOT NULL,
-  `detail_text` text DEFAULT NULL,
-  `metric_value` varchar(255) DEFAULT NULL,
-  `action_url` varchar(500) DEFAULT NULL,
-  `calculated_at` datetime NOT NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uniq_year_end_check_results_company_period_code` (`company_id`,`accounting_period_id`,`check_code`),
-  KEY `idx_year_end_check_results_company_period` (`company_id`,`accounting_period_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=241 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
 -- Table structure for table `year_end_reviews`
 --
 
@@ -2337,28 +2312,10 @@ CREATE TABLE `year_end_reviews` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
   `accounting_period_id` int(11) NOT NULL,
-  `status` enum('not_started','in_progress','needs_attention','ready_for_review','locked') NOT NULL DEFAULT 'not_started',
   `is_locked` tinyint(1) NOT NULL DEFAULT 0,
   `locked_at` datetime DEFAULT NULL,
   `locked_by` varchar(100) DEFAULT NULL,
   `review_notes` text DEFAULT NULL,
-  `director_loan_closing_acknowledged_at` datetime DEFAULT NULL,
-  `director_loan_closing_acknowledged_by` varchar(100) DEFAULT NULL,
-  `director_loan_closing_approval_note` text DEFAULT NULL,
-  `tax_readiness_acknowledged_at` datetime DEFAULT NULL,
-  `tax_readiness_acknowledged_by` varchar(100) DEFAULT NULL,
-  `tax_readiness_approval_note` text DEFAULT NULL,
-  `expense_position_acknowledged_at` datetime DEFAULT NULL,
-  `expense_position_acknowledged_by` varchar(100) DEFAULT NULL,
-  `expense_position_approval_note` text DEFAULT NULL,
-  `retained_earnings_close_acknowledged_at` datetime DEFAULT NULL,
-  `retained_earnings_close_acknowledged_by` varchar(100) DEFAULT NULL,
-  `retained_earnings_close_approval_note` text DEFAULT NULL,
-  `retained_earnings_close_opening_equity` decimal(14,2) DEFAULT NULL,
-  `retained_earnings_close_current_profit_loss` decimal(14,2) DEFAULT NULL,
-  `retained_earnings_close_closing_equity_before` decimal(14,2) DEFAULT NULL,
-  `retained_earnings_close_amount` decimal(14,2) DEFAULT NULL,
-  `last_recalculated_at` datetime DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
@@ -2383,6 +2340,9 @@ CREATE TABLE `year_end_review_acknowledgements` (
   `acknowledged_at` datetime NOT NULL,
   `acknowledged_by` varchar(100) NOT NULL,
   `note` text DEFAULT NULL,
+  `basis_version` varchar(50) DEFAULT NULL,
+  `basis_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `basis_json` longtext DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   PRIMARY KEY (`id`),
@@ -2466,7 +2426,8 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_06_002_remove_pending_prepayment_status.sql'),
   ('2026_07_07_001_transaction_splits.sql'),
   ('2026_07_07_002_transaction_inter_ac_marker.sql'),
-  ('2026_07_07_003_sourced_tax_rate_rules.sql');
+  ('2026_07_07_003_sourced_tax_rate_rules.sql'),
+  ('2026_07_13_001_live_year_end_acknowledgements.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

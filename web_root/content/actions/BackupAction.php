@@ -24,7 +24,7 @@ final class BackupAction implements ActionInterfaceFramework
         $session = new SessionAuthenticationService();
         $session->startSession();
 
-        if (!$this->canUseBackups($session) || !$session->isValidCsrfToken((string)$request->input('csrf_token', ''))) {
+        if (!(new \eel_accounts\Service\BackupAccessService())->canUseBackups($session) || !$session->isValidCsrfToken((string)$request->input('csrf_token', ''))) {
             return $this->error('You do not have permission to create database backups, or your security token expired.');
         }
 
@@ -51,7 +51,7 @@ final class BackupAction implements ActionInterfaceFramework
         $session = new SessionAuthenticationService();
         $session->startSession();
 
-        if (!$this->canUseBackups($session) || !$session->isValidCsrfToken((string)$request->input('csrf_token', ''))) {
+        if (!(new \eel_accounts\Service\BackupAccessService())->canUseBackups($session) || !$session->isValidCsrfToken((string)$request->input('csrf_token', ''))) {
             return $this->error('You do not have permission to restore database backups, or your security token expired.');
         }
 
@@ -87,7 +87,7 @@ final class BackupAction implements ActionInterfaceFramework
         $session = new SessionAuthenticationService();
         $session->startSession();
 
-        if (!$this->canUseBackups($session) || !$session->isValidCsrfToken((string)$request->input('csrf_token', ''))) {
+        if (!(new \eel_accounts\Service\BackupAccessService())->canUseBackups($session) || !$session->isValidCsrfToken((string)$request->input('csrf_token', ''))) {
             return $this->error('You do not have permission to download database backups, or your security token expired.');
         }
 
@@ -114,14 +114,6 @@ final class BackupAction implements ActionInterfaceFramework
         header('Content-Length: ' . (string)$sizeBytes);
         readfile($path);
         exit;
-    }
-
-    private function canUseBackups(SessionAuthenticationService $session): bool
-    {
-        $deviceId = trim((string)AntiFraudService::instance()->requestValue('Client-Device-ID'));
-        $userId = $session->authenticatedUserId($deviceId);
-
-        return $userId > 0 && in_array('backup', (new CardAccessFramework())->allowedCardsForUser($userId, ['backup']), true);
     }
 
     private function error(string $message): ActionResultFramework

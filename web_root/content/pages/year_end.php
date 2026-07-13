@@ -88,7 +88,7 @@ final class _year_end extends PageContextFramework
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $checklist = $companyId > 0 && $accountingPeriodId > 0
-            ? ((new \eel_accounts\Service\YearEndChecklistService())->fetchChecklist($companyId, $accountingPeriodId, false) ?? [])
+            ? ((new \eel_accounts\Service\YearEndChecklistService())->fetchChecklist($companyId, $accountingPeriodId) ?? [])
             : [];
 
         return [

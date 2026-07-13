@@ -77,12 +77,13 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
         $staleHtml = $stale
             ? '<div class="helper">Figures have changed since the last agreement. Review them and agree again before locking.</div>'
             : '';
-        $review = (array)($close['review'] ?? []);
+        $acknowledgement = (array)($close['acknowledgement'] ?? []);
         $acknowledgementForm = $this->acknowledgementHtml(
             $acknowledged && !$stale,
-            (string)($review['retained_earnings_close_acknowledged_at'] ?? ''),
-            (string)($review['retained_earnings_close_acknowledged_by'] ?? ''),
-            (string)($review['retained_earnings_close_approval_note'] ?? ''),
+            (string)($close['acknowledgement_state'] ?? 'absent'),
+            (string)($acknowledgement['acknowledged_at'] ?? ''),
+            (string)($acknowledgement['acknowledged_by'] ?? ''),
+            (string)($acknowledgement['note'] ?? ''),
             $companyId,
             $accountingPeriodId
         );
@@ -107,13 +108,14 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
         </section>';
     }
 
-    private function acknowledgementHtml(bool $acknowledged, string $acknowledgedAt, string $acknowledgedBy, string $note, int $companyId, int $accountingPeriodId): string
+    private function acknowledgementHtml(bool $acknowledged, string $state, string $acknowledgedAt, string $acknowledgedBy, string $note, int $companyId, int $accountingPeriodId): string
     {
         return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
             'subject' => 'retained earnings close',
             'companyId' => $companyId,
             'accountingPeriodId' => $accountingPeriodId,
             'acknowledged' => $acknowledged,
+            'acknowledgementState' => $state,
             'acknowledgedAt' => $acknowledgedAt,
             'acknowledgedBy' => $acknowledgedBy,
             'note' => $note,

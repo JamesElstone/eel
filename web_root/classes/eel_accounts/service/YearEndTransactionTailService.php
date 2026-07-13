@@ -14,6 +14,8 @@ final class YearEndTransactionTailService
 {
     public function __construct(
         private readonly ?\eel_accounts\Service\YearEndMetricsService $metricsService = null,
+        private readonly ?\eel_accounts\Service\YearEndAcknowledgementService $acknowledgementService = null,
+        private readonly ?\eel_accounts\Service\YearEndLockService $lockService = null,
     ) {
     }
 
@@ -70,6 +72,7 @@ final class YearEndTransactionTailService
                 'account' => (string)($account['account_name'] ?? ''),
                 'account_type' => (string)($account['account_type'] ?? ''),
                 'is_active' => (int)($account['is_active'] ?? 0),
+                'last_transaction_id' => (int)($lastTransaction['id'] ?? 0),
                 'last_transaction_date' => (string)($lastTransaction['txn_date'] ?? ''),
                 'last_transaction_desc' => (string)($lastTransaction['description'] ?? ''),
                 'last_transaction_amount' => $lastTransaction['amount'] ?? null,
@@ -83,13 +86,25 @@ final class YearEndTransactionTailService
             ];
         }
 
-        return [
+        $context = [
             'available' => true,
             'accounting_period' => $accountingPeriod,
             'rows' => $rows,
             'account_count' => count($rows),
             'accounts_with_transactions' => count(array_filter($rows, static fn(array $row): bool => (string)($row['last_transaction_date'] ?? '') !== '')),
-            'acknowledgement' => $this->fetchAcknowledgement($companyId, $accountingPeriodId),
+        ];
+        $service = $this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService();
+        $acknowledgement = $service->fetch($companyId, $accountingPeriodId, 'transaction_tail_review');
+        $evaluation = $service->evaluate(
+            $acknowledgement,
+            $service->buildBasis('transaction_tail_review', $context),
+            ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId)
+        );
+
+        return $context + [
+            'acknowledgement' => !empty($evaluation['current']) ? $acknowledgement : null,
+            'previous_acknowledgement' => empty($evaluation['current']) ? $acknowledgement : null,
+            'acknowledgement_state' => (string)($evaluation['state'] ?? 'absent'),
         ];
     }
 
@@ -278,28 +293,4 @@ final class YearEndTransactionTailService
         }
     }
 
-    private function fetchAcknowledgement(int $companyId, int $accountingPeriodId): ?array
-    {
-        if (!$this->tableExists('year_end_review_acknowledgements')) {
-            return null;
-        }
-
-        $row = \InterfaceDB::fetchOne(
-            'SELECT acknowledged_at,
-                    acknowledged_by,
-                    note
-             FROM year_end_review_acknowledgements
-             WHERE company_id = :company_id
-               AND accounting_period_id = :accounting_period_id
-               AND check_code = :check_code
-             LIMIT 1',
-            [
-                'company_id' => $companyId,
-                'accounting_period_id' => $accountingPeriodId,
-                'check_code' => 'transaction_tail_review',
-            ]
-        );
-
-        return is_array($row) ? $row : null;
-    }
 }

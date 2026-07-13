@@ -61,7 +61,7 @@ final class _year_end_transaction_tailCard extends CardBaseFramework
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriod = (array)($tail['accounting_period'] ?? []);
         $accountingPeriodId = (int)($accountingPeriod['id'] ?? ($company['accounting_period_id'] ?? 0));
-        $acknowledgement = $tail['acknowledgement'] ?? null;
+        $acknowledgement = $tail['acknowledgement'] ?? $tail['previous_acknowledgement'] ?? null;
         $rowsHtml = '';
         foreach ((array)($tail['rows'] ?? []) as $row) {
             $amount = array_key_exists('last_transaction_amount', $row) ? $row['last_transaction_amount'] : null;
@@ -89,18 +89,19 @@ final class _year_end_transaction_tailCard extends CardBaseFramework
                     <tbody>' . $rowsHtml . '</tbody>
                 </table>
             </div>
-            ' . $this->acknowledgementHtml(is_array($acknowledgement) ? $acknowledgement : null, $companyId, $accountingPeriodId) . '
+            ' . $this->acknowledgementHtml(is_array($acknowledgement) ? $acknowledgement : null, (string)($tail['acknowledgement_state'] ?? 'absent'), $companyId, $accountingPeriodId) . '
         </section>';
     }
 
-    private function acknowledgementHtml(?array $acknowledgement, int $companyId, int $accountingPeriodId): string
+    private function acknowledgementHtml(?array $acknowledgement, string $state, int $companyId, int $accountingPeriodId): string
     {
-        $acknowledged = $acknowledgement !== null;
+        $acknowledged = $state === 'current';
         return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
             'subject' => 'transaction cut-off position',
             'companyId' => $companyId,
             'accountingPeriodId' => $accountingPeriodId,
             'acknowledged' => $acknowledged,
+            'acknowledgementState' => $state,
             'acknowledgedAt' => (string)($acknowledgement['acknowledged_at'] ?? ''),
             'acknowledgedBy' => (string)($acknowledgement['acknowledged_by'] ?? ''),
             'note' => (string)($acknowledgement['note'] ?? ''),

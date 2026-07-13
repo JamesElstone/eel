@@ -7,91 +7,32 @@
  */
 declare(strict_types=1);
 
-
 namespace eel_accounts\Service;
 
 final class YearEndLockService
 {
-    public function fetchReview(int $companyId, int $accountingPeriodId): ?array {
+    public function fetchReview(int $companyId, int $accountingPeriodId): ?array
+    {
         if ($companyId <= 0 || $accountingPeriodId <= 0 || !$this->hasReviewTable()) {
             return null;
         }
 
-        $acknowledgementColumns = [];
-        if ($this->hasReviewColumn('director_loan_closing_acknowledged_at') && $this->hasReviewColumn('director_loan_closing_acknowledged_by')) {
-            $acknowledgementColumns[] = 'director_loan_closing_acknowledged_at';
-            $acknowledgementColumns[] = 'director_loan_closing_acknowledged_by';
-            $acknowledgementColumns[] = $this->hasReviewColumn('director_loan_closing_approval_note')
-                ? 'director_loan_closing_approval_note'
-                : 'NULL AS director_loan_closing_approval_note';
-        } else {
-            $acknowledgementColumns[] = 'NULL AS director_loan_closing_acknowledged_at';
-            $acknowledgementColumns[] = 'NULL AS director_loan_closing_acknowledged_by';
-            $acknowledgementColumns[] = 'NULL AS director_loan_closing_approval_note';
-        }
-
-        if ($this->hasReviewColumn('tax_readiness_acknowledged_at') && $this->hasReviewColumn('tax_readiness_acknowledged_by')) {
-            $acknowledgementColumns[] = 'tax_readiness_acknowledged_at';
-            $acknowledgementColumns[] = 'tax_readiness_acknowledged_by';
-            $acknowledgementColumns[] = $this->hasReviewColumn('tax_readiness_approval_note')
-                ? 'tax_readiness_approval_note'
-                : 'NULL AS tax_readiness_approval_note';
-        } else {
-            $acknowledgementColumns[] = 'NULL AS tax_readiness_acknowledged_at';
-            $acknowledgementColumns[] = 'NULL AS tax_readiness_acknowledged_by';
-            $acknowledgementColumns[] = 'NULL AS tax_readiness_approval_note';
-        }
-
-        if ($this->hasReviewColumn('expense_position_acknowledged_at') && $this->hasReviewColumn('expense_position_acknowledged_by')) {
-            $acknowledgementColumns[] = 'expense_position_acknowledged_at';
-            $acknowledgementColumns[] = 'expense_position_acknowledged_by';
-            $acknowledgementColumns[] = $this->hasReviewColumn('expense_position_approval_note')
-                ? 'expense_position_approval_note'
-                : 'NULL AS expense_position_approval_note';
-        } else {
-            $acknowledgementColumns[] = 'NULL AS expense_position_acknowledged_at';
-            $acknowledgementColumns[] = 'NULL AS expense_position_acknowledged_by';
-            $acknowledgementColumns[] = 'NULL AS expense_position_approval_note';
-        }
-
-        $retainedEarningsColumns = [
-            'retained_earnings_close_acknowledged_at',
-            'retained_earnings_close_acknowledged_by',
-            'retained_earnings_close_approval_note',
-            'retained_earnings_close_opening_equity',
-            'retained_earnings_close_current_profit_loss',
-            'retained_earnings_close_closing_equity_before',
-            'retained_earnings_close_amount',
-        ];
-        foreach ($retainedEarningsColumns as $column) {
-            $acknowledgementColumns[] = $this->hasReviewColumn($column)
-                ? $column
-                : 'NULL AS ' . $column;
-        }
-
-        $row = \InterfaceDB::fetchOne( 'SELECT id,
-                    company_id,
-                    accounting_period_id,
-                    status,
-                    is_locked,
-                    locked_at,
-                    locked_by,
-                    review_notes,
-                    ' . implode(",\n                    ", $acknowledgementColumns) . ',
-                    last_recalculated_at,
-                    created_at,
-                    updated_at
+        $row = \InterfaceDB::fetchOne(
+            'SELECT id, company_id, accounting_period_id,
+                    is_locked, locked_at, locked_by, review_notes,
+                    created_at, updated_at
              FROM year_end_reviews
              WHERE company_id = :company_id
                AND accounting_period_id = :accounting_period_id
-             LIMIT 1', [
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-        ]);
+             LIMIT 1',
+            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+        );
+
         return is_array($row) ? $row : null;
     }
 
-    public function isLocked(int $companyId, int $accountingPeriodId): bool {
+    public function isLocked(int $companyId, int $accountingPeriodId): bool
+    {
         if ($companyId <= 0 || $accountingPeriodId <= 0 || !$this->hasReviewTable()) {
             return false;
         }
@@ -103,183 +44,43 @@ final class YearEndLockService
                  WHERE company_id = :company_id
                    AND accounting_period_id = :accounting_period_id
                  LIMIT 1',
-                [
-                    'company_id' => $companyId,
-                    'accounting_period_id' => $accountingPeriodId,
-                ]
+                ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
             ) === 1;
         } catch (\Throwable) {
             return false;
         }
     }
 
-    public function assertUnlocked(int $companyId, int $accountingPeriodId, string $actionLabel = 'change this period'): void {
+    public function assertUnlocked(int $companyId, int $accountingPeriodId, string $actionLabel = 'change this period'): void
+    {
         if ($this->isLocked($companyId, $accountingPeriodId)) {
             throw new \RuntimeException('This accounting period is locked, so you cannot ' . trim($actionLabel) . '.');
         }
     }
 
-    public function saveRecalculationSnapshot(
-        int $companyId,
-        int $accountingPeriodId,
-        string $status,
-        array $checkRows
-    ): array {
-        if (!$this->hasReviewTable()) {
-            return [
-                'success' => false,
-                'errors' => ['Run the Year End review migration before recalculating this checklist.'],
-            ];
-        }
-
-        if ($this->isLocked($companyId, $accountingPeriodId)) {
-            return [
-                'success' => true,
-                'review' => $this->fetchReview($companyId, $accountingPeriodId),
-            ];
-        }
-
-        $status = $this->normaliseStatus($status);
-        $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
-        $existing = $this->fetchReview($companyId, $accountingPeriodId);
-
-        $ownsTransaction = !\InterfaceDB::inTransaction();
-        if ($ownsTransaction) {
-            \InterfaceDB::beginTransaction();
-        }
-
-        try {
-            if ($existing === null) {
-                \InterfaceDB::execute( 'INSERT INTO year_end_reviews (
-                        company_id,
-                        accounting_period_id,
-                        status,
-                        is_locked,
-                        review_notes,
-                        last_recalculated_at,
-                        created_at,
-                        updated_at
-                     ) VALUES (
-                        :company_id,
-                        :accounting_period_id,
-                        :status,
-                        0,
-                        NULL,
-                        :last_recalculated_at,
-                        :created_at,
-                        :updated_at
-                     )', [
-                    'company_id' => $companyId,
-                    'accounting_period_id' => $accountingPeriodId,
-                    'status' => $status,
-                    'last_recalculated_at' => $now,
-                    'created_at' => $now,
-                    'updated_at' => $now,
-                ]);
-            } else {
-                \InterfaceDB::execute( 'UPDATE year_end_reviews
-                     SET status = :status,
-                         last_recalculated_at = :last_recalculated_at,
-                         updated_at = :updated_at
-                     WHERE company_id = :company_id
-                       AND accounting_period_id = :accounting_period_id'
-                , [
-                    'status' => (int)($existing['is_locked'] ?? 0) === 1 ? 'locked' : $status,
-                    'last_recalculated_at' => $now,
-                    'updated_at' => $now,
-                    'company_id' => $companyId,
-                    'accounting_period_id' => $accountingPeriodId,
-                ]);
-            }
-
-            \InterfaceDB::execute( 'DELETE FROM year_end_check_results
-                 WHERE company_id = :company_id
-                   AND accounting_period_id = :accounting_period_id'
-            , [
-                'company_id' => $companyId,
-                'accounting_period_id' => $accountingPeriodId,
-            ]);
-
-            $insertCheckSql = 'INSERT INTO year_end_check_results (
-                    company_id,
-                    accounting_period_id,
-                    check_code,
-                    severity,
-                    status,
-                    title,
-                    detail_text,
-                    metric_value,
-                    action_url,
-                    calculated_at
-                 ) VALUES (
-                    :company_id,
-                    :accounting_period_id,
-                    :check_code,
-                    :severity,
-                    :status,
-                    :title,
-                    :detail_text,
-                    :metric_value,
-                    :action_url,
-                    :calculated_at
-                 )';
-
-            foreach ($checkRows as $row) {
-                \InterfaceDB::execute( $insertCheckSql, [
-                    'company_id' => $companyId,
-                    'accounting_period_id' => $accountingPeriodId,
-                    'check_code' => (string)($row['check_code'] ?? ''),
-                    'severity' => $this->normaliseSeverity((string)($row['severity'] ?? 'info')),
-                    'status' => $this->normaliseCheckStatus((string)($row['status'] ?? 'pass')),
-                    'title' => (string)($row['title'] ?? ''),
-                    'detail_text' => trim((string)($row['detail_text'] ?? '')) !== '' ? (string)$row['detail_text'] : null,
-                    'metric_value' => trim((string)($row['metric_value'] ?? '')) !== '' ? (string)$row['metric_value'] : null,
-                    'action_url' => trim((string)($row['action_url'] ?? '')) !== '' ? (string)$row['action_url'] : null,
-                    'calculated_at' => $now,
-                ]);
-            }
-
-            if ($ownsTransaction) {
-                \InterfaceDB::commit();
-            }
-        } catch (\Throwable $exception) {
-            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
-                \InterfaceDB::rollBack();
-            }
-
-            throw $exception;
-        }
-
-        return [
-            'success' => true,
-            'review' => $this->fetchReview($companyId, $accountingPeriodId),
-        ];
-    }
-
-    public function saveNotes(int $companyId, int $accountingPeriodId, string $notes, string $changedBy = 'web_app'): array {
+    public function saveNotes(int $companyId, int $accountingPeriodId, string $notes, string $changedBy = 'web_app'): array
+    {
         $this->assertUnlocked($companyId, $accountingPeriodId, 'change the year-end notes for this period');
         if (!$this->hasReviewTable()) {
-            return [
-                'success' => false,
-                'errors' => ['Run the Year End review migration before saving notes.'],
-            ];
+            return ['success' => false, 'errors' => ['Run the Year End review migration before saving notes.']];
         }
 
         $this->ensureReviewRow($companyId, $accountingPeriodId);
         $existing = $this->fetchReview($companyId, $accountingPeriodId);
         $notes = trim($notes);
+        $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
 
-        \InterfaceDB::execute( 'UPDATE year_end_reviews
-             SET review_notes = :review_notes,
-                 updated_at = :updated_at
-             WHERE company_id = :company_id
-               AND accounting_period_id = :accounting_period_id'
-        , [
-            'review_notes' => $notes !== '' ? $notes : null,
-            'updated_at' => (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s'),
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-        ]);
+        \InterfaceDB::execute(
+            'UPDATE year_end_reviews
+             SET review_notes = :review_notes, updated_at = :updated_at
+             WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
+            [
+                'review_notes' => $notes !== '' ? $notes : null,
+                'updated_at' => $now,
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+            ]
+        );
 
         $this->writeAuditLog(
             $companyId,
@@ -290,302 +91,54 @@ final class YearEndLockService
             ['review_notes' => $notes !== '' ? $notes : null]
         );
 
-        return [
-            'success' => true,
-            'review' => $this->fetchReview($companyId, $accountingPeriodId),
-        ];
+        return ['success' => true, 'review' => $this->fetchReview($companyId, $accountingPeriodId)];
     }
 
-    public function saveDirectorLoanClosingAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array {
-        $this->assertUnlocked($companyId, $accountingPeriodId, 'change the director loan confirmation for this period');
+    public function lockPeriod(int $companyId, int $accountingPeriodId, string $lockedBy = 'web_app'): array
+    {
         if (!$this->hasReviewTable()) {
-            return [
-                'success' => false,
-                'errors' => ['Run the Year End review migration before saving director loan acknowledgements.'],
-            ];
-        }
-
-        if (!$this->hasReviewColumn('director_loan_closing_acknowledged_at') || !$this->hasReviewColumn('director_loan_closing_acknowledged_by')) {
-            return [
-                'success' => false,
-                'errors' => ['Run the Director Loan year-end acknowledgement migration before saving this acknowledgement.'],
-            ];
+            return ['success' => false, 'errors' => ['Run the Year End review migration before locking periods.']];
         }
 
         $this->ensureReviewRow($companyId, $accountingPeriodId);
         $existing = $this->fetchReview($companyId, $accountingPeriodId);
         $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
-        $hasApprovalNote = $this->hasReviewColumn('director_loan_closing_approval_note');
-        $noteSql = $hasApprovalNote
-            ? ',
-                 director_loan_closing_approval_note = ' . ($acknowledged ? ':approval_note' : 'NULL')
-            : '';
-
-        \InterfaceDB::execute( 'UPDATE year_end_reviews
-             SET director_loan_closing_acknowledged_at = ' . ($acknowledged ? ':acknowledged_at' : 'NULL') . ',
-                 director_loan_closing_acknowledged_by = ' . ($acknowledged ? ':acknowledged_by' : 'NULL') . ',
-                 ' . ltrim($noteSql, "\n,") . ($noteSql !== '' ? ',' : '') . '
-                 updated_at = :updated_at
-             WHERE company_id = :company_id
-               AND accounting_period_id = :accounting_period_id'
-        , array_filter([
-            'acknowledged_at' => $acknowledged ? $now : null,
-            'acknowledged_by' => $acknowledged ? $this->actorValue($changedBy) : null,
-            'updated_at' => $now,
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-        ], static fn(mixed $value): bool => $value !== null) + ($hasApprovalNote && $acknowledged ? ['approval_note' => trim($note) !== '' ? trim($note) : null] : []));
-
-        $review = $this->fetchReview($companyId, $accountingPeriodId);
-        $this->writeAuditLog($companyId, $accountingPeriodId, $acknowledged ? 'director_loan_closing_acknowledged' : 'director_loan_closing_reopened', $changedBy, $existing, $review);
-
-        return [
-            'success' => true,
-            'review' => $review,
-        ];
-    }
-
-    public function saveTaxReadinessAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array {
-        $this->assertUnlocked($companyId, $accountingPeriodId, 'change the tax readiness confirmation for this period');
-        if (!$this->hasReviewTable()) {
-            return [
-                'success' => false,
-                'errors' => ['Run the Year End review migration before saving tax readiness acknowledgements.'],
-            ];
-        }
-
-        if (!$this->hasReviewColumn('tax_readiness_acknowledged_at') || !$this->hasReviewColumn('tax_readiness_acknowledged_by')) {
-            return [
-                'success' => false,
-                'errors' => ['Run the Tax Readiness year-end acknowledgement migration before saving this acknowledgement.'],
-            ];
-        }
-
-        $this->ensureReviewRow($companyId, $accountingPeriodId);
-        $existing = $this->fetchReview($companyId, $accountingPeriodId);
-        $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
-        $hasApprovalNote = $this->hasReviewColumn('tax_readiness_approval_note');
-        $noteSql = $hasApprovalNote
-            ? ',
-                 tax_readiness_approval_note = ' . ($acknowledged ? ':approval_note' : 'NULL')
-            : '';
-
-        \InterfaceDB::execute( 'UPDATE year_end_reviews
-             SET tax_readiness_acknowledged_at = ' . ($acknowledged ? ':acknowledged_at' : 'NULL') . ',
-                 tax_readiness_acknowledged_by = ' . ($acknowledged ? ':acknowledged_by' : 'NULL') . ',
-                 ' . ltrim($noteSql, "\n,") . ($noteSql !== '' ? ',' : '') . '
-                 updated_at = :updated_at
-             WHERE company_id = :company_id
-               AND accounting_period_id = :accounting_period_id'
-        , array_filter([
-            'acknowledged_at' => $acknowledged ? $now : null,
-            'acknowledged_by' => $acknowledged ? $this->actorValue($changedBy) : null,
-            'updated_at' => $now,
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-        ], static fn(mixed $value): bool => $value !== null) + ($hasApprovalNote && $acknowledged ? ['approval_note' => trim($note) !== '' ? trim($note) : null] : []));
-
-        $review = $this->fetchReview($companyId, $accountingPeriodId);
-        $this->writeAuditLog($companyId, $accountingPeriodId, $acknowledged ? 'tax_readiness_acknowledged' : 'tax_readiness_reopened', $changedBy, $existing, $review);
-
-        return [
-            'success' => true,
-            'review' => $review,
-        ];
-    }
-
-    public function saveExpensePositionAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array {
-        $this->assertUnlocked($companyId, $accountingPeriodId, 'change the expense confirmation for this period');
-        if (!$this->hasReviewTable()) {
-            return [
-                'success' => false,
-                'errors' => ['Run the Year End review migration before saving expense position acknowledgements.'],
-            ];
-        }
-
-        if (!$this->hasReviewColumn('expense_position_acknowledged_at') || !$this->hasReviewColumn('expense_position_acknowledged_by')) {
-            return [
-                'success' => false,
-                'errors' => ['Run the Expense Position year-end acknowledgement migration before saving this acknowledgement.'],
-            ];
-        }
-
-        $this->ensureReviewRow($companyId, $accountingPeriodId);
-        $existing = $this->fetchReview($companyId, $accountingPeriodId);
-        $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
-        $hasApprovalNote = $this->hasReviewColumn('expense_position_approval_note');
-        $noteSql = $hasApprovalNote
-            ? ',
-                 expense_position_approval_note = ' . ($acknowledged ? ':approval_note' : 'NULL')
-            : '';
-
-        \InterfaceDB::execute( 'UPDATE year_end_reviews
-             SET expense_position_acknowledged_at = ' . ($acknowledged ? ':acknowledged_at' : 'NULL') . ',
-                 expense_position_acknowledged_by = ' . ($acknowledged ? ':acknowledged_by' : 'NULL') . ',
-                 ' . ltrim($noteSql, "\n,") . ($noteSql !== '' ? ',' : '') . '
-                 updated_at = :updated_at
-             WHERE company_id = :company_id
-               AND accounting_period_id = :accounting_period_id'
-        , array_filter([
-            'acknowledged_at' => $acknowledged ? $now : null,
-            'acknowledged_by' => $acknowledged ? $this->actorValue($changedBy) : null,
-            'updated_at' => $now,
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-        ], static fn(mixed $value): bool => $value !== null) + ($hasApprovalNote && $acknowledged ? ['approval_note' => trim($note) !== '' ? trim($note) : null] : []));
-
-        $review = $this->fetchReview($companyId, $accountingPeriodId);
-        $this->writeAuditLog($companyId, $accountingPeriodId, $acknowledged ? 'expense_position_acknowledged' : 'expense_position_reopened', $changedBy, $existing, $review);
-
-        return [
-            'success' => true,
-            'review' => $review,
-        ];
-    }
-
-    public function saveRetainedEarningsCloseAcknowledgement(
-        int $companyId,
-        int $accountingPeriodId,
-        bool $acknowledged,
-        array $summary,
-        string $changedBy = 'web_app',
-        string $note = ''
-    ): array {
-        $this->assertUnlocked($companyId, $accountingPeriodId, 'change the retained earnings confirmation for this period');
-        if (!$this->hasReviewTable()) {
-            return [
-                'success' => false,
-                'errors' => ['Run the Year End review migration before saving retained earnings acknowledgements.'],
-            ];
-        }
-
-        foreach ([
-            'retained_earnings_close_acknowledged_at',
-            'retained_earnings_close_acknowledged_by',
-            'retained_earnings_close_opening_equity',
-            'retained_earnings_close_current_profit_loss',
-            'retained_earnings_close_closing_equity_before',
-            'retained_earnings_close_amount',
-        ] as $column) {
-            if (!$this->hasReviewColumn($column)) {
-                return [
-                    'success' => false,
-                    'errors' => ['Run the Retained Earnings year-end acknowledgement migration before saving this acknowledgement.'],
-                ];
-            }
-        }
-
-        $this->ensureReviewRow($companyId, $accountingPeriodId);
-        $existing = $this->fetchReview($companyId, $accountingPeriodId);
-        $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
-        $hasApprovalNote = $this->hasReviewColumn('retained_earnings_close_approval_note');
-        $noteSql = $hasApprovalNote
-            ? ',
-                 retained_earnings_close_approval_note = ' . ($acknowledged ? ':approval_note' : 'NULL')
-            : '';
 
         \InterfaceDB::execute(
             'UPDATE year_end_reviews
-             SET retained_earnings_close_acknowledged_at = ' . ($acknowledged ? ':acknowledged_at' : 'NULL') . ',
-                 retained_earnings_close_acknowledged_by = ' . ($acknowledged ? ':acknowledged_by' : 'NULL') . ',
-                 ' . ltrim($noteSql, "\n,") . ($noteSql !== '' ? ',' : '') . '
-                 retained_earnings_close_opening_equity = ' . ($acknowledged ? ':opening_equity' : 'NULL') . ',
-                 retained_earnings_close_current_profit_loss = ' . ($acknowledged ? ':current_profit_loss' : 'NULL') . ',
-                 retained_earnings_close_closing_equity_before = ' . ($acknowledged ? ':closing_equity_before' : 'NULL') . ',
-                 retained_earnings_close_amount = ' . ($acknowledged ? ':close_amount' : 'NULL') . ',
-                 updated_at = :updated_at
-             WHERE company_id = :company_id
-               AND accounting_period_id = :accounting_period_id',
-            array_filter([
-                'acknowledged_at' => $acknowledged ? $now : null,
-                'acknowledged_by' => $acknowledged ? $this->actorValue($changedBy) : null,
-                'opening_equity' => $acknowledged ? number_format((float)($summary['opening_equity'] ?? 0), 2, '.', '') : null,
-                'current_profit_loss' => $acknowledged ? number_format((float)($summary['current_profit_loss'] ?? 0), 2, '.', '') : null,
-                'closing_equity_before' => $acknowledged ? number_format((float)($summary['closing_equity_before_close'] ?? 0), 2, '.', '') : null,
-                'close_amount' => $acknowledged ? number_format((float)($summary['retained_earnings_movement'] ?? 0), 2, '.', '') : null,
+             SET is_locked = 1, locked_at = :locked_at, locked_by = :locked_by, updated_at = :updated_at
+             WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
+            [
+                'locked_at' => $now,
+                'locked_by' => $this->actorValue($lockedBy),
                 'updated_at' => $now,
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
-            ], static fn(mixed $value): bool => $value !== null) + ($hasApprovalNote && $acknowledged ? ['approval_note' => trim($note) !== '' ? trim($note) : null] : [])
+            ]
         );
-
-        $review = $this->fetchReview($companyId, $accountingPeriodId);
-        $this->writeAuditLog($companyId, $accountingPeriodId, $acknowledged ? 'retained_earnings_close_acknowledged' : 'retained_earnings_close_reopened', $changedBy, $existing, $review);
-
-        return [
-            'success' => true,
-            'review' => $review,
-        ];
-    }
-
-    public function lockPeriod(int $companyId, int $accountingPeriodId, string $lockedBy = 'web_app'): array {
-        if (!$this->hasReviewTable()) {
-            return [
-                'success' => false,
-                'errors' => ['Run the Year End review migration before locking periods.'],
-            ];
-        }
-
-        $this->ensureReviewRow($companyId, $accountingPeriodId);
-        $existing = $this->fetchReview($companyId, $accountingPeriodId);
-        $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
-
-        \InterfaceDB::execute( 'UPDATE year_end_reviews
-             SET status = :status,
-                 is_locked = 1,
-                 locked_at = :locked_at,
-                 locked_by = :locked_by,
-                 updated_at = :updated_at
-             WHERE company_id = :company_id
-               AND accounting_period_id = :accounting_period_id'
-        , [
-            'status' => 'locked',
-            'locked_at' => $now,
-            'locked_by' => $this->actorValue($lockedBy),
-            'updated_at' => $now,
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-        ]);
 
         $review = $this->fetchReview($companyId, $accountingPeriodId);
         $this->writeAuditLog($companyId, $accountingPeriodId, 'lock', $lockedBy, $existing, $review);
 
-        return [
-            'success' => true,
-            'review' => $review,
-        ];
+        return ['success' => true, 'review' => $review];
     }
 
-    public function unlockPeriod(int $companyId, int $accountingPeriodId, string $changedBy = 'web_app', ?string $notes = null): array {
+    public function unlockPeriod(int $companyId, int $accountingPeriodId, string $changedBy = 'web_app', ?string $notes = null): array
+    {
         if (!$this->hasReviewTable()) {
-            return [
-                'success' => false,
-                'errors' => ['Run the Year End review migration before unlocking periods.'],
-            ];
+            return ['success' => false, 'errors' => ['Run the Year End review migration before unlocking periods.']];
         }
 
         $this->ensureReviewRow($companyId, $accountingPeriodId);
         $existing = $this->fetchReview($companyId, $accountingPeriodId);
         $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
 
-        \InterfaceDB::execute( 'UPDATE year_end_reviews
-             SET is_locked = 0,
-                 locked_at = NULL,
-                 locked_by = NULL,
-                 status = CASE
-                    WHEN status = :locked_status THEN :fallback_status
-                    ELSE status
-                 END,
-                 updated_at = :updated_at
-             WHERE company_id = :company_id
-               AND accounting_period_id = :accounting_period_id'
-        , [
-            'locked_status' => 'locked',
-            'fallback_status' => 'in_progress',
-            'updated_at' => $now,
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-        ]);
+        \InterfaceDB::execute(
+            'UPDATE year_end_reviews
+             SET is_locked = 0, locked_at = NULL, locked_by = NULL, updated_at = :updated_at
+             WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
+            ['updated_at' => $now, 'company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+        );
 
         $review = $this->fetchReview($companyId, $accountingPeriodId);
         $this->writeAuditLog($companyId, $accountingPeriodId, 'unlock', $changedBy, $existing, $review, $notes);
@@ -606,121 +159,72 @@ final class YearEndLockService
         ?array $newValue = null,
         ?string $notes = null
     ): void {
-        if (!$this->hasAuditLogTable()) {
+        if (!$this->tableExists('year_end_audit_log')) {
             return;
         }
 
-        \InterfaceDB::execute( 'INSERT INTO year_end_audit_log (
-                company_id,
-                accounting_period_id,
-                action,
-                action_by,
-                action_at,
-                old_value_json,
-                new_value_json,
-                notes
+        \InterfaceDB::execute(
+            'INSERT INTO year_end_audit_log (
+                company_id, accounting_period_id, action, action_by, action_at,
+                old_value_json, new_value_json, notes
              ) VALUES (
-                :company_id,
-                :accounting_period_id,
-                :action,
-                :action_by,
-                :action_at,
-                :old_value_json,
-                :new_value_json,
-                :notes
-             )', [
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-            'action' => trim($action) !== '' ? trim($action) : 'unknown',
-            'action_by' => $this->actorValue($actionBy),
-            'action_at' => (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s'),
-            'old_value_json' => $oldValue !== null ? json_encode($oldValue, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE) : null,
-            'new_value_json' => $newValue !== null ? json_encode($newValue, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE) : null,
-            'notes' => $notes !== null && trim($notes) !== '' ? trim($notes) : null,
-        ]);
+                :company_id, :accounting_period_id, :action, :action_by, :action_at,
+                :old_value_json, :new_value_json, :notes
+             )',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'action' => trim($action) !== '' ? trim($action) : 'unknown',
+                'action_by' => $this->actorValue($actionBy),
+                'action_at' => (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s'),
+                'old_value_json' => $oldValue !== null ? json_encode($oldValue, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) : null,
+                'new_value_json' => $newValue !== null ? json_encode($newValue, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) : null,
+                'notes' => $notes !== null && trim($notes) !== '' ? trim($notes) : null,
+            ]
+        );
     }
 
-    private function ensureReviewRow(int $companyId, int $accountingPeriodId): void {
+    private function ensureReviewRow(int $companyId, int $accountingPeriodId): void
+    {
         if ($this->fetchReview($companyId, $accountingPeriodId) !== null) {
             return;
         }
 
         $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
-        \InterfaceDB::execute( 'INSERT INTO year_end_reviews (
-                company_id,
-                accounting_period_id,
-                status,
-                is_locked,
-                locked_at,
-                locked_by,
-                review_notes,
-                last_recalculated_at,
-                created_at,
-                updated_at
+        \InterfaceDB::execute(
+            'INSERT INTO year_end_reviews (
+                company_id, accounting_period_id, is_locked,
+                locked_at, locked_by, review_notes, created_at, updated_at
              ) VALUES (
-                :company_id,
-                :accounting_period_id,
-                :status,
-                0,
-                NULL,
-                NULL,
-                NULL,
-                NULL,
-                :created_at,
-                :updated_at
-             )', [
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-            'status' => 'not_started',
-            'created_at' => $now,
-            'updated_at' => $now,
-        ]);
+                :company_id, :accounting_period_id, 0,
+                NULL, NULL, NULL, :created_at, :updated_at
+             )',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]
+        );
     }
 
-    private function actorValue(string $value): string {
+    private function actorValue(string $value): string
+    {
         $value = trim($value);
         return $value !== '' ? $value : 'web_app';
     }
 
-    private function normaliseStatus(string $status): string {
-        $status = trim($status);
-        return in_array($status, ['not_started', 'in_progress', 'needs_attention', 'ready_for_review', 'locked'], true)
-            ? $status
-            : 'not_started';
-    }
-
-    private function normaliseSeverity(string $severity): string {
-        $severity = trim($severity);
-        return in_array($severity, ['info', 'warning', 'fail'], true) ? $severity : 'info';
-    }
-
-    private function normaliseCheckStatus(string $status): string {
-        $status = trim($status);
-        return in_array($status, ['pass', 'warning', 'fail', 'not_applicable'], true) ? $status : 'pass';
-    }
-
-    private function hasReviewTable(): bool {
+    private function hasReviewTable(): bool
+    {
         return $this->tableExists('year_end_reviews');
     }
 
-    private function hasReviewColumn(string $column): bool {
-        return $this->hasReviewTable() && \InterfaceDB::columnExists('year_end_reviews', $column);
-    }
-
-    private function hasAuditLogTable(): bool {
-        return $this->tableExists('year_end_audit_log');
-    }
-
-    private function tableExists(string $table): bool {
-        static $cache = [];
-        if (array_key_exists($table, $cache)) {
-            return $cache[$table];
+    private function tableExists(string $table): bool
+    {
+        try {
+            return \InterfaceDB::tableExists($table);
+        } catch (\Throwable) {
+            return false;
         }
-
-        $cache[$table] = \InterfaceDB::tableExists( $table);
-
-        return $cache[$table];
     }
 }
-
-

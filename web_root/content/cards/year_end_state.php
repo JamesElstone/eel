@@ -62,15 +62,11 @@ final class _year_end_stateCard extends CardBaseFramework
         $lockLabel = $isLocked ? 'Unlock Period' : 'Run Year-End Close and Lock';
         $lockTitle = $isLocked
             ? 'Reopen this accounting period for changes.'
-            : 'Runs the final year-end close tasks, snapshots tax summaries, and locks this accounting period against further changes.';
-        $checklistChangedAt = (string)($checklist['last_recalculated_at'] ?? '');
+            : 'Runs the live preflight, creates a fresh database backup, completes the final close tasks, and locks this accounting period against further changes.';
         $latestBackupAt = $this->latestBackupCreatedAt($context);
-        $backupIsCurrent = $this->backupIsCurrent($latestBackupAt, $checklistChangedAt);
         $hasChecklistWarnings = !empty((($context['year_end'] ?? [])['checklist_has_warnings'] ?? false));
-        $lockDisabled = !$isLocked && ($hasChecklistWarnings || !$backupIsCurrent);
-        $lockDisabledTitle = $hasChecklistWarnings
-            ? 'Resolve year-end checklist warnings before running the year-end close and locking this accounting period.'
-            : 'Create a fresh database backup after the latest checklist change before running the year-end close and locking this accounting period.';
+        $lockDisabled = !$isLocked && $hasChecklistWarnings;
+        $lockDisabledTitle = 'Resolve year-end checklist warnings before running the year-end close and locking this accounting period.';
         $status = (string)($checklist['overall_status'] ?? '');
 
         return '
@@ -81,15 +77,15 @@ final class _year_end_stateCard extends CardBaseFramework
                         <div class="summary-value"><span class="badge ' . HelperFramework::escape($this->badgeClass($status)) . '">' . HelperFramework::escape($this->statusLabel($status)) . '</span></div>
                     </div>
                     <div class="summary-card">
-                        <div class="summary-label">Checklist last changed</div>
-                        <div class="summary-value">' . HelperFramework::escape($checklistChangedAt) . '</div>
+                        <div class="summary-label">Calculation basis</div>
+                        <div class="summary-value">Live</div>
                     </div>
-                    <div class="' . HelperFramework::escape($this->backupSummaryCardClass($backupIsCurrent)) . '">
+                    <div class="summary-card">
                         <div class="summary-label">Latest backup</div>
                         <div class="summary-value">' . HelperFramework::escape($latestBackupAt !== '' ? $latestBackupAt : 'No backup available') . '</div>
                     </div>
                 </div>
-                ' . $this->backupFreshnessHelp($latestBackupAt, $checklistChangedAt, $isLocked) . '
+                <div class="helper">A fresh database backup is created automatically after the live preflight passes and before any closing entries are posted.</div>
                 <div class="helper">' . HelperFramework::escape($this->statusHelp($status, $isLocked)) . '</div>
                 <div class="actions-row">
                     ' . $this->actionForm($companyId, $accountingPeriodId, 'recalculate', 'Refresh Year-End Checklist', $isLocked, $isLocked ? 'This accounting period is locked.' : 'Re-checks the year-end readiness checklist using the latest ledger, review, tax, and confirmation data.') . '
@@ -150,38 +146,6 @@ final class _year_end_stateCard extends CardBaseFramework
         $latest = (array)($backups[0] ?? []);
 
         return trim((string)($latest['created_at'] ?? ''));
-    }
-
-    private function backupIsCurrent(string $latestBackupAt, string $checklistChangedAt): bool
-    {
-        if ($latestBackupAt === '' || $checklistChangedAt === '') {
-            return false;
-        }
-
-        $latestBackupTime = strtotime($latestBackupAt);
-        $checklistChangedTime = strtotime($checklistChangedAt);
-
-        return $latestBackupTime !== false
-            && $checklistChangedTime !== false
-            && $latestBackupTime >= $checklistChangedTime;
-    }
-
-    private function backupSummaryCardClass(bool $backupIsCurrent): string
-    {
-        return 'summary-card' . ($backupIsCurrent ? '' : ' warn');
-    }
-
-    private function backupFreshnessHelp(string $latestBackupAt, string $checklistChangedAt, bool $isLocked): string
-    {
-        if ($isLocked || $this->backupIsCurrent($latestBackupAt, $checklistChangedAt)) {
-            return '';
-        }
-
-        $message = $latestBackupAt === ''
-            ? 'Create a database backup before running the year-end close.'
-            : 'Create a new database backup because the checklist changed after the latest backup.';
-
-        return '<div class="helper">' . HelperFramework::escape($message) . '</div>';
     }
 
     private function runningLabel(string $intent): string

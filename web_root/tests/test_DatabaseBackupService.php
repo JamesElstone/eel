@@ -33,7 +33,7 @@ $harness->run(\eel_accounts\Service\DatabaseBackupService::class, static functio
 
     $harness->assertSame(
         "'£ 0.00'",
-        $method->invoke($service, "\xA3 0.00", 'year_end_check_results', 'metric_value', '2308')
+        $method->invoke($service, "\xA3 0.00", 'legacy_table', 'metric_value', '2308')
     );
 
     $backupDirectory = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'eel_accounts_backup_service_test_' . getmypid();

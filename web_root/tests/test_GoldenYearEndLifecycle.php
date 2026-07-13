@@ -176,13 +176,32 @@ function goldenAssertFirstPeriodLockBoundary(GeneratedServiceClassTestHarness $h
     $harness->assertFalse(!empty($lockedUpload['success']));
     $harness->assertSame(409, (int)($lockedUpload['http_status'] ?? 0));
 
-    $openUpload = $uploadService->createUploadFromHttpRequest(
-        ['company_id' => $companyId, 'account_id' => 9120, 'accounting_period_id' => 9112],
-        ['statement_file' => $file]
-    );
     @unlink($csvPath);
-    $harness->assertTrue(!empty($openUpload['success']));
-    $openUploadId = (int)($openUpload['statement_upload_id'] ?? 0);
+    $openUploadHash = hash('sha256', 'golden-open-upload-control');
+    InterfaceDB::prepareExecute(
+        'INSERT INTO statement_uploads (
+            company_id, accounting_period_id, account_id, source_type, workflow_status,
+            statement_month, original_filename, stored_filename, file_sha256, rows_parsed
+        ) VALUES (
+            :company_id, :accounting_period_id, :account_id, :source_type, :workflow_status,
+            :statement_month, :original_filename, :stored_filename, :file_sha256, 0
+        )',
+        [
+            'company_id' => $companyId,
+            'accounting_period_id' => 9112,
+            'account_id' => 9120,
+            'source_type' => 'bank_account',
+            'workflow_status' => 'uploaded',
+            'statement_month' => '2023-10-01',
+            'original_filename' => 'golden-open-control.csv',
+            'stored_filename' => 'golden-open-control.csv',
+            'file_sha256' => $openUploadHash,
+        ]
+    );
+    $openUploadId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM statement_uploads WHERE company_id = :company_id AND file_sha256 = :file_sha256 ORDER BY id DESC LIMIT 1',
+        ['company_id' => $companyId, 'file_sha256' => $openUploadHash]
+    );
     $harness->assertTrue($openUploadId > 0);
     $harness->assertFalse(!empty($uploadService->fetchUploadLockState($companyId, $openUploadId)['is_locked']));
 

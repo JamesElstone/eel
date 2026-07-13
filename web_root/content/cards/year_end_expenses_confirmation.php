@@ -79,6 +79,7 @@ final class _year_end_expenses_confirmationCard extends CardBaseFramework
 
         $acknowledgementForm = $this->acknowledgementHtml(
             $acknowledged,
+            (string)($expenses['expense_position_acknowledgement_state'] ?? 'absent'),
             (string)($expenses['expense_position_acknowledged_at'] ?? ''),
             (string)($expenses['expense_position_acknowledged_by'] ?? ''),
             (string)($expenses['expense_position_approval_note'] ?? ''),
@@ -103,13 +104,14 @@ final class _year_end_expenses_confirmationCard extends CardBaseFramework
         </section>';
     }
 
-    private function acknowledgementHtml(bool $acknowledged, string $acknowledgedAt, string $acknowledgedBy, string $note, int $companyId, int $accountingPeriodId): string
+    private function acknowledgementHtml(bool $acknowledged, string $state, string $acknowledgedAt, string $acknowledgedBy, string $note, int $companyId, int $accountingPeriodId): string
     {
         return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
             'subject' => 'expense position',
             'companyId' => $companyId,
             'accountingPeriodId' => $accountingPeriodId,
             'acknowledged' => $acknowledged,
+            'acknowledgementState' => $state,
             'acknowledgedAt' => $acknowledgedAt,
             'acknowledgedBy' => $acknowledgedBy,
             'note' => $note,

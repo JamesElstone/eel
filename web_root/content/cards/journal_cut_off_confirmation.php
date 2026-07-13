@@ -93,12 +93,13 @@ final class _journal_cut_off_confirmationCard extends CardBaseFramework
 
     private function acknowledgementHtml(?array $acknowledgement, int $companyId, int $accountingPeriodId): string
     {
-        $acknowledged = $acknowledgement !== null;
+        $acknowledged = !empty($acknowledgement['current']);
         return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
             'subject' => 'journal cut-off position',
             'companyId' => $companyId,
             'accountingPeriodId' => $accountingPeriodId,
             'acknowledged' => $acknowledged,
+            'acknowledgementState' => (string)($acknowledgement['state'] ?? ''),
             'acknowledgedAt' => (string)($acknowledgement['acknowledged_at'] ?? ''),
             'acknowledgedBy' => (string)($acknowledgement['acknowledged_by'] ?? ''),
             'note' => (string)($acknowledgement['note'] ?? ''),

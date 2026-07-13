@@ -16,7 +16,7 @@ use PDOStatement;
 use RuntimeException;
 use Throwable;
 
-final class DatabaseBackupService
+final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBackupCreatorInterface
 {
     private array $dbConfig;
     private string $backupDirectory;

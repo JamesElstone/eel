@@ -83,7 +83,7 @@ final class YearEndApprovalRenderer
             ? ' disabled' . ($disabledReason !== '' ? ' title="' . \HelperFramework::escape($disabledReason) . '"' : '')
             : ' disabled data-year-end-ack-submit';
 
-        return '<section class="panel-soft warn full settings-stack">
+        return self::staleEvidence($options) . '<section class="panel-soft warn full settings-stack">
             <div class="eyebrow">Year End Confirmation</div>
             <form method="post" data-ajax="true" class="form-grid" data-year-end-ack-form="true">
                 ' . self::commonFields($companyId, $accountingPeriodId, $intent) . '
@@ -96,6 +96,29 @@ final class YearEndApprovalRenderer
                 ' . ($disabledReason !== '' ? '<div class="helper full">' . \HelperFramework::escape($disabledReason) . '</div>' : '') . '
                 <div class="actions-row"><button class="button primary" type="submit"' . $buttonAttributes . '>Approve for Year End</button></div>
             </form>
+        </section>';
+    }
+
+    private static function staleEvidence(array $options): string
+    {
+        $state = trim((string)($options['acknowledgementState'] ?? ''));
+        $approvedAt = trim((string)($options['approvedAt'] ?? $options['acknowledgedAt'] ?? ''));
+        $approvedBy = trim((string)($options['approvedBy'] ?? $options['acknowledgedBy'] ?? ''));
+        $note = trim((string)($options['note'] ?? ''));
+        if (!in_array($state, ['stale', 'unverifiable'], true)
+            && $approvedAt === '' && $approvedBy === '' && $note === '') {
+            return '';
+        }
+
+        $message = $state === 'unverifiable'
+            ? 'Review required — the current live basis could not be verified.'
+            : 'Review required — underlying data changed.';
+
+        return '<section class="panel-soft warn full settings-stack">
+            <div class="eyebrow">Previous Year End Confirmation</div>
+            <div class="summary-value">' . \HelperFramework::escape($message) . '</div>
+            ' . ($note !== '' ? '<div class="helper">Original note: ' . \HelperFramework::escape($note) . '</div>' : '') . '
+            <div class="stat-foot">' . \HelperFramework::escape(self::approvedFoot($approvedAt, $approvedBy)) . '</div>
         </section>';
     }
 

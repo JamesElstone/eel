@@ -159,7 +159,6 @@ function yearEndClosePreviewRequireSchema(GeneratedServiceClassTestHarness $harn
         'nominal_account_subtypes',
         'asset_register',
         'asset_depreciation_entries',
-        'year_end_reviews',
     ] as $table) {
         if (!InterfaceDB::tableExists($table)) {
             $harness->skip($table . ' table is not available.');
@@ -181,18 +180,6 @@ function yearEndClosePreviewRequireSchema(GeneratedServiceClassTestHarness $harn
         }
     }
 
-    foreach ([
-        'director_loan_closing_acknowledged_at',
-        'director_loan_closing_acknowledged_by',
-        'retained_earnings_close_acknowledged_at',
-        'retained_earnings_close_acknowledged_by',
-        'retained_earnings_close_current_profit_loss',
-        'retained_earnings_close_amount',
-    ] as $column) {
-        if (!InterfaceDB::columnExists('year_end_reviews', $column)) {
-            $harness->skip($column . ' column is not available.');
-        }
-    }
 }
 
 function yearEndClosePreviewCreateFixture(): array

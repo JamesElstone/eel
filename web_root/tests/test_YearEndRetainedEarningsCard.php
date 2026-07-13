@@ -65,10 +65,11 @@ function yearEndRetainedEarningsCardContext(bool $acknowledged, bool $stale, arr
         ],
         'acknowledged' => $acknowledged,
         'acknowledgement_stale' => $stale,
-        'review' => [
-            'retained_earnings_close_acknowledged_at' => $acknowledged ? '2026-07-06 10:00:00' : '',
-            'retained_earnings_close_acknowledged_by' => $acknowledged ? 'Alex Example using the web_app' : '',
-        ],
+        'acknowledgement_state' => $stale ? 'stale' : ($acknowledged ? 'current' : 'absent'),
+        'acknowledgement' => $acknowledged ? [
+            'acknowledged_at' => '2026-07-06 10:00:00',
+            'acknowledged_by' => 'Alex Example using the web_app',
+        ] : null,
         'summary' => [
             'opening_equity' => 0,
             'current_profit_loss' => -396.91,

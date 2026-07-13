@@ -724,6 +724,9 @@ final class DashboardRepository
                            WHERE j.source_type = 'bank_csv'
                              AND j.source_ref = CONCAT('transaction:', t.id)
                        )";
+        $internalTransferMarkerSql = \InterfaceDB::columnExists('company_accounts', 'internal_transfer_marker')
+            ? "COALESCE(ca.internal_transfer_marker, '')"
+            : "''";
 
         $sql = "SELECT t.id,
                        t.account_id,
@@ -743,7 +746,7 @@ final class DashboardRepository
                        t.nominal_account_id,
                        t.transfer_account_id,
                        COALESCE(t.is_internal_transfer, 0) AS is_internal_transfer,
-                       COALESCE(ca.internal_transfer_marker, '') AS internal_transfer_marker,
+                       {$internalTransferMarkerSql} AS internal_transfer_marker,
                        COALESCE(ca.account_name, '') AS owned_account_name,
                        COALESCE(ta.account_name, '') AS transfer_account_name,
                        COALESCE(na.code, '') AS nominal_code,

@@ -41,13 +41,13 @@ final class YearEndAction implements ActionInterfaceFramework
                 return $this->result(false, ['This accounting period is locked. Unlock it before changing year-end review data.']);
             }
 
-            if ($intent === 'lock_period' && !$this->hasCurrentBackup($companyId, $accountingPeriodId)) {
-                return $this->result(false, ['Create a fresh database backup after the latest year-end checklist change before locking this period.']);
+            if ($intent === 'lock_period' && !$this->canCreateBackups()) {
+                return $this->result(false, ['You do not have permission to create the automatic pre-close database backup.']);
             }
 
             $result = match ($intent) {
                 'recalculate' => (new \eel_accounts\Service\YearEndChecklistService())->recalculateChecklist($companyId, $accountingPeriodId, $actor),
-                'lock_period' => (new \eel_accounts\Service\YearEndChecklistService())->lockPeriod($companyId, $accountingPeriodId, $actor),
+                'lock_period' => (new \eel_accounts\Service\YearEndChecklistService())->lockPeriod($companyId, $accountingPeriodId, $actor, true),
                 'unlock_period' => (new \eel_accounts\Service\YearEndChecklistService())->unlockPeriod($companyId, $accountingPeriodId, $actor),
                 'save_notes' => (new \eel_accounts\Service\YearEndChecklistService())->saveNotes($companyId, $accountingPeriodId, (string)$request->input('review_notes', ''), $actor),
                 'confirm_empty_month' => (new \eel_accounts\Service\EmptyMonthConfirmationService())->confirmMonth(
@@ -147,7 +147,7 @@ final class YearEndAction implements ActionInterfaceFramework
         return $this->result(
             !empty($result['success']),
             (array)($result['errors'] ?? []),
-            $this->successMessage($intent)
+            $this->successMessage($intent, $result)
         );
     }
 
@@ -193,11 +193,13 @@ final class YearEndAction implements ActionInterfaceFramework
         return new ActionResultFramework($success, ['page.context', 'year.end.state', 'year.end.checklist', 'year.end.director.loan.offset', 'year.end.tax.readiness', 'year.end.expenses.confirmation', 'year.end.retained.earnings', 'year.end.empty.month.confirmations', 'year.end.transaction.tail', 'year.end.notes', 'year.end.audit.log', 'trial.balance.state', 'nominal.opening.balances', 'nominal.closing.balances', 'cut.off.journals', 'prepayments.state'], $flashMessages);
     }
 
-    private function successMessage(string $intent): string
+    private function successMessage(string $intent, array $result = []): string
     {
         return match ($intent) {
             'recalculate' => 'Year-end checklist refreshed.',
-            'lock_period' => 'Year-end close tasks completed and accounting period locked.',
+            'lock_period' => 'Year-end close tasks completed, pre-close backup created'
+                . (trim((string)(($result['backup'] ?? [])['filename'] ?? '')) !== '' ? ': ' . (string)$result['backup']['filename'] : '')
+                . ', and accounting period locked.',
             'unlock_period' => 'Accounting period unlocked.',
             'save_notes' => 'Year-end notes saved.',
             'confirm_empty_month' => 'Empty month confirmation saved.',
@@ -270,24 +272,11 @@ final class YearEndAction implements ActionInterfaceFramework
         ], true);
     }
 
-    private function hasCurrentBackup(int $companyId, int $accountingPeriodId): bool
+    private function canCreateBackups(): bool
     {
-        $checklist = (new \eel_accounts\Service\YearEndChecklistService())->fetchChecklist($companyId, $accountingPeriodId, false);
-        $checklistChangedAt = trim((string)($checklist['last_recalculated_at'] ?? ''));
-        $backupStatus = (new \eel_accounts\Service\DatabaseBackupService())->fetchBackupStatus();
-        $latestBackup = (array)(((array)($backupStatus['recent_backups'] ?? []))[0] ?? []);
-        $latestBackupAt = trim((string)($latestBackup['created_at'] ?? ''));
-
-        if ($checklistChangedAt === '' || $latestBackupAt === '') {
-            return false;
-        }
-
-        $checklistChangedTime = strtotime($checklistChangedAt);
-        $latestBackupTime = strtotime($latestBackupAt);
-
-        return $checklistChangedTime !== false
-            && $latestBackupTime !== false
-            && $latestBackupTime >= $checklistChangedTime;
+        $session = new SessionAuthenticationService();
+        $session->startSession();
+        return (new \eel_accounts\Service\BackupAccessService())->canUseBackups($session);
     }
 
     private function companyIsVatRegistered(int $companyId): bool

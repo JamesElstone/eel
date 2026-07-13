@@ -117,12 +117,13 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
             return $this->panel('Approval', '<div class="helper">No Companies House mismatch approval is needed for this accounting period.</div>');
         }
 
-        $isAcknowledged = is_array($acknowledgement);
+        $isAcknowledged = !empty($acknowledgement['current']);
         $form = \eel_accounts\Renderer\YearEndApprovalRenderer::render([
             'subject' => 'Companies House comparison',
             'companyId' => $companyId,
             'accountingPeriodId' => $accountingPeriodId,
             'acknowledged' => $isAcknowledged,
+            'acknowledgementState' => (string)($acknowledgement['state'] ?? ''),
             'acknowledgedAt' => (string)($acknowledgement['acknowledged_at'] ?? ''),
             'acknowledgedBy' => (string)($acknowledgement['acknowledged_by'] ?? ''),
             'note' => (string)($acknowledgement['note'] ?? ''),

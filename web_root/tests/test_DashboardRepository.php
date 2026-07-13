@@ -392,6 +392,11 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
 
         $harness->assertSame('dashboard_action_queue', (string)($services[0]['key'] ?? ''));
         $harness->assertSame('fetchDashboardActionQueue', (string)($services[0]['method'] ?? ''));
+        $harness->assertSame('year_end_dashboard_summary', (string)($services[1]['key'] ?? ''));
+        $harness->assertSame(\eel_accounts\Service\YearEndChecklistService::class, (string)($services[1]['service'] ?? ''));
+        $harness->assertSame('fetchDashboardSummary', (string)($services[1]['method'] ?? ''));
+        $harness->assertSame(':company.id', (string)(($services[1]['params'] ?? [])['companyId'] ?? ''));
+        $harness->assertSame(':company.accounting_period_id', (string)(($services[1]['params'] ?? [])['accountingPeriodId'] ?? ''));
 
         $html = $card->render([
             'page' => [
@@ -440,6 +445,116 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
 
         $harness->assertSame(true, str_contains($html, 'No queued actions'));
         $harness->assertSame(true, str_contains($html, 'status-square ok'));
+    });
+
+    $harness->check('_dashboard_action_queueCard', 'summarises year-end warnings and suppresses the operational empty state', function () use ($harness): void {
+        $card = new _dashboard_action_queueCard();
+        $html = $card->render([
+            'services' => [
+                'dashboard_action_queue' => [[
+                    'title' => 'No immediate actions',
+                    'detail' => 'This period looks tidy. The dashboard has nothing urgent to surface right now.',
+                ]],
+                'year_end_dashboard_summary' => [
+                    'period_label' => '01/10/2023 to 30/09/2024',
+                    'top_issues' => [
+                        ['title' => 'Statement continuity', 'status' => 'warning'],
+                        ['title' => 'Tax readiness acknowledgement', 'status' => 'warning'],
+                        ['title' => 'Year end notes', 'status' => 'warning'],
+                    ],
+                ],
+            ],
+        ]);
+
+        $harness->assertSame(true, str_contains($html, 'Complete year-end review'));
+        $harness->assertSame(true, str_contains($html, '3 year-end checks need attention for 01/10/2023 to 30/09/2024. Open Year End to review the detailed checklist.'));
+        $harness->assertSame(true, str_contains($html, 'status-square warn'));
+        $harness->assertSame(false, str_contains($html, 'No immediate actions'));
+        $harness->assertSame(false, str_contains($html, 'period looks tidy'));
+    });
+
+    $harness->check('_dashboard_action_queueCard', 'marks the year-end summary as needing attention when any issue fails', function () use ($harness): void {
+        $card = new _dashboard_action_queueCard();
+        $html = $card->render([
+            'services' => [
+                'dashboard_action_queue' => [],
+                'year_end_dashboard_summary' => [
+                    'period_label' => '01/10/2023 to 30/09/2024',
+                    'top_issues' => [
+                        ['title' => 'Trial balance balances', 'status' => 'fail'],
+                        ['title' => 'Year end notes', 'status' => 'warning'],
+                    ],
+                ],
+            ],
+        ]);
+
+        $harness->assertSame(true, str_contains($html, 'Complete year-end review'));
+        $harness->assertSame(true, str_contains($html, 'status-square bad'));
+        $harness->assertSame(true, str_contains($html, 'Needs attention'));
+    });
+
+    $harness->check('_dashboard_action_queueCard', 'keeps operational actions alongside the year-end summary', function () use ($harness): void {
+        $card = new _dashboard_action_queueCard();
+        $html = $card->render([
+            'services' => [
+                'dashboard_action_queue' => [[
+                    'title' => 'Categorise uncategorised transactions',
+                    'detail' => '3 transactions still need to be categorised against a nominal account.',
+                ]],
+                'year_end_dashboard_summary' => [
+                    'top_issues' => [
+                        ['title' => 'Year end notes', 'status' => 'warning'],
+                    ],
+                ],
+            ],
+        ]);
+
+        $harness->assertSame(true, str_contains($html, 'Complete year-end review'));
+        $harness->assertSame(true, str_contains($html, 'Categorise uncategorised transactions'));
+        $harness->assertSame(true, strpos($html, 'Complete year-end review') < strpos($html, 'Categorise uncategorised transactions'));
+    });
+
+    $harness->check('_dashboard_action_queueCard', 'preserves the operational empty state when year-end has no issues', function () use ($harness): void {
+        $card = new _dashboard_action_queueCard();
+        $html = $card->render([
+            'services' => [
+                'dashboard_action_queue' => [[
+                    'title' => 'No immediate actions',
+                    'detail' => 'This period looks tidy. The dashboard has nothing urgent to surface right now.',
+                ]],
+                'year_end_dashboard_summary' => [
+                    'top_issues' => [],
+                ],
+            ],
+        ]);
+
+        $harness->assertSame(true, str_contains($html, 'No immediate actions'));
+        $harness->assertSame(true, str_contains($html, 'status-square ok'));
+        $harness->assertSame(false, str_contains($html, 'Complete year-end review'));
+    });
+
+    $harness->check('_dashboard_action_queueCard', 'does not show a tidy state when year-end summary loading fails', function () use ($harness): void {
+        $card = new _dashboard_action_queueCard();
+        $html = $card->render([
+            'services' => [
+                'dashboard_action_queue' => [[
+                    'title' => 'No immediate actions',
+                    'detail' => 'This period looks tidy. The dashboard has nothing urgent to surface right now.',
+                ]],
+                'year_end_dashboard_summary' => null,
+            ],
+            'service_errors' => [
+                'year_end_dashboard_summary' => [
+                    'type' => 'RuntimeException',
+                    'message' => 'Unable to load year-end summary.',
+                ],
+            ],
+        ]);
+
+        $harness->assertSame(true, str_contains($html, 'Year-end status unavailable'));
+        $harness->assertSame(true, str_contains($html, 'status-square warn'));
+        $harness->assertSame(false, str_contains($html, 'No immediate actions'));
+        $harness->assertSame(false, str_contains($html, 'period looks tidy'));
     });
 
     $harness->check('_dashboard_recent_transactionsCard', 'paginates recent transaction rows', function () use ($harness): void {

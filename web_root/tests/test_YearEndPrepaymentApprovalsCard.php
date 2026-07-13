@@ -29,7 +29,7 @@ $harness->run(_year_end_prepayment_approvalsCard::class, static function (Genera
         $harness->assertSame(false, str_contains($uncheckedHtml, 'Prepayment fixture 11'));
         $harness->assertSame(true, str_contains($uncheckedHtml, 'name="intent" value="acknowledge_review_check"'));
         $harness->assertSame(true, str_contains($uncheckedHtml, 'name="check_code" value="prepayment_approvals"'));
-        $harness->assertSame(true, str_contains($uncheckedHtml, 'I acknowledge that the year-end prepayment position has been reviewed'));
+        $harness->assertSame(true, str_contains($uncheckedHtml, 'I confirm that I have reviewed the prepayment position shown above'));
         $harness->assertSame(true, str_contains($uncheckedHtml, 'disabled data-year-end-ack-submit'));
         $harness->assertSame(false, str_contains($uncheckedHtml, 'checked required'));
 
@@ -43,6 +43,8 @@ $harness->run(_year_end_prepayment_approvalsCard::class, static function (Genera
         $acknowledgedHtml = $card->render(yearEndPrepaymentApprovalsCardContext([
             'acknowledged_at' => '2026-07-06 10:00:00',
             'acknowledged_by' => 'Alex Example using the web_app',
+            'current' => true,
+            'state' => 'current',
         ]));
 
         $harness->assertSame(true, str_contains($acknowledgedHtml, 'name="intent" value="reopen_review_check"'));

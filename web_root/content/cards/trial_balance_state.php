@@ -81,9 +81,12 @@ final class _trial_balance_stateCard extends CardBaseFramework
     {
         $readiness = (string)($validation['ready_for_ct_working_papers'] ?? 'Not ready');
         $score = $this->readinessScore($validation, $readiness);
+        $displayLabel = strcasecmp(trim($readiness), 'Ready for CT working papers') === 0
+            ? 'Balanced'
+            : $readiness;
         $chart = (new ChartService())->gauge($score, [
             'title' => 'Trial balance readiness',
-            'label' => $readiness,
+            'label' => $displayLabel,
             'color' => $this->readinessColor($score),
             'width' => 220,
             'height' => 160,

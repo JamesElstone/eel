@@ -32,13 +32,12 @@ final class _journal_cut_off_confirmationCard extends CardBaseFramework
                 ],
             ],
             [
-                'key' => 'journalCutOffAcknowledgement',
-                'service' => \eel_accounts\Service\YearEndChecklistService::class,
-                'method' => 'fetchReviewAcknowledgement',
+                'key' => 'journalCutOffReview',
+                'service' => \eel_accounts\Service\JournalCutOffReviewService::class,
+                'method' => 'fetchContext',
                 'params' => [
                     'companyId' => ':company.id',
                     'accountingPeriodId' => ':company.accounting_period_id',
-                    'checkCode' => 'cut_off_journals_review',
                 ],
             ],
         ];
@@ -60,7 +59,9 @@ final class _journal_cut_off_confirmationCard extends CardBaseFramework
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $data = (array)($context['services']['cutOffJournals'] ?? []);
-        $acknowledgement = $context['services']['journalCutOffAcknowledgement'] ?? null;
+        $review = (array)($context['services']['journalCutOffReview'] ?? []);
+        $acknowledgement = $review['acknowledgement'] ?? null;
+        $access = (array)($review['access'] ?? []);
 
         if (!is_array($acknowledgement)) {
             $acknowledgement = null;
@@ -103,6 +104,7 @@ final class _journal_cut_off_confirmationCard extends CardBaseFramework
             'acknowledgedAt' => (string)($acknowledgement['acknowledged_at'] ?? ''),
             'acknowledgedBy' => (string)($acknowledgement['acknowledged_by'] ?? ''),
             'note' => (string)($acknowledgement['note'] ?? ''),
+            'locked' => !empty($access['is_locked']),
             'intent' => 'acknowledge_review_check',
             'revokeIntent' => 'reopen_review_check',
             'approveFields' => ['check_code' => 'cut_off_journals_review'],

@@ -34,9 +34,8 @@ $harness->run(_journal_cut_off_confirmationCard::class, static function (Generat
 
         $harness->assertSame(\eel_accounts\Service\YearEndAdjustmentService::class, (string)($services[0]['service'] ?? ''));
         $harness->assertSame('fetchContext', (string)($services[0]['method'] ?? ''));
-        $harness->assertSame(\eel_accounts\Service\YearEndChecklistService::class, (string)($services[1]['service'] ?? ''));
-        $harness->assertSame('fetchReviewAcknowledgement', (string)($services[1]['method'] ?? ''));
-        $harness->assertSame('cut_off_journals_review', (string)(($services[1]['params'] ?? [])['checkCode'] ?? ''));
+        $harness->assertSame(\eel_accounts\Service\JournalCutOffReviewService::class, (string)($services[1]['service'] ?? ''));
+        $harness->assertSame('fetchContext', (string)($services[1]['method'] ?? ''));
 
         $html = $card->render(yearEndJournalCutOffCardContext(null));
 
@@ -72,6 +71,21 @@ $harness->run(_journal_cut_off_confirmationCard::class, static function (Generat
         $harness->assertSame(true, str_contains($html, 'Revoke approval'));
         $harness->assertSame(false, str_contains($html, 'name="intent" value="acknowledge_review_check"'));
         $harness->assertSame(false, str_contains($html, 'Mark cut-off journals review complete'));
+    });
+
+    $harness->check(_journal_cut_off_confirmationCard::class, 'does not offer revoke access for a locked period', static function () use ($harness, $card): void {
+        $context = yearEndJournalCutOffCardContext([
+            'acknowledged_at' => '2026-07-06 10:00:00',
+            'acknowledged_by' => 'James using the web_app',
+            'current' => true,
+            'state' => 'current',
+        ]);
+        $context['services']['journalCutOffReview']['access']['is_locked'] = true;
+
+        $html = $card->render($context);
+
+        $harness->assertSame(true, str_contains($html, 'This accounting period is locked, so this approval cannot be revoked.'));
+        $harness->assertSame(false, str_contains($html, 'Revoke approval'));
     });
 });
 
@@ -133,7 +147,15 @@ function yearEndJournalCutOffCardContext(?array $acknowledgement): array
                     ],
                 ],
             ],
-            'journalCutOffAcknowledgement' => $acknowledgement,
+            'journalCutOffReview' => [
+                'acknowledgement' => $acknowledgement,
+                'access' => [
+                    'permitted' => true,
+                    'is_locked' => false,
+                    'reason_code' => '',
+                    'reason' => '',
+                ],
+            ],
         ],
     ];
 }

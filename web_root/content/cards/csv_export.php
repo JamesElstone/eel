@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 final class _csv_exportCard extends CardBaseFramework
 {
+    private const PAGE_SIZE = 15;
+
     public function key(): string
     {
         return 'csv_export';
@@ -44,90 +46,122 @@ final class _csv_exportCard extends CardBaseFramework
         return '';
     }
 
+    public function handle(
+        RequestFramework $request,
+        PageServiceFramework $services,
+        array $pageContext,
+        ActionResultFramework $actionResult
+    ): array {
+        $pageContext = parent::handle($request, $services, $pageContext, $actionResult);
+
+        return $this->applyTableSortContext($request, $pageContext, $this->key());
+    }
+
     public function render(array $context): string
     {
         $companyId = (int)($context['company']['id'] ?? 0);
         $accountingPeriodId = (int)($context['company']['accounting_period_id'] ?? 0);
-        $months = (array)($context['services']['csv_export_months'] ?? []);
-
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return '<div class="helper">Select a company and accounting period before exporting CSV uploads.</div>';
         }
 
-        if ($months === []) {
-            return '<div class="helper">No uploaded CSV files are available for this accounting period.</div>';
-        }
+        return $this->configuredTable($context)->render($context);
+    }
 
-        $html = '<div class="stack">';
-        foreach ($months as $month) {
+    public function tables(array $context): array
+    {
+        return [$this->configuredTable($context)];
+    }
+
+    private function configuredTable(array $context): TableFramework
+    {
+        $hiddenFields = [
+            'page' => (string)($context['page']['page_id'] ?? 'uploads'),
+            '_pagination' => '1',
+            '_invalidate_fact' => $this->tableInvalidationFact(),
+            'cards[]' => [$this->key()],
+        ];
+        $table = $this->configureTableSorting($this->table($context), $context, $hiddenFields);
+        $pagination = HelperFramework::paginateArray($table->sortedRows(), $this->paginationPage($context), self::PAGE_SIZE);
+
+        return $table
+            ->visibleRows((array)$pagination['items'])
+            ->pagination($pagination, 'Uploads', $this->paginationPageField(), $hiddenFields);
+    }
+
+    private function table(array $context): TableFramework
+    {
+        return TableFramework::make($this->key(), $this->rows($context))
+            ->exports(false)
+            ->empty('No uploaded CSV files are available for this accounting period.')
+            ->textColumn('month_label', 'Month')
+            ->textColumn('account_name', 'Account', 'No account selected')
+            ->column(
+                'export_rows',
+                'Rows',
+                html: static fn(array $row): string => (string)(int)($row['export_rows'] ?? 0),
+                exportType: 'number'
+            )
+            ->badgeColumn('workflow_status', 'Status')
+            ->column(
+                'actions',
+                'Action',
+                html: fn(array $row): string => $this->actionHtml($row, $context),
+                exportable: false,
+                cellClass: 'cell-fit'
+            );
+    }
+
+    private function rows(array $context): array
+    {
+        $rows = [];
+        foreach ((array)($context['services']['csv_export_months'] ?? []) as $month) {
             if (!is_array($month)) {
                 continue;
             }
 
-            $uploads = array_values(array_filter(
-                (array)($month['uploads'] ?? []),
-                static fn(mixed $upload): bool => is_array($upload)
-            ));
+            foreach ((array)($month['uploads'] ?? []) as $upload) {
+                if (!is_array($upload)) {
+                    continue;
+                }
 
-            if ($uploads === []) {
-                continue;
+                $rows[] = array_merge($upload, [
+                    'month_label' => (string)($month['label'] ?? ''),
+                    'month_key' => (string)($month['month_key'] ?? ''),
+                ]);
             }
-
-            $rowsHtml = '';
-            $monthKey = (string)($month['month_key'] ?? '');
-            foreach ($uploads as $upload) {
-                $hiddenInputs = '
-                            <input type="hidden" name="card_action" value="Uploads">
-                            <input type="hidden" name="company_id" value="' . $companyId . '">
-                            <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                            <input type="hidden" name="upload_id" value="' . (int)($upload['id'] ?? 0) . '">
-                            <input type="hidden" name="export_month" value="' . HelperFramework::escape($monthKey) . '">';
-
-                $rowsHtml .= '<tr>
-                    <td>' . HelperFramework::escape((string)($upload['account_name'] ?? 'No account selected')) . '</td>
-                    <td>' . (int)($upload['export_rows'] ?? 0) . '</td>
-                    <td>' . HelperFramework::escape(HelperFramework::labelFromKey((string)($upload['workflow_status'] ?? ''), '_')) . '</td>
-                    <td>
-                        <div class="actions-row-nowrap">
-                        <form method="post" action="?page=uploads" class="inline-form">
-                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
-                            ' . $hiddenInputs . '
-                            <input type="hidden" name="intent" value="export_csv_upload">
-                            <button class="button primary" type="submit">Export CSV</button>
-                        </form>
-                        <form method="post" action="?page=uploads" class="inline-form">
-                ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
-                            ' . $hiddenInputs . '
-                            <input type="hidden" name="intent" value="export_xlsx_upload">
-                            <button class="button" type="submit">Export XLSX</button>
-                        </form>
-                        </div>
-                    </td>
-                </tr>';
-            }
-
-            $html .= '<div class="panel-soft">
-                <h3 class="card-title">' . HelperFramework::escape((string)($month['label'] ?? '')) . '</h3>'
-                . '<div class="table-scroll">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Account</th>
-                                <th>Rows</th>
-                                <th>Status</th>
-                                <th>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>' . $rowsHtml . '</tbody>
-                    </table>
-                </div>
-            </div>';
         }
 
-        if ($html === '<div class="stack">') {
-            return '<div class="helper">No uploaded CSV files are available for this accounting period.</div>';
-        }
+        return $rows;
+    }
 
-        return $html . '</div>';
+    private function actionHtml(array $row, array $context): string
+    {
+        $companyId = (int)($context['company']['id'] ?? 0);
+        $accountingPeriodId = (int)($context['company']['accounting_period_id'] ?? 0);
+        $hiddenInputs = HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
+            <input type="hidden" name="card_action" value="Uploads">
+            <input type="hidden" name="company_id" value="' . $companyId . '">
+            <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+            <input type="hidden" name="upload_id" value="' . (int)($row['id'] ?? 0) . '">
+            <input type="hidden" name="export_month" value="' . HelperFramework::escape((string)($row['month_key'] ?? '')) . '">';
+
+        return '<div class="actions-row-nowrap">
+            <form method="post" action="?page=uploads" class="inline-form">
+                ' . $hiddenInputs . '
+                <input type="hidden" name="intent" value="export_csv_upload">
+                <button class="button primary" type="submit">Export CSV</button>
+            </form>
+            <form method="post" action="?page=uploads" class="inline-form">
+                ' . $hiddenInputs . '
+                <input type="hidden" name="intent" value="export_xlsx_upload">
+                <button class="button" type="submit">Export XLSX</button>
+            </form>
+        </div>';
+    }
+
+    private function tableInvalidationFact(): string
+    {
+        return (string)($this->invalidationFacts()[0] ?? $this->key());
     }
 }

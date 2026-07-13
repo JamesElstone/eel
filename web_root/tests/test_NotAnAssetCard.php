@@ -11,14 +11,15 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(_not_an_assetCard::class, static function (GeneratedServiceClassTestHarness $harness, _not_an_assetCard $card): void {
-    $harness->check(_not_an_assetCard::class, 'declares non-asset candidate service with company settings context', static function () use ($harness, $card): void {
+    $harness->check(_not_an_assetCard::class, 'declares focused non-asset review service without loading the full checklist', static function () use ($harness, $card): void {
         $services = $card->services();
         $definition = (array)($services[0] ?? []);
         $params = (array)($definition['params'] ?? []);
 
-        $harness->assertSame('nonAssetCandidates', $definition['key'] ?? null);
-        $harness->assertSame(\eel_accounts\Service\AssetService::class, $definition['service'] ?? null);
-        $harness->assertSame('fetchNonAssetCandidates', $definition['method'] ?? null);
+        $harness->assertSame(1, count($services));
+        $harness->assertSame('nonAssetReview', $definition['key'] ?? null);
+        $harness->assertSame(\eel_accounts\Service\NonAssetReviewService::class, $definition['service'] ?? null);
+        $harness->assertSame('fetchContext', $definition['method'] ?? null);
         $harness->assertSame(':company.id', $params['companyId'] ?? null);
         $harness->assertSame(':company.accounting_period_id', $params['accountingPeriodId'] ?? null);
         $harness->assertSame(':company.settings.tools_small_equipment_nominal_id', $params['toolsSmallEquipmentNominalId'] ?? null);
@@ -52,10 +53,13 @@ $harness->run(_not_an_assetCard::class, static function (GeneratedServiceClassTe
                 ],
             ],
             'services' => [
-                'nonAssetCandidates' => [
-                    'available' => true,
-                    'threshold' => 250,
-                    'rows' => $rows,
+                'nonAssetReview' => [
+                    'candidates' => [
+                        'available' => true,
+                        'threshold' => 250,
+                        'rows' => $rows,
+                    ],
+                    'data_entry' => ['permitted' => true, 'is_locked' => false, 'reason_code' => '', 'reason' => ''],
                 ],
             ],
         ];
@@ -96,16 +100,19 @@ $harness->run(_not_an_assetCard::class, static function (GeneratedServiceClassTe
                 ],
             ],
             'services' => [
-                'nonAssetCandidates' => [
-                    'available' => true,
-                    'threshold' => 250,
-                    'rows' => [[
-                        'date' => '2026-07-02',
-                        'source' => 'Transaction',
-                        'description' => 'Cordless drill',
-                        'reference' => 'INV-7',
-                        'amount' => 312.50,
-                    ]],
+                'nonAssetReview' => [
+                    'candidates' => [
+                        'available' => true,
+                        'threshold' => 250,
+                        'rows' => [[
+                            'date' => '2026-07-02',
+                            'source' => 'Transaction',
+                            'description' => 'Cordless drill',
+                            'reference' => 'INV-7',
+                            'amount' => 312.50,
+                        ]],
+                    ],
+                    'data_entry' => ['permitted' => true, 'is_locked' => false, 'reason_code' => '', 'reason' => ''],
                 ],
             ],
         ]);
@@ -129,10 +136,11 @@ $harness->run(_not_an_assetCard::class, static function (GeneratedServiceClassTe
                 ],
             ],
             'services' => [
-                'nonAssetCandidates' => [
-                    'available' => true,
-                    'threshold' => 250,
-                    'rows' => [
+                'nonAssetReview' => [
+                    'candidates' => [
+                        'available' => true,
+                        'threshold' => 250,
+                        'rows' => [
                         [
                             'source_type' => 'transaction',
                             'source_id' => 51,
@@ -152,7 +160,9 @@ $harness->run(_not_an_assetCard::class, static function (GeneratedServiceClassTe
                             'reference' => 'EXP-7',
                             'amount' => 275.00,
                         ],
+                        ],
                     ],
+                    'data_entry' => ['permitted' => true, 'is_locked' => false, 'reason_code' => '', 'reason' => ''],
                 ],
             ],
         ];
@@ -194,15 +204,79 @@ $harness->run(_not_an_assetCard::class, static function (GeneratedServiceClassTe
                 ],
             ],
             'services' => [
-                'nonAssetCandidates' => [
-                    'available' => false,
-                    'threshold' => 500,
-                    'rows' => [],
+                'nonAssetReview' => [
+                    'candidates' => [
+                        'available' => false,
+                        'threshold' => 500,
+                        'rows' => [],
+                    ],
+                    'data_entry' => ['permitted' => true, 'is_locked' => false, 'reason_code' => '', 'reason' => ''],
                 ],
             ],
         ]);
 
         $harness->assertTrue(str_contains($html, '<option value="500" selected>$ 500.00</option>'));
         $harness->assertTrue(str_contains($html, 'Set the Tools &amp; Small Equipment nominal on Company Nominals'));
+    });
+
+    $harness->check(_not_an_assetCard::class, 'keeps locked periods viewable while removing mutation and approval controls', static function () use ($harness, $card): void {
+        $context = [
+            'company' => [
+                'id' => 7,
+                'accounting_period_id' => 22,
+                'settings' => [
+                    'tools_small_equipment_nominal_id' => 18,
+                    'potential_asset_threshold' => 250,
+                    'default_currency_symbol' => '$',
+                ],
+            ],
+            'services' => [
+                'nonAssetReview' => [
+                    'candidates' => [
+                        'available' => true,
+                        'threshold' => 250,
+                        'rows' => [[
+                            'source_type' => 'transaction',
+                            'source_id' => 51,
+                            'date' => '2026-07-02',
+                            'source' => 'Transaction',
+                            'description' => 'Cordless drill',
+                            'reference' => 'INV-7',
+                            'amount' => 312.50,
+                        ]],
+                    ],
+                    'data_entry' => [
+                        'permitted' => false,
+                        'is_locked' => true,
+                        'reason_code' => 'period_locked',
+                        'reason' => 'This accounting period is locked, so data entry is not permitted.',
+                    ],
+                    'acknowledgement' => null,
+                ],
+            ],
+        ];
+
+        $html = $card->render($context);
+        $csv = $card->tables($context)[0]->exportCsv();
+
+        $harness->assertTrue(str_contains($html, 'Period locked'));
+        $harness->assertTrue(str_contains($html, 'Non-asset thresholds and conversions are read only.'));
+        $harness->assertTrue(str_contains($html, '>Open Related Workflow</button>'));
+        $harness->assertFalse(str_contains($html, 'name="intent" value="save_potential_asset_threshold"'));
+        $harness->assertFalse(str_contains($html, 'name="intent" value="convert_non_asset_to_asset"'));
+        $harness->assertTrue(str_contains($html, 'name="approval_confirmed" value="1" required data-year-end-ack-checkbox disabled'));
+        $harness->assertTrue(str_contains($html, 'This accounting period is locked, so data entry is not permitted.'));
+        $harness->assertTrue(str_contains($csv, 'Cordless drill'));
+
+        $context['services']['nonAssetReview']['acknowledgement'] = [
+            'state' => 'current',
+            'current' => true,
+            'acknowledged_at' => '2026-07-13 12:00:00',
+            'acknowledged_by' => 'reviewer',
+            'note' => 'Reviewed before locking.',
+        ];
+        $approvedHtml = $card->render($context);
+        $harness->assertTrue(str_contains($approvedHtml, 'This accounting period is locked, so this approval cannot be revoked.'));
+        $harness->assertFalse(str_contains($approvedHtml, '>Revoke approval</button>'));
     });
 });

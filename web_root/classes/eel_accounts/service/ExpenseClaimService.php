@@ -1845,7 +1845,7 @@ final class ExpenseClaimService
             return ['success' => false, 'errors' => ['This posted claim does not have a linked journal to rebuild.']];
         }
 
-        (new \eel_accounts\Service\YearEndLockService())->assertUnlocked(
+        (new \eel_accounts\Service\AccountingPeriodAccessService())->assertDataEntryPermitted(
             $companyId,
             (int)($claim['accounting_period_id'] ?? 0),
             'rebuild posted expense claim journals for asset source recategorisation'

@@ -98,6 +98,71 @@ $harness->run(AssetAction::class, static function (GeneratedServiceClassTestHarn
         $harness->assertSame(false, array_key_exists('asset_disposal_search_asset_id', $result->context()));
     });
 
+    $harness->check(AssetAction::class, 'potential asset threshold changes require an unlocked accounting period', static function () use ($harness, $action): void {
+        if (!InterfaceDB::tableExists('year_end_reviews')) {
+            $harness->skip('year_end_reviews table is not available.');
+        }
+
+        $companyId = random_int(700000000, 799999999);
+        $accountingPeriodId = random_int(800000000, 899999999);
+        InterfaceDB::beginTransaction();
+        try {
+            InterfaceDB::prepareExecute(
+                'INSERT INTO year_end_reviews (company_id, accounting_period_id, is_locked, locked_at, locked_by)
+                 VALUES (:company_id, :accounting_period_id, 1, CURRENT_TIMESTAMP, :locked_by)',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'locked_by' => 'asset_action_test',
+                ]
+            );
+
+            $request = new RequestFramework(
+                [],
+                [
+                    'card_action' => 'Asset',
+                    'intent' => 'save_potential_asset_threshold',
+                    'company_id' => (string)$companyId,
+                    'accounting_period_id' => (string)$accountingPeriodId,
+                    'potential_asset_threshold' => '500',
+                ],
+                ['REQUEST_METHOD' => 'POST'],
+                [],
+                [],
+                null
+            );
+
+            $result = $action->handle($request, createTestPageServiceFramework());
+            $harness->assertSame(false, $result->isSuccess());
+            $harness->assertTrue(str_contains(
+                (string)(($result->flashMessages()[0] ?? [])['message'] ?? ''),
+                'locked'
+            ));
+        } finally {
+            InterfaceDB::rollBack();
+        }
+
+        $missingPeriodRequest = new RequestFramework(
+            [],
+            [
+                'card_action' => 'Asset',
+                'intent' => 'save_potential_asset_threshold',
+                'company_id' => (string)$companyId,
+                'potential_asset_threshold' => '500',
+            ],
+            ['REQUEST_METHOD' => 'POST'],
+            [],
+            [],
+            null
+        );
+        $missingPeriodResult = $action->handle($missingPeriodRequest, createTestPageServiceFramework());
+        $harness->assertSame(false, $missingPeriodResult->isSuccess());
+        $harness->assertTrue(str_contains(
+            (string)(($missingPeriodResult->flashMessages()[0] ?? [])['message'] ?? ''),
+            'Select a company and accounting period'
+        ));
+    });
+
     $harness->check(AssetAction::class, 'nil disposal action posts stolen metadata in SQLite fixture', static function () use ($harness, $action): void {
         assetActionTestRequireDisposalSchema($harness);
         $fixture = assetActionTestCreateNilDisposalFixture();

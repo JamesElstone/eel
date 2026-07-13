@@ -23,7 +23,7 @@ final class AssetAction implements ActionInterfaceFramework
 
         try {
             if ($intent === 'save_potential_asset_threshold') {
-                (new \eel_accounts\Service\YearEndLockService())->assertUnlocked(
+                (new \eel_accounts\Service\AccountingPeriodAccessService())->assertDataEntryPermitted(
                     $companyId,
                     (int)$request->input('accounting_period_id', 0),
                     'change potential asset review settings for this period'

@@ -39,6 +39,7 @@ final class YearEndChecklistService
         private readonly ?\eel_accounts\Service\CorporationTaxProvisionService $corporationTaxProvisionService = null,
         private readonly ?\eel_accounts\Service\YearEndAcknowledgementService $acknowledgementService = null,
         private readonly ?\eel_accounts\Contract\DatabaseBackupCreatorInterface $backupCreator = null,
+        private readonly ?\eel_accounts\Service\NonAssetReviewService $nonAssetReviewService = null,
     ) {
     }
 
@@ -910,18 +911,13 @@ final class YearEndChecklistService
                 : 'No Tools & Small Equipment items are over the potential asset threshold.',
             (string)$potentialAssetCandidateCount,
             '?page=assets&show_card=not_an_asset',
-            $this->acknowledgementBasis('fixed_asset_review_placeholder', [
-                'candidate_count' => $potentialAssetCandidateCount,
-                'threshold' => number_format($potentialAssetThreshold, 2, '.', ''),
-                'tools_nominal_id' => (int)($settings['tools_small_equipment_nominal_id'] ?? 0),
-                'candidates' => array_map(static fn(array $candidate): array => [
-                    'source' => (string)($candidate['source'] ?? ''),
-                    'source_id' => (int)($candidate['source_id'] ?? 0),
-                    'date' => (string)($candidate['date'] ?? ''),
-                    'amount' => number_format((float)($candidate['amount'] ?? 0), 2, '.', ''),
-                    'nominal_account_id' => (int)($candidate['nominal_account_id'] ?? 0),
-                ], (array)($potentialAssetCandidates['rows'] ?? [])),
-            ])
+            ($this->nonAssetReviewService ?? new \eel_accounts\Service\NonAssetReviewService(
+                acknowledgementService: $this->acknowledgementService
+            ))->buildAcknowledgementBasis(
+                $potentialAssetCandidates,
+                $potentialAssetThreshold,
+                (int)($settings['tools_small_equipment_nominal_id'] ?? 0)
+            )
         ), $reviewAcknowledgements);
         $vehicleReviewWarnings = (new \eel_accounts\Service\VehicleService())->periodReviewWarnings($companyId, $accountingPeriodId);
         $sections['year_end_accounts_review'][] = $this->makeCheck(

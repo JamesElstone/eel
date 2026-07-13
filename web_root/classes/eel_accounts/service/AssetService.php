@@ -813,7 +813,11 @@ final class AssetService
         if ($transaction === null || (int)($transaction['company_id'] ?? 0) !== $companyId) {
             return ['success' => false, 'errors' => ['The selected transaction could not be found for this company.']];
         }
-        (new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, (int)($transaction['accounting_period_id'] ?? 0), 'create assets from transactions in this period');
+        (new \eel_accounts\Service\AccountingPeriodAccessService())->assertDataEntryPermitted(
+            $companyId,
+            (int)($transaction['accounting_period_id'] ?? 0),
+            'create assets from transactions in this period'
+        );
 
         if ($this->linkedTransactionAssetExists($transactionId)) {
             return ['success' => false, 'errors' => ['This transaction is already linked to an asset.']];

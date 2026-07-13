@@ -30,24 +30,14 @@ final class _not_an_assetCard extends CardBaseFramework
     {
         return [
             [
-                'key' => 'nonAssetCandidates',
-                'service' => \eel_accounts\Service\AssetService::class,
-                'method' => 'fetchNonAssetCandidates',
+                'key' => 'nonAssetReview',
+                'service' => \eel_accounts\Service\NonAssetReviewService::class,
+                'method' => 'fetchContext',
                 'params' => [
                     'companyId' => ':company.id',
                     'accountingPeriodId' => ':company.accounting_period_id',
                     'toolsSmallEquipmentNominalId' => ':company.settings.tools_small_equipment_nominal_id',
                     'threshold' => ':company.settings.potential_asset_threshold',
-                ],
-            ],
-            [
-                'key' => 'fixedAssetYearEndAcknowledgement',
-                'service' => \eel_accounts\Service\YearEndChecklistService::class,
-                'method' => 'fetchReviewAcknowledgement',
-                'params' => [
-                    'companyId' => ':company.id',
-                    'accountingPeriodId' => ':company.accounting_period_id',
-                    'checkCode' => 'fixed_asset_review_placeholder',
                 ],
             ],
         ];
@@ -69,38 +59,53 @@ final class _not_an_assetCard extends CardBaseFramework
         $settings = (array)($company['settings'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
-        $data = (array)($context['services']['nonAssetCandidates'] ?? []);
+        $review = (array)($context['services']['nonAssetReview'] ?? []);
+        $data = (array)($review['candidates'] ?? []);
+        $dataEntry = (array)($review['data_entry'] ?? []);
         $threshold = \eel_accounts\Service\AssetService::normalisePotentialAssetThreshold($data['threshold'] ?? ($settings['potential_asset_threshold'] ?? 250));
         $nominalId = (int)($settings['tools_small_equipment_nominal_id'] ?? 0);
-        $isLocked = (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);
+        $dataEntryPermitted = !empty($dataEntry['permitted']);
 
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return '<div class="helper">Select a company and accounting period before reviewing non-assets.</div>';
         }
 
         if ($nominalId <= 0 || empty($data['available'])) {
-            return ($isLocked ? '' : $this->thresholdToolbar($companyId, $accountingPeriodId, $threshold, $settings))
+            return ($dataEntryPermitted ? $this->thresholdToolbar($companyId, $accountingPeriodId, $threshold, $settings) : $this->readOnlyHelper($dataEntry))
                 . '<div class="helper">Set the Tools &amp; Small Equipment nominal on Company Nominals before reviewing potential assets.</div>';
         }
 
         $tableHtml = $this->renderTableWithThresholdToolbar(
             $this->configuredTable($context),
             $context,
-            $isLocked ? '<div class="helper"><span class="badge warning">Period locked</span> Non-asset thresholds and conversions are read only.</div>' : $this->thresholdForm($companyId, $accountingPeriodId, $threshold, $settings)
+            $dataEntryPermitted ? $this->thresholdForm($companyId, $accountingPeriodId, $threshold, $settings) : $this->readOnlyHelper($dataEntry)
         );
-        $acknowledgement = $context['services']['fixedAssetYearEndAcknowledgement'] ?? null;
+        $acknowledgement = $review['acknowledgement'] ?? null;
 
         return $tableHtml . (!empty($data['rows']) || is_array($acknowledgement)
-            ? $this->yearEndAcknowledgementHtml(is_array($acknowledgement) ? $acknowledgement : null, $companyId, $accountingPeriodId)
+            ? $this->yearEndAcknowledgementHtml(
+                is_array($acknowledgement) ? $acknowledgement : null,
+                $companyId,
+                $accountingPeriodId,
+                $dataEntry
+            )
             : '');
     }
 
-    private function yearEndAcknowledgementHtml(?array $acknowledgement, int $companyId, int $accountingPeriodId): string
+    private function yearEndAcknowledgementHtml(
+        ?array $acknowledgement,
+        int $companyId,
+        int $accountingPeriodId,
+        array $dataEntry
+    ): string
     {
         return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
             'subject' => 'fixed asset candidate position',
             'companyId' => $companyId,
             'accountingPeriodId' => $accountingPeriodId,
+            'locked' => !empty($dataEntry['is_locked']),
+            'disabled' => empty($dataEntry['permitted']),
+            'disabledReason' => (string)($dataEntry['reason'] ?? ''),
             'acknowledged' => !empty($acknowledgement['current']),
             'acknowledgementState' => (string)($acknowledgement['state'] ?? 'absent'),
             'acknowledgedAt' => (string)($acknowledgement['acknowledged_at'] ?? ''),
@@ -146,6 +151,7 @@ final class _not_an_assetCard extends CardBaseFramework
         $settings = (array)($company['settings'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
+        $dataEntry = (array)(($context['services']['nonAssetReview'] ?? [])['data_entry'] ?? []);
         $companySettingsService = new \eel_accounts\Service\CompanySettingsService();
 
         return TableFramework::make($this->key(), $this->rows($context))
@@ -173,7 +179,13 @@ final class _not_an_assetCard extends CardBaseFramework
             ->column(
                 'action',
                 'Action',
-                html: fn(array $row): string => $this->actionButtons($row, $companyId, $accountingPeriodId, (int)($settings['default_bank_nominal_id'] ?? 0)),
+                html: fn(array $row): string => $this->actionButtons(
+                    $row,
+                    $companyId,
+                    $accountingPeriodId,
+                    (int)($settings['default_bank_nominal_id'] ?? 0),
+                    $dataEntry
+                ),
                 exportable: false,
                 cellClass: 'cell-fit'
             );
@@ -181,7 +193,7 @@ final class _not_an_assetCard extends CardBaseFramework
 
     private function rows(array $context): array
     {
-        $data = (array)(($context['services'] ?? [])['nonAssetCandidates'] ?? []);
+        $data = (array)(((array)(($context['services'] ?? [])['nonAssetReview'] ?? []))['candidates'] ?? []);
 
         return array_values(array_filter(
             (array)($data['rows'] ?? []),
@@ -220,6 +232,18 @@ final class _not_an_assetCard extends CardBaseFramework
         </div>';
     }
 
+    private function readOnlyHelper(array $dataEntry): string
+    {
+        $reason = trim((string)($dataEntry['reason'] ?? ''));
+        if (!empty($dataEntry['is_locked'])) {
+            return '<div class="helper"><span class="badge warning">Period locked</span> Non-asset thresholds and conversions are read only.</div>';
+        }
+
+        return '<div class="helper">' . HelperFramework::escape(
+            $reason !== '' ? $reason : 'Data entry is not permitted for this accounting period.'
+        ) . '</div>';
+    }
+
     private function renderTableWithThresholdToolbar(TableFramework $table, array $context, string $thresholdForm): string
     {
         $exportHiddenFields = [
@@ -236,11 +260,17 @@ final class _not_an_assetCard extends CardBaseFramework
         return $toolbar . $table->renderTable() . $table->renderFooter();
     }
 
-    private function actionButtons(array $row, int $companyId, int $accountingPeriodId, int $defaultBankNominalId): string
+    private function actionButtons(
+        array $row,
+        int $companyId,
+        int $accountingPeriodId,
+        int $defaultBankNominalId,
+        array $dataEntry
+    ): string
     {
         $buttons = array_filter([
             $this->openSourceButton($row, $companyId, $accountingPeriodId),
-            $this->convertToAssetForm($row, $companyId, $accountingPeriodId, $defaultBankNominalId),
+            $this->convertToAssetForm($row, $companyId, $accountingPeriodId, $defaultBankNominalId, $dataEntry),
         ], static fn(string $html): bool => $html !== '');
 
         return $buttons === [] ? '' : '<div class="actions-stack">' . implode('', $buttons) . '</div>';
@@ -296,15 +326,23 @@ final class _not_an_assetCard extends CardBaseFramework
         return '';
     }
 
-    private function convertToAssetForm(array $row, int $companyId, int $accountingPeriodId, int $defaultBankNominalId): string
+    private function convertToAssetForm(
+        array $row,
+        int $companyId,
+        int $accountingPeriodId,
+        int $defaultBankNominalId,
+        array $dataEntry
+    ): string
     {
         $sourceType = (string)($row['source_type'] ?? '');
         $sourceId = (int)($row['source_id'] ?? 0);
         if ($companyId <= 0 || $accountingPeriodId <= 0 || $sourceId <= 0 || !in_array($sourceType, ['transaction', 'expense_claim'], true)) {
             return '';
         }
-        if ((new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId)) {
-            return '<span class="helper">Period locked</span>';
+        if (empty($dataEntry['permitted'])) {
+            return '<span class="helper">' . HelperFramework::escape(
+                !empty($dataEntry['is_locked']) ? 'Period locked' : (string)($dataEntry['reason'] ?? 'Data entry is not permitted.')
+            ) . '</span>';
         }
 
         $formId = 'non-asset-convert-' . preg_replace('/[^a-z0-9_-]+/', '-', strtolower($sourceType)) . '-' . $sourceId;

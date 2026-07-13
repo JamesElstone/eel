@@ -34,6 +34,15 @@ final class CorporationTaxProvisionService
             return ['available' => false, 'errors' => (array)($summary['errors'] ?? ['The CT estimate is not available.'])];
         }
 
+        return $this->positionFromSummary($companyId, $accountingPeriodId, $ctPeriodId, $summary);
+    }
+
+    private function positionFromSummary(int $companyId, int $accountingPeriodId, int $ctPeriodId, array $summary): array
+    {
+        if (empty($summary['available'])) {
+            return ['available' => false, 'errors' => (array)($summary['errors'] ?? ['The CT estimate is not available.'])];
+        }
+
         $estimate = round((float)($summary['estimated_corporation_tax'] ?? 0), 2);
         $journals = $this->fetchProvisionJournals($companyId, $accountingPeriodId, $ctPeriodId);
         $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
@@ -58,7 +67,11 @@ final class CorporationTaxProvisionService
         ];
     }
 
-    public function fetchAccountingPeriodPosition(int $companyId, int $accountingPeriodId): array
+    public function fetchAccountingPeriodPosition(
+        int $companyId,
+        int $accountingPeriodId,
+        ?array $precomputedPeriodSummaries = null
+    ): array
     {
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return ['available' => false, 'errors' => ['Select a company and accounting period before reviewing Corporation Tax provisions.'], 'periods' => []];
@@ -71,7 +84,20 @@ final class CorporationTaxProvisionService
             return ['available' => false, 'errors' => (array)($activePeriods['errors'] ?? ['No CT periods are available for this accounting period.']), 'periods' => []];
         }
 
-        $computation->preloadCtPeriodLossPositionsForAccountingPeriod($companyId, $accountingPeriodId);
+        if ($precomputedPeriodSummaries === null) {
+            $computation->preloadCtPeriodLossPositionsForAccountingPeriod($companyId, $accountingPeriodId);
+        }
+
+        $precomputedByCtPeriodId = [];
+        foreach ($precomputedPeriodSummaries ?? [] as $summary) {
+            if (!is_array($summary)) {
+                continue;
+            }
+            $ctPeriodId = (int)($summary['ct_period_id'] ?? 0);
+            if ($ctPeriodId > 0) {
+                $precomputedByCtPeriodId[$ctPeriodId] = $summary;
+            }
+        }
 
         $periodPositions = [];
         $errors = (array)($activePeriods['errors'] ?? []);
@@ -81,7 +107,14 @@ final class CorporationTaxProvisionService
                 continue;
             }
 
-            $position = $this->fetchPosition($companyId, $accountingPeriodId, $ctPeriodId, $computation);
+            if ($precomputedPeriodSummaries !== null) {
+                $summary = $precomputedByCtPeriodId[$ctPeriodId] ?? null;
+                $position = is_array($summary)
+                    ? $this->positionFromSummary($companyId, $accountingPeriodId, $ctPeriodId, $summary)
+                    : ['available' => false, 'errors' => ['The precomputed CT summary is missing for this CT period.']];
+            } else {
+                $position = $this->fetchPosition($companyId, $accountingPeriodId, $ctPeriodId, $computation);
+            }
             if (empty($position['available'])) {
                 foreach ((array)($position['errors'] ?? ['The CT provision position could not be calculated.']) as $error) {
                     $errors[] = (string)($ctPeriod['display_label'] ?? ('CT period ' . (int)($ctPeriod['sequence_no'] ?? 0))) . ': ' . (string)$error;

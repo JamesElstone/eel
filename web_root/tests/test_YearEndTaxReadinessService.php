@@ -71,6 +71,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(round((float)($first['losses_brought_forward'] ?? 0), 2), round((float)($second['losses_brought_forward'] ?? 0), 2));
             $harness->assertSame(round((float)($first['losses_used'] ?? 0), 2), round((float)($second['losses_used'] ?? 0), 2));
             $harness->assertSame(round((float)($first['losses_carried_forward'] ?? 0), 2), round((float)($second['losses_carried_forward'] ?? 0), 2));
+
+            $cacheProperty = new ReflectionProperty(\eel_accounts\Service\CorporationTaxComputationService::class, 'ctPeriodSummaryCache');
+            $cacheProperty->setAccessible(true);
+            $harness->assertSame(true, count((array)$cacheProperty->getValue($taxService)) > 0);
+            $harness->assertCount(0, (array)$cacheProperty->getValue(new \eel_accounts\Service\CorporationTaxComputationService()));
         });
+
     }
 );

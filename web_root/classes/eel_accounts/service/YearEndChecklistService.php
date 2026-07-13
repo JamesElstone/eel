@@ -549,9 +549,15 @@ final class YearEndChecklistService
     }
 
     public function fetchChecklist(int $companyId, int $accountingPeriodId): ?array {
-        $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
-        
-        $tax = $this->taxReadinessService ?? new \eel_accounts\Service\YearEndTaxReadinessService($metrics, null);
+        $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService(
+            preTaxProfitLossService: new \eel_accounts\Service\PreTaxProfitLossService(
+                new \eel_accounts\Service\PeriodLedgerReadService()
+            )
+        );
+        $taxComputation = new \eel_accounts\Service\CorporationTaxComputationService($metrics);
+        $provisionService = new \eel_accounts\Service\CorporationTaxProvisionService($taxComputation);
+        $tax = $this->taxReadinessService
+            ?? new \eel_accounts\Service\YearEndTaxReadinessService($metrics, $taxComputation, $provisionService);
 
         $comparison = $this->companiesHouseComparisonService ?? new \eel_accounts\Service\YearEndCompaniesHouseComparisonService($metrics, null);
         $lock = $this->lockService ?? new \eel_accounts\Service\YearEndLockService();
@@ -587,8 +593,22 @@ final class YearEndChecklistService
         $prepaymentReview = (new \eel_accounts\Service\PrepaymentReviewService($metrics, $lock))->fetchContext($companyId, $accountingPeriodId);
         $duplicateRepayments = $metrics->duplicateRepaymentRiskSummary($companyId, $periodStart, $periodEnd);
         $financialStatements = $metrics->financialStatementsSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd, $trialBalance);
+        $taxReadiness = $tax->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
+        $balanceSheetMetrics = (array)(($financialStatements['balance_sheet'] ?? [])['metrics'] ?? []);
+        $corporationTaxProvision = is_array($taxReadiness['provision'] ?? null)
+            ? (array)$taxReadiness['provision']
+            : [
+                'available' => false,
+                'errors' => (array)($taxReadiness['errors'] ?? ['The Corporation Tax provision is unavailable.']),
+                'periods' => [],
+            ];
         $retainedEarningsClose = ($this->retainedEarningsCloseService ?? new \eel_accounts\Service\RetainedEarningsCloseService())
-            ->fetchContext($companyId, $accountingPeriodId);
+            ->fetchContext(
+                $companyId,
+                $accountingPeriodId,
+                $corporationTaxProvision,
+                $balanceSheetMetrics !== [] ? $balanceSheetMetrics : null
+            );
         $incorporationShares = (new \eel_accounts\Service\IncorporationShareCapitalService())->fetchSummary($companyId);
         $potentialAssetThreshold = \eel_accounts\Service\AssetService::normalisePotentialAssetThreshold($settings['potential_asset_threshold'] ?? 250);
         $potentialAssetCandidates = ($this->assetService ?? new \eel_accounts\Service\AssetService())->fetchNonAssetCandidates(
@@ -598,7 +618,6 @@ final class YearEndChecklistService
             $potentialAssetThreshold
         );
         $potentialAssetCandidateCount = (int)($potentialAssetCandidates['count'] ?? 0);
-        $taxReadiness = $tax->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
         $chComparison = $comparison->fetchComparison(
             $companyId,
             $accountingPeriodId,

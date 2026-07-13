@@ -507,22 +507,27 @@ final class YearEndMetricsService
             return 0;
         }
 
-        return (int)\InterfaceDB::fetchColumn( 'SELECT COUNT(*)
-             FROM statement_import_rows sir
-             INNER JOIN statement_uploads su ON su.id = sir.upload_id
+        return (int)\InterfaceDB::fetchColumn('SELECT COUNT(*)
+             FROM statement_uploads su
+             INNER JOIN statement_import_rows sir
+               ON sir.upload_id = su.id
+              AND sir.committed_transaction_id IS NOT NULL
              LEFT JOIN transactions t ON t.id = sir.committed_transaction_id
-             LEFT JOIN journals j
-               ON j.source_type = :source_type
-              AND j.source_ref = CONCAT(:source_prefix, sir.committed_transaction_id)
              WHERE su.company_id = :company_id
                AND su.accounting_period_id = :accounting_period_id
-               AND sir.committed_transaction_id IS NOT NULL
                AND (
                     t.id IS NULL
                     OR (
-                    t.nominal_account_id IS NOT NULL
+                        t.nominal_account_id IS NOT NULL
                         AND (t.category_status = :auto_status OR t.category_status = :manual_status)
-                        AND j.id IS NULL
+                        AND NOT EXISTS (
+                            SELECT 1
+                            FROM journals j
+                            WHERE j.company_id = su.company_id
+                              AND j.accounting_period_id = su.accounting_period_id
+                              AND j.source_type = :source_type
+                              AND j.source_ref = CONCAT(:source_prefix, sir.committed_transaction_id)
+                        )
                     )
                )', [
             'source_type' => 'bank_csv',

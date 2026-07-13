@@ -82,7 +82,6 @@ final class DashboardRepository
 
     public function fetchDashboardActionQueue(int $companyId, int $accountingPeriodId): array
     {
-        $stats = $this->emptyDashboardStats();
         $activity = [];
         $setupHealthActions = $this->fetchSetupHealthActions($companyId);
 
@@ -95,11 +94,22 @@ final class DashboardRepository
             ], $setupHealthActions);
         }
 
-        $stats = $this->fetchDashboardStats($companyId, $accountingPeriodId);
+        $bankAccountCount = (int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*)
+             FROM company_accounts
+             WHERE company_id = :company_id
+               AND account_type = :account_type
+               AND is_active = 1',
+            [
+                'company_id' => $companyId,
+                'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_BANK,
+            ]
+        );
+        $uploadCounts = $this->fetchActionQueueUploadCounts($companyId, $accountingPeriodId);
         $this->appendCompanySetupActions(
             $activity,
-            (int)$stats['bank_accounts'],
-            (int)$stats['statement_uploads']
+            $bankAccountCount,
+            (int)($uploadCounts['statement_uploads'] ?? 0)
         );
 
         if ($accountingPeriodId <= 0) {
@@ -109,7 +119,7 @@ final class DashboardRepository
         $transactionCounts = $this->fetchTransactionDashboardCounts($companyId, $accountingPeriodId);
         $this->appendMissingTransactionAction($activity, (int)($transactionCounts['transaction_count'] ?? 0));
 
-        $uncategorisedCount = (int)$stats['unreconciled_items'];
+        $uncategorisedCount = (int)($transactionCounts['unreconciled_items'] ?? 0);
         if ($uncategorisedCount > 0) {
             $activity[] = [
                 'title' => 'Categorise uncategorised transactions',
@@ -117,7 +127,7 @@ final class DashboardRepository
             ];
         }
 
-        $stagedUploadRows = (int)$stats['staged_upload_rows'];
+        $stagedUploadRows = $this->countStagedUploadRows($companyId, $accountingPeriodId);
         if ($stagedUploadRows > 0) {
             $activity[] = [
                 'title' => 'Process staged upload rows',
@@ -125,10 +135,7 @@ final class DashboardRepository
             ];
         }
 
-        $duplicateUploads = \InterfaceDB::countWhereCompare('statement_uploads', 'rows_duplicate', '>', 0, [
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-        ]);
+        $duplicateUploads = (int)($uploadCounts['duplicate_uploads'] ?? 0);
         if ($duplicateUploads > 0) {
             $activity[] = [
                 'title' => 'Review duplicate upload hits',
@@ -136,11 +143,7 @@ final class DashboardRepository
             ];
         }
 
-        $emptyUploads = \InterfaceDB::countWhere('statement_uploads', [
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-            'rows_inserted' => 0,
-        ]);
+        $emptyUploads = (int)($uploadCounts['empty_uploads'] ?? 0);
         if ($emptyUploads > 0) {
             $activity[] = [
                 'title' => 'Check empty imports',
@@ -148,19 +151,35 @@ final class DashboardRepository
             ];
         }
 
-        $manualTransactions = \InterfaceDB::countWhere('transactions', [
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-            'statement_upload_id' => null,
-        ]);
-        if ($manualTransactions > 0) {
-            $activity[] = [
-                'title' => 'Review manually added transactions',
-                'detail' => $manualTransactions . ' transaction' . ($manualTransactions === 1 ? '' : 's') . ' are not tied to an uploaded statement.',
-            ];
-        }
-
         return $this->finaliseActivity($activity, $setupHealthActions);
+    }
+
+    private function fetchActionQueueUploadCounts(int $companyId, int $accountingPeriodId): array
+    {
+        $row = \InterfaceDB::fetchOne(
+            'SELECT COUNT(*) AS statement_uploads,
+                    COALESCE(SUM(CASE
+                        WHEN accounting_period_id = :duplicate_period_id AND rows_duplicate > 0 THEN 1
+                        ELSE 0
+                    END), 0) AS duplicate_uploads,
+                    COALESCE(SUM(CASE
+                        WHEN accounting_period_id = :empty_period_id AND rows_inserted = 0 THEN 1
+                        ELSE 0
+                    END), 0) AS empty_uploads
+             FROM statement_uploads
+             WHERE company_id = :company_id',
+            [
+                'duplicate_period_id' => $accountingPeriodId,
+                'empty_period_id' => $accountingPeriodId,
+                'company_id' => $companyId,
+            ]
+        ) ?: [];
+
+        return [
+            'statement_uploads' => (int)($row['statement_uploads'] ?? 0),
+            'duplicate_uploads' => (int)($row['duplicate_uploads'] ?? 0),
+            'empty_uploads' => (int)($row['empty_uploads'] ?? 0),
+        ];
     }
 
     public function fetchRecentTransactions(

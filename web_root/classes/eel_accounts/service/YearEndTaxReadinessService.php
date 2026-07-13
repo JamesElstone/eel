@@ -109,7 +109,7 @@ final class YearEndTaxReadinessService
         $warnings = $this->warnings($periodSummaries);
         $confidenceStatus = $warnings === [] ? 'ready_for_review' : 'review_required';
         $provision = ($this->provisionService ?? new \eel_accounts\Service\CorporationTaxProvisionService())
-            ->fetchAccountingPeriodPosition($companyId, $accountingPeriodId);
+            ->fetchAccountingPeriodPosition($companyId, $accountingPeriodId, $periodSummaries);
 
         return array_merge($totals, [
             'available' => true,

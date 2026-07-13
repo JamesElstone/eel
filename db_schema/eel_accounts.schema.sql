@@ -1575,6 +1575,7 @@ CREATE TABLE `transactions` (
   KEY `idx_transactions_category_status` (`category_status`),
   KEY `idx_transactions_company_month` (`company_id`,`txn_date`),
   KEY `idx_transactions_company_period_date` (`company_id`,`accounting_period_id`,`txn_date`),
+  KEY `idx_transactions_company_period_category_status` (`company_id`,`accounting_period_id`,`category_status`),
   KEY `idx_transactions_company_currency` (`company_id`,`accounting_period_id`,`currency`),
   KEY `idx_transactions_company_document_hash` (`company_id`,`document_url_hash`),
   KEY `idx_transactions_document_status` (`document_download_status`),

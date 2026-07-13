@@ -386,17 +386,102 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
         $harness->assertCount(0, $activity);
     });
 
+    $harness->check(\eel_accounts\Repository\DashboardRepository::class, 'builds period-scoped operational action counts', function () use ($harness): void {
+        foreach (['companies', 'accounting_periods', 'company_accounts', 'statement_uploads', 'statement_import_rows', 'transactions'] as $table) {
+            if (!InterfaceDB::tableExists($table)) {
+                $harness->skip($table . ' table is not available.');
+            }
+        }
+
+        InterfaceDB::beginTransaction();
+        try {
+            $marker = 'DAQ' . strtoupper(substr(hash('sha256', uniqid('', true)), 0, 5));
+            $primary = dashboardActionQueueFixtureCompany($marker . 'A');
+            $other = dashboardActionQueueFixtureCompany($marker . 'B');
+            $otherPeriodId = dashboardActionQueueFixturePeriod((int)$primary['company_id'], 'Prior ' . $marker, '2023-01-01', '2023-12-31');
+            $primaryAccountId = dashboardActionQueueFixtureAccount((int)$primary['company_id'], 'Primary ' . $marker);
+            dashboardActionQueueFixtureAccount((int)$other['company_id'], 'Other ' . $marker);
+            $primaryUploadId = dashboardActionQueueFixtureUpload((int)$primary['company_id'], (int)$primary['accounting_period_id'], 'primary-' . $marker . '.csv', 2, 0, 'staged');
+            dashboardActionQueueFixtureUpload((int)$primary['company_id'], $otherPeriodId, 'prior-' . $marker . '.csv', 3, 0, 'completed');
+            dashboardActionQueueFixtureUpload((int)$other['company_id'], (int)$other['accounting_period_id'], 'other-' . $marker . '.csv', 4, 0, 'completed');
+
+            InterfaceDB::prepareExecute(
+                'INSERT INTO transactions (
+                    company_id, accounting_period_id, account_id, statement_upload_id,
+                    txn_date, description, amount, dedupe_hash, category_status
+                 ) VALUES (
+                    :company_id, :accounting_period_id, :account_id, :statement_upload_id,
+                    :txn_date, :description, :amount, :dedupe_hash, :category_status
+                 )',
+                [
+                    'company_id' => (int)$primary['company_id'],
+                    'accounting_period_id' => (int)$primary['accounting_period_id'],
+                    'account_id' => $primaryAccountId,
+                    'statement_upload_id' => $primaryUploadId,
+                    'txn_date' => '2024-06-01',
+                    'description' => 'Uncategorised queue fixture',
+                    'amount' => '10.00',
+                    'dedupe_hash' => hash('sha256', $marker . ':transaction'),
+                    'category_status' => 'uncategorised',
+                ]
+            );
+            InterfaceDB::prepareExecute(
+                'INSERT INTO statement_import_rows (
+                    upload_id, row_number, raw_json, accounting_period_id,
+                    validation_status, committed_transaction_id
+                 ) VALUES (
+                    :upload_id, 1, :raw_json, :accounting_period_id,
+                    :validation_status, NULL
+                 )',
+                [
+                    'upload_id' => $primaryUploadId,
+                    'raw_json' => '{}',
+                    'accounting_period_id' => (int)$primary['accounting_period_id'],
+                    'validation_status' => 'valid',
+                ]
+            );
+
+            $queue = (new \eel_accounts\Repository\DashboardRepository())->fetchDashboardActionQueue(
+                (int)$primary['company_id'],
+                (int)$primary['accounting_period_id']
+            );
+            $byTitle = [];
+            foreach ($queue as $item) {
+                if (is_array($item)) {
+                    $byTitle[(string)($item['title'] ?? '')] = (string)($item['detail'] ?? '');
+                }
+            }
+
+            $harness->assertSame('1 transaction still need to be categorised against a nominal account.', $byTitle['Categorise uncategorised transactions'] ?? '');
+            $harness->assertSame('1 staged upload row still need processing.', $byTitle['Process staged upload rows'] ?? '');
+            $harness->assertSame('1 upload reported duplicate rows.', $byTitle['Review duplicate upload hits'] ?? '');
+            $harness->assertSame('1 upload inserted no rows and may need inspection.', $byTitle['Check empty imports'] ?? '');
+            $harness->assertSame(false, isset($byTitle['Create a bank account']));
+            $harness->assertSame(false, isset($byTitle['Upload bank statement files']));
+            $harness->assertSame(false, isset($byTitle['Import transactions for this year']));
+
+            $noTransactions = dashboardActionQueueFixtureCompany($marker . 'C');
+            dashboardActionQueueFixtureAccount((int)$noTransactions['company_id'], 'No transactions ' . $marker);
+            dashboardActionQueueFixtureUpload((int)$noTransactions['company_id'], (int)$noTransactions['accounting_period_id'], 'no-transactions-' . $marker . '.csv', 0, 1, 'completed');
+            $emptyQueue = (new \eel_accounts\Repository\DashboardRepository())->fetchDashboardActionQueue(
+                (int)$noTransactions['company_id'],
+                (int)$noTransactions['accounting_period_id']
+            );
+            $harness->assertSame(true, in_array('Import transactions for this year', array_column($emptyQueue, 'title'), true));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
     $harness->check('_dashboard_action_queueCard', 'renders action queue from page context', function () use ($harness): void {
         $card = new _dashboard_action_queueCard();
         $services = $card->services();
 
+        $harness->assertCount(1, $services);
         $harness->assertSame('dashboard_action_queue', (string)($services[0]['key'] ?? ''));
         $harness->assertSame('fetchDashboardActionQueue', (string)($services[0]['method'] ?? ''));
-        $harness->assertSame('year_end_dashboard_summary', (string)($services[1]['key'] ?? ''));
-        $harness->assertSame(\eel_accounts\Service\YearEndChecklistService::class, (string)($services[1]['service'] ?? ''));
-        $harness->assertSame('fetchDashboardSummary', (string)($services[1]['method'] ?? ''));
-        $harness->assertSame(':company.id', (string)(($services[1]['params'] ?? [])['companyId'] ?? ''));
-        $harness->assertSame(':company.accounting_period_id', (string)(($services[1]['params'] ?? [])['accountingPeriodId'] ?? ''));
 
         $html = $card->render([
             'page' => [
@@ -447,7 +532,7 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
         $harness->assertSame(true, str_contains($html, 'status-square ok'));
     });
 
-    $harness->check('_dashboard_action_queueCard', 'summarises year-end warnings and suppresses the operational empty state', function () use ($harness): void {
+    $harness->check('_dashboard_action_queueCard', 'ignores year-end context and preserves the operational queue', function () use ($harness): void {
         $card = new _dashboard_action_queueCard();
         $html = $card->render([
             'services' => [
@@ -466,95 +551,10 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
             ],
         ]);
 
-        $harness->assertSame(true, str_contains($html, 'Complete year-end review'));
-        $harness->assertSame(true, str_contains($html, '3 year-end checks need attention for 01/10/2023 to 30/09/2024. Open Year End to review the detailed checklist.'));
-        $harness->assertSame(true, str_contains($html, 'status-square warn'));
-        $harness->assertSame(false, str_contains($html, 'No immediate actions'));
-        $harness->assertSame(false, str_contains($html, 'period looks tidy'));
-    });
-
-    $harness->check('_dashboard_action_queueCard', 'marks the year-end summary as needing attention when any issue fails', function () use ($harness): void {
-        $card = new _dashboard_action_queueCard();
-        $html = $card->render([
-            'services' => [
-                'dashboard_action_queue' => [],
-                'year_end_dashboard_summary' => [
-                    'period_label' => '01/10/2023 to 30/09/2024',
-                    'top_issues' => [
-                        ['title' => 'Trial balance balances', 'status' => 'fail'],
-                        ['title' => 'Year end notes', 'status' => 'warning'],
-                    ],
-                ],
-            ],
-        ]);
-
-        $harness->assertSame(true, str_contains($html, 'Complete year-end review'));
-        $harness->assertSame(true, str_contains($html, 'status-square bad'));
-        $harness->assertSame(true, str_contains($html, 'Needs attention'));
-    });
-
-    $harness->check('_dashboard_action_queueCard', 'keeps operational actions alongside the year-end summary', function () use ($harness): void {
-        $card = new _dashboard_action_queueCard();
-        $html = $card->render([
-            'services' => [
-                'dashboard_action_queue' => [[
-                    'title' => 'Categorise uncategorised transactions',
-                    'detail' => '3 transactions still need to be categorised against a nominal account.',
-                ]],
-                'year_end_dashboard_summary' => [
-                    'top_issues' => [
-                        ['title' => 'Year end notes', 'status' => 'warning'],
-                    ],
-                ],
-            ],
-        ]);
-
-        $harness->assertSame(true, str_contains($html, 'Complete year-end review'));
-        $harness->assertSame(true, str_contains($html, 'Categorise uncategorised transactions'));
-        $harness->assertSame(true, strpos($html, 'Complete year-end review') < strpos($html, 'Categorise uncategorised transactions'));
-    });
-
-    $harness->check('_dashboard_action_queueCard', 'preserves the operational empty state when year-end has no issues', function () use ($harness): void {
-        $card = new _dashboard_action_queueCard();
-        $html = $card->render([
-            'services' => [
-                'dashboard_action_queue' => [[
-                    'title' => 'No immediate actions',
-                    'detail' => 'This period looks tidy. The dashboard has nothing urgent to surface right now.',
-                ]],
-                'year_end_dashboard_summary' => [
-                    'top_issues' => [],
-                ],
-            ],
-        ]);
-
         $harness->assertSame(true, str_contains($html, 'No immediate actions'));
         $harness->assertSame(true, str_contains($html, 'status-square ok'));
         $harness->assertSame(false, str_contains($html, 'Complete year-end review'));
-    });
-
-    $harness->check('_dashboard_action_queueCard', 'does not show a tidy state when year-end summary loading fails', function () use ($harness): void {
-        $card = new _dashboard_action_queueCard();
-        $html = $card->render([
-            'services' => [
-                'dashboard_action_queue' => [[
-                    'title' => 'No immediate actions',
-                    'detail' => 'This period looks tidy. The dashboard has nothing urgent to surface right now.',
-                ]],
-                'year_end_dashboard_summary' => null,
-            ],
-            'service_errors' => [
-                'year_end_dashboard_summary' => [
-                    'type' => 'RuntimeException',
-                    'message' => 'Unable to load year-end summary.',
-                ],
-            ],
-        ]);
-
-        $harness->assertSame(true, str_contains($html, 'Year-end status unavailable'));
-        $harness->assertSame(true, str_contains($html, 'status-square warn'));
-        $harness->assertSame(false, str_contains($html, 'No immediate actions'));
-        $harness->assertSame(false, str_contains($html, 'period looks tidy'));
+        $harness->assertSame(false, str_contains($html, 'Statement continuity'));
     });
 
     $harness->check('_dashboard_recent_transactionsCard', 'paginates recent transaction rows', function () use ($harness): void {
@@ -714,3 +714,84 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
         $harness->assertSame(true, str_contains($secondPageHtml, 'name="activity_page" value="1"'));
     });
 });
+
+function dashboardActionQueueFixtureCompany(string $marker): array
+{
+    InterfaceDB::prepareExecute(
+        'INSERT INTO companies (company_name, company_number, is_active)
+         VALUES (:company_name, :company_number, 1)',
+        ['company_name' => 'Dashboard Queue ' . $marker, 'company_number' => $marker]
+    );
+    $companyId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM companies WHERE company_number = :company_number ORDER BY id DESC LIMIT 1',
+        ['company_number' => $marker]
+    );
+
+    return [
+        'company_id' => $companyId,
+        'accounting_period_id' => dashboardActionQueueFixturePeriod($companyId, 'Current ' . $marker, '2024-01-01', '2024-12-31'),
+    ];
+}
+
+function dashboardActionQueueFixturePeriod(int $companyId, string $label, string $start, string $end): int
+{
+    InterfaceDB::prepareExecute(
+        'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
+         VALUES (:company_id, :label, :period_start, :period_end)',
+        ['company_id' => $companyId, 'label' => $label, 'period_start' => $start, 'period_end' => $end]
+    );
+
+    return (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM accounting_periods WHERE company_id = :company_id AND label = :label ORDER BY id DESC LIMIT 1',
+        ['company_id' => $companyId, 'label' => $label]
+    );
+}
+
+function dashboardActionQueueFixtureAccount(int $companyId, string $name): int
+{
+    InterfaceDB::prepareExecute(
+        'INSERT INTO company_accounts (company_id, account_name, account_type, is_active)
+         VALUES (:company_id, :account_name, :account_type, 1)',
+        ['company_id' => $companyId, 'account_name' => $name, 'account_type' => 'bank']
+    );
+
+    return (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM company_accounts WHERE company_id = :company_id AND account_name = :account_name ORDER BY id DESC LIMIT 1',
+        ['company_id' => $companyId, 'account_name' => $name]
+    );
+}
+
+function dashboardActionQueueFixtureUpload(
+    int $companyId,
+    int $accountingPeriodId,
+    string $filename,
+    int $duplicateRows,
+    int $insertedRows,
+    string $workflowStatus
+): int {
+    InterfaceDB::prepareExecute(
+        'INSERT INTO statement_uploads (
+            company_id, accounting_period_id, statement_month, original_filename,
+            stored_filename, file_sha256, workflow_status, rows_duplicate, rows_inserted
+         ) VALUES (
+            :company_id, :accounting_period_id, :statement_month, :original_filename,
+            :stored_filename, :file_sha256, :workflow_status, :rows_duplicate, :rows_inserted
+         )',
+        [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'statement_month' => '2024-06-01',
+            'original_filename' => $filename,
+            'stored_filename' => $filename,
+            'file_sha256' => hash('sha256', $companyId . ':' . $accountingPeriodId . ':' . $filename),
+            'workflow_status' => $workflowStatus,
+            'rows_duplicate' => $duplicateRows,
+            'rows_inserted' => $insertedRows,
+        ]
+    );
+
+    return (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM statement_uploads WHERE company_id = :company_id AND original_filename = :filename ORDER BY id DESC LIMIT 1',
+        ['company_id' => $companyId, 'filename' => $filename]
+    );
+}

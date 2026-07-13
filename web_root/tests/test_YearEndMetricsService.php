@@ -99,6 +99,35 @@ $harness->run(\eel_accounts\Service\YearEndMetricsService::class, static functio
         $harness->assertSame(900.00, (float)($issues[0]['ledger_balance'] ?? 0));
         $harness->assertSame(-11.03, (float)($issues[0]['difference'] ?? 0));
     });
+
+    $harness->check(\eel_accounts\Service\YearEndMetricsService::class, 'stranded committed rows require a same-company period journal', static function () use ($harness, $service): void {
+        foreach (['companies', 'accounting_periods', 'company_accounts', 'statement_uploads', 'statement_import_rows', 'transactions', 'journals', 'nominal_accounts'] as $table) {
+            if (!InterfaceDB::tableExists($table)) {
+                $harness->skip($table . ' table is not available.');
+            }
+        }
+
+        InterfaceDB::beginTransaction();
+        try {
+            $marker = 'YEMS' . strtoupper(substr(hash('sha256', uniqid('', true)), 0, 4));
+            $primary = yearEndMetricsStrandedFixture($marker . 'A');
+            $other = yearEndMetricsStrandedFixture($marker . 'B');
+            $transactionId = (int)$primary['transaction_id'];
+            $sourceRef = 'transaction:' . $transactionId;
+
+            $harness->assertSame(1, $service->strandedCommittedSourceRowsCount((int)$primary['company_id'], (int)$primary['accounting_period_id']));
+
+            yearEndMetricsInsertSourceJournal((int)$other['company_id'], (int)$other['accounting_period_id'], $sourceRef, 'Other company journal');
+            $harness->assertSame(1, $service->strandedCommittedSourceRowsCount((int)$primary['company_id'], (int)$primary['accounting_period_id']));
+
+            yearEndMetricsInsertSourceJournal((int)$primary['company_id'], (int)$primary['accounting_period_id'], $sourceRef, 'Matching journal');
+            $harness->assertSame(0, $service->strandedCommittedSourceRowsCount((int)$primary['company_id'], (int)$primary['accounting_period_id']));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
 });
 
 function yearEndMetricsPrivateMethod(\eel_accounts\Service\YearEndMetricsService $service, string $methodName): ReflectionMethod
@@ -148,4 +177,141 @@ function yearEndMetricsUploadCheck(array $overrides = []): array
         'balance_check_rows_failed' => 0,
         'failed_rows' => [],
     ], array_diff_key($overrides, array_flip(['upload_id', 'filename', 'start', 'end'])));
+}
+
+function yearEndMetricsStrandedFixture(string $marker): array
+{
+    InterfaceDB::prepareExecute(
+        'INSERT INTO companies (company_name, company_number, is_active)
+         VALUES (:company_name, :company_number, 1)',
+        ['company_name' => 'Year End Metrics ' . $marker, 'company_number' => $marker]
+    );
+    $companyId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM companies WHERE company_number = :company_number ORDER BY id DESC LIMIT 1',
+        ['company_number' => $marker]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
+         VALUES (:company_id, :label, :period_start, :period_end)',
+        ['company_id' => $companyId, 'label' => $marker, 'period_start' => '2024-01-01', 'period_end' => '2024-12-31']
+    );
+    $accountingPeriodId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM accounting_periods WHERE company_id = :company_id AND label = :label ORDER BY id DESC LIMIT 1',
+        ['company_id' => $companyId, 'label' => $marker]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO company_accounts (company_id, account_name, account_type, is_active)
+         VALUES (:company_id, :account_name, :account_type, 1)',
+        ['company_id' => $companyId, 'account_name' => $marker, 'account_type' => 'bank']
+    );
+    $accountId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM company_accounts WHERE company_id = :company_id AND account_name = :account_name ORDER BY id DESC LIMIT 1',
+        ['company_id' => $companyId, 'account_name' => $marker]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO statement_uploads (
+            company_id, accounting_period_id, account_id, statement_month,
+            original_filename, stored_filename, file_sha256, workflow_status
+         ) VALUES (
+            :company_id, :accounting_period_id, :account_id, :statement_month,
+            :original_filename, :stored_filename, :file_sha256, :workflow_status
+         )',
+        [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'account_id' => $accountId,
+            'statement_month' => '2024-06-01',
+            'original_filename' => $marker . '.csv',
+            'stored_filename' => $marker . '.csv',
+            'file_sha256' => hash('sha256', $marker),
+            'workflow_status' => 'completed',
+        ]
+    );
+    $uploadId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM statement_uploads WHERE company_id = :company_id AND original_filename = :filename ORDER BY id DESC LIMIT 1',
+        ['company_id' => $companyId, 'filename' => $marker . '.csv']
+    );
+    $nominalId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM nominal_accounts WHERE is_active = 1 ORDER BY id ASC LIMIT 1'
+    );
+    if ($nominalId <= 0) {
+        InterfaceDB::prepareExecute(
+            'INSERT INTO nominal_accounts (code, name, account_type, tax_treatment, is_active)
+             VALUES (:code, :name, :account_type, :tax_treatment, 1)',
+            [
+                'code' => $marker,
+                'name' => 'Stranded row nominal ' . $marker,
+                'account_type' => 'expense',
+                'tax_treatment' => 'allowable',
+            ]
+        );
+        $nominalId = (int)InterfaceDB::fetchColumn(
+            'SELECT id FROM nominal_accounts WHERE code = :code ORDER BY id DESC LIMIT 1',
+            ['code' => $marker]
+        );
+    }
+    InterfaceDB::prepareExecute(
+        'INSERT INTO transactions (
+            company_id, accounting_period_id, account_id, statement_upload_id,
+            txn_date, description, amount, dedupe_hash, nominal_account_id, category_status
+         ) VALUES (
+            :company_id, :accounting_period_id, :account_id, :statement_upload_id,
+            :txn_date, :description, :amount, :dedupe_hash, :nominal_account_id, :category_status
+         )',
+        [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'account_id' => $accountId,
+            'statement_upload_id' => $uploadId,
+            'txn_date' => '2024-06-02',
+            'description' => 'Stranded row ' . $marker,
+            'amount' => '10.00',
+            'dedupe_hash' => hash('sha256', $marker . ':transaction'),
+            'nominal_account_id' => $nominalId,
+            'category_status' => 'manual',
+        ]
+    );
+    $transactionId = (int)InterfaceDB::fetchColumn(
+        'SELECT id FROM transactions WHERE company_id = :company_id AND dedupe_hash = :dedupe_hash ORDER BY id DESC LIMIT 1',
+        ['company_id' => $companyId, 'dedupe_hash' => hash('sha256', $marker . ':transaction')]
+    );
+    InterfaceDB::prepareExecute(
+        'INSERT INTO statement_import_rows (
+            upload_id, row_number, raw_json, accounting_period_id,
+            validation_status, committed_transaction_id
+         ) VALUES (
+            :upload_id, 1, :raw_json, :accounting_period_id,
+            :validation_status, :committed_transaction_id
+         )',
+        [
+            'upload_id' => $uploadId,
+            'raw_json' => '{}',
+            'accounting_period_id' => $accountingPeriodId,
+            'validation_status' => 'valid',
+            'committed_transaction_id' => $transactionId,
+        ]
+    );
+
+    return ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId, 'transaction_id' => $transactionId];
+}
+
+function yearEndMetricsInsertSourceJournal(int $companyId, int $accountingPeriodId, string $sourceRef, string $description): void
+{
+    InterfaceDB::prepareExecute(
+        'INSERT INTO journals (
+            company_id, accounting_period_id, source_type, source_ref,
+            journal_date, description, is_posted
+         ) VALUES (
+            :company_id, :accounting_period_id, :source_type, :source_ref,
+            :journal_date, :description, 1
+         )',
+        [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'source_type' => 'bank_csv',
+            'source_ref' => $sourceRef,
+            'journal_date' => '2024-06-02',
+            'description' => $description,
+        ]
+    );
 }

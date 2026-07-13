@@ -26,7 +26,12 @@ final class RetainedEarningsCloseService
     ) {
     }
 
-    public function fetchContext(int $companyId, int $accountingPeriodId, ?array $corporationTaxProvision = null): array
+    public function fetchContext(
+        int $companyId,
+        int $accountingPeriodId,
+        ?array $corporationTaxProvision = null,
+        ?array $balanceSheetMetrics = null
+    ): array
     {
         $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
         $accountingPeriod = $metrics->fetchAccountingPeriod($companyId, $accountingPeriodId);
@@ -59,7 +64,8 @@ final class RetainedEarningsCloseService
         $openingEquity = $this->equityBalanceUntilDate($companyId, $periodStart, true, false);
         $closingEquityBeforeClose = $this->equityBalanceUntilDate($companyId, $periodEnd, false, true);
         $expectedClosingEquity = round($openingEquity + (float)$profitAndLoss['profit_before_tax'], 2);
-        $balanceSheet = $metrics->fetchBalanceSheetMetricValues($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $balanceSheet = $balanceSheetMetrics
+            ?? $metrics->fetchBalanceSheetMetricValues($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $journalLines = $this->buildJournalLines($plRows, (int)$retainedEarningsNominal['id']);
         $existingJournal = ($this->journalService ?? new \eel_accounts\Service\ManualJournalService())->fetchJournalByTag(
             $companyId,

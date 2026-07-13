@@ -303,6 +303,7 @@ final class AssetService
             return [];
         }
 
+        $cutoffDate = $this->registerCutoffDate($companyId, $accountingPeriodId);
         $assets = \InterfaceDB::fetchAll(
             'SELECT ar.id,
                     ar.asset_code,
@@ -331,14 +332,29 @@ final class AssetService
                 GROUP BY ade.asset_id
              ) dep ON dep.asset_id = ar.id
              WHERE ar.company_id = :company_id
+               AND ar.purchase_date <= :cutoff_date
              ORDER BY ar.purchase_date DESC, ar.id DESC',
             [
                 'company_id' => $companyId,
                 'depreciation_company_id' => $companyId,
+                'cutoff_date' => $cutoffDate,
             ]
         );
 
         return $this->assetsWithPeriodDepreciation($assets ?: [], $companyId, $accountingPeriodId);
+    }
+
+    private function registerCutoffDate(int $companyId, int $accountingPeriodId): string
+    {
+        $today = (new \DateTimeImmutable('today'))->format('Y-m-d');
+        $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        $periodEnd = trim((string)($accountingPeriod['period_end'] ?? ''));
+
+        if (!$this->isIsoDate($periodEnd)) {
+            return $today;
+        }
+
+        return min($today, $periodEnd);
     }
 
     public function fetchDisposalSearch(int $companyId, string $searchDate, int $assetId = 0): array {

@@ -27,6 +27,103 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(0, $pageData['default_bank_nominal_id'] ?? null);
         });
 
+        $harness->check(\eel_accounts\Service\AssetService::class, 'register assets stop at the earlier of today and the accounting period end', static function () use ($harness, $service): void {
+            assetServiceTestRequireTaxViewSchema($harness);
+
+            InterfaceDB::beginTransaction();
+            try {
+                $marker = (string)random_int(100000, 999999);
+                $companyId = (int)('61' . $marker);
+                $historicalPeriodId = (int)('62' . $marker);
+                $futurePeriodId = (int)('63' . $marker);
+                $assetNominalId = assetServiceTestInsertNominalWithTreatment('RCA', 'Register Cutoff Asset', 'asset', 'capital');
+                $accumNominalId = assetServiceTestInsertNominalWithTreatment('RCD', 'Register Cutoff Accumulated', 'asset', 'capital');
+                $today = new \DateTimeImmutable('today');
+
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO companies (id, company_name, company_number, is_active)
+                     VALUES (:id, :company_name, :company_number, 1)',
+                    [
+                        'id' => $companyId,
+                        'company_name' => 'Register Cutoff Fixture ' . $marker,
+                        'company_number' => 'RC' . $marker,
+                    ]
+                );
+
+                foreach ([
+                    [$historicalPeriodId, 'Historical cutoff', '1999-01-01', '2000-12-31'],
+                    [$futurePeriodId, 'Future cutoff', '2999-01-01', '2999-12-31'],
+                ] as $period) {
+                    InterfaceDB::prepareExecute(
+                        'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end)
+                         VALUES (:id, :company_id, :label, :period_start, :period_end)',
+                        [
+                            'id' => (int)$period[0],
+                            'company_id' => $companyId,
+                            'label' => (string)$period[1] . ' ' . $marker,
+                            'period_start' => (string)$period[2],
+                            'period_end' => (string)$period[3],
+                        ]
+                    );
+                }
+
+                foreach ([
+                    [1, 'RC-BEFORE-' . $marker, '2000-12-30'],
+                    [2, 'RC-ON-END-' . $marker, '2000-12-31'],
+                    [3, 'RC-AFTER-END-' . $marker, '2001-01-01'],
+                    [4, 'RC-TODAY-' . $marker, $today->format('Y-m-d')],
+                    [5, 'RC-TOMORROW-' . $marker, $today->modify('+1 day')->format('Y-m-d')],
+                ] as $asset) {
+                    InterfaceDB::prepareExecute(
+                        'INSERT INTO asset_register (
+                            id, company_id, asset_code, description, category, nominal_account_id,
+                            accum_dep_nominal_id, purchase_date, cost, useful_life_years,
+                            depreciation_method, residual_value, status
+                         ) VALUES (
+                            :id, :company_id, :asset_code, :description, :category, :nominal_account_id,
+                            :accum_dep_nominal_id, :purchase_date, :cost, :useful_life_years,
+                            :depreciation_method, :residual_value, :status
+                         )',
+                        [
+                            'id' => (int)('64' . substr($marker, 0, 5) . (string)$asset[0]),
+                            'company_id' => $companyId,
+                            'asset_code' => (string)$asset[1],
+                            'description' => 'Register cutoff asset ' . (string)$asset[0],
+                            'category' => 'tools_equipment',
+                            'nominal_account_id' => $assetNominalId,
+                            'accum_dep_nominal_id' => $accumNominalId,
+                            'purchase_date' => (string)$asset[2],
+                            'cost' => 100.00,
+                            'useful_life_years' => 3,
+                            'depreciation_method' => 'straight_line',
+                            'residual_value' => 0.00,
+                            'status' => 'active',
+                        ]
+                    );
+                }
+
+                $historicalCodes = array_column(
+                    (array)($service->fetchRegisterData($companyId, $historicalPeriodId)['assets'] ?? []),
+                    'asset_code'
+                );
+                $futureCodes = array_column(
+                    (array)($service->fetchRegisterData($companyId, $futurePeriodId)['assets'] ?? []),
+                    'asset_code'
+                );
+
+                $harness->assertSame(
+                    ['RC-ON-END-' . $marker, 'RC-BEFORE-' . $marker],
+                    $historicalCodes
+                );
+                $harness->assertTrue(in_array('RC-TODAY-' . $marker, $futureCodes, true));
+                $harness->assertFalse(in_array('RC-TOMORROW-' . $marker, $futureCodes, true));
+            } finally {
+                if (InterfaceDB::inTransaction()) {
+                    InterfaceDB::rollBack();
+                }
+            }
+        });
+
         $harness->check(\eel_accounts\Service\AssetService::class, 'asset create categories keep vehicles under motor vehicle', static function () use ($harness): void {
             $allCategories = \eel_accounts\Service\AssetService::assetCategoryOptions();
             $createCategories = \eel_accounts\Service\AssetService::assetCreateCategoryOptions();

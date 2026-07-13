@@ -16,7 +16,7 @@ $harness->run(\eel_accounts\Service\CompanyMinutesService::class, static functio
         $harness->assertSame([], $service->listMinutes(1, 0));
     });
 
-    $harness->check(\eel_accounts\Service\CompanyMinutesService::class, 'lists voucher minutes inside the selected accounting period date range', static function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\CompanyMinutesService::class, 'lists voucher minutes no later than the current date inside an open accounting period', static function () use ($harness, $service): void {
         foreach (['companies', 'accounting_periods', 'journals', 'dividend_vouchers'] as $table) {
             if (!InterfaceDB::tableExists($table)) {
                 $harness->skip('Company minutes fixture tables are not available on the default InterfaceDB connection.');
@@ -27,9 +27,10 @@ $harness->run(\eel_accounts\Service\CompanyMinutesService::class, static functio
         try {
             $fixture = company_minutes_service_fixture();
             company_minutes_service_voucher($fixture, '2026-06-30', 'Minutes inside the accounting period.');
+            company_minutes_service_voucher($fixture, '2026-08-05', 'Minutes after the current date.');
             company_minutes_service_voucher($fixture, '2027-01-05', 'Minutes outside the accounting period.');
 
-            $rows = $service->listMinutes($fixture['company_id'], $fixture['accounting_period_id']);
+            $rows = $service->listMinutes($fixture['company_id'], $fixture['accounting_period_id'], 500, '2026-07-01');
 
             $harness->assertCount(1, $rows);
             $harness->assertSame('2026-06-30', (string)($rows[0]['date'] ?? ''));
@@ -41,7 +42,7 @@ $harness->run(\eel_accounts\Service\CompanyMinutesService::class, static functio
         }
     });
 
-    $harness->check(\eel_accounts\Service\CompanyMinutesService::class, 'lists voided dividends as separate minutes records referencing the declaration date', static function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\CompanyMinutesService::class, 'lists voided dividends as separate minutes records through the cutoff date', static function () use ($harness, $service): void {
         foreach (['companies', 'accounting_periods', 'journals', 'dividend_vouchers'] as $table) {
             if (!InterfaceDB::tableExists($table)) {
                 $harness->skip('Company minutes fixture tables are not available on the default InterfaceDB connection.');
@@ -58,21 +59,49 @@ $harness->run(\eel_accounts\Service\CompanyMinutesService::class, static functio
                      void_reason = :void_reason
                  WHERE id = :id',
                 [
-                    'voided_at' => '2027-01-05 12:34:56',
+                    'voided_at' => '2026-07-01 12:34:56',
                     'void_reason' => 'Dividend capacity was uncertain.',
                     'id' => $voucherId,
                 ]
             );
 
-            $rows = $service->listMinutes($fixture['company_id'], $fixture['accounting_period_id']);
+            $rows = $service->listMinutes($fixture['company_id'], $fixture['accounting_period_id'], 500, '2026-07-01');
 
             $harness->assertCount(2, $rows);
-            $harness->assertSame('2027-01-05', (string)($rows[0]['date'] ?? ''));
+            $harness->assertSame('2026-07-01', (string)($rows[0]['date'] ?? ''));
             $harness->assertSame('dividend_voucher_void', (string)($rows[0]['source_type'] ?? ''));
             $harness->assertSame(true, str_contains((string)($rows[0]['minutes'] ?? ''), 'declaration minutes dated 2026-06-30'));
             $harness->assertSame(true, str_contains((string)($rows[0]['minutes'] ?? ''), 'Reason: Dividend capacity was uncertain.'));
             $harness->assertSame('2026-06-30', (string)($rows[1]['date'] ?? ''));
             $harness->assertSame('Original declaration minutes.', (string)($rows[1]['minutes'] ?? ''));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
+    $harness->check(\eel_accounts\Service\CompanyMinutesService::class, 'excludes void minutes after the accounting period end when it is the earlier cutoff', static function () use ($harness, $service): void {
+        foreach (['companies', 'accounting_periods', 'journals', 'dividend_vouchers'] as $table) {
+            if (!InterfaceDB::tableExists($table)) {
+                $harness->skip('Company minutes fixture tables are not available on the default InterfaceDB connection.');
+            }
+        }
+
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = company_minutes_service_fixture();
+            $voucherId = company_minutes_service_voucher($fixture, '2026-06-30', 'Original declaration minutes.');
+            InterfaceDB::prepareExecute(
+                'UPDATE dividend_vouchers SET voided_at = :voided_at WHERE id = :id',
+                ['voided_at' => '2027-01-05 12:34:56', 'id' => $voucherId]
+            );
+
+            $rows = $service->listMinutes($fixture['company_id'], $fixture['accounting_period_id'], 500, '2027-02-01');
+
+            $harness->assertCount(1, $rows);
+            $harness->assertSame('2026-06-30', (string)($rows[0]['date'] ?? ''));
+            $harness->assertSame('dividend_voucher', (string)($rows[0]['source_type'] ?? ''));
         } finally {
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();

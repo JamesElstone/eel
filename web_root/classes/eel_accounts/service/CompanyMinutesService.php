@@ -11,13 +11,19 @@ namespace eel_accounts\Service;
 
 final class CompanyMinutesService
 {
-    public function listMinutes(int $companyId, int $accountingPeriodId, int $limit = 500): array
+    public function listMinutes(
+        int $companyId,
+        int $accountingPeriodId,
+        int $limit = 500,
+        ?string $asAtDate = null
+    ): array
     {
         if ($companyId <= 0 || $accountingPeriodId <= 0 || !$this->minutesTablesAvailable()) {
             return [];
         }
 
         $limit = max(1, min($limit, 1000));
+        $asAtDate = $this->normaliseAsAtDate($asAtDate);
         $stmt = \InterfaceDB::prepare(
             "SELECT dv.id,
                     dv.company_name,
@@ -27,7 +33,8 @@ final class CompanyMinutesService
                     dv.minutes_text,
                     dv.voided_at,
                     dv.void_reason,
-                    dv.reversal_journal_id
+                    dv.reversal_journal_id,
+                    ap.period_end
              FROM dividend_vouchers dv
              INNER JOIN accounting_periods ap
                 ON ap.id = dv.accounting_period_id
@@ -35,6 +42,7 @@ final class CompanyMinutesService
              WHERE dv.company_id = :company_id
                AND dv.accounting_period_id = :accounting_period_id
                AND dv.declaration_date BETWEEN ap.period_start AND ap.period_end
+               AND dv.declaration_date <= :as_at_date
                AND TRIM(COALESCE(dv.minutes_text, '')) <> ''
              ORDER BY dv.declaration_date DESC, dv.id DESC
              LIMIT {$limit}"
@@ -42,6 +50,7 @@ final class CompanyMinutesService
         $stmt->execute([
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
+            'as_at_date' => $asAtDate,
         ]);
 
         $rows = [];
@@ -60,9 +69,11 @@ final class CompanyMinutesService
             ];
 
             $voidedAt = trim((string)($voucher['voided_at'] ?? ''));
-            if ($voidedAt !== '') {
+            $voidDate = $voidedAt !== '' ? substr($voidedAt, 0, 10) : '';
+            $cutoffDate = min($asAtDate, (string)($voucher['period_end'] ?? $asAtDate));
+            if ($voidDate !== '' && $voidDate <= $cutoffDate) {
                 $rows[] = [
-                    'date' => substr($voidedAt, 0, 10),
+                    'date' => $voidDate,
                     'minutes' => $this->voidMinutesText($voucher),
                     'source_type' => 'dividend_voucher_void',
                     'source_id' => $sourceId,
@@ -83,6 +94,16 @@ final class CompanyMinutesService
         );
 
         return array_slice($rows, 0, $limit);
+    }
+
+    private function normaliseAsAtDate(?string $asAtDate): string
+    {
+        $asAtDate = trim((string)$asAtDate);
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $asAtDate) !== 1) {
+            return date('Y-m-d');
+        }
+
+        return $asAtDate;
     }
 
     private function minutesTablesAvailable(): bool

@@ -58,6 +58,7 @@ $harness->run(_nominals_accountsCard::class, function (GeneratedServiceClassTest
         $harness->assertTrue(str_contains($html, 'Allowable'));
         $harness->assertTrue(strpos($html, '>1000<') < strpos($html, '>5000<'));
         $harness->assertTrue(str_contains($html, '<th>Tax Treatment</th>'));
+        $harness->assertTrue(str_contains($html, '<th>Action</th>'));
         $harness->assertTrue(str_contains($html, 'name="card_action" value="Nominals"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="edit_nominal_account"'));
     });

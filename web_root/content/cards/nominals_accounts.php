@@ -69,7 +69,7 @@ final class _nominals_accountsCard extends CardBaseFramework
             ->textColumn('status_label', 'Status')
             ->column(
                 'actions',
-                '',
+                'Action',
                 html: fn(array $row): string => $this->actionsHtml($row, (string)($context['page']['page_id'] ?? 'nominals')),
                 exportable: false
             );

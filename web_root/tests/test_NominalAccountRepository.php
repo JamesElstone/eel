@@ -62,6 +62,35 @@ $harness->run(\eel_accounts\Repository\NominalAccountRepository::class, function
         $harness->assertSame(true, $repository->findById($nominalId) !== null);
     });
 
+    $harness->check(\eel_accounts\Repository\NominalAccountRepository::class, 'blocks deleting nominal accounts assigned to any defined company nominal setting', function () use ($harness, $repository): void {
+        $nominalId = nominalAccountRepositoryInsertNominal('Defined Nominal Setting Reference Fixture');
+        $companyId = nominalAccountRepositoryInsertCompany('Defined Nominal Setting Reference Fixture Limited');
+        $nominalSettingKeys = array_values(array_filter(
+            array_keys(\eel_accounts\Store\CompanySettingsStore::definitions()),
+            static fn(string $setting): bool => str_ends_with($setting, '_nominal_id')
+        ));
+
+        foreach ($nominalSettingKeys as $setting) {
+            InterfaceDB::prepareExecute(
+                'INSERT INTO company_settings (company_id, setting, type, value)
+                 VALUES (:company_id, :setting, :type, :value)',
+                [
+                    'company_id' => $companyId,
+                    'setting' => $setting,
+                    'type' => 'int',
+                    'value' => (string)$nominalId,
+                ]
+            );
+        }
+
+        $harness->assertTrue(in_array('corporation_tax_expense_nominal_id', $nominalSettingKeys, true));
+        $harness->assertTrue(in_array('corporation_tax_liability_nominal_id', $nominalSettingKeys, true));
+        $harness->assertSame(count($nominalSettingKeys), $repository->nominalReferenceCount($nominalId));
+        $harness->assertSame(false, $repository->canDeleteNominalAccount($nominalId));
+        $harness->assertSame(false, $repository->deleteNominalAccountIfUnused($nominalId));
+        $harness->assertSame(true, $repository->findById($nominalId) !== null);
+    });
+
     $harness->check(\eel_accounts\Repository\NominalAccountRepository::class, 'blocks deleting nominal accounts assigned to bank or trade accounts', function () use ($harness, $repository): void {
         $nominalId = nominalAccountRepositoryInsertNominal('Account Reference Fixture');
         $companyId = nominalAccountRepositoryInsertCompany('Account Reference Fixture Limited');

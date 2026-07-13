@@ -490,17 +490,10 @@ final class NominalAccountRepository
 
     private function nominalSettingKeys(): array
     {
-        return [
-            'default_bank_nominal_id',
-            'default_trade_nominal_id',
-            'default_expense_nominal_id',
-            'tools_small_equipment_nominal_id',
-            'director_loan_nominal_id',
-            'director_loan_asset_nominal_id',
-            'director_loan_liability_nominal_id',
-            'vat_nominal_id',
-            'uncategorised_nominal_id',
-        ];
+        return array_values(array_filter(
+            array_keys(\eel_accounts\Store\CompanySettingsStore::definitions()),
+            static fn(string $setting): bool => str_ends_with($setting, '_nominal_id')
+        ));
     }
 
     /**

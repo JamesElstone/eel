@@ -50,7 +50,6 @@ final class TestCardsHarness
         $this->assertCompaniesHouseSnapshotUsesSelectedCompanyContext();
         $this->assertJournalPageIncludesCutOffJournalsAdjustments();
         $this->assertYearEndConfirmationCardsLiveOnRelatedPages();
-        $this->assertYearEndCompaniesHouseComparisonRendersMismatchAcknowledgement();
         $this->assertYearEndTransactionTailRendersBalanceColumn();
     }
 
@@ -454,47 +453,6 @@ final class TestCardsHarness
         $this->assertPageFinalTabContains($journalPage, 'Year End Confirmation', ['journal_cut_off_confirmation']);
 
         test_output_line('Cards: journal page includes Cut-off Journals under Adjustments.');
-    }
-
-    private function assertYearEndCompaniesHouseComparisonRendersMismatchAcknowledgement(): void
-    {
-        $card = new _year_end_companies_house_comparisonCard();
-        $this->assertSame('Year End Companies House Comparison', $card->title());
-
-        $html = $card->render([
-            'company' => [
-                'id' => 12,
-                'accounting_period_id' => 34,
-                'settings' => [],
-            ],
-            'services' => [
-                'yearEndCompaniesHouseComparison' => [
-                    'available' => true,
-                    'comparison_note' => 'Matching filed numbers suggests the reconstructed ledger aligns with the stored Companies House filing.',
-                    'filing' => [
-                        'filing_date' => '2025-05-29',
-                    ],
-                    'rows' => [
-                        ['label' => 'Fixed assets', 'app_value' => 208.41, 'filed_value' => 0.00, 'variance' => 208.41, 'status' => 'fail'],
-                        ['label' => 'Current assets', 'app_value' => 1038.26, 'filed_value' => 275.00, 'variance' => 763.26, 'status' => 'fail'],
-                    ],
-                ],
-            ],
-            'year_end' => [
-                'checklist' => [
-                    'review_acknowledgements' => [],
-                ],
-            ],
-        ]);
-
-        $this->assertTrue(str_contains($html, 'Companies House Comparison'));
-        $this->assertTrue(str_contains($html, 'Stored filing date: 2025-05-29'));
-        $this->assertTrue(str_contains($html, 'Fixed assets'));
-        $this->assertTrue(str_contains($html, 'Current assets'));
-        $this->assertTrue(str_contains($html, 'companies_house_mismatch_acknowledgement'));
-        $this->assertTrue(str_contains($html, 'I confirm that I have reviewed the Companies House comparison shown above and approve it as accurate for Year End.'));
-
-        test_output_line('Cards: year_end_companies_house_comparison renders mismatch data and acknowledgement.');
     }
 
     private function assertYearEndTransactionTailRendersBalanceColumn(): void

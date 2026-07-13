@@ -30,22 +30,12 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
     {
         return [
             [
-                'key' => 'yearEndCompaniesHouseComparison',
-                'service' => \eel_accounts\Service\YearEndCompaniesHouseComparisonService::class,
-                'method' => 'fetchComparison',
+                'key' => 'companiesHouseComparisonReview',
+                'service' => \eel_accounts\Service\CompaniesHouseComparisonReviewService::class,
+                'method' => 'fetchContext',
                 'params' => [
                     'companyId' => ':company.id',
                     'accountingPeriodId' => ':company.accounting_period_id',
-                ],
-            ],
-            [
-                'key' => 'companiesHouseMismatchAcknowledgement',
-                'service' => \eel_accounts\Service\YearEndChecklistService::class,
-                'method' => 'fetchReviewAcknowledgement',
-                'params' => [
-                    'companyId' => ':company.id',
-                    'accountingPeriodId' => ':company.accounting_period_id',
-                    'checkCode' => self::CHECK_CODE,
                 ],
             ],
         ];
@@ -58,17 +48,21 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $comparison = (array)($context['services']['yearEndCompaniesHouseComparison'] ?? []);
+        $review = (array)($context['services']['companiesHouseComparisonReview'] ?? []);
+        $comparison = (array)($review['comparison'] ?? []);
+        $access = (array)($review['access'] ?? []);
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $companySettings = (array)($company['settings'] ?? []);
-        $acknowledgement = $this->acknowledgement($context);
-        $mismatchCount = $this->mismatchCount($comparison);
+        $acknowledgement = is_array($review['acknowledgement'] ?? null)
+            ? $review['acknowledgement']
+            : null;
+        $mismatchCount = (int)($review['mismatch_count'] ?? 0);
 
         return '<section class="settings-stack" id="year-end-companies-house-comparison">
             ' . $this->renderComparisonPanel($comparison, $companySettings) . '
-            ' . $this->renderAcknowledgementPanel($companyId, $accountingPeriodId, $comparison, $acknowledgement, $mismatchCount) . '
+            ' . $this->renderAcknowledgementPanel($companyId, $accountingPeriodId, $comparison, $acknowledgement, $access, $mismatchCount) . '
         </section>';
     }
 
@@ -107,8 +101,14 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
         </section>';
     }
 
-    private function renderAcknowledgementPanel(int $companyId, int $accountingPeriodId, array $comparison, ?array $acknowledgement, int $mismatchCount): string
-    {
+    private function renderAcknowledgementPanel(
+        int $companyId,
+        int $accountingPeriodId,
+        array $comparison,
+        ?array $acknowledgement,
+        array $access,
+        int $mismatchCount
+    ): string {
         if (empty($comparison['available'])) {
             return $this->panel('Approval', '<div class="helper">A Companies House filing must be available before a mismatch can be approved.</div>');
         }
@@ -122,6 +122,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
             'subject' => 'Companies House comparison',
             'companyId' => $companyId,
             'accountingPeriodId' => $accountingPeriodId,
+            'locked' => !empty($access['is_locked']),
             'acknowledged' => $isAcknowledged,
             'acknowledgementState' => (string)($acknowledgement['state'] ?? ''),
             'acknowledgedAt' => (string)($acknowledgement['acknowledged_at'] ?? ''),
@@ -143,29 +144,6 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
             </div>
             ' . $form . '
         </section>';
-    }
-
-    private function acknowledgement(array $context): ?array
-    {
-        $acknowledgement = $context['services']['companiesHouseMismatchAcknowledgement'] ?? null;
-        if (is_array($acknowledgement)) {
-            return $acknowledgement;
-        }
-
-        $acknowledgement = ((array)(($context['year_end'] ?? [])['checklist'] ?? []))['review_acknowledgements'][self::CHECK_CODE] ?? null;
-        return is_array($acknowledgement) ? $acknowledgement : null;
-    }
-
-    private function mismatchCount(array $comparison): int
-    {
-        $count = 0;
-        foreach ((array)($comparison['rows'] ?? []) as $row) {
-            if (is_array($row) && (string)($row['status'] ?? '') === 'fail') {
-                $count++;
-            }
-        }
-
-        return $count;
     }
 
     private function panel(string $title, string $body): string

@@ -25,22 +25,12 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
     {
         return [
             [
-                'key' => 'prepaymentsReview',
-                'service' => \eel_accounts\Service\PrepaymentReviewService::class,
+                'key' => 'prepaymentApprovalContext',
+                'service' => \eel_accounts\Service\PrepaymentApprovalContextService::class,
                 'method' => 'fetchContext',
                 'params' => [
                     'companyId' => ':company.id',
                     'accountingPeriodId' => ':company.accounting_period_id',
-                ],
-            ],
-            [
-                'key' => 'prepaymentApproval',
-                'service' => \eel_accounts\Service\YearEndChecklistService::class,
-                'method' => 'fetchReviewAcknowledgement',
-                'params' => [
-                    'companyId' => ':company.id',
-                    'accountingPeriodId' => ':company.accounting_period_id',
-                    'checkCode' => 'prepayment_approvals',
                 ],
             ],
         ];
@@ -61,8 +51,9 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
-        $acknowledgement = $context['services']['prepaymentApproval'] ?? null;
-        $review = (array)($context['services']['prepaymentsReview'] ?? []);
+        $approvalContext = (array)($context['services']['prepaymentApprovalContext'] ?? []);
+        $acknowledgement = $approvalContext['approval'] ?? null;
+        $review = (array)($approvalContext['review'] ?? []);
 
         return '<section class="settings-stack" id="year-end-prepayment-approvals">
             ' . $this->summaryHtml($review) . '
@@ -137,7 +128,8 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
     private function prepaidRows(array $context): array
     {
         $rows = [];
-        foreach ((array)(($context['services']['prepaymentsReview'] ?? [])['items'] ?? []) as $item) {
+        $approvalContext = (array)($context['services']['prepaymentApprovalContext'] ?? []);
+        foreach ((array)(($approvalContext['review'] ?? [])['items'] ?? []) as $item) {
             if (!is_array($item)) {
                 continue;
             }

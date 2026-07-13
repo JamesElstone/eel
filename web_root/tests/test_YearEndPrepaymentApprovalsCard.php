@@ -15,11 +15,10 @@ $harness->run(_year_end_prepayment_approvalsCard::class, static function (Genera
     $harness->check(_year_end_prepayment_approvalsCard::class, 'renders prepayment acknowledgement action and revoke state', static function () use ($harness, $card): void {
         $services = $card->services();
 
-        $harness->assertSame(\eel_accounts\Service\PrepaymentReviewService::class, (string)($services[0]['service'] ?? ''));
+        $harness->assertCount(1, $services);
+        $harness->assertSame('prepaymentApprovalContext', (string)($services[0]['key'] ?? ''));
+        $harness->assertSame(\eel_accounts\Service\PrepaymentApprovalContextService::class, (string)($services[0]['service'] ?? ''));
         $harness->assertSame('fetchContext', (string)($services[0]['method'] ?? ''));
-        $harness->assertSame(\eel_accounts\Service\YearEndChecklistService::class, (string)($services[1]['service'] ?? ''));
-        $harness->assertSame('fetchReviewAcknowledgement', (string)($services[1]['method'] ?? ''));
-        $harness->assertSame('prepayment_approvals', (string)(($services[1]['params'] ?? [])['checkCode'] ?? ''));
 
         $uncheckedHtml = $card->render(yearEndPrepaymentApprovalsCardContext(null));
 
@@ -106,13 +105,15 @@ function yearEndPrepaymentApprovalsCardContext(?array $acknowledgement, int $pen
             ],
         ],
         'services' => [
-            'prepaymentsReview' => [
-                'available' => true,
-                'items' => $items,
-                'prepaid_count' => 11,
-                'pending_count' => $pendingCount,
+            'prepaymentApprovalContext' => [
+                'review' => [
+                    'available' => true,
+                    'items' => $items,
+                    'prepaid_count' => 11,
+                    'pending_count' => $pendingCount,
+                ],
+                'approval' => $acknowledgement,
             ],
-            'prepaymentApproval' => $acknowledgement,
         ],
     ];
 }

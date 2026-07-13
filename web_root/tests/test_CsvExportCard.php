@@ -49,6 +49,8 @@ $harness->run(_csv_exportCard::class, static function (GeneratedServiceClassTest
         $harness->assertTrue(str_contains($html, 'Example Bank'));
         $harness->assertTrue(str_contains($html, '<td>42</td>'));
         $harness->assertTrue(str_contains($html, '<span class="table-sort-label">Account</span>'));
+        $harness->assertTrue(str_contains($html, 'table-condensed-toggle'));
+        $harness->assertTrue(str_contains($html, '<div class="actions-row actions-row-nowrap">'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="export_csv_upload"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="export_xlsx_upload"'));
         $harness->assertTrue(str_contains($html, 'name="export_month" value="2026-02-01"'));

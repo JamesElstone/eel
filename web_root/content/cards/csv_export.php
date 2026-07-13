@@ -92,7 +92,8 @@ final class _csv_exportCard extends CardBaseFramework
     private function table(array $context): TableFramework
     {
         return TableFramework::make($this->key(), $this->rows($context))
-            ->exports(false)
+            ->filename('csv-upload-exports')
+            ->exportLimit(5000)
             ->empty('No uploaded CSV files are available for this accounting period.')
             ->textColumn('month_label', 'Month')
             ->textColumn('account_name', 'Account', 'No account selected')
@@ -146,7 +147,7 @@ final class _csv_exportCard extends CardBaseFramework
             <input type="hidden" name="upload_id" value="' . (int)($row['id'] ?? 0) . '">
             <input type="hidden" name="export_month" value="' . HelperFramework::escape((string)($row['month_key'] ?? '')) . '">';
 
-        return '<div class="actions-row-nowrap">
+        return '<div class="actions-row actions-row-nowrap">
             <form method="post" action="?page=uploads" class="inline-form">
                 ' . $hiddenInputs . '
                 <input type="hidden" name="intent" value="export_csv_upload">

@@ -56,7 +56,7 @@ $harness->run(_hmrc_fines_tableCard::class, static function (GeneratedServiceCla
         $harness->assertTrue(str_contains($html, 'name="hmrc_fines_table_page" value="2"'));
         $harness->assertTrue(str_contains($html, '<option value="all" selected>All</option>'));
         $harness->assertTrue(str_contains($html, '<option value="current">In current Accounting Period</option>'));
-        $harness->assertTrue(str_contains($html, 'data-state-fields="hmrc_notice_type,hmrc_notice_date,hmrc_notice_due_date,hmrc_notice_amount_due,hmrc_notice_reference"'));
+        $harness->assertTrue(str_contains($html, 'class="form-grid full" data-state-fields="hmrc_notice_type,hmrc_notice_date,hmrc_notice_due_date,hmrc_notice_amount_due,hmrc_notice_reference"'));
         $harness->assertTrue(str_contains($html, 'data-state-target="save_hmrc_notice_button"'));
         $harness->assertTrue(str_contains($html, 'id="save_hmrc_notice_button" type="submit" disabled'));
         $harness->assertTrue(str_contains($html, 'id="hmrc_notice_reference" name="source_reference" required'));

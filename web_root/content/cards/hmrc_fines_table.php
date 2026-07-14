@@ -52,7 +52,7 @@ final class _hmrc_fines_tableCard extends CardBaseFramework
                 <input type="hidden" name="intent" value="create_manual_obligation">
                 <input type="hidden" name="company_id" value="' . $companyId . '">
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <section data-state-fields="hmrc_notice_type,hmrc_notice_date,hmrc_notice_due_date,hmrc_notice_amount_due,hmrc_notice_reference" data-state-target="save_hmrc_notice_button">
+                <section class="form-grid full" data-state-fields="hmrc_notice_type,hmrc_notice_date,hmrc_notice_due_date,hmrc_notice_amount_due,hmrc_notice_reference" data-state-target="save_hmrc_notice_button">
                     <div class="form-row"><label for="hmrc_notice_type">Type *</label><select class="select" id="hmrc_notice_type" name="obligation_type" required data-no-submit-on-change="true"><option value="">Select type...</option><option value="hmrc_penalty">HMRC penalty</option><option value="hmrc_interest">HMRC interest</option><option value="other">Other HMRC balance</option></select></div>
                     <div class="form-row"><label for="hmrc_notice_date">Notice date *</label><input class="input" id="hmrc_notice_date" type="date" name="notice_date" required></div>
                     <div class="form-row"><label for="hmrc_notice_due_date">Due date *</label><input class="input" id="hmrc_notice_due_date" type="date" name="due_date" required></div>

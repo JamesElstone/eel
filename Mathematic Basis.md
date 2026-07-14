@@ -34,20 +34,20 @@ The mathematical evidence supports use within that defined scope. It does not su
 
 For a Corporation Tax period, the application is treated as having preserved data integrity only when the following proposition is true:
 
-\[
+$$
 \text{Reliable tax result}
 = C \land B \land P \land R \land A \land L \land T
-\]
+$$
 
 where:
 
-- \(C\) = the population of posted journals is complete for the selected company, accounting period and date interval;
-- \(B\) = total debits equal total credits to the penny;
-- \(P\) = the accounting period is partitioned into continuous, non-overlapping Corporation Tax periods of no more than 12 months;
-- \(R\) = each relevant profit-and-loss nominal has a reviewed tax treatment, with no unresolved `other` or unknown treatment affecting the result;
-- \(A\) = the fixed-asset register and supported capital-allowance pools are complete for the period;
-- \(L\) = brought-forward losses fall within the supported ordinary trading-loss model; and
-- \(T\) = the correct sourced rate rule, augmented-profit assumption and associated-company count apply.
+- $C$ = the population of posted journals is complete for the selected company, accounting period and date interval;
+- $B$ = total debits equal total credits to the penny;
+- $P$ = the accounting period is partitioned into continuous, non-overlapping Corporation Tax periods of no more than 12 months;
+- $R$ = each relevant profit-and-loss nominal has a reviewed tax treatment, with no unresolved `other` or unknown treatment affecting the result;
+- $A$ = the fixed-asset register and supported capital-allowance pools are complete for the period;
+- $L$ = brought-forward losses fall within the supported ordinary trading-loss model; and
+- $T$ = the correct sourced rate rule, augmented-profit assumption and associated-company count apply.
 
 This is deliberately conjunctive. A numerically balanced answer is not considered sufficient if, for example, the period is incomplete or a material expense has no resolved tax treatment.
 
@@ -119,29 +119,29 @@ The atomic accounting evidence is a journal line containing:
 
 Monetary records are stored to two decimal places. Calculations use pounds and pence. A journal is balanced when:
 
-\[
+$$
 \sum_{l=1}^{n} Debit_l = \sum_{l=1}^{n} Credit_l
-\]
+$$
 
 The comparison tolerance is less than half a penny:
 
-\[
+$$
 \left|\sum Debit_l - \sum Credit_l\right| < 0.005
-\]
+$$
 
 Manual journals are rejected before saving when their debit and credit totals differ by at least £0.005 after two-decimal rounding. Generated accounting journals are also tested through the trial-balance and deterministic-fixture suites.
 
 ### 4.2 Population selected for profit and loss
 
-For a requested interval \([s,e]\), a journal contributes to the accounting profit calculation only when all of the following are true:
+For a requested interval $[s,e]$, a journal contributes to the accounting profit calculation only when all of the following are true:
 
-\[
+$$
 Included(j) =
 (Company_j = Company)
 \land (Period_j = Period)
 \land (Posted_j = 1)
 \land (s \le Date_j \le e)
-\]
+$$
 
 Only nominal accounts classified as `income`, `cost_of_sales` or `expense` enter the profit-and-loss calculation.
 
@@ -153,69 +153,69 @@ Every posted journal is placed in a named source category. Recognised categories
 
 Coverage passes only when all three equations hold:
 
-\[
+$$
 J_{covered}=J_{posted}
-\]
+$$
 
-\[
+$$
 D_{covered}=D_{posted}
-\]
+$$
 
-\[
+$$
 C_{covered}=C_{posted}
-\]
+$$
 
 The comparison is made to two decimal places using the same half-penny tolerance. This proves population coverage independently from the profit classification of each nominal account.
 
 ## 5. Accounting profit calculation
 
-For each nominal account, let \(D_k\) be total debits and \(C_k\) total credits in the selected interval.
+For each nominal account, let $D_k$ be total debits and $C_k$ total credits in the selected interval.
 
 Income uses its natural credit sign:
 
-\[
+$$
 Income = \sum_{k \in income}(C_k-D_k)
-\]
+$$
 
 Cost of sales and expenses use their natural debit sign:
 
-\[
+$$
 CostOfSales = \sum_{k \in cost\_of\_sales}(D_k-C_k)
-\]
+$$
 
-\[
+$$
 PostedOperatingExpenses = \sum_{k \in expense,\ k \ne CT}(D_k-C_k)
-\]
+$$
 
 The configured Corporation Tax expense nominal is removed from operating expenses. This prevents a circular calculation in which a tax provision reduces the accounting profit used to calculate that same tax provision.
 
 Accounting depreciation is then included once:
 
-\[
+$$
 OperatingExpenses = PostedOperatingExpenses + Depreciation
-\]
+$$
 
 The principal accounting subtotals are:
 
-\[
+$$
 GrossProfit = Income-CostOfSales
-\]
+$$
 
-\[
+$$
 ProfitBeforeTax = GrossProfit-OperatingExpenses
-\]
+$$
 
 The accounting-period-to-Corporation-Tax-period reconciliation is:
 
-\[
+$$
 ProfitBeforeTax_{AP} = \sum_{i=1}^{m} ProfitBeforeTax_{CT_i}
-\]
+$$
 
 and the reported reconciliation difference is:
 
-\[
+$$
 Difference = ProfitBeforeTax_{AP}-\sum ProfitBeforeTax_{CT_i}
-\]
+$$
 
 A zero difference demonstrates that splitting a long accounting period has neither omitted nor duplicated accounting profit.
 
@@ -225,37 +225,37 @@ A zero difference demonstrates that splitting a long accounting period has neith
 
 For each asset:
 
-- \(C\) = recorded cost;
-- \(R\) = residual value;
-- \(Y\) = useful life in years, with a minimum of one;
-- \(OD\) = depreciation posted before the current interval; and
-- \(d/y\) = inclusive days in the current interval divided by the number of days in the relevant calendar year.
+- $C$ = recorded cost;
+- $R$ = residual value;
+- $Y$ = useful life in years, with a minimum of one;
+- $OD$ = depreciation posted before the current interval; and
+- $d/y$ = inclusive days in the current interval divided by the number of days in the relevant calendar year.
 
 For straight-line depreciation:
 
-\[
+$$
 AnnualDepreciation = \frac{C-R}{Y}
-\]
+$$
 
 For reducing-balance depreciation as implemented:
 
-\[
+$$
 OpeningNBV = \max(R,C-OD)
-\]
+$$
 
-\[
+$$
 AnnualDepreciation = OpeningNBV \times \frac{1}{Y}
-\]
+$$
 
 In both cases:
 
-\[
+$$
 RemainingCap = \max(0,(C-R)-OD)
-\]
+$$
 
-\[
+$$
 PeriodDepreciation = round_2\left(\min\left(RemainingCap,AnnualDepreciation\times\frac{d}{y}\right)\right)
-\]
+$$
 
 The calculation is bounded by purchase date, disposal date, accounting-period end and the final day of useful life. It cannot depreciate the asset below residual value.
 
@@ -267,11 +267,11 @@ A final locked tax snapshot is calculated from the fresh year-end position. A li
 
 ### 6.3 Allocation to a Corporation Tax period
 
-If a depreciation row covers \(r\) inclusive days and overlaps a Corporation Tax period by \(o\) inclusive days:
+If a depreciation row covers $r$ inclusive days and overlaps a Corporation Tax period by $o$ inclusive days:
 
-\[
+$$
 AllocatedDepreciation = round_2\left(RowDepreciation\times\frac{o}{r}\right)
-\]
+$$
 
 This daily allocation is also used in the accounting-period/Corporation-Tax-period reconciliation.
 
@@ -289,9 +289,9 @@ The recognised states are:
 
 For supported disallowable debit expense balances:
 
-\[
+$$
 DisallowableAddBack = \sum_{k \in disallowable}|D_k-C_k|
-\]
+$$
 
 Because the implemented expression uses magnitude, a disallowable nominal containing a credit balance, refund or reversal is outside the automatic assurance boundary and must be reviewed separately.
 
@@ -301,21 +301,21 @@ Because the implemented expression uses magnitude, a disallowable nominal contai
 
 For supported AIA-qualifying additions, the available limit for a Corporation Tax period is derived from the date-effective annual rule. If the rule is constant throughout the period:
 
-\[
+$$
 AIALimit = round_2\left(AnnualLimit\times\min\left(1,\frac{PeriodDays}{365}\right)\right)
-\]
+$$
 
 Where a limit changes during a period, the sourced amounts are first weighted by overlap days. The resulting formula is equivalent to summing each rule's annual limit multiplied by its covered days divided by 365.
 
-For qualifying asset \(a\), processed chronologically:
+For qualifying asset $a$, processed chronologically:
 
-\[
+$$
 AIA_a = round_2(\min(Cost_a,AIA_{remaining}))
-\]
+$$
 
-\[
+$$
 AIA_{remaining,new}=round_2(AIA_{remaining}-AIA_a)
-\]
+$$
 
 Any unrelieved qualifying cost is added to the main pool. Business cars are not allocated AIA.
 
@@ -323,9 +323,9 @@ Any unrelieved qualifying cost is added to the main pool. Business cars are not 
 
 Supported new and unused zero-emission cars receive:
 
-\[
+$$
 FYA_a = Cost_a
-\]
+$$
 
 The implemented factual gate is the recorded combination of `new_unused` and zero-emission status. Reliance additionally requires confirmation that the statutory first-year allowance is available for the recorded purchase date.
 
@@ -333,37 +333,37 @@ Other supported cars are assigned to the main or special-rate pool from their re
 
 For each pool:
 
-\[
+$$
 PreWDAPool = OpeningWDV + UnrelievedAdditions - DisposalValue
-\]
+$$
 
-If \(PreWDAPool<0\):
+If $PreWDAPool<0$:
 
-\[
+$$
 BalancingCharge=|PreWDAPool|,\quad PreWDAPool=0
-\]
+$$
 
 Otherwise the writing-down allowance is:
 
-\[
+$$
 WDA = round_2\left(PreWDAPool\times WeightedRate\times\min\left(1,\frac{PeriodDays}{365}\right)\right)
-\]
+$$
 
-\[
+$$
 ClosingWDV = round_2(PreWDAPool-WDA)
-\]
+$$
 
 The pool's net deduction is:
 
-\[
+$$
 NetCapitalAllowances = AIA + FYA + WDA + BalancingAllowance - BalancingCharge
-\]
+$$
 
 Consequently, subtracting net capital allowances from accounting profit both deducts allowances and adds balancing charges:
 
-\[
+$$
 -NetCapitalAllowances = -AIA-FYA-WDA-BalancingAllowance+BalancingCharge
-\]
+$$
 
 Pool disposal arithmetic is therefore traceable. The wider Corporation Tax treatment of an accounting profit or loss on disposal, or of a chargeable gain, is outside this document's assurance scope as stated in section 3.3.
 
@@ -371,24 +371,24 @@ Pool disposal arithmetic is therefore traceable. The wider Corporation Tax treat
 
 Let:
 
-- \(P\) = accounting profit or loss before Corporation Tax;
-- \(E\) = supported disallowable expense add-backs;
-- \(D\) = accounting depreciation;
-- \(CA\) = net capital allowances from section 8.
+- $P$ = accounting profit or loss before Corporation Tax;
+- $E$ = supported disallowable expense add-backs;
+- $D$ = accounting depreciation;
+- $CA$ = net capital allowances from section 8.
 
 The implemented bridge is:
 
-\[
+$$
 TaxableBeforeLosses = round_2(P+E+D-CA)
-\]
+$$
 
 This reflects the tax principle that accounting profit is the starting point, depreciation is not a tax deduction, and supported capital allowances provide the replacement tax deduction.
 
 The bridge is arithmetically self-reconciling:
 
-\[
+$$
 BridgeDifference = TaxableBeforeLosses-(P+E+D-CA)=0.00
-\]
+$$
 
 Any non-zero difference is a calculation failure.
 
@@ -396,47 +396,47 @@ Any non-zero difference is a calculation failure.
 
 Let:
 
-- \(T\) = taxable result before losses;
-- \(L_{BF}\) = supported losses brought forward;
-- \(L_U\) = losses used in the current period;
-- \(L_C\) = new loss created; and
-- \(L_{CF}\) = losses carried forward.
+- $T$ = taxable result before losses;
+- $L_{BF}$ = supported losses brought forward;
+- $L_U$ = losses used in the current period;
+- $L_C$ = new loss created; and
+- $L_{CF}$ = losses carried forward.
 
 The implemented ordinary loss roll-forward is:
 
-\[
+$$
 L_U=\min(\max(0,T),L_{BF})
-\]
+$$
 
-\[
+$$
 TaxableProfit=\max(0,round_2(T-L_U))
-\]
+$$
 
-\[
+$$
 L_C=\max(0,-T)
-\]
+$$
 
-\[
+$$
 L_{CF}=round_2(L_{BF}-L_U+L_C)
-\]
+$$
 
 Periods are processed chronologically. Losses are consumed from the existing loss pool before a later loss is added. The identities checked are:
 
-\[
+$$
 L_U \le L_{BF}
-\]
+$$
 
-\[
+$$
 L_U \le \max(0,T)
-\]
+$$
 
-\[
+$$
 TaxableProfit \ge 0
-\]
+$$
 
-\[
+$$
 L_{CF} \ge 0
-\]
+$$
 
 This model does not implement the special restriction that can limit carried-forward loss use above the available £5 million deductions allowance. Such a case is outside scope.
 
@@ -444,15 +444,15 @@ This model does not implement the special restriction that can limit carried-for
 
 ### 11.1 Corporation Tax period derivation
 
-An accounts period longer than 12 months is partitioned into consecutive Corporation Tax periods. Starting at date \(s_i\):
+An accounts period longer than 12 months is partitioned into consecutive Corporation Tax periods. Starting at date $s_i$:
 
-\[
+$$
 e_i=\min(AccountsEnd,s_i+1\ year-1\ day)
-\]
+$$
 
-\[
+$$
 s_{i+1}=e_i+1\ day
-\]
+$$
 
 The derivation is valid only when:
 
@@ -465,21 +465,21 @@ The derivation is valid only when:
 
 A Corporation Tax period crossing 31 March is divided into financial-year segments. Let:
 
-- \(N\) = taxable total profits for the Corporation Tax period;
-- \(A\) = augmented profits;
-- \(D\) = inclusive days in the Corporation Tax period;
-- \(d_i\) = inclusive days in segment \(i\); and
-- \(FYDays_i\) = 365 or 366 days in that financial year.
+- $N$ = taxable total profits for the Corporation Tax period;
+- $A$ = augmented profits;
+- $D$ = inclusive days in the Corporation Tax period;
+- $d_i$ = inclusive days in segment $i$; and
+- $FYDays_i$ = 365 or 366 days in that financial year.
 
 Profits are apportioned on a strict time basis:
 
-\[
+$$
 q_i=\frac{d_i}{D}
-\]
+$$
 
-\[
+$$
 N_i=round_{10}(Nq_i),\quad A_i=round_{10}(Aq_i)
-\]
+$$
 
 This follows HMRC's distinction that profits are apportioned by accounting-period days, while thresholds are apportioned by days in the relevant financial year.
 
@@ -490,75 +490,75 @@ This follows HMRC's distinction that profits are apportioned by accounting-perio
 For ordinary non-ring-fence profits in the reviewed rule range:
 
 - before 1 April 2023, the applicable main rate is 19%;
-- from 1 April 2023, the small-profits rate is 19%, the main rate is 25%, the lower limit is £50,000, the upper limit is £250,000, and the standard marginal-relief fraction is \(3/200=0.015\).
+- from 1 April 2023, the small-profits rate is 19%, the main rate is 25%, the lower limit is £50,000, the upper limit is £250,000, and the standard marginal-relief fraction is $3/200=0.015$.
 
 Rates are stored as date-effective sourced rules. A calculation fails if no active rule completely covers the required financial year; it does not silently invent a rate.
 
 ### 12.2 Adjusted limits
 
-Let \(a\) be the number of other associated companies. The divisor is the total number of associated companies including the subject company:
+Let $a$ be the number of other associated companies. The divisor is the total number of associated companies including the subject company:
 
-\[
+$$
 CompanyDivisor=a+1
-\]
+$$
 
-For financial-year segment \(i\):
+For financial-year segment $i$:
 
-\[
+$$
 Lower_i=round_{10}\left(50000\times\frac{d_i}{FYDays_i}\div CompanyDivisor\right)
-\]
+$$
 
-\[
+$$
 Upper_i=round_{10}\left(250000\times\frac{d_i}{FYDays_i}\div CompanyDivisor\right)
-\]
+$$
 
 ### 12.3 Band decision
 
 For a segment after 1 April 2023:
 
-If \(A_i\le Lower_i\):
+If $A_i\le Lower_i$:
 
-\[
+$$
 Tax_i=N_i\times 0.19
-\]
+$$
 
-If \(Lower_i<A_i\le Upper_i\), marginal relief is:
+If $Lower_i<A_i\le Upper_i$, marginal relief is:
 
-\[
+$$
 MR_i=\left(F\times(Upper_i-A_i)\right)\times\frac{N_i}{A_i}
-\]
+$$
 
-where \(F=3/200\). Tax is:
+where $F=3/200$. Tax is:
 
-\[
+$$
 Tax_i=\max(0,N_i\times0.25-MR_i)
-\]
+$$
 
-If \(A_i>Upper_i\):
+If $A_i>Upper_i$:
 
-\[
+$$
 Tax_i=N_i\times0.25
-\]
+$$
 
 For a segment to which the pre-1 April 2023 flat regime applies:
 
-\[
+$$
 Tax_i=N_i\times0.19
-\]
+$$
 
 The Corporation Tax liability is:
 
-\[
+$$
 CorporationTax=round_2\left(\sum_i round_2(Tax_i)\right)
-\]
+$$
 
 and the reported effective rate is:
 
-\[
+$$
 EffectiveRate=round_6\left(\frac{CorporationTax}{N}\right)
-\]
+$$
 
-In the current end-to-end calculation, \(A=N\). If qualifying exempt distributions make \(A>N\), this assumption is false and the result is outside this assurance scope.
+In the current end-to-end calculation, $A=N$. If qualifying exempt distributions make $A>N$, this assumption is false and the result is outside this assurance scope.
 
 ## 13. Rounding policy
 
@@ -571,7 +571,7 @@ Rounding is explicit and repeatable:
 - each financial-year segment's liability is rounded to two decimal places before segments are summed; and
 - equality checks use a tolerance strictly below £0.005.
 
-Let \(round_p(x)\) mean conventional rounding to \(p\) decimal places. Rounding at the stated stages is part of the defined algorithm. An independent reproduction must round at the same stages, rather than only rounding the final answer.
+Let $round_p(x)$ mean conventional rounding to $p$ decimal places. Rounding at the stated stages is part of the defined algorithm. An independent reproduction must round at the same stages, rather than only rounding the final answer.
 
 ## 14. Synthetic worked examples
 
@@ -591,25 +591,25 @@ Assumptions: 12-month period wholly after 1 April 2023, no associated companies,
 
 Accounting profit:
 
-\[
+$$
 GrossProfit=150000-50000=100000
-\]
+$$
 
-\[
+$$
 ProfitBeforeTax=100000-(54000+6000)=40000
-\]
+$$
 
 Taxable profit:
 
-\[
+$$
 TaxableBeforeLosses=40000+2000+6000-8000=40000
-\]
+$$
 
 There are no brought-forward losses, so taxable profit is £40,000. The small-profits rate applies:
 
-\[
+$$
 CorporationTax=40000\times19\%=£7,600.00
-\]
+$$
 
 The example also demonstrates why depreciation is present twice: it first reduces accounting profit, is then added back for tax, and the separate capital-allowance deduction replaces it.
 
@@ -625,61 +625,61 @@ First fictional period:
 | Capital allowances | £8,000.00 |
 | Losses brought forward | £5,000.00 |
 
-\[
+$$
 T=-12000+2000+3000-8000=-15000
-\]
+$$
 
 No brought-forward loss is used against another loss. The new loss is £15,000 and:
 
-\[
+$$
 L_{CF}=5000-0+15000=£20,000.00
-\]
+$$
 
 Taxable profit and Corporation Tax are both nil.
 
 Second fictional period:
 
-\[
+$$
 T=25000,\quad L_{BF}=20000
-\]
+$$
 
-\[
+$$
 L_U=\min(25000,20000)=20000
-\]
+$$
 
-\[
+$$
 TaxableProfit=25000-20000=£5,000.00
-\]
+$$
 
-\[
+$$
 L_{CF}=20000-20000+0=£0.00
-\]
+$$
 
 At 19%, Corporation Tax is:
 
-\[
+$$
 5000\times19\%=£950.00
-\]
+$$
 
 ### 14.3 Marginal relief
 
 Assumptions: 12-month period, no associated companies, taxable total profits and augmented profits both £100,000.
 
-\[
+$$
 MainRateTax=100000\times25\%=£25,000.00
-\]
+$$
 
-\[
+$$
 MR=\left(\frac{3}{200}\times(250000-100000)\right)\times\frac{100000}{100000}
-\]
+$$
 
-\[
+$$
 MR=0.015\times150000=£2,250.00
-\]
+$$
 
-\[
+$$
 CorporationTax=25000-2250=£22,750.00
-\]
+$$
 
 The effective rate is 22.75%.
 
@@ -687,23 +687,23 @@ The effective rate is 22.75%.
 
 Assumptions: a 183-day segment in a 365-day financial year, one other associated company, and taxable total profits equal augmented profits of £40,000.
 
-\[
+$$
 Lower=50000\times\frac{183}{365}\div2=£12,534.25
-\]
+$$
 
-\[
+$$
 Upper=250000\times\frac{183}{365}\div2=£62,671.23
-\]
+$$
 
 The profit lies in the marginal-relief band:
 
-\[
+$$
 MR=0.015\times(62671.2328767-40000)=£340.07
-\]
+$$
 
-\[
+$$
 CorporationTax=(40000\times25\%)-340.07=£9,659.93
-\]
+$$
 
 ## 15. Traceability and repeatability
 
@@ -834,7 +834,7 @@ The following official sources were checked for this version. They are included 
 1. HMRC, [Accounting periods for Corporation Tax](https://www.gov.uk/corporation-tax-accounting-period) — Corporation Tax periods cannot exceed 12 months, so a longer accounts period must be divided.
 2. HMRC Business Income Manual, [BIM35201: the role of generally accepted accounting practice](https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim35201) — accounts are the starting point; depreciation and other disallowed expenditure require tax adjustment.
 3. HMRC, [Corporation Tax rates and allowances](https://www.gov.uk/government/publications/rates-and-allowances-corporation-tax/rates-and-allowances-corporation-tax) — non-ring-fence rates, £50,000/£250,000 limits and standard fraction of 3/200.
-4. HMRC Company Taxation Manual, [CTM03925: marginal-relief formula](https://www.gov.uk/hmrc-internal-manuals/company-taxation-manual/ctm03925) — \((F\times(U-A))\times(N/A)\).
+4. HMRC Company Taxation Manual, [CTM03925: marginal-relief formula](https://www.gov.uk/hmrc-internal-manuals/company-taxation-manual/ctm03925) — $(F\times(U-A))\times(N/A)$.
 5. HMRC Company Taxation Manual, [CTM03955: accounting periods straddling a financial year](https://www.gov.uk/hmrc-internal-manuals/company-taxation-manual/ctm03955) — time apportionment of profits and financial-year-day apportionment of limits.
 6. HMRC Company Taxation Manual, [CTM01750: rates of tax](https://www.gov.uk/hmrc-internal-manuals/company-taxation-manual/ctm01750) — profits crossing 31 March are time apportioned and each portion is charged for its financial year.
 7. HMRC, [Marginal Relief for Corporation Tax](https://www.gov.uk/guidance/corporation-tax-marginal-relief) — short-period and associated-company reductions to limits.

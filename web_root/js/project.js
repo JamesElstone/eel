@@ -94,6 +94,77 @@
         });
     }
 
+    function initialiseHmrcFinesCondensedTable(root = document) {
+        const toggles = root.querySelectorAll
+            ? root.querySelectorAll('.table-condensed-toggle[data-table-key="hmrc_fines_table"]')
+            : [];
+
+        toggles.forEach((toggle) => {
+            if (!(toggle instanceof HTMLButtonElement)) {
+                return;
+            }
+
+            const storageKey = 'table_condensed_view:hmrc_fines_table';
+            let hasStoredPreference = false;
+            try {
+                hasStoredPreference = window.localStorage.getItem(storageKey) !== null;
+                if (!hasStoredPreference) {
+                    window.localStorage.setItem(storageKey, '1');
+                }
+            } catch (error) {
+                // Condensed view can still be applied for this render when storage is unavailable.
+            }
+
+            if (hasStoredPreference) {
+                return;
+            }
+
+            const card = toggle.closest('.card');
+            const tableWrapper = card ? card.querySelector('.table-scroll') : null;
+            if (tableWrapper instanceof HTMLElement) {
+                tableWrapper.classList.add('table-condensed');
+            }
+            toggle.classList.add('primary');
+            toggle.setAttribute('aria-pressed', 'true');
+        });
+    }
+
+    function initialiseHmrcNoticeRequiredFields(root = document) {
+        const stateSections = root.querySelectorAll
+            ? root.querySelectorAll('[data-state-target="save_hmrc_notice_button"][data-state-fields]')
+            : [];
+
+        stateSections.forEach((section) => {
+            if (!(section instanceof HTMLElement) || section.dataset.hmrcRequiredFieldsBound === '1') {
+                return;
+            }
+
+            const fieldIds = String(section.dataset.stateFields || '')
+                .split(',')
+                .map((value) => value.trim())
+                .filter((value) => value !== '');
+            const fields = fieldIds
+                .map((fieldId) => document.getElementById(fieldId))
+                .filter((field) => field instanceof HTMLInputElement || field instanceof HTMLSelectElement);
+            const saveButton = document.getElementById(String(section.dataset.stateTarget || ''));
+
+            if (!(saveButton instanceof HTMLButtonElement) || fields.length !== fieldIds.length) {
+                return;
+            }
+
+            const sync = () => {
+                saveButton.disabled = fields.some((field) => String(field.value || '').trim() === '' || !field.checkValidity());
+            };
+
+            fields.forEach((field) => {
+                field.addEventListener('input', sync);
+                field.addEventListener('change', sync);
+            });
+            window.setTimeout(sync, 0);
+            section.dataset.hmrcRequiredFieldsBound = '1';
+        });
+    }
+
     function initialiseDirectorLoanOffsetAcknowledgements(root = document) {
         const forms = root.querySelectorAll ? root.querySelectorAll('[data-director-loan-offset-ack-form="true"], [data-year-end-ack-form="true"]') : [];
 
@@ -981,6 +1052,8 @@
     });
 
     initialiseManualAssetLegalWarnings(document);
+    initialiseHmrcFinesCondensedTable(document);
+    initialiseHmrcNoticeRequiredFields(document);
     initialiseDirectorLoanOffsetAcknowledgements(document);
     initialiseUploadProcessingIndicators(document);
     initialiseVehicleRows(document);
@@ -996,6 +1069,8 @@
             mutation.addedNodes.forEach((node) => {
                 if (node instanceof HTMLElement) {
                     initialiseManualAssetLegalWarnings(node);
+                    initialiseHmrcFinesCondensedTable(node);
+                    initialiseHmrcNoticeRequiredFields(node);
                     initialiseDirectorLoanOffsetAcknowledgements(node);
                     initialiseUploadProcessingIndicators(node);
                     initialiseVehicleRows(node);

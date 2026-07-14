@@ -171,6 +171,151 @@ $harness->run(\eel_accounts\Service\ProfitLossService::class, static function (G
             }
         }
     });
+
+    $harness->check(\eel_accounts\Service\ProfitLossService::class, 'does not report valid inter-account and split transactions as uncategorised', static function () use ($harness, $service): void {
+        foreach (['companies', 'accounting_periods', 'statement_uploads', 'transactions', 'nominal_accounts', 'transaction_inter_ac_marker', 'transaction_splits', 'transaction_split_lines'] as $table) {
+            if (!InterfaceDB::tableExists($table)) {
+                $harness->skip($table . ' table is not available.');
+            }
+        }
+
+        InterfaceDB::beginTransaction();
+        try {
+            $expenseNominalId = profitLossTestEnsureNominal('6090', 'Sundry Expenses', 'expense', 'allowable');
+            $assetNominalId = profitLossTestEnsureNominal('1300', 'Tools and Equipment', 'asset', 'allowable');
+            $marker = substr(hash('sha256', __FILE__ . microtime(true) . random_int(1, PHP_INT_MAX)), 0, 10);
+
+            InterfaceDB::prepareExecute(
+                'INSERT INTO companies (company_name, company_number, is_active)
+                 VALUES (:company_name, :company_number, 1)',
+                ['company_name' => 'P and L health fixture ' . $marker, 'company_number' => 'PH' . $marker]
+            );
+            $companyId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM companies WHERE company_number = :company_number',
+                ['company_number' => 'PH' . $marker]
+            );
+            InterfaceDB::prepareExecute(
+                'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
+                 VALUES (:company_id, :label, :period_start, :period_end)',
+                [
+                    'company_id' => $companyId,
+                    'label' => 'P and L health period',
+                    'period_start' => '2025-01-01',
+                    'period_end' => '2025-12-31',
+                ]
+            );
+            $periodId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM accounting_periods WHERE company_id = :company_id ORDER BY id DESC LIMIT 1',
+                ['company_id' => $companyId]
+            );
+            InterfaceDB::prepareExecute(
+                'INSERT INTO statement_uploads (
+                    company_id, accounting_period_id, workflow_status, statement_month,
+                    original_filename, stored_filename, file_sha256
+                 ) VALUES (
+                    :company_id, :accounting_period_id, :workflow_status, :statement_month,
+                    :original_filename, :stored_filename, :file_sha256
+                 )',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $periodId,
+                    'workflow_status' => 'committed',
+                    'statement_month' => '2025-01-01',
+                    'original_filename' => 'health.csv',
+                    'stored_filename' => 'health-' . $marker . '.csv',
+                    'file_sha256' => hash('sha256', 'health-upload-' . $marker),
+                ]
+            );
+            $uploadId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM statement_uploads WHERE company_id = :company_id ORDER BY id DESC LIMIT 1',
+                ['company_id' => $companyId]
+            );
+
+            $transactions = [
+                ['transfer-source', -50.00, 'manual', null],
+                ['transfer-match', -50.00, 'manual', null],
+                ['completed-split', -150.00, 'manual', null],
+                ['ordinary-expense', -25.00, 'manual', $expenseNominalId],
+                ['genuinely-unresolved', -10.00, 'manual', null],
+            ];
+            $transactionIds = [];
+            foreach ($transactions as $index => $transaction) {
+                $dedupeHash = hash('sha256', $marker . ':' . $index);
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO transactions (
+                        company_id, accounting_period_id, statement_upload_id, txn_date,
+                        description, amount, dedupe_hash, nominal_account_id, category_status
+                     ) VALUES (
+                        :company_id, :accounting_period_id, :statement_upload_id, :txn_date,
+                        :description, :amount, :dedupe_hash, :nominal_account_id, :category_status
+                     )',
+                    [
+                        'company_id' => $companyId,
+                        'accounting_period_id' => $periodId,
+                        'statement_upload_id' => $uploadId,
+                        'txn_date' => '2025-01-' . str_pad((string)($index + 1), 2, '0', STR_PAD_LEFT),
+                        'description' => $transaction[0],
+                        'amount' => number_format((float)$transaction[1], 2, '.', ''),
+                        'dedupe_hash' => $dedupeHash,
+                        'nominal_account_id' => $transaction[3],
+                        'category_status' => $transaction[2],
+                    ]
+                );
+                $transactionIds[] = (int)InterfaceDB::fetchColumn(
+                    'SELECT id FROM transactions WHERE company_id = :company_id AND dedupe_hash = :dedupe_hash',
+                    ['company_id' => $companyId, 'dedupe_hash' => $dedupeHash]
+                );
+            }
+
+            InterfaceDB::prepareExecute(
+                'INSERT INTO transaction_inter_ac_marker (
+                    company_id, accounting_period_id, transaction_id, matched_transaction_id, created_by
+                 ) VALUES (
+                    :company_id, :accounting_period_id, :transaction_id, :matched_transaction_id, :created_by
+                 )',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $periodId,
+                    'transaction_id' => $transactionIds[0],
+                    'matched_transaction_id' => $transactionIds[1],
+                    'created_by' => 'test',
+                ]
+            );
+            InterfaceDB::prepareExecute(
+                'INSERT INTO transaction_splits (transaction_id) VALUES (:transaction_id)',
+                ['transaction_id' => $transactionIds[2]]
+            );
+            $splitId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM transaction_splits WHERE transaction_id = :transaction_id',
+                ['transaction_id' => $transactionIds[2]]
+            );
+            foreach ([[1, 60.00, $expenseNominalId], [2, 90.00, $assetNominalId]] as $line) {
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO transaction_split_lines (split_id, line_number, amount, nominal_account_id)
+                     VALUES (:split_id, :line_number, :amount, :nominal_account_id)',
+                    [
+                        'split_id' => $splitId,
+                        'line_number' => $line[0],
+                        'amount' => number_format((float)$line[1], 2, '.', ''),
+                        'nominal_account_id' => $line[2],
+                    ]
+                );
+            }
+
+            $health = $service->getProfitLossHealth($companyId, $periodId);
+            $watch = $service->getUncategorisedWatch($companyId, $periodId, 10);
+            $harness->assertSame(5, (int)($health['total_transactions'] ?? 0));
+            $harness->assertSame(4, (int)($health['categorised_transactions'] ?? 0));
+            $harness->assertSame(1, (int)($health['uncategorised_transactions'] ?? 0));
+            $harness->assertSame('80.0', number_format((float)($health['categorised_percent'] ?? 0), 1, '.', ''));
+            $harness->assertSame(1, count($watch));
+            $harness->assertSame('genuinely-unresolved', (string)($watch[0]['description'] ?? ''));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
 });
 
 function profitLossTestEnsureNominal(string $code, string $name, string $accountType, string $taxTreatment): int

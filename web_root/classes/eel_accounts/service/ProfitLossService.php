@@ -302,6 +302,7 @@ final class ProfitLossService
         }
 
         $limit = max(1, min(50, $limit));
+        $resolvedWithoutNominalPredicate = $this->resolvedWithoutNominalPredicate('t');
         $stmt = \InterfaceDB::prepare(
             'SELECT t.id,
                     t.txn_date,
@@ -313,7 +314,10 @@ final class ProfitLossService
              FROM transactions t
              WHERE t.company_id = ?
                AND t.accounting_period_id = ?
-               AND (t.category_status = ? OR t.nominal_account_id IS NULL)
+               AND (
+                    t.category_status = ?
+                    OR (t.nominal_account_id IS NULL AND NOT (' . $resolvedWithoutNominalPredicate . '))
+               )
              ORDER BY ABS(t.amount) DESC, t.txn_date DESC, t.id DESC
              LIMIT ' . $limit
         );
@@ -878,22 +882,17 @@ final class ProfitLossService
     private function transactionMonths(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array
     {
         $result = [];
-        try {
-            $hasInterAccountMarkers = \InterfaceDB::tableExists('transaction_inter_ac_marker');
-        } catch (\Throwable) {
-            $hasInterAccountMarkers = false;
-        }
-        $noPostPredicate = $hasInterAccountMarkers
-            ? "EXISTS (
-                   SELECT 1
-                   FROM transaction_inter_ac_marker tiam
-                   WHERE tiam.matched_transaction_id = transactions.id
-               )"
-            : '0 = 1';
+        $resolvedWithoutNominalPredicate = $this->resolvedWithoutNominalPredicate('transactions');
         foreach (\InterfaceDB::fetchAll(
             'SELECT DATE_FORMAT(txn_date, \'%Y-%m-01\') AS month_start,
                     COUNT(*) AS transaction_count,
-                    SUM(CASE WHEN NOT (' . $noPostPredicate . ') AND (category_status = :uncategorised OR nominal_account_id IS NULL) THEN 1 ELSE 0 END) AS uncategorised_count
+                    SUM(
+                        CASE
+                            WHEN category_status = :uncategorised THEN 1
+                            WHEN nominal_account_id IS NULL AND NOT (' . $resolvedWithoutNominalPredicate . ') THEN 1
+                            ELSE 0
+                        END
+                    ) AS uncategorised_count
              FROM transactions
              WHERE company_id = :company_id
                AND accounting_period_id = :accounting_period_id
@@ -1025,13 +1024,18 @@ final class ProfitLossService
             return 0;
         }
 
+        $resolvedWithoutNominalPredicate = $this->resolvedWithoutNominalPredicate('transactions');
+
         return (int)\InterfaceDB::fetchColumn(
             'SELECT COUNT(*)
              FROM transactions
              WHERE company_id = :company_id
                AND accounting_period_id = :accounting_period_id
                AND txn_date BETWEEN :period_start AND :period_end
-               AND (category_status = :uncategorised OR nominal_account_id IS NULL)',
+               AND (
+                    category_status = :uncategorised
+                    OR (nominal_account_id IS NULL AND NOT (' . $resolvedWithoutNominalPredicate . '))
+               )',
             [
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
@@ -1040,5 +1044,70 @@ final class ProfitLossService
                 'uncategorised' => 'uncategorised',
             ]
         );
+    }
+
+    private function interAccountMarkerPredicate(string $transactionAlias): string
+    {
+        try {
+            if (!\InterfaceDB::tableExists('transaction_inter_ac_marker')) {
+                return '0 = 1';
+            }
+        } catch (\Throwable) {
+            return '0 = 1';
+        }
+
+        return 'EXISTS (
+                    SELECT 1
+                    FROM transaction_inter_ac_marker health_tiam
+                    WHERE health_tiam.transaction_id = ' . $transactionAlias . '.id
+                       OR health_tiam.matched_transaction_id = ' . $transactionAlias . '.id
+                )';
+    }
+
+    private function resolvedWithoutNominalPredicate(string $transactionAlias): string
+    {
+        $predicates = [
+            $this->interAccountMarkerPredicate($transactionAlias),
+            '(COALESCE(' . $transactionAlias . '.is_internal_transfer, 0) = 1
+              AND COALESCE(' . $transactionAlias . '.transfer_account_id, 0) > 0
+              AND ' . $transactionAlias . '.category_status = \'manual\')',
+        ];
+
+        try {
+            $hasSplits = \InterfaceDB::tableExists('transaction_splits')
+                && \InterfaceDB::tableExists('transaction_split_lines');
+        } catch (\Throwable) {
+            $hasSplits = false;
+        }
+
+        if ($hasSplits) {
+            $predicates[] = 'EXISTS (
+                SELECT 1
+                FROM transaction_splits health_ts
+                INNER JOIN transaction_split_lines health_tsl
+                    ON health_tsl.split_id = health_ts.id
+                WHERE health_ts.transaction_id = ' . $transactionAlias . '.id
+                GROUP BY health_ts.id, health_ts.transaction_id
+                HAVING SUM(CASE WHEN COALESCE(health_tsl.is_deferred, 0) = 0 THEN 1 ELSE 0 END) >= 2
+                   AND SUM(CASE WHEN COALESCE(health_tsl.is_deferred, 0) = 1 THEN 1 ELSE 0 END) = 0
+                   AND SUM(
+                       CASE
+                           WHEN health_tsl.amount IS NULL
+                             OR health_tsl.amount <= 0
+                             OR health_tsl.nominal_account_id IS NULL
+                           THEN 1
+                           ELSE 0
+                       END
+                   ) = 0
+                   AND ABS(
+                       ROUND(
+                           ABS(' . $transactionAlias . '.amount) - COALESCE(SUM(health_tsl.amount), 0),
+                           2
+                       )
+                   ) < 0.005
+            )';
+        }
+
+        return '(' . implode(' OR ', $predicates) . ')';
     }
 }

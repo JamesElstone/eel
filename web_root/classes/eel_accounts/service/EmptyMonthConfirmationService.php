@@ -64,6 +64,43 @@ final class EmptyMonthConfirmationService
         return $map;
     }
 
+    public function acceptedInitialStatementEvidence(int $companyId, int $accountingPeriodId): array
+    {
+        $context = $this->fetchContext($companyId, $accountingPeriodId);
+        if (empty($context['available'])) {
+            return [];
+        }
+
+        $evidence = [];
+        foreach ((array)($context['months'] ?? []) as $month) {
+            if (!is_array($month) || (string)($month['status'] ?? '') !== 'confirmed') {
+                continue;
+            }
+
+            $confirmation = is_array($month['confirmation'] ?? null) ? (array)$month['confirmation'] : [];
+            $confirmationEvidence = is_array($confirmation['evidence'] ?? null) ? (array)$confirmation['evidence'] : [];
+            if (!in_array((string)($confirmationEvidence['confirmation_basis'] ?? ''), [
+                'initial_opening_month',
+                'incorporation_month_first_later_statement_opening_zero',
+            ], true)) {
+                continue;
+            }
+
+            $statement = is_array($confirmationEvidence['first_later_statement'] ?? null)
+                ? (array)$confirmationEvidence['first_later_statement']
+                : [];
+            if ((int)($statement['upload_id'] ?? 0) <= 0) {
+                continue;
+            }
+
+            $statement['confirmed_month_start'] = (string)($month['month_start'] ?? '');
+            $statement['confirmed_at'] = (string)($confirmation['confirmed_at'] ?? '');
+            $evidence[] = $statement;
+        }
+
+        return $evidence;
+    }
+
     public function activeConfirmationsAffectedByUpload(int $companyId, int $accountingPeriodId, int $uploadId): array
     {
         $companyId = max(0, $companyId);

@@ -111,7 +111,7 @@ final class _prepayments_reviewCard extends CardBaseFramework
         if ($serviceEnd === '') {
             $serviceEnd = $periodEnd;
         }
-        $saveButtonClass = 'prepayment-save-' . preg_replace('/[^a-z0-9_-]/i', '-', $sourceType) . '-' . $sourceId;
+        $autosaveButtonClass = 'prepayment-autosave-' . preg_replace('/[^a-z0-9_-]/i', '-', $sourceType) . '-' . $sourceId;
 
         return '<tr>
             <td>' . HelperFramework::escape(HelperFramework::labelFromKey($sourceType, '_')) . '</td>
@@ -132,16 +132,16 @@ final class _prepayments_reviewCard extends CardBaseFramework
                     <input type="hidden" name="source_type" value="' . HelperFramework::escape($sourceType) . '">
                     <input type="hidden" name="source_id" value="' . $sourceId . '">
                     <input type="hidden" name="prepayment_notes" value="' . HelperFramework::escape((string)($review['notes'] ?? '')) . '">
-                    <select class="select" id="' . HelperFramework::escape($formId) . '-status" name="prepayment_status" data-dirty-action-target=".' . HelperFramework::escape($saveButtonClass) . '" data-initial-value="' . HelperFramework::escape($status) . '">' . $this->statusOptions($status) . '</select>
+                    <select class="select" id="' . HelperFramework::escape($formId) . '-status" name="prepayment_status" data-autosave-submit-target=".' . HelperFramework::escape($autosaveButtonClass) . '" data-initial-value="' . HelperFramework::escape($status) . '">' . $this->statusOptions($status) . '</select>
                     <span class="prepayment-date-actions" data-visible-when-field="prepayment_status" data-visible-when-value="prepaid"' . ($status === 'prepaid' ? '' : ' hidden aria-hidden="true"') . '>
                         <label class="prepayment-date-field" for="' . HelperFramework::escape($formId) . '-service-start-date">Service start
-                            <input class="input" id="' . HelperFramework::escape($formId) . '-service-start-date" type="date" name="service_start_date" value="' . HelperFramework::escape($serviceStart) . '" data-dirty-action-target=".' . HelperFramework::escape($saveButtonClass) . '" data-initial-value="' . HelperFramework::escape($serviceStart) . '" data-dirty-require-value="1">
+                            <input class="input" id="' . HelperFramework::escape($formId) . '-service-start-date" type="date" name="service_start_date" value="' . HelperFramework::escape($serviceStart) . '" data-autosave-submit-target=".' . HelperFramework::escape($autosaveButtonClass) . '" data-initial-value="' . HelperFramework::escape($serviceStart) . '" data-autosave-require-value="1">
                         </label>
                         <label class="prepayment-date-field" for="' . HelperFramework::escape($formId) . '-service-end-date">Service end
-                            <input class="input" id="' . HelperFramework::escape($formId) . '-service-end-date" type="date" name="service_end_date" value="' . HelperFramework::escape($serviceEnd) . '" data-dirty-action-target=".' . HelperFramework::escape($saveButtonClass) . '" data-initial-value="' . HelperFramework::escape($serviceEnd) . '" data-dirty-require-value="1">
+                            <input class="input" id="' . HelperFramework::escape($formId) . '-service-end-date" type="date" name="service_end_date" value="' . HelperFramework::escape($serviceEnd) . '" data-autosave-submit-target=".' . HelperFramework::escape($autosaveButtonClass) . '" data-initial-value="' . HelperFramework::escape($serviceEnd) . '" data-autosave-require-value="1">
                         </label>
                     </span>
-                    <button class="button button-inline primary ' . HelperFramework::escape($saveButtonClass) . '" type="submit" data-dirty-enable-mode="changed" disabled>Save decision</button>
+                    <button class="' . HelperFramework::escape($autosaveButtonClass) . '" type="submit" hidden>Autosave decision</button>
                 </form>') . '
             </td>
         </tr>';

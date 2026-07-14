@@ -366,6 +366,41 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
         $harness->assertFalse(str_contains((string)$text, 'At least one bank account has running-balance'));
     });
 
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'accepted initial month evidence clears only its matching first statement warning', static function () use ($harness): void {
+        $service = new \eel_accounts\Service\YearEndChecklistService();
+        $method = new ReflectionMethod($service, 'applyAcceptedInitialStatementConfirmations');
+        $method->setAccessible(true);
+
+        $filtered = $method->invoke($service, [
+            'issue_count' => 2,
+            'issues' => [
+                [
+                    'type' => 'statement_continuity',
+                    'account_id' => 58,
+                    'upload_id' => 313,
+                    'opening_balance' => 0.0,
+                    'previous_statement_closing_balance' => null,
+                ],
+                [
+                    'type' => 'running_balance',
+                    'account_id' => 58,
+                    'upload_id' => 313,
+                ],
+            ],
+        ], [[
+            'upload_id' => 313,
+            'account_id' => 58,
+            'opening_balance' => 0.0,
+            'confirmation_basis' => 'incorporation_month_first_later_statement_opening_zero',
+            'confirmed_month_start' => '2022-09-01',
+            'confirmed_at' => '2026-07-14 12:00:00',
+        ]]);
+
+        $harness->assertSame(1, (int)($filtered['issue_count'] ?? 0));
+        $harness->assertSame('running_balance', (string)(($filtered['issues'][0] ?? [])['type'] ?? ''));
+        $harness->assertSame(1, (int)($filtered['accepted_initial_gap_count'] ?? 0));
+    });
+
     $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'statement continuity detail distinguishes boundary mismatch and running balance breaks', static function () use ($harness): void {
         $service = new \eel_accounts\Service\YearEndChecklistService();
         $detail = new ReflectionMethod($service, 'statementContinuityDetail');

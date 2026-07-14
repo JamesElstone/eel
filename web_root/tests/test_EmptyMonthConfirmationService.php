@@ -31,6 +31,22 @@ $harness->run(\eel_accounts\Service\EmptyMonthConfirmationService::class, static
             $confirm = $service->confirmMonth((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], '2022-09-01', 'Bank account opened in October.', 'unit_test');
             $harness->assertSame(true, (bool)($confirm['success'] ?? false));
             $harness->assertSame(true, isset($service->activeConfirmationMap((int)$fixture['company_id'], (int)$fixture['accounting_period_id'])['2022-09-01']));
+            $acceptedEvidence = $service->acceptedInitialStatementEvidence((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+            $acceptedUploadId = (int)($acceptedEvidence[0]['upload_id'] ?? 0);
+            $harness->assertSame(true, $acceptedUploadId > 0);
+
+            $confirmation = (array)$service->activeConfirmationMap((int)$fixture['company_id'], (int)$fixture['accounting_period_id'])['2022-09-01'];
+            $legacyEvidence = json_decode((string)($confirmation['evidence_json'] ?? ''), true);
+            $legacyEvidence['confirmation_basis'] = 'incorporation_month_first_later_statement_opening_zero';
+            InterfaceDB::prepareExecute(
+                'UPDATE accounting_period_month_confirmations SET evidence_json = :evidence_json WHERE id = :id',
+                [
+                    'evidence_json' => json_encode($legacyEvidence, JSON_UNESCAPED_SLASHES),
+                    'id' => (int)($confirmation['id'] ?? 0),
+                ]
+            );
+            $legacyAcceptedEvidence = $service->acceptedInitialStatementEvidence((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+            $harness->assertSame($acceptedUploadId, (int)($legacyAcceptedEvidence[0]['upload_id'] ?? 0));
 
             $confirmedContext = $service->fetchContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
             $harness->assertSame('confirmed', (string)($confirmedContext['months'][0]['status'] ?? ''));
@@ -38,6 +54,7 @@ $harness->run(\eel_accounts\Service\EmptyMonthConfirmationService::class, static
             $revoke = $service->revokeMonth((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], '2022-09-01', 'unit_test');
             $harness->assertSame(true, (bool)($revoke['success'] ?? false));
             $harness->assertSame(false, isset($service->activeConfirmationMap((int)$fixture['company_id'], (int)$fixture['accounting_period_id'])['2022-09-01']));
+            $harness->assertSame([], $service->acceptedInitialStatementEvidence((int)$fixture['company_id'], (int)$fixture['accounting_period_id']));
         });
     });
 

@@ -40,6 +40,7 @@ final class YearEndChecklistService
         private readonly ?\eel_accounts\Service\YearEndAcknowledgementService $acknowledgementService = null,
         private readonly ?\eel_accounts\Contract\DatabaseBackupCreatorInterface $backupCreator = null,
         private readonly ?\eel_accounts\Service\NonAssetReviewService $nonAssetReviewService = null,
+        private readonly ?\eel_accounts\Service\EmptyMonthConfirmationService $emptyMonthConfirmationService = null,
     ) {
     }
 
@@ -585,6 +586,11 @@ final class YearEndChecklistService
         $journalIntegrity = $metrics->journalIntegritySummary($companyId, $accountingPeriodId);
         $postedSourceWork = $metrics->postedSourceWorkSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $statementContinuity = $metrics->statementContinuitySummary($companyId, $accountingPeriodId, $bankNominalId);
+        $statementContinuity = $this->applyAcceptedInitialStatementConfirmations(
+            $statementContinuity,
+            ($this->emptyMonthConfirmationService ?? new \eel_accounts\Service\EmptyMonthConfirmationService())
+                ->acceptedInitialStatementEvidence($companyId, $accountingPeriodId)
+        );
         $duplicateAudit = $metrics->duplicateImportAudit($companyId, $accountingPeriodId);
         $strandedRows = $metrics->strandedCommittedSourceRowsCount($companyId, $accountingPeriodId);
         $directorLoan = $metrics->directorLoanSummary($companyId, $accountingPeriodId);
@@ -733,6 +739,7 @@ final class YearEndChecklistService
         array_push($sections['ledger_integrity'], ...$this->postedSourceWorkChecks($postedSourceWork));
 
         $continuityWarningCount = $this->statementContinuityIssueCount($statementContinuity);
+        $acceptedInitialGapCount = (int)($statementContinuity['accepted_initial_gap_count'] ?? 0);
         $sections['bank_source_completeness'][] = $this->makeCheck(
             'statement_continuity',
             'Statement continuity',
@@ -740,8 +747,12 @@ final class YearEndChecklistService
             $continuityWarningCount > 0 ? 'warning' : 'pass',
             $continuityWarningCount > 0
                 ? $this->statementContinuityDetail($statementContinuity, $settings)
-                : 'Statement continuity checks passed where statement balance data exists.',
-            $this->statementContinuityMetric($continuityWarningCount),
+                : ($acceptedInitialGapCount > 0
+                    ? $acceptedInitialGapCount . ' initial no-activity ' . ($acceptedInitialGapCount === 1 ? 'gap has' : 'gaps have') . ' been confirmed and the remaining statement continuity checks passed.'
+                    : 'Statement continuity checks passed where statement balance data exists.'),
+            $acceptedInitialGapCount > 0 && $continuityWarningCount === 0
+                ? $acceptedInitialGapCount . ' accepted initial ' . ($acceptedInitialGapCount === 1 ? 'gap' : 'gaps')
+                : $this->statementContinuityMetric($continuityWarningCount),
             '?page=source_accounts'
         );
         $sections['bank_source_completeness'][] = $this->makeCheck(
@@ -1310,6 +1321,69 @@ final class YearEndChecklistService
         return (int)($summary['continuity_warnings'] ?? 0)
             + (int)($summary['running_balance_warnings'] ?? 0)
             + (int)($summary['ledger_warnings'] ?? 0);
+    }
+
+    private function applyAcceptedInitialStatementConfirmations(array $summary, array $acceptedEvidence): array
+    {
+        $acceptedByUploadId = [];
+        foreach ($acceptedEvidence as $evidence) {
+            if (!is_array($evidence)) {
+                continue;
+            }
+
+            $uploadId = (int)($evidence['upload_id'] ?? 0);
+            if ($uploadId > 0) {
+                $acceptedByUploadId[$uploadId] = $evidence;
+            }
+        }
+
+        if ($acceptedByUploadId === []) {
+            return $summary;
+        }
+
+        $issues = array_values(array_filter((array)($summary['issues'] ?? []), static fn(mixed $issue): bool => is_array($issue)));
+        if ($issues === []) {
+            return $summary;
+        }
+
+        $remaining = [];
+        $accepted = [];
+        foreach ($issues as $issue) {
+            $uploadId = (int)($issue['upload_id'] ?? 0);
+            $evidence = $acceptedByUploadId[$uploadId] ?? null;
+            $hasNoPreviousStatement = ($issue['previous_statement_closing_balance'] ?? null) === null
+                || ($issue['previous_statement_closing_balance'] ?? '') === '';
+            $accountMatches = !is_array($evidence)
+                || (int)($evidence['account_id'] ?? 0) <= 0
+                || (int)($issue['account_id'] ?? 0) === (int)($evidence['account_id'] ?? 0);
+            $openingMatches = is_array($evidence)
+                && abs((float)($issue['opening_balance'] ?? 0) - (float)($evidence['opening_balance'] ?? 0)) < 0.005;
+
+            if ((string)($issue['type'] ?? '') === 'statement_continuity'
+                && is_array($evidence)
+                && $hasNoPreviousStatement
+                && $accountMatches
+                && $openingMatches) {
+                $accepted[] = $issue + [
+                    'confirmed_month_start' => (string)($evidence['confirmed_month_start'] ?? ''),
+                    'confirmed_at' => (string)($evidence['confirmed_at'] ?? ''),
+                ];
+                continue;
+            }
+
+            $remaining[] = $issue;
+        }
+
+        if ($accepted === []) {
+            return $summary;
+        }
+
+        $summary['issues'] = $remaining;
+        $summary['issue_count'] = count($remaining);
+        $summary['accepted_initial_gaps'] = $accepted;
+        $summary['accepted_initial_gap_count'] = count($accepted);
+
+        return $summary;
     }
 
     private function statementContinuityMetric(int $issueCount): string

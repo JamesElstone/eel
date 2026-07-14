@@ -52,7 +52,9 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue(str_contains($html, 'Awaiting decision'));
             $harness->assertTrue(str_contains($html, 'Review required — choose a decision'));
             $harness->assertTrue(str_contains($html, 'value="pending" selected disabled'));
-            $harness->assertTrue(str_contains($html, 'Save decision'));
+            $harness->assertTrue(str_contains($html, 'data-autosave-submit-target=".prepayment-autosave-transaction-123"'));
+            $harness->assertTrue(str_contains($html, '<button class="prepayment-autosave-transaction-123" type="submit" hidden>Autosave decision</button>'));
+            $harness->assertSame(false, str_contains($html, 'Save decision'));
             $harness->assertSame(false, str_contains($html, 'value="not_prepaid" selected'));
         });
     }

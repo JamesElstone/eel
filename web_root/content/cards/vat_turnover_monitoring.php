@@ -246,8 +246,8 @@ final class _vat_turnover_monitoringCard extends CardBaseFramework
     private function links(): string
     {
         return '<div class="helper">Official guidance: '
-            . '<a class="button button-inline" href="' . \eel_accounts\Service\VatThresholdRuleService::REGISTRATION_GUIDANCE_URL . '" target="_blank" rel="noopener noreferrer">Register for VAT</a>'
-            . ' <a class="button button-inline" href="' . \eel_accounts\Service\VatThresholdRuleService::THRESHOLDS_URL . '" target="_blank" rel="noopener noreferrer">VAT Thresholds</a>'
+            . '<a class="button button-inline" href="' . \eel_accounts\Service\VatThresholdRuleService::REGISTRATION_GUIDANCE_URL . '" target="_blank" rel="noopener noreferrer">HMRC - Register for VAT</a>'
+            . ' <a class="button button-inline" href="' . \eel_accounts\Service\VatThresholdRuleService::THRESHOLDS_URL . '" target="_blank" rel="noopener noreferrer">HMRC - VAT Thresholds</a>'
             . '</div>';
     }
 

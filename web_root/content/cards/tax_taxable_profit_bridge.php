@@ -23,8 +23,8 @@ final class _tax_taxable_profit_bridgeCard extends CardBaseFramework
             ];
         }
         return \eel_accounts\Renderer\TaxCardRenderer::header('company_tax_returns', [
-            'bim35201' => 'HMRC BIM35201: depreciation',
-            'ctm01405' => 'HMRC CTM01405: apportionment',
+            'bim35201' => 'HMRC - BIM35201: Depreciation',
+            'ctm01405' => 'HMRC - CTM01405: Apportionment',
         ])
             . \eel_accounts\Renderer\TaxCardRenderer::table(['Step', 'Amount'], $rows, 'No taxable profit bridge is available.');
     }

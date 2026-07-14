@@ -45,9 +45,20 @@ final class TaxCardRenderer
         return \HelperFramework::escape((string)($tax['selected_ct_period_helper'] ?? ''));
     }
 
-    public static function guidanceLink(string $key, string $label = 'His Majesty\'s Revenue and Customs (HMRC) guidance'): string
+    public static function guidanceLink(string $key, ?string $label = null): string
     {
         $url = \eel_accounts\Service\TaxGuidanceService::url($key);
+        $label ??= match ($key) {
+            'corporation_tax' => 'HMRC - Corporation Tax Rates and Allowances',
+            'company_tax_returns' => 'HMRC - Company Tax Returns',
+            'capital_allowances' => 'HMRC - Capital Allowances',
+            'aia' => 'HMRC - Annual Investment Allowance',
+            'wda' => 'HMRC - Work Out Capital Allowances',
+            'business_cars' => 'HMRC - Capital Allowances for Business Cars',
+            'losses' => 'HMRC - Corporation Tax: Calculating and Claiming a Loss',
+            'marginal_relief' => 'HMRC - Corporation Tax Marginal Relief',
+            default => 'HMRC - Guidance',
+        };
 
         return '<a class="button button-inline" href="' . \HelperFramework::escape($url) . '" target="_blank" rel="noopener noreferrer">'
             . \HelperFramework::escape($label)

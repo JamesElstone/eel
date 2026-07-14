@@ -70,6 +70,14 @@ $harness->run(\eel_accounts\Service\ProfitLossService::class, static function (G
             $harness->assertSame('800.00', number_format((float)($summary['profit_before_tax'] ?? 0), 2, '.', ''));
             $harness->assertSame('610.00', number_format((float)($summary['profit_after_posted_tax'] ?? 0), 2, '.', ''));
 
+            $ctReconciliation = $service->getCtPeriodProfitReconciliation($companyId, $periodId);
+            $harness->assertSame(true, (bool)($ctReconciliation['available'] ?? false));
+            $harness->assertSame(1, count((array)($ctReconciliation['ct_periods'] ?? [])));
+            $harness->assertSame('2025-01-01', (string)($ctReconciliation['ct_periods'][0]['period_start'] ?? ''));
+            $harness->assertSame('2025-12-31', (string)($ctReconciliation['ct_periods'][0]['period_end'] ?? ''));
+            $harness->assertSame('800.00', number_format((float)($ctReconciliation['ct_periods'][0]['profit_before_tax'] ?? 0), 2, '.', ''));
+            $harness->assertSame('0.00', number_format((float)($ctReconciliation['reconciliation_difference'] ?? 0), 2, '.', ''));
+
             $breakdown = $service->getProfitLossBreakdown($companyId, $periodId);
             $harness->assertSame(1, count((array)($breakdown['expense'] ?? [])));
             $harness->assertSame(1, count((array)($breakdown['tax_charge'] ?? [])));
@@ -86,6 +94,77 @@ $harness->run(\eel_accounts\Service\ProfitLossService::class, static function (G
             $trend = $service->getMonthlyProfitLossTrend($companyId, $periodId);
             $december = array_values(array_filter($trend, static fn(array $row): bool => (string)($row['month_start'] ?? '') === '2025-12-01'))[0] ?? [];
             $harness->assertSame('190.00', number_format((float)($december['corporation_tax_expense_total'] ?? 0), 2, '.', ''));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
+    $harness->check(\eel_accounts\Service\ProfitLossService::class, 'reconciles a long accounting period across two CT periods', static function () use ($harness, $service): void {
+        foreach (['companies', 'accounting_periods', 'nominal_accounts', 'journals', 'journal_lines', 'corporation_tax_periods'] as $table) {
+            if (!InterfaceDB::tableExists($table)) {
+                $harness->skip($table . ' table is not available.');
+            }
+        }
+
+        InterfaceDB::beginTransaction();
+        try {
+            $bankNominalId = profitLossTestEnsureNominal('1000', 'Bank', 'asset', 'allowable');
+            $incomeNominalId = profitLossTestEnsureNominal('4000', 'Sales', 'income', 'allowable');
+            $expenseNominalId = profitLossTestEnsureNominal('6090', 'Sundry Expenses', 'expense', 'allowable');
+            $marker = substr(hash('sha256', __FILE__ . microtime(true) . random_int(1, PHP_INT_MAX)), 0, 10);
+
+            InterfaceDB::prepareExecute(
+                'INSERT INTO companies (company_name, company_number, is_active)
+                 VALUES (:company_name, :company_number, 1)',
+                ['company_name' => 'Long P and L Fixture ' . $marker, 'company_number' => 'LP' . $marker]
+            );
+            $companyId = (int)InterfaceDB::fetchColumn('SELECT id FROM companies WHERE company_number = :company_number', ['company_number' => 'LP' . $marker]);
+            InterfaceDB::prepareExecute(
+                'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
+                 VALUES (:company_id, :label, :period_start, :period_end)',
+                [
+                    'company_id' => $companyId,
+                    'label' => 'Long P and L period',
+                    'period_start' => '2023-01-01',
+                    'period_end' => '2024-01-31',
+                ]
+            );
+            $periodId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM accounting_periods WHERE company_id = :company_id ORDER BY id DESC LIMIT 1',
+                ['company_id' => $companyId]
+            );
+            (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $periodId);
+
+            profitLossTestJournal($companyId, $periodId, '2023-06-30', 'First CT period income', [
+                [$bankNominalId, 500.00, 0.00],
+                [$incomeNominalId, 0.00, 500.00],
+            ]);
+            profitLossTestJournal($companyId, $periodId, '2023-07-31', 'First CT period expense', [
+                [$expenseNominalId, 400.00, 0.00],
+                [$bankNominalId, 0.00, 400.00],
+            ]);
+            profitLossTestJournal($companyId, $periodId, '2024-01-15', 'Second CT period expense', [
+                [$expenseNominalId, 20.00, 0.00],
+                [$bankNominalId, 0.00, 20.00],
+            ]);
+
+            $reconciliation = $service->getCtPeriodProfitReconciliation($companyId, $periodId);
+            $ctPeriods = (array)($reconciliation['ct_periods'] ?? []);
+            $harness->assertSame(true, (bool)($reconciliation['available'] ?? false));
+            $harness->assertSame(2, count($ctPeriods));
+            $harness->assertSame('CT Period 1', (string)($ctPeriods[0]['display_label'] ?? ''));
+            $harness->assertSame('2023-01-01', (string)($ctPeriods[0]['period_start'] ?? ''));
+            $harness->assertSame('2023-12-31', (string)($ctPeriods[0]['period_end'] ?? ''));
+            $harness->assertSame('100.00', number_format((float)($ctPeriods[0]['profit_before_tax'] ?? 0), 2, '.', ''));
+            $harness->assertSame('CT Period 2', (string)($ctPeriods[1]['display_label'] ?? ''));
+            $harness->assertSame('2024-01-01', (string)($ctPeriods[1]['period_start'] ?? ''));
+            $harness->assertSame('2024-01-31', (string)($ctPeriods[1]['period_end'] ?? ''));
+            $harness->assertSame('-20.00', number_format((float)($ctPeriods[1]['profit_before_tax'] ?? 0), 2, '.', ''));
+            $harness->assertSame('80.00', number_format((float)($reconciliation['accounting_period_profit_before_tax'] ?? 0), 2, '.', ''));
+            $harness->assertSame('80.00', number_format((float)($reconciliation['ct_period_profit_total'] ?? 0), 2, '.', ''));
+            $harness->assertSame('0.00', number_format((float)($reconciliation['reconciliation_difference'] ?? 0), 2, '.', ''));
         } finally {
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();

@@ -28,8 +28,26 @@ $harness->run(_pl_summaryCard::class, static function (GeneratedServiceClassTest
                 'cost_of_sales_total' => 300,
                 'gross_profit' => 900,
                 'expense_total' => 200,
+                'profit_before_tax' => 700,
                 'net_profit' => 700,
                 'profit_margin_percent' => 58.3,
+            ],
+            'ct_period_reconciliation' => [
+                'available' => true,
+                'ct_periods' => [
+                    [
+                        'display_label' => 'CT Period 1',
+                        'period_start' => '2022-09-05',
+                        'period_end' => '2023-09-04',
+                        'profit_before_tax' => 720,
+                    ],
+                    [
+                        'display_label' => 'CT Period 2',
+                        'period_start' => '2023-09-05',
+                        'period_end' => '2023-09-30',
+                        'profit_before_tax' => -20,
+                    ],
+                ],
             ],
             'health' => [
                 'available' => true,
@@ -131,6 +149,32 @@ $harness->run(_pl_summaryCard::class, static function (GeneratedServiceClassTest
             ],
         ],
     ]);
+    $singlePeriodHtml = $card->render([
+        'company' => [
+            'settings' => [
+                'default_currency_symbol' => '&#36;',
+            ],
+        ],
+        'profit_loss' => [
+            'summary' => [
+                'available' => true,
+                'has_journals' => true,
+                'profit_before_tax' => 100,
+                'net_profit' => 100,
+                'profit_margin_percent' => 10,
+            ],
+            'ct_period_reconciliation' => [
+                'available' => true,
+                'ct_periods' => [[
+                    'display_label' => 'CT Period 1',
+                    'period_start' => '2024-10-01',
+                    'period_end' => '2025-09-30',
+                    'profit_before_tax' => 100,
+                ]],
+            ],
+            'breakdown' => [],
+        ],
+    ]);
 
     $lossHtml = $card->render([
         'profit_loss' => [
@@ -185,12 +229,36 @@ $harness->run(_pl_summaryCard::class, static function (GeneratedServiceClassTest
         $harness->assertSame(false, str_contains($html, '<div class="summary-label">Result</div>'));
         $harness->assertSame(false, str_contains($html, 'class="badge'));
         $harness->assertSame(false, str_contains($html, 'panel-soft'));
-        $harness->assertTrue(str_contains($html, 'Net profit / loss'));
+        $harness->assertTrue(str_contains($html, 'P&amp;L for CT Period 1'));
+        $harness->assertTrue(str_contains($html, 'P&amp;L for CT Period 2'));
+        $harness->assertTrue(str_contains($html, '05/09/2022 to 04/09/2023'));
+        $harness->assertTrue(str_contains($html, '05/09/2023 to 30/09/2023'));
+        $harness->assertTrue(str_contains($html, '$ -20.00'));
+        $harness->assertSame(1, substr_count($html, '<div class="summary-label">Profit before tax</div>'));
+        $harness->assertSame(1, substr_count($html, '<div class="summary-label">Profit margin</div>'));
+        $headlineGridPosition = strpos($html, '<div class="summary-grid four">');
+        $profitBeforeTaxPosition = strpos($html, '<div class="summary-label">Profit before tax</div>');
+        $profitMarginPosition = strpos($html, '<div class="summary-label">Profit margin</div>');
+        $incomePosition = strpos($html, '<div class="summary-label">Income</div>');
+        $harness->assertTrue($headlineGridPosition !== false);
+        $harness->assertTrue($profitBeforeTaxPosition !== false && $headlineGridPosition < $profitBeforeTaxPosition);
+        $harness->assertTrue($profitMarginPosition !== false && $profitBeforeTaxPosition < $profitMarginPosition);
+        $harness->assertTrue($incomePosition !== false && $profitMarginPosition < $incomePosition);
         $harness->assertTrue(str_contains($html, '<div class="summary-label">Income</div><div class="summary-value">$ 1,200.00</div>'));
-        $harness->assertTrue(str_contains($html, '<div class="summary-label">Net profit / loss</div><div class="summary-value">$ 700.00</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">Profit before tax</div><div class="summary-value">$ 700.00</div>'));
         $harness->assertTrue(str_contains($html, 'Missing months'));
         $harness->assertTrue(str_contains($html, 'Uncategorised transactions'));
         $harness->assertSame(false, str_contains($html, 'Books health score'));
+    });
+
+    $harness->check(_pl_summaryCard::class, 'renders dynamic CT-period headline cards even without Sankey data', static function () use ($harness, $singlePeriodHtml): void {
+        $harness->assertTrue(str_contains($singlePeriodHtml, '<div class="pl-summary-income-flow">'));
+        $harness->assertTrue(str_contains($singlePeriodHtml, 'No incoming or outgoing nominal flow is available for the selected period.'));
+        $harness->assertTrue(str_contains($singlePeriodHtml, 'P&amp;L for CT Period 1'));
+        $harness->assertTrue(str_contains($singlePeriodHtml, '01/10/2024 to 30/09/2025'));
+        $harness->assertTrue(str_contains($singlePeriodHtml, '<div class="summary-label">Profit before tax</div><div class="summary-value">$ 100.00</div>'));
+        $harness->assertTrue(str_contains($singlePeriodHtml, '<div class="summary-label">Profit margin</div><div class="summary-value">10.0%</div>'));
+        $harness->assertSame(false, str_contains($singlePeriodHtml, 'summary-grid four'));
     });
 
     $harness->check(_pl_summaryCard::class, 'renders income flow Sankey chart next to profitability', static function () use ($harness, $html): void {

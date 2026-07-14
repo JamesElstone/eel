@@ -504,6 +504,69 @@ final class ProfitLossService
         ];
     }
 
+    public function getCtPeriodProfitReconciliation(int $companyId, int $accountingPeriodId): array
+    {
+        $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null) {
+            return [
+                'available' => false,
+                'errors' => ['Select a company and accounting period before reviewing CT-period profit.'],
+                'ct_periods' => [],
+            ];
+        }
+
+        try {
+            $periods = $this->activeCtPeriods($companyId, $accountingPeriodId, $accountingPeriod);
+            $rows = [];
+            $ctPeriodProfitTotal = 0.0;
+            foreach ($periods as $period) {
+                $totals = $this->preTaxService->calculate(
+                    $companyId,
+                    $accountingPeriodId,
+                    (string)$period['period_end'],
+                    (string)$period['period_start']
+                );
+                $profitBeforeTax = round((float)($totals['profit_before_tax'] ?? 0), 2);
+                $ctPeriodProfitTotal = round($ctPeriodProfitTotal + $profitBeforeTax, 2);
+                $rows[] = [
+                    'ct_period_id' => (int)($period['id'] ?? 0),
+                    'sequence_no' => (int)($period['sequence_no'] ?? 0),
+                    'display_sequence_no' => (int)($period['display_sequence_no'] ?? ($period['sequence_no'] ?? 0)),
+                    'display_label' => (string)($period['display_label'] ?? ('CT Period ' . (int)($period['sequence_no'] ?? 0))),
+                    'period_start' => (string)$period['period_start'],
+                    'period_end' => (string)$period['period_end'],
+                    'profit_before_tax' => $profitBeforeTax,
+                ];
+            }
+
+            $accountingPeriodTotals = $this->preTaxService->calculate(
+                $companyId,
+                $accountingPeriodId,
+                (string)$accountingPeriod['period_end'],
+                (string)$accountingPeriod['period_start']
+            );
+            $accountingPeriodProfit = round((float)($accountingPeriodTotals['profit_before_tax'] ?? 0), 2);
+
+            return [
+                'available' => true,
+                'errors' => [],
+                'accounting_period_id' => $accountingPeriodId,
+                'accounting_period_start' => (string)$accountingPeriod['period_start'],
+                'accounting_period_end' => (string)$accountingPeriod['period_end'],
+                'accounting_period_profit_before_tax' => $accountingPeriodProfit,
+                'ct_period_profit_total' => $ctPeriodProfitTotal,
+                'reconciliation_difference' => round($accountingPeriodProfit - $ctPeriodProfitTotal, 2),
+                'ct_periods' => $rows,
+            ];
+        } catch (\Throwable $exception) {
+            return [
+                'available' => false,
+                'errors' => [$exception->getMessage()],
+                'ct_periods' => [],
+            ];
+        }
+    }
+
     private function emptySummary(string $error): array
     {
         return [
@@ -540,6 +603,60 @@ final class ProfitLossService
         }
 
         return (new \eel_accounts\Repository\AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId);
+    }
+
+    private function activeCtPeriods(int $companyId, int $accountingPeriodId, array $accountingPeriod): array
+    {
+        $periods = [];
+        $hasCtPeriodTable = \InterfaceDB::tableExists('corporation_tax_periods');
+        if ($hasCtPeriodTable) {
+            $periods = \InterfaceDB::fetchAll(
+                'SELECT id, accounting_period_id, sequence_no, period_start, period_end, status
+                 FROM corporation_tax_periods
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id
+                   AND status <> :superseded_status
+                 ORDER BY sequence_no ASC, id ASC',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'superseded_status' => 'superseded',
+                ]
+            ) ?: [];
+        }
+
+        if ($periods === []) {
+            $derivedPeriods = (new TaxPeriodService())->derive(
+                (string)$accountingPeriod['period_start'],
+                (string)$accountingPeriod['period_end'],
+                $companyId
+            );
+            $periods = array_map(
+                static fn(array $period, int $index): array => [
+                    'id' => 0,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'sequence_no' => $index + 1,
+                    'period_start' => (string)$period['start'],
+                    'period_end' => (string)$period['end'],
+                    'status' => 'derived',
+                ],
+                $derivedPeriods,
+                array_keys($derivedPeriods)
+            );
+        }
+
+        $ctPeriodService = $hasCtPeriodTable ? new CorporationTaxPeriodService() : null;
+        foreach ($periods as &$period) {
+            $sequenceNo = (int)($period['sequence_no'] ?? 0);
+            $displaySequenceNo = $ctPeriodService !== null
+                ? $ctPeriodService->displaySequenceNo($companyId, $accountingPeriodId, $sequenceNo)
+                : $sequenceNo;
+            $period['display_sequence_no'] = $displaySequenceNo;
+            $period['display_label'] = 'CT Period ' . $displaySequenceNo;
+        }
+        unset($period);
+
+        return $periods;
     }
 
     private function corporationTaxProvisionPosition(int $companyId, int $accountingPeriodId, PreTaxProfitLossService $preTaxService, array $accountingPeriod, string $effectiveEnd, array $preTax): array

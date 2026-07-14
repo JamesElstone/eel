@@ -89,6 +89,7 @@ final class _profit_loss extends PageContextFramework
         return [
             'profit_loss' => [
                 'summary' => $profitLossService->getProfitLossSummary($companyId, $accountingPeriodId),
+                'ct_period_reconciliation' => $profitLossService->getCtPeriodProfitReconciliation($companyId, $accountingPeriodId),
                 'breakdown' => $profitLossService->getProfitLossBreakdown($companyId, $accountingPeriodId),
                 'monthly_trend' => $profitLossService->getMonthlyProfitLossTrend($companyId, $accountingPeriodId),
                 'health' => $profitLossService->getProfitLossHealth($companyId, $accountingPeriodId),

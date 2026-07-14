@@ -27,6 +27,7 @@ final class _pl_summaryCard extends CardBaseFramework
         $hasTransactions = !empty($summary['has_transactions']);
         $netProfit = (float)($summary['profit_after_estimated_tax'] ?? ($summary['net_profit'] ?? 0));
         $chart = $this->incomeFlowChart((array)($context['profit_loss']['breakdown'] ?? []), $companySettings);
+        $headlineMetrics = $this->headlineMetrics($context, $summary, $companySettings);
         $notice = '';
         if (!$hasJournals && $hasTransactions) {
             $notice = '<div class="helper">Transactions exist but no posted journals were found for this period.</div>';
@@ -36,7 +37,10 @@ final class _pl_summaryCard extends CardBaseFramework
         return '<div class="settings-stack">
             <div class="pl-summary-topline">
                 <div class="summary-card summary-card-fit"><div class="summary-label">Profitability</div><div class="summary-value ' . HelperFramework::escape($this->resultClass($netProfit)) . '">' . HelperFramework::escape($this->resultLabel($netProfit)) . '</div></div>
-                ' . ($chart !== '' ? '<div class="pl-summary-income-flow">' . $chart . '</div>' : '<div class="helper">No incoming or outgoing nominal flow is available for the selected period.</div>') . '
+                <div class="pl-summary-income-flow">
+                    ' . ($chart !== '' ? $chart : '<div class="helper">No incoming or outgoing nominal flow is available for the selected period.</div>') . '
+                    ' . $headlineMetrics . '
+                </div>
             </div>
             ' . $notice . '
             <div class="summary-grid">
@@ -45,15 +49,52 @@ final class _pl_summaryCard extends CardBaseFramework
                 ' . $this->summaryCard('Gross profit', $summary['gross_profit'] ?? 0, $companySettings) . '
                 ' . $this->summaryCard('Operating expenses', $summary['operating_expense_total'] ?? ($summary['expense_total'] ?? 0), $companySettings) . '
                 ' . $this->summaryCard('Depreciation preview', $summary['depreciation_expense'] ?? 0, $companySettings) . '
-                ' . $this->summaryCard('Profit before tax', $summary['profit_before_tax'] ?? ($summary['net_profit'] ?? 0), $companySettings) . '
                 ' . $this->summaryCard('Posted CT charge', $summary['posted_corporation_tax_charge'] ?? 0, $companySettings) . '
                 ' . $this->summaryCard('Estimated CT', $summary['estimated_corporation_tax'] ?? 0, $companySettings) . '
                 ' . $this->summaryCard('Unposted CT adjustment', $summary['unposted_corporation_tax_adjustment'] ?? 0, $companySettings) . '
                 ' . $this->summaryCard('Profit after estimated tax', $summary['profit_after_estimated_tax'] ?? ($summary['net_profit'] ?? 0), $companySettings) . '
-                <div class="summary-card"><div class="summary-label">Profit margin</div><div class="summary-value">' . HelperFramework::escape(number_format((float)($summary['profit_margin_percent'] ?? 0), 1)) . '%</div></div>
             </div>
             ' . $this->healthMetrics($context) . '
         </div>';
+    }
+
+    private function headlineMetrics(array $context, array $summary, array $companySettings): string
+    {
+        $reconciliation = (array)($context['profit_loss']['ct_period_reconciliation'] ?? []);
+        $ctPeriods = !empty($reconciliation['available'])
+            ? array_values((array)($reconciliation['ct_periods'] ?? []))
+            : [];
+        $gridClass = count($ctPeriods) === 2 ? 'summary-grid four' : 'summary-grid';
+        $cards = '';
+        foreach ($ctPeriods as $period) {
+            if (!is_array($period)) {
+                continue;
+            }
+            $label = 'P&amp;L for ' . HelperFramework::escape((string)($period['display_label'] ?? 'CT Period'));
+            $dates = $this->periodLabel((string)($period['period_start'] ?? ''), (string)($period['period_end'] ?? ''));
+            $cards .= '<div class="summary-card"><div class="summary-label">' . $label . '</div><div class="summary-value">'
+                . HelperFramework::escape($this->money($companySettings, $period['profit_before_tax'] ?? 0))
+                . '</div><div class="helper">' . HelperFramework::escape($dates) . '</div></div>';
+        }
+        $cards .= $this->summaryCard('Profit before tax', $summary['profit_before_tax'] ?? ($summary['net_profit'] ?? 0), $companySettings);
+        $cards .= '<div class="summary-card"><div class="summary-label">Profit margin</div><div class="summary-value">'
+            . HelperFramework::escape(number_format((float)($summary['profit_margin_percent'] ?? 0), 1))
+            . '%</div></div>';
+
+        return '<div class="' . $gridClass . '">' . $cards . '</div>';
+    }
+
+    private function periodLabel(string $periodStart, string $periodEnd): string
+    {
+        if ($periodStart === '' || $periodEnd === '') {
+            return '';
+        }
+
+        try {
+            return HelperFramework::accountingPeriodLabel($periodStart, $periodEnd);
+        } catch (Throwable) {
+            return $periodStart . ' to ' . $periodEnd;
+        }
     }
 
     private function incomeFlowChart(array $breakdown, array $companySettings): string

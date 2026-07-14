@@ -975,6 +975,10 @@
   gap: 16px;
 }
 
+.vat-turnover-monitoring-chart-grid {
+  padding-bottom: 12px;
+}
+
 .chart-panel {
   min-width: 0;
   border: 1px solid var(--line);

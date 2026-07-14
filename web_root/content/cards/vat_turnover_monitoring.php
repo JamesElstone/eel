@@ -121,7 +121,7 @@ final class _vat_turnover_monitoringCard extends CardBaseFramework
             . $this->summary('Threshold used', ($monitoring['threshold_percentage_used'] ?? null) === null ? 'Unavailable' : number_format((float)$monitoring['threshold_percentage_used'], 1) . '%')
             . $this->summary('Headroom', $headroomText)
             . '</div>'
-            . '<div class="chart-demo-grid">'
+            . '<div class="chart-demo-grid vat-turnover-monitoring-chart-grid">'
             . '<div class="chart-panel"><h4 class="card-title">Monthly Gross Income</h4>' . $monthlyChart . '</div>'
             . '<div class="chart-panel"><h4 class="card-title">VAT Threshold Monitor</h4>' . $rollingChart
             . ($singlePointComparison

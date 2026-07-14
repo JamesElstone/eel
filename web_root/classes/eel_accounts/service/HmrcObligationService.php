@@ -242,6 +242,7 @@ final class HmrcObligationService
         \InterfaceDB::prepareExecute(
             'UPDATE hmrc_obligations
              SET amount_paid = :amount_paid,
+                 legacy_unlinked_amount = :legacy_amount_paid,
                  status = :status,
                  source = :source,
                  source_reference = :source_reference,
@@ -250,6 +251,7 @@ final class HmrcObligationService
              WHERE id = :id',
             [
                 'amount_paid' => number_format($amountPaid, 2, '.', ''),
+                'legacy_amount_paid' => number_format($amountPaid, 2, '.', ''),
                 'status' => $status,
                 'source' => 'manual',
                 'source_reference' => trim($sourceReference) !== '' ? trim($sourceReference) : null,
@@ -264,6 +266,100 @@ final class HmrcObligationService
         }
 
         return ['success' => true, 'errors' => [], 'warnings' => $warnings];
+    }
+
+    public function linkPaymentEvidence(int $companyId, int $obligationId, string $sourceType, int $sourceId, float $allocatedAmount): array
+    {
+        $this->ensureSchema();
+        $obligation = $this->rawObligation($obligationId, $companyId);
+        if ($obligation === null) {
+            return ['success' => false, 'errors' => ['The HMRC obligation could not be found for this company.']];
+        }
+        (new AccountingPeriodAccessService())->assertDataEntryPermitted(
+            $companyId,
+            (int)$obligation['accounting_period_id'],
+            'link HMRC payment evidence'
+        );
+        $sourceType = strtolower(trim($sourceType));
+        if (!in_array($sourceType, ['transaction', 'expense_claim_line'], true) || $sourceId <= 0) {
+            return ['success' => false, 'errors' => ['Select a transaction or expense claim line as payment evidence.']];
+        }
+        $allocatedAmount = round($allocatedAmount, 2);
+        if ($allocatedAmount <= 0) {
+            return ['success' => false, 'errors' => ['The allocated payment amount must be greater than zero.']];
+        }
+
+        $source = $this->paymentEvidenceSource($companyId, $sourceType, $sourceId);
+        if ($source === null || empty($source['is_active'])) {
+            return ['success' => false, 'errors' => ['The selected payment evidence is unavailable or does not belong to this company.']];
+        }
+        $existingAllocation = (float)\InterfaceDB::fetchColumn(
+            'SELECT COALESCE(SUM(allocated_amount), 0)
+             FROM hmrc_obligation_evidence_links
+             WHERE ' . ($sourceType === 'transaction' ? 'transaction_id' : 'expense_claim_line_id') . ' = :source_id
+               AND NOT (hmrc_obligation_id = :obligation_id)',
+            ['source_id' => $sourceId, 'obligation_id' => $obligationId]
+        );
+        if ($existingAllocation + $allocatedAmount > (float)$source['amount'] + 0.004) {
+            return ['success' => false, 'errors' => ['The allocation exceeds the unallocated amount available from this evidence source.']];
+        }
+
+        $transactionId = $sourceType === 'transaction' ? $sourceId : null;
+        $expenseLineId = $sourceType === 'expense_claim_line' ? $sourceId : null;
+        $existing = \InterfaceDB::fetchOne(
+            'SELECT id FROM hmrc_obligation_evidence_links
+             WHERE hmrc_obligation_id = :obligation_id
+               AND ' . ($sourceType === 'transaction' ? 'transaction_id' : 'expense_claim_line_id') . ' = :source_id LIMIT 1',
+            ['obligation_id' => $obligationId, 'source_id' => $sourceId]
+        );
+        if (is_array($existing)) {
+            \InterfaceDB::prepareExecute(
+                'UPDATE hmrc_obligation_evidence_links SET allocated_amount = :amount WHERE id = :id',
+                ['amount' => number_format($allocatedAmount, 2, '.', ''), 'id' => (int)$existing['id']]
+            );
+        } else {
+            \InterfaceDB::prepareExecute(
+                'INSERT INTO hmrc_obligation_evidence_links
+                    (hmrc_obligation_id, transaction_id, expense_claim_line_id, allocated_amount)
+                 VALUES (:obligation_id, :transaction_id, :expense_line_id, :amount)',
+                ['obligation_id' => $obligationId, 'transaction_id' => $transactionId, 'expense_line_id' => $expenseLineId, 'amount' => number_format($allocatedAmount, 2, '.', '')]
+            );
+        }
+        $this->recalculatePaymentState($obligationId);
+
+        return ['success' => true, 'errors' => []];
+    }
+
+    public function unlinkPaymentEvidence(int $companyId, int $obligationId, int $evidenceLinkId): array
+    {
+        $this->ensureSchema();
+        $obligation = $this->rawObligation($obligationId, $companyId);
+        if ($obligation === null) {
+            return ['success' => false, 'errors' => ['The HMRC obligation could not be found for this company.']];
+        }
+        (new AccountingPeriodAccessService())->assertDataEntryPermitted($companyId, (int)$obligation['accounting_period_id'], 'unlink HMRC payment evidence');
+        \InterfaceDB::prepareExecute(
+            'DELETE FROM hmrc_obligation_evidence_links WHERE id = :id AND hmrc_obligation_id = :obligation_id',
+            ['id' => $evidenceLinkId, 'obligation_id' => $obligationId]
+        );
+        $this->recalculatePaymentState($obligationId);
+
+        return ['success' => true, 'errors' => []];
+    }
+
+    public function defaultEvidenceAllocation(int $companyId, string $sourceType, int $sourceId): float
+    {
+        $source = $this->paymentEvidenceSource($companyId, $sourceType, $sourceId);
+        if ($source === null) {
+            return 0.0;
+        }
+        $column = $sourceType === 'transaction' ? 'transaction_id' : 'expense_claim_line_id';
+        $used = (float)\InterfaceDB::fetchColumn(
+            'SELECT COALESCE(SUM(allocated_amount), 0) FROM hmrc_obligation_evidence_links WHERE ' . $column . ' = :source_id',
+            ['source_id' => $sourceId]
+        );
+
+        return max(0.0, round((float)$source['amount'] - $used, 2));
     }
 
     public function createManualObligation(array $input): array
@@ -622,6 +718,11 @@ final class HmrcObligationService
                     ['penalty_type' => 'hmrc_penalty', 'interest_type' => 'hmrc_interest']
                 );
             }
+            if (!\InterfaceDB::columnExists('hmrc_obligations', 'legacy_unlinked_amount')) {
+                \InterfaceDB::prepareExecute('ALTER TABLE hmrc_obligations ADD COLUMN legacy_unlinked_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER amount_paid');
+                \InterfaceDB::prepareExecute('UPDATE hmrc_obligations SET legacy_unlinked_amount = amount_paid WHERE amount_paid > 0');
+            }
+            $this->ensureEvidenceSchema();
             return;
         }
 
@@ -637,6 +738,7 @@ final class HmrcObligationService
                 due_date DATE NOT NULL,
                 amount_due DECIMAL(12,2) NULL,
                 amount_paid DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+                legacy_unlinked_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
                 status ENUM('not_started','in_progress','ready','filed','paid','part_paid','overdue','cancelled','not_applicable') NOT NULL DEFAULT 'not_started',
                 source ENUM('calculated','manual','hmrc_notice','journal','bank_match') NOT NULL DEFAULT 'calculated',
                 source_reference VARCHAR(255) NULL,
@@ -755,6 +857,32 @@ final class HmrcObligationService
             'Posted from HMRC obligation #' . (int)$obligation['id'] . '. Later bank payments should clear nominal 2210, not the expense nominal.',
             'web_app'
         );
+        $this->ensureEvidenceSchema();
+    }
+
+    private function ensureEvidenceSchema(): void
+    {
+        if (\InterfaceDB::tableExists('hmrc_obligation_evidence_links')) {
+            return;
+        }
+        \InterfaceDB::prepareExecute(
+            'CREATE TABLE IF NOT EXISTS hmrc_obligation_evidence_links (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                hmrc_obligation_id INT NOT NULL,
+                transaction_id BIGINT NULL,
+                expense_claim_line_id BIGINT NULL,
+                allocated_amount DECIMAL(12,2) NOT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_hmrc_evidence_obligation_transaction (hmrc_obligation_id, transaction_id),
+                UNIQUE KEY uq_hmrc_evidence_obligation_expense (hmrc_obligation_id, expense_claim_line_id),
+                KEY idx_hmrc_evidence_transaction (transaction_id),
+                KEY idx_hmrc_evidence_expense (expense_claim_line_id),
+                CONSTRAINT fk_hmrc_evidence_obligation FOREIGN KEY (hmrc_obligation_id) REFERENCES hmrc_obligations(id) ON DELETE CASCADE ON UPDATE CASCADE,
+                CONSTRAINT fk_hmrc_evidence_transaction FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON UPDATE CASCADE,
+                CONSTRAINT fk_hmrc_evidence_expense FOREIGN KEY (expense_claim_line_id) REFERENCES expense_claim_lines(id) ON UPDATE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+        );
     }
 
     private function nominalId(array $codes, string $accountType): int
@@ -811,8 +939,97 @@ final class HmrcObligationService
         $row['days_delta'] = $this->daysDelta((string)$row['due_date'], $today);
         $row['action_needed'] = $this->actionNeeded($row);
         $row['companies_house'] = $this->companiesHouseStatus((int)$row['company_id'], (string)$row['period_end']);
+        $row['legacy_unlinked_amount'] = round((float)($row['legacy_unlinked_amount'] ?? 0), 2);
+        $row['evidence_links'] = $this->evidenceLinks((int)$row['id']);
+        $row['evidence_candidates'] = $type === 'ct600_filing' ? [] : $this->evidenceCandidates((int)$row['company_id']);
 
         return $row;
+    }
+
+    private function paymentEvidenceSource(int $companyId, string $sourceType, int $sourceId): ?array
+    {
+        if ($sourceType === 'transaction') {
+            $row = \InterfaceDB::fetchOne(
+                'SELECT id, ABS(amount) AS amount, txn_date AS evidence_date, description, reference,
+                        CASE WHEN category_status <> :error_status THEN 1 ELSE 0 END AS is_active
+                 FROM transactions WHERE id = :id AND company_id = :company_id LIMIT 1',
+                ['error_status' => 'error', 'id' => $sourceId, 'company_id' => $companyId]
+            );
+        } elseif ($sourceType === 'expense_claim_line') {
+            $row = \InterfaceDB::fetchOne(
+                'SELECT l.id, ABS(l.amount) AS amount, l.expense_date AS evidence_date, l.description, c.claim_reference_code AS reference,
+                        CASE WHEN COALESCE(c.status, \'\') <> :void_status THEN 1 ELSE 0 END AS is_active
+                 FROM expense_claim_lines l
+                 INNER JOIN expense_claims c ON c.id = l.expense_claim_id
+                 WHERE l.id = :id AND c.company_id = :company_id LIMIT 1',
+                ['void_status' => 'void', 'id' => $sourceId, 'company_id' => $companyId]
+            );
+        } else {
+            return null;
+        }
+
+        return is_array($row) ? $row : null;
+    }
+
+    private function evidenceCandidates(int $companyId): array
+    {
+        $rows = [];
+        foreach (\InterfaceDB::fetchAll(
+            'SELECT id, txn_date AS evidence_date, description, reference, ABS(amount) AS amount
+             FROM transactions WHERE company_id = :company_id AND amount <> 0 ORDER BY txn_date DESC, id DESC LIMIT 250',
+            ['company_id' => $companyId]
+        ) as $row) {
+            $rows[] = (array)$row + ['source_type' => 'transaction', 'source_label' => 'Transaction'];
+        }
+        foreach (\InterfaceDB::fetchAll(
+            'SELECT l.id, l.expense_date AS evidence_date, l.description, c.claim_reference_code AS reference, ABS(l.amount) AS amount
+             FROM expense_claim_lines l INNER JOIN expense_claims c ON c.id = l.expense_claim_id
+             WHERE c.company_id = :company_id ORDER BY l.expense_date DESC, l.id DESC LIMIT 250',
+            ['company_id' => $companyId]
+        ) as $row) {
+            $rows[] = (array)$row + ['source_type' => 'expense_claim_line', 'source_label' => 'Expense'];
+        }
+
+        return $rows;
+    }
+
+    private function evidenceLinks(int $obligationId): array
+    {
+        if ($obligationId <= 0 || !\InterfaceDB::tableExists('hmrc_obligation_evidence_links')) {
+            return [];
+        }
+        return \InterfaceDB::fetchAll(
+            'SELECT el.*,
+                    CASE WHEN el.transaction_id IS NOT NULL THEN \'transaction\' ELSE \'expense_claim_line\' END AS source_type,
+                    COALESCE(t.txn_date, l.expense_date) AS evidence_date,
+                    COALESCE(t.description, l.description, \'\') AS description,
+                    COALESCE(t.reference, c.claim_reference_code, \'\') AS reference
+             FROM hmrc_obligation_evidence_links el
+             LEFT JOIN transactions t ON t.id = el.transaction_id
+             LEFT JOIN expense_claim_lines l ON l.id = el.expense_claim_line_id
+             LEFT JOIN expense_claims c ON c.id = l.expense_claim_id
+             WHERE el.hmrc_obligation_id = :obligation_id ORDER BY el.id',
+            ['obligation_id' => $obligationId]
+        );
+    }
+
+    private function recalculatePaymentState(int $obligationId): void
+    {
+        $row = \InterfaceDB::fetchOne('SELECT amount_due, legacy_unlinked_amount FROM hmrc_obligations WHERE id = :id LIMIT 1', ['id' => $obligationId]);
+        if (!is_array($row)) {
+            return;
+        }
+        $linked = (float)\InterfaceDB::fetchColumn(
+            'SELECT COALESCE(SUM(allocated_amount), 0) FROM hmrc_obligation_evidence_links WHERE hmrc_obligation_id = :id',
+            ['id' => $obligationId]
+        );
+        $paid = round((float)($row['legacy_unlinked_amount'] ?? 0) + $linked, 2);
+        $due = $row['amount_due'] !== null ? (float)$row['amount_due'] : null;
+        $status = $paid <= 0 ? 'not_started' : ($due !== null && $paid + 0.004 >= $due ? 'paid' : 'part_paid');
+        \InterfaceDB::prepareExecute(
+            'UPDATE hmrc_obligations SET amount_paid = :paid, status = :status, source = :source, checked_at = CURRENT_TIMESTAMP WHERE id = :id',
+            ['paid' => number_format($paid, 2, '.', ''), 'status' => $status, 'source' => 'bank_match', 'id' => $obligationId]
+        );
     }
 
     private function actionNeeded(array $row): string

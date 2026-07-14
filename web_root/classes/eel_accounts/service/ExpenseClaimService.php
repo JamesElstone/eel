@@ -1658,17 +1658,22 @@ final class ExpenseClaimService
             ]);
             (new \eel_accounts\Service\VehicleService())->cleanupVehicleDetailsForExpenseClaimLine($lineId);
         } else {
+            $expenseNominalId = (int)((new \eel_accounts\Store\CompanySettingsStore($companyId))->all()['default_expense_charge_nominal_id'] ?? 0);
+            if ((int)($line['nominal_account_id'] ?? 0) <= 0 && !$this->activeNominalAccountExists($expenseNominalId, 'expense')) {
+                return ['success' => false, 'errors' => ['Configure an active Default ordinary expense charge nominal in Company Nominals.']];
+            }
             \InterfaceDB::prepare(
                 'DELETE FROM expense_claim_line_assets
                  WHERE expense_claim_line_id = :expense_claim_line_id'
             )->execute(['expense_claim_line_id' => $lineId]);
             \InterfaceDB::prepare(
                 'UPDATE expense_claim_lines
-                 SET nominal_account_id = NULL,
+                 SET nominal_account_id = :nominal_account_id,
                      updated_at = CURRENT_TIMESTAMP
                  WHERE id = :id
                    AND expense_claim_id = :expense_claim_id'
             )->execute([
+                'nominal_account_id' => (int)($line['nominal_account_id'] ?? 0) > 0 ? (int)$line['nominal_account_id'] : $expenseNominalId,
                 'id' => $lineId,
                 'expense_claim_id' => $claimId,
             ]);
@@ -1815,6 +1820,14 @@ final class ExpenseClaimService
             'claims' => $this->listClaims($companyId),
             'messages' => ['Expense claim line converted to an asset and the posted journal rebuilt.'],
         ];
+    }
+
+    private function activeNominalAccountExists(int $nominalId, string $accountType): bool
+    {
+        return $nominalId > 0 && (int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*) FROM nominal_accounts WHERE id = :id AND account_type = :account_type AND is_active = 1',
+            ['id' => $nominalId, 'account_type' => $accountType]
+        ) > 0;
     }
 
     public function syncPostedAssetLineSource(int $companyId, int $lineId, int $targetNominalId, string $category): array

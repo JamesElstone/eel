@@ -105,6 +105,9 @@ final class NominalsAction implements ActionInterfaceFramework
         if ($nominal === null) {
             return $this->errorResult('The selected nominal account could not be found.');
         }
+        if ($this->isConfiguredCompanyNominalDefault($nominalId)) {
+            return $this->errorResult('This nominal account is assigned as a company default and cannot be deleted.');
+        }
 
         try {
             InterfaceDB::beginTransaction();
@@ -139,6 +142,17 @@ final class NominalsAction implements ActionInterfaceFramework
                 ],
             ]
         );
+    }
+
+    private function isConfiguredCompanyNominalDefault(int $nominalId): bool
+    {
+        if ($nominalId <= 0 || !InterfaceDB::tableExists('company_settings')) {
+            return false;
+        }
+        return (int)InterfaceDB::fetchColumn(
+            "SELECT COUNT(*) FROM company_settings WHERE setting LIKE '%\\_nominal\\_id' ESCAPE '\\\\' AND TRIM(COALESCE(value, '')) = :nominal_id",
+            ['nominal_id' => (string)$nominalId]
+        ) > 0;
     }
 
     private function saveNominalAccount(RequestFramework $request, ?int $id): ActionResultFramework
@@ -279,6 +293,9 @@ final class NominalsAction implements ActionInterfaceFramework
                 'corporation_tax_expense_nominal_id' => trim((string)$request->post('corporation_tax_expense_nominal_id', '')),
                 'corporation_tax_liability_nominal_id' => trim((string)$request->post('corporation_tax_liability_nominal_id', '')),
             ];
+            foreach ($settingsService->helperNominalSettingKeys() as $key) {
+                $settings[$key] = trim((string)$request->post($key, ''));
+            }
 
             $settingsService->saveNominalsSection($settingsStore, $settings);
             $nominalAccounts = (new \eel_accounts\Repository\NominalAccountRepository())->fetchNominalAccounts($companyId);
@@ -351,6 +368,12 @@ final class NominalsAction implements ActionInterfaceFramework
             'corporation_tax_expense_nominal_id' => 'Corporation Tax expense',
             'corporation_tax_liability_nominal_id' => 'Corporation Tax liability',
         ];
+        $labels['dividends_payable_nominal_id'] = 'Dividends payable';
+        $labels['default_expense_charge_nominal_id'] = 'Default expense charge';
+        foreach (\eel_accounts\Service\AssetService::assetCategoryOptions() as $category => $label) {
+            $labels[$category . '_asset_cost_nominal_id'] = $label . ' cost';
+            $labels[$category . '_accum_dep_nominal_id'] = $label . ' accumulated depreciation';
+        }
         $nominalsById = [];
 
         foreach ($nominalAccounts as $nominalAccount) {

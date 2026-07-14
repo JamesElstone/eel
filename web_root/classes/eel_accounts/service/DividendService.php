@@ -16,6 +16,19 @@ final class DividendService
     private const DIVIDENDS_PAID_CODE = '3100';
     private const DIVIDENDS_PAYABLE_CODE = '2150';
 
+    private function configuredDividendsPayableNominalId(int $companyId): int
+    {
+        $nominalId = (int)((new \eel_accounts\Store\CompanySettingsStore($companyId))->all()['dividends_payable_nominal_id'] ?? 0);
+        if ($nominalId <= 0 || (int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*) FROM nominal_accounts WHERE id = :id AND account_type = :type AND is_active = 1',
+            ['id' => $nominalId, 'type' => 'liability']
+        ) === 0) {
+            return 0;
+        }
+
+        return $nominalId;
+    }
+
     public function ensureDividendNominals(int $companyId): array
     {
         if ($companyId <= 0) {
@@ -263,7 +276,7 @@ final class DividendService
 
         $nominals = (array)($nominalResult['accounts'] ?? []);
         $dividendsPaidNominalId = (int)($nominals['dividends_paid']['id'] ?? 0);
-        $dividendsPayableNominalId = (int)($nominals['dividends_payable']['id'] ?? 0);
+        $dividendsPayableNominalId = $this->configuredDividendsPayableNominalId($companyId);
         $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
         $directorLoanNominalId = (int)($settings['director_loan_liability_nominal_id'] ?? 0);
         if ($directorLoanNominalId <= 0) {
@@ -449,7 +462,7 @@ final class DividendService
 
         $nominals = (array)($nominalResult['accounts'] ?? []);
         $dividendsPaidNominalId = (int)($nominals['dividends_paid']['id'] ?? 0);
-        $dividendsPayableNominalId = (int)($nominals['dividends_payable']['id'] ?? 0);
+        $dividendsPayableNominalId = $this->configuredDividendsPayableNominalId($companyId);
         if ($dividendsPaidNominalId <= 0 || $dividendsPayableNominalId <= 0) {
             return ['success' => false, 'errors' => ['Dividend nominal accounts are missing.']];
         }

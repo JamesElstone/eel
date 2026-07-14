@@ -1254,7 +1254,7 @@ final class _transactions_importedCard extends CardBaseFramework
             return '';
         }
 
-        $disabledReason = $this->dividendButtonDisabledReason($transaction, $isPeriodLocked);
+        $disabledReason = $this->dividendButtonDisabledReason($transaction, $settings, $isPeriodLocked);
         if ($disabledReason !== '') {
             return '<button class="button" type="button" disabled title="' . HelperFramework::escape($disabledReason) . '">Dividend</button>';
         }
@@ -1273,7 +1273,7 @@ final class _transactions_importedCard extends CardBaseFramework
                 data-chicken-button-class="button primary">Dividend</button>';
     }
 
-    private function dividendButtonDisabledReason(array $transaction, bool $isPeriodLocked): string
+    private function dividendButtonDisabledReason(array $transaction, array $settings, bool $isPeriodLocked): string
     {
         if ($isPeriodLocked) {
             return 'Period locked';
@@ -1281,7 +1281,11 @@ final class _transactions_importedCard extends CardBaseFramework
         if (round((float)($transaction['amount'] ?? 0), 2) >= 0) {
             return 'Dividend declarations can only be created from outgoing payments';
         }
-        if ((string)($transaction['nominal_code'] ?? '') !== '2150') {
+        $dividendsPayableId = $this->positiveSettingId($settings['dividends_payable_nominal_id'] ?? '');
+        if ($dividendsPayableId <= 0) {
+            return 'Set Dividends Payable nominal in Company Nominals';
+        }
+        if ((int)($transaction['nominal_account_id'] ?? 0) !== $dividendsPayableId) {
             return 'Categorise the transaction to Dividends Payable first';
         }
         if (!in_array((string)($transaction['category_status'] ?? ''), ['auto', 'manual'], true)) {

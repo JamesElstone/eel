@@ -79,6 +79,12 @@ final class _companies_nominalsCard extends CardBaseFramework
                 'corporation_tax_expense_nominal_id' => 'Corporation Tax expense nominal',
                 'corporation_tax_liability_nominal_id' => 'Corporation Tax liability nominal',
             ];
+            $suggestionLabels['dividends_payable_nominal_id'] = 'Dividends Payable nominal';
+            $suggestionLabels['default_expense_charge_nominal_id'] = 'Default ordinary expense charge nominal';
+            foreach (\eel_accounts\Service\AssetService::assetCategoryOptions() as $category => $label) {
+                $suggestionLabels[$category . '_asset_cost_nominal_id'] = $label . ' cost nominal';
+                $suggestionLabels[$category . '_accum_dep_nominal_id'] = $label . ' accumulated depreciation nominal';
+            }
 
             foreach ($suggestionLabels as $key => $label) {
                 if (!isset($nominalSuggestions[$key]) || !is_array($nominalSuggestions[$key])) {
@@ -112,6 +118,8 @@ final class _companies_nominalsCard extends CardBaseFramework
             ';
         }
 
+        $helperDefaultsHtml = $this->renderHelperNominalDefaults($nominalAccounts, $settings);
+        $helperStateFields = implode(',', (new \eel_accounts\Service\CompanySettingsService())->helperNominalSettingKeys());
         $mainHtml = '
             <form method="post" data-ajax="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
@@ -119,7 +127,7 @@ final class _companies_nominalsCard extends CardBaseFramework
                 <input type="hidden" name="intent" value="save_nominals">
                 <input type="hidden" name="company_id" value="' . HelperFramework::escape((string)($context['company']['id'] ?? 0)) . '">
                 <div class="panel-soft">
-                    <section data-state-fields="default_bank_nominal_id,default_trade_nominal_id,default_expense_nominal_id,tools_small_equipment_nominal_id,director_loan_asset_nominal_id,director_loan_liability_nominal_id,vat_nominal_id,uncategorised_nominal_id,corporation_tax_expense_nominal_id,corporation_tax_liability_nominal_id" data-state-target="save_default_nominals">
+                    <section data-state-fields="default_bank_nominal_id,default_trade_nominal_id,default_expense_nominal_id,tools_small_equipment_nominal_id,prepayment_asset_nominal_id,director_loan_asset_nominal_id,director_loan_liability_nominal_id,vat_nominal_id,uncategorised_nominal_id,corporation_tax_expense_nominal_id,corporation_tax_liability_nominal_id,' . HelperFramework::escape($helperStateFields) . '" data-state-target="save_default_nominals">
                     <div class="form-flex-flow">
                         <div class="form-row">
                             <label for="default_bank_nominal_id">Default Bank nominal</label>
@@ -191,6 +199,7 @@ final class _companies_nominalsCard extends CardBaseFramework
                                 ' . $this->nominalOptions($nominalAccounts, (string)($settings['corporation_tax_liability_nominal_id'] ?? '')) . '
                             </select>
                         </div>
+                        ' . $helperDefaultsHtml . '
                     </div>
                     <div>
                         <button class="button primary" id="save_default_nominals" type="submit" disabled>Save Nominals Defaults</button>
@@ -238,6 +247,28 @@ final class _companies_nominalsCard extends CardBaseFramework
         </div>';
     }
 
+    private function renderHelperNominalDefaults(array $nominalAccounts, array $settings): string
+    {
+        $fields = [
+            'dividends_payable_nominal_id' => 'Dividends Payable nominal',
+            'default_expense_charge_nominal_id' => 'Default ordinary expense charge nominal',
+        ];
+        foreach (\eel_accounts\Service\AssetService::assetCategoryOptions() as $category => $label) {
+            $fields[$category . '_asset_cost_nominal_id'] = $label . ' cost nominal';
+            $fields[$category . '_accum_dep_nominal_id'] = $label . ' accumulated depreciation nominal';
+        }
+        $html = '';
+        foreach ($fields as $key => $label) {
+            $value = (string)($settings[$key] ?? '');
+            $html .= '<div class="form-row"><label for="' . HelperFramework::escape($key) . '">'
+                . HelperFramework::escape($label) . '</label><select class="select" id="' . HelperFramework::escape($key)
+                . '" name="' . HelperFramework::escape($key) . '" data-state-default="' . HelperFramework::escape($value)
+                . '"><option value="">Select nominal account</option>' . $this->nominalOptions($nominalAccounts, $value) . '</select></div>';
+        }
+
+        return $html;
+    }
+
     private function mappingNominalLabel(mixed $nominal, string $expectedCode): string
     {
         return is_array($nominal)
@@ -267,7 +298,7 @@ final class _companies_nominalsCard extends CardBaseFramework
             ];
         }, $nominalAccounts);
 
-        return array_filter([
+        $suggestions = array_filter([
             'default_bank_nominal_id' => !$this->hasAssignedNominal($settings, 'default_bank_nominal_id')
                 ? $this->firstMatchingNominal($normalised, static fn(array $row): bool => $row['id'] > 0 && ($row['subtype_code'] === 'bank' || $row['code'] === '1200' || str_contains(strtolower($row['name']), 'bank')))
                 : null,
@@ -323,6 +354,26 @@ final class _companies_nominalsCard extends CardBaseFramework
                 ? $this->firstMatchingNominal($normalised, static fn(array $row): bool => $row['id'] > 0 && $row['account_type'] === 'liability' && $row['subtype_code'] === 'corp_tax')
                 : null,
         ], static fn(?array $row): bool => $row !== null);
+        $byCode = [];
+        foreach ($normalised as $row) {
+            $byCode[(string)$row['code']] = $row;
+        }
+        $codeSettings = [
+            'dividends_payable_nominal_id' => '2150',
+            'default_expense_charge_nominal_id' => '6000',
+        ];
+        foreach (\eel_accounts\Service\AssetService::assetCategoryOptions() as $category => $_label) {
+            $codes = \eel_accounts\Service\AssetService::assetNominalCodesForCategory((string)$category);
+            $codeSettings[$category . '_asset_cost_nominal_id'] = (string)$codes['cost'];
+            $codeSettings[$category . '_accum_dep_nominal_id'] = (string)$codes['accum'];
+        }
+        foreach ($codeSettings as $key => $code) {
+            if (!$this->hasAssignedNominal($settings, $key) && isset($byCode[$code])) {
+                $suggestions[$key] = $byCode[$code];
+            }
+        }
+
+        return $suggestions;
     }
 
     private function hasAssignedNominal(array $settings, string $key): bool

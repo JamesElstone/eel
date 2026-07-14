@@ -81,14 +81,51 @@ final class _hmrc_obligations_timelineCard extends CardBaseFramework
             </form>';
         }
 
-        return '<form method="post" action="?page=hmrc_obligations" data-ajax="true" class="mini-form">
+        $legacyAmount = (float)($item['legacy_unlinked_amount'] ?? 0);
+        $legacyHtml = $legacyAmount > 0.004
+            ? '<div class="helper"><span class="badge warning">Legacy unlinked payment</span> £' . number_format($legacyAmount, 2) . ' requires review.</div>'
+            : '';
+        $linksHtml = $legacyHtml . $this->evidenceLinksHtml((array)($item['evidence_links'] ?? []), $common);
+        $options = '<option value="">Select transaction or expense</option>';
+        foreach ((array)($item['evidence_candidates'] ?? []) as $candidate) {
+            if (!is_array($candidate)) {
+                continue;
+            }
+            $value = (string)($candidate['source_type'] ?? '') . ':' . (int)($candidate['id'] ?? 0);
+            $label = (string)($candidate['source_label'] ?? 'Evidence') . ' | ' . (string)($candidate['evidence_date'] ?? '') . ' | '
+                . (string)($candidate['description'] ?? '') . ' | £' . number_format((float)($candidate['amount'] ?? 0), 2);
+            $options .= '<option value="' . HelperFramework::escape($value) . '">' . HelperFramework::escape($label) . '</option>';
+        }
+
+        return $linksHtml . '<form method="post" action="?page=hmrc_obligations" data-ajax="true" class="mini-form">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             ' . $common . '
-            <input type="hidden" name="intent" value="mark_paid">
-            <input class="input" type="number" step="0.01" min="0" name="amount_paid" value="' . HelperFramework::escape(number_format((float)($item['amount_due'] ?? 0), 2, '.', '')) . '">
-            <input class="input" name="source_reference" placeholder="Payment ref">
-            <button class="button primary" type="submit">Mark Paid</button>
+            <input type="hidden" name="intent" value="link_payment_evidence">
+            <select class="select" name="evidence_source" required>' . $options . '</select>
+            <input class="input" type="number" step="0.01" min="0.01" name="allocated_amount" placeholder="Full available amount">
+            <button class="button primary" type="submit">Link Payment</button>
         </form>';
+    }
+
+    private function evidenceLinksHtml(array $links, string $common): string
+    {
+        $html = '';
+        foreach ($links as $link) {
+            if (!is_array($link)) {
+                continue;
+            }
+            $label = HelperFramework::labelFromKey((string)($link['source_type'] ?? ''), '_') . ' | '
+                . (string)($link['evidence_date'] ?? '') . ' | ' . (string)($link['description'] ?? '') . ' | '
+                . number_format((float)($link['allocated_amount'] ?? 0), 2);
+            $html .= '<form method="post" action="?page=hmrc_obligations" data-ajax="true" class="actions-row">'
+                . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . $common
+                . '<input type="hidden" name="intent" value="unlink_payment_evidence">'
+                . '<input type="hidden" name="evidence_link_id" value="' . (int)($link['id'] ?? 0) . '">'
+                . '<span class="helper">' . HelperFramework::escape($label) . '</span>'
+                . '<button class="button button-inline danger" type="submit">Unlink</button></form>';
+        }
+
+        return $html;
     }
 
     private function chHint(array $ch): string

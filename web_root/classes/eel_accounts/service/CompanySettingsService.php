@@ -207,6 +207,9 @@ final class CompanySettingsService
         $settingsStore->set('uncategorised_nominal_id', $settings['uncategorised_nominal_id'] ?? '', 'int');
         $settingsStore->set('corporation_tax_expense_nominal_id', $settings['corporation_tax_expense_nominal_id'] ?? '', 'int');
         $settingsStore->set('corporation_tax_liability_nominal_id', $settings['corporation_tax_liability_nominal_id'] ?? '', 'int');
+        foreach ($this->helperNominalSettingKeys() as $key) {
+            $settingsStore->set($key, $settings[$key] ?? '', 'int');
+        }
         $settingsStore->flush();
     }
 
@@ -235,6 +238,7 @@ final class CompanySettingsService
             'uncategorised_nominal_id',
             'corporation_tax_expense_nominal_id',
             'corporation_tax_liability_nominal_id',
+            ...$this->helperNominalSettingKeys(),
         ] as $key) {
             if ($this->hasAssignedNominal($settings, $key)) {
                 continue;
@@ -367,7 +371,7 @@ final class CompanySettingsService
             ];
         }, $nominalAccounts);
 
-        return array_filter([
+        $suggestions = array_filter([
             'default_bank_nominal_id' => $this->firstMatchingNominal($normalised, static function (array $row): bool {
                 return $row['id'] > 0
                     && ($row['subtype_code'] === 'bank'
@@ -435,6 +439,34 @@ final class CompanySettingsService
                 static fn(array $row): bool => $row['id'] > 0 && $row['account_type'] === 'liability' && $row['subtype_code'] === 'corp_tax'
             ),
         ], static fn(?array $row): bool => $row !== null);
+
+        $byCode = [];
+        foreach ($normalised as $row) {
+            $byCode[(string)$row['code']] = $row;
+        }
+        $suggestions['dividends_payable_nominal_id'] = $byCode['2150'] ?? null;
+        $suggestions['default_expense_charge_nominal_id'] = $byCode['6000'] ?? $this->firstMatchingNominal(
+            $normalised,
+            static fn(array $row): bool => $row['id'] > 0 && $row['account_type'] === 'expense'
+        );
+        foreach (AssetService::assetCategoryOptions() as $category => $_label) {
+            $codes = AssetService::assetNominalCodesForCategory((string)$category);
+            $suggestions[$category . '_asset_cost_nominal_id'] = $byCode[(string)$codes['cost']] ?? null;
+            $suggestions[$category . '_accum_dep_nominal_id'] = $byCode[(string)$codes['accum']] ?? null;
+        }
+
+        return array_filter($suggestions, static fn(?array $row): bool => $row !== null);
+    }
+
+    public function helperNominalSettingKeys(): array
+    {
+        $keys = ['dividends_payable_nominal_id', 'default_expense_charge_nominal_id'];
+        foreach (AssetService::assetCategoryOptions() as $category => $_label) {
+            $keys[] = $category . '_asset_cost_nominal_id';
+            $keys[] = $category . '_accum_dep_nominal_id';
+        }
+
+        return $keys;
     }
 
     private function firstMatchingNominal(array $nominals, callable $predicate): ?array

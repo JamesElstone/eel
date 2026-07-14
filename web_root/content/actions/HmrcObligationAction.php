@@ -19,7 +19,8 @@ final class HmrcObligationAction implements ActionInterfaceFramework
             $result = match ($intent) {
                 'sync_hmrc_obligations' => $service->syncObligationsForCompany($companyId),
                 'mark_filed' => $service->markFiled((int)$request->input('obligation_id', 0), (string)$request->input('source_reference', ''), (string)$request->input('notes', '')),
-                'mark_paid' => $service->markPaid((int)$request->input('obligation_id', 0), (float)$request->input('amount_paid', 0), (string)$request->input('source_reference', ''), (string)$request->input('notes', '')),
+                'link_payment_evidence' => $this->linkPaymentEvidence($service, $request, $companyId),
+                'unlink_payment_evidence' => $service->unlinkPaymentEvidence($companyId, (int)$request->input('obligation_id', 0), (int)$request->input('evidence_link_id', 0)),
                 'update_status' => $service->updateObligationStatus((int)$request->input('obligation_id', 0), (string)$request->input('status', ''), (string)$request->input('notes', '')),
                 'filter_obligations' => ['success' => true, 'filter_only' => true],
                 'create_manual_obligation' => $service->createManualObligation([
@@ -56,5 +57,16 @@ final class HmrcObligationAction implements ActionInterfaceFramework
         }
 
         return new ActionResultFramework($success, ['hmrc.obligations.summary', 'hmrc.obligations.timeline', 'hmrc.obligations.period.checklist', 'hmrc.obligations.action.panel', 'hmrc.fines.table', 'page.context'], $flashMessages);
+    }
+
+    private function linkPaymentEvidence(\eel_accounts\Service\HmrcObligationService $service, RequestFramework $request, int $companyId): array
+    {
+        $source = explode(':', trim((string)$request->input('evidence_source', '')), 2);
+        $sourceType = (string)($source[0] ?? '');
+        $sourceId = (int)($source[1] ?? 0);
+        $amountInput = trim((string)$request->input('allocated_amount', ''));
+        $amount = $amountInput === '' ? $service->defaultEvidenceAllocation($companyId, $sourceType, $sourceId) : (float)$amountInput;
+
+        return $service->linkPaymentEvidence($companyId, (int)$request->input('obligation_id', 0), $sourceType, $sourceId, $amount);
     }
 }

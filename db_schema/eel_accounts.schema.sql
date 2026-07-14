@@ -677,6 +677,7 @@ CREATE TABLE `hmrc_obligations` (
   `due_date` date NOT NULL,
   `amount_due` decimal(12,2) DEFAULT NULL,
   `amount_paid` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `legacy_unlinked_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
   `status` enum('not_started','in_progress','ready','filed','paid','part_paid','overdue','cancelled','not_applicable') NOT NULL DEFAULT 'not_started',
   `source` enum('calculated','manual','hmrc_notice','journal','bank_match') NOT NULL DEFAULT 'calculated',
   `source_reference` varchar(255) DEFAULT NULL,
@@ -1593,6 +1594,32 @@ CREATE TABLE `transactions` (
   CONSTRAINT `fk_transactions_upload` FOREIGN KEY (`statement_upload_id`) REFERENCES `statement_uploads` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
 CONSTRAINT `chk_transactions_amount_nonzero` CHECK (`amount` <> 0)
 ) ENGINE=InnoDB AUTO_INCREMENT=4099 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `hmrc_obligation_evidence_links`
+--
+
+DROP TABLE IF EXISTS `hmrc_obligation_evidence_links`;
+CREATE TABLE `hmrc_obligation_evidence_links` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `hmrc_obligation_id` int(11) NOT NULL,
+  `transaction_id` bigint(20) DEFAULT NULL,
+  `expense_claim_line_id` bigint(20) DEFAULT NULL,
+  `allocated_amount` decimal(12,2) NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_hmrc_evidence_obligation_transaction` (`hmrc_obligation_id`,`transaction_id`),
+  UNIQUE KEY `uq_hmrc_evidence_obligation_expense` (`hmrc_obligation_id`,`expense_claim_line_id`),
+  KEY `idx_hmrc_evidence_transaction` (`transaction_id`),
+  KEY `idx_hmrc_evidence_expense` (`expense_claim_line_id`),
+  CONSTRAINT `chk_hmrc_evidence_one_source` CHECK ((`transaction_id` is not null and `expense_claim_line_id` is null) or (`transaction_id` is null and `expense_claim_line_id` is not null)),
+  CONSTRAINT `chk_hmrc_evidence_positive_amount` CHECK (`allocated_amount` > 0),
+  CONSTRAINT `fk_hmrc_evidence_obligation` FOREIGN KEY (`hmrc_obligation_id`) REFERENCES `hmrc_obligations` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_hmrc_evidence_transaction` FOREIGN KEY (`transaction_id`) REFERENCES `transactions` (`id`) ON UPDATE CASCADE,
+  CONSTRAINT `fk_hmrc_evidence_expense` FOREIGN KEY (`expense_claim_line_id`) REFERENCES `expense_claim_lines` (`id`) ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --

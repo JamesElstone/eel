@@ -2267,11 +2267,11 @@ final class AssetService
             $errors[] = 'No accounting period exists for the chosen purchase date.';
         }
 
-        $nominalCodes = $this->nominalCodesForCategory($category);
-        $nominalAccountId = $this->findNominalIdByCode($nominalCodes['cost']);
-        $accumDepNominalId = $this->findNominalIdByCode($nominalCodes['accum']);
-        if ($nominalAccountId <= 0 || $accumDepNominalId <= 0) {
-            $errors[] = 'The required fixed asset nominal accounts are missing.';
+        $settings = $companyId > 0 ? (new \eel_accounts\Store\CompanySettingsStore($companyId))->all() : [];
+        $nominalAccountId = (int)($settings[$category . '_asset_cost_nominal_id'] ?? 0);
+        $accumDepNominalId = (int)($settings[$category . '_accum_dep_nominal_id'] ?? 0);
+        if (!$this->activeNominalExists($nominalAccountId) || !$this->activeNominalExists($accumDepNominalId)) {
+            $errors[] = 'Configure active cost and accumulated depreciation nominals for ' . (self::assetCategoryOptions()[$category] ?? $category) . ' in Company Nominals.';
         }
 
         return [
@@ -2295,6 +2295,14 @@ final class AssetService
 
     private function nominalCodesForCategory(string $category): array {
         return self::assetNominalCodesForCategory($category);
+    }
+
+    private function activeNominalExists(int $nominalId): bool
+    {
+        return $nominalId > 0 && (int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*) FROM nominal_accounts WHERE id = :id AND is_active = 1',
+            ['id' => $nominalId]
+        ) > 0;
     }
 
     private function normaliseManualAdditionReason(string $reason): string

@@ -64,12 +64,43 @@ final class _hmrc_fines_tableCard extends CardBaseFramework
             </form>
         </section>';
 
+        $summary = $this->summaryHtml($context, $companySettings);
         $table = $this->configuredTable($context, $companySettings);
 
-        return '<div class="settings-stack">' . $form . $table->render($context, [
+        return '<div class="settings-stack">' . $summary . $form . $table->render($context, [
             'cards[]' => (array)($context['page']['page_cards'] ?? []),
             'hmrc_fines_period_scope' => $this->selectedPeriodScope($context),
         ]) . '</div>';
+    }
+
+    private function summaryHtml(array $context, array $companySettings): string
+    {
+        $totalFines = 0.0;
+        $totalInterest = 0.0;
+        $balanceOutstanding = 0.0;
+
+        foreach ($this->filteredRows($context) as $row) {
+            $amountDue = max(0.0, (float)($row['amount_due'] ?? 0));
+            $amountPaid = max(0.0, (float)($row['amount_paid'] ?? 0));
+            if ((string)($row['obligation_type'] ?? '') === 'hmrc_penalty') {
+                $totalFines += $amountDue;
+            } elseif ((string)($row['obligation_type'] ?? '') === 'hmrc_interest') {
+                $totalInterest += $amountDue;
+            }
+            $balanceOutstanding += max(0.0, $amountDue - $amountPaid);
+        }
+
+        return '<div class="summary-grid">'
+            . $this->summaryCard('Total Fines', $this->money($companySettings, $totalFines))
+            . $this->summaryCard('Total Interest Owed', $this->money($companySettings, $totalInterest))
+            . $this->summaryCard('Balance Outstanding', $this->money($companySettings, $balanceOutstanding))
+            . '</div>';
+    }
+
+    private function summaryCard(string $label, string $value): string
+    {
+        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label)
+            . '</div><div class="summary-value">' . HelperFramework::escape($value) . '</div></div>';
     }
 
     public function tables(array $context): array

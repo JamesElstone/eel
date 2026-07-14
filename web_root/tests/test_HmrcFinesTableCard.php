@@ -50,6 +50,10 @@ $harness->run(_hmrc_fines_tableCard::class, static function (GeneratedServiceCla
 
         $harness->assertSame('HMRC penalties post to 6230 and HMRC interest posts to 6231, with the unpaid balance held in 2210 HMRC Penalties & Interest Payable. Later bank payments should clear 2210.', $card->helper($context));
         $harness->assertFalse(str_contains($html, 'HMRC penalties post to 6230'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">Total Fines</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">Total Interest Owed</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">Balance Outstanding</div>'));
+        $harness->assertTrue(strpos($html, 'Total Fines') < strpos($html, 'Record HMRC notice'));
         $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="csv"'));
         $harness->assertTrue(str_contains($html, 'data-table-key="hmrc_fines_table"'));
         $harness->assertTrue(str_contains($html, 'HMRC notices 1-15 of 16'));

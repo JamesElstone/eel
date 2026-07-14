@@ -115,7 +115,7 @@ final class _trial_balance_stateCard extends CardBaseFramework
             . $this->checkSummaryCard('Period completeness', $checks['period_completeness'] ?? [], $this->greenMonthCount($periodTiles))
             . $this->checkSummaryCard('FRS 105 deferred tax', $checks['frs105_deferred_tax_nominal'] ?? [], (string)(int)($deferredTaxMetrics['deferred_tax_nominal_count'] ?? 0))
             . $this->summaryCard('Review notes', $this->yesNoBadge(!empty($validation['review_warnings_acknowledged']), 'Acknowledged', 'Needed'), true)
-            . $this->summaryCard('TB comparison diffs', HelperFramework::escape((string)(int)($validation['comparison_differences'] ?? 0)) . ' ' . $this->statusBadge(((int)($validation['comparison_differences'] ?? 0) === 0) ? 'pass' : 'warning'), true);
+            . $this->summaryCard('Trial balance comparison differences', HelperFramework::escape((string)(int)($validation['comparison_differences'] ?? 0)) . ' ' . $this->statusBadge(((int)($validation['comparison_differences'] ?? 0) === 0) ? 'pass' : 'warning'), true);
     }
 
     private function checksByCode(array $validation): array

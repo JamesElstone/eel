@@ -28,7 +28,6 @@ final class _tax_aia_allocationCard extends CardBaseFramework
             ];
         }
         return \eel_accounts\Renderer\TaxCardRenderer::header('aia')
-            . \eel_accounts\Renderer\TaxCardRenderer::computationPersistenceNotice($workings)
             . \eel_accounts\Renderer\TaxCardRenderer::table(['Purchase date', 'Asset', 'Addition', 'Annual Investment Allowance (AIA) claimed', 'Annual Investment Allowance (AIA) used'], $rows, 'No Annual Investment Allowance (AIA) allocation rows were found for this period.');
     }
 }

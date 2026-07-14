@@ -72,7 +72,7 @@ foreach ($cardClasses as $className) {
             _tax_capital_allowances_summaryCard::class,
             _tax_aia_allocationCard::class,
         ], true)) {
-            $harness->check($className, 'surfaces a stale persisted CT computation without replacing live figures', static function () use ($harness, $card, $className): void {
+            $harness->check($className, 'does not show computation persistence status', static function () use ($harness, $card, $className): void {
                 $context = taxWorkingsCardsContext();
                 $context['services']['taxWorkings']['summary']['computation_persistence'] = [
                     'status' => 'stale',
@@ -81,8 +81,9 @@ foreach ($cardClasses as $className) {
                 ];
                 $html = $card->render($context);
 
-                $harness->assertTrue(str_contains($html, 'Persisted computation stale'));
-                $harness->assertTrue(str_contains($html, 'cards show a fresh live calculation'));
+                $harness->assertSame(false, str_contains($html, 'Persisted computation stale'));
+                $harness->assertSame(false, str_contains($html, 'cards show a fresh live calculation'));
+                $harness->assertSame(false, str_contains($html, 'Review required'));
                 $harness->assertTrue(str_contains($html, '$ 12,000.00') || $className !== _tax_corporation_tax_summaryCard::class);
             });
         }

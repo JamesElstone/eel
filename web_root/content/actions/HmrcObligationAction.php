@@ -32,6 +32,10 @@ final class HmrcObligationAction implements ActionInterfaceFramework
                     'source_reference' => (string)$request->input('source_reference', ''),
                     'notes' => (string)$request->input('notes', ''),
                 ]),
+                'delete_manual_obligation' => $service->deleteManualObligation(
+                    $companyId,
+                    (int)$request->input('obligation_id', 0)
+                ),
                 default => ['success' => false, 'errors' => ['Unknown HMRC obligation action.']],
             };
         } catch (Throwable $exception) {

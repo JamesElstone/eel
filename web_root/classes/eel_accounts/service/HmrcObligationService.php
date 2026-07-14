@@ -383,6 +383,72 @@ final class HmrcObligationService
         return ['success' => true, 'errors' => [], 'warnings' => $warnings ?? []];
     }
 
+    public function deleteManualObligation(int $companyId, int $obligationId): array
+    {
+        $this->ensureSchema();
+        $obligation = $this->rawObligation($obligationId, $companyId);
+        if ($obligation === null) {
+            return ['success' => false, 'errors' => ['The HMRC fine or interest record could not be found.']];
+        }
+
+        $accountingPeriodId = (int)($obligation['accounting_period_id'] ?? 0);
+        (new \eel_accounts\Service\AccountingPeriodAccessService())->assertDataEntryPermitted(
+            $companyId,
+            $accountingPeriodId,
+            'delete this HMRC fine or interest record'
+        );
+
+        $journalId = (int)($obligation['related_journal_id'] ?? 0);
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
+        }
+
+        try {
+            \InterfaceDB::prepareExecute(
+                'DELETE FROM hmrc_obligations WHERE id = :id AND company_id = :company_id',
+                ['id' => $obligationId, 'company_id' => $companyId]
+            );
+
+            if ($journalId > 0) {
+                $journal = \InterfaceDB::fetchOne(
+                    'SELECT id
+                     FROM journals
+                     WHERE id = :id
+                       AND company_id = :company_id
+                       AND accounting_period_id = :accounting_period_id
+                     LIMIT 1',
+                    [
+                        'id' => $journalId,
+                        'company_id' => $companyId,
+                        'accounting_period_id' => $accountingPeriodId,
+                    ]
+                );
+                if (is_array($journal)) {
+                    if (\InterfaceDB::tableExists('journal_entry_metadata')) {
+                        \InterfaceDB::prepareExecute(
+                            'DELETE FROM journal_entry_metadata WHERE journal_id = :journal_id',
+                            ['journal_id' => $journalId]
+                        );
+                    }
+                    \InterfaceDB::prepareExecute('DELETE FROM journals WHERE id = :id', ['id' => $journalId]);
+                }
+            }
+
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+
+            return ['success' => false, 'errors' => [$exception->getMessage()]];
+        }
+
+        return ['success' => true, 'errors' => [], 'deleted' => true];
+    }
+
     public function calculateDueDates(array $accountingPeriod): array
     {
         $periodEnd = (string)($accountingPeriod['period_end'] ?? '');

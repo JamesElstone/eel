@@ -155,7 +155,38 @@ final class _hmrc_fines_tableCard extends CardBaseFramework
                 html: static fn(array $row): string => HelperFramework::escape((int)($row['related_journal_id'] ?? 0) > 0 ? 'Accrued' : 'No accrual'),
                 export: static fn(array $row): string => (int)($row['related_journal_id'] ?? 0) > 0 ? 'Accrued' : 'No accrual'
             )
-            ->textColumn('source_reference', 'Reference');
+            ->textColumn('source_reference', 'Reference')
+            ->column(
+                'actions',
+                'Actions',
+                html: fn(array $row): string => $this->deleteActionHtml(
+                    $row,
+                    (int)($context['company']['id'] ?? 0),
+                    $this->selectedPeriodScope($context)
+                ),
+                exportable: false,
+                cellClass: 'cell-fit'
+            );
+    }
+
+    private function deleteActionHtml(array $row, int $companyId, string $periodScope): string
+    {
+        $obligationId = (int)($row['id'] ?? 0);
+        $accountingPeriodId = (int)($row['accounting_period_id'] ?? 0);
+        if ($obligationId <= 0 || !(new \eel_accounts\Service\AccountingPeriodAccessService())
+            ->isDataEntryPermitted($companyId, $accountingPeriodId)) {
+            return '';
+        }
+
+        return '<form method="post" action="?page=hmrc_obligations" data-ajax="true" class="actions-row">'
+            . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
+            <input type="hidden" name="card_action" value="HmrcObligation">
+            <input type="hidden" name="intent" value="delete_manual_obligation">
+            <input type="hidden" name="company_id" value="' . $companyId . '">
+            <input type="hidden" name="obligation_id" value="' . $obligationId . '">
+            <input type="hidden" name="hmrc_fines_period_scope" value="' . HelperFramework::escape($periodScope) . '">
+            <button class="button danger" type="submit" data-chicken-check="true" data-chicken-message="Delete this HMRC fine or interest record and its linked accrual journal?" data-chicken-confirm-text="Delete">Delete</button>
+        </form>';
     }
 
     private function filteredRows(array $context): array

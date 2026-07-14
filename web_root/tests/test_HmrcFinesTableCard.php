@@ -15,6 +15,7 @@ $harness->run(_hmrc_fines_tableCard::class, static function (GeneratedServiceCla
     $rows = [];
     foreach (range(1, 16) as $index) {
         $rows[] = [
+            'id' => $index,
             'accounting_period_id' => $index === 16 ? 80 : 79,
             'accounting_period_label' => $index === 16 ? 'AP80' : 'AP79',
             'obligation_type' => $index % 2 === 0 ? 'hmrc_interest' : 'hmrc_penalty',
@@ -65,6 +66,8 @@ $harness->run(_hmrc_fines_tableCard::class, static function (GeneratedServiceCla
         $harness->assertTrue(strpos($html, '>Notice date</') < strpos($html, '>Period</'));
         $harness->assertTrue(strpos($html, 'HMRC-15') < strpos($html, 'HMRC-1<'));
         $harness->assertTrue(str_contains($html, '15/09/2024'));
+        $harness->assertTrue(str_contains($html, 'name="intent" value="delete_manual_obligation"'));
+        $harness->assertTrue(str_contains($html, 'data-chicken-confirm-text="Delete"'));
     });
 
     $harness->check(_hmrc_fines_tableCard::class, 'filters both the screen table and export to the current accounting period', static function () use ($harness, $card, $context): void {

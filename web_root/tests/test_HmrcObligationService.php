@@ -83,6 +83,31 @@ $harness->run(\eel_accounts\Service\HmrcObligationService::class, static functio
             $harness->assertSame('123.45', number_format($totalCredit, 2, '.', ''));
             $harness->assertSame(true, in_array('6230', array_column($lines, 'code'), true));
             $harness->assertSame(true, in_array('2210', array_column($lines, 'code'), true));
+
+            if (InterfaceDB::tableExists('year_end_reviews')) {
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO year_end_reviews (company_id, accounting_period_id, is_locked)
+                     VALUES (:company_id, :accounting_period_id, 1)',
+                    ['company_id' => $companyId, 'accounting_period_id' => $periodId]
+                );
+                $lockedError = '';
+                try {
+                    $service->deleteManualObligation($companyId, (int)$obligation['id']);
+                } catch (RuntimeException $exception) {
+                    $lockedError = $exception->getMessage();
+                }
+                $harness->assertTrue(str_contains($lockedError, 'accounting period is locked'));
+                $harness->assertSame(1, InterfaceDB::countWhere('hmrc_obligations', ['id' => (int)$obligation['id']]));
+                InterfaceDB::prepareExecute(
+                    'UPDATE year_end_reviews SET is_locked = 0 WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
+                    ['company_id' => $companyId, 'accounting_period_id' => $periodId]
+                );
+            }
+
+            $deleteResult = $service->deleteManualObligation($companyId, (int)$obligation['id']);
+            $harness->assertSame(true, (bool)($deleteResult['success'] ?? false));
+            $harness->assertSame(0, InterfaceDB::countWhere('hmrc_obligations', ['id' => (int)$obligation['id']]));
+            $harness->assertSame(0, InterfaceDB::countWhere('journals', ['id' => $journalId]));
         } finally {
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();

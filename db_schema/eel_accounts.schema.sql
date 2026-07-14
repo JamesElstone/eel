@@ -937,6 +937,7 @@ CREATE TABLE `nominal_account_subtypes` (
 
 INSERT INTO `nominal_account_subtypes` (`code`, `name`, `parent_account_type`, `sort_order`, `is_active`) VALUES
   ('bank', 'Bank', 'asset', 10, 1),
+  ('prepayments', 'Prepayments', 'asset', 25, 1),
   ('fixed_asset', 'Fixed Asset', 'asset', 20, 1),
   ('director_loan_asset', 'Director Loan Asset', 'asset', 30, 1),
   ('trade_creditor', 'Trade Creditor', 'liability', 45, 1),
@@ -996,14 +997,15 @@ CREATE TABLE `prepayment_reviews` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` int(11) NOT NULL,
   `accounting_period_id` int(11) NOT NULL,
-  `source_type` enum('transaction','expense_claim_line') NOT NULL,
+  `source_type` enum('transaction','transaction_split_line','expense_claim_line') NOT NULL,
   `source_id` bigint(20) NOT NULL,
-  `status` enum('pending','not_prepaid','prepaid') NOT NULL DEFAULT 'pending',
+  `status` enum('not_prepaid','prepaid') NOT NULL DEFAULT 'not_prepaid',
   `service_start_date` date DEFAULT NULL,
   `service_end_date` date DEFAULT NULL,
   `notes` text DEFAULT NULL,
   `generated_journal_id` bigint(20) DEFAULT NULL,
   `reversal_journal_id` bigint(20) DEFAULT NULL,
+  `current_schedule_id` bigint(20) DEFAULT NULL,
   `reviewed_at` datetime DEFAULT NULL,
   `reviewed_by` varchar(100) DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
@@ -1013,6 +1015,7 @@ CREATE TABLE `prepayment_reviews` (
   KEY `idx_prepayment_reviews_period_status` (`company_id`,`accounting_period_id`,`status`),
   KEY `idx_prepayment_reviews_generated_journal` (`generated_journal_id`),
   KEY `idx_prepayment_reviews_reversal_journal` (`reversal_journal_id`),
+  KEY `idx_prepayment_reviews_current_schedule` (`current_schedule_id`),
   CONSTRAINT `fk_prepayment_reviews_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_prepayment_reviews_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_prepayment_reviews_generated_journal` FOREIGN KEY (`generated_journal_id`) REFERENCES `journals` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
@@ -1020,6 +1023,129 @@ CREATE TABLE `prepayment_reviews` (
   CONSTRAINT `chk_prepayment_reviews_dates` CHECK (`service_start_date` IS NULL OR `service_end_date` IS NULL OR `service_start_date` <= `service_end_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `prepayment_schedules`
+--
+
+DROP TABLE IF EXISTS `prepayment_schedules`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `prepayment_schedules` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `review_id` bigint(20) NOT NULL,
+  `version_no` int(11) NOT NULL,
+  `company_id` int(11) NOT NULL,
+  `source_accounting_period_id` int(11) NOT NULL,
+  `source_type` enum('transaction','transaction_split_line','expense_claim_line') NOT NULL,
+  `source_id` bigint(20) NOT NULL,
+  `source_journal_id` bigint(20) NOT NULL,
+  `source_journal_line_id` bigint(20) NOT NULL,
+  `source_date` date NOT NULL,
+  `source_amount_pence` bigint(20) NOT NULL,
+  `original_expense_nominal_id` int(11) NOT NULL,
+  `asset_nominal_id` int(11) NOT NULL,
+  `service_start_date` date NOT NULL,
+  `service_end_date` date NOT NULL,
+  `total_days` int(11) NOT NULL,
+  `calculation_version` smallint(5) unsigned NOT NULL DEFAULT 2,
+  `calculation_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `status` enum('draft','active','superseded','complete','needs_review') NOT NULL DEFAULT 'active',
+  `superseded_by_schedule_id` bigint(20) DEFAULT NULL,
+  `created_by` varchar(100) NOT NULL DEFAULT 'web_app',
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_prepayment_schedules_review_version` (`review_id`,`version_no`),
+  KEY `idx_prepayment_schedules_company_source_period` (`company_id`,`source_accounting_period_id`,`status`),
+  KEY `idx_prepayment_schedules_source` (`company_id`,`source_type`,`source_id`),
+  KEY `idx_prepayment_schedules_source_journal` (`source_journal_id`),
+  KEY `idx_prepayment_schedules_source_line` (`source_journal_line_id`),
+  KEY `idx_prepayment_schedules_asset_nominal` (`asset_nominal_id`),
+  KEY `idx_prepayment_schedules_superseded_by` (`superseded_by_schedule_id`),
+  CONSTRAINT `fk_prepayment_schedules_review` FOREIGN KEY (`review_id`) REFERENCES `prepayment_reviews` (`id`) ON UPDATE CASCADE,
+  CONSTRAINT `fk_prepayment_schedules_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_prepayment_schedules_source_period` FOREIGN KEY (`source_accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON UPDATE CASCADE,
+  CONSTRAINT `fk_prepayment_schedules_source_journal` FOREIGN KEY (`source_journal_id`) REFERENCES `journals` (`id`) ON UPDATE CASCADE,
+  CONSTRAINT `fk_prepayment_schedules_source_line` FOREIGN KEY (`source_journal_line_id`) REFERENCES `journal_lines` (`id`) ON UPDATE CASCADE,
+  CONSTRAINT `fk_prepayment_schedules_expense_nominal` FOREIGN KEY (`original_expense_nominal_id`) REFERENCES `nominal_accounts` (`id`) ON UPDATE CASCADE,
+  CONSTRAINT `fk_prepayment_schedules_asset_nominal` FOREIGN KEY (`asset_nominal_id`) REFERENCES `nominal_accounts` (`id`) ON UPDATE CASCADE,
+  CONSTRAINT `fk_prepayment_schedules_superseded_by` FOREIGN KEY (`superseded_by_schedule_id`) REFERENCES `prepayment_schedules` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `chk_prepayment_schedules_amount` CHECK (`source_amount_pence` > 0),
+  CONSTRAINT `chk_prepayment_schedules_days` CHECK (`total_days` > 0),
+  CONSTRAINT `chk_prepayment_schedules_dates` CHECK (`service_start_date` <= `service_end_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `prepayment_schedule_periods`
+--
+
+DROP TABLE IF EXISTS `prepayment_schedule_periods`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `prepayment_schedule_periods` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `schedule_id` bigint(20) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `period_start` date NOT NULL,
+  `period_end` date NOT NULL,
+  `overlap_start` date DEFAULT NULL,
+  `overlap_end` date DEFAULT NULL,
+  `overlap_days` int(11) NOT NULL,
+  `expense_pence` bigint(20) NOT NULL,
+  `opening_deferred_pence` bigint(20) NOT NULL,
+  `closing_deferred_pence` bigint(20) NOT NULL,
+  `is_source_period` tinyint(1) NOT NULL DEFAULT 0,
+  `allocation_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_prepayment_schedule_period` (`schedule_id`,`accounting_period_id`),
+  KEY `idx_prepayment_schedule_period_accounting_period` (`accounting_period_id`,`schedule_id`),
+  CONSTRAINT `fk_prepayment_schedule_period_schedule` FOREIGN KEY (`schedule_id`) REFERENCES `prepayment_schedules` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_prepayment_schedule_period_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON UPDATE CASCADE,
+  CONSTRAINT `chk_prepayment_schedule_period_days` CHECK (`overlap_days` >= 0),
+  CONSTRAINT `chk_prepayment_schedule_period_expense` CHECK (`expense_pence` >= 0),
+  CONSTRAINT `chk_prepayment_schedule_period_opening` CHECK (`opening_deferred_pence` >= 0),
+  CONSTRAINT `chk_prepayment_schedule_period_closing` CHECK (`closing_deferred_pence` >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `prepayment_schedule_postings`
+--
+
+DROP TABLE IF EXISTS `prepayment_schedule_postings`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `prepayment_schedule_postings` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `schedule_id` bigint(20) NOT NULL,
+  `schedule_period_id` bigint(20) NOT NULL,
+  `accounting_period_id` int(11) NOT NULL,
+  `journal_id` bigint(20) NOT NULL,
+  `posting_role` enum('deferral','release') NOT NULL,
+  `posting_type` enum('deferral','release','correction','reopen_compensation') NOT NULL,
+  `effect_pence` bigint(20) NOT NULL,
+  `target_pence` bigint(20) NOT NULL,
+  `calculation_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `created_by` varchar(100) NOT NULL DEFAULT 'web_app',
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_prepayment_schedule_posting_journal` (`journal_id`),
+  KEY `idx_prepayment_postings_schedule_period` (`schedule_id`,`schedule_period_id`,`posting_role`),
+  KEY `idx_prepayment_postings_accounting_period` (`accounting_period_id`,`posting_role`),
+  CONSTRAINT `fk_prepayment_postings_schedule` FOREIGN KEY (`schedule_id`) REFERENCES `prepayment_schedules` (`id`) ON UPDATE CASCADE,
+  CONSTRAINT `fk_prepayment_postings_schedule_period` FOREIGN KEY (`schedule_period_id`) REFERENCES `prepayment_schedule_periods` (`id`) ON UPDATE CASCADE,
+  CONSTRAINT `fk_prepayment_postings_accounting_period` FOREIGN KEY (`accounting_period_id`) REFERENCES `accounting_periods` (`id`) ON UPDATE CASCADE,
+  CONSTRAINT `fk_prepayment_postings_journal` FOREIGN KEY (`journal_id`) REFERENCES `journals` (`id`) ON UPDATE CASCADE,
+  CONSTRAINT `chk_prepayment_postings_effect` CHECK (`effect_pence` <> 0),
+  CONSTRAINT `chk_prepayment_postings_target` CHECK (`target_pence` >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+ALTER TABLE `prepayment_reviews`
+  ADD CONSTRAINT `fk_prepayment_reviews_current_schedule` FOREIGN KEY (`current_schedule_id`) REFERENCES `prepayment_schedules` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 --
 -- Table structure for table `role_card_permissions`

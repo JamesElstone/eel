@@ -20,6 +20,10 @@ final class CompanySettingsStore
         $this->companyId = $companyId;
     }
 
+    public function companyId(): int {
+        return $this->companyId;
+    }
+
     public static function definitions(): array {
         return [
             'utr' => ['type' => 'int', 'default' => ''],
@@ -30,6 +34,7 @@ final class CompanySettingsStore
             'default_trade_nominal_id' => ['type' => 'int', 'default' => ''],
             'default_expense_nominal_id' => ['type' => 'int', 'default' => ''],
             'tools_small_equipment_nominal_id' => ['type' => 'int', 'default' => ''],
+            'prepayment_asset_nominal_id' => ['type' => 'int', 'default' => ''],
             'director_loan_nominal_id' => ['type' => 'int', 'default' => ''],
             'director_loan_asset_nominal_id' => ['type' => 'int', 'default' => ''],
             'director_loan_liability_nominal_id' => ['type' => 'int', 'default' => ''],

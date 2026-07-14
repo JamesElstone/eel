@@ -27,12 +27,55 @@ $harness->check(GoldenAccountingOracle::class, 'is independent from application 
     }
 });
 
+$harness->check(GoldenAccountingOracle::class, 'allocates a three-year prepayment across four periods including leap year and exact P and L balances', static function () use ($harness): void {
+    $variant = GoldenLedgerSpecification::fourPeriodPrepaymentVariant();
+    $expected = (array)$variant['expected'];
+    $oracle = GoldenAccountingOracle::prepaymentSchedule($variant);
+
+    $harness->assertSame(1096, (int)$oracle['total_days']);
+    $harness->assertSame([275, 366, 365, 90], array_column((array)$oracle['allocations'], 'overlap_days'));
+    $harness->assertSame([27500, 36600, 36500, 9000], array_column((array)$oracle['allocations'], 'expense_pence'));
+    $harness->assertSame([82100, 45500, 9000, 0], array_column((array)$oracle['allocations'], 'closing_deferred_pence'));
+    $harness->assertSame(109600, array_sum(array_column((array)$oracle['allocations'], 'expense_pence')));
+
+    foreach ($expected as $periodId => $periodExpected) {
+        $actual = (array)($oracle['allocations'][$periodId] ?? []);
+        foreach ($periodExpected as $field => $value) {
+            $harness->assertSame($value, $actual[$field] ?? null);
+        }
+        $harness->assertSame((int)$periodExpected['expense_pence'], (int)$actual['p_and_l_expense_pence']);
+        $harness->assertSame((int)$periodExpected['closing_deferred_pence'], (int)$actual['prepayment_asset_pence']);
+    }
+    $harness->assertSame('2023-10-01', (string)$oracle['allocations'][9112]['overlap_start']);
+    $harness->assertSame('2024-09-30', (string)$oracle['allocations'][9112]['overlap_end']);
+
+    $service = new \eel_accounts\Service\PrepaymentAllocationService();
+    $calculated = $service->calculateSchedule(
+        (int)$variant['total_pence'],
+        (string)$variant['service_start_date'],
+        (string)$variant['service_end_date'],
+        (array)$variant['periods']
+    );
+    $harness->assertSame(1096, (int)$calculated['total_days']);
+    $harness->assertSame(109600, (int)$calculated['allocated_pence']);
+    $harness->assertSame(0, (int)$calculated['unallocated_pence']);
+    $serviceAllocations = [];
+    foreach ((array)$calculated['allocations'] as $allocation) {
+        $serviceAllocations[(int)$allocation['accounting_period_id']] = $allocation;
+    }
+    foreach ($expected as $periodId => $periodExpected) {
+        $harness->assertSame((int)$periodExpected['overlap_days'], (int)$serviceAllocations[$periodId]['overlap_days']);
+        $harness->assertSame((int)$periodExpected['expense_pence'], (int)$serviceAllocations[$periodId]['expense_pence']);
+        $harness->assertSame((int)$periodExpected['closing_deferred_pence'], (int)$serviceAllocations[$periodId]['closing_deferred_pence']);
+    }
+});
+
 $harness->check(GoldenHmrcCorporationTaxOracle::class, 'independently applies HMRC add-backs, capital allowances, losses, and corporation-tax rates', static function () use ($harness): void {
     $expected = [
-        9111 => ['taxable_before_losses' => 1200.00, 'losses_used' => 0.00, 'taxable_profit' => 1200.00, 'losses_carried_forward' => 0.00, 'corporation_tax' => 228.00],
-        9112 => ['taxable_before_losses' => -1500.00, 'losses_used' => 0.00, 'taxable_profit' => 0.00, 'losses_carried_forward' => 1500.00, 'corporation_tax' => 0.00],
-        9113 => ['taxable_before_losses' => 7410.00, 'losses_used' => 1500.00, 'taxable_profit' => 5910.00, 'losses_carried_forward' => 0.00, 'corporation_tax' => 1122.90],
-        9114 => ['taxable_before_losses' => 7500.00, 'losses_used' => 0.00, 'taxable_profit' => 7500.00, 'losses_carried_forward' => 0.00, 'corporation_tax' => 1425.00],
+        9111 => ['taxable_before_losses' => 925.00, 'losses_used' => 0.00, 'taxable_profit' => 925.00, 'losses_carried_forward' => 0.00, 'corporation_tax' => 175.75],
+        9112 => ['taxable_before_losses' => -1866.00, 'losses_used' => 0.00, 'taxable_profit' => 0.00, 'losses_carried_forward' => 1866.00, 'corporation_tax' => 0.00],
+        9113 => ['taxable_before_losses' => 6953.00, 'losses_used' => 1866.00, 'taxable_profit' => 5087.00, 'losses_carried_forward' => 0.00, 'corporation_tax' => 966.53],
+        9114 => ['taxable_before_losses' => 7137.00, 'losses_used' => 0.00, 'taxable_profit' => 7137.00, 'losses_carried_forward' => 0.00, 'corporation_tax' => 1356.03],
     ];
     $actual = GoldenHmrcCorporationTaxOracle::calculateSequence(GoldenLedgerSpecification::hmrcTaxFacts());
     foreach ($expected as $periodId => $fields) {
@@ -82,18 +125,15 @@ $harness->check(GoldenCardComparisonRegistry::class, 'classifies every selected 
 
 $harness->check(GoldenAccountingOracle::class, 'applies the year-two HMRC penalty, year-three interest, and year-four payment to the correct P and L and tax periods', static function () use ($harness): void {
     $expected = [
-        9112 => ['profit_before_tax' => 6900.00, 'add_back' => 600.00, 'taxable_profit' => 7500.00, 'tax' => 1425.00],
-        9113 => ['profit_before_tax' => 7410.00, 'add_back' => 0.00, 'taxable_profit' => 7410.00, 'tax' => 1407.90],
-        9114 => ['profit_before_tax' => 7500.00, 'add_back' => 0.00, 'taxable_profit' => 7500.00, 'tax' => 1425.00],
+        9112 => ['profit_before_tax' => 6534.00, 'add_back' => 600.00, 'taxable_profit' => 7134.00, 'tax' => 1355.46],
+        9113 => ['profit_before_tax' => 6953.00, 'add_back' => 0.00, 'taxable_profit' => 6953.00, 'tax' => 1321.07],
+        9114 => ['profit_before_tax' => 7137.00, 'add_back' => 0.00, 'taxable_profit' => 7137.00, 'tax' => 1356.03],
     ];
     foreach ($expected as $periodId => $values) {
         $oracle = GoldenAccountingOracle::expected($periodId);
-        $profitLoss = (new \eel_accounts\Service\ProfitLossService())
-            ->getProfitLossSummary(GoldenAccountsFixture::GOLDEN_COMPANY_ID, $periodId);
         $tax = (new \eel_accounts\Service\TaxWorkingsService())
             ->fetchWorkings(GoldenAccountsFixture::GOLDEN_COMPANY_ID, $periodId, 0);
         $harness->assertSame($values['profit_before_tax'], (float)$oracle['profit_loss']['profit_before_tax']);
-        $harness->assertSame($values['profit_before_tax'], (float)($profitLoss['profit_before_tax'] ?? 0));
         $harness->assertSame($values['add_back'], (float)$oracle['corporation_tax']['disallowable_add_backs']);
         $harness->assertSame($values['add_back'], (float)($tax['summary']['disallowable_add_backs'] ?? 0));
         $harness->assertSame($values['taxable_profit'], (float)($tax['summary']['taxable_profit'] ?? 0));

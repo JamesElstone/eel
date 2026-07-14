@@ -15,6 +15,8 @@ final class PrepaymentReviewService
     public function __construct(
         private readonly ?\eel_accounts\Service\YearEndMetricsService $metricsService = null,
         private readonly ?\eel_accounts\Service\YearEndLockService $lockService = null,
+        private readonly ?\eel_accounts\Service\PrepaymentSourceService $sourceService = null,
+        private readonly ?\eel_accounts\Service\PrepaymentScheduleService $scheduleService = null,
     ) {
     }
 
@@ -52,10 +54,10 @@ final class PrepaymentReviewService
             ];
         }
 
-        $items = array_merge(
-            $this->fetchTransactionItems($companyId, $accountingPeriodId),
-            $this->fetchExpenseLineItems($companyId, $accountingPeriodId)
-        );
+        $candidateContext = ($this->sourceService ?? new \eel_accounts\Service\PrepaymentSourceService())
+            ->fetchCandidateContext($companyId, $accountingPeriodId);
+        $items = (array)($candidateContext['eligible'] ?? []);
+        $excludedItems = (array)($candidateContext['excluded'] ?? []);
         $reviews = $this->fetchReviews($companyId, $accountingPeriodId);
         foreach ($items as $index => $item) {
             $review = $reviews[$this->reviewKey((string)$item['source_type'], (int)$item['source_id'])] ?? null;
@@ -68,6 +70,11 @@ final class PrepaymentReviewService
                 'reviewed_by' => '',
                 'persisted' => false,
             ];
+            if (is_array($review) && (int)($review['current_schedule_id'] ?? 0) > 0
+                && ($this->scheduleService ?? new \eel_accounts\Service\PrepaymentScheduleService())->hasSchema()) {
+                $items[$index]['review']['schedule'] = ($this->scheduleService ?? new \eel_accounts\Service\PrepaymentScheduleService())
+                    ->fetchSchedule((int)$review['current_schedule_id']);
+            }
         }
 
         usort($items, static function (array $left, array $right): int {
@@ -81,6 +88,13 @@ final class PrepaymentReviewService
 
         $reviewedCount = count(array_filter($items, fn(array $item): bool => $this->isCompletedDecision((array)($item['review'] ?? []))));
         $pendingCount = count($items) - $reviewedCount;
+        $scheduleContext = ($this->scheduleService ?? new \eel_accounts\Service\PrepaymentScheduleService())->hasSchema()
+            ? ($this->scheduleService ?? new \eel_accounts\Service\PrepaymentScheduleService())->fetchPeriodContext($companyId, $accountingPeriodId)
+            : ['available' => false, 'errors' => [], 'schedules' => []];
+        $carriedSchedules = array_values(array_filter(
+            (array)($scheduleContext['schedules'] ?? []),
+            static fn(array $schedule): bool => (int)($schedule['source_accounting_period_id'] ?? 0) !== $accountingPeriodId
+        ));
 
         return [
             'available' => true,
@@ -94,11 +108,17 @@ final class PrepaymentReviewService
             })),
             'reviewed_count' => $reviewedCount,
             'unreviewed_count' => $pendingCount,
+            'excluded_items' => $excludedItems,
+            'excluded_count' => count($excludedItems),
+            'schedule_context' => $scheduleContext,
+            'carried_schedules' => $carriedSchedules,
+            'carried_schedule_count' => count($carriedSchedules),
         ];
     }
 
     public function saveReview(int $companyId, int $accountingPeriodId, array $payload, string $changedBy = 'web_app'): array
     {
+        (new \eel_accounts\Service\VatSupportScopeService())->assertTaxAndYearEndSupported($companyId, 'change prepayment reviews');
         (($this->lockService ?? new \eel_accounts\Service\YearEndLockService()))->assertUnlocked($companyId, $accountingPeriodId, 'save prepayment review decisions');
 
         if (!$this->tableExists('prepayment_reviews')) {
@@ -115,7 +135,7 @@ final class PrepaymentReviewService
         $serviceEnd = trim((string)($payload['service_end_date'] ?? ''));
         $notes = trim((string)($payload['notes'] ?? ''));
 
-        if (!in_array($sourceType, ['transaction', 'expense_claim_line'], true) || $sourceId <= 0) {
+        if (!in_array($sourceType, \eel_accounts\Service\PrepaymentSourceService::sourceTypes(), true) || $sourceId <= 0) {
             return [
                 'success' => false,
                 'errors' => ['Select a valid prepayment source item.'],
@@ -152,15 +172,51 @@ final class PrepaymentReviewService
             ];
         }
 
-        if (!$this->sourceBelongsToCandidateNominal($companyId, $accountingPeriodId, $sourceType, $sourceId)) {
+        $sourceVerification = ($this->sourceService ?? new \eel_accounts\Service\PrepaymentSourceService())
+            ->verify($companyId, $accountingPeriodId, $sourceType, $sourceId);
+        if (empty($sourceVerification['success'])) {
             return [
                 'success' => false,
-                'errors' => ['The selected source item is not available for prepayment review.'],
+                'errors' => (array)($sourceVerification['errors'] ?? ['The selected source item is not available for prepayment review.']),
             ];
         }
 
+        $accountingPeriod = ($this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService())
+            ->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if (!is_array($accountingPeriod)) {
+            return ['success' => false, 'errors' => ['The selected accounting period could not be found.']];
+        }
+        if ($status === 'prepaid' && $serviceStart < (string)$accountingPeriod['period_start']) {
+            return ['success' => false, 'errors' => ['The service start cannot precede the source accounting period; treat that case as an accrual or prior-period issue.']];
+        }
+        if ($status === 'prepaid' && $serviceEnd <= (string)$accountingPeriod['period_end']) {
+            return ['success' => false, 'errors' => ['A prepayment must extend beyond the source accounting period end.']];
+        }
+
+        $existing = \InterfaceDB::fetchOne(
+            'SELECT id, current_schedule_id FROM prepayment_reviews
+             WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id
+               AND source_type = :source_type AND source_id = :source_id LIMIT 1',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'source_type' => $sourceType,
+                'source_id' => $sourceId,
+            ]
+        );
+        $scheduleService = $this->scheduleService ?? new \eel_accounts\Service\PrepaymentScheduleService();
+        if ($status === 'not_prepaid' && is_array($existing) && (int)($existing['current_schedule_id'] ?? 0) > 0
+            && $scheduleService->netPostedForReview((int)$existing['id']) !== 0) {
+            return ['success' => false, 'requires_reopen' => true, 'errors' => ['Reopen and compensate the posted prepayment schedule before changing this decision to not pre-paid.']];
+        }
+
         $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
-        \InterfaceDB::execute(
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
+        }
+        try {
+            $sql =
             'INSERT INTO prepayment_reviews (
                 company_id,
                 accounting_period_id,
@@ -188,15 +244,25 @@ final class PrepaymentReviewService
                 :created_at,
                 :updated_at
              )
-             ON DUPLICATE KEY UPDATE
+             ';
+            $sql .= \InterfaceDB::driverName() === 'sqlite'
+                ? ' ON CONFLICT(company_id, accounting_period_id, source_type, source_id) DO UPDATE SET
+                status = excluded.status,
+                service_start_date = excluded.service_start_date,
+                service_end_date = excluded.service_end_date,
+                notes = excluded.notes,
+                reviewed_at = excluded.reviewed_at,
+                reviewed_by = excluded.reviewed_by,
+                updated_at = excluded.updated_at'
+                : ' ON DUPLICATE KEY UPDATE
                 status = VALUES(status),
                 service_start_date = VALUES(service_start_date),
                 service_end_date = VALUES(service_end_date),
                 notes = VALUES(notes),
                 reviewed_at = VALUES(reviewed_at),
                 reviewed_by = VALUES(reviewed_by),
-                updated_at = VALUES(updated_at)',
-            [
+                updated_at = VALUES(updated_at)';
+            \InterfaceDB::execute($sql, [
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
                 'source_type' => $sourceType,
@@ -209,8 +275,55 @@ final class PrepaymentReviewService
                 'reviewed_by' => $this->actorValue($changedBy),
                 'created_at' => $now,
                 'updated_at' => $now,
-            ]
-        );
+            ]);
+
+            $reviewId = (int)\InterfaceDB::fetchColumn(
+                'SELECT id FROM prepayment_reviews
+                 WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id
+                   AND source_type = :source_type AND source_id = :source_id LIMIT 1',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'source_type' => $sourceType,
+                    'source_id' => $sourceId,
+                ]
+            );
+            if ($reviewId <= 0) {
+                throw new \RuntimeException('The prepayment review could not be reloaded after save.');
+            }
+
+            $scheduleResult = null;
+            if ($status === 'prepaid') {
+                $scheduleResult = $scheduleService->syncReviewSchedule($reviewId, $changedBy);
+                if (empty($scheduleResult['success'])) {
+                    throw new \RuntimeException((string)(($scheduleResult['errors'] ?? [])[0] ?? 'The prepayment schedule could not be calculated.'));
+                }
+            } elseif (is_array($existing) && (int)($existing['current_schedule_id'] ?? 0) > 0) {
+                \InterfaceDB::execute(
+                    'UPDATE prepayment_schedules SET status = :status, updated_at = CURRENT_TIMESTAMP WHERE id = :id',
+                    ['status' => 'superseded', 'id' => (int)$existing['current_schedule_id']]
+                );
+                \InterfaceDB::execute(
+                    'UPDATE prepayment_reviews SET current_schedule_id = NULL WHERE id = :id',
+                    ['id' => $reviewId]
+                );
+            }
+
+            (new \eel_accounts\Service\YearEndAcknowledgementService())->revoke(
+                $companyId,
+                $accountingPeriodId,
+                'prepayment_approvals'
+            );
+
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+            return ['success' => false, 'errors' => [$exception->getMessage()]];
+        }
 
         ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->writeAuditLog(
             $companyId,
@@ -227,6 +340,8 @@ final class PrepaymentReviewService
 
         return [
             'success' => true,
+            'review_id' => $reviewId,
+            'schedule' => is_array($scheduleResult ?? null) ? ($scheduleResult['schedule'] ?? null) : null,
         ];
     }
 
@@ -291,8 +406,12 @@ final class PrepaymentReviewService
 
     private function fetchReviews(int $companyId, int $accountingPeriodId): array
     {
+        $currentScheduleSelect = $this->columnExists('prepayment_reviews', 'current_schedule_id')
+            ? 'current_schedule_id'
+            : 'NULL AS current_schedule_id';
         $rows = \InterfaceDB::fetchAll(
-            'SELECT source_type,
+            'SELECT id,
+                    source_type,
                     source_id,
                     status,
                     COALESCE(service_start_date, \'\') AS service_start_date,
@@ -301,7 +420,8 @@ final class PrepaymentReviewService
                     COALESCE(reviewed_at, \'\') AS reviewed_at,
                     COALESCE(reviewed_by, \'\') AS reviewed_by,
                     generated_journal_id,
-                    reversal_journal_id
+                    reversal_journal_id,
+                    ' . $currentScheduleSelect . '
              FROM prepayment_reviews
              WHERE company_id = :company_id
                AND accounting_period_id = :accounting_period_id',

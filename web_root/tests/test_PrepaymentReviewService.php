@@ -53,7 +53,20 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     ['account_type' => 'expense']
                 );
                 if ($nominalId <= 0) {
-                    $harness->skip('An active expense nominal is required.');
+                    InterfaceDB::prepareExecute(
+                        'INSERT INTO nominal_accounts (code, name, account_type, tax_treatment, prepayment_candidate, is_active, sort_order)
+                         VALUES (:code, :name, :account_type, :tax_treatment, 1, 1, 9000)',
+                        [
+                            'code' => 'PR' . substr($marker, 0, 6),
+                            'name' => 'Prepayment Review Expense',
+                            'account_type' => 'expense',
+                            'tax_treatment' => 'allowable',
+                        ]
+                    );
+                    $nominalId = (int)InterfaceDB::fetchColumn(
+                        'SELECT id FROM nominal_accounts WHERE code = :code',
+                        ['code' => 'PR' . substr($marker, 0, 6)]
+                    );
                 }
                 InterfaceDB::prepareExecute(
                     'UPDATE nominal_accounts SET prepayment_candidate = 1 WHERE id = :id',
@@ -105,6 +118,65 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $transactionId = (int)InterfaceDB::fetchColumn(
                     'SELECT id FROM transactions WHERE company_id = :company_id AND dedupe_hash = :dedupe_hash',
                     ['company_id' => $companyId, 'dedupe_hash' => hash('sha256', $marker . ':transaction')]
+                );
+                $bankNominalId = (int)InterfaceDB::fetchColumn(
+                    'SELECT id FROM nominal_accounts WHERE account_type = :account_type AND is_active = 1 ORDER BY id ASC LIMIT 1',
+                    ['account_type' => 'asset']
+                );
+                if ($bankNominalId <= 0) {
+                    InterfaceDB::prepareExecute(
+                        'INSERT INTO nominal_accounts (code, name, account_type, tax_treatment, is_active, sort_order)
+                         VALUES (:code, :name, :account_type, :tax_treatment, 1, 9001)',
+                        [
+                            'code' => 'PB' . substr($marker, 0, 6),
+                            'name' => 'Prepayment Review Bank',
+                            'account_type' => 'asset',
+                            'tax_treatment' => 'other',
+                        ]
+                    );
+                    $bankNominalId = (int)InterfaceDB::fetchColumn(
+                        'SELECT id FROM nominal_accounts WHERE code = :code',
+                        ['code' => 'PB' . substr($marker, 0, 6)]
+                    );
+                }
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO journals (
+                        company_id, accounting_period_id, source_type, source_ref,
+                        journal_date, description, is_posted
+                     ) VALUES (
+                        :company_id, :accounting_period_id, :source_type, :source_ref,
+                        :journal_date, :description, 1
+                     )',
+                    [
+                        'company_id' => $companyId,
+                        'accounting_period_id' => $accountingPeriodId,
+                        'source_type' => 'bank_csv',
+                        'source_ref' => 'transaction:' . $transactionId,
+                        'journal_date' => '2025-06-15',
+                        'description' => 'Annual service purchase',
+                    ]
+                );
+                $journalId = (int)InterfaceDB::fetchColumn(
+                    'SELECT id FROM journals WHERE company_id = :company_id AND source_ref = :source_ref',
+                    ['company_id' => $companyId, 'source_ref' => 'transaction:' . $transactionId]
+                );
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit, line_description)
+                     VALUES (:journal_id, :nominal_account_id, 120.00, 0.00, :description)',
+                    [
+                        'journal_id' => $journalId,
+                        'nominal_account_id' => $nominalId,
+                        'description' => 'Annual service expense',
+                    ]
+                );
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit, line_description)
+                     VALUES (:journal_id, :nominal_account_id, 0.00, 120.00, :description)',
+                    [
+                        'journal_id' => $journalId,
+                        'nominal_account_id' => $bankNominalId,
+                        'description' => 'Bank payment',
+                    ]
                 );
 
                 $unreviewed = $service->fetchContext($companyId, $accountingPeriodId);

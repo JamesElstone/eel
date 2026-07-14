@@ -72,6 +72,7 @@ final class _companies_nominalsCard extends CardBaseFramework
                 'default_trade_nominal_id' => 'Default trade nominal',
                 'default_expense_nominal_id' => 'Expense claims payable nominal',
                 'tools_small_equipment_nominal_id' => 'Tools & Small Equipment nominal',
+                'prepayment_asset_nominal_id' => 'Prepayments asset nominal',
                 'director_loan_asset_nominal_id' => 'Director Loan Asset nominal',
                 'director_loan_liability_nominal_id' => 'Director Loan Liability nominal',
                 'vat_nominal_id' => 'VAT control nominal',
@@ -155,6 +156,13 @@ final class _companies_nominalsCard extends CardBaseFramework
                             <select class="select" id="tools_small_equipment_nominal_id" name="tools_small_equipment_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['tools_small_equipment_nominal_id'] ?? '')) . '">
                                 <option value="">Select nominal account</option>
                                 ' . $this->nominalOptions($nominalAccounts, (string)($settings['tools_small_equipment_nominal_id'] ?? '')) . '
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <label for="prepayment_asset_nominal_id">Prepayments asset nominal</label>
+                            <select class="select" id="prepayment_asset_nominal_id" name="prepayment_asset_nominal_id" data-state-default="' . HelperFramework::escape((string)($settings['prepayment_asset_nominal_id'] ?? '')) . '">
+                                <option value="">Select nominal account</option>
+                                ' . $this->prepaymentNominalOptions($nominalAccounts, (string)($settings['prepayment_asset_nominal_id'] ?? '')) . '
                             </select>
                         </div>
                         <div class="form-row">
@@ -286,6 +294,15 @@ final class _companies_nominalsCard extends CardBaseFramework
         return $html;
     }
 
+    private function prepaymentNominalOptions(array $nominalAccounts, string $selectedId): string
+    {
+        return $this->nominalOptions(array_values(array_filter(
+            $nominalAccounts,
+            static fn(array $nominal): bool => strtolower(trim((string)($nominal['account_type'] ?? ''))) === 'asset'
+                && strtolower(trim((string)($nominal['subtype_code'] ?? ''))) === 'prepayments'
+        )), $selectedId);
+    }
+
     private function buildNominalDefaultSuggestions(array $nominalAccounts, array $settings): array
     {
         $normalised = array_map(static function (array $row): array {
@@ -331,6 +348,11 @@ final class _companies_nominalsCard extends CardBaseFramework
                     $name = strtolower($row['name']);
                     return $row['id'] > 0 && $row['account_type'] === 'expense' && str_contains($name, 'tools') && str_contains($name, 'equipment');
                 }))
+                : null,
+            'prepayment_asset_nominal_id' => !$this->hasAssignedNominal($settings, 'prepayment_asset_nominal_id')
+                ? $this->firstMatchingNominal($normalised, static fn(array $row): bool => $row['id'] > 0
+                    && $row['account_type'] === 'asset'
+                    && $row['subtype_code'] === 'prepayments')
                 : null,
             'director_loan_asset_nominal_id' => !$this->hasAssignedNominal($settings, 'director_loan_asset_nominal_id')
                 ? $this->directorLoanAssetNominalSuggestion($normalised)

@@ -30,6 +30,7 @@ $harness->run(NominalsAction::class, function (GeneratedServiceClassTestHarness 
             'default_trade_nominal_id' => '15',
             'default_expense_nominal_id' => '20',
             'tools_small_equipment_nominal_id' => '21',
+            'prepayment_asset_nominal_id' => '22',
             'director_loan_asset_nominal_id' => '30',
             'director_loan_liability_nominal_id' => '31',
             'vat_nominal_id' => '',
@@ -39,6 +40,7 @@ $harness->run(NominalsAction::class, function (GeneratedServiceClassTestHarness 
             ['id' => 15, 'code' => '2300', 'name' => 'Trade Creditors'],
             ['id' => 20, 'code' => '5000', 'name' => 'Expenses'],
             ['id' => 21, 'code' => '6070', 'name' => 'Tools & Small Equipment'],
+            ['id' => 22, 'code' => '1150', 'name' => 'Prepayments'],
             ['id' => 30, 'code' => '1200', 'name' => 'Director Loan Asset'],
             ['id' => 31, 'code' => '2100', 'name' => 'Director Loan Liability'],
             ['id' => 50, 'code' => '9999', 'name' => 'Uncategorised'],
@@ -49,6 +51,7 @@ $harness->run(NominalsAction::class, function (GeneratedServiceClassTestHarness 
         $harness->assertSame(true, str_contains($message, 'Default trade: 2300 - Trade Creditors'));
         $harness->assertSame(true, str_contains($message, 'Expense claims payable: 5000 - Expenses'));
         $harness->assertSame(true, str_contains($message, 'Tools &amp; Small Equipment: 6070 - Tools &amp; Small Equipment'));
+        $harness->assertSame(true, str_contains($message, 'Prepayments asset: 1150 - Prepayments'));
         $harness->assertSame(true, str_contains($message, 'Director loan asset: 1200 - Director Loan Asset'));
         $harness->assertSame(true, str_contains($message, 'Director loan liability: 2100 - Director Loan Liability'));
         $harness->assertSame(true, str_contains($message, 'VAT control: Unassigned'));
@@ -89,19 +92,88 @@ $harness->run(NominalsAction::class, function (GeneratedServiceClassTestHarness 
 
     $harness->check('NominalsAction', 'returns a validation error when no complete suggestion set is available', function () use ($harness, $instance): void {
         authenticateTestSession();
-        (new \eel_accounts\Service\AccountingContextService())->setPageContext(1, 'Test Company', '00000000', 0);
-        $settingsStore = new \eel_accounts\Store\CompanySettingsStore(1);
+        $companyId = nominalsActionInsertCompany('Incomplete Nominal Suggestions Fixture Limited');
+        (new \eel_accounts\Service\AccountingContextService())->setPageContext($companyId, 'Test Company', '00000000', 0);
+        $settingsStore = new \eel_accounts\Store\CompanySettingsStore($companyId);
+        $prepaymentNominalId = (int)InterfaceDB::fetchColumn(
+            'SELECT na.id
+             FROM nominal_accounts na
+             INNER JOIN nominal_account_subtypes nas ON nas.id = na.account_subtype_id
+             WHERE na.account_type = :account_type
+               AND na.is_active = 1
+               AND nas.code = :subtype
+             ORDER BY na.id ASC
+             LIMIT 1',
+            ['account_type' => 'asset', 'subtype' => 'prepayments']
+        );
+        if ($prepaymentNominalId <= 0) {
+            $prepaymentSubtypeId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM nominal_account_subtypes WHERE code = :code',
+                ['code' => 'prepayments']
+            );
+            if ($prepaymentSubtypeId <= 0) {
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO nominal_account_subtypes (code, name, parent_account_type, sort_order, is_active)
+                     VALUES (:code, :name, :parent_account_type, :sort_order, 1)',
+                    [
+                        'code' => 'prepayments',
+                        'name' => 'Prepayments',
+                        'parent_account_type' => 'asset',
+                        'sort_order' => 1150,
+                    ]
+                );
+                $prepaymentSubtypeId = (int)InterfaceDB::fetchColumn(
+                    'SELECT id FROM nominal_account_subtypes WHERE code = :code',
+                    ['code' => 'prepayments']
+                );
+            }
+            InterfaceDB::prepareExecute(
+                'INSERT INTO nominal_accounts (
+                    code, name, account_type, account_subtype_id,
+                    tax_treatment, is_active, sort_order
+                 ) VALUES (
+                    :code, :name, :account_type, :account_subtype_id,
+                    :tax_treatment, 1, :sort_order
+                 )',
+                [
+                    'code' => '1150',
+                    'name' => 'Prepayments',
+                    'account_type' => 'asset',
+                    'account_subtype_id' => $prepaymentSubtypeId,
+                    'tax_treatment' => 'other',
+                    'sort_order' => 1150,
+                ]
+            );
+            $prepaymentNominalId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM nominal_accounts WHERE code = :code',
+                ['code' => '1150']
+            );
+        }
         foreach ([
             'default_bank_nominal_id',
             'default_trade_nominal_id',
             'default_expense_nominal_id',
             'tools_small_equipment_nominal_id',
+            'prepayment_asset_nominal_id',
             'director_loan_asset_nominal_id',
             'director_loan_liability_nominal_id',
             'vat_nominal_id',
             'uncategorised_nominal_id',
         ] as $index => $setting) {
-            $settingsStore->set($setting, 9000 + $index, 'int');
+            $settingsStore->set(
+                $setting,
+                $setting === 'prepayment_asset_nominal_id' ? $prepaymentNominalId : 9000 + $index,
+                'int'
+            );
+        }
+        $settingsService = new \eel_accounts\Service\CompanySettingsService();
+        $suggestionMethod = new ReflectionMethod($settingsService, 'buildNominalDefaultSuggestions');
+        $suggestionMethod->setAccessible(true);
+        $nominalAccounts = (new \eel_accounts\Repository\NominalAccountRepository())->fetchNominalAccounts($companyId);
+        foreach ((array)$suggestionMethod->invoke($settingsService, $nominalAccounts) as $setting => $nominal) {
+            if (isset($nominal['id'])) {
+                $settingsStore->set((string)$setting, (int)$nominal['id'], 'int');
+            }
         }
         $settingsStore->flush();
 

@@ -195,22 +195,52 @@ final class CompanySettingsService
 
     public function saveNominalsSection(\eel_accounts\Store\CompanySettingsStore $settingsStore, array $settings): void
     {
-        $settingsStore->set('default_bank_nominal_id', $settings['default_bank_nominal_id'] ?? '', 'int');
-        $settingsStore->set('default_trade_nominal_id', $settings['default_trade_nominal_id'] ?? '', 'int');
-        $settingsStore->set('default_expense_nominal_id', $settings['default_expense_nominal_id'] ?? '', 'int');
-        $settingsStore->set('tools_small_equipment_nominal_id', $settings['tools_small_equipment_nominal_id'] ?? '', 'int');
-        $directorLoanLiabilityNominalId = $this->directorLoanLiabilityNominalSetting($settings);
-        $settingsStore->set('director_loan_asset_nominal_id', $settings['director_loan_asset_nominal_id'] ?? '', 'int');
-        $settingsStore->set('director_loan_liability_nominal_id', $directorLoanLiabilityNominalId, 'int');
-        $settingsStore->set('director_loan_nominal_id', $directorLoanLiabilityNominalId, 'int');
-        $settingsStore->set('vat_nominal_id', $settings['vat_nominal_id'] ?? '', 'int');
-        $settingsStore->set('uncategorised_nominal_id', $settings['uncategorised_nominal_id'] ?? '', 'int');
-        $settingsStore->set('corporation_tax_expense_nominal_id', $settings['corporation_tax_expense_nominal_id'] ?? '', 'int');
-        $settingsStore->set('corporation_tax_liability_nominal_id', $settings['corporation_tax_liability_nominal_id'] ?? '', 'int');
-        foreach ($this->helperNominalSettingKeys() as $key) {
-            $settingsStore->set($key, $settings[$key] ?? '', 'int');
+        $companyId = $settingsStore->companyId();
+        $prepayments = new PrepaymentAssetNominalService();
+        $change = $prepayments->prepareChange(
+            $companyId,
+            max(0, (int)($settings['prepayment_asset_nominal_id'] ?? 0))
+        );
+        $settings['prepayment_asset_nominal_id'] = (string)(int)$change['nominal']['id'];
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
         }
-        $settingsStore->flush();
+
+        try {
+            $settingsStore->set('default_bank_nominal_id', $settings['default_bank_nominal_id'] ?? '', 'int');
+            $settingsStore->set('default_trade_nominal_id', $settings['default_trade_nominal_id'] ?? '', 'int');
+            $settingsStore->set('default_expense_nominal_id', $settings['default_expense_nominal_id'] ?? '', 'int');
+            $settingsStore->set('tools_small_equipment_nominal_id', $settings['tools_small_equipment_nominal_id'] ?? '', 'int');
+            $settingsStore->set('prepayment_asset_nominal_id', $settings['prepayment_asset_nominal_id'], 'int');
+            $directorLoanLiabilityNominalId = $this->directorLoanLiabilityNominalSetting($settings);
+            $settingsStore->set('director_loan_asset_nominal_id', $settings['director_loan_asset_nominal_id'] ?? '', 'int');
+            $settingsStore->set('director_loan_liability_nominal_id', $directorLoanLiabilityNominalId, 'int');
+            $settingsStore->set('director_loan_nominal_id', $directorLoanLiabilityNominalId, 'int');
+            $settingsStore->set('vat_nominal_id', $settings['vat_nominal_id'] ?? '', 'int');
+            $settingsStore->set('uncategorised_nominal_id', $settings['uncategorised_nominal_id'] ?? '', 'int');
+            $settingsStore->set('corporation_tax_expense_nominal_id', $settings['corporation_tax_expense_nominal_id'] ?? '', 'int');
+            $settingsStore->set('corporation_tax_liability_nominal_id', $settings['corporation_tax_liability_nominal_id'] ?? '', 'int');
+            foreach ($this->helperNominalSettingKeys() as $key) {
+                $settingsStore->set($key, $settings[$key] ?? '', 'int');
+            }
+            $settingsStore->flush();
+            if (!empty($change['changed'])) {
+                $prepayments->synchroniseChange(
+                    $companyId,
+                    (array)$change['review_ids'],
+                    (array)$change['accounting_period_ids']
+                );
+            }
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+            throw $exception;
+        }
     }
 
     public function saveImportReviewSection(\eel_accounts\Store\CompanySettingsStore $settingsStore, array $settings): void
@@ -232,6 +262,7 @@ final class CompanySettingsService
             'default_trade_nominal_id',
             'default_expense_nominal_id',
             'tools_small_equipment_nominal_id',
+            'prepayment_asset_nominal_id',
             'director_loan_asset_nominal_id',
             'director_loan_liability_nominal_id',
             'vat_nominal_id',
@@ -413,6 +444,12 @@ final class CompanySettingsService
                         && str_contains($name, 'tools')
                         && str_contains($name, 'equipment');
                 }),
+            'prepayment_asset_nominal_id' => $this->firstMatchingNominal(
+                $normalised,
+                static fn(array $row): bool => $row['id'] > 0
+                    && $row['account_type'] === 'asset'
+                    && $row['subtype_code'] === 'prepayments'
+            ),
             'director_loan_asset_nominal_id' => $this->directorLoanAssetNominalSuggestion($normalised),
             'director_loan_liability_nominal_id' => $this->directorLoanLiabilityNominalSuggestion($normalised),
             'director_loan_nominal_id' => $this->directorLoanLiabilityNominalSuggestion($normalised),

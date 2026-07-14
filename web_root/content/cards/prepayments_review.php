@@ -21,7 +21,7 @@ final class _prepayments_reviewCard extends CardBaseFramework
 
     public function helper(array $context): string
     {
-        return 'Only nominals marked as prepayment candidates in Nominals appear here. Enter service dates only when the source item covers a period beyond this accounting year.';
+        return 'Only posted expense debits on nominals marked as prepayment candidates appear here. Amounts are apportioned by inclusive days and exact cumulative penny rounding. Future accounting-period releases are posted in the first service month of each period; monthly P&amp;L is not spread in this phase.';
     }
 
     public function services(): array
@@ -69,8 +69,10 @@ final class _prepayments_reviewCard extends CardBaseFramework
         }
 
         if ($rowsHtml === '') {
-            $rowsHtml = '<tr><td colspan="6">No transaction or expense claim lines use nominals marked as prepayment candidates for this accounting period.</td></tr>';
+            $rowsHtml = '<tr><td colspan="7">No direct transaction, split line or expense claim line uses a nominal marked as a prepayment candidate for this accounting period.</td></tr>';
         }
+        $carriedHtml = $this->carriedSchedulesHtml((array)($review['carried_schedules'] ?? []), $companySettings);
+        $excludedHtml = $this->excludedCandidatesHtml((array)($review['excluded_items'] ?? []), $companySettings);
 
         return '<section class="settings-stack" id="prepayments-review">
             <div class="month-grid">
@@ -78,17 +80,44 @@ final class _prepayments_reviewCard extends CardBaseFramework
                 ' . $this->summaryCard('Reviewed', (string)(int)($review['reviewed_count'] ?? 0)) . '
                 ' . $this->summaryCard('Prepaid', (string)(int)($review['prepaid_count'] ?? 0)) . '
                 ' . $this->summaryCard('Awaiting decision', (string)(int)($review['pending_count'] ?? 0)) . '
+                ' . $this->summaryCard('Carried schedules', (string)(int)($review['carried_schedule_count'] ?? 0)) . '
             </div>
             ' . ($isLocked ? '<div class="helper"><span class="badge warning">Period locked</span> Prepayment decisions are read only.</div>' : '') . '
+            ' . $excludedHtml . '
             <div class="panel-soft">
                 <div class="table-scroll">
                     <table>
-                        <thead><tr><th>Source</th><th>Date</th><th>Nominal</th><th>Description</th><th>Amount</th><th>Status</th></tr></thead>
+                        <thead><tr><th>Source</th><th>Date</th><th>Nominal</th><th>Description</th><th>Amount</th><th>Status</th><th>Schedule</th></tr></thead>
                         <tbody>' . $rowsHtml . '</tbody>
                     </table>
                 </div>
             </div>
+            ' . $carriedHtml . '
         </section>';
+    }
+
+    private function excludedCandidatesHtml(array $items, array $companySettings): string
+    {
+        if ($items === []) {
+            return '';
+        }
+        $rows = '';
+        foreach ($items as $item) {
+            $rows .= '<tr><td>'
+                . HelperFramework::escape(HelperFramework::labelFromKey((string)($item['source_type'] ?? ''), '_'))
+                . ' #' . (int)($item['source_id'] ?? 0) . '</td><td>'
+                . HelperFramework::escape($this->displayDate((string)($item['source_date'] ?? ''))) . '</td><td>'
+                . HelperFramework::escape(trim((string)($item['nominal_code'] ?? '') . ' ' . (string)($item['nominal_name'] ?? ''))) . '</td><td>'
+                . HelperFramework::escape((string)($item['description'] ?? '')) . '</td><td class="numeric">'
+                . HelperFramework::escape($this->money($companySettings, $item['amount'] ?? 0)) . '</td><td>'
+                . HelperFramework::escape((string)($item['exclusion_reason'] ?? 'The source is not eligible for prepayment review.'))
+                . '</td></tr>';
+        }
+
+        return '<div class="panel-soft warn"><h4 class="card-title">Excluded source items</h4>'
+            . '<p class="helper">These rows use a prepayment-candidate nominal but do not have exact posted positive-debit evidence. They are shown for coverage and do not block Year End.</p>'
+            . '<div class="table-scroll"><table><thead><tr><th>Source</th><th>Date</th><th>Nominal</th><th>Description</th><th>Amount</th><th>Reason</th></tr></thead>'
+            . '<tbody>' . $rows . '</tbody></table></div></div>';
     }
 
     private function itemRow(array $item, int $companyId, int $accountingPeriodId, array $companySettings, array $accountingPeriod, bool $isLocked): string
@@ -112,6 +141,9 @@ final class _prepayments_reviewCard extends CardBaseFramework
             $serviceEnd = $periodEnd;
         }
         $autosaveButtonClass = 'prepayment-autosave-' . preg_replace('/[^a-z0-9_-]/i', '-', $sourceType) . '-' . $sourceId;
+        $sourceValid = !array_key_exists('source_valid', $item) || !empty($item['source_valid']);
+        $schedule = is_array($review['schedule'] ?? null) ? (array)$review['schedule'] : null;
+        $scheduleHtml = $this->scheduleHtml($schedule, $review, $accountingPeriodId, $companySettings, $companyId, $isLocked);
 
         return '<tr>
             <td>' . HelperFramework::escape(HelperFramework::labelFromKey($sourceType, '_')) . '</td>
@@ -119,10 +151,11 @@ final class _prepayments_reviewCard extends CardBaseFramework
             <td>' . HelperFramework::escape(trim((string)($item['nominal_code'] ?? '') . ' ' . (string)($item['nominal_name'] ?? ''))) . '</td>
             <td>
                 ' . HelperFramework::escape((string)($item['description'] ?? '')) . '
+                ' . (!$sourceValid ? '<div class="helper"><span class="badge warning">Not postable</span> ' . HelperFramework::escape((string)(($item['source_errors'] ?? [])[0] ?? 'The source journal is not ready.')) . '</div>' : '') . '
             </td>
             <td class="numeric">' . HelperFramework::escape($this->money($companySettings, $item['amount'] ?? 0)) . '</td>
             <td>
-                ' . ($isLocked ? '<span class="badge ' . ($status === 'pending' ? 'warning' : ($status === 'prepaid' ? 'success' : 'info')) . '">' . HelperFramework::escape($this->statusLabel($status)) . '</span>' : '
+                ' . ($isLocked || !$sourceValid ? '<span class="badge ' . ($status === 'pending' ? 'warning' : ($status === 'prepaid' ? 'success' : 'info')) . '">' . HelperFramework::escape($this->statusLabel($status)) . '</span>' : '
                 <form id="' . HelperFramework::escape($formId) . '" method="post" data-ajax="true" class="actions-row actions-row-nowrap prepayment-review-form">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                     <input type="hidden" name="card_action" value="Prepayments">
@@ -144,7 +177,87 @@ final class _prepayments_reviewCard extends CardBaseFramework
                     <button class="' . HelperFramework::escape($autosaveButtonClass) . '" type="submit" hidden>Autosave decision</button>
                 </form>') . '
             </td>
+            <td>' . $scheduleHtml . '</td>
         </tr>';
+    }
+
+    private function scheduleHtml(?array $schedule, array $review, int $accountingPeriodId, array $settings, int $companyId, bool $isLocked): string
+    {
+        if ((string)($review['status'] ?? '') !== 'prepaid') {
+            return '<span class="helper">Not applicable</span>';
+        }
+        if (!is_array($schedule)) {
+            return '<span class="badge warning">Calculation required</span>';
+        }
+
+        $selected = null;
+        $hasPostings = false;
+        $allocationRows = '';
+        foreach ((array)($schedule['allocations'] ?? []) as $allocation) {
+            if ((int)$allocation['accounting_period_id'] === $accountingPeriodId) {
+                $selected = $allocation;
+            }
+            if ((int)($allocation['posting_count'] ?? 0) > 0) {
+                $hasPostings = true;
+            }
+            $allocationRows .= '<tr>
+                <td>' . HelperFramework::escape($this->displayDate((string)$allocation['period_start']) . '–' . $this->displayDate((string)$allocation['period_end'])) . '</td>
+                <td class="numeric">' . (int)$allocation['overlap_days'] . '</td>
+                <td class="numeric">' . HelperFramework::escape($this->money($settings, ((int)$allocation['expense_pence']) / 100)) . '</td>
+                <td class="numeric">' . HelperFramework::escape($this->money($settings, ((int)$allocation['closing_deferred_pence']) / 100)) . '</td>
+            </tr>';
+        }
+
+        $summary = '';
+        if (is_array($selected)) {
+            $summary = '<div><strong>' . (int)$selected['overlap_days'] . '/' . (int)$schedule['total_days'] . ' days</strong></div>
+                <div class="helper">Expense ' . HelperFramework::escape($this->money($settings, ((int)$selected['expense_pence']) / 100))
+                . '; closing Prepayments ' . HelperFramework::escape($this->money($settings, ((int)$selected['closing_deferred_pence']) / 100)) . '.</div>';
+        }
+        $unallocated = (int)($schedule['unallocated_pence'] ?? 0);
+        $warning = $unallocated > 0
+            ? '<div class="helper"><span class="badge warning">Future period missing</span> ' . HelperFramework::escape($this->money($settings, $unallocated / 100)) . ' remains to be allocated when later accounting periods are created.</div>'
+            : '';
+        $reopen = $hasPostings && !$isLocked
+            ? '<form method="post" data-ajax="true" class="actions-row">'
+                . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
+                <input type="hidden" name="card_action" value="Prepayments">
+                <input type="hidden" name="intent" value="reopen_schedule">
+                <input type="hidden" name="company_id" value="' . $companyId . '">
+                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
+                <input type="hidden" name="review_id" value="' . (int)($review['id'] ?? 0) . '">
+                <button class="button" type="submit">Reopen schedule</button>
+               </form>'
+            : '';
+
+        return $summary . $warning . '<details><summary>Full AP schedule</summary>
+            <div class="table-scroll"><table><thead><tr><th>Accounting period</th><th>Days</th><th>Expense</th><th>Closing asset</th></tr></thead>
+            <tbody>' . $allocationRows . '</tbody></table></div></details>' . $reopen;
+    }
+
+    private function carriedSchedulesHtml(array $schedules, array $settings): string
+    {
+        if ($schedules === []) {
+            return '';
+        }
+        $rows = '';
+        foreach ($schedules as $schedule) {
+            $allocation = (array)($schedule['selected_allocation'] ?? []);
+            $rows .= '<tr>
+                <td>' . HelperFramework::escape((string)($schedule['source_description'] ?? 'Prepayment source')) . '</td>
+                <td>' . HelperFramework::escape($this->displayDate((string)($schedule['service_start_date'] ?? '')) . '–' . $this->displayDate((string)($schedule['service_end_date'] ?? ''))) . '</td>
+                <td class="numeric">' . (int)($allocation['overlap_days'] ?? 0) . '</td>
+                <td class="numeric">' . HelperFramework::escape($this->money($settings, ((int)($allocation['expense_pence'] ?? 0)) / 100)) . '</td>
+                <td class="numeric">' . HelperFramework::escape($this->money($settings, ((int)($allocation['opening_deferred_pence'] ?? 0)) / 100)) . '</td>
+                <td class="numeric">' . HelperFramework::escape($this->money($settings, ((int)($allocation['closing_deferred_pence'] ?? 0)) / 100)) . '</td>
+                <td><span class="badge ' . ((string)($allocation['journal_state'] ?? '') === 'posted' ? 'success' : 'warning') . '">' . HelperFramework::escape(HelperFramework::labelFromKey((string)($allocation['journal_state'] ?? 'not_posted'), '_')) . '</span></td>
+            </tr>';
+        }
+
+        return '<div class="panel-soft"><h4 class="card-title">Carried-forward prepayment schedules</h4>
+            <p class="helper">These purchases originated in an earlier accounting period. Their AP allocation is released at the first service date in this period.</p>
+            <div class="table-scroll"><table><thead><tr><th>Source</th><th>Service dates</th><th>Days</th><th>AP expense</th><th>Opening asset</th><th>Closing asset</th><th>Journal</th></tr></thead>
+            <tbody>' . $rows . '</tbody></table></div></div>';
     }
 
     private function statusLabel(string $status): string

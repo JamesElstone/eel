@@ -18,11 +18,100 @@ $harness->check(GoldenAccountsFixture::class, 'builds deterministic synthetic ac
     $harness->assertSame(false, (bool)($manifest['privacy']['live_rows_copied'] ?? true));
     $harness->assertSame(4, count((array)($manifest['periods'] ?? [])));
     $harness->assertSame(4, InterfaceDB::countWhere('accounting_periods', 'company_id', GoldenAccountsFixture::GOLDEN_COMPANY_ID));
-    $harness->assertSame(17, InterfaceDB::countWhere('transactions', 'company_id', GoldenAccountsFixture::GOLDEN_COMPANY_ID));
+    $harness->assertSame(19, InterfaceDB::countWhere('transactions', 'company_id', GoldenAccountsFixture::GOLDEN_COMPANY_ID));
     $harness->assertSame(4, InterfaceDB::countWhere('expense_claims', 'company_id', GoldenAccountsFixture::GOLDEN_COMPANY_ID));
     $harness->assertSame(4, InterfaceDB::countWhere('asset_register', 'company_id', GoldenAccountsFixture::GOLDEN_COMPANY_ID));
     GoldenAccountsFixture::build();
-    $harness->assertSame(17, InterfaceDB::countWhere('transactions', 'company_id', GoldenAccountsFixture::GOLDEN_COMPANY_ID));
+    $harness->assertSame(19, InterfaceDB::countWhere('transactions', 'company_id', GoldenAccountsFixture::GOLDEN_COMPANY_ID));
+});
+
+$harness->check(GoldenAccountsFixture::class, 'apportions one cross-period prepayment by inclusive service days', static function () use ($harness): void {
+    GoldenAccountsFixture::build();
+    $review = InterfaceDB::fetchOne(
+        'SELECT pr.*, t.amount
+         FROM prepayment_reviews pr
+         INNER JOIN transactions t ON t.id = pr.source_id AND pr.source_type = :source_type
+         WHERE pr.company_id = :company_id AND pr.id = :review_id',
+        ['source_type' => 'transaction', 'company_id' => GoldenAccountsFixture::GOLDEN_COMPANY_ID, 'review_id' => 9195]
+    );
+    $harness->assertSame('2025-07-01', (string)$review['service_start_date']);
+    $harness->assertSame('2026-06-30', (string)$review['service_end_date']);
+
+    $totalDays = (new DateTimeImmutable((string)$review['service_start_date']))
+        ->diff((new DateTimeImmutable((string)$review['service_end_date']))->modify('+1 day'))->days;
+    $ap9113Days = (new DateTimeImmutable((string)$review['service_start_date']))
+        ->diff((new DateTimeImmutable('2025-09-30'))->modify('+1 day'))->days;
+    $cost = abs((float)$review['amount']);
+    $ap9113Amount = round($cost * $ap9113Days / $totalDays, 2);
+    $ap9114Amount = round($cost - $ap9113Amount, 2);
+
+    $harness->assertSame(365, $totalDays);
+    $harness->assertSame(92, $ap9113Days);
+    $harness->assertSame(92.00, $ap9113Amount);
+    $harness->assertSame(273.00, $ap9114Amount);
+
+    $allocations = InterfaceDB::fetchAll(
+        'SELECT psp.accounting_period_id, psp.expense_pence
+         FROM prepayment_reviews pr
+         INNER JOIN prepayment_schedules ps ON ps.id = pr.current_schedule_id
+         INNER JOIN prepayment_schedule_periods psp ON psp.schedule_id = ps.id
+         WHERE pr.id = 9195 ORDER BY psp.accounting_period_id'
+    );
+    $harness->assertSame([9200, 27300], array_map('intval', array_column($allocations, 'expense_pence')));
+
+    foreach ([9113 => 457.00, 9114 => 363.00] as $periodId => $expectedExpense) {
+        $expense = (float)InterfaceDB::fetchColumn(
+            'SELECT COALESCE(SUM(jl.debit - jl.credit), 0)
+             FROM journals j
+             INNER JOIN journal_lines jl ON jl.journal_id = j.id
+             WHERE j.company_id = :company_id AND j.accounting_period_id = :period_id
+               AND jl.nominal_account_id = :nominal_id AND j.is_posted = 1',
+            ['company_id' => GoldenAccountsFixture::GOLDEN_COMPANY_ID, 'period_id' => $periodId, 'nominal_id' => 91019]
+        );
+        $harness->assertSame($expectedExpense, $expense);
+    }
+
+    $metadata = InterfaceDB::fetchAll(
+        'SELECT j.id, j.source_type, j.source_ref,
+                jem.journal_tag, jem.journal_key, jem.entry_mode, jem.related_journal_id
+         FROM journals j
+         INNER JOIN journal_entry_metadata jem ON jem.journal_id = j.id
+         WHERE j.company_id = :company_id
+           AND jem.journal_tag IN (:deferral_tag, :release_tag)
+           AND jem.journal_key LIKE :journal_key
+         ORDER BY CASE jem.journal_tag WHEN :deferral_order THEN 0 ELSE 1 END, j.id',
+        [
+            'company_id' => GoldenAccountsFixture::GOLDEN_COMPANY_ID,
+            'deferral_tag' => 'prepayment_deferral',
+            'release_tag' => 'prepayment_release',
+            'deferral_order' => 'prepayment_deferral',
+            'journal_key' => 'review:9195:%',
+        ]
+    );
+    $harness->assertSame(2, count($metadata));
+    $harness->assertSame('manual', (string)$metadata[0]['source_type']);
+    $harness->assertTrue(str_contains((string)$metadata[0]['source_ref'], 'prepayment_deferral'));
+    $harness->assertSame('prepayment_deferral', (string)$metadata[0]['journal_tag']);
+    $harness->assertTrue(str_contains((string)$metadata[0]['journal_key'], ':9113:'));
+    $harness->assertSame('system_generated', (string)$metadata[0]['entry_mode']);
+    $harness->assertSame(0, (int)($metadata[0]['related_journal_id'] ?? 0));
+    $harness->assertSame('manual', (string)$metadata[1]['source_type']);
+    $harness->assertTrue(str_contains((string)$metadata[1]['source_ref'], 'prepayment_release'));
+    $harness->assertSame('prepayment_release', (string)$metadata[1]['journal_tag']);
+    $harness->assertTrue(str_contains((string)$metadata[1]['journal_key'], ':9114:'));
+    $harness->assertSame('system_generated', (string)$metadata[1]['entry_mode']);
+    $harness->assertSame(0, (int)($metadata[1]['related_journal_id'] ?? 0));
+
+    $assetSetting = InterfaceDB::fetchOne(
+        'SELECT cs.value, nas.code AS subtype_code
+         FROM company_settings cs
+         INNER JOIN nominal_accounts na ON na.id = CAST(cs.value AS INTEGER)
+         LEFT JOIN nominal_account_subtypes nas ON nas.id = na.account_subtype_id
+         WHERE cs.company_id = :company_id AND cs.setting = :setting',
+        ['company_id' => GoldenAccountsFixture::GOLDEN_COMPANY_ID, 'setting' => 'prepayment_asset_nominal_id']
+    );
+    $harness->assertSame(91018, (int)$assetSetting['value']);
+    $harness->assertSame('prepayments', (string)$assetSetting['subtype_code']);
 });
 
 $harness->check(GoldenAccountsFixture::class, 'seeds transaction-backed three-year assets and a reviewed year-two van', static function () use ($harness): void {

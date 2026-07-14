@@ -30,6 +30,7 @@ $harness->run(_companies_nominalsCard::class, static function (GeneratedServiceC
                 ['id' => 16, 'code' => '1300', 'name' => 'Tools and Equipment', 'account_type' => 'asset', 'subtype_code' => ''],
                 ['id' => 17, 'code' => '1330', 'name' => 'Accumulated Depreciation - Tools', 'account_type' => 'asset', 'subtype_code' => ''],
                 ['id' => 18, 'code' => '6070', 'name' => 'Tools & Small Equipment', 'account_type' => 'expense', 'subtype_code' => 'overhead'],
+                ['id' => 19, 'code' => '1150', 'name' => 'Prepayments', 'account_type' => 'asset', 'subtype_code' => 'prepayments'],
                 ['id' => 20, 'code' => '5000', 'name' => 'Materials', 'account_type' => 'expense', 'subtype_code' => ''],
                 ['id' => 21, 'code' => '8500', 'name' => 'Tax charge renamed safely', 'account_type' => 'expense', 'subtype_code' => 'corp_tax_expense'],
                 ['id' => 22, 'code' => '2200', 'name' => 'Tax creditor renamed safely', 'account_type' => 'liability', 'subtype_code' => 'corp_tax'],
@@ -42,7 +43,7 @@ $harness->run(_companies_nominalsCard::class, static function (GeneratedServiceC
     $harness->check(_companies_nominalsCard::class, 'renders default trade nominal field', static function () use ($harness, $html): void {
         $harness->assertTrue(str_contains($html, 'default_trade_nominal_id'));
         $harness->assertTrue(str_contains($html, '<label for="default_trade_nominal_id">Default Trade nominal</label>'));
-        $harness->assertTrue(str_contains($html, 'data-state-fields="default_bank_nominal_id,default_trade_nominal_id,default_expense_nominal_id,tools_small_equipment_nominal_id,director_loan_asset_nominal_id,director_loan_liability_nominal_id,vat_nominal_id,uncategorised_nominal_id,corporation_tax_expense_nominal_id,corporation_tax_liability_nominal_id"'));
+        $harness->assertTrue(str_contains($html, 'data-state-fields="default_bank_nominal_id,default_trade_nominal_id,default_expense_nominal_id,tools_small_equipment_nominal_id,prepayment_asset_nominal_id,director_loan_asset_nominal_id,director_loan_liability_nominal_id,vat_nominal_id,uncategorised_nominal_id,corporation_tax_expense_nominal_id,corporation_tax_liability_nominal_id"'));
         $harness->assertTrue(str_contains($html, '<option value="15" selected>2300 Trade Creditors</option>'));
     });
 
@@ -61,6 +62,16 @@ $harness->run(_companies_nominalsCard::class, static function (GeneratedServiceC
     $harness->check(_companies_nominalsCard::class, 'renders and suggests Tools and Small Equipment nominal', static function () use ($harness, $html): void {
         $harness->assertTrue(str_contains($html, '<label for="tools_small_equipment_nominal_id">Tools &amp; Small Equipment nominal</label>'));
         $harness->assertTrue(str_contains($html, '<strong>Tools &amp; Small Equipment nominal</strong><span>6070 Tools &amp; Small Equipment</span>'));
+    });
+
+    $harness->check(_companies_nominalsCard::class, 'renders and suggests the Prepayments current-asset nominal', static function () use ($harness, $html): void {
+        $harness->assertTrue(str_contains($html, '<label for="prepayment_asset_nominal_id">Prepayments asset nominal</label>'));
+        $harness->assertTrue(str_contains($html, '<strong>Prepayments asset nominal</strong><span>1150 Prepayments</span>'));
+        preg_match('/<select[^>]+id="prepayment_asset_nominal_id"[^>]*>(.*?)<\/select>/s', $html, $matches);
+        $options = (string)($matches[1] ?? '');
+        $harness->assertTrue(str_contains($options, '<option value="19">1150 Prepayments</option>'));
+        $harness->assertFalse(str_contains($options, 'value="16"'));
+        $harness->assertFalse(str_contains($options, 'value="17"'));
     });
 
     $harness->check(_companies_nominalsCard::class, 'renders and suggests director loan asset and liability fields', static function () use ($harness, $html): void {

@@ -4,6 +4,80 @@ declare(strict_types=1);
 
 final class GoldenAccountingOracle
 {
+    /**
+     * Independently derives accounting-period prepayment allocations and their
+     * resulting P&L and current-asset amounts from immutable test facts.
+     *
+     * @param array<string, mixed> $variant
+     * @return array{total_days: int, allocations: array<int, array<string, int|string>>}
+     */
+    public static function prepaymentSchedule(array $variant): array
+    {
+        $totalPence = (int)($variant['total_pence'] ?? 0);
+        $serviceStart = self::prepaymentDate((string)($variant['service_start_date'] ?? ''), 'service start');
+        $serviceEnd = self::prepaymentDate((string)($variant['service_end_date'] ?? ''), 'service end');
+        $totalDays = (int)$serviceStart->diff($serviceEnd->modify('+1 day'))->days;
+        if ($totalPence <= 0 || $serviceEnd < $serviceStart || $totalDays <= 0) {
+            throw new InvalidArgumentException('Invalid golden prepayment variant.');
+        }
+
+        $periods = (array)($variant['periods'] ?? []);
+        usort($periods, static fn(array $left, array $right): int => strcmp(
+            (string)($left['period_start'] ?? ''),
+            (string)($right['period_start'] ?? '')
+        ));
+
+        $allocations = [];
+        $allocationIndex = 0;
+        foreach ($periods as $period) {
+            $periodStart = self::prepaymentDate((string)($period['period_start'] ?? ''), 'period start');
+            $periodEnd = self::prepaymentDate((string)($period['period_end'] ?? ''), 'period end');
+            $overlapStart = $periodStart > $serviceStart ? $periodStart : $serviceStart;
+            $overlapEnd = $periodEnd < $serviceEnd ? $periodEnd : $serviceEnd;
+            if ($overlapEnd < $overlapStart) {
+                continue;
+            }
+
+            $daysBeforeOverlap = (int)$serviceStart->diff($overlapStart)->days;
+            $elapsedThroughOverlap = (int)$serviceStart->diff($overlapEnd->modify('+1 day'))->days;
+            $recognisedBefore = self::roundPositiveFractionHalfUp($totalPence, $daysBeforeOverlap, $totalDays);
+            $recognisedThrough = self::roundPositiveFractionHalfUp($totalPence, $elapsedThroughOverlap, $totalDays);
+            $expensePence = $recognisedThrough - $recognisedBefore;
+            $closingDeferredPence = $totalPence - $recognisedThrough;
+            $isInitialPeriod = $allocationIndex === 0;
+
+            $allocations[(int)($period['id'] ?? $period['accounting_period_id'] ?? 0)] = [
+                'overlap_start' => $overlapStart->format('Y-m-d'),
+                'overlap_end' => $overlapEnd->format('Y-m-d'),
+                'overlap_days' => (int)$overlapStart->diff($overlapEnd->modify('+1 day'))->days,
+                'expense_pence' => $expensePence,
+                'closing_deferred_pence' => $closingDeferredPence,
+                'posting_type' => $isInitialPeriod ? 'deferral' : 'release',
+                'posting_pence' => $isInitialPeriod ? $closingDeferredPence : $expensePence,
+                'p_and_l_expense_pence' => $isInitialPeriod ? $totalPence - $closingDeferredPence : $expensePence,
+                'prepayment_asset_pence' => $closingDeferredPence,
+            ];
+            $allocationIndex++;
+        }
+
+        return ['total_days' => $totalDays, 'allocations' => $allocations];
+    }
+
+    private static function roundPositiveFractionHalfUp(int $amount, int $numerator, int $denominator): int
+    {
+        return intdiv(($amount * $numerator) + intdiv($denominator, 2), $denominator);
+    }
+
+    private static function prepaymentDate(string $value, string $label): DateTimeImmutable
+    {
+        $date = DateTimeImmutable::createFromFormat('!Y-m-d', $value);
+        if (!$date instanceof DateTimeImmutable || $date->format('Y-m-d') !== $value) {
+            throw new InvalidArgumentException('Invalid golden prepayment ' . $label . '.');
+        }
+
+        return $date;
+    }
+
     /** @return array<string, mixed> */
     public static function expected(int $periodId): array
     {
@@ -37,7 +111,8 @@ final class GoldenAccountingOracle
         $costOfSales = (float)$accounts['materials']['debit'];
         $expenses = (float)$accounts['overheads']['debit']
             + (float)($accounts['hmrc_penalty']['debit'] ?? 0)
-            + (float)($accounts['hmrc_interest']['debit'] ?? 0);
+            + (float)($accounts['hmrc_interest']['debit'] ?? 0)
+            + (float)($accounts['prepayment_expense']['net'] ?? 0);
         $profit = round($income - $costOfSales - $expenses, 2);
         $disallowableAddBack = round((float)($period['disallowable_add_back'] ?? 0), 2);
         $taxableProfit = round(max(0, $profit + $disallowableAddBack), 2);
@@ -94,7 +169,9 @@ final class GoldenAccountingOracle
                 'company_name' => 'Golden Electrical Test Limited',
                 'company_number' => 'T9100',
                 'fixed_assets' => $fixedAssets,
-                'current_assets' => (float)$accounts['bank']['net'] + max(0, (float)($accounts['hmrc_payable']['net'] ?? 0)),
+                'current_assets' => (float)$accounts['bank']['net']
+                    + (float)($accounts['prepaid_expenses']['net'] ?? 0)
+                    + max(0, (float)($accounts['hmrc_payable']['net'] ?? 0)),
                 'creditors_within_one_year' => (float)-$accounts['director_loan']['net'] + max(0, -(float)($accounts['hmrc_payable']['net'] ?? 0)),
                 'creditors_after_more_than_one_year' => 0.00,
                 'net_current_assets_liabilities' => $profit,

@@ -7,12 +7,17 @@
  */
 declare(strict_types=1);
 
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'GoldenLedgerSpecification.php';
+
 final class GoldenAccountsFixture
 {
     public const GOLDEN_COMPANY_ID = 9100;
     public const EMPTY_COMPANY_ID = 9200;
     public const WARNING_COMPANY_ID = 9300;
     public const COMPLETE_COMPANY_ID = 9400;
+
+    /** @var array<int, array<string, mixed>> */
+    private static array $fourPeriodPrepaymentEvidence = [];
 
     /** @var list<array{id: int, label: string, start: string, end: string}> */
     private const PERIODS = [
@@ -51,10 +56,10 @@ final class GoldenAccountsFixture
         $periods = [];
         foreach (self::PERIODS as $period) {
             $adjustments = match ($period['id']) {
-                9111 => ['transaction_count' => 6, 'expenses' => 1500.00, 'net_profit' => 7500.00, 'bank' => 1500.00, 'journal_total' => 22800.00],
-                9112 => ['transaction_count' => 4, 'expenses' => 2100.00, 'net_profit' => 6900.00, 'bank' => -1200.00, 'journal_total' => 26100.00],
-                9113 => ['transaction_count' => 3, 'expenses' => 1590.00, 'net_profit' => 7410.00, 'bank' => 7800.00, 'journal_total' => 16590.00],
-                9114 => ['transaction_count' => 4, 'expenses' => 1500.00, 'net_profit' => 7500.00, 'bank' => 7110.00, 'journal_total' => 17190.00],
+                9111 => ['transaction_count' => 7, 'expenses' => 1775.00, 'net_profit' => 7225.00, 'bank' => 404.00, 'journal_total' => 24717.00],
+                9112 => ['transaction_count' => 4, 'expenses' => 2466.00, 'net_profit' => 6534.00, 'bank' => -1200.00, 'journal_total' => 26466.00],
+                9113 => ['transaction_count' => 4, 'expenses' => 2047.00, 'net_profit' => 6953.00, 'bank' => 7435.00, 'journal_total' => 17593.00],
+                9114 => ['transaction_count' => 4, 'expenses' => 1863.00, 'net_profit' => 7137.00, 'bank' => 7110.00, 'journal_total' => 17553.00],
                 default => ['transaction_count' => 3, 'expenses' => 1500.00, 'net_profit' => 7500.00, 'bank' => 7800.00, 'journal_total' => 16500.00],
             };
             $periods[(string)$period['id']] = [
@@ -77,10 +82,10 @@ final class GoldenAccountsFixture
         foreach (self::accountingCardKeys() as $cardKey) {
             $cardExpectations[$cardKey] = ['scenario' => 'golden', 'renders' => true];
         }
-        $cardExpectations['pl_summary']['metrics'] = ['income' => 12000.00, 'expenses' => 1500.00, 'net_profit' => 7500.00];
+        $cardExpectations['pl_summary']['metrics'] = ['income' => 12000.00, 'expenses' => 1863.00, 'net_profit' => 7137.00];
         $cardExpectations['transactions_imported']['metrics'] = ['transaction_count' => 3, 'uncategorised_count' => 0];
         $cardExpectations['expense_statistics']['metrics'] = ['claim_count' => 1, 'claimed_amount' => 300.00];
-        $cardExpectations['journals_list']['metrics'] = ['journal_count' => 4, 'debits' => 16500.00, 'credits' => 16500.00];
+        $cardExpectations['journals_list']['metrics'] = ['journal_count' => 7, 'debits' => 17553.00, 'credits' => 17553.00];
 
         return [
             'companies' => [
@@ -108,6 +113,8 @@ final class GoldenAccountsFixture
                 'motor_vehicles_vans' => 91015,
                 'motor_vehicles_accumulated_depreciation' => 91016,
                 'depreciation_expense' => 91017,
+                'prepayments' => 91018,
+                'annual_subscriptions' => 91019,
             ],
             'privacy' => [
                 'live_rows_copied' => false,
@@ -115,6 +122,13 @@ final class GoldenAccountsFixture
             ],
             'card_expectations' => $cardExpectations,
         ];
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    public static function fourPeriodPrepaymentEvidence(): array
+    {
+        self::build();
+        return self::$fourPeriodPrepaymentEvidence;
     }
 
     /** @return list<string> */
@@ -135,10 +149,11 @@ final class GoldenAccountsFixture
             'nominal_opening_balances', 'nominals_accounts', 'nominals_add_account', 'not_an_asset',
             'pl_expense_breakdown', 'pl_income_breakdown', 'pl_monthly_trend', 'pl_net_profit_bridge',
             'pl_source_coverage', 'pl_summary', 'prepayments_review', 'statement_field_mapping',
-            'tax_treatment_rules', 'transaction_search', 'transactions_imported', 'transactions_monthly_status',
+            'tax_prepayment_treatment', 'tax_rates_ct', 'tax_rates_vat', 'tax_thresholds_vat', 'tax_treatment_rules', 'tax_vat_threshold', 'transaction_search', 'transactions_imported', 'transactions_monthly_status',
             'transactions_rule_form', 'transactions_rules', 'trial_balance_losses', 'trial_balance_state',
             'trial_balance_validation', 'uploads_bank_transactions', 'uploads_details',
             'uploads_statement_coverage', 'uploads_validate_commit', 'vat_readiness', 'vat_registration',
+            'vat_support_scope', 'vat_turnover_monitoring',
             'vehicle_register', 'year_end_companies_house_comparison', 'year_end_director_loan_offset',
             'year_end_empty_month_confirmations', 'year_end_expenses_confirmation', 'year_end_notes',
             'year_end_prepayment_approvals', 'year_end_retained_earnings', 'year_end_state',
@@ -162,29 +177,45 @@ final class GoldenAccountsFixture
 
     private static function seedNominals(): void
     {
+        $subtypeId = static function (?string $code): ?int {
+            if ($code === null) {
+                return null;
+            }
+            $id = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM nominal_account_subtypes WHERE code = :code LIMIT 1',
+                ['code' => $code]
+            );
+            if ($id <= 0) {
+                throw new RuntimeException('Golden nominal subtype is missing: ' . $code);
+            }
+            return $id;
+        };
         $rows = [
-            [91001, 'G100', 'Golden Test Bank', 'asset', 'other', 1],
+            [91001, 'G100', 'Golden Test Bank', 'asset', 'other', 'bank'],
             [91002, 'G400', 'Golden Test Sales', 'income', 'allowable', null],
             [91003, 'G500', 'Golden Test Materials', 'cost_of_sales', 'allowable', null],
-            [91004, 'G600', 'Golden Test Overheads', 'expense', 'allowable', 11],
-            [91005, 'G800', 'Golden Test Director Loan', 'liability', 'other', 6],
-            [91006, 'G801', 'Golden Test Director Loan Asset', 'asset', 'other', 3],
-            [91007, '3000', 'Golden Test Retained Earnings', 'equity', 'other', 9],
-            [91008, 'G700', 'Golden Test Corporation Tax Expense', 'expense', 'disallowable', 14],
-            [91009, 'G810', 'Golden Test Corporation Tax Liability', 'liability', 'other', 13],
-            [91010, '6230', 'Golden Test HMRC Penalties', 'expense', 'disallowable', 11],
-            [91011, '6231', 'Golden Test HMRC Interest', 'expense', 'allowable', 11],
-            [91012, '2210', 'Golden Test HMRC Penalties & Interest Payable', 'liability', 'other', 12],
-            [91013, '1300', 'Golden Test Plant and Machinery', 'asset', 'capital', 2],
-            [91014, '1309', 'Golden Test Plant and Machinery Accumulated Depreciation', 'asset', 'capital', 2],
-            [91015, '1322', 'Golden Test Motor Vehicles - Vans', 'asset', 'capital', 2],
-            [91016, '1329', 'Golden Test Motor Vehicles Accumulated Depreciation', 'asset', 'capital', 2],
-            [91017, '6200', 'Golden Test Depreciation Expense', 'expense', 'disallowable', 11],
+            [91004, 'G600', 'Golden Test Overheads', 'expense', 'allowable', 'overhead'],
+            [91005, 'G800', 'Golden Test Director Loan', 'liability', 'other', 'director_loan_liability'],
+            [91006, 'G801', 'Golden Test Director Loan Asset', 'asset', 'other', 'director_loan_asset'],
+            [91007, '3000', 'Golden Test Retained Earnings', 'equity', 'other', 'capital_reserves'],
+            [91008, 'G700', 'Golden Test Corporation Tax Expense', 'expense', 'disallowable', 'corp_tax_expense'],
+            [91009, 'G810', 'Golden Test Corporation Tax Liability', 'liability', 'other', 'corp_tax'],
+            [91010, '6230', 'Golden Test HMRC Penalties', 'expense', 'disallowable', 'overhead'],
+            [91011, '6231', 'Golden Test HMRC Interest', 'expense', 'allowable', 'overhead'],
+            [91012, '2210', 'Golden Test HMRC Penalties & Interest Payable', 'liability', 'other', 'hmrc_payable'],
+            [91013, 'G1300', 'Golden Test Plant and Machinery', 'asset', 'capital', 'fixed_asset'],
+            [91014, '1309', 'Golden Test Plant and Machinery Accumulated Depreciation', 'asset', 'capital', 'fixed_asset'],
+            [91015, '1322', 'Golden Test Motor Vehicles - Vans', 'asset', 'capital', 'fixed_asset'],
+            [91016, '1329', 'Golden Test Motor Vehicles Accumulated Depreciation', 'asset', 'capital', 'fixed_asset'],
+            [91017, '6200', 'Golden Test Depreciation Expense', 'expense', 'disallowable', 'depreciation_expense'],
+            [91018, 'GOLD-PREPAY-ASSET', 'Golden Test Prepayments', 'asset', 'other', 'prepayments'],
+            [91019, 'GOLD-PREPAY-EXP', 'Golden Test Annual Subscriptions', 'expense', 'allowable', 'overhead'],
         ];
-        foreach ($rows as [$id, $code, $name, $type, $tax, $subtypeId]) {
+        foreach ($rows as [$id, $code, $name, $type, $tax, $subtypeCode]) {
             self::insert('nominal_accounts', [
                 'id' => $id, 'code' => $code, 'name' => $name, 'account_type' => $type,
-                'account_subtype_id' => $subtypeId, 'tax_treatment' => $tax, 'is_active' => 1, 'sort_order' => $id,
+                'account_subtype_id' => $subtypeId($subtypeCode), 'tax_treatment' => $tax,
+                'prepayment_candidate' => $id === 91019 ? 1 : 0, 'is_active' => 1, 'sort_order' => $id,
             ]);
         }
     }
@@ -217,6 +248,10 @@ final class GoldenAccountsFixture
             'claimant_name' => 'Synthetic Claimant', 'is_active' => 1,
         ]);
         self::insert('company_settings', [
+            'id' => 9197, 'company_id' => self::GOLDEN_COMPANY_ID,
+            'setting' => 'prepayment_asset_nominal_id', 'type' => 'int', 'value' => '91018',
+        ]);
+        self::insert('company_settings', [
             'id' => 9198, 'company_id' => self::GOLDEN_COMPANY_ID,
             'setting' => 'corporation_tax_expense_nominal_id', 'type' => 'int', 'value' => '91008',
         ]);
@@ -231,6 +266,160 @@ final class GoldenAccountsFixture
         }
         self::seedFixedAssets();
         self::seedHmrcPenaltyLifecycle();
+        self::seedFourPeriodPrepayment();
+        self::seedCrossPeriodPrepayment();
+    }
+
+    private static function seedFourPeriodPrepayment(): void
+    {
+        $variant = GoldenLedgerSpecification::fourPeriodPrepaymentVariant();
+        self::insert('transactions', [
+            'id' => 9290, 'company_id' => self::GOLDEN_COMPANY_ID, 'accounting_period_id' => 9111,
+            'statement_upload_id' => 9140, 'account_id' => 9120, 'txn_date' => '2022-12-30',
+            'txn_type' => 'Synthetic', 'description' => 'Three-year software service 30 December 2022 to 29 December 2025',
+            'reference' => 'GOLDEN-PREPAYMENT-FOUR-AP', 'amount' => -1096.00, 'currency' => 'GBP',
+            'source_type' => 'statement_csv', 'source_account_label' => 'Golden Current Account',
+            'balance' => 404.00, 'counterparty_name' => 'Synthetic Long-Term Software Supplier',
+            'dedupe_hash' => hash('sha256', 'GOLDEN-PREPAYMENT-FOUR-AP'), 'nominal_account_id' => 91019,
+            'category_status' => 'manual', 'document_download_status' => 'skipped',
+        ]);
+        self::journal(9292, 9111, '2022-12-30', 'bank_csv', 'transaction:9290', 91019, 91001, 1096.00);
+        self::insert('prepayment_reviews', [
+            'id' => 9291,
+            'company_id' => self::GOLDEN_COMPANY_ID, 'accounting_period_id' => 9111,
+            'source_type' => 'transaction', 'source_id' => 9290, 'status' => 'prepaid',
+            'service_start_date' => (string)$variant['service_start_date'],
+            'service_end_date' => (string)$variant['service_end_date'],
+            'notes' => 'Synthetic three-year service spanning four accounting periods.',
+            'reviewed_at' => '2023-09-30 11:00:00', 'reviewed_by' => 'golden-test',
+        ]);
+
+        $scheduleResult = (new \eel_accounts\Service\PrepaymentScheduleService())
+            ->syncReviewSchedule(9291, 'golden-test');
+        if (empty($scheduleResult['success'])) {
+            throw new RuntimeException('Unable to calculate the four-period golden prepayment schedule: '
+                . implode(' ', (array)($scheduleResult['errors'] ?? [])));
+        }
+
+        $reviewService = new \eel_accounts\Service\PrepaymentReviewService();
+        $approvalService = new \eel_accounts\Service\PrepaymentApprovalContextService();
+        $acknowledgements = new \eel_accounts\Service\YearEndAcknowledgementService();
+        $postingService = new \eel_accounts\Service\PrepaymentPostingService();
+        $scheduleService = new \eel_accounts\Service\PrepaymentScheduleService();
+        foreach (array_keys((array)$variant['expected']) as $periodId) {
+            $periodId = (int)$periodId;
+            $reviewContext = $reviewService->fetchContext(self::GOLDEN_COMPANY_ID, $periodId);
+            $approval = $acknowledgements->save(
+                self::GOLDEN_COMPANY_ID,
+                $periodId,
+                'prepayment_approvals',
+                $approvalService->buildApprovalBasis($reviewContext),
+                'golden-test'
+            );
+            if (empty($approval['success'])) {
+                throw new RuntimeException('Unable to approve the four-period golden prepayment schedule for AP '
+                    . $periodId . ': ' . implode(' ', (array)($approval['errors'] ?? [])));
+            }
+
+            $periodContext = $scheduleService->fetchPeriodContext(self::GOLDEN_COMPANY_ID, $periodId);
+            $selectedSchedule = null;
+            foreach ((array)($periodContext['schedules'] ?? []) as $schedule) {
+                if ((int)($schedule['review_id'] ?? 0) === 9291) {
+                    $selectedSchedule = $schedule;
+                    break;
+                }
+            }
+            if (!is_array($selectedSchedule)) {
+                throw new RuntimeException('The four-period golden schedule is missing from AP ' . $periodId . '.');
+            }
+            $allocation = (array)($selectedSchedule['selected_allocation'] ?? []);
+            $previewProfit = (new \eel_accounts\Service\PreTaxProfitLossService())
+                ->calculate(self::GOLDEN_COMPANY_ID, $periodId);
+            $posting = $postingService->postForAccountingPeriod(self::GOLDEN_COMPANY_ID, $periodId, 'golden-test');
+            if (empty($posting['success'])) {
+                throw new RuntimeException('Unable to post the four-period golden prepayment schedule for AP '
+                    . $periodId . ': ' . implode(' ', (array)($posting['errors'] ?? [])));
+            }
+            $retry = $postingService->postForAccountingPeriod(self::GOLDEN_COMPANY_ID, $periodId, 'golden-test');
+            if (empty($retry['success'])) {
+                throw new RuntimeException('Unable to retry the four-period golden prepayment schedule for AP ' . $periodId . '.');
+            }
+            $postedProfit = (new \eel_accounts\Service\PreTaxProfitLossService())
+                ->calculate(self::GOLDEN_COMPANY_ID, $periodId);
+            $currentScheduleId = (int)InterfaceDB::fetchColumn('SELECT current_schedule_id FROM prepayment_reviews WHERE id = 9291');
+            $currentSchedule = $scheduleService->fetchSchedule($currentScheduleId);
+            self::$fourPeriodPrepaymentEvidence[$periodId] = [
+                'schedule_id' => $currentScheduleId,
+                'allocation' => $allocation,
+                'preview_profit_before_tax' => (float)($previewProfit['profit_before_tax'] ?? 0),
+                'posted_profit_before_tax' => (float)($postedProfit['profit_before_tax'] ?? 0),
+                'posted_count' => (int)($posting['posted_count'] ?? 0),
+                'retry_posted_count' => (int)($retry['posted_count'] ?? 0),
+                'journal_ids' => array_map('intval', (array)($posting['journal_ids'] ?? [])),
+                'schedule_status' => (string)($currentSchedule['status'] ?? ''),
+            ];
+        }
+    }
+
+    private static function seedCrossPeriodPrepayment(): void
+    {
+        self::insert('transactions', [
+            'id' => 9194, 'company_id' => self::GOLDEN_COMPANY_ID, 'accounting_period_id' => 9113,
+            'statement_upload_id' => 9142, 'account_id' => 9120, 'txn_date' => '2025-07-01',
+            'txn_type' => 'Synthetic', 'description' => 'Annual software subscription 1 July 2025 to 30 June 2026',
+            'reference' => 'GOLDEN-PREPAYMENT-Y3-Y4', 'amount' => -365.00, 'currency' => 'GBP',
+            'source_type' => 'statement_csv', 'source_account_label' => 'Golden Current Account',
+            'balance' => 7435.00, 'counterparty_name' => 'Synthetic Software Supplier',
+            'dedupe_hash' => hash('sha256', 'GOLDEN-PREPAYMENT-Y3-Y4'), 'nominal_account_id' => 91019,
+            'category_status' => 'manual', 'document_download_status' => 'skipped',
+        ]);
+        self::journal(9241, 9113, '2025-07-01', 'bank_csv', 'transaction:9194', 91019, 91001, 365.00);
+
+        // Inclusive daily apportionment: 92 days in AP 9113 and 273 days in AP 9114.
+        self::insert('prepayment_reviews', [
+            'id' => 9195,
+            'company_id' => self::GOLDEN_COMPANY_ID, 'accounting_period_id' => 9113,
+            'source_type' => 'transaction', 'source_id' => 9194, 'status' => 'prepaid',
+            'service_start_date' => '2025-07-01', 'service_end_date' => '2026-06-30',
+            'notes' => 'Synthetic 365-day subscription spanning AP 9113 and AP 9114.',
+            'reviewed_at' => '2025-09-30 12:00:00', 'reviewed_by' => 'golden-test',
+        ]);
+
+        $schedule = (new \eel_accounts\Service\PrepaymentScheduleService())
+            ->syncReviewSchedule(9195, 'golden-test');
+        if (empty($schedule['success'])) {
+            throw new RuntimeException('Unable to calculate the golden prepayment schedule: '
+                . implode(' ', (array)($schedule['errors'] ?? [])));
+        }
+
+        $reviewService = new \eel_accounts\Service\PrepaymentReviewService();
+        $approvalService = new \eel_accounts\Service\PrepaymentApprovalContextService();
+        $acknowledgements = new \eel_accounts\Service\YearEndAcknowledgementService();
+        $postingService = new \eel_accounts\Service\PrepaymentPostingService();
+        foreach ([9113, 9114] as $periodId) {
+            $review = $reviewService->fetchContext(self::GOLDEN_COMPANY_ID, $periodId);
+            $approval = $acknowledgements->save(
+                self::GOLDEN_COMPANY_ID,
+                $periodId,
+                'prepayment_approvals',
+                $approvalService->buildApprovalBasis($review),
+                'golden-test'
+            );
+            if (empty($approval['success'])) {
+                throw new RuntimeException('Unable to approve the golden prepayment schedule for AP '
+                    . $periodId . ': ' . implode(' ', (array)($approval['errors'] ?? [])));
+            }
+
+            $posting = $postingService->postForAccountingPeriod(
+                self::GOLDEN_COMPANY_ID,
+                $periodId,
+                'golden-test'
+            );
+            if (empty($posting['success'])) {
+                throw new RuntimeException('Unable to post the golden prepayment schedule for AP '
+                    . $periodId . ': ' . implode(' ', (array)($posting['errors'] ?? [])));
+            }
+        }
     }
 
     /** @param array{id: int, label: string, start: string, end: string} $period */
@@ -434,7 +623,18 @@ final class GoldenAccountsFixture
         ]);
     }
 
-    private static function journal(int $id, int $periodId, string $date, string $sourceType, string $sourceRef, int $debitNominal, int $creditNominal, float $amount): void
+    /** @param array<string, int|string|null> $metadata */
+    private static function journal(
+        int $id,
+        int $periodId,
+        string $date,
+        string $sourceType,
+        string $sourceRef,
+        int $debitNominal,
+        int $creditNominal,
+        float $amount,
+        array $metadata = []
+    ): void
     {
         self::insert('journals', [
             'id' => $id, 'company_id' => self::GOLDEN_COMPANY_ID, 'accounting_period_id' => $periodId,
@@ -443,6 +643,18 @@ final class GoldenAccountsFixture
         ]);
         self::insert('journal_lines', ['journal_id' => $id, 'nominal_account_id' => $debitNominal, 'debit' => $amount, 'credit' => 0]);
         self::insert('journal_lines', ['journal_id' => $id, 'nominal_account_id' => $creditNominal, 'debit' => 0, 'credit' => $amount]);
+        if ($metadata !== []) {
+            self::insert('journal_entry_metadata', [
+                'journal_id' => $id,
+                'company_id' => self::GOLDEN_COMPANY_ID,
+                'accounting_period_id' => $periodId,
+                'journal_tag' => (string)($metadata['journal_tag'] ?? ''),
+                'journal_key' => (string)($metadata['journal_key'] ?? ''),
+                'entry_mode' => (string)($metadata['entry_mode'] ?? 'manual'),
+                'related_journal_id' => $metadata['related_journal_id'] ?? null,
+                'notes' => $metadata['notes'] ?? null,
+            ]);
+        }
     }
 
     /** @param array<string, scalar|null> $values */

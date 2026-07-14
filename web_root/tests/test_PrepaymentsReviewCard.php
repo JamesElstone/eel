@@ -30,6 +30,17 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         'reviewed_count' => 0,
                         'prepaid_count' => 0,
                         'pending_count' => 1,
+                        'excluded_count' => 1,
+                        'excluded_items' => [[
+                            'source_type' => 'transaction',
+                            'source_id' => 124,
+                            'source_date' => '2025-06-16',
+                            'nominal_code' => '6200',
+                            'nominal_name' => 'Software',
+                            'description' => 'Unposted refund candidate',
+                            'amount' => 25.00,
+                            'exclusion_reason' => 'The source journal is not posted.',
+                        ]],
                         'items' => [[
                             'source_type' => 'transaction',
                             'source_id' => 123,
@@ -56,6 +67,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue(str_contains($html, '<button class="prepayment-autosave-transaction-123" type="submit" hidden>Autosave decision</button>'));
             $harness->assertSame(false, str_contains($html, 'Save decision'));
             $harness->assertSame(false, str_contains($html, 'value="not_prepaid" selected'));
+            $harness->assertTrue(str_contains($html, 'Excluded source items'));
+            $harness->assertTrue(str_contains($html, 'do not block Year End'));
+            $harness->assertTrue(str_contains($html, 'Unposted refund candidate'));
+            $harness->assertTrue(str_contains($html, 'The source journal is not posted.'));
         });
     }
 );

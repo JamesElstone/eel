@@ -2020,6 +2020,10 @@
   color: var(--danger);
 }
 
+.vat-registration-api-state {
+  justify-content: flex-end;
+}
+
 .uploads-tabs {
   margin-top: 18px;
   width: 100%;

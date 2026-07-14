@@ -35,6 +35,8 @@ final class _vat_registrationCard extends CardBaseFramework
         $settings = (array)($context['company']['settings'] ?? []);
         $companyId = (int)($context['company']['id'] ?? 0);
         $vatService = new \eel_accounts\Service\VatRegistrationService();
+        $hmrcApiMode = \eel_accounts\Store\AccountingConfigurationStore::hmrcMode();
+        $hmrcApiState = $hmrcApiMode === 'LIVE' ? 'Live' : 'Test';
         $validationStatus = trim((string)($settings['vat_validation_status'] ?? ''));
         $validatedHash = \eel_accounts\Service\VatRegistrationViewDataService::validationHash($vatService, $settings);
 
@@ -55,32 +57,42 @@ final class _vat_registrationCard extends CardBaseFramework
         $registeredValue = !empty($settings['is_vat_registered']) ? '1' : '0';
 
         return '
+            <div class="pill-row vat-registration-api-state">
+                <span class="pill">HMRC API: ' . HelperFramework::escape($hmrcApiState) . '</span>
+            </div>
             <form method="post" data-ajax="true" data-vat-registration-form>
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
             <input type="hidden" name="card_action" value="VatRegistration">
             <input type="hidden" name="company_id" value="' . $companyId . '">
-            <div class="form-grid">
-                <div class="form-row">
-                    <label>Company</label>
-                    <input class="input" value="' . HelperFramework::escape((string)($settings['company_name'] ?? '')) . '" readonly>
-                </div>
-                <div class="form-row">
-                    <label>Company Registration Number (CRN)</label>
-                    <input class="input" value="' . HelperFramework::escape((string)($settings['companies_house_number'] ?? '')) . '" readonly>
-                </div>
-                <div class="form-row full">
-                    <label>VAT Registered</label>
-                    <div class="segmented-control" data-vat-registered-toggle>
-                        <label class="segmented-option">
-                            <input type="radio" name="is_vat_registered" value="1" data-vat-registered-control data-vat-initial-value="' . HelperFramework::escape($registeredValue) . '"' . (!empty($settings['is_vat_registered']) ? ' checked' : '') . '>
-                            <span>Yes</span>
-                        </label>
-                        <label class="segmented-option">
-                            <input type="radio" name="is_vat_registered" value="0" data-vat-registered-control data-vat-initial-value="' . HelperFramework::escape($registeredValue) . '"' . (empty($settings['is_vat_registered']) ? ' checked' : '') . '>
-                            <span>No</span>
-                        </label>
+            <section class="panel-soft settings-stack">
+                <div class="form-grid">
+                    <div class="form-row">
+                        <label>Company</label>
+                        <input class="input" value="' . HelperFramework::escape((string)($settings['company_name'] ?? '')) . '" readonly>
+                    </div>
+                    <div class="form-row">
+                        <label>Company Registration Number (CRN)</label>
+                        <input class="input" value="' . HelperFramework::escape((string)($settings['companies_house_number'] ?? '')) . '" readonly>
+                    </div>
+                    <div class="form-row full">
+                        <label>VAT Registered</label>
+                        <div class="segmented-control" data-vat-registered-toggle>
+                            <label class="segmented-option">
+                                <input type="radio" name="is_vat_registered" value="1" data-vat-registered-control data-vat-initial-value="' . HelperFramework::escape($registeredValue) . '"' . (!empty($settings['is_vat_registered']) ? ' checked' : '') . '>
+                                <span>Yes</span>
+                            </label>
+                            <label class="segmented-option">
+                                <input type="radio" name="is_vat_registered" value="0" data-vat-registered-control data-vat-initial-value="' . HelperFramework::escape($registeredValue) . '"' . (empty($settings['is_vat_registered']) ? ' checked' : '') . '>
+                                <span>No</span>
+                            </label>
+                        </div>
                     </div>
                 </div>
+                <div>
+                    <button class="button primary" id="save_vat_button" type="submit" name="intent" value="save_vat" disabled data-vat-save-button data-vat-validation-status="' . HelperFramework::escape($validationStatus) . '" data-vat-validated-hash="' . HelperFramework::escape($validatedHash) . '">Save VAT Configuration</button>
+                </div>
+            </section>
+            <div class="form-grid">
                 <div class="form-row full vat-panel' . (empty($settings['is_vat_registered']) ? ' is-hidden' : '') . '" data-vat-fields>
                     <div class="form-grid">
                         <div class="form-row">
@@ -103,9 +115,6 @@ final class _vat_registrationCard extends CardBaseFramework
                         </div>
                     </div>
                 </div>
-            </div>
-            <div>
-                <button class="button primary" id="save_vat_button" type="submit" name="intent" value="save_vat" disabled data-vat-save-button data-vat-validation-status="' . HelperFramework::escape($validationStatus) . '" data-vat-validated-hash="' . HelperFramework::escape($validatedHash) . '">Save VAT Configuration</button>
             </div>
             </form>
         ';

@@ -24,6 +24,7 @@ final class _tax_disallowable_add_backsCard extends CardBaseFramework
             ];
         }
         return \eel_accounts\Renderer\TaxCardRenderer::header('company_tax_returns')
+            . \eel_accounts\Renderer\TaxCardRenderer::computationPersistenceNotice($workings)
             . \eel_accounts\Renderer\TaxCardRenderer::table(['Nominal', 'Tax treatment', 'Add-back'], $rows, 'No disallowable expense add-backs were found for this period.');
     }
 }

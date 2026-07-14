@@ -51,6 +51,10 @@ final class _companies_house_snapshotCard extends CardBaseFramework
         foreach ((array)($snapshot['warnings'] ?? []) as $warning) {
             $warningHtml .= '<div class="helper">' . HelperFramework::escape((string)$warning) . '</div>';
         }
+        $reliable = !empty($snapshot['reliable_closing_balance']);
+        $balanced = !empty($snapshot['is_balance_sheet_balanced']);
+        $statusClass = $reliable && $balanced ? 'success' : 'warning';
+        $statusLabel = !$reliable ? 'Provisional' : ($balanced ? 'Balanced' : 'Review');
 
         $fieldsHtml = '';
         foreach ((array)($snapshot['fields'] ?? []) as $field) {
@@ -90,7 +94,7 @@ final class _companies_house_snapshotCard extends CardBaseFramework
             <section class="panel-soft">
                 <div class="status-head">
                     <h3 class="card-title">Companies House Snapshot</h3>
-                    <span class="badge ' . (!empty($snapshot['is_balance_sheet_balanced']) ? 'success' : 'warning') . '">' . (!empty($snapshot['is_balance_sheet_balanced']) ? 'Balanced' : 'Review') . '</span>
+                    <span class="badge ' . $statusClass . '">' . $statusLabel . '</span>
                 </div>
                 <div class="helper">Manual Companies House balance-sheet entry only. Profit and loss figures remain in the HMRC/iXBRL workflow and are not shown here.</div>
                 ' . $warningHtml . '

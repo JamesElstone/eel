@@ -24,6 +24,39 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(450.0, $buckets['net_current_assets_liabilities'] ?? null);
             $harness->assertSame(1050.0, $buckets['net_assets_liabilities'] ?? null);
             $harness->assertSame(true, $metrics['is_balance_sheet_balanced'] ?? false);
+            $harness->assertSame(false, (bool)($metrics['reliable_closing_balance'] ?? true));
+            $harness->assertSame('prior_period_unlocked', (string)(($metrics['prior_period_dependency'] ?? [])['status'] ?? ''));
+        });
+
+        $harness->check(\eel_accounts\Service\IxbrlBalanceSheetMetricsService::class, 'does not synthesise equity to hide a balance sheet difference', static function () use ($harness, $service): void {
+            InterfaceDB::beginTransaction();
+            try {
+                $suffix = substr(hash('sha256', __FILE__ . microtime(true)), 0, 10);
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO companies (company_name, company_number) VALUES (:company_name, :company_number)',
+                    ['company_name' => 'iXBRL Imbalance Fixture Limited', 'company_number' => 'IB' . strtoupper(substr($suffix, 0, 8))]
+                );
+                $companyId = (int)InterfaceDB::fetchColumn('SELECT id FROM companies WHERE company_number = :company_number', ['company_number' => 'IB' . strtoupper(substr($suffix, 0, 8))]);
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO accounting_periods (company_id, label, period_start, period_end) VALUES (:company_id, :label, :period_start, :period_end)',
+                    ['company_id' => $companyId, 'label' => 'Fixture Imbalance', 'period_start' => '2026-01-01', 'period_end' => '2026-12-31']
+                );
+                $periodId = (int)InterfaceDB::fetchColumn('SELECT id FROM accounting_periods WHERE company_id = :company_id AND label = :label', ['company_id' => $companyId, 'label' => 'Fixture Imbalance']);
+                $fixedSubtypeId = ixbrlBalanceSheetSubtype('fixed_asset', 'Fixed Asset', 'asset');
+                $fixedNominalId = ixbrlBalanceSheetNominal('8I' . $suffix, 'Unbalanced Fixed Asset', 'asset', $fixedSubtypeId);
+                $journalId = ixbrlBalanceSheetJournal($companyId, $periodId, 'fixture-imbalance-' . $suffix, '2026-12-31');
+                ixbrlBalanceSheetLine($journalId, $fixedNominalId, 250.0, 0.0);
+
+                $metrics = $service->fetchClosingMetrics($companyId, $periodId);
+                $harness->assertSame(250.0, (float)(($metrics['buckets'] ?? [])['net_assets_liabilities'] ?? 0));
+                $harness->assertSame(0.0, (float)(($metrics['buckets'] ?? [])['equity_capital_reserves'] ?? -1));
+                $harness->assertSame(250.0, (float)($metrics['balance_equation_difference'] ?? 0));
+                $harness->assertSame(false, (bool)($metrics['is_balance_sheet_balanced'] ?? true));
+            } finally {
+                if (InterfaceDB::inTransaction()) {
+                    InterfaceDB::rollBack();
+                }
+            }
         });
     }
 );

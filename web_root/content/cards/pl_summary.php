@@ -33,7 +33,6 @@ final class _pl_summaryCard extends CardBaseFramework
         } elseif (!$hasJournals) {
             $notice = '<div class="helper">No posted journals or transactions exist yet for this period.</div>';
         }
-
         return '<div class="settings-stack">
             <div class="pl-summary-topline">
                 <div class="summary-card summary-card-fit"><div class="summary-label">Profitability</div><div class="summary-value ' . HelperFramework::escape($this->resultClass($netProfit)) . '">' . HelperFramework::escape($this->resultLabel($netProfit)) . '</div></div>
@@ -45,6 +44,7 @@ final class _pl_summaryCard extends CardBaseFramework
                 ' . $this->summaryCard('Cost of sales', $summary['cost_of_sales_total'] ?? 0, $companySettings) . '
                 ' . $this->summaryCard('Gross profit', $summary['gross_profit'] ?? 0, $companySettings) . '
                 ' . $this->summaryCard('Operating expenses', $summary['operating_expense_total'] ?? ($summary['expense_total'] ?? 0), $companySettings) . '
+                ' . $this->summaryCard('Depreciation preview', $summary['depreciation_expense'] ?? 0, $companySettings) . '
                 ' . $this->summaryCard('Profit before tax', $summary['profit_before_tax'] ?? ($summary['net_profit'] ?? 0), $companySettings) . '
                 ' . $this->summaryCard('Posted CT charge', $summary['posted_corporation_tax_charge'] ?? 0, $companySettings) . '
                 ' . $this->summaryCard('Estimated CT', $summary['estimated_corporation_tax'] ?? 0, $companySettings) . '

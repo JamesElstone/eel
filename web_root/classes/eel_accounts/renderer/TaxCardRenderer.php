@@ -93,6 +93,26 @@ final class TaxCardRenderer
         return '<div class="actions-row">' . $links . '</div>';
     }
 
+    public static function computationPersistenceNotice(array $workings): string
+    {
+        $summary = (array)($workings['summary'] ?? []);
+        $state = (array)($summary['computation_persistence'] ?? []);
+        if ($state === []) {
+            return '';
+        }
+
+        $status = (string)($state['status'] ?? 'not_persisted');
+        $label = (string)($state['status_label'] ?? 'CT computation snapshot status unavailable');
+        $detail = match ($status) {
+            'current' => 'The latest persisted CT computation matches the current live inputs.',
+            'stale' => 'The tax cards show a fresh live calculation, but the latest persisted computation run was produced from older inputs. The final Year End close will persist the reviewed calculation for submission.',
+            default => 'The tax cards show a live calculation. The final Year End close will persist the reviewed calculation for submission.',
+        };
+        $class = $status === 'current' ? 'success' : 'warning';
+
+        return '<div class="helper"><span class="badge ' . $class . '">' . \HelperFramework::escape($label) . '</span> ' . \HelperFramework::escape($detail) . '</div>';
+    }
+
     public static function table(array $headers, array $rows, string $empty = 'No rows to show.'): string
     {
         if ($rows === []) {

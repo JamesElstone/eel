@@ -140,7 +140,8 @@ final class CorporationTaxComputationService
             return $this->ctPeriodSummaryCache[$cacheKey] = $stored;
         }
 
-        return $this->ctPeriodSummaryCache[$cacheKey] = $this->calculateSummaryForCtPeriodId($companyId, $ctPeriodId);
+        $summary = $this->calculateSummaryForCtPeriodId($companyId, $ctPeriodId);
+        return $this->ctPeriodSummaryCache[$cacheKey] = $this->withComputationPersistenceState($companyId, $ctPeriodId, $summary);
     }
 
     public function calculateSummaryForCtPeriodId(int $companyId, int $ctPeriodId): array {
@@ -236,12 +237,6 @@ final class CorporationTaxComputationService
         return $summary;
     }
 
-    public function persistSummaryForCtPeriodId(int $companyId, int $ctPeriodId): array {
-        $this->clearRuntimeCaches();
-
-        return $this->persistSummaryForCtPeriodIdWithCurrentCaches($companyId, $ctPeriodId);
-    }
-
     private function persistSummaryForCtPeriodIdWithCurrentCaches(int $companyId, int $ctPeriodId): array {
         $summary = $this->calculateSummaryForCtPeriodId($companyId, $ctPeriodId);
         if (empty($summary['available'])) {
@@ -266,14 +261,24 @@ final class CorporationTaxComputationService
         if ($runId > 0) {
             (new \eel_accounts\Service\CorporationTaxPeriodService())->markLatestComputation((int)$row['ct_period_id'], $runId);
             unset($this->ctPeriodSummaryCache[$companyId . ':' . (int)$row['ct_period_id']]);
+            unset($this->ctPeriodCache[$companyId . ':' . (int)$row['ct_period_id']]);
             $summary['computation_run_id'] = $runId;
+            $summary = $this->withComputationPersistenceState($companyId, (int)$row['ct_period_id'], $summary);
         }
 
         return $summary;
     }
 
-    public function persistSummariesForAccountingPeriod(int $companyId, int $accountingPeriodId): array
+    public function persistSummariesForYearEndLock(int $companyId, int $accountingPeriodId): array
     {
+        if (!\InterfaceDB::inTransaction()) {
+            return [
+                'success' => false,
+                'errors' => ['Corporation Tax close evidence can only be persisted inside the Year End lock transaction.'],
+                'summaries' => [],
+            ];
+        }
+
         $this->clearRuntimeCaches();
         $activePeriods = $this->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId);
         $periods = (array)($activePeriods['periods'] ?? []);
@@ -336,8 +341,8 @@ final class CorporationTaxComputationService
 
     /**
      * Lightweight live CT position for dividend capacity. For a single CT
-     * period, historical losses are only loaded when current taxable profit is
-     * positive and they can change the liability.
+     * period, the full brought-forward loss position remains visible even when
+     * the current period creates a further loss.
      *
      * @param array<string, mixed> $preTaxProfitLoss
      */
@@ -375,17 +380,15 @@ final class CorporationTaxComputationService
             2
         );
 
-        $lossesBroughtForward = 0.0;
-        $lossesUsed = 0.0;
-        $taxableProfit = 0.0;
-        if ($taxableBeforeLosses > 0) {
-            $lossPosition = $this->ctPeriodLossPosition($companyId, $ctPeriodId);
-            $lossesBroughtForward = round((float)($lossPosition['brought_forward'] ?? 0), 2);
-            $lossesUsed = min($taxableBeforeLosses, $lossesBroughtForward);
-            $taxableProfit = round($taxableBeforeLosses - $lossesUsed, 2);
-        }
-        $lossCreated = $taxableBeforeLosses < 0 ? abs($taxableBeforeLosses) : 0.0;
-        $lossesCarriedForward = round($lossesBroughtForward - $lossesUsed + $lossCreated, 2);
+        $lossCalculation = $this->dividendCapacityLossCalculation(
+            $taxableBeforeLosses,
+            $this->ctPeriodLossPosition($companyId, $ctPeriodId)
+        );
+        $lossesBroughtForward = (float)$lossCalculation['losses_brought_forward'];
+        $lossesUsed = (float)$lossCalculation['losses_used'];
+        $taxableProfit = (float)$lossCalculation['taxable_profit'];
+        $lossCreated = (float)$lossCalculation['loss_created'];
+        $lossesCarriedForward = (float)$lossCalculation['losses_carried_forward'];
         $rateCalculation = ($this->rateService ?? new CorporationTaxRateService())->calculate(
             $periodStart,
             $periodEnd,
@@ -420,6 +423,24 @@ final class CorporationTaxComputationService
         ];
 
         return $row + ['periods' => [$row], 'totals' => $row, 'errors' => []];
+    }
+
+    private function dividendCapacityLossCalculation(float $taxableBeforeLosses, array $lossPosition): array
+    {
+        $lossesBroughtForward = round(max(0.0, (float)($lossPosition['brought_forward'] ?? 0)), 2);
+        $lossesUsed = $taxableBeforeLosses > 0
+            ? min($taxableBeforeLosses, $lossesBroughtForward)
+            : 0.0;
+        $taxableProfit = round(max(0.0, $taxableBeforeLosses - $lossesUsed), 2);
+        $lossCreated = $taxableBeforeLosses < 0 ? abs($taxableBeforeLosses) : 0.0;
+
+        return [
+            'losses_brought_forward' => $lossesBroughtForward,
+            'losses_used' => round($lossesUsed, 2),
+            'taxable_profit' => $taxableProfit,
+            'loss_created' => round($lossCreated, 2),
+            'losses_carried_forward' => round($lossesBroughtForward - $lossesUsed + $lossCreated, 2),
+        ];
     }
 
     private function fullDividendCapacityEstimate(int $companyId, int $accountingPeriodId, array $periods, array $errors): array
@@ -656,7 +677,7 @@ final class CorporationTaxComputationService
         }
 
         $row = \InterfaceDB::fetchOne(
-            'SELECT summary_json
+            'SELECT summary_json, computation_hash, status, generated_at
              FROM corporation_tax_computation_runs
              WHERE id = :id
                AND company_id = :company_id
@@ -670,6 +691,76 @@ final class CorporationTaxComputationService
         }
         $summary['computation_run_id'] = $runId;
         $summary['summary_source'] = 'locked_snapshot';
+        $summary['computation_persistence'] = [
+            'status' => 'current',
+            'status_label' => 'Persisted computation current',
+            'current' => true,
+            'run_id' => $runId,
+            'stored_hash' => (string)($row['computation_hash'] ?? ''),
+            'live_hash' => (string)($summary['computation_hash'] ?? $row['computation_hash'] ?? ''),
+            'generated_at' => (string)($row['generated_at'] ?? ''),
+            'locked_snapshot' => true,
+        ];
+
+        return $summary;
+    }
+
+    private function withComputationPersistenceState(int $companyId, int $ctPeriodId, array $summary): array
+    {
+        if (empty($summary['available'])) {
+            return $summary;
+        }
+
+        $period = $this->fetchCtPeriod($companyId, $ctPeriodId);
+        $runId = (int)($period['latest_computation_run_id'] ?? 0);
+        $state = [
+            'status' => 'not_persisted',
+            'status_label' => 'No persisted computation',
+            'current' => false,
+            'run_id' => $runId,
+            'stored_hash' => '',
+            'live_hash' => (string)($summary['computation_hash'] ?? ''),
+            'generated_at' => '',
+            'locked_snapshot' => false,
+        ];
+
+        if ($runId > 0 && $this->tableExists('corporation_tax_computation_runs')) {
+            $row = \InterfaceDB::fetchOne(
+                'SELECT computation_hash, generated_at, status
+                 FROM corporation_tax_computation_runs
+                 WHERE id = :id
+                   AND company_id = :company_id
+                   AND ct_period_id = :ct_period_id
+                 LIMIT 1',
+                ['id' => $runId, 'company_id' => $companyId, 'ct_period_id' => $ctPeriodId]
+            );
+            if (is_array($row)) {
+                $storedHash = (string)($row['computation_hash'] ?? '');
+                $liveHash = (string)($summary['computation_hash'] ?? '');
+                $current = $storedHash !== '' && $liveHash !== '' && hash_equals($storedHash, $liveHash);
+                $state = [
+                    'status' => $current ? 'current' : 'stale',
+                    'status_label' => $current ? 'Persisted computation current' : 'Persisted computation stale',
+                    'current' => $current,
+                    'run_id' => $runId,
+                    'stored_hash' => $storedHash,
+                    'live_hash' => $liveHash,
+                    'generated_at' => (string)($row['generated_at'] ?? ''),
+                    'locked_snapshot' => false,
+                ];
+            }
+        }
+
+        $summary['computation_persistence'] = $state;
+        if (in_array((string)$state['status'], ['stale', 'not_persisted'], true)) {
+            $message = (string)$state['status'] === 'stale'
+                ? 'The latest persisted CT computation is stale because the live accounting or tax inputs have changed.'
+                : 'No CT computation snapshot has been persisted for the current live inputs.';
+            $warnings = array_values(array_unique(array_merge((array)($summary['warnings'] ?? []), [$message])));
+            $summary['warnings'] = $warnings;
+            $summary['confidence_status'] = 'review_required';
+            $summary['confidence_label'] = 'Review required';
+        }
 
         return $summary;
     }

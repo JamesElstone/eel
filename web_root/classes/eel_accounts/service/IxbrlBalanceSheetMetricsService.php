@@ -33,13 +33,7 @@ final class IxbrlBalanceSheetMetricsService
             return $this->emptyResult();
         }
 
-        $periodPredicate = $accountingPeriodId !== null && $accountingPeriodId > 0
-            ? ' AND j.accounting_period_id = :accounting_period_id'
-            : '';
         $params = ['company_id' => $companyId, 'period_end' => $periodEnd];
-        if ($periodPredicate !== '') {
-            $params['accounting_period_id'] = $accountingPeriodId;
-        }
 
         $rows = \InterfaceDB::fetchAll(
             'SELECT
@@ -56,7 +50,6 @@ final class IxbrlBalanceSheetMetricsService
              WHERE j.company_id = :company_id
                AND j.is_posted = 1
                AND j.journal_date <= :period_end
-               ' . $periodPredicate . '
              GROUP BY na.id, na.code, na.name, na.account_type, nas.code
              ORDER BY na.sort_order, na.code',
             $params
@@ -111,8 +104,17 @@ final class IxbrlBalanceSheetMetricsService
         $buckets['net_current_assets_liabilities'] = round($buckets['current_assets'] - $buckets['creditors_within_one_year'], 2);
         $buckets['total_assets_less_current_liabilities'] = round($buckets['fixed_assets'] + $buckets['current_assets'] - $buckets['creditors_within_one_year'], 2);
         $buckets['net_assets_liabilities'] = round($buckets['total_assets_less_current_liabilities'] - $buckets['creditors_after_more_than_one_year'], 2);
-        $buckets['equity_capital_reserves'] = round(abs($equity) >= 0.005 ? $equity : $buckets['net_assets_liabilities'], 2);
+        $buckets['equity_capital_reserves'] = round($equity, 2);
         $buckets['equity'] = $buckets['equity_capital_reserves'];
+        $priorPeriodDependency = $this->priorPeriodDependency($companyId, $periodStart);
+        $balanceEquationDifference = round($buckets['net_assets_liabilities'] - $buckets['equity_capital_reserves'], 2);
+        $warnings = [];
+        if (empty($priorPeriodDependency['satisfied'])) {
+            $warnings[] = (string)($priorPeriodDependency['detail'] ?? 'The prior accounting period must be locked before these closing balances are final.');
+        }
+        if (abs($balanceEquationDifference) >= 0.005) {
+            $warnings[] = 'Balance sheet metrics do not agree with explicitly posted capital and reserves.';
+        }
 
         return [
             'available' => true,
@@ -121,8 +123,11 @@ final class IxbrlBalanceSheetMetricsService
             'buckets' => $buckets,
             'sources' => $sources,
             'row_count' => count($rows),
-            'balance_equation_difference' => round($buckets['net_assets_liabilities'] - $buckets['equity_capital_reserves'], 2),
-            'is_balance_sheet_balanced' => abs($buckets['net_assets_liabilities'] - $buckets['equity_capital_reserves']) < 0.005,
+            'balance_equation_difference' => $balanceEquationDifference,
+            'is_balance_sheet_balanced' => abs($balanceEquationDifference) < 0.005,
+            'reliable_closing_balance' => !empty($priorPeriodDependency['satisfied']),
+            'prior_period_dependency' => $priorPeriodDependency,
+            'warnings' => array_values(array_unique($warnings)),
         ];
     }
 
@@ -216,6 +221,56 @@ final class IxbrlBalanceSheetMetricsService
             'row_count' => 0,
             'balance_equation_difference' => 0.0,
             'is_balance_sheet_balanced' => false,
+            'reliable_closing_balance' => false,
+            'prior_period_dependency' => [
+                'status' => 'unavailable',
+                'satisfied' => false,
+                'prior_accounting_period' => null,
+                'detail' => 'The closing balance dependency could not be determined.',
+            ],
+            'warnings' => [],
+        ];
+    }
+
+    private function priorPeriodDependency(int $companyId, string $periodStart): array
+    {
+        if ($companyId <= 0 || !$this->validDate($periodStart)) {
+            return [
+                'status' => 'unavailable',
+                'satisfied' => false,
+                'prior_accounting_period' => null,
+                'detail' => 'The prior accounting period dependency could not be determined.',
+            ];
+        }
+
+        $priorPeriod = \InterfaceDB::fetchOne(
+            'SELECT id, company_id, label, period_start, period_end
+             FROM accounting_periods
+             WHERE company_id = :company_id
+               AND period_end < :period_start
+             ORDER BY period_end DESC, id DESC
+             LIMIT 1',
+            ['company_id' => $companyId, 'period_start' => $periodStart]
+        );
+        if (!is_array($priorPeriod)) {
+            return [
+                'status' => 'first_period',
+                'satisfied' => true,
+                'prior_accounting_period' => null,
+                'detail' => 'This is the first recorded accounting period, so no prior-period lock is required.',
+            ];
+        }
+
+        $locked = (new \eel_accounts\Service\YearEndLockService())
+            ->isLocked($companyId, (int)($priorPeriod['id'] ?? 0));
+
+        return [
+            'status' => $locked ? 'prior_period_locked' : 'prior_period_unlocked',
+            'satisfied' => $locked,
+            'prior_accounting_period' => $priorPeriod,
+            'detail' => $locked
+                ? 'The prior accounting period is locked and its closing balances are included in this roll-forward.'
+                : 'The prior accounting period is not locked. These closing balances are provisional until its Year End close is completed.',
         ];
     }
 

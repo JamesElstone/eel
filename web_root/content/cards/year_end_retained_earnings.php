@@ -78,6 +78,12 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
             ? '<div class="helper">Figures have changed since the last agreement. Review them and agree again before locking.</div>'
             : '';
         $acknowledgement = (array)($close['acknowledgement'] ?? []);
+        $canAcknowledge = !empty($close['can_acknowledge']);
+        $blockedReason = (string)(($close['prior_period_dependency'] ?? [])['detail'] ?? '');
+        $dependencyHtml = '';
+        foreach ((array)($close['warnings'] ?? []) as $warning) {
+            $dependencyHtml .= '<div class="helper"><span class="badge warning">Prior period</span> ' . HelperFramework::escape((string)$warning) . '</div>';
+        }
         $acknowledgementForm = $this->acknowledgementHtml(
             $acknowledged && !$stale,
             (string)($close['acknowledgement_state'] ?? 'absent'),
@@ -85,7 +91,9 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
             (string)($acknowledgement['acknowledged_by'] ?? ''),
             (string)($acknowledgement['note'] ?? ''),
             $companyId,
-            $accountingPeriodId
+            $accountingPeriodId,
+            $canAcknowledge,
+            $blockedReason
         );
 
         return '<section class="settings-stack" id="year-end-retained-earnings">
@@ -97,7 +105,7 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
                 ' . $this->summaryCard('Retained earnings movement', $this->money($companySettings, $summary['retained_earnings_movement'] ?? 0)) . '
             </div>
             <div class="helper">' . HelperFramework::escape($this->balanceEquation($companySettings, $summary)) . '</div>
-            ' . $pendingDepreciationHtml . $staleHtml . $existingHtml . '
+            ' . $dependencyHtml . $pendingDepreciationHtml . $staleHtml . $existingHtml . '
             <div class="table-scroll panel-soft">
                 <table>
                     <thead><tr><th>Nominal</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead>
@@ -108,7 +116,7 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
         </section>';
     }
 
-    private function acknowledgementHtml(bool $acknowledged, string $state, string $acknowledgedAt, string $acknowledgedBy, string $note, int $companyId, int $accountingPeriodId): string
+    private function acknowledgementHtml(bool $acknowledged, string $state, string $acknowledgedAt, string $acknowledgedBy, string $note, int $companyId, int $accountingPeriodId, bool $canAcknowledge, string $blockedReason): string
     {
         return \eel_accounts\Renderer\YearEndApprovalRenderer::render([
             'subject' => 'retained earnings close',
@@ -119,6 +127,8 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
             'acknowledgedAt' => $acknowledgedAt,
             'acknowledgedBy' => $acknowledgedBy,
             'note' => $note,
+            'disabled' => !$canAcknowledge,
+            'disabledReason' => !$canAcknowledge ? $blockedReason : '',
             'intent' => 'save_retained_earnings_close_acknowledgement',
             'revokeIntent' => 'save_retained_earnings_close_acknowledgement',
             'checkboxName' => 'retained_earnings_close_acknowledgement',

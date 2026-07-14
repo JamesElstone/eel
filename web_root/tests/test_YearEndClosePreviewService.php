@@ -54,6 +54,40 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame('457.00', number_format((float)($profitLoss['expense_total'] ?? 0), 2, '.', ''));
                 $harness->assertSame('543.00', number_format((float)($profitLoss['net_profit'] ?? 0), 2, '.', ''));
 
+                $monthlyTrend = (new \eel_accounts\Service\ProfitLossService())->getMonthlyProfitLossTrend(
+                    (int)$fixture['company_id'],
+                    (int)$fixture['accounting_period_id']
+                );
+                $harness->assertSame(
+                    '457.00',
+                    number_format(array_sum(array_column($monthlyTrend, 'depreciation_expense')), 2, '.', '')
+                );
+                $harness->assertSame(
+                    number_format((float)($profitLoss['operating_expense_total'] ?? 0), 2, '.', ''),
+                    number_format(array_sum(array_column($monthlyTrend, 'operating_expense_total')), 2, '.', '')
+                );
+                $harness->assertSame(
+                    number_format((float)($profitLoss['profit_before_tax'] ?? 0), 2, '.', ''),
+                    number_format(array_sum(array_column($monthlyTrend, 'profit_before_tax')), 2, '.', '')
+                );
+
+                $reserveReview = (new \eel_accounts\Service\DividendReserveClassificationService())->fetchReviewContext(
+                    (int)$fixture['company_id'],
+                    (int)$fixture['accounting_period_id'],
+                    '2025-12-31'
+                );
+                $harness->assertSame(true, !empty($reserveReview['available']));
+                $harness->assertSame(
+                    '543.00',
+                    number_format((float)($reserveReview['summary']['ledger_profit_loss'] ?? 0), 2, '.', '')
+                );
+                $previewRows = array_values(array_filter(
+                    (array)($reserveReview['rows'] ?? []),
+                    static fn(array $row): bool => !empty($row['is_close_preview'])
+                ));
+                $harness->assertSame(1, count($previewRows));
+                $harness->assertSame('-457.00', number_format((float)($previewRows[0]['profit_effect'] ?? 0), 2, '.', ''));
+
                 $snapshot = (new \eel_accounts\Service\CompaniesHouseSnapshotService())->fetchSnapshot(
                     (int)$fixture['company_id'],
                     (int)$fixture['accounting_period_id']
@@ -73,11 +107,16 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $ctService = new \eel_accounts\Service\CorporationTaxComputationService();
                 $firstSummary = $ctService->calculateSummaryForCtPeriodId((int)$fixture['company_id'], (int)$ctPeriods[0]['id']);
                 $secondSummary = $ctService->calculateSummaryForCtPeriodId((int)$fixture['company_id'], (int)$ctPeriods[1]['id']);
+                $ctService->fetchSummaryForCtPeriodId((int)$fixture['company_id'], (int)$ctPeriods[0]['id']);
 
                 $harness->assertSame('365.00', number_format((float)($firstSummary['depreciation_add_back'] ?? 0), 2, '.', ''));
                 $harness->assertSame('-365.00', number_format((float)($firstSummary['accounting_profit'] ?? 0), 2, '.', ''));
                 $harness->assertSame('92.00', number_format((float)($secondSummary['depreciation_add_back'] ?? 0), 2, '.', ''));
                 $harness->assertSame('908.00', number_format((float)($secondSummary['accounting_profit'] ?? 0), 2, '.', ''));
+                $harness->assertSame(0, InterfaceDB::countWhere('corporation_tax_computation_runs', [
+                    'company_id' => (int)$fixture['company_id'],
+                    'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                ]));
             } finally {
                 if (InterfaceDB::inTransaction()) {
                     InterfaceDB::rollBack();
@@ -107,12 +146,21 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $targetCtPeriodId = (int)$ctPeriods[1]['id'];
 
                 $ctService = new \eel_accounts\Service\CorporationTaxComputationService();
-                $staleSummary = $ctService->fetchSummaryForCtPeriodId($companyId, $targetCtPeriodId);
+                $initialSummary = $ctService->calculateSummaryForCtPeriodId($companyId, $targetCtPeriodId);
+                $harness->assertSame(0, InterfaceDB::countWhere('corporation_tax_computation_runs', [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                ]));
 
                 yearEndClosePreviewInsertJournal($companyId, $accountingPeriodId, (string)$fixture['company_id'] . '-extra-expense', '2025-12-15', [
                     [yearEndClosePreviewNominalId('6200'), 50.00, 0.00],
                     [yearEndClosePreviewNominalId('1000'), 0.00, 50.00],
                 ]);
+
+                $changedLiveSummary = (new \eel_accounts\Service\CorporationTaxComputationService())
+                    ->fetchSummaryForCtPeriodId($companyId, $targetCtPeriodId);
+                $harness->assertSame('not_persisted', (string)($changedLiveSummary['computation_persistence']['status'] ?? ''));
+                $harness->assertSame(false, !empty($changedLiveSummary['computation_persistence']['current']));
 
                 $retainedEarningsService = new \eel_accounts\Service\RetainedEarningsCloseService();
                 $acknowledged = $retainedEarningsService->saveAcknowledgement($companyId, $accountingPeriodId, true, 'test');
@@ -120,7 +168,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $postedClose = $retainedEarningsService->postClose($companyId, $accountingPeriodId, 'test');
                 $harness->assertSame(true, (bool)($postedClose['success'] ?? false));
 
-                $persisted = $ctService->persistSummariesForAccountingPeriod($companyId, $accountingPeriodId);
+                $persisted = $ctService->persistSummariesForYearEndLock($companyId, $accountingPeriodId);
                 $harness->assertSame(true, (bool)($persisted['success'] ?? false));
 
                 $targetSummary = null;
@@ -133,7 +181,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
                 $harness->assertTrue(is_array($targetSummary));
                 $harness->assertSame(
-                    number_format(round((float)($staleSummary['accounting_profit'] ?? 0) - 50.00, 2), 2, '.', ''),
+                    number_format(round((float)($initialSummary['accounting_profit'] ?? 0) - 50.00, 2), 2, '.', ''),
                     number_format((float)($targetSummary['accounting_profit'] ?? 0), 2, '.', '')
                 );
                 $harness->assertTrue((int)($targetSummary['computation_run_id'] ?? 0) > 0);
@@ -142,6 +190,46 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     InterfaceDB::rollBack();
                 }
             }
+        });
+
+        $harness->check(\eel_accounts\Service\CorporationTaxComputationService::class, 'requires the lock transaction and rolls generated CT evidence back with a failed lock', static function () use ($harness): void {
+            yearEndClosePreviewRequireSchema($harness);
+            if (!InterfaceDB::tableExists('corporation_tax_computation_runs')) {
+                $harness->skip('Corporation Tax computation runs table is not available.');
+            }
+
+            $service = new \eel_accounts\Service\CorporationTaxComputationService();
+            $refused = $service->persistSummariesForYearEndLock(1, 1);
+            $harness->assertSame(false, (bool)($refused['success'] ?? true));
+
+            $companyId = 0;
+            $accountingPeriodId = 0;
+            InterfaceDB::beginTransaction();
+            try {
+                $fixture = yearEndClosePreviewCreateFixture();
+                $companyId = (int)$fixture['company_id'];
+                $accountingPeriodId = (int)$fixture['accounting_period_id'];
+                (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $accountingPeriodId);
+
+                $persisted = $service->persistSummariesForYearEndLock($companyId, $accountingPeriodId);
+                $harness->assertSame(true, (bool)($persisted['success'] ?? false));
+                $harness->assertTrue(InterfaceDB::countWhere('corporation_tax_computation_runs', [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                ]) > 0);
+
+                // Simulate a later failure in the Year End lock workflow.
+                InterfaceDB::rollBack();
+            } finally {
+                if (InterfaceDB::inTransaction()) {
+                    InterfaceDB::rollBack();
+                }
+            }
+
+            $harness->assertSame(0, InterfaceDB::countWhere('corporation_tax_computation_runs', [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+            ]));
         });
     }
 );
@@ -159,6 +247,8 @@ function yearEndClosePreviewRequireSchema(GeneratedServiceClassTestHarness $harn
         'nominal_account_subtypes',
         'asset_register',
         'asset_depreciation_entries',
+        'dividend_reserve_classification_rules',
+        'dividend_reserve_review_snapshots',
     ] as $table) {
         if (!InterfaceDB::tableExists($table)) {
             $harness->skip($table . ' table is not available.');

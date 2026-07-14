@@ -163,7 +163,8 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
 
         return '<div class="month-grid">
             ' . $this->summaryCard('Pre-paid items', (string)(int)($review['prepaid_count'] ?? 0)) . '
-            ' . $this->summaryCard('Incomplete', (string)(int)($review['pending_count'] ?? 0)) . '
+            ' . $this->summaryCard('Reviewed decisions', (string)(int)($review['reviewed_count'] ?? 0)) . '
+            ' . $this->summaryCard('Awaiting decision', (string)(int)($review['pending_count'] ?? 0)) . '
         </div>';
     }
 
@@ -196,7 +197,7 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
             return 'Prepayment review must be available before this approval can be saved.';
         }
 
-        return 'Complete all pre-paid service dates before saving this approval. Incomplete: ' . $incompleteCount . '.';
+        return 'Record an explicit decision for every candidate and complete all pre-paid service dates before saving this approval. Awaiting decision: ' . $incompleteCount . '.';
     }
 
     private function summaryCard(string $label, string $value): string

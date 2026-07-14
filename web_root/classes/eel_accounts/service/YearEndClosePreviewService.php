@@ -59,6 +59,71 @@ final class YearEndClosePreviewService
         return $allocatedRows;
     }
 
+    /**
+     * Allocate the canonical depreciation preview across calendar months while
+     * preserving the exact period total after per-month rounding.
+     *
+     * @return array<string, float> keyed by YYYY-MM-01
+     */
+    public function monthlyDepreciationExpenseForPeriod(
+        int $companyId,
+        int $accountingPeriodId,
+        string $periodStart,
+        string $periodEnd
+    ): array {
+        if ($this->periodDays($periodStart, $periodEnd) <= 0) {
+            return [];
+        }
+
+        $months = [];
+        $cursor = (new \DateTimeImmutable($periodStart))->modify('first day of this month');
+        $lastMonth = (new \DateTimeImmutable($periodEnd))->modify('first day of this month');
+        while ($cursor <= $lastMonth) {
+            $months[$cursor->format('Y-m-01')] = 0.0;
+            $cursor = $cursor->modify('+1 month');
+        }
+
+        foreach ($this->depreciationRowsForPeriod($companyId, $accountingPeriodId) as $row) {
+            $entryStart = (string)($row['period_start'] ?? '');
+            $entryEnd = (string)($row['period_end'] ?? '');
+            $entryDays = $this->periodDays($entryStart, $entryEnd);
+            $requestedOverlapDays = $this->overlapDays($entryStart, $entryEnd, $periodStart, $periodEnd);
+            if ($entryDays <= 0 || $requestedOverlapDays <= 0) {
+                continue;
+            }
+
+            $rowAmount = round((float)($row['amount'] ?? 0), 2);
+            $expectedTotal = round($rowAmount * ($requestedOverlapDays / $entryDays), 2);
+            $allocatedTotal = 0.0;
+            $lastAllocatedMonth = '';
+
+            foreach (array_keys($months) as $monthStart) {
+                $monthEnd = (new \DateTimeImmutable($monthStart))->modify('last day of this month')->format('Y-m-d');
+                $overlapDays = $this->overlapDays(
+                    $entryStart,
+                    $entryEnd,
+                    max($periodStart, $monthStart),
+                    min($periodEnd, $monthEnd)
+                );
+                if ($overlapDays <= 0) {
+                    continue;
+                }
+
+                $amount = round($rowAmount * ($overlapDays / $entryDays), 2);
+                $months[$monthStart] = round($months[$monthStart] + $amount, 2);
+                $allocatedTotal = round($allocatedTotal + $amount, 2);
+                $lastAllocatedMonth = $monthStart;
+            }
+
+            $roundingResidual = round($expectedTotal - $allocatedTotal, 2);
+            if ($lastAllocatedMonth !== '' && abs($roundingResidual) >= 0.005) {
+                $months[$lastAllocatedMonth] = round($months[$lastAllocatedMonth] + $roundingResidual, 2);
+            }
+        }
+
+        return $months;
+    }
+
     public function pendingBalanceSheetAdjustments(int $companyId, int $accountingPeriodId, string $periodEnd): array
     {
         $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);

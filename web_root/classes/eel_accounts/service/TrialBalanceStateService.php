@@ -37,6 +37,9 @@ final class TrialBalanceStateService
                 'summary' => (array)($snapshot['summary'] ?? []),
                 'totals' => (array)($snapshot['totals'] ?? []),
                 'has_rows' => !empty($snapshot['has_rows']),
+                'source_basis' => (string)($snapshot['source_basis'] ?? 'posted_journals_only'),
+                'summary_source_basis' => (string)($snapshot['summary_source_basis'] ?? 'posted_journals_plus_year_end_close_preview'),
+                'summary_basis_note' => (string)($snapshot['summary_basis_note'] ?? ''),
             ],
             'validation' => $validation,
         ];

@@ -657,6 +657,11 @@ final class YearEndMetricsService
             'total_assets_less_current_liabilities' => round((float)($buckets['total_assets_less_current_liabilities'] ?? 0), 2),
             'net_assets_liabilities' => round((float)($buckets['net_assets_liabilities'] ?? 0), 2),
             'equity_capital_reserves' => round((float)($buckets['equity_capital_reserves'] ?? 0), 2),
+            'balance_equation_difference' => round((float)($metrics['balance_equation_difference'] ?? 0), 2),
+            'is_balance_sheet_balanced' => !empty($metrics['is_balance_sheet_balanced']),
+            'reliable_closing_balance' => !empty($metrics['reliable_closing_balance']),
+            'prior_period_dependency' => (array)($metrics['prior_period_dependency'] ?? []),
+            'warnings' => array_values(array_map('strval', (array)($metrics['warnings'] ?? []))),
         ];
     }
 

@@ -997,7 +997,7 @@ CREATE TABLE `prepayment_reviews` (
   `accounting_period_id` int(11) NOT NULL,
   `source_type` enum('transaction','expense_claim_line') NOT NULL,
   `source_id` bigint(20) NOT NULL,
-  `status` enum('not_prepaid','prepaid') NOT NULL DEFAULT 'not_prepaid',
+  `status` enum('pending','not_prepaid','prepaid') NOT NULL DEFAULT 'pending',
   `service_start_date` date DEFAULT NULL,
   `service_end_date` date DEFAULT NULL,
   `notes` text DEFAULT NULL,

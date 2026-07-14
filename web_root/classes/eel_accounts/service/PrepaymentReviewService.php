@@ -60,12 +60,13 @@ final class PrepaymentReviewService
         foreach ($items as $index => $item) {
             $review = $reviews[$this->reviewKey((string)$item['source_type'], (int)$item['source_id'])] ?? null;
             $items[$index]['review'] = is_array($review) ? $review : [
-                'status' => 'not_prepaid',
+                'status' => 'pending',
                 'service_start_date' => '',
                 'service_end_date' => '',
                 'notes' => '',
                 'reviewed_at' => '',
                 'reviewed_by' => '',
+                'persisted' => false,
             ];
         }
 
@@ -78,12 +79,8 @@ final class PrepaymentReviewService
             return strcmp((string)($left['nominal_name'] ?? ''), (string)($right['nominal_name'] ?? ''));
         });
 
-        $pendingCount = count(array_filter($items, static function (array $item): bool {
-            $status = (string)(((array)($item['review'] ?? []))['status'] ?? 'not_prepaid');
-            return $status === 'prepaid'
-                && (trim((string)(((array)($item['review'] ?? []))['service_start_date'] ?? '')) === ''
-                    || trim((string)(((array)($item['review'] ?? []))['service_end_date'] ?? '')) === '');
-        }));
+        $reviewedCount = count(array_filter($items, fn(array $item): bool => $this->isCompletedDecision((array)($item['review'] ?? []))));
+        $pendingCount = count($items) - $reviewedCount;
 
         return [
             'available' => true,
@@ -92,9 +89,11 @@ final class PrepaymentReviewService
             'total_count' => count($items),
             'pending_count' => $pendingCount,
             'prepaid_count' => count(array_filter($items, static function (array $item): bool {
-                return (string)(((array)($item['review'] ?? []))['status'] ?? 'not_prepaid') === 'prepaid';
+                $review = (array)($item['review'] ?? []);
+                return !empty($review['persisted']) && (string)($review['status'] ?? '') === 'prepaid';
             })),
-            'reviewed_count' => count($items) - $pendingCount,
+            'reviewed_count' => $reviewedCount,
+            'unreviewed_count' => $pendingCount,
         ];
     }
 
@@ -315,16 +314,31 @@ final class PrepaymentReviewService
         $reviews = [];
         foreach ((array)$rows as $row) {
             if (is_array($row)) {
-                if ((string)($row['status'] ?? '') === 'pending' || (string)($row['status'] ?? '') === '') {
-                    $row['status'] = 'not_prepaid';
-                    $row['service_start_date'] = '';
-                    $row['service_end_date'] = '';
-                }
+                $row['status'] = trim((string)($row['status'] ?? '')) !== '' ? (string)$row['status'] : 'pending';
+                $row['persisted'] = true;
                 $reviews[$this->reviewKey((string)$row['source_type'], (int)$row['source_id'])] = $row;
             }
         }
 
         return $reviews;
+    }
+
+    private function isCompletedDecision(array $review): bool
+    {
+        if (empty($review['persisted'])) {
+            return false;
+        }
+
+        $status = (string)($review['status'] ?? 'pending');
+        if ($status === 'not_prepaid') {
+            return true;
+        }
+        if ($status !== 'prepaid') {
+            return false;
+        }
+
+        return trim((string)($review['service_start_date'] ?? '')) !== ''
+            && trim((string)($review['service_end_date'] ?? '')) !== '';
     }
 
     private function sourceBelongsToCandidateNominal(int $companyId, int $accountingPeriodId, string $sourceType, int $sourceId): bool

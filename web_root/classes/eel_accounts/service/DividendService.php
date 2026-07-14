@@ -135,9 +135,22 @@ final class DividendService
         $retainedEarningsPosition = $this->retainedEarningsBroughtForward($companyId, $accountingPeriodId, $periodStart);
         $retainedEarningsBroughtForward = (float)($retainedEarningsPosition['amount'] ?? 0.0);
         $reserveReview = (new \eel_accounts\Service\DividendReserveClassificationService())->fetchReviewContext($companyId, $accountingPeriodId, $effectiveDate);
-        $reserveReviewReliable = !empty($reserveReview['available']) && !empty($reserveReview['snapshot_current']);
-        $reserveReviewDetail = $this->reserveReviewDetail($reserveReview);
         $reserveSnapshot = is_array($reserveReview['snapshot'] ?? null) ? (array)$reserveReview['snapshot'] : [];
+        $expectedReserveLedgerProfit = round(
+            $ledgerProfit - (float)($preTaxProfitLoss['posted_corporation_tax_charge'] ?? 0),
+            2
+        );
+        $reviewLedgerProfit = round((float)($reserveSnapshot['ledger_profit_loss'] ?? 0), 2);
+        $reserveProfitReconciles = !empty($reserveReview['snapshot_current'])
+            && abs($expectedReserveLedgerProfit - $reviewLedgerProfit) < 0.005;
+        $reserveReviewReliable = !empty($reserveReview['available'])
+            && !empty($reserveReview['snapshot_current'])
+            && $reserveProfitReconciles;
+        $reserveReviewDetail = $reserveProfitReconciles
+            ? $this->reserveReviewDetail($reserveReview)
+            : (!empty($reserveReview['snapshot_current'])
+                ? 'Dividend declaration is blocked because the reviewed reserve profit does not reconcile to the current preview-adjusted Profit and Loss.'
+                : $this->reserveReviewDetail($reserveReview));
         $classifiedProfit = $reserveReviewReliable
             ? round((float)($reserveSnapshot['distributable_current_profit'] ?? 0), 2)
             : 0.0;
@@ -163,6 +176,9 @@ final class DividendService
             'reserve_basis_detail' => $reserveBasisDetail,
             'reserve_review_status' => (string)($reserveReview['status'] ?? 'unavailable'),
             'reserve_review_detail' => $reserveReviewDetail,
+            'reserve_review_profit_reconciles' => $reserveProfitReconciles,
+            'reserve_review_ledger_profit_loss' => $reviewLedgerProfit,
+            'expected_reserve_ledger_profit_loss' => $expectedReserveLedgerProfit,
             'reserves_reliable' => $reservesReliable,
             'ledger_current_year_profit_loss' => $ledgerProfit,
             'classified_current_year_profit_loss' => $classifiedProfit,

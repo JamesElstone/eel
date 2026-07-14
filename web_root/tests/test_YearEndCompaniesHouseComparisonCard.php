@@ -95,7 +95,7 @@ function companiesHouseComparisonCardContext(?array $acknowledgement, bool $lock
             'companiesHouseComparisonReview' => [
                 'comparison' => [
                     'available' => true,
-                    'comparison_note' => 'Matching filed numbers suggests the reconstructed ledger aligns with the stored Companies House filing.',
+                    'comparison_note' => 'An exact-period Companies House filing was selected, but 2 of 2 comparable values differ from the current reconstructed accounts.',
                     'filing' => ['filing_date' => '2025-05-29'],
                     'rows' => [
                         ['label' => 'Fixed assets', 'app_value' => 208.41, 'filed_value' => 0.00, 'variance' => 208.41, 'status' => 'fail'],

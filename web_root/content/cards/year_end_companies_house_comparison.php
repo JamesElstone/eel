@@ -62,7 +62,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
 
         return '<section class="settings-stack" id="year-end-companies-house-comparison">
             ' . $this->renderComparisonPanel($comparison, $companySettings) . '
-            ' . $this->renderAcknowledgementPanel($companyId, $accountingPeriodId, $comparison, $acknowledgement, $access, $mismatchCount) . '
+            ' . $this->renderAcknowledgementPanel($companyId, $accountingPeriodId, $comparison, $acknowledgement, $access, $mismatchCount, $review) . '
         </section>';
     }
 
@@ -70,6 +70,11 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
     {
         if (empty($comparison['available'])) {
             return $this->panel('Companies House Comparison', $this->renderErrors((array)($comparison['errors'] ?? ['No Companies House comparison is available.'])));
+        }
+
+        $warningsHtml = '';
+        foreach ((array)($comparison['warnings'] ?? []) as $warning) {
+            $warningsHtml .= '<div class="helper">' . HelperFramework::escape((string)$warning) . '</div>';
         }
 
         $rowsHtml = '';
@@ -91,6 +96,7 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
         return '<section class="panel-soft" id="companies-house-comparison">
             <div class="status-head"><h3 class="card-title">Companies House Comparison</h3></div>
             <div class="helper">' . HelperFramework::escape((string)($comparison['comparison_note'] ?? '')) . '</div>
+            ' . $warningsHtml . '
             <div class="helper">Stored filing date: ' . HelperFramework::escape((string)($comparison['filing']['filing_date'] ?? '')) . '</div>
             <div class="table-scroll">
                 <table>
@@ -107,7 +113,8 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
         array $comparison,
         ?array $acknowledgement,
         array $access,
-        int $mismatchCount
+        int $mismatchCount,
+        array $review
     ): string {
         if (empty($comparison['available'])) {
             return $this->panel('Approval', '<div class="helper">A Companies House filing must be available before a mismatch can be approved.</div>');
@@ -123,6 +130,8 @@ final class _year_end_companies_house_comparisonCard extends CardBaseFramework
             'companyId' => $companyId,
             'accountingPeriodId' => $accountingPeriodId,
             'locked' => !empty($access['is_locked']),
+            'disabled' => empty($review['can_acknowledge']),
+            'disabledReason' => (string)($review['acknowledgement_blocked_reason'] ?? ''),
             'acknowledged' => $isAcknowledged,
             'acknowledgementState' => (string)($acknowledgement['state'] ?? ''),
             'acknowledgedAt' => (string)($acknowledgement['acknowledged_at'] ?? ''),

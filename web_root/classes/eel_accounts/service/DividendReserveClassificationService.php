@@ -337,6 +337,27 @@ final class DividendReserveClassificationService
             $asAtDate
         );
 
+        $depreciation = (new YearEndClosePreviewService())->depreciationExpenseForPeriod(
+            $companyId,
+            $accountingPeriodId,
+            (string)($accountingPeriod['period_start'] ?? ''),
+            $asAtDate
+        );
+        if ($depreciation > 0.0) {
+            $nominal = (array)((new YearEndClosePreviewService())->depreciationExpenseNominal() ?? []);
+            $rows[] = [
+                'nominal_account_id' => (int)($nominal['id'] ?? 0),
+                'nominal_code' => (string)($nominal['code'] ?? '6200'),
+                'nominal_name' => (string)($nominal['name'] ?? 'Depreciation') . ' (Year End preview)',
+                'account_type' => 'expense',
+                'subtype_code' => (string)($nominal['account_subtype_code'] ?? ''),
+                'total_debit' => round($depreciation, 2),
+                'total_credit' => 0.0,
+                'profit_effect' => round(0 - $depreciation, 2),
+                'is_close_preview' => true,
+            ];
+        }
+
         foreach ($rows as &$row) {
             $nominalAccountId = (int)($row['nominal_account_id'] ?? 0);
             $defaultTreatment = $this->defaultTreatment($row);
@@ -370,6 +391,7 @@ final class DividendReserveClassificationService
                AND j.is_posted = 1
                AND j.journal_date BETWEEN :period_start AND :period_end
                AND jem_close.id IS NULL
+               AND COALESCE(j.source_type, \'\') <> :asset_depreciation_source_type
                AND na.account_type IN (:income_type, :cost_type, :expense_type)
              GROUP BY na.id, na.code, na.name, na.account_type, nas.code
              ORDER BY na.code ASC, na.name ASC',
@@ -379,6 +401,7 @@ final class DividendReserveClassificationService
                 'accounting_period_id' => $accountingPeriodId,
                 'period_start' => $periodStart,
                 'period_end' => $periodEnd,
+                'asset_depreciation_source_type' => YearEndClosePreviewService::ASSET_DEPRECIATION_SOURCE_TYPE,
                 'income_type' => 'income',
                 'cost_type' => 'cost_of_sales',
                 'expense_type' => 'expense',
@@ -526,6 +549,8 @@ final class DividendReserveClassificationService
         foreach ($summary as $key => $value) {
             $summary[$key] = round((float)$value, 2);
         }
+
+        $summary['accounting_basis'] = 'posted_journals_plus_year_end_close_preview';
 
         return $summary;
     }

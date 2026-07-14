@@ -44,6 +44,7 @@ final class RetainedEarningsCloseService
 
         $periodStart = (string)$accountingPeriod['period_start'];
         $periodEnd = (string)$accountingPeriod['period_end'];
+        $priorPeriodDependency = $this->priorPeriodDependency($companyId, $periodStart);
         $settings = $metrics->fetchCompanySettings($companyId);
         $retainedEarningsNominal = $this->retainedEarningsNominal();
         if ($retainedEarningsNominal === null) {
@@ -99,6 +100,10 @@ final class RetainedEarningsCloseService
             'profit_and_loss_rows' => $plRows,
             'journal_lines' => $journalLines,
             'existing_journal' => $existingJournal,
+            'prior_period_dependency' => $priorPeriodDependency,
+            'warnings' => empty($priorPeriodDependency['satisfied'])
+                ? [(string)($priorPeriodDependency['detail'] ?? 'Complete and lock the prior accounting period before closing retained earnings.')]
+                : [],
         ];
         $service = $this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService();
         $acknowledgement = $service->fetch($companyId, $accountingPeriodId, 'retained_earnings_close_confirmation');
@@ -113,6 +118,8 @@ final class RetainedEarningsCloseService
             'acknowledgement_stale' => in_array((string)($evaluation['state'] ?? ''), ['stale', 'unverifiable'], true),
             'acknowledgement_state' => (string)($evaluation['state'] ?? 'absent'),
             'acknowledgement' => $acknowledgement,
+            'can_acknowledge' => !empty($priorPeriodDependency['satisfied']),
+            'can_post' => !empty($priorPeriodDependency['satisfied']),
         ];
     }
 
@@ -126,6 +133,14 @@ final class RetainedEarningsCloseService
         $context = $this->fetchContext($companyId, $accountingPeriodId);
         if (empty($context['available'])) {
             return $context + ['success' => false];
+        }
+        if (empty($context['can_acknowledge'])) {
+            return [
+                'success' => false,
+                'status' => 422,
+                'errors' => [(string)(($context['prior_period_dependency'] ?? [])['detail'] ?? 'Complete and lock the prior accounting period before approving retained earnings.')],
+                'context' => $context,
+            ];
         }
 
         $service = $this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService();
@@ -144,6 +159,14 @@ final class RetainedEarningsCloseService
         $context = $this->fetchContext($companyId, $accountingPeriodId);
         if (empty($context['available'])) {
             return $context + ['success' => false];
+        }
+        if (empty($context['can_post'])) {
+            return [
+                'success' => false,
+                'status' => 422,
+                'errors' => [(string)(($context['prior_period_dependency'] ?? [])['detail'] ?? 'Complete and lock the prior accounting period before posting retained earnings.')],
+                'context' => $context,
+            ];
         }
 
         if (!$acknowledgementPrevalidated && empty($context['acknowledged'])) {
@@ -209,7 +232,41 @@ final class RetainedEarningsCloseService
         return $service->buildBasis('retained_earnings_close_confirmation', [
             'summary' => (array)($context['summary'] ?? []),
             'journal_lines' => (array)($context['journal_lines'] ?? []),
+            'prior_period_dependency' => (array)($context['prior_period_dependency'] ?? []),
         ]);
+    }
+
+    private function priorPeriodDependency(int $companyId, string $periodStart): array
+    {
+        $priorPeriod = \InterfaceDB::fetchOne(
+            'SELECT id, company_id, label, period_start, period_end
+             FROM accounting_periods
+             WHERE company_id = :company_id
+               AND period_end < :period_start
+             ORDER BY period_end DESC, id DESC
+             LIMIT 1',
+            ['company_id' => $companyId, 'period_start' => $periodStart]
+        );
+        if (!is_array($priorPeriod)) {
+            return [
+                'status' => 'first_period',
+                'satisfied' => true,
+                'prior_accounting_period' => null,
+                'detail' => 'This is the first recorded accounting period, so no prior-period lock is required.',
+            ];
+        }
+
+        $locked = ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())
+            ->isLocked($companyId, (int)($priorPeriod['id'] ?? 0));
+
+        return [
+            'status' => $locked ? 'prior_period_locked' : 'prior_period_unlocked',
+            'satisfied' => $locked,
+            'prior_accounting_period' => $priorPeriod,
+            'detail' => $locked
+                ? 'The prior accounting period is locked and retained earnings can roll forward from it.'
+                : 'The prior accounting period is not locked. Complete its Year End close before approving or posting this retained earnings close.',
+        ];
     }
 
     private function retainedEarningsNominal(): ?array

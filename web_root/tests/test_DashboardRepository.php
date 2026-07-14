@@ -537,8 +537,9 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
         $html = $card->render([
             'services' => [
                 'dashboard_action_queue' => [[
-                    'title' => 'No immediate actions',
-                    'detail' => 'This period looks tidy. The dashboard has nothing urgent to surface right now.',
+                    'title' => 'No setup or transaction actions',
+                    'detail' => 'No immediate setup, import, categorisation, or draft-journal actions were found. Review the separate Year End readiness card for close and filing issues.',
+                    'state' => 'ok',
                 ]],
                 'year_end_dashboard_summary' => [
                     'period_label' => '01/10/2023 to 30/09/2024',
@@ -551,7 +552,8 @@ $harness->run(\eel_accounts\Repository\DashboardRepository::class, function (Gen
             ],
         ]);
 
-        $harness->assertSame(true, str_contains($html, 'No immediate actions'));
+        $harness->assertSame(true, str_contains($html, 'No setup or transaction actions'));
+        $harness->assertSame(true, str_contains($html, 'separate Year End readiness card'));
         $harness->assertSame(true, str_contains($html, 'status-square ok'));
         $harness->assertSame(false, str_contains($html, 'Complete year-end review'));
         $harness->assertSame(false, str_contains($html, 'Statement continuity'));

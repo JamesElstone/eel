@@ -54,7 +54,7 @@ final class TrialBalanceService
         }
 
         $rows = $this->fetchNominalTrialBalanceRows($companyId, $accountingPeriodId, $includeUnposted);
-        $summary = $this->buildSummary($context, $rows);
+        $summary = $this->buildSummary($context, $rows, $includeUnposted);
         $filteredRows = $this->applyFilters($rows, $includeZero, $filters);
         $totals = $this->buildTotals($filteredRows);
 
@@ -75,6 +75,8 @@ final class TrialBalanceService
             'has_rows' => $rows !== [],
             'has_visible_rows' => $filteredRows !== [],
             'source_basis' => $includeUnposted ? 'posted_and_unposted_journals' : 'posted_journals_only',
+            'summary_source_basis' => 'posted_journals_plus_year_end_close_preview',
+            'summary_basis_note' => 'Trial balance rows and equality show activity in the selected accounting period. Balance-labelled summary values use cumulative closing ledger balances through the period end; profit before tax and net assets also include applicable Year End close-preview adjustments.',
         ];
     }
 
@@ -91,7 +93,9 @@ final class TrialBalanceService
 
         return [
             'available' => true,
-            'summary' => $this->buildSummary($context, $rows),
+            'summary' => $this->buildSummary($context, $rows, $includeUnposted),
+            'source_basis' => $includeUnposted ? 'posted_and_unposted_journals' : 'posted_journals_only',
+            'summary_source_basis' => 'posted_journals_plus_year_end_close_preview',
         ];
     }
 
@@ -122,9 +126,18 @@ final class TrialBalanceService
             'context' => $context,
             'rows' => $rows,
             'totals' => $this->buildTotals($rows),
-            'summary' => $this->buildCoreSummary($context, $rows, $profitAndLoss, $balanceSheet),
+            'summary' => $this->buildCoreSummary(
+                $context,
+                $rows,
+                $profitAndLoss,
+                $balanceSheet,
+                $this->fetchClosingBalanceRows($companyId, $periodEnd, false)
+            ),
             'balance_sheet_metrics' => $balanceSheet,
             'has_rows' => $rows !== [],
+            'source_basis' => 'posted_journals_only',
+            'summary_source_basis' => 'posted_journals_plus_year_end_close_preview',
+            'summary_basis_note' => 'Trial balance rows and equality show posted activity in the selected accounting period. Balance-labelled summary values use cumulative posted closing balances through the period end; profit before tax and net assets also include applicable Year End close-preview adjustments.',
         ];
     }
 
@@ -309,7 +322,7 @@ final class TrialBalanceService
         return $rows;
     }
 
-    private function buildSummary(array $context, array $rows): array {
+    private function buildSummary(array $context, array $rows, bool $includeUnposted = false): array {
         $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
         $companyId = (int)($context['company']['id'] ?? 0);
         $accountingPeriodId = (int)($context['accounting_period']['id'] ?? 0);
@@ -319,7 +332,8 @@ final class TrialBalanceService
             $context,
             $rows,
             $metrics->profitAndLossSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd),
-            $metrics->fetchBalanceSheetMetricValues($companyId, $accountingPeriodId, $periodStart, $periodEnd)
+            $metrics->fetchBalanceSheetMetricValues($companyId, $accountingPeriodId, $periodStart, $periodEnd),
+            $this->fetchClosingBalanceRows($companyId, $periodEnd, $includeUnposted)
         );
         $taxComputation = (new \eel_accounts\Service\YearEndTaxReadinessService($metrics))->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
         $reviewNotes = trim((string)($context['review']['review_notes'] ?? ''));
@@ -336,7 +350,7 @@ final class TrialBalanceService
         return $summary;
     }
 
-    private function buildCoreSummary(array $context, array $rows, array $profitAndLoss, array $balanceSheet): array {
+    private function buildCoreSummary(array $context, array $rows, array $profitAndLoss, array $balanceSheet, array $closingRows): array {
         $settings = (array)($context['settings'] ?? []);
 
         $totalDebits = 0.0;
@@ -359,7 +373,9 @@ final class TrialBalanceService
         foreach ($rows as $row) {
             $totalDebits += (float)($row['display_debit'] ?? 0);
             $totalCredits += (float)($row['display_credit'] ?? 0);
+        }
 
+        foreach ($closingRows as $row) {
             $nominalId = (int)($row['nominal_account_id'] ?? 0);
             $subtypeCode = (string)($row['subtype_code'] ?? '');
             $name = strtolower((string)($row['nominal_name'] ?? ''));
@@ -405,6 +421,33 @@ final class TrialBalanceService
             'uncategorised_exposure' => round($uncategorisedExposure, 2),
             'corporation_tax_balance' => round($corporationTaxBalance, 2),
         ];
+    }
+
+    private function fetchClosingBalanceRows(int $companyId, string $periodEnd, bool $includeUnposted): array
+    {
+        if ($companyId <= 0 || $periodEnd === '') {
+            return [];
+        }
+
+        $postedPredicate = $includeUnposted ? '' : ' AND j.is_posted = 1';
+
+        return \InterfaceDB::fetchAll(
+            'SELECT na.id AS nominal_account_id,
+                    COALESCE(na.code, \'\') AS nominal_code,
+                    COALESCE(na.name, \'\') AS nominal_name,
+                    COALESCE(nas.code, \'\') AS subtype_code,
+                    COALESCE(SUM(jl.debit - jl.credit), 0) AS net_movement
+             FROM journals j
+             INNER JOIN journal_lines jl ON jl.journal_id = j.id
+             INNER JOIN nominal_accounts na ON na.id = jl.nominal_account_id
+             LEFT JOIN nominal_account_subtypes nas ON nas.id = na.account_subtype_id
+             WHERE j.company_id = :company_id
+               AND j.journal_date <= :period_end'
+               . $postedPredicate . '
+             GROUP BY na.id, na.code, na.name, nas.code
+             ORDER BY na.sort_order, na.code',
+            ['company_id' => $companyId, 'period_end' => $periodEnd]
+        );
     }
 
     private function applyFilters(array $rows, bool $includeZero, array $filters): array {

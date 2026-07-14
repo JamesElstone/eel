@@ -68,12 +68,18 @@ final class IxbrlAccountsMappingService
         $buckets['profit_loss'] = round($income - $costOfSales - $expenses, 2);
 
         $assumptions = [
-            'Balance sheet facts use closing posted-journal balances up to the period end, including opening and brought-forward journals.',
+            'Balance sheet facts use closing posted-journal balances up to the period end, including opening and brought-forward journals, plus applicable pending Year End close-preview adjustments.',
             'Fixed assets require a fixed_asset nominal subtype; otherwise asset accounts are treated as current assets.',
             'All liability accounts are treated as due within one year unless an explicit long-term liability subtype is present.',
         ];
         if (abs($explicitEquity) >= 0.005 && abs($explicitEquity - $buckets['equity_capital_reserves']) >= 0.005) {
             $assumptions[] = 'Explicit current-period equity movement differs from closing capital and reserves; the closing balance sheet metric is used for accounts facts.';
+        }
+        foreach ((array)($closingMetrics['warnings'] ?? []) as $warning) {
+            $warning = trim((string)$warning);
+            if ($warning !== '') {
+                $assumptions[] = $warning;
+            }
         }
 
         return [
@@ -85,6 +91,9 @@ final class IxbrlAccountsMappingService
             'closing_balance_row_count' => (int)($closingMetrics['row_count'] ?? 0),
             'balance_equation_difference' => (float)($closingMetrics['balance_equation_difference'] ?? 0),
             'is_balance_sheet_balanced' => !empty($closingMetrics['is_balance_sheet_balanced']),
+            'reliable_closing_balance' => !empty($closingMetrics['reliable_closing_balance']),
+            'prior_period_dependency' => (array)($closingMetrics['prior_period_dependency'] ?? []),
+            'warnings' => array_values(array_map('strval', (array)($closingMetrics['warnings'] ?? []))),
         ];
     }
 

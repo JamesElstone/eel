@@ -52,7 +52,7 @@ $harness->run(_year_end_prepayment_approvalsCard::class, static function (Genera
         $harness->assertSame(false, str_contains($acknowledgedHtml, 'name="intent" value="acknowledge_review_check"'));
 
         $blockedHtml = $card->render(yearEndPrepaymentApprovalsCardContext(null, 2));
-        $harness->assertSame(true, str_contains($blockedHtml, 'Incomplete: 2.'));
+        $harness->assertSame(true, str_contains($blockedHtml, 'Awaiting decision: 2.'));
         $harness->assertSame(true, str_contains($blockedHtml, 'data-year-end-ack-checkbox disabled'));
         $harness->assertSame(false, str_contains($blockedHtml, 'disabled data-year-end-ack-submit'));
     });

@@ -112,6 +112,45 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
         }
     });
 
+    $harness->check(\eel_accounts\Service\RetainedEarningsCloseService::class, 'blocks acknowledgement and posting until the prior accounting period is locked', static function () use ($harness): void {
+        retainedEarningsCloseRequireSchema($harness);
+
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = retainedEarningsCloseCreateLossFixture();
+            InterfaceDB::prepareExecute(
+                'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
+                 VALUES (:company_id, :label, :period_start, :period_end)',
+                [
+                    'company_id' => (int)$fixture['company_id'],
+                    'label' => 'Retained prior ' . (string)$fixture['marker'],
+                    'period_start' => '2025-01-01',
+                    'period_end' => '2025-12-31',
+                ]
+            );
+            $priorPeriodId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM accounting_periods WHERE company_id = :company_id AND label = :label',
+                ['company_id' => (int)$fixture['company_id'], 'label' => 'Retained prior ' . (string)$fixture['marker']]
+            );
+
+            $service = new \eel_accounts\Service\RetainedEarningsCloseService();
+            $blocked = $service->fetchContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+            $harness->assertSame('prior_period_unlocked', (string)(($blocked['prior_period_dependency'] ?? [])['status'] ?? ''));
+            $harness->assertSame(false, (bool)($blocked['can_acknowledge'] ?? true));
+            $harness->assertSame(false, (bool)($service->saveAcknowledgement((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], true, 'test')['success'] ?? true));
+            $harness->assertSame(false, (bool)($service->postClose((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'test', true)['success'] ?? true));
+
+            (new \eel_accounts\Service\YearEndLockService())->lockPeriod((int)$fixture['company_id'], $priorPeriodId, 'test');
+            $ready = $service->fetchContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+            $harness->assertSame('prior_period_locked', (string)(($ready['prior_period_dependency'] ?? [])['status'] ?? ''));
+            $harness->assertSame(true, (bool)($ready['can_acknowledge'] ?? false));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
     $harness->check(\eel_accounts\Service\RetainedEarningsCloseService::class, 'includes pending year-end depreciation in approval figures', static function () use ($harness): void {
         retainedEarningsCloseRequireDepreciationSchema($harness);
 

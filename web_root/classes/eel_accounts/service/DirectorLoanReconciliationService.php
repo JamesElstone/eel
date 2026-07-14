@@ -88,6 +88,7 @@ final class DirectorLoanReconciliationService
         $balances = $this->fetchGrossBalances(
             $companyId,
             $accountingPeriodId,
+            (string)($accountingPeriod['period_end'] ?? ''),
             (int)$assetNominal['id'],
             (int)$liabilityNominal['id']
         );
@@ -280,7 +281,7 @@ final class DirectorLoanReconciliationService
         return null;
     }
 
-    private function fetchGrossBalances(int $companyId, int $accountingPeriodId, int $assetNominalId, int $liabilityNominalId): array
+    private function fetchGrossBalances(int $companyId, int $accountingPeriodId, string $periodEnd, int $assetNominalId, int $liabilityNominalId): array
     {
         $rows = \InterfaceDB::fetchAll(
             'SELECT jl.nominal_account_id,
@@ -289,14 +290,18 @@ final class DirectorLoanReconciliationService
              FROM journals j
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
              WHERE j.company_id = :company_id
-               AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
+               AND j.journal_date <= :period_end
                AND jl.nominal_account_id IN (:asset_nominal_id, :liability_nominal_id)
-               AND COALESCE(j.source_ref, \'\') <> :offset_source_ref
+               AND NOT (
+                    j.accounting_period_id = :accounting_period_id
+                    AND COALESCE(j.source_ref, \'\') = :offset_source_ref
+               )
              GROUP BY jl.nominal_account_id',
             [
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
+                'period_end' => $periodEnd,
                 'asset_nominal_id' => $assetNominalId,
                 'liability_nominal_id' => $liabilityNominalId,
                 'offset_source_ref' => 'meta:' . self::OFFSET_JOURNAL_TAG . ':' . self::OFFSET_JOURNAL_KEY,

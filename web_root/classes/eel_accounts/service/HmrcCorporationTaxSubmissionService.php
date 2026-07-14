@@ -47,6 +47,17 @@ final class HmrcCorporationTaxSubmissionService
         }
         $sequence = $ctPeriodService->canSubmit($companyId, $ctPeriodId);
         $errors = array_merge($errors, (array)($sequence['errors'] ?? []));
+        if ($ctPeriod !== null) {
+            $computation = (new \eel_accounts\Service\CorporationTaxComputationService())->fetchSummaryForCtPeriodId($companyId, $ctPeriodId);
+            $persistence = (array)($computation['computation_persistence'] ?? []);
+            if (empty($computation['available'])) {
+                $errors[] = 'A current CT computation could not be built for submission.';
+            } elseif (empty($persistence['current'])) {
+                $errors[] = (string)($persistence['status'] ?? '') === 'stale'
+                    ? 'The latest persisted CT computation is stale. Refresh the Year End review and complete the final close before validating a submission.'
+                    : 'Complete the final Year End close to persist the reviewed CT computation before validating a submission.';
+            }
+        }
 
         $tbTotals = (new \eel_accounts\Service\IxbrlTrialBalanceService())->getTotals($companyId, $accountingPeriodId);
         if ((int)($tbTotals['row_count'] ?? 0) <= 0) {
@@ -140,6 +151,18 @@ final class HmrcCorporationTaxSubmissionService
         $sequence = (new \eel_accounts\Service\CorporationTaxPeriodService())->canSubmit((int)$submission['company_id'], $ctPeriodId);
         if (empty($sequence['ok'])) {
             return ['success' => false, 'errors' => (array)($sequence['errors'] ?? ['Earlier CT periods must be completed first.'])];
+        }
+        $computation = (new \eel_accounts\Service\CorporationTaxComputationService())->fetchSummaryForCtPeriodId((int)$submission['company_id'], $ctPeriodId);
+        $persistence = (array)($computation['computation_persistence'] ?? []);
+        if (empty($computation['available']) || empty($persistence['current'])) {
+            return [
+                'success' => false,
+                'errors' => [
+                    (string)($persistence['status'] ?? '') === 'stale'
+                        ? 'Submission blocked because the persisted CT computation is stale. Refresh the Year End review and complete the final close.'
+                        : 'Submission blocked until the final Year End close persists the reviewed CT computation.',
+                ],
+            ];
         }
         \InterfaceDB::prepareExecute('UPDATE hmrc_ct600_submissions SET status = :status WHERE id = :id', ['status' => 'submitting', 'id' => $submissionId]);
         (new \eel_accounts\Service\CorporationTaxPeriodService())->markLatestSubmission($ctPeriodId, $submissionId, 'submitting');

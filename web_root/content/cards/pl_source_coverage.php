@@ -23,7 +23,11 @@ final class _pl_source_coverageCard extends CardBaseFramework
             return '<div class="helper">No source coverage data is available.</div>';
         }
         $html = '';
+        $coverageSummary = (array)($sources['coverage_summary'] ?? []);
         foreach ($sources as $source) {
+            if (!is_array($source) || !empty($source['is_summary'])) {
+                continue;
+            }
             $present = !empty($source['present']);
             $html .= '<tr>
                 <td>' . HelperFramework::escape((string)($source['label'] ?? $source['source_type'] ?? '')) . '</td>
@@ -33,7 +37,18 @@ final class _pl_source_coverageCard extends CardBaseFramework
                 <td>' . HelperFramework::escape($this->money($companySettings, $source['credit_total'] ?? 0)) . '</td>
             </tr>';
         }
-        return '<div class="table-scroll"><table><thead><tr><th>Source</th><th>Status</th><th>Journals</th><th>Debits</th><th>Credits</th></tr></thead><tbody>' . $html . '</tbody></table></div>';
+        $summary = (array)($context['profit_loss']['summary'] ?? []);
+        $depreciation = (float)($summary['depreciation_expense'] ?? 0);
+        $previewNote = $depreciation > 0.0
+            ? '<div class="helper"><span class="badge info">Close preview</span> Journal coverage below is posted-source evidence only. The P&amp;L cards also include ' . HelperFramework::escape($this->money($companySettings, $depreciation)) . ' of Year End depreciation preview.</div>'
+            : '';
+        $reconciled = !empty($coverageSummary['reconciled']);
+        $coverageNote = '<div class="helper"><span class="badge ' . ($reconciled ? 'success' : 'warning') . '">' . ($reconciled ? 'Reconciled' : 'Review') . '</span> Covered '
+            . (int)($coverageSummary['covered_journal_count'] ?? 0) . ' of '
+            . (int)($coverageSummary['posted_journal_count'] ?? 0) . ' posted journals; '
+            . (int)($coverageSummary['uncovered_journal_count'] ?? 0) . ' uncovered.</div>';
+
+        return '<div class="settings-stack">' . $previewNote . $coverageNote . '<div class="table-scroll"><table><thead><tr><th>Source</th><th>Status</th><th>Journals</th><th>Debits</th><th>Credits</th></tr></thead><tbody>' . $html . '</tbody></table></div></div>';
     }
 
     private function money(array $companySettings, mixed $value): string

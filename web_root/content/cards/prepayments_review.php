@@ -75,8 +75,9 @@ final class _prepayments_reviewCard extends CardBaseFramework
         return '<section class="settings-stack" id="prepayments-review">
             <div class="month-grid">
                 ' . $this->summaryCard('Potential items', (string)(int)($review['total_count'] ?? 0)) . '
+                ' . $this->summaryCard('Reviewed', (string)(int)($review['reviewed_count'] ?? 0)) . '
                 ' . $this->summaryCard('Prepaid', (string)(int)($review['prepaid_count'] ?? 0)) . '
-                ' . $this->summaryCard('Incomplete', (string)(int)($review['pending_count'] ?? 0)) . '
+                ' . $this->summaryCard('Awaiting decision', (string)(int)($review['pending_count'] ?? 0)) . '
             </div>
             ' . ($isLocked ? '<div class="helper"><span class="badge warning">Period locked</span> Prepayment decisions are read only.</div>' : '') . '
             <div class="panel-soft">
@@ -96,9 +97,9 @@ final class _prepayments_reviewCard extends CardBaseFramework
         $sourceType = (string)($item['source_type'] ?? '');
         $sourceId = (int)($item['source_id'] ?? 0);
         $formId = 'prepayment-review-' . preg_replace('/[^a-z0-9_-]/i', '-', $sourceType) . '-' . $sourceId;
-        $status = (string)($review['status'] ?? 'not_prepaid');
-        if ($status !== 'prepaid') {
-            $status = 'not_prepaid';
+        $status = (string)($review['status'] ?? 'pending');
+        if (!in_array($status, ['pending', 'not_prepaid', 'prepaid'], true)) {
+            $status = 'pending';
         }
         $sourceDate = (string)($item['source_date'] ?? '');
         $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
@@ -121,7 +122,7 @@ final class _prepayments_reviewCard extends CardBaseFramework
             </td>
             <td class="numeric">' . HelperFramework::escape($this->money($companySettings, $item['amount'] ?? 0)) . '</td>
             <td>
-                ' . ($isLocked ? '<span class="badge ' . ($status === 'prepaid' ? 'success' : 'info') . '">' . HelperFramework::escape($this->statusLabel($status)) . '</span>' : '
+                ' . ($isLocked ? '<span class="badge ' . ($status === 'pending' ? 'warning' : ($status === 'prepaid' ? 'success' : 'info')) . '">' . HelperFramework::escape($this->statusLabel($status)) . '</span>' : '
                 <form id="' . HelperFramework::escape($formId) . '" method="post" data-ajax="true" class="actions-row actions-row-nowrap prepayment-review-form">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                     <input type="hidden" name="card_action" value="Prepayments">
@@ -131,7 +132,7 @@ final class _prepayments_reviewCard extends CardBaseFramework
                     <input type="hidden" name="source_type" value="' . HelperFramework::escape($sourceType) . '">
                     <input type="hidden" name="source_id" value="' . $sourceId . '">
                     <input type="hidden" name="prepayment_notes" value="' . HelperFramework::escape((string)($review['notes'] ?? '')) . '">
-                    <select class="select" id="' . HelperFramework::escape($formId) . '-status" name="prepayment_status">' . $this->statusOptions($status) . '</select>
+                    <select class="select" id="' . HelperFramework::escape($formId) . '-status" name="prepayment_status" data-dirty-action-target=".' . HelperFramework::escape($saveButtonClass) . '" data-initial-value="' . HelperFramework::escape($status) . '">' . $this->statusOptions($status) . '</select>
                     <span class="prepayment-date-actions" data-visible-when-field="prepayment_status" data-visible-when-value="prepaid"' . ($status === 'prepaid' ? '' : ' hidden aria-hidden="true"') . '>
                         <label class="prepayment-date-field" for="' . HelperFramework::escape($formId) . '-service-start-date">Service start
                             <input class="input" id="' . HelperFramework::escape($formId) . '-service-start-date" type="date" name="service_start_date" value="' . HelperFramework::escape($serviceStart) . '" data-dirty-action-target=".' . HelperFramework::escape($saveButtonClass) . '" data-initial-value="' . HelperFramework::escape($serviceStart) . '" data-dirty-require-value="1">
@@ -139,8 +140,8 @@ final class _prepayments_reviewCard extends CardBaseFramework
                         <label class="prepayment-date-field" for="' . HelperFramework::escape($formId) . '-service-end-date">Service end
                             <input class="input" id="' . HelperFramework::escape($formId) . '-service-end-date" type="date" name="service_end_date" value="' . HelperFramework::escape($serviceEnd) . '" data-dirty-action-target=".' . HelperFramework::escape($saveButtonClass) . '" data-initial-value="' . HelperFramework::escape($serviceEnd) . '" data-dirty-require-value="1">
                         </label>
-                        <button class="button button-inline primary ' . HelperFramework::escape($saveButtonClass) . '" type="submit" data-dirty-enable-mode="changed" disabled>Save</button>
                     </span>
+                    <button class="button button-inline primary ' . HelperFramework::escape($saveButtonClass) . '" type="submit" data-dirty-enable-mode="changed" disabled>Save decision</button>
                 </form>') . '
             </td>
         </tr>';
@@ -148,18 +149,23 @@ final class _prepayments_reviewCard extends CardBaseFramework
 
     private function statusLabel(string $status): string
     {
-        return $status === 'prepaid' ? 'Prepaid' : 'Not pre-paid';
+        return match ($status) {
+            'prepaid' => 'Prepaid',
+            'not_prepaid' => 'Not pre-paid',
+            default => 'Review required',
+        };
     }
 
     private function statusOptions(string $selected): string
     {
         $labels = [
+            'pending' => 'Review required — choose a decision',
             'not_prepaid' => 'Not pre-paid',
             'prepaid' => 'Prepaid',
         ];
         $html = '';
         foreach ($labels as $value => $label) {
-            $html .= '<option value="' . HelperFramework::escape($value) . '"' . ($selected === $value ? ' selected' : '') . '>' . HelperFramework::escape($label) . '</option>';
+            $html .= '<option value="' . HelperFramework::escape($value) . '"' . ($selected === $value ? ' selected' : '') . ($value === 'pending' ? ' disabled' : '') . '>' . HelperFramework::escape($label) . '</option>';
         }
 
         return $html;

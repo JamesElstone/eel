@@ -18,6 +18,7 @@ final class _tax_corporation_tax_summaryCard extends CardBaseFramework
         $summary = (array)$workings['summary'];
         $provision = (array)($workings['provision'] ?? []);
         return \eel_accounts\Renderer\TaxCardRenderer::header('corporation_tax')
+            . \eel_accounts\Renderer\TaxCardRenderer::computationPersistenceNotice($workings)
             . '<div class="status-head">'
             . \eel_accounts\Renderer\TaxCardRenderer::badge((string)($summary['calculation_status'] ?? 'estimate'), HelperFramework::labelFromKey((string)($summary['calculation_status'] ?? 'estimate'), '_'))
             . \eel_accounts\Renderer\TaxCardRenderer::badge((string)($summary['confidence_status'] ?? 'review_required'), (string)($summary['confidence_label'] ?? 'Review required'))

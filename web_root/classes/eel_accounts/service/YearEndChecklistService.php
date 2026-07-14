@@ -196,7 +196,7 @@ final class YearEndChecklistService
             }
 
             $taxPersistenceResult = (new \eel_accounts\Service\CorporationTaxComputationService())
-                ->persistSummariesForAccountingPeriod($companyId, $accountingPeriodId);
+                ->persistSummariesForYearEndLock($companyId, $accountingPeriodId);
             if (empty($taxPersistenceResult['success'])) {
                 return $this->rollbackLockTransaction($transaction, [
                     'success' => false,
@@ -849,19 +849,33 @@ final class YearEndChecklistService
         );
         $equityMovement = abs((float)($financialStatements['retained_earnings']['unexplained_movement'] ?? 0));
         $retainedEarningsCloseAvailable = !empty($retainedEarningsClose['available']);
+        $priorPeriodDependency = (array)($retainedEarningsClose['prior_period_dependency'] ?? []);
+        $priorPeriodDependencySatisfied = !empty($priorPeriodDependency['satisfied']);
+        $sections['year_end_accounts_review'][] = $this->makeCheck(
+            'prior_period_lock_dependency',
+            'Prior accounting period locked',
+            'fail',
+            $priorPeriodDependencySatisfied ? 'pass' : 'fail',
+            (string)($priorPeriodDependency['detail'] ?? 'The prior accounting period dependency could not be verified.'),
+            $priorPeriodDependencySatisfied ? 'Ready' : 'Blocked',
+            '?page=year_end'
+        );
         $retainedEarningsConfirmationCheck = $this->applyReviewAcknowledgement($this->makeCheck(
             'retained_earnings_close_confirmation',
             'Retained earnings close confirmation',
             'fail',
-            $retainedEarningsCloseAvailable ? 'fail' : 'fail',
+            $retainedEarningsCloseAvailable && $priorPeriodDependencySatisfied ? 'fail' : 'fail',
             !$retainedEarningsCloseAvailable
                 ? (string)(($retainedEarningsClose['errors'] ?? [])[0] ?? 'Retained earnings close preview is not available.')
-                : 'Review and agree how current profit/loss will be carried into retained earnings before locking.',
+                : (!$priorPeriodDependencySatisfied
+                    ? (string)($priorPeriodDependency['detail'] ?? 'Complete and lock the prior accounting period first.')
+                    : 'Review and agree how current profit/loss will be carried into retained earnings before locking.'),
             $retainedEarningsCloseAvailable ? 'Pending' : '',
             '?page=profit_loss&show_card=year_end_retained_earnings',
-            !$retainedEarningsCloseAvailable ? null : $this->acknowledgementBasis('retained_earnings_close_confirmation', [
+            !$retainedEarningsCloseAvailable || !$priorPeriodDependencySatisfied ? null : $this->acknowledgementBasis('retained_earnings_close_confirmation', [
                 'summary' => (array)($retainedEarningsClose['summary'] ?? []),
                 'journal_lines' => (array)($retainedEarningsClose['journal_lines'] ?? []),
+                'prior_period_dependency' => $priorPeriodDependency,
             ])
         ), $reviewAcknowledgements);
         $retainedEarningsCloseCurrent = !empty($retainedEarningsConfirmationCheck['acknowledgement_current']);
@@ -1129,15 +1143,19 @@ final class YearEndChecklistService
             'companies_house_mismatch_acknowledgement',
             'Accounts comparison metrics',
             'warning',
-            !empty($chComparison['available']) && $comparisonFailures > 0 ? 'warning' : (!empty($chComparison['available']) ? 'pass' : 'not_applicable'),
+            !empty($chComparison['available']) && empty($chComparison['reliable_closing_balance'])
+                ? 'fail'
+                : (!empty($chComparison['available']) && $comparisonFailures > 0 ? 'warning' : (!empty($chComparison['available']) ? 'pass' : 'not_applicable')),
             !empty($chComparison['available'])
-                ? ($comparisonFailures > 0
+                ? (empty($chComparison['reliable_closing_balance'])
+                    ? (string)(($chComparison['warnings'] ?? [])[0] ?? 'Complete and lock the prior accounting period before approving the comparison.')
+                    : ($comparisonFailures > 0
                     ? 'Stored Companies House filing values differ from the reviewed app figures. Acknowledge here only when this is a known filing error to be corrected before HMRC submission.'
-                    : 'App-computed balance sheet values match the stored filed accounts.')
+                    : 'App-computed balance sheet values match the stored filed accounts.'))
                 : 'No comparison metrics are available.',
             !empty($chComparison['available']) ? (string)$comparisonFailures : '',
             '?page=companies_house&show_card=year_end_companies_house_comparison#companies-house-mismatch-acknowledgement',
-            empty($chComparison['available']) ? null : $this->acknowledgementBasis('companies_house_mismatch_acknowledgement', $chComparison)
+            empty($chComparison['available']) || empty($chComparison['reliable_closing_balance']) ? null : $this->acknowledgementBasis('companies_house_mismatch_acknowledgement', $chComparison)
         ), $reviewAcknowledgements);
 
         $blockingChecksPass = $uncategorisedCount === 0
@@ -1146,6 +1164,7 @@ final class YearEndChecklistService
             && !empty($trialBalance['exists'])
             && $journalIntegrityIssues === 0
             && $unpostedSourceWorkCount === 0
+            && $priorPeriodDependencySatisfied
             && $retainedEarningsCloseCurrent
             && $taxProvisionCurrent
             && $this->acknowledgementCurrentInSections($sections, 'prepayment_approvals')
@@ -1713,7 +1732,7 @@ final class YearEndChecklistService
         if ($incompleteCount > 0) {
             return [
                 'success' => false,
-                'errors' => ['Complete all pre-paid service dates before saving this approval. Incomplete: ' . $incompleteCount . '.'],
+                'errors' => ['Record an explicit decision for every prepayment candidate and complete all pre-paid service dates before saving this approval. Awaiting decision: ' . $incompleteCount . '.'],
             ];
         }
 

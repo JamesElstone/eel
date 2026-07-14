@@ -51,11 +51,19 @@ final class CompaniesHouseComparisonReviewService
             $acknowledgement['current'] = !empty($evaluation['current']);
         }
 
+        $comparisonCanBeAcknowledged = array_key_exists('can_acknowledge', $comparison)
+            ? !empty($comparison['can_acknowledge'])
+            : !empty($comparison['available']);
+
         return [
             'comparison' => $comparison,
             'acknowledgement' => is_array($acknowledgement) ? $acknowledgement : null,
             'access' => $access,
             'mismatch_count' => $this->mismatchCount($comparison),
+            'can_acknowledge' => $comparisonCanBeAcknowledged && empty($access['is_locked']),
+            'acknowledgement_blocked_reason' => !$comparisonCanBeAcknowledged
+                ? (string)(($comparison['warnings'] ?? [])[0] ?? 'Complete and lock the prior accounting period before approving this comparison.')
+                : '',
         ];
     }
 

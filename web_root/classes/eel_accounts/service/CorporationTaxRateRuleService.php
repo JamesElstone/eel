@@ -521,7 +521,12 @@ final class CorporationTaxRateRuleService
     private function normaliseText(string $value): string
     {
         $value = html_entity_decode($value, \ENT_QUOTES | \ENT_HTML5, 'UTF-8');
-        $value = str_replace(["\xc2\xa0", "\xe2\x80\x94"], [' ', '—'], $value);
+        $value = str_replace(
+            ["\xc3\x82\xc2\xa3", "\xc2\xa3", "\xc3\x82\xc2\xa0", "\xc2\xa0", "\xe2\x80\x94"],
+            ['GBP ', 'GBP ', ' ', ' ', '—'],
+            $value
+        );
+        $value = preg_replace('/\s*\(/u', ' (', $value) ?? $value;
         $value = preg_replace('/\s+/', ' ', $value) ?? $value;
 
         return trim($value);

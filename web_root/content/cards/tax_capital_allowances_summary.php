@@ -17,6 +17,7 @@ final class _tax_capital_allowances_summaryCard extends CardBaseFramework
         }
         $summary = (array)($workings['capital_allowances_summary'] ?? []);
         return \eel_accounts\Renderer\TaxCardRenderer::header('capital_allowances')
+            . \eel_accounts\Renderer\TaxCardRenderer::computationPersistenceNotice($workings)
             . \eel_accounts\Renderer\TaxCardRenderer::summaryGrid([
                 ['Annual Investment Allowance (AIA)', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['aia_claimed'] ?? 0)],
                 ['First Year Allowance (FYA)', \eel_accounts\Renderer\TaxCardRenderer::money($context, $summary['fya_claimed'] ?? 0)],

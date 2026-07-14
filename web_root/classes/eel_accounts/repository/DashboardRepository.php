@@ -275,8 +275,9 @@ final class DashboardRepository
         if ($activity === [] && $setupHealthActions === []) {
             return [
                 [
-                    'title' => 'No immediate actions',
-                    'detail' => 'This period looks tidy. The dashboard has nothing urgent to surface right now.',
+                    'title' => 'No setup or transaction actions',
+                    'detail' => 'No immediate setup, import, categorisation, or draft-journal actions were found. Review the separate Year End readiness card for close and filing issues.',
+                    'state' => 'ok',
                 ],
             ];
         }

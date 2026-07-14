@@ -54,10 +54,6 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
             ->postClose($companyId, $periodId, 'golden_year_end_test');
         $harness->assertTrue(!empty($retainedEarnings['success']));
 
-        $taxPersistence = (new \eel_accounts\Service\CorporationTaxComputationService())
-            ->persistSummariesForAccountingPeriod($companyId, $periodId);
-        $harness->assertTrue(!empty($taxPersistence['success']));
-
         $profitLoss = (new \eel_accounts\Service\ProfitLossService())->getProfitLossSummary($companyId, $periodId);
         $harness->assertSame(number_format((float)$expected['depreciation'], 2, '.', ''), number_format((float)($profitLoss['depreciation_expense'] ?? 0), 2, '.', ''));
         $harness->assertSame(number_format((float)$expected['profit_before_tax'], 2, '.', ''), number_format((float)($profitLoss['profit_before_tax'] ?? 0), 2, '.', ''));
@@ -80,9 +76,22 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
         $harness->assertSame(number_format((float)$hmrcExpected[$periodId]['corporation_tax'], 2, '.', ''), number_format($ctTax, 2, '.', ''));
 
         $beforeLock = goldenYearEndReportingSnapshot($companyId, $periodId);
-        $lock = (new \eel_accounts\Service\YearEndLockService())
-            ->lockPeriod($companyId, $periodId, 'golden_year_end_test');
-        $harness->assertTrue(!empty($lock['success']));
+        InterfaceDB::beginTransaction();
+        try {
+            $taxPersistence = (new \eel_accounts\Service\CorporationTaxComputationService())
+                ->persistSummariesForYearEndLock($companyId, $periodId);
+            $harness->assertTrue(!empty($taxPersistence['success']));
+
+            $lock = (new \eel_accounts\Service\YearEndLockService())
+                ->lockPeriod($companyId, $periodId, 'golden_year_end_test');
+            $harness->assertTrue(!empty($lock['success']));
+            InterfaceDB::commit();
+        } catch (Throwable $exception) {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+            throw $exception;
+        }
         $harness->assertTrue((new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $periodId));
         $afterLock = goldenYearEndReportingSnapshot($companyId, $periodId);
 

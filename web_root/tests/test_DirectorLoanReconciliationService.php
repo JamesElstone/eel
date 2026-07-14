@@ -63,6 +63,22 @@ $harness->run(\eel_accounts\Service\DirectorLoanReconciliationService::class, st
         });
     });
 
+    $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'rolls prior period balances into the closing offset proposal', static function () use ($harness, $service): void {
+        directorLoanReconciliationTestWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 253.00, 0.00, 'prior-asset', (int)$fixture['prior_accounting_period_id'], '2024-12-31');
+            directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 0.00, 1288.63, 'prior-liability', (int)$fixture['prior_accounting_period_id'], '2024-12-31');
+            directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 4620.83, 0.00, 'current-asset');
+            directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 0.00, 10873.46, 'current-liability');
+
+            $result = $service->fetchContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+
+            $harness->assertSame(4873.83, (float)($result['asset_receivable'] ?? 0));
+            $harness->assertSame(12162.09, (float)($result['liability_payable'] ?? 0));
+            $harness->assertSame(4873.83, (float)($result['offset_amount'] ?? 0));
+            $harness->assertSame(7288.26, (float)($result['net_position'] ?? 0));
+        });
+    });
+
     $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'confirmation context includes lightweight tax review', static function () use ($harness, $service): void {
         directorLoanReconciliationTestWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
             directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 500.00, 0.00, 'director-owes-company');
@@ -138,6 +154,20 @@ function directorLoanReconciliationTestWithFixture(GeneratedServiceClassTestHarn
              VALUES (:company_id, :label, :period_start, :period_end)',
             [
                 'company_id' => $companyId,
+                'label' => 'DLO Prior ' . $marker,
+                'period_start' => '2024-01-01',
+                'period_end' => '2024-12-31',
+            ]
+        );
+        $priorAccountingPeriodId = (int)InterfaceDB::fetchColumn(
+            'SELECT id FROM accounting_periods WHERE company_id = :company_id AND label = :label',
+            ['company_id' => $companyId, 'label' => 'DLO Prior ' . $marker]
+        );
+        InterfaceDB::prepareExecute(
+            'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
+             VALUES (:company_id, :label, :period_start, :period_end)',
+            [
+                'company_id' => $companyId,
                 'label' => 'DLO ' . $marker,
                 'period_start' => '2025-01-01',
                 'period_end' => '2025-12-31',
@@ -151,6 +181,7 @@ function directorLoanReconciliationTestWithFixture(GeneratedServiceClassTestHarn
         $callback([
             'marker' => $marker,
             'company_id' => $companyId,
+            'prior_accounting_period_id' => $priorAccountingPeriodId,
             'accounting_period_id' => $accountingPeriodId,
             'asset_nominal_id' => $assetNominalId,
             'liability_nominal_id' => $liabilityNominalId,
@@ -162,7 +193,7 @@ function directorLoanReconciliationTestWithFixture(GeneratedServiceClassTestHarn
     }
 }
 
-function directorLoanReconciliationTestInsertLineJournal(array $fixture, int $nominalId, float $debit, float $credit, string $key): void
+function directorLoanReconciliationTestInsertLineJournal(array $fixture, int $nominalId, float $debit, float $credit, string $key, ?int $accountingPeriodId = null, ?string $journalDate = null): void
 {
     $sourceRef = 'test-director-loan-offset:' . $fixture['marker'] . ':' . $key;
     InterfaceDB::prepareExecute(
@@ -170,10 +201,10 @@ function directorLoanReconciliationTestInsertLineJournal(array $fixture, int $no
          VALUES (:company_id, :accounting_period_id, :source_type, :source_ref, :journal_date, :description, 1)',
         [
             'company_id' => (int)$fixture['company_id'],
-            'accounting_period_id' => (int)$fixture['accounting_period_id'],
+            'accounting_period_id' => $accountingPeriodId ?? (int)$fixture['accounting_period_id'],
             'source_type' => 'manual',
             'source_ref' => $sourceRef,
-            'journal_date' => '2025-12-31',
+            'journal_date' => $journalDate ?? '2025-12-31',
             'description' => 'Director loan test fixture ' . $key,
         ]
     );

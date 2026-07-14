@@ -69,6 +69,7 @@ final class ProfitLossService
             'operating_expense_total' => $operatingExpenseTotal,
             'posted_operating_expense_total' => round((float)($totals['posted_operating_expense_total'] ?? $operatingExpenseTotal), 2),
             'depreciation_expense' => round((float)($totals['depreciation_expense'] ?? 0), 2),
+            'accounting_basis' => 'posted_journals_plus_year_end_close_preview',
             'expense_total' => $expenseTotal,
             'profit_before_tax' => $profitBeforeTax,
             'corporation_tax_expense_total' => $postedCorporationTaxCharge,
@@ -214,7 +215,20 @@ final class ProfitLossService
             }
         }
 
-        foreach ($months as &$month) {
+        $depreciationByMonth = (new YearEndClosePreviewService())->monthlyDepreciationExpenseForPeriod(
+            $companyId,
+            $accountingPeriodId,
+            (string)$accountingPeriod['period_start'],
+            (string)$accountingPeriod['period_end']
+        );
+        foreach ($months as $monthStart => &$month) {
+            $month['posted_operating_expense_total'] = round((float)$month['operating_expense_total'], 2);
+            $month['depreciation_expense'] = round((float)($depreciationByMonth[$monthStart] ?? 0), 2);
+            $month['operating_expense_total'] = round(
+                (float)$month['posted_operating_expense_total'] + (float)$month['depreciation_expense'],
+                2
+            );
+            $month['accounting_basis'] = 'posted_journals_plus_year_end_close_preview';
             $month['income_total'] = round((float)$month['income_total'], 2);
             $month['cost_of_sales_total'] = round((float)$month['cost_of_sales_total'], 2);
             $month['operating_expense_total'] = round((float)$month['operating_expense_total'], 2);
@@ -385,7 +399,9 @@ final class ProfitLossService
             'director_loan_offset' => ['label' => 'Director loan offset journals'],
             'expense_register' => ['label' => 'Expense register journals'],
             'asset_depreciation' => ['label' => 'Asset depreciation journals'],
+            'asset_disposal' => ['label' => 'Asset disposal journals'],
             'manual' => ['label' => 'Manual journals'],
+            'other' => ['label' => 'Other posted journals'],
         ];
 
         foreach ($sources as $sourceType => &$source) {
@@ -398,6 +414,7 @@ final class ProfitLossService
         unset($source);
 
         if ($companyId <= 0 || $accountingPeriodId <= 0 || $periodStart === '' || $periodEnd === '') {
+            $sources['coverage_summary'] = $this->sourceCoverageSummary([], $sources);
             return $sources;
         }
 
@@ -435,7 +452,7 @@ final class ProfitLossService
                 ? 'director_loan_offset'
                 : (string)($row['source_type'] ?? '');
             if (!isset($sources[$sourceType])) {
-                continue;
+                $sourceType = 'other';
             }
             $sources[$sourceType]['journal_count']++;
             $sources[$sourceType]['debit_total'] = round((float)$sources[$sourceType]['debit_total'] + (float)($row['debit_total'] ?? 0), 2);
@@ -443,7 +460,48 @@ final class ProfitLossService
             $sources[$sourceType]['present'] = true;
         }
 
+        $sources['coverage_summary'] = $this->sourceCoverageSummary($rows, $sources);
         return $sources;
+    }
+
+    private function sourceCoverageSummary(array $rows, array $sources): array
+    {
+        $coveredJournalCount = 0;
+        $coveredDebitTotal = 0.0;
+        $coveredCreditTotal = 0.0;
+        foreach ($sources as $source) {
+            if (!is_array($source) || !array_key_exists('journal_count', $source)) {
+                continue;
+            }
+            $coveredJournalCount += (int)($source['journal_count'] ?? 0);
+            $coveredDebitTotal += (float)($source['debit_total'] ?? 0);
+            $coveredCreditTotal += (float)($source['credit_total'] ?? 0);
+        }
+
+        $postedDebitTotal = 0.0;
+        $postedCreditTotal = 0.0;
+        foreach ($rows as $row) {
+            $postedDebitTotal += (float)($row['debit_total'] ?? 0);
+            $postedCreditTotal += (float)($row['credit_total'] ?? 0);
+        }
+
+        $postedJournalCount = count($rows);
+        $reconciled = $coveredJournalCount === $postedJournalCount
+            && abs(round($coveredDebitTotal - $postedDebitTotal, 2)) < 0.005
+            && abs(round($coveredCreditTotal - $postedCreditTotal, 2)) < 0.005;
+
+        return [
+            'is_summary' => true,
+            'posted_journal_count' => $postedJournalCount,
+            'covered_journal_count' => $coveredJournalCount,
+            'uncovered_journal_count' => max(0, $postedJournalCount - $coveredJournalCount),
+            'posted_debit_total' => round($postedDebitTotal, 2),
+            'covered_debit_total' => round($coveredDebitTotal, 2),
+            'posted_credit_total' => round($postedCreditTotal, 2),
+            'covered_credit_total' => round($coveredCreditTotal, 2),
+            'reconciled' => $reconciled,
+            'status' => $reconciled ? 'pass' : 'warning',
+        ];
     }
 
     private function emptySummary(string $error): array
@@ -648,6 +706,8 @@ final class ProfitLossService
                 'income_total' => 0.0,
                 'cost_of_sales_total' => 0.0,
                 'operating_expense_total' => 0.0,
+                'posted_operating_expense_total' => 0.0,
+                'depreciation_expense' => 0.0,
                 'corporation_tax_expense_total' => 0.0,
                 'expense_total' => 0.0,
                 'profit_before_tax' => 0.0,

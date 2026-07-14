@@ -62,6 +62,11 @@ final class YearEndCompaniesHouseComparisonService
             (string)$accountingPeriod['period_start'],
             (string)$accountingPeriod['period_end']
         );
+        $reliableClosingBalance = array_key_exists('reliable_closing_balance', $appMetrics)
+            ? !empty($appMetrics['reliable_closing_balance'])
+            : true;
+        $priorPeriodDependency = (array)($appMetrics['prior_period_dependency'] ?? []);
+        $warnings = array_values(array_filter(array_map('strval', (array)($appMetrics['warnings'] ?? []))));
         $threshold = $this->comparisonThreshold($companyId);
         $rows = [];
 
@@ -94,14 +99,33 @@ final class YearEndCompaniesHouseComparisonService
         }
 
         $hasExactMatch = (string)($nearest['period_end'] ?? '') === (string)$accountingPeriod['period_end'];
+        $comparableCount = count(array_filter($rows, static fn(array $row): bool => $row['variance'] !== null));
+        $matchedCount = count(array_filter($rows, static fn(array $row): bool => (string)$row['status'] === 'pass'));
+        $mismatchCount = count(array_filter($rows, static fn(array $row): bool => in_array((string)$row['status'], ['warning', 'fail'], true)));
+        $comparisonNote = 'This is an advisory nearest-period comparison because no exact Companies House filing matched the selected accounting period.';
+        if ($hasExactMatch && $comparableCount === 0) {
+            $comparisonNote = 'An exact-period Companies House filing was selected, but it contains no comparable numeric facts for these metrics.';
+        } elseif ($hasExactMatch && $mismatchCount > 0) {
+            $comparisonNote = 'An exact-period Companies House filing was selected, but ' . $mismatchCount . ' of ' . $comparableCount . ' comparable values differ from the current reconstructed accounts.';
+        } elseif ($hasExactMatch) {
+            $comparisonNote = 'An exact-period Companies House filing was selected and all ' . $matchedCount . ' comparable values match the current reconstructed accounts.';
+        }
+        if (!$reliableClosingBalance) {
+            $comparisonNote = 'Provisional comparison only: the prior accounting period must be locked before these reconstructed closing balances can be approved. ' . $comparisonNote;
+        }
 
         return [
             'available' => true,
             'threshold' => $threshold,
             'comparison_scope' => $hasExactMatch ? 'exact_match' : 'nearest_match',
-            'comparison_note' => $hasExactMatch
-                ? 'Matching filed numbers suggests the reconstructed ledger aligns with the stored Companies House filing.'
-                : 'This is an advisory nearest-period comparison because no exact Companies House filing matched the selected accounting period.',
+            'comparison_note' => $comparisonNote,
+            'comparable_count' => $comparableCount,
+            'matched_count' => $matchedCount,
+            'mismatch_count' => $mismatchCount,
+            'reliable_closing_balance' => $reliableClosingBalance,
+            'can_acknowledge' => $reliableClosingBalance,
+            'prior_period_dependency' => $priorPeriodDependency,
+            'warnings' => $warnings,
             'filing' => [
                 'document_row_id' => (int)($nearest['id'] ?? 0),
                 'filing_date' => (string)($nearest['filing_date'] ?? ''),

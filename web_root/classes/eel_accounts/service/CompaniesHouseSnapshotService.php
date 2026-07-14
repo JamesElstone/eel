@@ -45,6 +45,14 @@ final class CompaniesHouseSnapshotService
         $totalNetAssets = $this->money($totalAssetsLessCurrentLiabilities - $creditorsAfterOneYear);
         $capitalAndReserves = $this->money($buckets['equity_capital_reserves'] ?? 0);
         $balanceEquationDifference = $this->money($totalNetAssets - $capitalAndReserves);
+        $reliableClosingBalance = !empty($mapping['reliable_closing_balance']);
+        $warnings = array_values(array_unique(array_filter(array_map(
+            'strval',
+            (array)($mapping['warnings'] ?? [])
+        ))));
+        if (abs($balanceEquationDifference) >= 0.005) {
+            $warnings[] = 'Balance sheet metrics do not agree with capital and reserves.';
+        }
 
         return [
             'available' => true,
@@ -85,9 +93,11 @@ final class CompaniesHouseSnapshotService
             ],
             'sources' => $this->summariseSources($sources),
             'assumptions' => array_values(array_filter(array_map('strval', (array)($mapping['assumptions'] ?? [])))),
-            'warnings' => abs($balanceEquationDifference) < 0.005 ? [] : ['Balance sheet metrics do not agree with capital and reserves.'],
+            'warnings' => array_values(array_unique($warnings)),
             'is_balance_sheet_balanced' => abs($balanceEquationDifference) < 0.005,
             'balance_equation_difference' => $balanceEquationDifference,
+            'reliable_closing_balance' => $reliableClosingBalance,
+            'prior_period_dependency' => (array)($mapping['prior_period_dependency'] ?? []),
         ];
     }
 

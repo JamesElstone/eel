@@ -65,6 +65,28 @@ foreach ($cardClasses as $className) {
             $harness->assertTrue(str_contains($html, 'Select a company and accounting period'));
         });
 
+        if (in_array($className, [
+            _tax_corporation_tax_summaryCard::class,
+            _tax_taxable_profit_bridgeCard::class,
+            _tax_disallowable_add_backsCard::class,
+            _tax_capital_allowances_summaryCard::class,
+            _tax_aia_allocationCard::class,
+        ], true)) {
+            $harness->check($className, 'surfaces a stale persisted CT computation without replacing live figures', static function () use ($harness, $card, $className): void {
+                $context = taxWorkingsCardsContext();
+                $context['services']['taxWorkings']['summary']['computation_persistence'] = [
+                    'status' => 'stale',
+                    'status_label' => 'Persisted computation stale',
+                    'current' => false,
+                ];
+                $html = $card->render($context);
+
+                $harness->assertTrue(str_contains($html, 'Persisted computation stale'));
+                $harness->assertTrue(str_contains($html, 'cards show a fresh live calculation'));
+                $harness->assertTrue(str_contains($html, '$ 12,000.00') || $className !== _tax_corporation_tax_summaryCard::class);
+            });
+        }
+
         if ($className === _tax_capital_allowances_summaryCard::class) {
             $harness->check($className, 'renders capital allowances calculation workings', static function () use ($harness, $card): void {
                 $context = taxWorkingsCardsContext();

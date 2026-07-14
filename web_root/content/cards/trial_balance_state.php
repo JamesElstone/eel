@@ -52,6 +52,7 @@ final class _trial_balance_stateCard extends CardBaseFramework
         $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
 
         return '<div id="trial-balance-app" class="settings-stack">
+            ' . (trim((string)($trialBalance['summary_basis_note'] ?? '')) !== '' ? '<div class="helper"><span class="badge info">Mixed basis</span> ' . HelperFramework::escape((string)$trialBalance['summary_basis_note']) . '</div>' : '') . '
             ' . $this->renderSummaryPanel($summary, $validation, $companySettings) . '
         </div>';
     }

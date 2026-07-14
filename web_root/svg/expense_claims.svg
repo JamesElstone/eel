@@ -6,9 +6,9 @@
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
   <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-  <path d="M8 7h8"/>
-  <path d="M8 11h8"/>
-  <path d="M8 15h5"/>
-  <path d="M6 3h9l3 3v14a1 1 0 0 1 -1 1H6a1 1 0 0 1 -1 -1V4a1 1 0 0 1 1 -1"/>
-  <path d="M14 3v4h4"/>
+  <path d="M7 10v4.5a6 6 0 0 0 10 4.5a6 6 0 0 0 0 -4.5V10"/>
+  <path d="M5 9.5c4.5 2 9.5 2 14 0"/>
+  <path d="M14.5 5.5c0 -1.4 -1 -2.5 -2.5 -2.5s-2.5 1 -2.5 2.5c0 3 5 1.5 5 4.5c0 .35 -.06 .67 -.18 .95"/>
+  <path d="M12 2v8.75"/>
+  <path d="M9 6.5h4"/>
 </svg>

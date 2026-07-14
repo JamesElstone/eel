@@ -76,7 +76,13 @@ final class _pl_summaryCard extends CardBaseFramework
                 . HelperFramework::escape($this->money($companySettings, $period['profit_before_tax'] ?? 0))
                 . '</div><div class="helper">' . HelperFramework::escape($dates) . '</div></div>';
         }
-        $cards .= $this->summaryCard('Profit before tax', $summary['profit_before_tax'] ?? ($summary['net_profit'] ?? 0), $companySettings);
+        $profitBeforeTax = (float)($summary['profit_before_tax'] ?? ($summary['net_profit'] ?? 0));
+        $cards .= $this->summaryCard(
+            'Profit before tax',
+            $profitBeforeTax,
+            $companySettings,
+            $this->profitBeforeTaxCardClass($profitBeforeTax)
+        );
         $cards .= '<div class="summary-card"><div class="summary-label">Profit margin</div><div class="summary-value">'
             . HelperFramework::escape(number_format((float)($summary['profit_margin_percent'] ?? 0), 1))
             . '%</div></div>';
@@ -266,9 +272,24 @@ final class _pl_summaryCard extends CardBaseFramework
         ], ' ');
     }
 
-    private function summaryCard(string $label, mixed $value, array $companySettings): string
+    private function summaryCard(string $label, mixed $value, array $companySettings, string $class = ''): string
     {
-        return '<div class="summary-card"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $value)) . '</div></div>';
+        $classes = 'summary-card' . ($class !== '' ? ' ' . $class : '');
+
+        return '<div class="' . HelperFramework::escape($classes) . '"><div class="summary-label">' . HelperFramework::escape($label) . '</div><div class="summary-value">' . HelperFramework::escape($this->money($companySettings, $value)) . '</div></div>';
+    }
+
+    private function profitBeforeTaxCardClass(float $profitBeforeTax): string
+    {
+        if ($profitBeforeTax > 0) {
+            return 'pl-profit-before-tax-positive';
+        }
+
+        if ($profitBeforeTax < 0) {
+            return 'pl-profit-before-tax-negative';
+        }
+
+        return '';
     }
 
     private function money(array $companySettings, float|int|string|null $value): string

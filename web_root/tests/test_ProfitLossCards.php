@@ -245,6 +245,7 @@ $harness->run(_pl_summaryCard::class, static function (GeneratedServiceClassTest
         $harness->assertTrue($profitMarginPosition !== false && $profitBeforeTaxPosition < $profitMarginPosition);
         $harness->assertTrue($incomePosition !== false && $profitMarginPosition < $incomePosition);
         $harness->assertTrue(str_contains($html, '<div class="summary-label">Income</div><div class="summary-value">$ 1,200.00</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-card pl-profit-before-tax-positive"><div class="summary-label">Profit before tax</div><div class="summary-value">$ 700.00</div></div>'));
         $harness->assertTrue(str_contains($html, '<div class="summary-label">Profit before tax</div><div class="summary-value">$ 700.00</div>'));
         $harness->assertTrue(str_contains($html, 'Missing months'));
         $harness->assertTrue(str_contains($html, 'Uncategorised transactions'));
@@ -285,7 +286,9 @@ $harness->run(_pl_summaryCard::class, static function (GeneratedServiceClassTest
 
     $harness->check(_pl_summaryCard::class, 'renders loss and nill result labels', static function () use ($harness, $lossHtml, $nillHtml): void {
         $harness->assertTrue(str_contains($lossHtml, '<div class="summary-label">Profitability</div><div class="summary-value pl-profitability-value pl-profitability-value-loss">Loss</div>'));
+        $harness->assertTrue(str_contains($lossHtml, '<div class="summary-card pl-profit-before-tax-negative"><div class="summary-label">Profit before tax</div>'));
         $harness->assertTrue(str_contains($nillHtml, '<div class="summary-label">Profitability</div><div class="summary-value pl-profitability-value pl-profitability-value-nill">Nill</div>'));
+        $harness->assertTrue(str_contains($nillHtml, '<div class="summary-card"><div class="summary-label">Profit before tax</div>'));
     });
 
     $harness->check(_pl_summaryCard::class, 'renders loss as an incoming balancing Sankey flow', static function () use ($harness, $lossFlowHtml): void {

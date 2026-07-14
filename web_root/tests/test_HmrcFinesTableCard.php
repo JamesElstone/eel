@@ -61,6 +61,7 @@ $harness->run(_hmrc_fines_tableCard::class, static function (GeneratedServiceCla
         $harness->assertTrue(str_contains($html, 'id="save_hmrc_notice_button" type="submit" disabled'));
         $harness->assertTrue(str_contains($html, 'id="hmrc_notice_reference" name="source_reference" required'));
         $harness->assertTrue(str_contains($html, '<label for="hmrc_notice_type">Type *</label>'));
+        $harness->assertTrue(str_contains($html, 'id="hmrc_notice_type" name="obligation_type" required data-no-submit-on-change="true"'));
         $harness->assertTrue(str_contains($html, '<label for="hmrc_notice_reference">HMRC reference *</label>'));
         $harness->assertFalse(str_contains($html, '<label for="hmrc_notice_notes">Notes / evidence path *</label>'));
         $harness->assertTrue(strpos($html, '>Notice date</') < strpos($html, '>Period</'));

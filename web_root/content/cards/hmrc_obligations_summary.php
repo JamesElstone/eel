@@ -38,6 +38,11 @@ final class _hmrc_obligations_summaryCard extends CardBaseFramework
             <section class="panel-soft">
                 <div class="helper">Corporation Tax payment is normally due 9 months and 1 day after the accounting period end. The CT600 / Company Tax Return is normally due 12 months after the period end.</div>
                 <div class="helper">Companies House filing and HMRC filing are separate. HMRC fines are normally disallowable for Corporation Tax.</div>
+                <div class="actions-row">
+                    <a class="button button-inline" href="https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim38515" target="_blank" rel="noopener noreferrer">HMRC BIM38515: fines and penalties</a>
+                    <a class="button button-inline" href="https://www.gov.uk/hmrc-internal-manuals/company-taxation-manual/ctm92190" target="_blank" rel="noopener noreferrer">HMRC CTM92190: late CT interest</a>
+                    <a class="button button-inline" href="https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim45740" target="_blank" rel="noopener noreferrer">HMRC BIM45740: late-paid tax interest</a>
+                </div>
             </section>
         </div>';
     }

@@ -752,15 +752,6 @@ final class CorporationTaxComputationService
         }
 
         $summary['computation_persistence'] = $state;
-        if (in_array((string)$state['status'], ['stale', 'not_persisted'], true)) {
-            $message = (string)$state['status'] === 'stale'
-                ? 'The latest persisted CT computation is stale because the live accounting or tax inputs have changed.'
-                : 'No CT computation snapshot has been persisted for the current live inputs.';
-            $warnings = array_values(array_unique(array_merge((array)($summary['warnings'] ?? []), [$message])));
-            $summary['warnings'] = $warnings;
-            $summary['confidence_status'] = 'review_required';
-            $summary['confidence_label'] = 'Review required';
-        }
 
         return $summary;
     }

@@ -161,6 +161,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     ->fetchSummaryForCtPeriodId($companyId, $targetCtPeriodId);
                 $harness->assertSame('not_persisted', (string)($changedLiveSummary['computation_persistence']['status'] ?? ''));
                 $harness->assertSame(false, !empty($changedLiveSummary['computation_persistence']['current']));
+                $harness->assertSame(false, in_array(
+                    'No CT computation snapshot has been persisted for the current live inputs.',
+                    (array)($changedLiveSummary['warnings'] ?? []),
+                    true
+                ));
 
                 $retainedEarningsService = new \eel_accounts\Service\RetainedEarningsCloseService();
                 $acknowledged = $retainedEarningsService->saveAcknowledgement($companyId, $accountingPeriodId, true, 'test');

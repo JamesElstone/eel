@@ -23,5 +23,21 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame('7943.78', number_format((float)$result['losses_carried_forward'], 2, '.', ''));
             $harness->assertSame('0.00', number_format((float)$result['taxable_profit'], 2, '.', ''));
         });
+
+        $harness->check(\eel_accounts\Service\CorporationTaxComputationService::class, 'keeps expected pre-lock persistence state out of tax warnings', static function () use ($harness, $service): void {
+            $method = new ReflectionMethod($service, 'withComputationPersistenceState');
+            $method->setAccessible(true);
+            $result = $method->invoke($service, 0, 0, [
+                'available' => true,
+                'warnings' => ['A genuine pre-close tax issue.'],
+                'confidence_status' => 'review_required',
+                'confidence_label' => 'Review required',
+            ]);
+
+            $harness->assertSame('not_persisted', (string)($result['computation_persistence']['status'] ?? ''));
+            $harness->assertSame(['A genuine pre-close tax issue.'], (array)($result['warnings'] ?? []));
+            $harness->assertSame('review_required', (string)($result['confidence_status'] ?? ''));
+            $harness->assertSame('Review required', (string)($result['confidence_label'] ?? ''));
+        });
     }
 );

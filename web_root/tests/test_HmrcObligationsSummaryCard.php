@@ -19,11 +19,11 @@ $harness->run(_hmrc_obligations_summaryCard::class, static function (GeneratedSe
 
     $harness->check(_hmrc_obligations_summaryCard::class, 'renders official HMRC penalty and interest guidance links', static function () use ($harness, $html): void {
         $harness->assertTrue(str_contains($html, 'href="https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim38515"'));
-        $harness->assertTrue(str_contains($html, 'HMRC BIM38515: fines and penalties'));
+        $harness->assertTrue(str_contains($html, 'HMRC - BIM38515: Fines and Penalties'));
         $harness->assertTrue(str_contains($html, 'href="https://www.gov.uk/hmrc-internal-manuals/company-taxation-manual/ctm92190"'));
-        $harness->assertTrue(str_contains($html, 'HMRC CTM92190: late CT interest'));
+        $harness->assertTrue(str_contains($html, 'HMRC - CTM92190: Late Corporation Tax Interest'));
         $harness->assertTrue(str_contains($html, 'href="https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim45740"'));
-        $harness->assertTrue(str_contains($html, 'HMRC BIM45740: late-paid tax interest'));
+        $harness->assertTrue(str_contains($html, 'HMRC - BIM45740: Late-Paid Tax Interest'));
         $harness->assertSame(3, substr_count($html, 'class="button button-inline"'));
         $harness->assertSame(3, substr_count($html, 'target="_blank" rel="noopener noreferrer"'));
     });

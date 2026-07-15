@@ -69,7 +69,8 @@ $harness->run(_hmrc_fines_tableCard::class, static function (GeneratedServiceCla
         $harness->assertTrue(str_contains($html, '<label for="hmrc_notice_reference">HMRC reference *</label>'));
         $harness->assertFalse(str_contains($html, '<label for="hmrc_notice_notes">Notes / evidence path *</label>'));
         $harness->assertTrue(strpos($html, '>Notice date</') < strpos($html, '>Period</'));
-        $harness->assertTrue(strpos($html, 'HMRC-15') < strpos($html, 'HMRC-1<'));
+        $harness->assertTrue(strpos($html, '>HMRC-15</td>') < strpos($html, '>HMRC-14</td>'));
+        $harness->assertFalse(str_contains($html, '>HMRC-1</td>'));
         $harness->assertTrue(str_contains($html, '15/09/2024'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="delete_manual_obligation"'));
         $harness->assertTrue(str_contains($html, 'data-chicken-confirm-text="Delete"'));

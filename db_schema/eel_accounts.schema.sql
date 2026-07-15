@@ -2652,7 +2652,13 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_07_001_transaction_splits.sql'),
   ('2026_07_07_002_transaction_inter_ac_marker.sql'),
   ('2026_07_07_003_sourced_tax_rate_rules.sql'),
-  ('2026_07_13_001_live_year_end_acknowledgements.sql');
+  ('2026_07_13_001_live_year_end_acknowledgements.sql'),
+  ('2026_07_14_001_normalise_tax_rate_rule_labels.sql'),
+  ('2026_07_14_002_prepayment_schedules.sql'),
+  ('2026_07_14_003_vat_monitoring_support_scope.sql'),
+  ('2026_07_14_004_tax_prepayment_card_permission.sql'),
+  ('2026_07_14_005_vat_reference_rates_and_tax_cards.sql'),
+  ('2026_07_14_006_hmrc_obligation_evidence.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

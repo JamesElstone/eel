@@ -2117,6 +2117,10 @@
   gap: 14px;
 }
 
+.prepayments-summary-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .month-card-form {
   margin: 0;
 }

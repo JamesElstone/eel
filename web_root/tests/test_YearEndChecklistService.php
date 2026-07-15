@@ -295,6 +295,28 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
         $harness->assertSame('fail', (string)$fail['status']);
     });
 
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'missing legacy prepayment schedules are a dedicated blocking check', static function () use ($harness): void {
+        $service = new \eel_accounts\Service\YearEndChecklistService();
+        $checkMethod = new ReflectionMethod($service, 'prepaymentScheduleIntegrityCheck');
+        $checkMethod->setAccessible(true);
+        $currentMethod = new ReflectionMethod($service, 'prepaymentSchedulesCurrent');
+        $currentMethod->setAccessible(true);
+
+        $missing = ['available' => true, 'missing_count' => 1];
+        $check = $checkMethod->invoke($service, $missing);
+        $harness->assertSame('prepayment_schedule_integrity', (string)($check['check_code'] ?? ''));
+        $harness->assertSame('fail', (string)($check['status'] ?? ''));
+        $harness->assertSame('1 missing', (string)($check['metric_value'] ?? ''));
+        $harness->assertSame('?page=prepayments&show_card=prepayments_review#prepayment-schedule-repair', (string)($check['action_url'] ?? ''));
+        $harness->assertSame(false, (bool)$currentMethod->invoke($service, $missing));
+
+        $current = ['available' => true, 'missing_count' => 0];
+        $currentCheck = $checkMethod->invoke($service, $current);
+        $harness->assertSame('pass', (string)($currentCheck['status'] ?? ''));
+        $harness->assertSame('Current', (string)($currentCheck['metric_value'] ?? ''));
+        $harness->assertSame(true, (bool)$currentMethod->invoke($service, $current));
+    });
+
     $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'filing basis reminder is informational only', static function () use ($harness): void {
         $service = new \eel_accounts\Service\YearEndChecklistService();
         $method = new ReflectionMethod($service, 'applyReviewAcknowledgement');

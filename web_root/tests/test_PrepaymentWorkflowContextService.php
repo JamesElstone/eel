@@ -18,7 +18,8 @@ $harness->run(
 
             $harness->assertSame(false, !empty($context['review']['available']));
             $harness->assertSame(null, $context['approval']);
-            $harness->assertSame(false, !empty($context['historical_correction']['available']));
+            $harness->assertSame(false, !empty($context['repair']['available']));
+            $harness->assertSame(false, array_key_exists('historical_correction', $context));
         });
     }
 );

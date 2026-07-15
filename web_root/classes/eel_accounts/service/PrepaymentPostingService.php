@@ -53,14 +53,8 @@ final class PrepaymentPostingService
 
         $errors = [];
         if ($synchronise) {
-            $historical = (new PrepaymentHistoricalCorrectionService($schedules))->fetchContext($companyId, $accountingPeriodId);
-            if (!empty($historical['companies_house_filed'])
-                && (int)($historical['repair']['missing_count'] ?? 0) > 0) {
-                $errors[] = 'Recalculate the missing legacy prepayment schedules explicitly before closing a filed accounting period.';
-            } else {
-                $sync = $schedules->syncForAccountingPeriod($companyId, $accountingPeriodId, 'year_end_validation');
-                $errors = (array)($sync['errors'] ?? []);
-            }
+            $sync = $schedules->syncForAccountingPeriod($companyId, $accountingPeriodId, 'year_end_validation');
+            $errors = (array)($sync['errors'] ?? []);
         }
         $approvalContext = (new PrepaymentApprovalContextService())->fetchContext($companyId, $accountingPeriodId);
         $review = (array)($approvalContext['review'] ?? []);
@@ -98,11 +92,6 @@ final class PrepaymentPostingService
         $adjustments = $schedules->fetchPreviewAdjustments($companyId, $accountingPeriodId);
         if ($requireZeroAdjustments && $adjustments !== []) {
             $errors[] = 'Prepayment journals are not at their exact calculated targets; use the normal Year End close to post them before locking this period.';
-        }
-        try {
-            (new PrepaymentHistoricalCorrectionService($schedules))->assertPostingPermitted($companyId, $accountingPeriodId);
-        } catch (\Throwable $exception) {
-            $errors[] = $exception->getMessage();
         }
         $errors = array_values(array_unique(array_filter(array_map('trim', $errors))));
         return [
@@ -268,10 +257,6 @@ final class PrepaymentPostingService
                 ['schedule_id' => (int)$schedule['id'], 'review_id' => $reviewId]
             );
             foreach ($affectedPeriods as $period) {
-                (new PrepaymentHistoricalCorrectionService($schedules))->assertPostingPermitted(
-                    $companyId,
-                    (int)$period['accounting_period_id']
-                );
                 ($this->lockService ?? new YearEndLockService())->assertUnlockedForUpdate(
                     $companyId,
                     (int)$period['accounting_period_id'],

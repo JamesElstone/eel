@@ -13,16 +13,16 @@ final class PrepaymentWorkflowContextService
 {
     public function __construct(
         private readonly ?PrepaymentApprovalContextService $approvalService = null,
-        private readonly ?PrepaymentHistoricalCorrectionService $historicalCorrectionService = null,
+        private readonly ?PrepaymentScheduleService $scheduleService = null,
     ) {
     }
 
-    /** @return array{review: array, approval: ?array, historical_correction: array} */
+    /** @return array{review: array, approval: ?array, repair: array} */
     public function fetchContext(int $companyId, int $accountingPeriodId): array
     {
         $approvalService = $this->approvalService;
-        $historicalCorrectionService = $this->historicalCorrectionService;
-        if ($approvalService === null && $historicalCorrectionService === null) {
+        $scheduleService = $this->scheduleService;
+        if ($approvalService === null && $scheduleService === null) {
             $sourceService = new PrepaymentSourceService();
             $scheduleService = new PrepaymentScheduleService(sourceService: $sourceService);
             $reviewService = new PrepaymentReviewService(
@@ -30,23 +30,16 @@ final class PrepaymentWorkflowContextService
                 scheduleService: $scheduleService
             );
             $approvalService = new PrepaymentApprovalContextService(reviewService: $reviewService);
-            $historicalCorrectionService = new PrepaymentHistoricalCorrectionService(scheduleService: $scheduleService);
         }
 
         $approvalContext = ($approvalService ?? new PrepaymentApprovalContextService())
             ->fetchContext($companyId, $accountingPeriodId);
-        $review = (array)($approvalContext['review'] ?? []);
-        $historicalCorrection = ($historicalCorrectionService ?? new PrepaymentHistoricalCorrectionService())
-            ->fetchContext(
-                $companyId,
-                $accountingPeriodId,
-                is_array($review['schedule_context'] ?? null) ? $review['schedule_context'] : null
-            );
 
         return [
-            'review' => $review,
+            'review' => (array)($approvalContext['review'] ?? []),
             'approval' => is_array($approvalContext['approval'] ?? null) ? $approvalContext['approval'] : null,
-            'historical_correction' => $historicalCorrection,
+            'repair' => ($scheduleService ?? new PrepaymentScheduleService())
+                ->fetchRepairContext($companyId, $accountingPeriodId),
         ];
     }
 }

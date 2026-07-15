@@ -74,8 +74,8 @@ final class _prepayments_reviewCard extends CardBaseFramework
         }
         $carriedHtml = $this->carriedSchedulesHtml((array)($review['carried_schedules'] ?? []), $companySettings);
         $excludedHtml = $this->excludedCandidatesHtml((array)($review['excluded_items'] ?? []), $companySettings);
-        $historicalHtml = $this->historicalCorrectionHtml(
-            (array)($workflowContext['historical_correction'] ?? []),
+        $repairHtml = $this->scheduleRepairHtml(
+            (array)($workflowContext['repair'] ?? []),
             $companyId,
             $accountingPeriodId,
             $companySettings,
@@ -83,7 +83,7 @@ final class _prepayments_reviewCard extends CardBaseFramework
         );
 
         return '<section class="settings-stack" id="prepayments-review">
-            <div class="month-grid">
+            <div class="month-grid prepayments-summary-grid">
                 ' . $this->summaryCard('Potential items', (string)(int)($review['total_count'] ?? 0)) . '
                 ' . $this->summaryCard('Reviewed', (string)(int)($review['reviewed_count'] ?? 0)) . '
                 ' . $this->summaryCard('Prepaid', (string)(int)($review['prepaid_count'] ?? 0)) . '
@@ -91,7 +91,7 @@ final class _prepayments_reviewCard extends CardBaseFramework
                 ' . $this->summaryCard('Carried schedules', (string)(int)($review['carried_schedule_count'] ?? 0)) . '
             </div>
             ' . ($isLocked ? '<div class="helper"><span class="badge warning">Period locked</span> Prepayment decisions are read only.</div>' : '') . '
-            ' . $historicalHtml . '
+            ' . $repairHtml . '
             ' . $excludedHtml . '
             <div class="panel-soft">
                 <div class="table-scroll">
@@ -105,17 +105,16 @@ final class _prepayments_reviewCard extends CardBaseFramework
         </section>';
     }
 
-    private function historicalCorrectionHtml(
-        array $context,
+    private function scheduleRepairHtml(
+        array $repair,
         int $companyId,
         int $accountingPeriodId,
         array $settings,
         bool $isLocked
     ): string {
-        if (empty($context['available'])) {
+        if (empty($repair['available'])) {
             return '';
         }
-        $repair = (array)($context['repair'] ?? []);
         $missingRows = '';
         foreach ((array)($repair['missing_reviews'] ?? []) as $missing) {
             $allocation = (array)($missing['selected_allocation'] ?? []);
@@ -128,9 +127,10 @@ final class _prepayments_reviewCard extends CardBaseFramework
                 . HelperFramework::escape($this->money($settings, ((int)($allocation['expense_pence'] ?? 0)) / 100)) . '</td><td class="numeric">'
                 . HelperFramework::escape($this->money($settings, ((int)($allocation['closing_deferred_pence'] ?? 0)) / 100)) . '</td></tr>';
         }
-        $repairHtml = '';
-        if ($missingRows !== '') {
-            $button = $isLocked ? '' : '<form method="post" data-ajax="true" class="actions-row">'
+        if ($missingRows === '') {
+            return '';
+        }
+        $button = $isLocked ? '' : '<form method="post" data-ajax="true" class="actions-row">'
                 . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Prepayments">
                 <input type="hidden" name="intent" value="recalculate_schedule">
@@ -138,61 +138,10 @@ final class _prepayments_reviewCard extends CardBaseFramework
                 <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
                 <button class="button" type="submit">Recalculate schedule</button>
             </form>';
-            $repairHtml = '<div class="panel-soft warn"><h4 class="card-title">Saved prepayments missing automated schedules</h4>
-                <p class="helper">This read-only preview reconstructs the schedule from the posted source and saved service dates. Recalculation creates append-only schedule snapshots only; it does not post journals.</p>
-                <div class="table-scroll"><table><thead><tr><th>Review</th><th>Source</th><th>Date</th><th>Amount</th><th>Service dates</th><th>AP days</th><th>AP expense</th><th>Closing asset</th></tr></thead><tbody>'
-                . $missingRows . '</tbody></table></div>' . $button . '</div>';
-        }
-
-        if (empty($context['companies_house_filed']) || empty($context['has_prepayment_work'])) {
-            return $repairHtml;
-        }
-        $documents = [];
-        foreach ((array)$context['companies_house_documents'] as $document) {
-            $documents[] = trim((string)($document['filing_date'] ?? '')) . ' — '
-                . trim((string)($document['filing_description'] ?? 'Filed accounts'))
-                . ' (' . trim((string)($document['document_id'] ?? '')) . ')';
-        }
-        $hmrc = (array)($context['hmrc_filing'] ?? []);
-        $hmrcState = (string)($hmrc['state'] ?? 'unknown');
-        $approval = (array)($context['acknowledgement'] ?? []);
-        $profitPence = (int)($context['expected_profit_change_pence'] ?? 0);
-        $profitLabel = ($profitPence >= 0 ? '+' : '−') . $this->money($settings, abs($profitPence) / 100);
-        $evidenceForm = '';
-        if (!$isLocked && $hmrcState === 'unknown') {
-            $evidenceForm = '<form method="post" data-ajax="true" class="form-grid">'
-                . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
-                <input type="hidden" name="card_action" value="Prepayments">
-                <input type="hidden" name="intent" value="confirm_hmrc_filing_status">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <label>HMRC CT return status<select class="select" name="hmrc_filing_status" required><option value="">Select status</option><option value="not_filed">Not filed</option><option value="filed">Filed</option></select></label>
-                <label>Evidence or submission reference<input class="input" name="hmrc_filing_reference" required></label>
-                <label>Notes<input class="input" name="hmrc_filing_notes"></label>
-                <div class="actions-row"><button class="button" type="submit">Record HMRC filing evidence</button></div>
-            </form>';
-        }
-        $approvalForm = '';
-        if (!$isLocked && $hmrcState !== 'unknown' && (int)($repair['missing_count'] ?? 0) === 0 && empty($approval['current'])) {
-            $approvalForm = '<form method="post" data-ajax="true" class="form-grid">'
-                . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
-                <input type="hidden" name="card_action" value="Prepayments">
-                <input type="hidden" name="intent" value="acknowledge_historical_correction">
-                <input type="hidden" name="company_id" value="' . $companyId . '">
-                <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
-                <label>Correction note<input class="input" name="historical_correction_note"></label>
-                <label class="checkbox-row"><input type="checkbox" name="historical_correction_confirmed" value="1" required> I reviewed the filed Companies House accounts, the current prepayment schedule and the recorded HMRC filing evidence.</label>
-                <div class="actions-row"><button class="button" type="submit">Approve historical correction</button></div>
-            </form>';
-        }
-
-        return $repairHtml . '<div class="panel-soft warn"><h4 class="card-title">Filed-period prepayment correction</h4>
-            <p class="helper">Companies House accounts already exist for this period. Prepayment journals remain blocked until the missing schedules, HMRC filing evidence and this hashed correction acknowledgement are current.</p>
-            <dl class="definition-list"><dt>Filed accounts</dt><dd>' . HelperFramework::escape(implode('; ', $documents)) . '</dd>
-            <dt>Expected accounting-profit change</dt><dd>' . HelperFramework::escape($profitLabel) . '</dd>
-            <dt>HMRC CT status</dt><dd><span class="badge ' . ($hmrcState === 'unknown' ? 'warning' : 'info') . '">' . HelperFramework::escape(HelperFramework::labelFromKey($hmrcState, '_')) . '</span></dd>
-            <dt>Correction approval</dt><dd><span class="badge ' . (!empty($approval['current']) ? 'success' : 'warning') . '">' . (!empty($approval['current']) ? 'Current' : 'Required') . '</span></dd></dl>'
-            . $evidenceForm . $approvalForm . '</div>';
+        return '<div class="panel-soft warn" id="prepayment-schedule-repair"><h4 class="card-title">Saved prepayments missing automated schedules</h4>
+            <p class="helper">This read-only preview reconstructs the schedule from the posted source and saved service dates. Recalculation creates append-only schedule snapshots only; it does not post journals.</p>
+            <div class="table-scroll"><table><thead><tr><th>Review</th><th>Source</th><th>Date</th><th>Amount</th><th>Service dates</th><th>AP days</th><th>AP expense</th><th>Closing asset</th></tr></thead><tbody>'
+            . $missingRows . '</tbody></table></div>' . $button . '</div>';
     }
 
     private function excludedCandidatesHtml(array $items, array $companySettings): string

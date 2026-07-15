@@ -728,6 +728,7 @@ final class YearEndChecklistService
         $expensePosition = (new \eel_accounts\Service\YearEndExpenseConfirmationService($metrics))->fetchContext($companyId, $accountingPeriodId);
         $transactionTail = (new \eel_accounts\Service\YearEndTransactionTailService($metrics))->fetchContext($companyId, $accountingPeriodId);
         $prepaymentReview = (new \eel_accounts\Service\PrepaymentReviewService($metrics, $lock))->fetchContext($companyId, $accountingPeriodId);
+        $prepaymentRepair = (new \eel_accounts\Service\PrepaymentScheduleService())->fetchRepairContext($companyId, $accountingPeriodId);
         $duplicateRepayments = $metrics->duplicateRepaymentRiskSummary($companyId, $periodStart, $periodEnd);
         $financialStatements = $metrics->financialStatementsSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd, $trialBalance);
         $taxReadiness = $tax->fetchAccountingPeriodCtSummary($companyId, $accountingPeriodId);
@@ -1121,6 +1122,7 @@ final class YearEndChecklistService
                 : ((int)($prepaymentReview['reviewed_count'] ?? 0) . ' of ' . $prepaymentTotalCount),
             '?page=prepayments'
         );
+        $sections['year_end_accounts_review'][] = $this->prepaymentScheduleIntegrityCheck($prepaymentRepair);
 
         $sections['year_end_accounts_review'][] = $this->applyReviewAcknowledgement($this->makeCheck(
             'prepayment_approvals',
@@ -1310,6 +1312,7 @@ final class YearEndChecklistService
             && $priorPeriodDependencySatisfied
             && $retainedEarningsCloseCurrent
             && $taxProvisionCurrent
+            && $this->prepaymentSchedulesCurrent($prepaymentRepair)
             && $this->acknowledgementCurrentInSections($sections, 'prepayment_approvals')
             && (!$directorLoanTaxReviewRequired || $this->acknowledgementCurrentInSections($sections, 'director_loan_tax_review'));
         $sections['final_review_lock'][] = $this->makeCheck(
@@ -1943,6 +1946,32 @@ final class YearEndChecklistService
         }
 
         return ['success' => true];
+    }
+
+    private function prepaymentScheduleIntegrityCheck(array $repair): array
+    {
+        $available = !empty($repair['available']);
+        $missingCount = (int)($repair['missing_count'] ?? 0);
+        $current = $available && $missingCount === 0;
+
+        return $this->makeCheck(
+            'prepayment_schedule_integrity',
+            'Automated prepayment schedules',
+            'fail',
+            $current ? 'pass' : 'fail',
+            !$available
+                ? (string)(($repair['errors'] ?? [])[0] ?? 'Automated prepayment schedule integrity could not be checked.')
+                : ($current
+                    ? 'Every saved prepaid decision has a current automated schedule.'
+                    : 'Recalculate the missing legacy prepayment schedule' . ($missingCount === 1 ? '' : 's') . ' before closing Year End.'),
+            !$available ? 'Unavailable' : ($current ? 'Current' : $missingCount . ' missing'),
+            '?page=prepayments&show_card=prepayments_review#prepayment-schedule-repair'
+        );
+    }
+
+    private function prepaymentSchedulesCurrent(array $repair): bool
+    {
+        return !empty($repair['available']) && (int)($repair['missing_count'] ?? 0) === 0;
     }
 
     private function findChecklistCheck(array $checklist, string $checkCode): ?array

@@ -41,14 +41,6 @@ final class PrepaymentsAction implements ActionInterfaceFramework
                     $companyId,
                     $accountingPeriodId
                 ),
-                'confirm_hmrc_filing_status' => (new \eel_accounts\Service\PrepaymentHistoricalCorrectionService())->confirmHmrcFilingStatus(
-                    $companyId,
-                    $accountingPeriodId,
-                    (string)$request->input('hmrc_filing_status', ''),
-                    (string)$request->input('hmrc_filing_reference', ''),
-                    (string)$request->input('hmrc_filing_notes', '')
-                ),
-                'acknowledge_historical_correction' => $this->acknowledgeHistoricalCorrection($request, $companyId, $accountingPeriodId),
                 default => [
                     'success' => false,
                     'errors' => ['The selected prepayment action is not recognised.'],
@@ -65,8 +57,6 @@ final class PrepaymentsAction implements ActionInterfaceFramework
                 'save_review' => 'Prepayment review and schedule saved.',
                 'reopen_schedule' => 'Prepayment schedule reopened and posted effects compensated.',
                 'recalculate_schedule' => 'Missing prepayment schedules recalculated. No journals were posted.',
-                'confirm_hmrc_filing_status' => 'HMRC Corporation Tax filing evidence recorded.',
-                'acknowledge_historical_correction' => 'Historical prepayment correction approved.',
                 default => 'Prepayments updated.',
             }
         );
@@ -92,19 +82,4 @@ final class PrepaymentsAction implements ActionInterfaceFramework
         return new ActionResultFramework($success, ['page.context', 'prepayments.state', 'year.end.state', 'year.end.checklist'], $flashMessages);
     }
 
-    private function acknowledgeHistoricalCorrection(
-        RequestFramework $request,
-        int $companyId,
-        int $accountingPeriodId
-    ): array {
-        if ((string)$request->input('historical_correction_confirmed', '') !== '1') {
-            return ['success' => false, 'errors' => ['Confirm that the filed Companies House figures and HMRC filing evidence have been reviewed.']];
-        }
-        return (new \eel_accounts\Service\PrepaymentHistoricalCorrectionService())->acknowledge(
-            $companyId,
-            $accountingPeriodId,
-            'web_app',
-            (string)$request->input('historical_correction_note', '')
-        );
-    }
 }

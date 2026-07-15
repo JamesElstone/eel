@@ -22,6 +22,30 @@ final class YearEndExpenseConfirmationService
 
     public function fetchContext(int $companyId, int $accountingPeriodId): array
     {
+        $context = $this->fetchApprovalContext($companyId, $accountingPeriodId);
+        if (empty($context['available'])) {
+            return $context;
+        }
+
+        $service = $this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService();
+        $acknowledgement = $service->fetch($companyId, $accountingPeriodId, 'expense_position_acknowledgement');
+        $evaluation = $service->evaluate(
+            $acknowledgement,
+            $service->buildBasis('expense_position_acknowledgement', $context),
+            ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId)
+        );
+
+        return $context + [
+            'expense_position_acknowledged' => !empty($evaluation['current']),
+            'expense_position_acknowledgement_state' => (string)($evaluation['state'] ?? 'absent'),
+            'expense_position_acknowledged_at' => (string)($acknowledgement['acknowledged_at'] ?? ''),
+            'expense_position_acknowledged_by' => (string)($acknowledgement['acknowledged_by'] ?? ''),
+            'expense_position_approval_note' => (string)($acknowledgement['note'] ?? ''),
+        ];
+    }
+
+    public function fetchApprovalContext(int $companyId, int $accountingPeriodId): array
+    {
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return [
                 'available' => false,
@@ -86,21 +110,7 @@ final class YearEndExpenseConfirmationService
             'claimants' => $claimants,
             'totals' => $totals,
         ];
-        $service = $this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService();
-        $acknowledgement = $service->fetch($companyId, $accountingPeriodId, 'expense_position_acknowledgement');
-        $evaluation = $service->evaluate(
-            $acknowledgement,
-            $service->buildBasis('expense_position_acknowledgement', $context),
-            ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId)
-        );
-
-        return $context + [
-            'expense_position_acknowledged' => !empty($evaluation['current']),
-            'expense_position_acknowledgement_state' => (string)($evaluation['state'] ?? 'absent'),
-            'expense_position_acknowledged_at' => (string)($acknowledgement['acknowledged_at'] ?? ''),
-            'expense_position_acknowledged_by' => (string)($acknowledgement['acknowledged_by'] ?? ''),
-            'expense_position_approval_note' => (string)($acknowledgement['note'] ?? ''),
-        ];
+        return $context;
     }
 
     private function tableExists(string $table): bool

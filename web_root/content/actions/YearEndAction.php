@@ -196,6 +196,10 @@ final class YearEndAction implements ActionInterfaceFramework
 
     private function changedFacts(string $intent): array
     {
+        if ($intent === 'save_expense_position_acknowledgement') {
+            return ['year.end.expenses.confirmation'];
+        }
+
         if (in_array($intent, ['acknowledge_review_check', 'reopen_review_check'], true)) {
             return ['page.context', 'year.end.checklist', 'year.end.audit.log'];
         }
@@ -238,7 +242,6 @@ final class YearEndAction implements ActionInterfaceFramework
             'create_adjustment',
             'save_director_loan_offset_acknowledgement',
             'save_tax_readiness_acknowledgement',
-            'save_expense_position_acknowledgement',
             'save_retained_earnings_close_acknowledgement',
             'save_transaction_tail_acknowledgement',
             'post_director_loan_offset',
@@ -273,7 +276,6 @@ final class YearEndAction implements ActionInterfaceFramework
             'create_adjustment',
             'save_director_loan_offset_acknowledgement',
             'save_tax_readiness_acknowledgement',
-            'save_expense_position_acknowledgement',
             'save_retained_earnings_close_acknowledgement',
             'save_transaction_tail_acknowledgement',
             'acknowledge_review_check',

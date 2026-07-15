@@ -392,7 +392,45 @@ final class YearEndChecklistService
     }
 
     public function saveExpensePositionAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array {
-        return $this->saveAcknowledgement($companyId, $accountingPeriodId, 'expense_position_acknowledgement', $acknowledged, $note, $changedBy);
+        ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())
+            ->assertUnlocked($companyId, $accountingPeriodId, 'change the expense position confirmation for this period');
+
+        $checkCode = 'expense_position_acknowledgement';
+        $service = $this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService();
+        $existing = $service->fetch($companyId, $accountingPeriodId, $checkCode);
+        $basis = null;
+
+        if ($acknowledged) {
+            $expenseContext = (new \eel_accounts\Service\YearEndExpenseConfirmationService(
+                acknowledgementService: $service
+            ))->fetchApprovalContext($companyId, $accountingPeriodId);
+            if (empty($expenseContext['available'])) {
+                return [
+                    'success' => false,
+                    'errors' => (array)($expenseContext['errors'] ?? ['The current expense position could not be verified.']),
+                ];
+            }
+            $basis = $service->buildBasis($checkCode, $expenseContext);
+        }
+
+        $result = $acknowledged
+            ? $service->save($companyId, $accountingPeriodId, $checkCode, (array)$basis, $changedBy, $note)
+            : $service->revoke($companyId, $accountingPeriodId, $checkCode);
+        if (empty($result['success'])) {
+            return $result;
+        }
+
+        ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->writeAuditLog(
+            $companyId,
+            $accountingPeriodId,
+            $acknowledged ? 'review_check_acknowledged' : 'review_check_reopened',
+            $changedBy,
+            $existing,
+            $acknowledged ? (array)($result['acknowledgement'] ?? []) : ['check_code' => $checkCode, 'acknowledged' => false],
+            trim($note) !== '' ? trim($note) : null
+        );
+
+        return $result;
     }
 
     public function saveRetainedEarningsCloseAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array {
@@ -507,7 +545,7 @@ final class YearEndChecklistService
             trim($note) !== '' ? trim($note) : null
         );
 
-        return $result + ['checklist' => $this->fetchChecklist($companyId, $accountingPeriodId)];
+        return $result;
     }
 
     public function unlockPeriod(int $companyId, int $accountingPeriodId, string $changedBy = 'web_app', ?string $notes = null): array {

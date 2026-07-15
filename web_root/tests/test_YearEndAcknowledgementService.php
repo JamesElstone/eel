@@ -18,7 +18,7 @@ $harness->run(\eel_accounts\Service\YearEndAcknowledgementService::class, static
         $first = $service->buildBasis('expense_position_acknowledgement', [
             'available' => true,
             'accounting_period' => ['id' => '80', 'label' => '2023 / 2024', 'period_start' => ' 2023-10-01 ', 'period_end' => '2024-09-30'],
-            'totals' => ['carried_forward' => '12.5'],
+            'totals' => ['carried_forward' => '12.5', 'payments_made' => '7.5'],
             'claimants' => [
                 ['claimant_id' => '9', 'claimant_name' => 'Director', 'carried_forward' => 2.50, 'last_item_desc' => 'Hotel'],
                 ['claimant_id' => 3, 'claimant_name' => 'Employee', 'carried_forward' => '10.00', 'last_item_desc' => 'Mileage'],
@@ -28,7 +28,7 @@ $harness->run(\eel_accounts\Service\YearEndAcknowledgementService::class, static
         $second = $service->buildBasis('expense_position_acknowledgement', [
             'available' => true,
             'accounting_period' => ['id' => 80, 'label' => 'A different card label', 'period_start' => '2023-10-01', 'period_end' => '2024-09-30'],
-            'totals' => ['carried_forward' => 12.50],
+            'totals' => ['carried_forward' => 12.50, 'payments_made' => 7.50],
             'claimants' => [
                 ['claimant_id' => 3, 'claimant_name' => 'Renamed for display', 'carried_forward' => 10.0, 'last_item_desc' => 'Changed wording'],
                 ['claimant_id' => 9, 'claimant_name' => 'Another display name', 'carried_forward' => '2.50', 'last_item_desc' => 'Different wording'],
@@ -42,6 +42,18 @@ $harness->run(\eel_accounts\Service\YearEndAcknowledgementService::class, static
         $harness->assertSame(false, str_contains((string)$json, 'Hotel'));
         $harness->assertSame(false, str_contains((string)$json, '?page='));
         $harness->assertSame(true, str_contains((string)$json, '"carried_forward":"12.50"'));
+        $harness->assertSame(true, str_contains((string)$json, '"payments_made":"7.50"'));
+
+        $changedPayments = $service->buildBasis('expense_position_acknowledgement', [
+            'available' => true,
+            'accounting_period' => ['id' => 80, 'period_start' => '2023-10-01', 'period_end' => '2024-09-30'],
+            'totals' => ['carried_forward' => 12.50, 'payments_made' => 8.50],
+            'claimants' => [
+                ['claimant_id' => 3, 'carried_forward' => 10.0],
+                ['claimant_id' => 9, 'carried_forward' => 2.50],
+            ],
+        ]);
+        $harness->assertSame(false, $service->hashBasis($first) === $service->hashBasis($changedPayments));
     });
 
     $harness->check(\eel_accounts\Service\YearEndAcknowledgementService::class, 'self-invalidates and becomes current when the exact position is restored', static function () use ($harness, $service): void {

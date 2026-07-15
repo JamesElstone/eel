@@ -317,7 +317,7 @@ final class YearEndAcknowledgementService
             'available', 'status', 'state', 'type', 'code', 'date', 'period', 'sequence', 'count',
             'amount', 'balance', 'debit', 'credit', 'profit', 'loss', 'tax', 'allowance', 'rate',
             'threshold', 'variance', 'total', 'opening', 'closing', 'carried', 'brought', 'movement',
-            'value', 'scope', 'method', 'direction', 'required', 'used', 'is_', 'has_', 'can_',
+            'value', 'payment', 'scope', 'method', 'direction', 'required', 'used', 'is_', 'has_', 'can_',
             'source', 'nominal', 'equity', 'assets', 'liabilities', 'difference', 'exposure',
         ] as $token) {
             if (str_contains($key, $token)) {
@@ -331,7 +331,7 @@ final class YearEndAcknowledgementService
     private function isDecimalKey(string $key): bool
     {
         foreach ([
-            'amount', 'balance', 'debit', 'credit', 'profit', 'loss', 'tax', 'allowance', 'rate',
+            'amount', 'balance', 'debit', 'credit', 'profit', 'loss', 'tax', 'allowance', 'rate', 'payment',
             'threshold', 'variance', 'total', 'opening', 'closing', 'carried', 'brought', 'movement',
             'value', 'equity', 'assets', 'liabilities', 'difference', 'exposure',
         ] as $token) {

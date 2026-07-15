@@ -230,7 +230,9 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
 
     $harness->check('YearEndAction', 'saves expense position acknowledgement', static function () use ($harness): void {
         yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness): void {
-            $instance = yearEndActionTestInstanceWithDirectorCount(1);
+            // Expense confirmation is not director-dependent. A two-director
+            // response would fail immediately if the action called Companies House.
+            $instance = yearEndActionTestInstanceWithDirectorCount(2);
             if (!InterfaceDB::tableExists('year_end_review_acknowledgements') || !InterfaceDB::columnExists('year_end_review_acknowledgements', 'basis_hash')) {
                 $harness->skip('Expense position year-end acknowledgement schema is not available on the default InterfaceDB connection.');
             }
@@ -241,6 +243,7 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             );
 
             $harness->assertSame(true, $result->isSuccess());
+            $harness->assertSame(['year.end.expenses.confirmation'], $result->changedFacts());
             $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'Expense position approval saved'));
             $acknowledgedAt = (string)InterfaceDB::fetchColumn(
                 'SELECT COALESCE(acknowledged_at, \'\')

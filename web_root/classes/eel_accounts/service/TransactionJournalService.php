@@ -266,6 +266,38 @@ final class TransactionJournalService
             $limit = 5000;
         }
         $limit = max(1, min($limit, $hasFilters ? 5000 : 500));
+        [$where, $params] = $this->journalWhere($companyId, $accountingPeriodId, $filters);
+
+        return $this->fetchJournalRows($where, $params, $limit, 0);
+    }
+
+    public function fetchJournalsPage(int $companyId, int $accountingPeriodId, array $filters = []): array
+    {
+        $page = max(1, (int)($filters['page'] ?? 1));
+        $pageSize = max(1, min(200, (int)($filters['page_size'] ?? 30)));
+        $exportAll = !empty($filters['export_all']);
+
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return $this->journalPagination([], $page, $pageSize, 0, $exportAll);
+        }
+
+        $filters = $this->normaliseJournalFilters($filters);
+        [$where, $params] = $this->journalWhere($companyId, $accountingPeriodId, $filters);
+        $total = (int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*) FROM journals j WHERE ' . implode(' AND ', $where),
+            $params
+        );
+        $pageCount = $total > 0 ? (int)ceil($total / $pageSize) : 0;
+        $page = $pageCount > 0 ? min($page, $pageCount) : 1;
+        $offset = $exportAll ? 0 : ($page - 1) * $pageSize;
+        $limit = $exportAll ? null : $pageSize;
+        $journals = $this->fetchJournalRows($where, $params, $limit, $offset);
+
+        return $this->journalPagination($journals, $page, $pageSize, $total, $exportAll);
+    }
+
+    private function journalWhere(int $companyId, int $accountingPeriodId, array $filters): array
+    {
         $where = [
             'j.company_id = :company_id',
             'j.accounting_period_id = :accounting_period_id',
@@ -345,6 +377,14 @@ final class TransactionJournalService
             )';
         }
 
+        return [$where, $params];
+    }
+
+    private function fetchJournalRows(array $where, array $params, ?int $limit, int $offset): array
+    {
+        $limitSql = $limit === null
+            ? ''
+            : ' LIMIT ' . max(1, $limit) . ' OFFSET ' . max(0, $offset);
         $stmt = \InterfaceDB::prepare(
             "SELECT j.id,
                     j.company_id,
@@ -353,26 +393,90 @@ final class TransactionJournalService
                     COALESCE(j.source_ref, '') AS source_ref,
                     j.journal_date,
                     j.description,
-                    j.is_posted,
-                    COUNT(jl.id) AS line_count,
-                    COALESCE(SUM(jl.debit), 0.00) AS total_debit
+                    j.is_posted
              FROM journals j
-             LEFT JOIN journal_lines jl ON jl.journal_id = j.id
              WHERE " . implode(' AND ', $where) . "
-             GROUP BY j.id, j.company_id, j.accounting_period_id, j.source_type, j.source_ref, j.journal_date, j.description, j.is_posted
              ORDER BY j.journal_date DESC, j.id DESC
-             LIMIT {$limit}"
+             {$limitSql}"
         );
         $stmt->execute($params);
 
         $journals = $stmt->fetchAll();
 
+        return $this->attachJournalLines($journals);
+    }
+
+    private function attachJournalLines(array $journals): array
+    {
+        $journalIds = array_values(array_filter(array_map(
+            static fn(array $journal): int => (int)($journal['id'] ?? 0),
+            $journals
+        )));
+        $linesByJournal = [];
+
+        foreach (array_chunk($journalIds, 500) as $journalIdChunk) {
+            $placeholders = [];
+            $params = [];
+            foreach ($journalIdChunk as $index => $journalId) {
+                $key = 'journal_id_' . $index;
+                $placeholders[] = ':' . $key;
+                $params[$key] = $journalId;
+            }
+
+            $stmt = \InterfaceDB::prepare(
+                'SELECT jl.id,
+                        jl.journal_id,
+                        jl.nominal_account_id,
+                        jl.company_account_id,
+                        jl.debit,
+                        jl.credit,
+                        COALESCE(jl.line_description, \'\') AS line_description,
+                        COALESCE(na.code, \'\') AS nominal_code,
+                        COALESCE(na.name, \'\') AS nominal_name,
+                        COALESCE(ca.account_name, \'\') AS company_account_name
+                 FROM journal_lines jl
+                 LEFT JOIN nominal_accounts na ON na.id = jl.nominal_account_id
+                 LEFT JOIN company_accounts ca ON ca.id = jl.company_account_id
+                 WHERE jl.journal_id IN (' . implode(', ', $placeholders) . ')
+                 ORDER BY jl.journal_id ASC, jl.id ASC'
+            );
+            $stmt->execute($params);
+
+            foreach ($stmt->fetchAll() as $line) {
+                $linesByJournal[(int)$line['journal_id']][] = $line;
+            }
+        }
+
         foreach ($journals as &$journal) {
-            $journal['lines'] = $this->fetchJournalLines((int)$journal['id']);
+            $lines = $linesByJournal[(int)$journal['id']] ?? [];
+            $journal['lines'] = $lines;
+            $journal['line_count'] = count($lines);
+            $journal['total_debit'] = number_format(array_sum(array_map(
+                static fn(array $line): float => (float)($line['debit'] ?? 0),
+                $lines
+            )), 2, '.', '');
         }
         unset($journal);
 
         return $journals;
+    }
+
+    private function journalPagination(array $items, int $page, int $pageSize, int $total, bool $exportAll): array
+    {
+        $pageCount = $total > 0 ? (int)ceil($total / $pageSize) : 0;
+        $offset = $exportAll ? 0 : ($page - 1) * $pageSize;
+
+        return [
+            'items' => array_values($items),
+            'page' => $page,
+            'page_size' => $pageSize,
+            'page_count' => $pageCount,
+            'total' => $total,
+            'offset' => $offset,
+            'has_previous_page' => !$exportAll && $page > 1,
+            'has_next_page' => !$exportAll && $pageCount > 0 && $page < $pageCount,
+            'export_all' => $exportAll,
+        ];
     }
 
     private function normaliseJournalFilters(array $filters): array

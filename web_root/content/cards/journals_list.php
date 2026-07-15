@@ -22,7 +22,7 @@ final class _journals_listCard extends CardBaseFramework
             [
                 'key' => 'journal_entries',
                 'service' => \eel_accounts\Service\TransactionJournalService::class,
-                'method' => 'fetchJournals',
+                'method' => 'fetchJournalsPage',
                 'params' => [
                     'companyId' => ':company.id',
                     'accountingPeriodId' => ':company.accounting_period_id',
@@ -72,6 +72,9 @@ final class _journals_listCard extends CardBaseFramework
                 'side' => $this->normaliseSide((string)$request->input('journals_list_side', 'any')),
                 'source_account_id' => max(0, (int)$request->input('journals_list_source_account_id', 0)),
                 'nominal_account_ids' => $this->normaliseIds($request->input('journals_list_nominal_account_ids', [])),
+                'page' => $this->paginationPage($pageContext),
+                'page_size' => self::PAGE_SIZE,
+                'export_all' => (string)$request->input('journals_list_export_all', '') === '1',
             ]
         );
 
@@ -83,7 +86,7 @@ final class _journals_listCard extends CardBaseFramework
         return $this->searchForm($context)
             . $this->configuredTable($context)->render(
             $context,
-            $this->tableHiddenFields($context)
+            $this->exportHiddenFields($context)
         );
     }
 
@@ -98,10 +101,10 @@ final class _journals_listCard extends CardBaseFramework
     {
         $hiddenFields = $this->tableHiddenFields($context);
         $journals = $this->journalRows($context);
-        $pagination = HelperFramework::paginateArray($journals, $this->paginationPage($context), self::PAGE_SIZE);
+        $pagination = $this->journalPagination($context);
 
         return $this->table($context)
-            ->visibleRows($this->journalLineRows((array)$pagination['items']))
+            ->visibleRows($this->journalLineRows($journals))
             ->pagination(
                 $pagination,
                 'Journals',
@@ -117,9 +120,11 @@ final class _journals_listCard extends CardBaseFramework
         $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
         $settingsService = new \eel_accounts\Service\CompanySettingsService();
 
-        return TableFramework::make($this->key(), $this->journalLineRows($this->journalRows($context)))
+        $rows = $this->journalLineRows($this->journalRows($context));
+
+        return TableFramework::make($this->key(), $rows)
             ->filename('journals-list')
-            ->exportLimit(5000)
+            ->exportLimit($this->exportAll($context) ? max(1, count($rows)) : 5000)
             ->empty($this->hasSearchCriteria($context) ? $this->noMatchesMessage() : 'Posted transaction journals will appear here once transactions have been categorised and posted.')
             ->column(
                 'journal_date',
@@ -197,6 +202,13 @@ final class _journals_listCard extends CardBaseFramework
             'journals_list_source_account_id' => $this->sourceAccountId($context),
             'journals_list_nominal_account_ids' => implode(',', $this->nominalAccountIds($context)),
         ];
+    }
+
+    private function exportHiddenFields(array $context): array
+    {
+        return array_merge($this->tableHiddenFields($context), [
+            'journals_list_export_all' => '1',
+        ]);
     }
 
     private function searchForm(array $context): string
@@ -301,10 +313,33 @@ final class _journals_listCard extends CardBaseFramework
 
     private function journalRows(array $context): array
     {
+        $result = (array)($context['services']['journal_entries'] ?? []);
+        $rows = array_key_exists('items', $result) ? (array)$result['items'] : $result;
+
         return array_values(array_filter(
-            (array)($context['services']['journal_entries'] ?? []),
+            $rows,
             static fn(mixed $row): bool => is_array($row)
         ));
+    }
+
+    private function journalPagination(array $context): array
+    {
+        $result = (array)($context['services']['journal_entries'] ?? []);
+        if (array_key_exists('items', $result)) {
+            return $result;
+        }
+
+        return HelperFramework::paginateArray(
+            $this->journalRows($context),
+            $this->paginationPage($context),
+            self::PAGE_SIZE
+        );
+    }
+
+    private function exportAll(array $context): bool
+    {
+        return !empty(($context[$this->key()] ?? [])['export_all'])
+            || !empty(($context['services']['journal_entries'] ?? [])['export_all']);
     }
 
     private function companyAccounts(array $context): array

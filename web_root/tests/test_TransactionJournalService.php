@@ -200,6 +200,56 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             }
         }
     });
+
+    $harness->check(\eel_accounts\Service\TransactionJournalService::class, 'paginates journals in SQL and returns every filtered journal for export', static function () use ($harness, $service): void {
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = transactionJournalSearchTestCreateFixture();
+
+            $firstPage = $service->fetchJournalsPage($fixture['company_id'], $fixture['accounting_period_id'], [
+                'page' => 1,
+                'page_size' => 1,
+            ]);
+            $harness->assertSame(2, (int)$firstPage['total']);
+            $harness->assertSame(2, (int)$firstPage['page_count']);
+            $harness->assertSame(1, count((array)$firstPage['items']));
+            $harness->assertSame($fixture['materials_journal_id'], (int)$firstPage['items'][0]['id']);
+            $harness->assertSame(2, count((array)$firstPage['items'][0]['lines']));
+            $harness->assertSame(80.0, (float)$firstPage['items'][0]['total_debit']);
+            $harness->assertSame(true, (bool)$firstPage['has_next_page']);
+
+            $secondPage = $service->fetchJournalsPage($fixture['company_id'], $fixture['accounting_period_id'], [
+                'page' => 2,
+                'page_size' => 1,
+            ]);
+            $harness->assertSame($fixture['software_journal_id'], (int)$secondPage['items'][0]['id']);
+            $harness->assertSame(true, (bool)$secondPage['has_previous_page']);
+            $harness->assertSame(false, (bool)$secondPage['has_next_page']);
+
+            $export = $service->fetchJournalsPage($fixture['company_id'], $fixture['accounting_period_id'], [
+                'page' => 2,
+                'page_size' => 1,
+                'export_all' => true,
+            ]);
+            $harness->assertSame(2, (int)$export['total']);
+            $harness->assertSame(2, count((array)$export['items']));
+            $harness->assertSame(true, (bool)$export['export_all']);
+            $harness->assertSame(false, (bool)$export['has_previous_page']);
+            $harness->assertSame(false, (bool)$export['has_next_page']);
+
+            $filteredExport = $service->fetchJournalsPage($fixture['company_id'], $fixture['accounting_period_id'], [
+                'keyword' => 'Copper',
+                'page_size' => 1,
+                'export_all' => true,
+            ]);
+            $harness->assertSame(1, (int)$filteredExport['total']);
+            $harness->assertSame($fixture['materials_journal_id'], (int)$filteredExport['items'][0]['id']);
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
 });
 
 function transactionJournalSplitTestCreateFixture(): array

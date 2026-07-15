@@ -7,7 +7,62 @@
  */
 declare(strict_types=1);
 
-defined('APP_ROOT') || define('APP_ROOT', rtrim((string)(realpath(dirname(__DIR__, 2)) ?: dirname(__DIR__, 2)), '\\/') . DIRECTORY_SEPARATOR);
+$testAppRoot = rtrim((string)(realpath(dirname(__DIR__, 2)) ?: dirname(__DIR__, 2)), '\\/') . DIRECTORY_SEPARATOR;
+$testConfigDirectory = $testAppRoot . 'tests' . DIRECTORY_SEPARATOR . 'fixtures' . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR;
+$normaliseTestPath = static function (string $path): string {
+    $resolved = realpath($path);
+    $normalised = $resolved !== false ? $resolved : $path;
+
+    return rtrim(str_replace(['\\', '/'], DIRECTORY_SEPARATOR, $normalised), DIRECTORY_SEPARATOR);
+};
+$expectedConfigPath = $normaliseTestPath($testConfigDirectory);
+
+if (defined('APP_CONFIG')) {
+    $configuredPath = $normaliseTestPath((string)constant('APP_CONFIG'));
+    $pathsMatch = DIRECTORY_SEPARATOR === '\\'
+        ? strcasecmp($configuredPath, $expectedConfigPath) === 0
+        : strcmp($configuredPath, $expectedConfigPath) === 0;
+
+    if (!$pathsMatch) {
+        throw new RuntimeException(
+            'Unsafe test bootstrap blocked: APP_CONFIG was already set to a non-test configuration directory. '
+            . 'Run tests without loading web_root/classes/bootstrap.php first.'
+        );
+    }
+}
+
+$testConfigFile = $testConfigDirectory . 'app.php';
+$testConfig = is_file($testConfigFile) ? require $testConfigFile : null;
+$testDsn = is_array($testConfig) ? trim((string)($testConfig['db']['dsn'] ?? '')) : '';
+if (strcasecmp($testDsn, 'sqlite::memory:') !== 0) {
+    throw new RuntimeException('Unsafe test bootstrap blocked: the test database DSN must be sqlite::memory:.');
+}
+
+if (class_exists('InterfaceDB', false)) {
+    $activeDriver = strtolower(trim((string)InterfaceDB::driverName()));
+    if ($activeDriver !== 'sqlite') {
+        throw new RuntimeException(
+            'Unsafe test bootstrap blocked: InterfaceDB is already using the non-test driver "'
+            . $activeDriver
+            . '". Run tests in a fresh PHP process without loading web_root/classes/bootstrap.php first.'
+        );
+    }
+}
+
+unset(
+    $activeDriver,
+    $configuredPath,
+    $expectedConfigPath,
+    $normaliseTestPath,
+    $pathsMatch,
+    $testConfig,
+    $testConfigDirectory,
+    $testConfigFile,
+    $testDsn
+);
+
+defined('APP_ROOT') || define('APP_ROOT', $testAppRoot);
+unset($testAppRoot);
 defined('PROJECT_ROOT') || define('PROJECT_ROOT', rtrim(dirname(APP_ROOT), '\\/') . DIRECTORY_SEPARATOR);
 defined('APP_CLASSES') || define('APP_CLASSES', APP_ROOT . 'classes' . DIRECTORY_SEPARATOR);
 defined('APP_CONFIG') || define('APP_CONFIG', APP_ROOT . 'tests' . DIRECTORY_SEPARATOR . 'fixtures' . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR);

@@ -168,7 +168,7 @@ final class _tax_rates_ctCard extends CardBaseFramework
     private function refreshRatesAction(string $statusFilter, bool $isEmpty): string
     {
         $buttonClass = $isEmpty ? 'button danger' : 'button primary';
-        $buttonLabel = $isEmpty ? 'Import Live His Majesty\'s Revenue and Customs (HMRC) Rates' : 'Refresh His Majesty\'s Revenue and Customs (HMRC) Rates';
+        $buttonLabel = $isEmpty ? 'Import Live His Majesty\'s Revenue and Customs (HMRC) Rates' : 'Refresh HMRC CT Rates';
 
         return '<form method="post" action="?page=tax_rates" data-ajax="true">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '

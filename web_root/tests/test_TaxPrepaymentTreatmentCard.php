@@ -66,6 +66,49 @@ $harness->run(_tax_prepayment_treatmentCard::class, static function (
         $harness->assertTrue(str_contains($html, 'bim42201'));
         $harness->assertTrue(str_contains($html, 'bim70066'));
         $harness->assertTrue(str_contains($html, 'frs-105'));
+        $harness->assertSame(3, substr_count($html, 'class="button button-inline"'));
+        $harness->assertTrue(str_contains($html, 'HMRC - BIM42201'));
+        $harness->assertTrue(str_contains($html, 'HMRC - BIM70066'));
+        $harness->assertTrue(str_contains($html, 'FRC - FRS 105'));
+        $harness->assertSame(false, str_contains($html, 'Accounting and tax guidance:'));
         $harness->assertSame(false, str_contains($html, 'FRS 103'));
+    });
+
+    $harness->check(_tax_prepayment_treatmentCard::class, 'labels an unposted open-period calculation as a preview', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'company' => ['settings' => ['default_currency' => 'GBP']],
+            'services' => ['prepayment_period_context' => [
+                'available' => true,
+                'errors' => [],
+                'total_expense_pence' => 2500,
+                'total_closing_deferred_pence' => 7500,
+                'schedules' => [[
+                    'source_type' => 'transaction',
+                    'source_id' => 42,
+                    'source_description' => 'Annual cover',
+                    'source_date' => '2024-01-01',
+                    'source_amount_pence' => 10000,
+                    'expense_nominal_code' => '6100',
+                    'expense_nominal_name' => 'Insurance',
+                    'service_start_date' => '2024-01-01',
+                    'service_end_date' => '2024-12-31',
+                    'total_days' => 366,
+                    'selected_allocation' => [
+                        'expense_pence' => 2500,
+                        'closing_deferred_pence' => 7500,
+                        'recognised_through_pence' => 2500,
+                        'overlap_days' => 91,
+                        'overlap_start' => '2024-01-01',
+                        'overlap_end' => '2024-03-31',
+                        'journal_state' => 'preview_only',
+                        'posting_role' => 'deferral',
+                        'posting_target_pence' => 7500,
+                    ],
+                ]],
+            ]],
+        ]);
+
+        $harness->assertTrue(str_contains($html, 'Preview Only'));
+        $harness->assertSame(false, str_contains($html, 'Run the automated prepayment schedules migration'));
     });
 });

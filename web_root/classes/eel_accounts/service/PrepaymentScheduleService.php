@@ -446,10 +446,10 @@ final class PrepaymentScheduleService
      */
     public function fetchPeriodContext(int $companyId, int $accountingPeriodId): array
     {
-        if ($companyId <= 0 || $accountingPeriodId <= 0 || !$this->schemaAvailable()) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return [
                 'available' => false,
-                'errors' => ['Run the automated prepayment schedules migration and select an accounting period.'],
+                'errors' => ['Select a company and accounting period to preview prepayment treatment.'],
                 'schedules' => [],
             ];
         }
@@ -462,7 +462,10 @@ final class PrepaymentScheduleService
         $errors = [];
         $totalExpense = 0;
         $totalClosing = 0;
-        foreach ($this->fetchCurrentSchedulesForPeriod($companyId, $accountingPeriodId) as $schedule) {
+        $currentSchedules = $this->schemaAvailable()
+            ? $this->fetchCurrentSchedulesForPeriod($companyId, $accountingPeriodId)
+            : [];
+        foreach ($currentSchedules as $schedule) {
             $selected = null;
             foreach ((array)$schedule['allocations'] as $allocation) {
                 if ((int)$allocation['accounting_period_id'] === $accountingPeriodId) {
@@ -517,6 +520,15 @@ final class PrepaymentScheduleService
             $totalClosing += (int)$selected['closing_deferred_pence'];
         }
 
+        $preview = $this->fetchUnstoredPreviewsForPeriod($companyId, $accountingPeriodId, $period);
+        $errors = array_merge($errors, (array)$preview['errors']);
+        foreach ((array)$preview['schedules'] as $schedule) {
+            $schedules[] = $schedule;
+            $selected = (array)($schedule['selected_allocation'] ?? []);
+            $totalExpense += (int)($selected['expense_pence'] ?? 0);
+            $totalClosing += (int)($selected['closing_deferred_pence'] ?? 0);
+        }
+
         return [
             'available' => true,
             'errors' => array_values(array_unique($errors)),
@@ -524,6 +536,112 @@ final class PrepaymentScheduleService
             'schedules' => $schedules,
             'total_expense_pence' => $totalExpense,
             'total_closing_deferred_pence' => $totalClosing,
+        ];
+    }
+
+    /**
+     * Build a read-only schedule preview for saved prepaid reviews which do
+     * not yet have a persisted schedule. This remains available while the
+     * schedule-storage migration or Year End workflow is still outstanding.
+     *
+     * @param array<string, mixed> $period
+     * @return array{errors: list<string>, schedules: list<array<string, mixed>>}
+     */
+    private function fetchUnstoredPreviewsForPeriod(int $companyId, int $accountingPeriodId, array $period): array
+    {
+        if (!\InterfaceDB::tableExists('prepayment_reviews')
+            || !\InterfaceDB::columnExists('prepayment_reviews', 'current_schedule_id')) {
+            return ['errors' => ['The prepayment review data needed for a preview is unavailable.'], 'schedules' => []];
+        }
+
+        $currentScheduleFilter = $this->schemaAvailable() ? ' AND current_schedule_id IS NULL' : '';
+        $reviewIds = \InterfaceDB::fetchAll(
+            'SELECT id
+             FROM prepayment_reviews
+             WHERE company_id = :company_id
+               AND status = \'prepaid\'
+               ' . $currentScheduleFilter . '
+               AND (
+                    accounting_period_id = :accounting_period_id
+                    OR (service_start_date <= :period_end AND service_end_date >= :period_start)
+               )
+             ORDER BY id',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'period_start' => (string)$period['period_start'],
+                'period_end' => (string)$period['period_end'],
+            ]
+        );
+
+        $errors = [];
+        $schedules = [];
+        $sources = $this->sourceService ?? new PrepaymentSourceService();
+        foreach ($reviewIds as $row) {
+            $review = $this->fetchReview((int)$row['id']);
+            if (!is_array($review)) {
+                continue;
+            }
+            $built = $this->buildBasis($review);
+            if (empty($built['success']) || !is_array($built['basis'] ?? null)) {
+                foreach ((array)($built['errors'] ?? ['The schedule preview could not be calculated.']) as $error) {
+                    $errors[] = 'Prepayment review #' . (int)$review['id'] . ': ' . (string)$error;
+                }
+                continue;
+            }
+
+            $basis = (array)$built['basis'];
+            $selected = null;
+            foreach ((array)$basis['allocations'] as $allocation) {
+                if ((int)($allocation['accounting_period_id'] ?? 0) === $accountingPeriodId) {
+                    $selected = $allocation;
+                    break;
+                }
+            }
+            if (!is_array($selected)) {
+                continue;
+            }
+
+            $calculationHash = $this->hash($basis);
+            $verification = $sources->verify(
+                $companyId,
+                (int)$basis['source_accounting_period_id'],
+                (string)$basis['source_type'],
+                (int)$basis['source_id']
+            );
+            $source = is_array($verification['source'] ?? null) ? (array)$verification['source'] : [];
+            $role = !empty($selected['is_source_period']) ? 'deferral' : 'release';
+            $targetPence = $role === 'deferral'
+                ? (int)$selected['closing_deferred_pence']
+                : (int)$selected['expense_pence'];
+            $selected['posting_role'] = $role;
+            $selected['posting_target_pence'] = $targetPence;
+            $selected['posted_effect_pence'] = 0;
+            $selected['posting_delta_pence'] = $targetPence;
+            $selected['journal_state'] = 'preview_only';
+
+            $allocatedPence = array_sum(array_map(
+                static fn(array $allocation): int => (int)($allocation['expense_pence'] ?? 0),
+                (array)$basis['allocations']
+            ));
+            $basis['allocations'] = (array)$basis['allocations'];
+            $basis['allocated_pence'] = $allocatedPence;
+            $basis['unallocated_pence'] = max(0, (int)$basis['source_amount_pence'] - $allocatedPence);
+            $basis['calculation_hash'] = $calculationHash;
+            $basis['source_description'] = (string)($source['description'] ?? '');
+            $basis['expense_nominal_code'] = (string)($source['nominal_code'] ?? '');
+            $basis['expense_nominal_name'] = (string)($source['nominal_name'] ?? '');
+            $basis['selected_allocation'] = $selected;
+            $basis['journal_state'] = 'preview_only';
+            $basis['preview_only'] = true;
+            $basis['source_valid'] = !empty($verification['success']);
+            $basis['source_errors'] = (array)($verification['errors'] ?? []);
+            $schedules[] = $basis;
+        }
+
+        return [
+            'errors' => array_values(array_unique($errors)),
+            'schedules' => $schedules,
         ];
     }
 
@@ -536,6 +654,9 @@ final class PrepaymentScheduleService
         }
         $adjustments = [];
         foreach ((array)$context['schedules'] as $schedule) {
+            if (!empty($schedule['preview_only'])) {
+                continue;
+            }
             $allocation = (array)($schedule['selected_allocation'] ?? []);
             $delta = (int)($allocation['posting_delta_pence'] ?? 0);
             if ($delta === 0) {

@@ -137,10 +137,10 @@ final class _tax_prepayment_treatmentCard extends CardBaseFramework
 
     private function guidanceLinks(): string
     {
-        return '<div class="helper">Accounting and tax guidance: '
-            . '<a href="' . \eel_accounts\Service\TaxGuidanceService::url('bim42201') . '" target="_blank" rel="noopener noreferrer">HMRC BIM42201</a>, '
-            . '<a href="' . \eel_accounts\Service\TaxGuidanceService::url('bim70066') . '" target="_blank" rel="noopener noreferrer">HMRC BIM70066</a>, and '
-            . '<a href="' . \eel_accounts\Service\TaxGuidanceService::url('frs105') . '" target="_blank" rel="noopener noreferrer">FRC FRS 105</a>.'
+        return '<div class="actions-row">'
+            . \eel_accounts\Renderer\TaxCardRenderer::guidanceLink('bim42201', 'HMRC - BIM42201')
+            . \eel_accounts\Renderer\TaxCardRenderer::guidanceLink('bim70066', 'HMRC - BIM70066')
+            . \eel_accounts\Renderer\TaxCardRenderer::guidanceLink('frs105', 'FRC - FRS 105')
             . '</div>';
     }
 

@@ -44,6 +44,30 @@ if (!function_exists('test_output_line')) {
     }
 }
 
+if (!function_exists('test_output_result')) {
+    function test_output_result(
+        string $className,
+        string $description,
+        string $result,
+        string $diagnostic = ''
+    ): void {
+        test_output_bootstrap();
+
+        $suffix = match ($result) {
+            'fail' => ' failed.',
+            'skip' => ' skipped.',
+            default => '.',
+        };
+        $message = $className . ': ' . $description . $suffix;
+
+        if ($diagnostic !== '') {
+            $message .= ' ' . $diagnostic;
+        }
+
+        test_output_record_result($className, $description, $result, $message);
+    }
+}
+
 if (!function_exists('test_output_failure_line')) {
     function test_output_failure_line(string $message): void
     {
@@ -65,13 +89,19 @@ if (!function_exists('test_output_record_message')) {
     {
         test_output_bootstrap();
 
-        $state = &$GLOBALS['test_output_state'];
-        $state['messages'][] = [
-            'result' => $result,
-            'message' => $message,
-        ];
+        $pattern = match ($result) {
+            'fail' => '/^([^:]+):\s+(.+?) failed\.(?:\s+.*)?$/s',
+            'skip' => '/^([^:]+):\s+(.+?) skipped\.(?:\s+.*)?$/s',
+            default => '/^([^:]+):\s+(.+?)(?:\.)?$/s',
+        };
 
-        if (preg_match('/^([^:]+):\s+(.+?)(?:\.)?$/', $message, $matches) !== 1) {
+        if (preg_match($pattern, $message, $matches) !== 1) {
+            $state = &$GLOBALS['test_output_state'];
+            $state['messages'][] = [
+                'result' => $result,
+                'message' => $message,
+            ];
+
             if ($result === 'fail') {
                 $state['summary']['status'] = 'failing';
             }
@@ -79,8 +109,24 @@ if (!function_exists('test_output_record_message')) {
             return;
         }
 
-        $className = trim($matches[1]);
-        $description = trim($matches[2]);
+        test_output_record_result(trim($matches[1]), trim($matches[2]), $result, $message);
+    }
+}
+
+if (!function_exists('test_output_record_result')) {
+    function test_output_record_result(
+        string $className,
+        string $description,
+        string $result,
+        string $message
+    ): void {
+        test_output_bootstrap();
+
+        $state = &$GLOBALS['test_output_state'];
+        $state['messages'][] = [
+            'result' => $result,
+            'message' => $message,
+        ];
 
         if (!isset($state['classes'][$className])) {
             $state['classes'][$className] = [

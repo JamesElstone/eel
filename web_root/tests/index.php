@@ -36,7 +36,7 @@ foreach ($files as $file) {
             http_response_code(500);
         }
 
-        test_output_failure_line($currentTest . ': ' . $exception->getMessage());
+        test_output_result($currentTest, 'loads without an uncaught exception', 'fail', $exception->getMessage());
     }
 }
 

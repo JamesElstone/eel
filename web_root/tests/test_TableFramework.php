@@ -220,17 +220,17 @@ $harness->check(TableFramework::class, 'exports unpaginated rows and export-spec
 
 $harness->check(TableFramework::class, 'exports ASCII grid tables', function () use ($harness): void {
     $table = TableFramework::make('demo_table', [
-        ['id' => 261, 'display_name' => 'James Elstone'],
+        ['id' => 261, 'display_name' => 'Alex Example'],
     ])
         ->column('id', 'id')
         ->column('display_name', 'display_name');
 
     $harness->assertSame(
-        "+-----+---------------+\n"
-            . "| id  | display_name  |\n"
-            . "+-----+---------------+\n"
-            . "| 261 | James Elstone |\n"
-            . "+-----+---------------+\n",
+        "+-----+--------------+\n"
+            . "| id  | display_name |\n"
+            . "+-----+--------------+\n"
+            . "| 261 | Alex Example |\n"
+            . "+-----+--------------+\n",
         $table->exportAscii()
     );
 });

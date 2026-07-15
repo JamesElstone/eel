@@ -69,7 +69,7 @@ final class _journal_cut_off_confirmationCard extends CardBaseFramework
 
         return '<section class="settings-stack" id="journal-cut-off">
             ' . $this->renderPostedAdjustments((array)($data['adjustments'] ?? [])) . '
-            ' . $this->acknowledgementHtml($acknowledgement, $companyId, $accountingPeriodId) . '
+            ' . $this->acknowledgementHtml($acknowledgement, $companyId, $accountingPeriodId, $access) . '
         </section>';
     }
 
@@ -92,7 +92,12 @@ final class _journal_cut_off_confirmationCard extends CardBaseFramework
         return '<section class="panel-soft settings-stack"><h4 class="card-title">Posted cut-off journals</h4><div class="table-scroll"><table><thead><tr><th>Date</th><th>Description</th><th>Type</th><th>Lines</th></tr></thead><tbody>' . $rows . '</tbody></table></div></section>';
     }
 
-    private function acknowledgementHtml(?array $acknowledgement, int $companyId, int $accountingPeriodId): string
+    private function acknowledgementHtml(
+        ?array $acknowledgement,
+        int $companyId,
+        int $accountingPeriodId,
+        array $access
+    ): string
     {
         $acknowledged = !empty($acknowledgement['current']);
         return \eel_accounts\Renderer\YearEndApprovalRenderer::render([

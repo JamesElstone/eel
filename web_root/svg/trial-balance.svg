@@ -1,14 +1,16 @@
-<!--
-  EEL Accounts
-  Copyright (c) 2026 James Elstone
-  Licensed under the GNU Affero General Public License v3.0 (AGPLv3)
-  See LICENSE file for details.
--->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-  <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-  <path d="M6 4h12"/>
-  <path d="M6 10h12"/>
-  <path d="M6 16h12"/>
-  <path d="M9 4v12"/>
-  <path d="M15 10v10"/>
+<svg fill="none" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" aria-hidden="true" version="1.1" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+	<defs>
+		<marker id="elstone-b" overflow="visible" markerHeight="1" markerWidth="1" orient="auto-start-reverse" preserveAspectRatio="xMidYMid" viewBox="0 0 1 1">
+			<path transform="rotate(180 .125 0)" d="m3-3-3 3 3 3" fill="none" stroke="context-stroke" stroke-linecap="butt" stroke-width="1"/>
+		</marker>
+		<marker id="elstone-a" overflow="visible" markerHeight="1" markerWidth="1" orient="auto-start-reverse" preserveAspectRatio="xMidYMid" viewBox="0 0 1 1">
+			<path transform="rotate(180 .125 0)" d="m3-3-3 3 3 3" fill="none" stroke="context-stroke" stroke-linecap="butt" stroke-width="1"/>
+		</marker>
+	</defs>
+	<g fill="#000" stroke="#ffffff">
+		<path d="m6 8h12"/>
+		<path d="m6 14h12"/>
+		<path d="m9 1.5091v12.465" marker-start="url(#elstone-b)"/>
+		<path d="m15.05 20.499v-12.465" marker-start="url(#elstone-a)"/>
+	</g>
 </svg>

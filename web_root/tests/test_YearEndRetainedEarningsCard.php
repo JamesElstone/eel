@@ -21,7 +21,8 @@ $harness->run(_year_end_retained_earningsCard::class, static function (Generated
         $harness->assertSame(true, str_contains($html, 'reset income and expense nominal balances for the next period (clear them)'));
         $harness->assertSame(true, str_contains($html, 'Original transactions, expense claims, and source journals are not changed.'));
         $harness->assertSame(true, str_contains($html, 'I confirm that I have reviewed the retained earnings close shown above and approve it as accurate for Year End.'));
-        $harness->assertSame(true, str_contains($html, 'disabled data-year-end-ack-submit'));
+        $harness->assertSame(true, str_contains($html, 'type="submit" disabled title="Complete and lock the prior accounting period before closing retained earnings."'));
+        $harness->assertSame(false, str_contains($html, 'disabled data-year-end-ack-submit'));
         $harness->assertSame(false, str_contains($html, 'Open Year End Confirmation'));
         $harness->assertSame(false, str_contains($html, 'preview_deferred'));
     });
@@ -39,7 +40,8 @@ $harness->run(_year_end_retained_earningsCard::class, static function (Generated
         $html = $card->render(yearEndRetainedEarningsCardContext(true, true));
 
         $harness->assertSame(true, str_contains($html, 'Figures have changed since the last agreement.'));
-        $harness->assertSame(true, str_contains($html, 'disabled data-year-end-ack-submit'));
+        $harness->assertSame(true, str_contains($html, 'Review required — underlying data changed.'));
+        $harness->assertSame(true, str_contains($html, 'type="submit" disabled title="Complete and lock the prior accounting period before closing retained earnings."'));
     });
 
     $harness->check(_year_end_retained_earningsCard::class, 'reuses the profit and loss corporation tax provision', static function () use ($harness, $card): void {
@@ -70,6 +72,15 @@ function yearEndRetainedEarningsCardContext(bool $acknowledged, bool $stale, arr
             'acknowledged_at' => '2026-07-06 10:00:00',
             'acknowledged_by' => 'Alex Example using the web_app',
         ] : null,
+        'can_acknowledge' => false,
+        'prior_period_dependency' => [
+            'status' => 'prior_period_unlocked',
+            'satisfied' => false,
+            'detail' => 'Complete and lock the prior accounting period before closing retained earnings.',
+        ],
+        'warnings' => [
+            'Complete and lock the prior accounting period before closing retained earnings.',
+        ],
         'summary' => [
             'opening_equity' => 0,
             'current_profit_loss' => -396.91,

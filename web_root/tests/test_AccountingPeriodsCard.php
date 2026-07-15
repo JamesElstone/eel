@@ -75,7 +75,8 @@ $harness->run(_accounting_periodsCard::class, static function (GeneratedServiceC
     $harness->check(_accounting_periodsCard::class, 'renders form values from the selected accounting period row', static function () use ($harness, $html): void {
         $harness->assertTrue(str_contains($html, '<div class="card-toolbar">'));
         $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="csv"'));
-        $harness->assertTrue(str_contains($html, '<div class="table-scroll-mini"><table>'));
+        $harness->assertTrue(str_contains($html, '<div class="table-scroll-mini">'));
+        $harness->assertTrue(str_contains($html, 'data-table-key="accounting_periods"'));
         $harness->assertTrue(str_contains($html, 'Accounting periods 1-5 of 6'));
         $harness->assertTrue(str_contains($html, 'name="accounting_periods_page" value="2"'));
         $harness->assertTrue(str_contains($html, 'form method="post" data-ajax="true" data-accounting-period-selector="true"'));

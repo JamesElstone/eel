@@ -47,6 +47,22 @@ final class _companies_searchCard extends CardBaseFramework
         $resultsHtml = '';
 
         foreach ($companySearchResults as $result) {
+            $incorporationDate = trim((string)($result['incorporation_date'] ?? ''));
+            $eligibility = is_array($result['incorporation_eligibility'] ?? null)
+                ? $result['incorporation_eligibility']
+                : (new \eel_accounts\Service\CompanyIncorporationEligibilityService())->evaluate($incorporationDate);
+            $isSupported = !empty($eligibility['is_supported']);
+            $eligibilityLabel = trim((string)($eligibility['label'] ?? ($isSupported ? 'Eligible' : 'Not supported')));
+            $eligibilityMessage = trim((string)($eligibility['message'] ?? ''));
+            $incorporationDateObject = \DateTimeImmutable::createFromFormat('!Y-m-d', $incorporationDate);
+            $incorporationDateLabel = $incorporationDateObject instanceof \DateTimeImmutable
+                && $incorporationDateObject->format('Y-m-d') === $incorporationDate
+                    ? $incorporationDateObject->format('j F Y')
+                    : ($incorporationDate !== '' ? $incorporationDate : 'Not provided');
+            $addButtonAttributes = $isSupported
+                ? ''
+                : ' disabled aria-disabled="true" title="' . HelperFramework::escape($eligibilityMessage) . '"';
+
             $resultsHtml .= '
             <div class="search-result">
                 <div class="search-result-head">
@@ -56,6 +72,11 @@ final class _companies_searchCard extends CardBaseFramework
                             Number: ' . HelperFramework::escape((string)($result['company_number'] ?? ''))
                             . (trim((string)($result['company_status'] ?? '')) !== '' ? ' | Status: ' . HelperFramework::escape((string)$result['company_status']) : '') . '
                         </div>
+                        <div class="search-result-meta">
+                            Incorporation date: ' . HelperFramework::escape($incorporationDateLabel) . '
+                            | Eligibility: ' . HelperFramework::escape($eligibilityLabel) . '
+                        </div>
+                        ' . ($eligibilityMessage !== '' ? '<div class="search-result-meta">' . HelperFramework::escape($eligibilityMessage) . '</div>' : '') . '
                     </div>
                     <span class="status-pill">' . HelperFramework::escape((string)($result['source'] ?? '') === 'profile' ? 'Direct lookup' : 'Search result') . '</span>
                 </div>
@@ -65,9 +86,7 @@ final class _companies_searchCard extends CardBaseFramework
                     <input type="hidden" name="intent" value="add_company">
                     <input type="hidden" name="company_name" value="' . HelperFramework::escape((string)($result['company_name'] ?? '')) . '">
                     <input type="hidden" name="selected_company_number" value="' . HelperFramework::escape((string)($result['company_number'] ?? '')) . '">
-                    <input type="hidden" name="selected_incorporation_date" value="' . HelperFramework::escape((string)($result['incorporation_date'] ?? '')) . '">
-                    <input type="hidden" name="selected_company_profile_payload" value="' . HelperFramework::escape((string)($result['profile_payload'] ?? '')) . '">
-                    <button class="button primary" data-processing-text="Adding Company..." data-processing-state="disabled" data-show-card="companies_company_settings" type="submit">Add Company</button>
+                    <button class="button primary" data-processing-text="Adding Company..." data-processing-state="disabled" data-show-card="companies_company_settings" type="submit"' . $addButtonAttributes . '>Add Company</button>
                 </form>
             </div>';
         }

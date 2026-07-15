@@ -231,9 +231,9 @@ $harness->run(_pl_summaryCard::class, static function (GeneratedServiceClassTest
         $harness->assertSame(false, str_contains($html, 'panel-soft'));
         $harness->assertTrue(str_contains($html, 'P&amp;L for CT Period 1'));
         $harness->assertTrue(str_contains($html, 'P&amp;L for CT Period 2'));
-        $harness->assertTrue(str_contains($html, '05/09/2022 to 04/09/2023'));
-        $harness->assertTrue(str_contains($html, '05/09/2023 to 30/09/2023'));
-        $harness->assertTrue(str_contains($html, '$ -20.00'));
+        $harness->assertTrue(str_contains($html, HelperFramework::accountingPeriodLabel('2022-09-05', '2023-09-04')));
+        $harness->assertTrue(str_contains($html, HelperFramework::accountingPeriodLabel('2023-09-05', '2023-09-30')));
+        $harness->assertTrue(str_contains($html, '-$ 20.00'));
         $harness->assertSame(1, substr_count($html, '<div class="summary-label">Profit before tax</div>'));
         $harness->assertSame(1, substr_count($html, '<div class="summary-label">Profit margin</div>'));
         $headlineGridPosition = strpos($html, '<div class="summary-grid four">');
@@ -256,7 +256,7 @@ $harness->run(_pl_summaryCard::class, static function (GeneratedServiceClassTest
         $harness->assertTrue(str_contains($singlePeriodHtml, '<div class="pl-summary-income-flow">'));
         $harness->assertTrue(str_contains($singlePeriodHtml, 'No incoming or outgoing nominal flow is available for the selected period.'));
         $harness->assertTrue(str_contains($singlePeriodHtml, 'P&amp;L for CT Period 1'));
-        $harness->assertTrue(str_contains($singlePeriodHtml, '01/10/2024 to 30/09/2025'));
+        $harness->assertTrue(str_contains($singlePeriodHtml, HelperFramework::accountingPeriodLabel('2024-10-01', '2025-09-30')));
         $harness->assertTrue(str_contains($singlePeriodHtml, '<div class="summary-label">Profit before tax</div><div class="summary-value">$ 100.00</div>'));
         $harness->assertTrue(str_contains($singlePeriodHtml, '<div class="summary-label">Profit margin</div><div class="summary-value">10.0%</div>'));
         $harness->assertSame(false, str_contains($singlePeriodHtml, 'summary-grid four'));
@@ -383,7 +383,10 @@ $harness->run(_pl_monthly_trendCard::class, static function (GeneratedServiceCla
                     'income_total' => 1200,
                     'cost_of_sales_total' => 300,
                     'expense_total' => 200,
+                    'operating_expense_total' => 200,
+                    'profit_before_tax' => 700,
                     'net_profit' => 700,
+                    'profit_after_tax' => 700,
                 ],
                 [
                     'month_start' => '2026-02-01',
@@ -391,7 +394,10 @@ $harness->run(_pl_monthly_trendCard::class, static function (GeneratedServiceCla
                     'income_total' => 1500,
                     'cost_of_sales_total' => 400,
                     'expense_total' => 250,
+                    'operating_expense_total' => 250,
+                    'profit_before_tax' => 850,
                     'net_profit' => 850,
+                    'profit_after_tax' => 850,
                 ],
             ],
         ],
@@ -409,8 +415,8 @@ $harness->run(_pl_monthly_trendCard::class, static function (GeneratedServiceCla
         $harness->assertTrue(str_contains($html, '<span class="badge success">$ 700.00</span>'));
         $harness->assertTrue(str_contains($html, 'Income - 1'));
         $harness->assertTrue(str_contains($html, 'Cost of sales - 1'));
-        $harness->assertTrue(str_contains($html, 'Expenses - 1'));
-        $harness->assertTrue(str_contains($html, 'Net - 1'));
+        $harness->assertTrue(str_contains($html, 'Operating expenses - 1'));
+        $harness->assertTrue(str_contains($html, 'After tax - 1'));
         $harness->assertSame(false, str_contains($html, 'Income - January 2026'));
     });
 });

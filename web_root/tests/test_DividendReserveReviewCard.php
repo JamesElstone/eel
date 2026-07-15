@@ -94,7 +94,7 @@ $harness->run(_dividend_reserve_reviewCard::class, static function (GeneratedSer
             ],
         ]);
 
-        $harness->assertTrue(str_contains($html, 'This review checks which parts of the company&#039;s profit can safely support dividends.'));
+        $harness->assertTrue(str_contains($html, "This review checks which parts of the company's profit can safely support dividends."));
         $harness->assertTrue(str_contains($html, 'Most ordinary sales and expenses are classified automatically.'));
         $harness->assertTrue(str_contains($html, 'If unsure, leave as Unknown and ask your accountant.'));
         $harness->assertTrue(str_contains($html, 'Normal earned income that can usually support dividends.'));

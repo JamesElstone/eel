@@ -830,13 +830,14 @@ final class YearEndMetricsService
 
     private function fetchUploadCountsByMonth(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array {
         $result = [];
-        foreach (\InterfaceDB::fetchAll( 'SELECT DATE_FORMAT(COALESCE(date_range_start, statement_month), \'%Y-%m-01\') AS month_key,
+        $monthExpression = $this->monthKeyExpression('COALESCE(date_range_start, statement_month)');
+        foreach (\InterfaceDB::fetchAll( 'SELECT ' . $monthExpression . ' AS month_key,
                     COUNT(*) AS upload_count
              FROM statement_uploads
              WHERE company_id = :company_id
                AND accounting_period_id = :accounting_period_id
                AND COALESCE(date_range_start, statement_month, date_range_end) BETWEEN :period_start AND :period_end
-             GROUP BY DATE_FORMAT(COALESCE(date_range_start, statement_month), \'%Y-%m-01\')', [
+             GROUP BY ' . $monthExpression, [
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
             'period_start' => $periodStart,
@@ -850,13 +851,14 @@ final class YearEndMetricsService
 
     private function fetchTransactionCountsByMonth(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array {
         $result = [];
+        $monthExpression = $this->monthKeyExpression('t.txn_date');
         $splitStatusJoin = $this->transactionSplitStatusJoin('t');
         $readySplitPredicate = $splitStatusJoin !== ''
             ? 'COALESCE(split_status.is_ready, 0) = 1'
             : '0 = 1';
         $validTransferPredicate = $this->validTransferPredicate('t');
         $interAccountNoPostPredicate = $this->interAccountNoPostPredicate('t');
-        foreach (\InterfaceDB::fetchAll( 'SELECT DATE_FORMAT(t.txn_date, \'%Y-%m-01\') AS month_key,
+        foreach (\InterfaceDB::fetchAll( 'SELECT ' . $monthExpression . ' AS month_key,
                     COUNT(*) AS transaction_count,
                     SUM(
                         CASE
@@ -874,7 +876,7 @@ final class YearEndMetricsService
              WHERE t.company_id = :company_id
                AND t.accounting_period_id = :accounting_period_id
                AND t.txn_date BETWEEN :period_start AND :period_end
-             GROUP BY DATE_FORMAT(t.txn_date, \'%Y-%m-01\')', [
+             GROUP BY ' . $monthExpression, [
             'category_status' => 'uncategorised',
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
@@ -945,14 +947,15 @@ final class YearEndMetricsService
 
     private function fetchPostedJournalCountsByMonth(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array {
         $result = [];
-        foreach (\InterfaceDB::fetchAll( 'SELECT DATE_FORMAT(journal_date, \'%Y-%m-01\') AS month_key,
+        $monthExpression = $this->monthKeyExpression('journal_date');
+        foreach (\InterfaceDB::fetchAll( 'SELECT ' . $monthExpression . ' AS month_key,
                     COUNT(*) AS journal_count
              FROM journals
              WHERE company_id = :company_id
                AND accounting_period_id = :accounting_period_id
                AND is_posted = 1
                AND journal_date BETWEEN :period_start AND :period_end
-             GROUP BY DATE_FORMAT(journal_date, \'%Y-%m-01\')', [
+             GROUP BY ' . $monthExpression, [
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
             'period_start' => $periodStart,
@@ -966,7 +969,8 @@ final class YearEndMetricsService
 
     private function fetchSuspenseCountsByMonth(int $companyId, int $accountingPeriodId, int $nominalAccountId): array {
         $result = [];
-        foreach (\InterfaceDB::fetchAll( 'SELECT DATE_FORMAT(j.journal_date, \'%Y-%m-01\') AS month_key,
+        $monthExpression = $this->monthKeyExpression('j.journal_date');
+        foreach (\InterfaceDB::fetchAll( 'SELECT ' . $monthExpression . ' AS month_key,
                     COUNT(*) AS suspense_count
              FROM journals j
              INNER JOIN journal_lines jl ON jl.journal_id = j.id
@@ -974,7 +978,7 @@ final class YearEndMetricsService
                AND j.accounting_period_id = :accounting_period_id
                AND j.is_posted = 1
                AND jl.nominal_account_id = :nominal_account_id
-             GROUP BY DATE_FORMAT(j.journal_date, \'%Y-%m-01\')', [
+             GROUP BY ' . $monthExpression, [
             'company_id' => $companyId,
             'accounting_period_id' => $accountingPeriodId,
             'nominal_account_id' => $nominalAccountId,
@@ -983,6 +987,13 @@ final class YearEndMetricsService
         }
 
         return $result;
+    }
+
+    private function monthKeyExpression(string $column): string
+    {
+        return \InterfaceDB::driverName() === 'sqlite'
+            ? "strftime('%Y-%m-01', {$column})"
+            : "DATE_FORMAT({$column}, '%Y-%m-01')";
     }
 
     private function fetchTrialBalanceLines(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array {

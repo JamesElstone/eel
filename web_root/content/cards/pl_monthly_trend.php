@@ -68,11 +68,6 @@ final class _pl_monthly_trendCard extends CardBaseFramework
                 'points' => $this->points($rows, 'operating_expense_total'),
             ],
             [
-                'label' => 'CT charge',
-                'color' => '#64748b',
-                'points' => $this->points($rows, 'corporation_tax_expense_total'),
-            ],
-            [
                 'label' => 'Profit before tax',
                 'color' => '#0f766e',
                 'points' => $this->points($rows, 'profit_before_tax'),

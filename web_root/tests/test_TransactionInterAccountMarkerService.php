@@ -10,6 +10,13 @@ declare(strict_types=1);
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'PageServiceTestFactory.php';
 
+if (
+    InterfaceDB::tableExists('company_accounts')
+    && !InterfaceDB::columnExists('company_accounts', 'internal_transfer_marker')
+) {
+    InterfaceDB::execute('ALTER TABLE company_accounts ADD COLUMN internal_transfer_marker TEXT NULL');
+}
+
 (new GeneratedServiceClassTestHarness())->run(\eel_accounts\Service\TransactionInterAccountMarkerService::class, static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\TransactionInterAccountMarkerService $service): void {
     $harness->check(\eel_accounts\Service\TransactionInterAccountMarkerService::class, 'creates 5802 to 4516 marker and filters candidates', static function () use ($harness, $service): void {
         foreach (['companies', 'accounting_periods', 'nominal_accounts', 'company_accounts', 'statement_uploads', 'transactions', 'transaction_inter_ac_marker', 'transaction_category_audit', 'journals', 'journal_lines'] as $table) {
@@ -144,10 +151,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             );
             $harness->assertSame((int)$fixture['savings_nominal_id'], (int)($lines[0]['nominal_account_id'] ?? 0));
             $harness->assertSame((int)$fixture['savings_account_id'], (int)($lines[0]['company_account_id'] ?? 0));
-            $harness->assertSame('270.00', (string)($lines[0]['debit'] ?? ''));
+            $harness->assertSame('270.00', number_format((float)($lines[0]['debit'] ?? 0), 2, '.', ''));
             $harness->assertSame((int)$fixture['current_nominal_id'], (int)($lines[1]['nominal_account_id'] ?? 0));
             $harness->assertSame((int)$fixture['current_account_id'], (int)($lines[1]['company_account_id'] ?? 0));
-            $harness->assertSame('270.00', (string)($lines[1]['credit'] ?? ''));
+            $harness->assertSame('270.00', number_format((float)($lines[1]['credit'] ?? 0), 2, '.', ''));
         } finally {
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();
@@ -316,6 +323,7 @@ function transactionInterAccountMarkerCreateFixture(): array
     $sameAccountTransactionId = (int)('60' . $marker);
     $wrongAmountTransactionId = (int)('61' . $marker);
     $tooLateTransactionId = (int)('62' . $marker);
+    $autoRuleId = (int)('63' . $marker);
 
     InterfaceDB::prepareExecute(
         'INSERT INTO companies (id, company_name, company_number, is_active)
@@ -340,6 +348,36 @@ function transactionInterAccountMarkerCreateFixture(): array
 
     transactionInterAccountMarkerInsertNominal($bankNominalId, 'IA' . substr($marker, 0, 4), 'Example Bank Nominal ' . $marker, 'asset', 'other');
     transactionInterAccountMarkerInsertNominal($tradeNominalId, 'IT' . substr($marker, 0, 4), 'Example Trade Supplier Nominal ' . $marker, 'liability', 'other');
+
+    InterfaceDB::prepareExecute(
+        'INSERT INTO categorisation_rules (
+            id,
+            company_id,
+            priority,
+            match_field,
+            desc_match_type,
+            desc_match_value,
+            nominal_account_id,
+            is_active
+         ) VALUES (
+            :id,
+            :company_id,
+            100,
+            :match_field,
+            :desc_match_type,
+            :desc_match_value,
+            :nominal_account_id,
+            1
+         )',
+        [
+            'id' => $autoRuleId,
+            'company_id' => $companyId,
+            'match_field' => 'description',
+            'desc_match_type' => 'contains',
+            'desc_match_value' => 'STALE INTER ACCOUNT AUTO STATE',
+            'nominal_account_id' => $bankNominalId,
+        ]
+    );
 
     InterfaceDB::prepareExecute(
         'INSERT INTO company_accounts (id, company_id, account_name, account_type, nominal_account_id, is_active)
@@ -395,6 +433,7 @@ function transactionInterAccountMarkerCreateFixture(): array
         'trade_nominal_id' => $tradeNominalId,
         'bank_account_id' => $bankAccountId,
         'trade_account_id' => $tradeAccountId,
+        'auto_rule_id' => $autoRuleId,
     ];
 }
 
@@ -412,7 +451,7 @@ function transactionInterAccountMarkerPrepareStaleAutoState(array $fixture): voi
                 'id' => $transactionId,
                 'nominal_account_id' => (int)$fixture['bank_nominal_id'],
                 'category_status' => 'auto',
-                'auto_rule_id' => 9001,
+                'auto_rule_id' => (int)$fixture['auto_rule_id'],
             ]
         );
         (new \eel_accounts\Service\TransactionAutoApprovalService())->setTransactionApprovalState(

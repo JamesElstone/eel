@@ -222,7 +222,7 @@ $harness->run(NominalsAction::class, function (GeneratedServiceClassTestHarness 
         }
     });
 
-    $harness->check('NominalsAction', 'delete_nominal_account rejects referenced nominal accounts', function () use ($harness, $instance): void {
+    $harness->check('NominalsAction', 'delete_nominal_account rejects company-default nominal accounts', function () use ($harness, $instance): void {
         ensureNominalsActionReferenceSchema();
 
         $path = AppConfigurationStore::configPath();
@@ -261,7 +261,7 @@ $harness->run(NominalsAction::class, function (GeneratedServiceClassTestHarness 
             $result = $instance->handle($request, createTestPageServiceFramework());
 
             $harness->assertSame(false, $result->isSuccess());
-            $harness->assertSame('This nominal account is in use and cannot be deleted.', (string)($result->flashMessages()[0]['message'] ?? ''));
+            $harness->assertSame('This nominal account is assigned as a company default and cannot be deleted.', (string)($result->flashMessages()[0]['message'] ?? ''));
             $harness->assertSame(1, (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM nominal_accounts WHERE id = :id', ['id' => $nominalId]));
         } finally {
             file_put_contents($path, $original, LOCK_EX);

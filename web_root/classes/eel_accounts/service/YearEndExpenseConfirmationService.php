@@ -44,6 +44,10 @@ final class YearEndExpenseConfirmationService
         ];
     }
 
+    /**
+     * Returns only the live expense facts that can be approved. This deliberately
+     * avoids acknowledgement evaluation and the wider Year End checklist.
+     */
     public function fetchApprovalContext(int $companyId, int $accountingPeriodId): array
     {
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
@@ -110,6 +114,7 @@ final class YearEndExpenseConfirmationService
             'claimants' => $claimants,
             'totals' => $totals,
         ];
+
         return $context;
     }
 

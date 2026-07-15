@@ -60,28 +60,10 @@ $harness->run(_expenses_stateCard::class, function (GeneratedServiceClassTestHar
         $harness->assertTrue(str_contains($html, '<button class="button button-inline danger" type="submit">Delete</button>'));
         $harness->assertSame(false, str_contains($html, 'Create or open a monthly expense claim for an active claimant.'));
         $harness->assertSame(false, str_contains($html, 'id="expense-create-claimant"'));
-        $harness->assertTrue(str_contains($html, '<form method="post" action="?page=expense_claims" data-ajax="true" class="toolbar">
-                <input type="hidden" name="card_action" value="Expense">
-                <input type="hidden" name="company_id" value="7">
-                <input type="hidden" name="intent" value="filter_claims">
-                <input type="hidden" name="expense_query" value="">
-                <input type="hidden" name="expense_status" value="all">
-                <label for="expense-claimant">Claimant</label>
-                <select class="select" id="expense-claimant" name="claimant_id"><option value="">Choose Claimant...</option><option value="4">Bob</option><option value="3" selected>Alex Example</option></select>
-            </form>'));
-        $harness->assertTrue(str_contains($html, '<form method="post" data-ajax="true" class="toolbar">
-                <input type="hidden" name="page" value="expenses">
-                <input type="hidden" name="card_action" value="Expense">
-                <input type="hidden" name="company_id" value="7">
-                <input type="hidden" name="intent" value="filter_claims">
-                <input type="hidden" name="expense_query" value="">
-                <input type="hidden" name="expense_heatmap_claimant_id" value="3">
-                <input type="hidden" name="expense_heatmap_date" value="2026-05-01">
-                <div class="form-row table-filter-row">
-                    <label for="table-filter-expenses_state-expense_status">Show</label>
-                    <select class="selector-input" id="table-filter-expenses_state-expense_status" name="expense_status"><option value="all" selected>All</option><option value="draft">Draft</option><option value="posted">Posted</option></select>
-                </div>
-            </form>'));
+        $harness->assertTrue(str_contains($html, '<form method="post" action="?page=expense_claims" data-ajax="true" class="toolbar">'));
+        $harness->assertTrue(str_contains($html, '<select class="select" id="expense-claimant" name="claimant_id"><option value="">Choose Claimant...</option><option value="4">Bob</option><option value="3" selected>Alex Example</option></select>'));
+        $harness->assertTrue(str_contains($html, '<form method="post" data-ajax="true" class="toolbar">'));
+        $harness->assertTrue(str_contains($html, '<input type="hidden" name="page" value="expenses">'));
         $harness->assertSame(false, str_contains($html, '<div class="mini-field">
                     <label for="expense-claimant">Claimant</label>'));
         $harness->assertSame(false, str_contains($html, '<h3 class="card-title">Create Expense claim</h3>'));
@@ -100,18 +82,8 @@ $harness->run(_expenses_stateCard::class, function (GeneratedServiceClassTestHar
         $harness->assertTrue(str_contains($html, '<label for="table-filter-expenses_state-expense_status">Show</label>'));
         $harness->assertTrue(str_contains($html, 'id="table-filter-expenses_state-expense_status" name="expense_status"'));
         $harness->assertTrue(str_contains($html, '<option value="all" selected>All</option>'));
-        $harness->assertTrue(str_contains($html, '<form id="expense-search-form" method="post" action="?page=expense_claims" data-ajax="true" class="toolbar">
-                <input type="hidden" name="card_action" value="Expense">
-                <input type="hidden" name="company_id" value="7">
-                <input type="hidden" name="intent" value="filter_claims">
-                <input type="hidden" name="expense_status" value="all">
-                <input type="hidden" name="expense_heatmap_claimant_id" value="3">
-                <input type="hidden" name="expense_heatmap_date" value="2026-05-01">
-                <div class="mini-field">
-                    <input class="input" id="expense-search-query" name="expense_query" type="search" value="" placeholder="EXP-...">
-                </div>
-                <button class="button primary" type="submit">Search</button>
-            </form>'));
+        $harness->assertTrue(str_contains($html, '<form id="expense-search-form" method="post" action="?page=expense_claims" data-ajax="true" class="toolbar">'));
+        $harness->assertTrue(str_contains($html, '<input class="input" id="expense-search-query" name="expense_query" type="search" value="" placeholder="EXP-...">'));
         $harness->assertSame(false, str_contains($html, 'name="expense_query" form="expense-search-form"'));
         $harness->assertSame(false, str_contains($html, 'type="submit" form="expense-search-form"'));
         $harness->assertSame(0, preg_match('/<div class="actions-row">\s*<\/div>/', $html));

@@ -54,6 +54,8 @@ $harness->run(CompanyAction::class, function (GeneratedServiceClassTestHarness $
         $harness->assertSame('01234567', $result['company_number'] ?? '');
         $harness->assertSame('active', $result['company_status'] ?? '');
         $harness->assertSame('2020-01-31', $result['incorporation_date'] ?? '');
+        $harness->assertSame('supported', ($result['incorporation_eligibility'] ?? [])['status'] ?? '');
+        $harness->assertSame(true, ($result['incorporation_eligibility'] ?? [])['is_supported'] ?? null);
         $harness->assertSame('profile', $result['source'] ?? '');
         $harness->assertSame($profile, $decodeProfilePayload->invoke($instance, (string)($result['profile_payload'] ?? '')));
     });
@@ -74,7 +76,17 @@ $harness->run(CompanyAction::class, function (GeneratedServiceClassTestHarness $
         }
 
         $companyNumber = 'DIR' . strtoupper(substr(hash('sha256', __FILE__ . microtime(true)), 0, 8));
-        $action = new CompanyAction(companyActionDirectorEligibilityServiceWithDirectorCount(2));
+        $profile = [
+            'company_name' => 'Multi Director Fixture Limited',
+            'company_number' => $companyNumber,
+            'company_status' => 'active',
+            'date_of_creation' => '2024-01-01',
+        ];
+        $companiesHouseService = companyActionCompaniesHouseService($profile, 2);
+        $action = new CompanyAction(
+            new \eel_accounts\Service\CompanyDirectorEligibilityService($companiesHouseService),
+            $companiesHouseService
+        );
         $request = new RequestFramework(
             [],
             [
@@ -83,12 +95,7 @@ $harness->run(CompanyAction::class, function (GeneratedServiceClassTestHarness $
                 'company_name' => 'Multi Director Fixture Limited',
                 'selected_company_number' => $companyNumber,
                 'selected_incorporation_date' => '2024-01-01',
-                'selected_company_profile_payload' => json_encode([
-                    'company_name' => 'Multi Director Fixture Limited',
-                    'company_number' => $companyNumber,
-                    'company_status' => 'active',
-                    'date_of_creation' => '2024-01-01',
-                ], JSON_UNESCAPED_SLASHES),
+                'selected_company_profile_payload' => json_encode($profile, JSON_UNESCAPED_SLASHES),
             ],
             ['REQUEST_METHOD' => 'POST', 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest', 'HTTP_ACCEPT' => 'application/json'],
             [],
@@ -101,6 +108,63 @@ $harness->run(CompanyAction::class, function (GeneratedServiceClassTestHarness $
         $harness->assertSame(false, $result->isSuccess());
         $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'exactly 1 active director'));
         $harness->assertSame(0, InterfaceDB::countWhere('companies', ['company_number' => $companyNumber]));
+    });
+
+    $harness->check('CompanyAction', 'add_company trusts the refreshed profile date and rejects unsupported dates before director or database work', function () use ($harness): void {
+        if (!InterfaceDB::tableExists('companies')) {
+            $harness->skip('Companies table is not available on the default InterfaceDB connection.');
+        }
+
+        $cases = [
+            'before_cutoff' => '2011-01-04',
+            'missing' => null,
+            'invalid' => 'not-a-date',
+        ];
+
+        foreach ($cases as $case => $authoritativeDate) {
+            $companyNumber = 'EL' . strtoupper(substr(hash('sha256', $case . __FILE__ . microtime(true)), 0, 8));
+            $profile = [
+                'company_name' => 'Eligibility ' . $case . ' Fixture Limited',
+                'company_number' => $companyNumber,
+                'company_status' => 'active',
+            ];
+            if ($authoritativeDate !== null) {
+                $profile['date_of_creation'] = $authoritativeDate;
+            }
+
+            $calls = (object)['profile' => 0, 'officers' => 0];
+            $companiesHouseService = companyActionCompaniesHouseService($profile, 1, $calls);
+            $action = new CompanyAction(
+                new \eel_accounts\Service\CompanyDirectorEligibilityService($companiesHouseService),
+                $companiesHouseService
+            );
+            $request = new RequestFramework(
+                [],
+                [
+                    'card_action' => 'Company',
+                    'intent' => 'add_company',
+                    'company_name' => 'Tampered Eligible Name Limited',
+                    'selected_company_number' => $companyNumber,
+                    'selected_incorporation_date' => '2024-01-01',
+                    'selected_company_profile_payload' => json_encode([
+                        'company_name' => 'Tampered Eligible Name Limited',
+                        'company_number' => $companyNumber,
+                        'date_of_creation' => '2024-01-01',
+                    ], JSON_UNESCAPED_SLASHES),
+                ],
+                ['REQUEST_METHOD' => 'POST', 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest', 'HTTP_ACCEPT' => 'application/json'],
+                [],
+                [],
+                null
+            );
+
+            $result = $action->handle($request, createTestPageServiceFramework());
+
+            $harness->assertSame(false, $result->isSuccess());
+            $harness->assertSame(1, $calls->profile);
+            $harness->assertSame(0, $calls->officers);
+            $harness->assertSame(0, InterfaceDB::countWhere('companies', ['company_number' => $companyNumber]));
+        }
     });
 
     $harness->check('CompanyAction', 'add_accounting_period requires a selected company', function () use ($harness, $instance): void {
@@ -204,12 +268,31 @@ $harness->run(CompanyAction::class, function (GeneratedServiceClassTestHarness $
     });
 });
 
-function companyActionDirectorEligibilityServiceWithDirectorCount(int $directorCount): \eel_accounts\Service\CompanyDirectorEligibilityService
+function companyActionCompaniesHouseService(
+    array $profile,
+    int $directorCount,
+    ?stdClass $calls = null
+): \eel_accounts\Service\CompaniesHouseService
 {
-    $service = new \eel_accounts\Service\CompaniesHouseService(
+    $calls ??= (object)['profile' => 0, 'officers' => 0];
+
+    return new \eel_accounts\Service\CompaniesHouseService(
         'TEST',
         20,
-        static function (array $request) use ($directorCount): array {
+        static function (array $request) use ($profile, $directorCount, $calls): array {
+            $path = (string)($request['path'] ?? '');
+            if (!str_ends_with($path, '/officers')) {
+                $calls->profile++;
+
+                return [
+                    'status_code' => 200,
+                    'headers' => [],
+                    'body' => json_encode($profile, JSON_UNESCAPED_SLASHES),
+                    'url' => 'https://example.test' . $path,
+                ];
+            }
+
+            $calls->officers++;
             $items = [];
             for ($index = 0; $index < $directorCount; $index++) {
                 $items[] = ['officer_role' => 'director', 'name' => 'Director ' . ($index + 1)];
@@ -224,10 +307,8 @@ function companyActionDirectorEligibilityServiceWithDirectorCount(int $directorC
                     'start_index' => 0,
                     'total_results' => count($items),
                 ], JSON_UNESCAPED_SLASHES),
-                'url' => 'https://example.test' . (string)($request['path'] ?? ''),
+                'url' => 'https://example.test' . $path,
             ];
         }
     );
-
-    return new \eel_accounts\Service\CompanyDirectorEligibilityService($service);
 }

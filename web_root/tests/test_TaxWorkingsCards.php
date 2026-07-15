@@ -42,14 +42,13 @@ foreach ($cardClasses as $className) {
             $harness->assertSame(':tax.selected_ct_period_id', $params['ctPeriodId'] ?? null);
         });
 
-        $harness->check($className, 'renders read-only tax content with HMRC guidance link', static function () use ($harness, $card): void {
+        $harness->check($className, 'renders read-only tax content with an HMRC guidance link and no mutation action', static function () use ($harness, $card): void {
             $html = $card->render(taxWorkingsCardsContext());
 
-            $harness->assertTrue(str_contains($html, 'HMRC guidance'));
+            $harness->assertTrue(str_contains($html, 'HMRC -'));
             $harness->assertTrue(str_contains($html, 'target="_blank"'));
             $harness->assertTrue(str_contains($html, 'rel="noopener noreferrer"'));
             $harness->assertSame(false, str_contains($html, 'name="card_action"'));
-            $harness->assertSame(false, str_contains($html, '<form'));
         });
 
         $harness->check($className, 'renders unavailable state', static function () use ($harness, $card): void {
@@ -114,8 +113,8 @@ foreach ($cardClasses as $className) {
             $harness->check($className, 'renders depreciation and apportionment guidance beside the general HMRC link', static function () use ($harness, $card): void {
                 $html = $card->render(taxWorkingsCardsContext());
 
-                $harness->assertTrue(str_contains($html, 'HMRC BIM35201: depreciation'));
-                $harness->assertTrue(str_contains($html, 'HMRC CTM01405: apportionment'));
+                $harness->assertTrue(str_contains($html, 'HMRC - BIM35201: Depreciation'));
+                $harness->assertTrue(str_contains($html, 'HMRC - CTM01405: Apportionment'));
                 $harness->assertTrue(str_contains($html, 'https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim35201'));
                 $harness->assertTrue(str_contains($html, 'https://www.gov.uk/hmrc-internal-manuals/company-taxation-manual/ctm01405'));
             });

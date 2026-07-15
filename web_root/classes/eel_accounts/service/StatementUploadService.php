@@ -3740,7 +3740,11 @@ final class StatementUploadService
                                                 AND t.auto_rule_id > 0
                                                 AND NOT ({$interAccountNoPostPredicate}))";
 
-        $summaryStmt = \InterfaceDB::prepare("SELECT DATE_FORMAT(t.txn_date, '%Y-%m-01') AS month_key,
+        $transactionMonthExpression = $this->monthKeyExpression('t.txn_date');
+        $importRowMonthExpression = $this->monthKeyExpression('sir.chosen_txn_date');
+        $uploadMonthExpression = $this->monthKeyExpression('su.statement_month');
+
+        $summaryStmt = \InterfaceDB::prepare("SELECT {$transactionMonthExpression} AS month_key,
                                              COUNT(*) AS txn_count,
                                              SUM(
                                                  CASE
@@ -3798,7 +3802,7 @@ final class StatementUploadService
                                       {$splitStatusJoin}
                                       WHERE t.company_id = ?
                                         AND t.txn_date BETWEEN ? AND ?
-                                      GROUP BY DATE_FORMAT(t.txn_date, '%Y-%m-01')
+                                      GROUP BY {$transactionMonthExpression}
                                       ORDER BY month_key");
         $summaryStmt->execute([
             $companyId,
@@ -3810,7 +3814,7 @@ final class StatementUploadService
             $summaries[(string)$row['month_key']] = $row;
         }
 
-        $importRowsStmt = \InterfaceDB::prepare("SELECT DATE_FORMAT(sir.chosen_txn_date, '%Y-%m-01') AS month_key,
+        $importRowsStmt = \InterfaceDB::prepare("SELECT {$importRowMonthExpression} AS month_key,
                                                        COUNT(*) AS raw_row_count,
                                                        SUM(
                                                            CASE
@@ -3826,7 +3830,7 @@ final class StatementUploadService
                                                   AND su.company_id = ?
                                                 WHERE sir.accounting_period_id = ?
                                                   AND sir.chosen_txn_date BETWEEN ? AND ?
-                                                GROUP BY DATE_FORMAT(sir.chosen_txn_date, '%Y-%m-01')
+                                                GROUP BY {$importRowMonthExpression}
                                                 ORDER BY month_key");
         $importRowsStmt->execute([
             $companyId,
@@ -3839,7 +3843,7 @@ final class StatementUploadService
             $importRowSummaries[(string)$row['month_key']] = $row;
         }
 
-        $unstagedUploadsStmt = \InterfaceDB::prepare("SELECT DATE_FORMAT(su.statement_month, '%Y-%m-01') AS month_key,
+        $unstagedUploadsStmt = \InterfaceDB::prepare("SELECT {$uploadMonthExpression} AS month_key,
                                                            SUM(su.rows_parsed) AS raw_row_count
                                                     FROM statement_uploads su
                                                     LEFT JOIN statement_import_rows sir
@@ -3855,7 +3859,7 @@ final class StatementUploadService
                                                           )
                                                       )
                                                       AND su.statement_month BETWEEN ? AND ?
-                                                    GROUP BY DATE_FORMAT(su.statement_month, '%Y-%m-01')
+                                                    GROUP BY {$uploadMonthExpression}
                                                     ORDER BY month_key");
         $unstagedUploadsStmt->execute([
             $companyId,
@@ -4012,14 +4016,18 @@ final class StatementUploadService
 
     private function uniqueUploadedRowsByMonthSql(): string
     {
+        $importRowMonthExpression = $this->monthKeyExpression('sir.chosen_txn_date');
+        $uploadMonthExpression = $this->monthKeyExpression('su.statement_month');
+        $fileKeyExpression = $this->uploadFileKeyExpression('su');
+
         return "SELECT month_key,
                        SUM(raw_row_count) AS raw_row_count
                 FROM (
                     SELECT month_key,
                            COUNT(*) AS raw_row_count
                     FROM (
-                        SELECT DATE_FORMAT(sir.chosen_txn_date, '%Y-%m-01') AS month_key,
-                               COALESCE(NULLIF(su.file_sha256, ''), CONCAT('upload:', su.id)) AS file_key,
+                        SELECT {$importRowMonthExpression} AS month_key,
+                               {$fileKeyExpression} AS file_key,
                                sir.`row_number`
                         FROM statement_import_rows sir
                         INNER JOIN statement_uploads su
@@ -4027,13 +4035,13 @@ final class StatementUploadService
                           AND su.company_id = ?
                         WHERE sir.accounting_period_id = ?
                           AND sir.chosen_txn_date BETWEEN ? AND ?
-                        GROUP BY DATE_FORMAT(sir.chosen_txn_date, '%Y-%m-01'),
-                                 COALESCE(NULLIF(su.file_sha256, ''), CONCAT('upload:', su.id)),
+                        GROUP BY {$importRowMonthExpression},
+                                 {$fileKeyExpression},
                                  sir.`row_number`
                     ) unique_import_rows
                     GROUP BY month_key
                     UNION ALL
-                    SELECT DATE_FORMAT(su.statement_month, '%Y-%m-01') AS month_key,
+                    SELECT {$uploadMonthExpression} AS month_key,
                            MAX(su.rows_parsed) AS raw_row_count
                     FROM statement_uploads su
                     LEFT JOIN statement_import_rows sir
@@ -4049,11 +4057,27 @@ final class StatementUploadService
                           )
                       )
                       AND su.statement_month BETWEEN ? AND ?
-                    GROUP BY DATE_FORMAT(su.statement_month, '%Y-%m-01'),
-                             COALESCE(NULLIF(su.file_sha256, ''), CONCAT('upload:', su.id))
+                    GROUP BY {$uploadMonthExpression},
+                             {$fileKeyExpression}
                 ) monthly_unique_rows
                 GROUP BY month_key
                 ORDER BY month_key";
+    }
+
+    private function monthKeyExpression(string $column): string
+    {
+        return \InterfaceDB::driverName() === 'sqlite'
+            ? "strftime('%Y-%m-01', {$column})"
+            : "DATE_FORMAT({$column}, '%Y-%m-01')";
+    }
+
+    private function uploadFileKeyExpression(string $uploadAlias): string
+    {
+        if (\InterfaceDB::driverName() === 'sqlite') {
+            return "COALESCE(NULLIF({$uploadAlias}.file_sha256, ''), 'upload:' || {$uploadAlias}.id)";
+        }
+
+        return "COALESCE(NULLIF({$uploadAlias}.file_sha256, ''), CONCAT('upload:', {$uploadAlias}.id))";
     }
 
     public function filterUploadHistory(string $filter = 'all'): array

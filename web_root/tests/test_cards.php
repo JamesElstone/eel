@@ -264,11 +264,12 @@ final class TestCardsHarness
             ],
         ]);
 
-        $this->assertTrue(str_contains($html, '$ 0.00'));
+        $this->assertTrue(!str_contains($html, '$ 0.00'));
+        $this->assertTrue(!str_contains($html, 'Difference'));
         $this->assertTrue(str_contains($html, '$ 100.00'));
         $this->assertTrue(str_contains($html, '$ 42.50'));
 
-        test_output_line('Cards: trial_balance_validation renders monetary metrics with company currency.');
+        test_output_line('Cards: trial_balance_validation suppresses zero metrics and renders remaining metrics with company currency.');
     }
 
     private function assertTrialBalanceLossesRendersCtPeriodTotals(): void

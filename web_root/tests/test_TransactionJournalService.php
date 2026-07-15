@@ -182,6 +182,18 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             ]);
             $harness->assertSame(1, count($keywordMatches));
             $harness->assertSame($fixture['materials_journal_id'], (int)$keywordMatches[0]['id']);
+
+            foreach ([
+                '%' => $fixture['software_journal_id'],
+                '_' => $fixture['materials_journal_id'],
+                '!' => $fixture['materials_journal_id'],
+            ] as $literalKeyword => $expectedJournalId) {
+                $literalMatches = $service->fetchJournals($fixture['company_id'], $fixture['accounting_period_id'], 200, [
+                    'keyword' => $literalKeyword,
+                ]);
+                $harness->assertSame(1, count($literalMatches));
+                $harness->assertSame($expectedJournalId, (int)$literalMatches[0]['id']);
+            }
         } finally {
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();
@@ -387,7 +399,7 @@ function transactionJournalSearchTestCreateFixture(): array
             'nominal_account_id' => $softwareNominalId,
             'debit' => '120.00',
             'credit' => '0.00',
-            'line_description' => 'SaaS annual plan',
+            'line_description' => 'SaaS annual plan 100%',
         ],
         [
             'nominal_account_id' => $bankNominalId,
@@ -402,7 +414,7 @@ function transactionJournalSearchTestCreateFixture(): array
             'nominal_account_id' => $materialsNominalId,
             'debit' => '80.00',
             'credit' => '0.00',
-            'line_description' => 'Copper pipe',
+            'line_description' => 'Copper_pipe!',
         ],
         [
             'nominal_account_id' => $bankNominalId,

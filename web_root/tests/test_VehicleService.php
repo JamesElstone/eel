@@ -220,7 +220,8 @@ function vehicleServiceFixture(string $label, callable $callback): void
         $bankNominalId = vehicleServiceNominalId('1000');
         $vehicleNominalId = vehicleServiceNominalId('1320');
         vehicleServiceNominalId('1321');
-        vehicleServiceNominalId('1322');
+        $vanNominalId = vehicleServiceNominalId('1322');
+        $vehicleAccumDepNominalId = vehicleServiceNominalId('1350');
         $payableNominalId = vehicleServiceNominalId('2110');
         vehicleServiceEnsureTaxRateRules();
 
@@ -229,6 +230,10 @@ function vehicleServiceFixture(string $label, callable $callback): void
             'name' => 'Vehicle Fixture ' . $label . ' ' . $marker,
             'number' => 'VH' . substr($marker, 0, 6),
         ]);
+        $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
+        $settings->set('van_asset_cost_nominal_id', $vanNominalId, 'int');
+        $settings->set('van_accum_dep_nominal_id', $vehicleAccumDepNominalId, 'int');
+        $settings->flush();
         \InterfaceDB::prepareExecute('INSERT INTO accounting_periods (id, company_id, label, period_start, period_end) VALUES (:id, :company_id, :label, :start, :end)', [
             'id' => $periodId,
             'company_id' => $companyId,

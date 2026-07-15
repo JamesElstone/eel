@@ -79,7 +79,7 @@ $harness->run(_asset_registerCard::class, static function (GeneratedServiceClass
         $harness->assertTrue(str_contains($html, 'class="asset-disposal-form"'));
         $harness->assertTrue(str_contains($html, 'class="asset-disposal-controls"'));
         $harness->assertTrue(str_contains($html, 'class="table-scroll asset-register-table"'));
-        $harness->assertTrue(str_contains($html, 'AIA eligibility check'));
+        $harness->assertTrue(str_contains($card->helper([]), 'AIA eligibility check'));
         $purchaseDateHeaderPosition = strpos($html, '<th class="asset-register-wrap-heading asset-register-purchase-date-heading">Purchase Date</th>');
         $ageHeaderPosition = strpos($html, '<th class="asset-register-wrap-heading asset-register-age-heading">Age (days)</th>');
         $usefulLifeHeaderPosition = strpos($html, '<th class="asset-register-wrap-heading asset-register-useful-life-heading">Useful Life (years)</th>');

@@ -150,7 +150,7 @@ final class NominalsAction implements ActionInterfaceFramework
             return false;
         }
         return (int)InterfaceDB::fetchColumn(
-            "SELECT COUNT(*) FROM company_settings WHERE setting LIKE '%\\_nominal\\_id' ESCAPE '\\\\' AND TRIM(COALESCE(value, '')) = :nominal_id",
+            "SELECT COUNT(*) FROM company_settings WHERE setting LIKE '%!_nominal!_id' ESCAPE '!' AND TRIM(COALESCE(value, '')) = :nominal_id",
             ['nominal_id' => (string)$nominalId]
         ) > 0;
     }

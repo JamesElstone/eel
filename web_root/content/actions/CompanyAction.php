@@ -11,6 +11,8 @@ final class CompanyAction implements ActionInterfaceFramework
 {
     public function __construct(
         private readonly ?\eel_accounts\Service\CompanyDirectorEligibilityService $directorEligibilityService = null,
+        private readonly ?\eel_accounts\Service\CompaniesHouseService $companiesHouseService = null,
+        private readonly ?\eel_accounts\Service\CompanyIncorporationEligibilityService $incorporationEligibilityService = null,
     ) {
     }
 
@@ -106,13 +108,10 @@ final class CompanyAction implements ActionInterfaceFramework
 
     private function addCompany(RequestFramework $request): ActionResultFramework
     {
-        $companyName = trim((string)$request->input('company_name', ''));
         $companyNumber = trim((string)$request->input('selected_company_number', ''));
-        $incorporationDate = trim((string)$request->input('selected_incorporation_date', ''));
-        $companiesHouseProfile = $this->decodeProfilePayload((string)$request->input('selected_company_profile_payload', ''));
         $environment = $this->companiesHouseEnvironment();
 
-        if ($companyName === '') {
+        if ($companyNumber === '') {
             return new ActionResultFramework(
                 false,
                 ['page.context'],
@@ -124,9 +123,22 @@ final class CompanyAction implements ActionInterfaceFramework
         }
 
         try {
-            if ($companiesHouseProfile === null && $companyNumber !== '') {
-                $profile = (new \eel_accounts\Service\CompaniesHouseService($environment))->fetchProfileByNumber($companyNumber);
-                $companiesHouseProfile = $profile !== [] ? $profile : null;
+            $companiesHouseProfile = $this->companiesHouseService($environment)->fetchProfileByNumber($companyNumber);
+            if ($companiesHouseProfile === []) {
+                throw new RuntimeException('Companies House did not return a company profile for that number.');
+            }
+
+            $companyName = trim((string)($companiesHouseProfile['company_name'] ?? ''));
+            $companyNumber = trim((string)($companiesHouseProfile['company_number'] ?? $companyNumber));
+            $incorporationDate = trim((string)($companiesHouseProfile['date_of_creation'] ?? ''));
+
+            if ($companyName === '' || $companyNumber === '') {
+                throw new RuntimeException('Companies House returned an incomplete company profile.');
+            }
+
+            $incorporationEligibility = $this->incorporationEligibilityService()->evaluate($incorporationDate);
+            if (empty($incorporationEligibility['is_supported'])) {
+                return $this->errorResult([(string)($incorporationEligibility['message'] ?? 'This company is not supported.')]);
             }
 
             $directorEligibility = $this->directorEligibilityService()->assertSingleActiveDirectorByNumber($companyNumber, $environment);
@@ -135,10 +147,6 @@ final class CompanyAction implements ActionInterfaceFramework
             }
 
             $this->ensureSicLookupDataForProfile($companiesHouseProfile);
-
-            if ($incorporationDate === '' && is_array($companiesHouseProfile)) {
-                $incorporationDate = trim((string)($companiesHouseProfile['date_of_creation'] ?? ''));
-            }
 
             $repository = new \eel_accounts\Repository\CompanyRepository();
             $existingCompanyId = $repository->findExistingCompanyId($companyName, $companyNumber !== '' ? $companyNumber : null);
@@ -978,7 +986,7 @@ final class CompanyAction implements ActionInterfaceFramework
     private function searchCompanies(string $searchTerm): array
     {
         $environment = $this->companiesHouseEnvironment();
-        $service = new \eel_accounts\Service\CompaniesHouseService($environment);
+        $service = $this->companiesHouseService($environment);
         $results = [];
         $mode = ctype_digit($searchTerm) ? 'number' : 'term';
 
@@ -1014,11 +1022,14 @@ final class CompanyAction implements ActionInterfaceFramework
 
     private function mapProfileResult(array $profile, string $source): array
     {
+        $incorporationDate = trim((string)($profile['date_of_creation'] ?? ''));
+
         return [
             'company_name' => trim((string)($profile['company_name'] ?? '')),
             'company_number' => trim((string)($profile['company_number'] ?? '')),
             'company_status' => trim((string)($profile['company_status'] ?? '')),
-            'incorporation_date' => trim((string)($profile['date_of_creation'] ?? '')),
+            'incorporation_date' => $incorporationDate,
+            'incorporation_eligibility' => $this->incorporationEligibilityService()->evaluate($incorporationDate),
             'source' => $source,
             'profile_payload' => $this->encodeProfilePayload($profile),
         ];
@@ -1026,11 +1037,14 @@ final class CompanyAction implements ActionInterfaceFramework
 
     private function mapSearchResult(array $item): array
     {
+        $incorporationDate = trim((string)($item['date_of_creation'] ?? ''));
+
         return [
             'company_name' => trim((string)($item['title'] ?? $item['company_name'] ?? '')),
             'company_number' => trim((string)($item['company_number'] ?? '')),
             'company_status' => trim((string)($item['company_status'] ?? '')),
-            'incorporation_date' => trim((string)($item['date_of_creation'] ?? '')),
+            'incorporation_date' => $incorporationDate,
+            'incorporation_eligibility' => $this->incorporationEligibilityService()->evaluate($incorporationDate),
             'source' => 'search',
             'profile_payload' => '',
         ];
@@ -1069,6 +1083,16 @@ final class CompanyAction implements ActionInterfaceFramework
     private function directorEligibilityService(): \eel_accounts\Service\CompanyDirectorEligibilityService
     {
         return $this->directorEligibilityService ?? new \eel_accounts\Service\CompanyDirectorEligibilityService();
+    }
+
+    private function companiesHouseService(string $environment): \eel_accounts\Service\CompaniesHouseService
+    {
+        return $this->companiesHouseService ?? new \eel_accounts\Service\CompaniesHouseService($environment);
+    }
+
+    private function incorporationEligibilityService(): \eel_accounts\Service\CompanyIncorporationEligibilityService
+    {
+        return $this->incorporationEligibilityService ?? new \eel_accounts\Service\CompanyIncorporationEligibilityService();
     }
 
     private function ensureSicLookupDataForProfile(?array $profile): void

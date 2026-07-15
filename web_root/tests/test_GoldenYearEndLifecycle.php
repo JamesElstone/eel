@@ -25,6 +25,9 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
     foreach ($periods as $periodId) {
         $expected = GoldenLedgerSpecification::yearEndAssetExpectations()[$periodId];
         $depreciation = (new \eel_accounts\Service\AssetService())->runDepreciation($companyId, $periodId);
+        if (empty($depreciation['success'])) {
+            throw new RuntimeException('AP ' . $periodId . ' depreciation failed: ' . implode(' ', (array)($depreciation['errors'] ?? [])));
+        }
         $harness->assertTrue(!empty($depreciation['success']));
         $harness->assertSame((int)$expected['depreciation_entries'], (int)($depreciation['created'] ?? 0));
         $postedDepreciation = (float)InterfaceDB::fetchColumn(
@@ -38,6 +41,9 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
 
         $provision = (new \eel_accounts\Service\CorporationTaxProvisionService())
             ->postProvisionsForAccountingPeriod($companyId, $periodId, 'golden_year_end_test');
+        if (empty($provision['success'])) {
+            throw new RuntimeException('AP ' . $periodId . ' CT provision failed: ' . implode(' ', (array)($provision['errors'] ?? [])));
+        }
         $harness->assertTrue(!empty($provision['success']));
 
         $checklist = new \eel_accounts\Service\YearEndChecklistService();
@@ -48,10 +54,16 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
             'golden_year_end_test',
             'Golden lifecycle figures agreed after close-task calculations.'
         );
+        if (empty($acknowledgement['success'])) {
+            throw new RuntimeException('AP ' . $periodId . ' retained-earnings acknowledgement failed: ' . implode(' ', (array)($acknowledgement['errors'] ?? [])));
+        }
         $harness->assertTrue(!empty($acknowledgement['success']));
 
         $retainedEarnings = (new \eel_accounts\Service\RetainedEarningsCloseService())
             ->postClose($companyId, $periodId, 'golden_year_end_test');
+        if (empty($retainedEarnings['success'])) {
+            throw new RuntimeException('AP ' . $periodId . ' retained-earnings close failed: ' . implode(' ', (array)($retainedEarnings['errors'] ?? [])));
+        }
         $harness->assertTrue(!empty($retainedEarnings['success']));
 
         $profitLoss = (new \eel_accounts\Service\ProfitLossService())->getProfitLossSummary($companyId, $periodId);
@@ -61,12 +73,31 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
         $ctTax = 0.0;
         $ctTaxableProfit = 0.0;
         $ctCapitalAllowances = 0.0;
+        $ctAccountingProfit = 0.0;
+        $ctDisallowableAddBacks = 0.0;
+        $ctDepreciationAddBack = 0.0;
+        $ctAllocationBasis = [];
         $ctPeriods = (new \eel_accounts\Service\CorporationTaxPeriodService())->fetchForAccountingPeriod($companyId, $periodId);
         foreach ($ctPeriods as $ctPeriod) {
             $summary = (new \eel_accounts\Service\CorporationTaxComputationService())->fetchSummaryForCtPeriodId($companyId, (int)$ctPeriod['id']);
             $ctTax += (float)($summary['estimated_corporation_tax'] ?? 0);
             $ctTaxableProfit += (float)($summary['taxable_profit'] ?? 0);
             $ctCapitalAllowances += (float)($summary['capital_allowances'] ?? 0);
+            $ctAccountingProfit += (float)($summary['accounting_profit'] ?? 0);
+            $ctDisallowableAddBacks += (float)($summary['disallowable_add_backs'] ?? 0);
+            $ctDepreciationAddBack += (float)($summary['depreciation_add_back'] ?? 0);
+            $ctAllocationBasis[] = (array)($summary['accounting_allocation_basis'] ?? []);
+        }
+        $hmrcFacts = GoldenLedgerSpecification::hmrcTaxFacts()[$periodId];
+        $harness->assertSame(number_format((float)$hmrcFacts['accounting_profit'], 2, '.', ''), number_format($ctAccountingProfit, 2, '.', ''));
+        $harness->assertSame(number_format((float)$hmrcFacts['disallowable_add_backs'], 2, '.', ''), number_format($ctDisallowableAddBacks, 2, '.', ''));
+        $harness->assertSame(number_format((float)$hmrcFacts['depreciation_add_back'], 2, '.', ''), number_format($ctDepreciationAddBack, 2, '.', ''));
+        if ($periodId === 9111) {
+            $harness->assertSame(2, count($ctPeriods));
+            $harness->assertTrue(!empty($ctAllocationBasis[0]['time_apportioned']));
+            $harness->assertSame('whole_accounting_period_inclusive_days', (string)($ctAllocationBasis[0]['method'] ?? ''));
+            $harness->assertSame(391, (int)($ctAllocationBasis[0]['accounting_period_days'] ?? 0));
+            $harness->assertTrue(!empty($ctAllocationBasis[1]['final_period_residual']));
         }
         $harness->assertSame(number_format((float)$expected['capital_allowances'], 2, '.', ''), number_format($ctCapitalAllowances, 2, '.', ''));
         $harness->assertSame(number_format((float)$expected['taxable_profit'], 2, '.', ''), number_format($ctTaxableProfit, 2, '.', ''));
@@ -80,10 +111,16 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
         try {
             $taxPersistence = (new \eel_accounts\Service\CorporationTaxComputationService())
                 ->persistSummariesForYearEndLock($companyId, $periodId);
+            if (empty($taxPersistence['success'])) {
+                throw new RuntimeException('AP ' . $periodId . ' CT persistence failed: ' . implode(' ', (array)($taxPersistence['errors'] ?? [])));
+            }
             $harness->assertTrue(!empty($taxPersistence['success']));
 
             $lock = (new \eel_accounts\Service\YearEndLockService())
                 ->lockPeriod($companyId, $periodId, 'golden_year_end_test');
+            if (empty($lock['success'])) {
+                throw new RuntimeException('AP ' . $periodId . ' lock failed: ' . implode(' ', (array)($lock['errors'] ?? [])));
+            }
             $harness->assertTrue(!empty($lock['success']));
             InterfaceDB::commit();
         } catch (Throwable $exception) {

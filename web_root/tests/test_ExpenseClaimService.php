@@ -1211,7 +1211,11 @@ function expenseClaimServiceWithFixture(callable $callback): void
             );
         }
         $assetCostNominalId = expenseClaimServiceEnsureNominalByCode('1300', 'Tools and Equipment', 'asset');
-        expenseClaimServiceEnsureNominalByCode('1330', 'Accumulated Depreciation - Tools', 'asset');
+        $assetAccumDepNominalId = expenseClaimServiceEnsureNominalByCode('1330', 'Accumulated Depreciation - Tools', 'asset');
+        $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
+        $settings->set('tools_equipment_asset_cost_nominal_id', $assetCostNominalId, 'int');
+        $settings->set('tools_equipment_accum_dep_nominal_id', $assetAccumDepNominalId, 'int');
+        $settings->flush();
 
         \InterfaceDB::prepareExecute(
             'INSERT INTO company_accounts (id, company_id, account_name, account_type, nominal_account_id, is_active)

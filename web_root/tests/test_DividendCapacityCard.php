@@ -19,6 +19,8 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
     $harness->check(_dividend_capacityCard::class, 'renders reliability warning panels with related workflow action', static function () use ($harness, $card): void {
         $html = $card->render([
             'company' => [
+                'id' => 7,
+                'accounting_period_id' => 22,
                 'settings' => [],
             ],
             'dividends' => [
@@ -94,9 +96,9 @@ $harness->run(_dividend_capacityCard::class, static function (GeneratedServiceCl
         ]);
 
         $harness->assertTrue(str_contains($html, 'Estimated Corporation Tax'));
-        $harness->assertTrue(str_contains($html, '&#163; 1,900.00 + &#163; 575.00 = &#163; 2,475.00'));
+        $harness->assertTrue(str_contains($html, '£ 1,900.00 + £ 575.00 = £ 2,475.00'));
         $harness->assertTrue(str_contains($html, 'Unposted Corporation Tax deducted'));
-        $harness->assertTrue(str_contains($html, 'Estimated Corporation Tax &#163; 2,475.00 - posted Corporation Tax &#163; 475.00 = &#163; 2,000.00'));
+        $harness->assertTrue(str_contains($html, 'Estimated Corporation Tax £ 2,475.00 - posted Corporation Tax £ 475.00 = £ 2,000.00'));
     });
 
     $harness->check(_dividend_capacityCard::class, 'renders warning metric values separately from warning severity', static function () use ($harness, $card): void {
@@ -143,7 +145,7 @@ function dividend_card_assert_context_service(GeneratedServiceClassTestHarness $
 
     $harness->assertSame('dividendContext', $service['key'] ?? null);
     $harness->assertSame(\eel_accounts\Service\DividendViewDataService::class, $service['service'] ?? null);
-    $harness->assertSame('fetchContext', $service['method'] ?? null);
+    $harness->assertSame('fetchCapacityContext', $service['method'] ?? null);
     $harness->assertSame(':company.id', $params['companyId'] ?? null);
     $harness->assertSame(':company.accounting_period_id', $params['accountingPeriodId'] ?? null);
 }

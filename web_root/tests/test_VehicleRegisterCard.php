@@ -103,8 +103,10 @@ $harness->run(_vehicle_registerCard::class, static function (GeneratedServiceCla
         $harness->assertTrue($tables[0] instanceof TableFramework);
 
         $csv = $tables[0]->exportCsv();
+        $csvLines = preg_split('/\r\n|\r|\n/', trim($csv));
+        $header = str_getcsv((string)($csvLines[0] ?? ''), ',', '"', '\\');
 
-        $harness->assertTrue(str_contains($csv, 'Asset,Vehicle facts,Tax facts,Status'));
+        $harness->assertSame(['Asset', 'Vehicle facts', 'Tax facts', 'Status'], $header);
         $harness->assertTrue(str_contains($csv, 'FA-33-6'));
         $harness->assertTrue(str_contains($csv, 'Type: Van'));
         $harness->assertSame(false, str_contains($csv, ',Action'));

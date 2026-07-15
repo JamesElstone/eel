@@ -43,7 +43,24 @@ $harness->run(_companies_nominalsCard::class, static function (GeneratedServiceC
     $harness->check(_companies_nominalsCard::class, 'renders default trade nominal field', static function () use ($harness, $html): void {
         $harness->assertTrue(str_contains($html, 'default_trade_nominal_id'));
         $harness->assertTrue(str_contains($html, '<label for="default_trade_nominal_id">Default Trade nominal</label>'));
-        $harness->assertTrue(str_contains($html, 'data-state-fields="default_bank_nominal_id,default_trade_nominal_id,default_expense_nominal_id,tools_small_equipment_nominal_id,prepayment_asset_nominal_id,director_loan_asset_nominal_id,director_loan_liability_nominal_id,vat_nominal_id,uncategorised_nominal_id,corporation_tax_expense_nominal_id,corporation_tax_liability_nominal_id"'));
+        preg_match('/data-state-fields="([^"]+)"/', $html, $stateFieldMatch);
+        $stateFields = explode(',', (string)($stateFieldMatch[1] ?? ''));
+        foreach ([
+            'default_bank_nominal_id',
+            'default_trade_nominal_id',
+            'default_expense_nominal_id',
+            'tools_small_equipment_nominal_id',
+            'prepayment_asset_nominal_id',
+            'director_loan_asset_nominal_id',
+            'director_loan_liability_nominal_id',
+            'vat_nominal_id',
+            'uncategorised_nominal_id',
+            'corporation_tax_expense_nominal_id',
+            'corporation_tax_liability_nominal_id',
+            ...(new \eel_accounts\Service\CompanySettingsService())->helperNominalSettingKeys(),
+        ] as $stateField) {
+            $harness->assertTrue(in_array($stateField, $stateFields, true));
+        }
         $harness->assertTrue(str_contains($html, '<option value="15" selected>2300 Trade Creditors</option>'));
     });
 

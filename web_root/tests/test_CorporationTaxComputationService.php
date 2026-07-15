@@ -39,5 +39,25 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame('review_required', (string)($result['confidence_status'] ?? ''));
             $harness->assertSame('Review required', (string)($result['confidence_label'] ?? ''));
         });
+
+        $harness->check(\eel_accounts\Service\CorporationTaxComputationService::class, 'time apportions pennies by inclusive CT-period days and puts the rounding residual in the final period', static function () use ($harness, $service): void {
+            $allocate = new ReflectionMethod($service, 'allocatePenceByInclusiveDays');
+            $allocate->setAccessible(true);
+            $result = $allocate->invoke($service, 57000, [1 => 365, 2 => 26], 391);
+
+            $harness->assertSame([1 => 53210, 2 => 3790], $result);
+            $harness->assertSame(57000, array_sum($result));
+
+            $negative = $allocate->invoke($service, -101, [1 => 200, 2 => 191], 391);
+            $harness->assertSame(-101, array_sum($negative));
+        });
+
+        $harness->check(\eel_accounts\Service\CorporationTaxComputationService::class, 'counts leap-day boundaries inclusively for CT allocation', static function () use ($harness, $service): void {
+            $inclusiveDays = new ReflectionMethod($service, 'inclusiveDays');
+            $inclusiveDays->setAccessible(true);
+
+            $harness->assertSame(366, $inclusiveDays->invoke($service, '2023-03-01', '2024-02-29'));
+            $harness->assertSame(1, $inclusiveDays->invoke($service, '2024-02-29', '2024-02-29'));
+        });
     }
 );

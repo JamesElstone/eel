@@ -39,6 +39,58 @@ $harness->run(\eel_accounts\Repository\CompanyRepository::class, function (Gener
         $harness->assertSame('LIVE', $result['companies_house_environment'] ?? null);
     });
 
+    $harness->check(\eel_accounts\Repository\CompanyRepository::class, 'creates a company incorporated on the first supported date', function () use ($harness): void {
+        if (!InterfaceDB::tableExists('companies')) {
+            $harness->skip('Companies table is not available on the default InterfaceDB connection.');
+        }
+
+        $repository = new \eel_accounts\Repository\CompanyRepository();
+        $suffix = strtoupper(substr(hash('sha256', __FILE__ . microtime(true)), 0, 8));
+        $companyName = 'Cutoff Boundary ' . $suffix . ' Limited';
+        $companyNumber = 'CB' . $suffix;
+
+        try {
+            $companyId = $repository->createCompany($companyName, $companyNumber, '2011-01-05');
+
+            $harness->assertTrue($companyId > 0);
+            $harness->assertSame(
+                '2011-01-05',
+                (string)InterfaceDB::fetchColumn('SELECT incorporation_date FROM companies WHERE id = :id', ['id' => $companyId])
+            );
+        } finally {
+            InterfaceDB::prepareExecute('DELETE FROM companies WHERE company_number = :number', ['number' => $companyNumber]);
+        }
+    });
+
+    $harness->check(\eel_accounts\Repository\CompanyRepository::class, 'rejects unsupported incorporation dates before inserting a company', function () use ($harness): void {
+        if (!InterfaceDB::tableExists('companies')) {
+            $harness->skip('Companies table is not available on the default InterfaceDB connection.');
+        }
+
+        $repository = new \eel_accounts\Repository\CompanyRepository();
+        $cases = [
+            'before' => '2011-01-04',
+            'missing' => null,
+            'invalid' => 'not-a-date',
+        ];
+
+        foreach ($cases as $case => $incorporationDate) {
+            $suffix = strtoupper(substr(hash('sha256', $case . __FILE__ . microtime(true)), 0, 8));
+            $companyName = 'Rejected ' . $case . ' ' . $suffix . ' Limited';
+            $companyNumber = 'RJ' . $suffix;
+            $exception = null;
+
+            try {
+                $repository->createCompany($companyName, $companyNumber, $incorporationDate);
+            } catch (RuntimeException $caught) {
+                $exception = $caught;
+            }
+
+            $harness->assertTrue($exception instanceof RuntimeException);
+            $harness->assertSame(0, InterfaceDB::countWhere('companies', ['company_number' => $companyNumber]));
+        }
+    });
+
     $harness->check(\eel_accounts\Repository\CompanyRepository::class, 'deletes unreferenced auto-created company account nominals', function () use ($harness): void {
         $repository = new \eel_accounts\Repository\CompanyRepository();
         $fixture = companyRepositoryNominalDeleteFixture('Delete Auto Nominal Fixture Limited');

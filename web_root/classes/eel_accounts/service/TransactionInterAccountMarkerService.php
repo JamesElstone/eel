@@ -154,6 +154,12 @@ final class TransactionInterAccountMarkerService
         }
 
         $limit = max(1, min($limit, 100));
+        $dateDistanceExpression = \InterfaceDB::driverName() === 'sqlite'
+            ? 'ABS(julianday(candidate.txn_date) - julianday(:distance_txn_date))'
+            : 'ABS(DATEDIFF(candidate.txn_date, :distance_txn_date))';
+        $dateWindowPredicate = \InterfaceDB::driverName() === 'sqlite'
+            ? "candidate.txn_date BETWEEN date(:window_txn_date_start, '-4 days') AND date(:window_txn_date_end, '+4 days')"
+            : 'candidate.txn_date BETWEEN DATE_SUB(:window_txn_date_start, INTERVAL 4 DAY) AND DATE_ADD(:window_txn_date_end, INTERVAL 4 DAY)';
         $stmt = \InterfaceDB::prepare(
             "SELECT candidate.id,
                     candidate.account_id,
@@ -161,15 +167,15 @@ final class TransactionInterAccountMarkerService
                     candidate.description,
                     candidate.amount,
                     COALESCE(ca.account_name, '') AS account_name,
-                    ABS(DATEDIFF(candidate.txn_date, :distance_txn_date)) AS date_distance
+                    {$dateDistanceExpression} AS date_distance
              FROM transactions candidate
              INNER JOIN company_accounts ca ON ca.id = candidate.account_id
              WHERE candidate.company_id = :company_id
                AND candidate.accounting_period_id = :accounting_period_id
                AND candidate.id <> :transaction_id
                AND candidate.account_id <> :account_id
-               AND ABS(ROUND(candidate.amount, 2)) = :amount
-               AND candidate.txn_date BETWEEN DATE_SUB(:window_txn_date_start, INTERVAL 4 DAY) AND DATE_ADD(:window_txn_date_end, INTERVAL 4 DAY)
+               AND CAST(ABS(ROUND(candidate.amount, 2)) AS DECIMAL(18, 2)) = CAST(:amount AS DECIMAL(18, 2))
+               AND {$dateWindowPredicate}
                AND NOT EXISTS (
                    SELECT 1
                    FROM transaction_inter_ac_marker existing_marker

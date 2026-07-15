@@ -17,6 +17,7 @@ final class CorporationTaxComputationService
     private array $assetAdjustmentsCache = [];
     private array $associatedCompanyCountCache = [];
     private array $capitalAllowanceBreakdownCache = [];
+    private array $ctPeriodAccountingAllocationCache = [];
     private array $ctPeriodCache = [];
     private array $ctPeriodLossScheduleCompleteCache = [];
     private array $ctPeriodLossScheduleCache = [];
@@ -37,6 +38,7 @@ final class CorporationTaxComputationService
         $this->assetAdjustmentsCache = [];
         $this->associatedCompanyCountCache = [];
         $this->capitalAllowanceBreakdownCache = [];
+        $this->ctPeriodAccountingAllocationCache = [];
         $this->ctPeriodCache = [];
         $this->ctPeriodLossScheduleCompleteCache = [];
         $this->ctPeriodLossScheduleCache = [];
@@ -186,12 +188,8 @@ final class CorporationTaxComputationService
         }
 
         $accountingPeriodId = (int)$ctPeriod['accounting_period_id'];
-        $pnl = $this->profitAndLossSummary(
-            $companyId,
-            $accountingPeriodId,
-            (string)$ctPeriod['period_start'],
-            (string)$ctPeriod['period_end']
-        );
+        $accountingAllocation = $this->ctPeriodAccountingAllocation($companyId, $accountingPeriodId, $ctPeriod);
+        $pnl = (array)$accountingAllocation['pnl'];
         $assetAdjustments = $this->fetchAssetAdjustmentsForCtPeriod($companyId, $accountingPeriodId, $ctPeriod);
         $taxableBeforeLosses = round(
             (float)($pnl['profit_before_tax'] ?? 0)
@@ -227,6 +225,7 @@ final class CorporationTaxComputationService
             'loss_used' => $lossUsed,
             'associated_company_count' => $associatedCompanyCount,
             'rate_liability' => (float)$rateCalculation['liability'],
+            'accounting_allocation_basis' => (array)($accountingAllocation['basis'] ?? []),
         ], JSON_UNESCAPED_SLASHES));
 
         $row = [
@@ -264,6 +263,7 @@ final class CorporationTaxComputationService
         $summary['period_start'] = (string)$ctPeriod['period_start'];
         $summary['period_end'] = (string)$ctPeriod['period_end'];
         $summary['capital_allowance_breakdown'] = (array)($assetAdjustments['capital_allowance_breakdown'] ?? []);
+        $summary['accounting_allocation_basis'] = (array)($accountingAllocation['basis'] ?? []);
         $summary['computation_hash'] = $computationHash;
 
         return $summary;
@@ -678,16 +678,175 @@ final class CorporationTaxComputationService
             return $this->assetAdjustmentsCache[$cacheKey];
         }
 
-        $periodStart = (string)($ctPeriod['period_start'] ?? '');
-        $periodEnd = (string)($ctPeriod['period_end'] ?? '');
+        $accountingAllocation = $this->ctPeriodAccountingAllocation($companyId, $accountingPeriodId, $ctPeriod);
         $breakdown = $this->capitalAllowanceBreakdown($companyId, $accountingPeriodId, $ctPeriodId);
 
         return $this->assetAdjustmentsCache[$cacheKey] = [
-            'depreciation_add_back' => $this->depreciationAddBack($companyId, $accountingPeriodId, $periodStart, $periodEnd),
+            'depreciation_add_back' => round((float)($accountingAllocation['depreciation_add_back'] ?? 0), 2),
             'capital_allowances' => $this->capitalAllowanceAmountFromBreakdown($breakdown),
             'warning' => implode(' ', (array)($breakdown['warnings'] ?? [])),
             'capital_allowance_breakdown' => $breakdown,
         ];
+    }
+
+    /**
+     * A company accounting period longer than 12 months is represented by two
+     * Corporation Tax periods. Accounting profit and ordinary P&L add-backs
+     * belong to the period of account, so allocate the whole-period values by
+     * inclusive days instead of assigning an AP-end journal wholly to the
+     * short, final CT period. Capital allowances, losses and rates remain on
+     * their existing CT-period-specific paths.
+     *
+     * @param array<string, mixed> $ctPeriod
+     * @return array{pnl: array<string, mixed>, depreciation_add_back: float, basis: array<string, mixed>}
+     */
+    private function ctPeriodAccountingAllocation(int $companyId, int $accountingPeriodId, array $ctPeriod): array
+    {
+        $ctPeriodId = (int)($ctPeriod['id'] ?? 0);
+        $cacheKey = $companyId . ':' . $accountingPeriodId . ':' . $ctPeriodId;
+        if (isset($this->ctPeriodAccountingAllocationCache[$cacheKey])) {
+            return $this->ctPeriodAccountingAllocationCache[$cacheKey];
+        }
+
+        $periodStart = (string)($ctPeriod['period_start'] ?? '');
+        $periodEnd = (string)($ctPeriod['period_end'] ?? '');
+        $active = $this->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId);
+        $ctPeriods = array_values((array)($active['periods'] ?? []));
+
+        if (count($ctPeriods) <= 1) {
+            $pnl = $this->profitAndLossSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+            $days = $this->inclusiveDays($periodStart, $periodEnd);
+
+            return $this->ctPeriodAccountingAllocationCache[$cacheKey] = [
+                'pnl' => $pnl,
+                'depreciation_add_back' => round($this->depreciationAddBack($companyId, $accountingPeriodId, $periodStart, $periodEnd), 2),
+                'basis' => [
+                    'method' => 'journal_date_within_single_ct_period',
+                    'time_apportioned' => false,
+                    'ct_period_days' => $days,
+                    'accounting_period_days' => $days,
+                    'rounding' => 'pennies_half_up',
+                ],
+            ];
+        }
+
+        $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
+        $accountingPeriod = $metrics->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null) {
+            throw new \RuntimeException('The accounting period could not be found for CT time apportionment.');
+        }
+
+        $accountingStart = (string)($accountingPeriod['period_start'] ?? '');
+        $accountingEnd = (string)($accountingPeriod['period_end'] ?? '');
+        $accountingDays = $this->inclusiveDays($accountingStart, $accountingEnd);
+        $fullPnl = $this->profitAndLossSummary($companyId, $accountingPeriodId, $accountingStart, $accountingEnd);
+        $fullAssetAdjustments = $this->fetchAssetAdjustments($companyId, $accountingPeriodId);
+
+        $periodDays = [];
+        $selectedIndex = null;
+        foreach ($ctPeriods as $index => $period) {
+            $id = (int)($period['id'] ?? 0);
+            if ($id <= 0) {
+                throw new \RuntimeException('A valid CT period is required for CT time apportionment.');
+            }
+            $periodDays[$id] = $this->inclusiveDays(
+                (string)($period['period_start'] ?? ''),
+                (string)($period['period_end'] ?? '')
+            );
+            if ($id === $ctPeriodId) {
+                $selectedIndex = $index;
+            }
+        }
+        if ($selectedIndex === null) {
+            throw new \RuntimeException('The selected CT period is not part of the accounting period allocation.');
+        }
+
+        $profitPence = (int)round((float)($fullPnl['profit_before_tax'] ?? 0) * 100, 0, PHP_ROUND_HALF_UP);
+        $disallowablePence = (int)round((float)($fullPnl['disallowable_add_backs'] ?? 0) * 100, 0, PHP_ROUND_HALF_UP);
+        $depreciationPence = (int)round((float)($fullAssetAdjustments['depreciation_add_back'] ?? 0) * 100, 0, PHP_ROUND_HALF_UP);
+
+        $profitAllocations = $this->allocatePenceByInclusiveDays($profitPence, $periodDays, $accountingDays);
+        $disallowableAllocations = $this->allocatePenceByInclusiveDays($disallowablePence, $periodDays, $accountingDays);
+        $depreciationAllocations = $this->allocatePenceByInclusiveDays($depreciationPence, $periodDays, $accountingDays);
+        $selectedDays = (int)($periodDays[$ctPeriodId] ?? 0);
+        $pnl = $fullPnl;
+        $pnl['profit_before_tax'] = round((int)$profitAllocations[$ctPeriodId] / 100, 2);
+        $pnl['disallowable_add_backs'] = round((int)$disallowableAllocations[$ctPeriodId] / 100, 2);
+
+        return $this->ctPeriodAccountingAllocationCache[$cacheKey] = [
+            'pnl' => $pnl,
+            'depreciation_add_back' => round((int)$depreciationAllocations[$ctPeriodId] / 100, 2),
+            'basis' => [
+                'method' => 'whole_accounting_period_inclusive_days',
+                'time_apportioned' => true,
+                'guidance' => 'HMRC CTM01405',
+                'accounting_period_start' => $accountingStart,
+                'accounting_period_end' => $accountingEnd,
+                'accounting_period_days' => $accountingDays,
+                'ct_period_start' => $periodStart,
+                'ct_period_end' => $periodEnd,
+                'ct_period_days' => $selectedDays,
+                'ct_period_sequence_no' => (int)($ctPeriod['sequence_no'] ?? ($selectedIndex + 1)),
+                'ct_period_count' => count($ctPeriods),
+                'coverage_days' => array_sum($periodDays),
+                'coverage_complete' => array_sum($periodDays) === $accountingDays,
+                'rounding' => 'pennies_half_up_final_ct_period_residual',
+                'final_period_residual' => $selectedIndex === count($ctPeriods) - 1,
+                'whole_period_values' => [
+                    'accounting_profit' => round($profitPence / 100, 2),
+                    'disallowable_add_backs' => round($disallowablePence / 100, 2),
+                    'depreciation_add_back' => round($depreciationPence / 100, 2),
+                ],
+                'allocated_values' => [
+                    'accounting_profit' => round((int)$profitAllocations[$ctPeriodId] / 100, 2),
+                    'disallowable_add_backs' => round((int)$disallowableAllocations[$ctPeriodId] / 100, 2),
+                    'depreciation_add_back' => round((int)$depreciationAllocations[$ctPeriodId] / 100, 2),
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * @param array<int, int> $periodDays
+     * @return array<int, int>
+     */
+    private function allocatePenceByInclusiveDays(int $totalPence, array $periodDays, int $totalDays): array
+    {
+        if ($totalDays <= 0 || $periodDays === []) {
+            throw new \RuntimeException('Inclusive days are required for CT time apportionment.');
+        }
+
+        $allocations = [];
+        $allocated = 0;
+        $periodIds = array_keys($periodDays);
+        $lastPeriodId = (int)end($periodIds);
+        foreach ($periodDays as $periodId => $days) {
+            if ((int)$days <= 0) {
+                throw new \RuntimeException('Each CT period must contain at least one inclusive day.');
+            }
+
+            $amount = (int)$periodId === $lastPeriodId
+                ? $totalPence - $allocated
+                : (int)round($totalPence * ((int)$days / $totalDays), 0, PHP_ROUND_HALF_UP);
+            $allocations[(int)$periodId] = $amount;
+            $allocated += $amount;
+        }
+
+        return $allocations;
+    }
+
+    private function inclusiveDays(string $start, string $end): int
+    {
+        if ($start === '' || $end === '') {
+            throw new \RuntimeException('Valid dates are required for inclusive-day apportionment.');
+        }
+        $startDate = new \DateTimeImmutable($start);
+        $endDate = new \DateTimeImmutable($end);
+        if ($endDate < $startDate) {
+            throw new \RuntimeException('The period end must not be before its start.');
+        }
+
+        return (int)$startDate->diff($endDate)->days + 1;
     }
 
     private function depreciationAddBack(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): float
@@ -955,12 +1114,8 @@ final class CorporationTaxComputationService
                 }
 
                 $lossBroughtForward = round(array_sum(array_column($lossPool, 'amount_remaining')), 2);
-                $pnl = $this->profitAndLossSummary(
-                    $companyId,
-                    $accountingPeriodId,
-                    (string)$ctPeriod['period_start'],
-                    (string)$ctPeriod['period_end']
-                );
+                $accountingAllocation = $this->ctPeriodAccountingAllocation($companyId, $accountingPeriodId, $ctPeriod);
+                $pnl = (array)$accountingAllocation['pnl'];
                 $assetAdjustments = $this->fetchAssetAdjustmentsForCtPeriod($companyId, $accountingPeriodId, $ctPeriod);
                 $taxableBeforeLosses = round(
                     (float)($pnl['profit_before_tax'] ?? 0)

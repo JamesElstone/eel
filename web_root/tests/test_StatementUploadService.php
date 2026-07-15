@@ -106,7 +106,10 @@ $harness->run(\eel_accounts\Service\StatementUploadService::class, function (Gen
 
         $sql = $method->invoke($service);
 
-        $harness->assertTrue(str_contains($sql, "COALESCE(NULLIF(su.file_sha256, ''), CONCAT('upload:', su.id))"));
+        $expectedFileKey = InterfaceDB::driverName() === 'sqlite'
+            ? "COALESCE(NULLIF(su.file_sha256, ''), 'upload:' || su.id)"
+            : "COALESCE(NULLIF(su.file_sha256, ''), CONCAT('upload:', su.id))";
+        $harness->assertTrue(str_contains($sql, $expectedFileKey));
         $harness->assertTrue(str_contains($sql, "sir.`row_number`"));
         $harness->assertTrue(str_contains($sql, 'unique_import_rows'));
         $harness->assertTrue(str_contains($sql, 'MAX(su.rows_parsed) AS raw_row_count'));

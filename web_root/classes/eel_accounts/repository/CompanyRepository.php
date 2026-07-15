@@ -303,6 +303,12 @@ final class CompanyRepository
             return $existingCompanyId;
         }
 
+        $incorporationEligibility = (new \eel_accounts\Service\CompanyIncorporationEligibilityService())
+            ->evaluate($incorporationDate);
+        if (empty($incorporationEligibility['is_supported'])) {
+            throw new \RuntimeException((string)($incorporationEligibility['message'] ?? 'This company is not supported.'));
+        }
+
         \InterfaceDB::beginTransaction();
 
         try {

@@ -276,8 +276,8 @@ final class TransactionJournalService
         ];
 
         if ($filters['keyword'] !== '') {
-            $where[] = "(j.description LIKE :keyword ESCAPE '\\\\'
-                OR COALESCE(j.source_ref, '') LIKE :keyword ESCAPE '\\\\'
+            $where[] = "(j.description LIKE :keyword ESCAPE '!'
+                OR COALESCE(j.source_ref, '') LIKE :keyword ESCAPE '!'
                 OR EXISTS (
                     SELECT 1
                     FROM journal_lines keyword_jl
@@ -285,10 +285,10 @@ final class TransactionJournalService
                     LEFT JOIN company_accounts keyword_ca ON keyword_ca.id = keyword_jl.company_account_id
                     WHERE keyword_jl.journal_id = j.id
                       AND (
-                          COALESCE(keyword_jl.line_description, '') LIKE :keyword ESCAPE '\\\\'
-                          OR COALESCE(keyword_na.code, '') LIKE :keyword ESCAPE '\\\\'
-                          OR COALESCE(keyword_na.name, '') LIKE :keyword ESCAPE '\\\\'
-                          OR COALESCE(keyword_ca.account_name, '') LIKE :keyword ESCAPE '\\\\'
+                          COALESCE(keyword_jl.line_description, '') LIKE :keyword ESCAPE '!'
+                          OR COALESCE(keyword_na.code, '') LIKE :keyword ESCAPE '!'
+                          OR COALESCE(keyword_na.name, '') LIKE :keyword ESCAPE '!'
+                          OR COALESCE(keyword_ca.account_name, '') LIKE :keyword ESCAPE '!'
                       )
                 ))";
             $params['keyword'] = '%' . $this->escapeLike((string)$filters['keyword']) . '%';
@@ -441,8 +441,8 @@ final class TransactionJournalService
     private function escapeLike(string $value): string
     {
         return str_replace(
-            ['\\', '%', '_'],
-            ['\\\\', '\\%', '\\_'],
+            ['!', '%', '_'],
+            ['!!', '!%', '!_'],
             $value
         );
     }

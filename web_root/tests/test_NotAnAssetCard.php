@@ -173,14 +173,14 @@ $harness->run(_not_an_assetCard::class, static function (GeneratedServiceClassTe
         $harness->assertSame(2, substr_count($html, '>Open Related Workflow</button>'));
         $harness->assertSame(2, substr_count($html, '>Convert to Asset</button>'));
         $harness->assertSame(2, substr_count($html, 'name="intent" value="convert_non_asset_to_asset"'));
-        $harness->assertTrue(str_contains($html, 'name="page" value="transactions"'));
+        $harness->assertTrue(str_contains($html, 'action="?page=transactions"'));
         $harness->assertTrue(str_contains($html, 'name="show_card" value="transactions_imported"'));
         $harness->assertTrue(str_contains($html, 'name="month_key" value="2026-07-01"'));
         $harness->assertTrue(str_contains($html, 'name="category_filter" value="all"'));
         $harness->assertTrue(str_contains($html, 'name="source_type" value="transaction"'));
         $harness->assertTrue(str_contains($html, 'name="source_id" value="51"'));
         $harness->assertTrue(str_contains($html, 'This will recategorise the transaction and rebuild its journal'));
-        $harness->assertTrue(str_contains($html, 'name="page" value="expense_claims"'));
+        $harness->assertTrue(str_contains($html, 'action="?page=expense_claims"'));
         $harness->assertTrue(str_contains($html, 'name="show_card" value="expense_claim_editor"'));
         $harness->assertTrue(str_contains($html, 'name="claim_id" value="71"'));
         $harness->assertTrue(str_contains($html, 'name="source_type" value="expense_claim"'));

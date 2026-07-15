@@ -681,7 +681,8 @@ function dividend_service_manual_fixture(\eel_accounts\Service\DividendService $
     );
 
     dividend_service_ensure_ct_rate_rules();
-    $service->ensureDividendNominals($companyId);
+    $nominalResult = $service->ensureDividendNominals($companyId);
+    dividend_service_configure_payable_nominal($companyId, $nominalResult);
     dividend_service_add_profit_journal($companyId, $accountingPeriodId, $marker, $profit, $profitDate);
     dividend_service_save_reserve_review($companyId, $accountingPeriodId, [], dividend_service_default_review_date($periodStart, $periodEnd));
 
@@ -727,6 +728,7 @@ function dividend_service_transaction_fixture(\eel_accounts\Service\DividendServ
 
     dividend_service_ensure_ct_rate_rules();
     $nominalResult = $service->ensureDividendNominals($companyId);
+    dividend_service_configure_payable_nominal($companyId, $nominalResult);
     $nominals = (array)($nominalResult['accounts'] ?? []);
     $dividendsPayableId = (int)($nominals['dividends_payable']['id'] ?? 0);
     $dividendsPaidId = (int)($nominals['dividends_paid']['id'] ?? 0);
@@ -886,7 +888,8 @@ function dividend_service_two_period_fixture(\eel_accounts\Service\DividendServi
         ]
     );
 
-    $service->ensureDividendNominals($companyId);
+    $nominalResult = $service->ensureDividendNominals($companyId);
+    dividend_service_configure_payable_nominal($companyId, $nominalResult);
     dividend_service_ensure_ct_rate_rules();
     dividend_service_add_profit_journal($companyId, $priorPeriodId, $marker . 'P', 100.00, '2021-11-01');
     dividend_service_add_profit_journal($companyId, $currentPeriodId, $marker . 'C', 100.00, '2022-11-01');
@@ -915,6 +918,18 @@ function dividend_service_lock_prior_close(array $fixture): void
     if ((int)($fixture['current_period_id'] ?? 0) > 0) {
         dividend_service_save_reserve_review((int)$fixture['company_id'], (int)$fixture['current_period_id'], [], '2022-11-30');
     }
+}
+
+function dividend_service_configure_payable_nominal(int $companyId, array $nominalResult): void
+{
+    $payableNominalId = (int)(($nominalResult['accounts'] ?? [])['dividends_payable']['id'] ?? 0);
+    if ($payableNominalId <= 0) {
+        throw new RuntimeException('Unable to configure the dividend payable nominal for the fixture.');
+    }
+
+    $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
+    $settings->set('dividends_payable_nominal_id', $payableNominalId, 'int');
+    $settings->flush();
 }
 
 function dividend_service_save_reserve_review(int $companyId, int $accountingPeriodId, array $treatments = [], ?string $asAtDate = '2022-11-30'): void

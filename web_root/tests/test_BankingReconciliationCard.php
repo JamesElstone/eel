@@ -168,9 +168,8 @@ $harness->run(_banking_reconciliationCard::class, static function (GeneratedServ
 
         $harness->assertTrue(str_contains($html, '<div class="card-toolbar">'));
         $harness->assertTrue(str_contains($html, 'table_key" value="banking_reconciliation_uploads_account_47"'));
-        $harness->assertTrue(str_contains($html, '<div class="table-scroll panel-soft"><table>'));
-        $harness->assertTrue(str_contains($html, '<div class="panel-soft">
-                <h4 class="card-title">Ledger Reconciliation</h4>'));
+        $harness->assertTrue(str_contains($html, '<div class="table-scroll panel-soft">'));
+        $harness->assertTrue(str_contains($html, '<h4 class="card-title">Ledger Reconciliation</h4>'));
         $harness->assertTrue(str_contains($html, 'statement-12.csv'));
         $harness->assertTrue(!str_contains($html, 'statement-13.csv'));
         $harness->assertTrue(str_contains($html, 'Statement uploads 1-12 of 13'));

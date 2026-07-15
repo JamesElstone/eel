@@ -131,6 +131,8 @@ $harness->run(HealthAction::class, function (GeneratedServiceClassTestHarness $h
             ['id' => 31],
             ['id' => 40],
             ['id' => 50],
+            ['id' => 60],
+            ['id' => 61],
         ];
 
         $none = $buildDefaultNominalStatus->invoke($service, [], $nominalAccounts);
@@ -151,8 +153,11 @@ $harness->run(HealthAction::class, function (GeneratedServiceClassTestHarness $h
             'director_loan_liability_nominal_id' => 31,
             'vat_nominal_id' => 40,
             'uncategorised_nominal_id' => 50,
+            'corporation_tax_expense_nominal_id' => 60,
+            'corporation_tax_liability_nominal_id' => 61,
         ], $nominalAccounts);
         $harness->assertSame('ok', $complete['state'] ?? null);
+        $harness->assertSame('All default nominals have been created and assigned.', $complete['detail'] ?? null);
     });
 
     $harness->check('HealthAction', 'settings setup health card renders action button and health rows', function () use (

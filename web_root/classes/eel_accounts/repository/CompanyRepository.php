@@ -92,6 +92,9 @@ final class CompanyRepository
             'vat_validation_country_code',
             'vat_last_error',
         ];
+        if (\InterfaceDB::columnExists('companies', 'vat_validation_mode')) {
+            $select[] = 'vat_validation_mode';
+        }
 
         $row = \InterfaceDB::fetchOne(
             'SELECT ' . implode(', ', $select) . ' FROM companies WHERE id = :id',
@@ -133,6 +136,7 @@ final class CompanyRepository
         $vatValidationStatus = $isVatRegistered ? (trim((string)($settings['vat_validation_status'] ?? '')) !== '' ? trim((string)$settings['vat_validation_status']) : null) : null;
         $vatValidatedAt = $isVatRegistered ? (trim((string)($settings['vat_validated_at'] ?? '')) !== '' ? trim((string)$settings['vat_validated_at']) : null) : null;
         $vatValidationSource = $isVatRegistered ? (trim((string)($settings['vat_validation_source'] ?? '')) !== '' ? trim((string)$settings['vat_validation_source']) : null) : null;
+        $vatValidationMode = $isVatRegistered ? (trim((string)($settings['vat_validation_mode'] ?? '')) !== '' ? strtoupper(trim((string)$settings['vat_validation_mode'])) : null) : null;
         $vatValidationName = $isVatRegistered ? (trim((string)($settings['vat_validation_name'] ?? '')) !== '' ? trim((string)$settings['vat_validation_name']) : null) : null;
         $vatValidationAddressLine1 = $isVatRegistered ? (trim((string)($settings['vat_validation_address_line1'] ?? '')) !== '' ? trim((string)$settings['vat_validation_address_line1']) : null) : null;
         $vatValidationPostcode = $isVatRegistered ? (trim((string)($settings['vat_validation_postcode'] ?? '')) !== '' ? trim((string)$settings['vat_validation_postcode']) : null) : null;
@@ -147,11 +151,7 @@ final class CompanyRepository
                  vat_number = ?,
                  vat_validation_status = ?,
                  vat_validated_at = ?,
-                 vat_validation_source = ?,
-                 vat_validation_name = ?,
-                 vat_validation_address_line1 = ?,
-                 vat_validation_postcode = ?,
-                 vat_validation_country_code = ?';
+                 vat_validation_source = ?';
         $params = [
             $settings['company_name'],
             $settings['companies_house_number'] !== '' ? $settings['companies_house_number'] : null,
@@ -161,11 +161,18 @@ final class CompanyRepository
             $vatValidationStatus,
             $vatValidatedAt,
             $vatValidationSource,
-            $vatValidationName,
-            $vatValidationAddressLine1,
-            $vatValidationPostcode,
-            $vatValidationCountryCode,
         ];
+        if (\InterfaceDB::columnExists('companies', 'vat_validation_mode')) {
+            $sql .= ',
+                 vat_validation_mode = ?';
+            $params[] = $vatValidationMode;
+        }
+        $sql .= ',
+                 vat_validation_name = ?,
+                 vat_validation_address_line1 = ?,
+                 vat_validation_postcode = ?,
+                 vat_validation_country_code = ?';
+        array_push($params, $vatValidationName, $vatValidationAddressLine1, $vatValidationPostcode, $vatValidationCountryCode);
 
         $sql .= ',
                  vat_last_error = ?

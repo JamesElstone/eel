@@ -89,4 +89,67 @@ $harness->run(VatRegistrationAction::class, function (GeneratedServiceClassTestH
             clearAuthenticatedTestSession();
         }
     });
+
+    $harness->check('VatRegistrationAction', 'mismatch acceptance cannot be reused after the VAT identity changes', function () use ($harness, $instance): void {
+        InterfaceDB::beginTransaction();
+        try {
+            $companyNumber = 'VAM' . strtoupper(substr(hash('sha256', (string)microtime(true)), 0, 8));
+            InterfaceDB::prepareExecute(
+                'INSERT INTO companies (
+                    company_name, company_number, is_vat_registered, vat_country_code, vat_number,
+                    vat_validation_status, vat_validation_source, vat_validation_mode
+                 ) VALUES (
+                    :company_name, :company_number, 1, :vat_country_code, :vat_number,
+                    :vat_validation_status, :vat_validation_source, :vat_validation_mode
+                 )',
+                [
+                    'company_name' => 'VAT Mismatch Fixture Limited',
+                    'company_number' => $companyNumber,
+                    'vat_country_code' => 'GB',
+                    'vat_number' => '123456789',
+                    'vat_validation_status' => 'mismatch_pending',
+                    'vat_validation_source' => 'hmrc',
+                    'vat_validation_mode' => 'LIVE',
+                ]
+            );
+            $companyId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM companies WHERE company_number = :company_number',
+                ['company_number' => $companyNumber]
+            );
+            (new \eel_accounts\Service\AccountingContextService())->setPageContext(
+                $companyId,
+                'VAT Mismatch Fixture Limited',
+                $companyNumber,
+                0
+            );
+
+            $request = new RequestFramework(
+                [],
+                [
+                    'card_action' => 'VatRegistration',
+                    'intent' => 'accept_vat_mismatch',
+                    'company_id' => (string)$companyId,
+                    'is_vat_registered' => '1',
+                    'vat_country_code' => 'GB',
+                    'vat_number' => '987654321',
+                ],
+                ['REQUEST_METHOD' => 'POST', 'HTTP_X_REQUESTED_WITH' => 'XMLHttpRequest', 'HTTP_ACCEPT' => 'application/json'],
+                [],
+                [],
+                null
+            );
+            $result = $instance->handle($request, createTestPageServiceFramework());
+            $stored = (new \eel_accounts\Repository\CompanyRepository())->fetchCompanyDetails($companyId);
+
+            $harness->assertSame(false, $result->isSuccess());
+            $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'changed after validation'));
+            $harness->assertSame('123456789', (string)($stored['vat_number'] ?? ''));
+            $harness->assertSame('mismatch_pending', (string)($stored['vat_validation_status'] ?? ''));
+        } finally {
+            (new \eel_accounts\Service\AccountingContextService())->clearPageContext();
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
 });

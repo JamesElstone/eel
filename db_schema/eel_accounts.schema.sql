@@ -100,6 +100,7 @@ CREATE TABLE `companies` (
   `vat_validation_status` varchar(20) DEFAULT NULL,
   `vat_validated_at` datetime DEFAULT NULL,
   `vat_validation_source` varchar(20) DEFAULT NULL,
+  `vat_validation_mode` varchar(8) DEFAULT NULL,
   `vat_validation_name` varchar(255) DEFAULT NULL,
   `vat_validation_address_line1` varchar(255) DEFAULT NULL,
   `vat_validation_postcode` varchar(32) DEFAULT NULL,
@@ -2452,6 +2453,76 @@ CREATE TABLE `year_end_audit_log` (
   PRIMARY KEY (`id`),
   KEY `idx_year_end_audit_log_company_period` (`company_id`,`accounting_period_id`),
   KEY `idx_year_end_audit_log_action_at` (`action_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `vat_rate_rules`
+--
+
+DROP TABLE IF EXISTS `vat_rate_rules`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `vat_rate_rules` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `rate_type` varchar(16) NOT NULL,
+  `scope` varchar(32) NOT NULL,
+  `effective_from` date NOT NULL,
+  `effective_to` date DEFAULT NULL,
+  `rate_percentage` decimal(7,3) NOT NULL,
+  `original_period_text` varchar(255) NOT NULL,
+  `source_url` varchar(500) NOT NULL,
+  `source_content_id` varchar(64) NOT NULL,
+  `source_updated_at` datetime DEFAULT NULL,
+  `source_checked_at` datetime NOT NULL,
+  `rule_version` varchar(64) NOT NULL,
+  `dataset_hash` char(64) NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `notes` text DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_vat_rate_rule_dataset` (`dataset_hash`,`rate_type`,`scope`,`effective_from`),
+  KEY `idx_vat_rate_rules_lookup` (`rate_type`,`scope`,`is_active`,`effective_from`,`effective_to`),
+  KEY `idx_vat_rate_rules_dataset` (`dataset_hash`,`is_active`),
+  CONSTRAINT `chk_vat_rate_rule_dates` CHECK (`effective_to` is null or `effective_from` <= `effective_to`),
+  CONSTRAINT `chk_vat_rate_percentage` CHECK (`rate_percentage` >= 0 and `rate_percentage` <= 100)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `vat_threshold_rules`
+--
+
+DROP TABLE IF EXISTS `vat_threshold_rules`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `vat_threshold_rules` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `threshold_type` varchar(32) NOT NULL,
+  `jurisdiction` varchar(32) NOT NULL,
+  `effective_from` date NOT NULL,
+  `effective_to` date DEFAULT NULL,
+  `original_period_text` varchar(255) NOT NULL,
+  `registration_threshold` decimal(14,2) DEFAULT NULL,
+  `deregistration_threshold` decimal(14,2) DEFAULT NULL,
+  `source_url` varchar(500) NOT NULL,
+  `source_content_id` char(36) NOT NULL,
+  `source_updated_at` datetime DEFAULT NULL,
+  `source_checked_at` datetime NOT NULL,
+  `dataset_hash` char(64) NOT NULL,
+  `row_hash` char(64) NOT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `audit_notes` text DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_vat_threshold_rule_dataset_row` (`dataset_hash`,`row_hash`),
+  KEY `idx_vat_threshold_rules_lookup` (`threshold_type`,`jurisdiction`,`is_active`,`effective_from`,`effective_to`),
+  KEY `idx_vat_threshold_rules_dataset` (`dataset_hash`,`is_active`),
+  CONSTRAINT `chk_vat_threshold_rule_dates` CHECK (`effective_to` is null or `effective_from` <= `effective_to`),
+  CONSTRAINT `chk_vat_threshold_registration_amount` CHECK (`registration_threshold` is null or `registration_threshold` > 0),
+  CONSTRAINT `chk_vat_threshold_deregistration_amount` CHECK (`deregistration_threshold` is null or `deregistration_threshold` > 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 

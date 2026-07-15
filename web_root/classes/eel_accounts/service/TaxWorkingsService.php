@@ -41,6 +41,12 @@ final class TaxWorkingsService
             ];
         }
 
+        $vatSupportScope = (array)($estimate['vat_support_scope']
+            ?? (new \eel_accounts\Service\VatSupportScopeService())->fetchForCompany($companyId));
+        if (!empty($vatSupportScope['tax_year_end_read_only'])) {
+            return $this->historicalSnapshotWorkings($period, $ctPeriod, $estimate, $vatSupportScope);
+        }
+
         $periodStart = $ctPeriod !== null ? (string)$ctPeriod['period_start'] : (string)$period['period_start'];
         $periodEnd = $ctPeriod !== null ? (string)$ctPeriod['period_end'] : (string)$period['period_end'];
         $poolRows = $this->poolRows($companyId, $accountingPeriodId, (array)($estimate['capital_allowance_breakdown'] ?? []), $ctPeriodId);
@@ -66,6 +72,59 @@ final class TaxWorkingsService
             'losses' => (array)($estimate['schedule'] ?? []),
             'rate_bands' => (array)($estimate['ct_rate_bands'] ?? []),
             'provision' => $ctPeriodId > 0 ? (new \eel_accounts\Service\CorporationTaxProvisionService())->fetchPosition($companyId, $accountingPeriodId, $ctPeriodId) : [],
+            'warnings' => $warnings,
+        ];
+    }
+
+    /**
+     * A persisted CT summary is immutable evidence. Do not combine it with
+     * current nominal, asset, provision or warning rows after LIVE HMRC VAT
+     * confirmation has placed the company outside the supported product scope.
+     * Ordinary bookkeeping remains available and those live rows may therefore
+     * have changed since the summary was persisted.
+     *
+     * @param array<string, mixed> $period
+     * @param array<string, mixed>|null $ctPeriod
+     * @param array<string, mixed> $estimate
+     * @param array<string, mixed> $vatSupportScope
+     * @return array<string, mixed>
+     */
+    private function historicalSnapshotWorkings(
+        array $period,
+        ?array $ctPeriod,
+        array $estimate,
+        array $vatSupportScope
+    ): array {
+        $warnings = array_values(array_unique(array_filter(array_merge(
+            (array)($estimate['warnings'] ?? []),
+            [
+                (string)($vatSupportScope['message'] ?? VatSupportScopeService::UNSUPPORTED_MESSAGE),
+                'Detailed nominal, asset and provision rows are hidden because they are live data and may no longer match this persisted historical computation.',
+            ]
+        ), static fn(string $warning): bool => trim($warning) !== '')));
+
+        return [
+            'available' => true,
+            'historical_snapshot_only' => true,
+            'vat_support_scope' => $vatSupportScope,
+            'guidance' => TaxGuidanceService::all(),
+            'period' => $period,
+            'selected_ct_period' => $ctPeriod,
+            'summary' => $estimate,
+            'bridge' => (array)($estimate['steps'] ?? []),
+            'disallowable_add_backs' => [],
+            'depreciation_add_back' => [],
+            'capital_allowances_summary' => $this->capitalAllowanceSummary(
+                (array)($estimate['capital_allowance_breakdown']['rows'] ?? [])
+            ),
+            'aia_allocation' => [],
+            'main_rate_pool' => [],
+            'special_rate_pool' => [],
+            'car_co2_treatment' => [],
+            'disposals_balancing' => [],
+            'losses' => (array)($estimate['schedule'] ?? []),
+            'rate_bands' => (array)($estimate['ct_rate_bands'] ?? []),
+            'provision' => [],
             'warnings' => $warnings,
         ];
     }

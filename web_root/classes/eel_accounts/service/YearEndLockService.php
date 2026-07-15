@@ -58,8 +58,34 @@ final class YearEndLockService
         }
     }
 
+    public function assertUnlockedForUpdate(int $companyId, int $accountingPeriodId, string $actionLabel = 'change this period'): void
+    {
+        if (!\InterfaceDB::inTransaction()) {
+            throw new \RuntimeException('The accounting-period lock can only be secured inside a transaction.');
+        }
+        if (!$this->hasReviewTable()) {
+            throw new \RuntimeException('Run the Year End review migration before changing accounting periods.');
+        }
+        $this->ensureReviewRow($companyId, $accountingPeriodId);
+        $sql = 'SELECT COALESCE(is_locked, 0)
+                FROM year_end_reviews
+                WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id
+                LIMIT 1';
+        if (\InterfaceDB::driverName() !== 'sqlite') {
+            $sql .= ' FOR UPDATE';
+        }
+        $locked = (int)\InterfaceDB::fetchColumn($sql, [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+        ]) === 1;
+        if ($locked) {
+            throw new \RuntimeException('This accounting period is locked, so you cannot ' . trim($actionLabel) . '.');
+        }
+    }
+
     public function saveNotes(int $companyId, int $accountingPeriodId, string $notes, string $changedBy = 'web_app'): array
     {
+        $this->assertYearEndSupported($companyId, 'save Year End notes');
         $this->assertUnlocked($companyId, $accountingPeriodId, 'change the year-end notes for this period');
         if (!$this->hasReviewTable()) {
             return ['success' => false, 'errors' => ['Run the Year End review migration before saving notes.']];
@@ -96,35 +122,67 @@ final class YearEndLockService
 
     public function lockPeriod(int $companyId, int $accountingPeriodId, string $lockedBy = 'web_app'): array
     {
+        $this->assertYearEndSupported($companyId, 'lock an accounting period');
         if (!$this->hasReviewTable()) {
             return ['success' => false, 'errors' => ['Run the Year End review migration before locking periods.']];
         }
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
+        }
+        try {
+            $this->ensureReviewRow($companyId, $accountingPeriodId);
+            $existing = $this->fetchReview($companyId, $accountingPeriodId);
+            if (!empty($existing['is_locked'])) {
+                if ($ownsTransaction) {
+                    \InterfaceDB::commit();
+                }
+                return ['success' => true, 'review' => $existing, 'no_op' => true];
+            }
+            $this->assertUnlockedForUpdate($companyId, $accountingPeriodId, 'lock this accounting period');
 
-        $this->ensureReviewRow($companyId, $accountingPeriodId);
-        $existing = $this->fetchReview($companyId, $accountingPeriodId);
-        $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
+            $prepayments = (new PrepaymentPostingService())->validateForFinalLock($companyId, $accountingPeriodId);
+            if (empty($prepayments['success'])) {
+                if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                    \InterfaceDB::rollBack();
+                }
+                return [
+                    'success' => false,
+                    'errors' => (array)($prepayments['errors'] ?? ['Prepayment postings failed final validation.']),
+                    'prepayments' => $prepayments,
+                ];
+            }
 
-        \InterfaceDB::execute(
-            'UPDATE year_end_reviews
-             SET is_locked = 1, locked_at = :locked_at, locked_by = :locked_by, updated_at = :updated_at
-             WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
-            [
-                'locked_at' => $now,
-                'locked_by' => $this->actorValue($lockedBy),
-                'updated_at' => $now,
-                'company_id' => $companyId,
-                'accounting_period_id' => $accountingPeriodId,
-            ]
-        );
-
-        $review = $this->fetchReview($companyId, $accountingPeriodId);
-        $this->writeAuditLog($companyId, $accountingPeriodId, 'lock', $lockedBy, $existing, $review);
-
-        return ['success' => true, 'review' => $review];
+            $now = (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s');
+            \InterfaceDB::execute(
+                'UPDATE year_end_reviews
+                 SET is_locked = 1, locked_at = :locked_at, locked_by = :locked_by, updated_at = :updated_at
+                 WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id',
+                [
+                    'locked_at' => $now,
+                    'locked_by' => $this->actorValue($lockedBy),
+                    'updated_at' => $now,
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                ]
+            );
+            $review = $this->fetchReview($companyId, $accountingPeriodId);
+            $this->writeAuditLog($companyId, $accountingPeriodId, 'lock', $lockedBy, $existing, $review);
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
+            return ['success' => true, 'review' => $review, 'prepayments' => $prepayments];
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+            return ['success' => false, 'errors' => [$exception->getMessage()]];
+        }
     }
 
     public function unlockPeriod(int $companyId, int $accountingPeriodId, string $changedBy = 'web_app', ?string $notes = null): array
     {
+        $this->assertYearEndSupported($companyId, 'unlock an accounting period');
         if (!$this->hasReviewTable()) {
             return ['success' => false, 'errors' => ['Run the Year End review migration before unlocking periods.']];
         }
@@ -157,8 +215,17 @@ final class YearEndLockService
         string $actionBy,
         ?array $oldValue = null,
         ?array $newValue = null,
-        ?string $notes = null
+        ?string $notes = null,
+        bool $supportScopeVerified = false
     ): void {
+        $normalisedAction = trim($action) !== '' ? trim($action) : 'unknown';
+        // Manual journals are ordinary bookkeeping and remain supported for a
+        // LIVE-confirmed VAT company. Their audit rows share this table, while
+        // every genuine Year End caller is read-only in unsupported VAT scope.
+        if (!$supportScopeVerified && !in_array($normalisedAction, ['journal_created', 'journal_appended'], true)) {
+            $this->assertYearEndSupported($companyId, 'write a Year End audit entry');
+        }
+
         if (!$this->tableExists('year_end_audit_log')) {
             return;
         }
@@ -174,7 +241,7 @@ final class YearEndLockService
             [
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
-                'action' => trim($action) !== '' ? trim($action) : 'unknown',
+                'action' => $normalisedAction,
                 'action_by' => $this->actorValue($actionBy),
                 'action_at' => (new \DateTimeImmutable('now'))->format('Y-m-d H:i:s'),
                 'old_value_json' => $oldValue !== null ? json_encode($oldValue, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) : null,
@@ -182,6 +249,12 @@ final class YearEndLockService
                 'notes' => $notes !== null && trim($notes) !== '' ? trim($notes) : null,
             ]
         );
+    }
+
+    private function assertYearEndSupported(int $companyId, string $actionLabel): void
+    {
+        (new \eel_accounts\Service\VatSupportScopeService())
+            ->assertTaxAndYearEndSupported($companyId, $actionLabel);
     }
 
     private function ensureReviewRow(int $companyId, int $accountingPeriodId): void

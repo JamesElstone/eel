@@ -21,7 +21,7 @@ final class _tax_rates extends PageContextFramework
 
     public function subtitle(): string
     {
-        return 'Review the sourced tax and allowance rules used by the calculation engine.';
+        return 'Review sourced Corporation Tax rules, VAT rates and VAT registration thresholds.';
     }
 
     public function hiddenSiteContextSelectors(): array
@@ -32,7 +32,9 @@ final class _tax_rates extends PageContextFramework
     public function cards(): array
     {
         return [
-            'tax_rates',
+            'tax_rates_ct',
+            'tax_rates_vat',
+            'tax_thresholds_vat',
             'tax_treatment_rules',
         ];
     }
@@ -46,7 +48,7 @@ final class _tax_rates extends PageContextFramework
         $service = new \eel_accounts\Service\TaxRateRuleService();
 
         return [
-            'tax_rates' => [
+            'tax_rates_ct' => [
                 'rules' => $service->fetchRules(),
                 'source_url' => \eel_accounts\Service\TaxRateRuleService::HMRC_RATES_COLLECTION_URL,
             ],

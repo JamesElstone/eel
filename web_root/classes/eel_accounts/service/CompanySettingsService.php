@@ -58,6 +58,7 @@ final class CompanySettingsService
                 $settings['vat_validation_status'] = (string)($company['vat_validation_status'] ?? '');
                 $settings['vat_validated_at'] = (string)($company['vat_validated_at'] ?? '');
                 $settings['vat_validation_source'] = (string)($company['vat_validation_source'] ?? '');
+                $settings['vat_validation_mode'] = (string)($company['vat_validation_mode'] ?? '');
                 $settings['vat_validation_name'] = (string)($company['vat_validation_name'] ?? '');
                 $settings['vat_validation_address_line1'] = (string)($company['vat_validation_address_line1'] ?? '');
                 $settings['vat_validation_postcode'] = (string)($company['vat_validation_postcode'] ?? '');
@@ -379,6 +380,7 @@ final class CompanySettingsService
             'vat_validation_status' => '',
             'vat_validated_at' => '',
             'vat_validation_source' => '',
+            'vat_validation_mode' => '',
             'vat_validation_name' => '',
             'vat_validation_address_line1' => '',
             'vat_validation_postcode' => '',

@@ -118,8 +118,13 @@ final class YearEndAcknowledgementService
         string $checkCode,
         array $currentBasis,
         string $changedBy,
-        string $note = ''
+        string $note = '',
+        bool $supportScopeVerified = false
     ): array {
+        if (!$supportScopeVerified) {
+            (new \eel_accounts\Service\VatSupportScopeService())
+                ->assertTaxAndYearEndSupported($companyId, 'save a Year End acknowledgement');
+        }
         if (!$this->tableAvailable()) {
             return ['success' => false, 'errors' => ['Run the Year End acknowledgement-basis migration before saving this approval.']];
         }
@@ -179,8 +184,12 @@ final class YearEndAcknowledgementService
         ];
     }
 
-    public function revoke(int $companyId, int $accountingPeriodId, string $checkCode): array
+    public function revoke(int $companyId, int $accountingPeriodId, string $checkCode, bool $supportScopeVerified = false): array
     {
+        if (!$supportScopeVerified) {
+            (new \eel_accounts\Service\VatSupportScopeService())
+                ->assertTaxAndYearEndSupported($companyId, 'revoke a Year End acknowledgement');
+        }
         if (!$this->tableAvailable()) {
             return ['success' => false, 'errors' => ['Year End acknowledgements are not available.']];
         }

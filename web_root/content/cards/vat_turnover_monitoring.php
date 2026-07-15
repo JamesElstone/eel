@@ -113,6 +113,7 @@ final class _vat_turnover_monitoringCard extends CardBaseFramework
         ]);
 
         return $this->limitationsPanel((array)($monitoring['warnings'] ?? []))
+            . (empty($threshold['available']) ? $this->thresholdImportNotice() : '')
             . '<div class="summary-grid">'
             . $this->summary('Effective date', (string)($monitoring['effective_date'] ?? ''))
             . $this->summary('Gross Income in Accounting Period', $this->money($settings, $monitoring['ap_to_date_gross_income'] ?? 0))
@@ -248,6 +249,13 @@ final class _vat_turnover_monitoringCard extends CardBaseFramework
         return '<div class="helper">Official guidance: '
             . '<a class="button button-inline" href="' . \eel_accounts\Service\VatThresholdRuleService::REGISTRATION_GUIDANCE_URL . '" target="_blank" rel="noopener noreferrer">HMRC - Register for VAT</a>'
             . ' <a class="button button-inline" href="' . \eel_accounts\Service\VatThresholdRuleService::THRESHOLDS_URL . '" target="_blank" rel="noopener noreferrer">HMRC - VAT Thresholds</a>'
+            . '</div>';
+    }
+
+    private function thresholdImportNotice(): string
+    {
+        return '<div class="helper"><strong>Threshold unavailable.</strong> '
+            . '<a class="button button-inline" href="?page=tax_rates">Import HMRC VAT thresholds on the Tax Rates page</a>.'
             . '</div>';
     }
 

@@ -119,6 +119,11 @@ final class DirectorLoanReconciliationService
 
     public function postOffset(int $companyId, int $accountingPeriodId, string $changedBy = 'web_app'): array
     {
+        $scopeBlock = (new VatSupportScopeService())->mutationBlockResult($companyId, 'post a Year End director loan offset');
+        if ($scopeBlock !== null) {
+            return $scopeBlock;
+        }
+
         (new YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'post a director loan offset in this period');
         $context = $this->fetchContext($companyId, $accountingPeriodId);
         if (empty($context['available'])) {

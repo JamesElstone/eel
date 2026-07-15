@@ -105,6 +105,11 @@ final class YearEndChecklistService
     }
 
     public function lockPeriod(int $companyId, int $accountingPeriodId, string $lockedBy = 'web_app', bool $backupPermitted = false): array {
+        $scopeError = $this->vatSupportScopeMutationError($companyId, 'close this accounting period');
+        if ($scopeError !== null) {
+            return $scopeError;
+        }
+
         $transaction = $this->beginLockTransaction();
 
         try {
@@ -397,6 +402,11 @@ final class YearEndChecklistService
     }
 
     public function saveNotes(int $companyId, int $accountingPeriodId, string $notes, string $changedBy = 'web_app'): array {
+        $scopeError = $this->vatSupportScopeMutationError($companyId, 'change Year End notes');
+        if ($scopeError !== null) {
+            return $scopeError;
+        }
+
         ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'change the year-end notes for this period');
         $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId);
         if (empty($checklistResult['success'])) {
@@ -423,45 +433,81 @@ final class YearEndChecklistService
     }
 
     public function saveExpensePositionAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array {
-        ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())
-            ->assertUnlocked($companyId, $accountingPeriodId, 'change the expense position confirmation for this period');
+        $scopeError = $this->vatSupportScopeMutationError($companyId, 'change the expense position confirmation');
+        if ($scopeError !== null) {
+            return $scopeError;
+        }
 
-        $checkCode = 'expense_position_acknowledgement';
-        $service = $this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService();
-        $existing = $service->fetch($companyId, $accountingPeriodId, $checkCode);
-        $basis = null;
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
+        }
 
-        if ($acknowledged) {
-            $expenseContext = (new \eel_accounts\Service\YearEndExpenseConfirmationService(
-                acknowledgementService: $service
-            ))->fetchApprovalContext($companyId, $accountingPeriodId);
-            if (empty($expenseContext['available'])) {
-                return [
-                    'success' => false,
-                    'errors' => (array)($expenseContext['errors'] ?? ['The current expense position could not be verified.']),
-                ];
+        try {
+            $lock = $this->lockService ?? new \eel_accounts\Service\YearEndLockService();
+            $lock->assertUnlockedForUpdate(
+                $companyId,
+                $accountingPeriodId,
+                'change the expense position confirmation for this period'
+            );
+
+            $checkCode = 'expense_position_acknowledgement';
+            $service = $this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService();
+            $existing = $service->fetch($companyId, $accountingPeriodId, $checkCode);
+            $basis = null;
+
+            if ($acknowledged) {
+                $expenseContext = (new \eel_accounts\Service\YearEndExpenseConfirmationService(
+                    acknowledgementService: $service
+                ))->fetchApprovalContext($companyId, $accountingPeriodId);
+                if (empty($expenseContext['available'])) {
+                    if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                        \InterfaceDB::rollBack();
+                    }
+
+                    return [
+                        'success' => false,
+                        'errors' => (array)($expenseContext['errors'] ?? ['The current expense position could not be verified.']),
+                    ];
+                }
+
+                $basis = $service->buildBasis($checkCode, $expenseContext);
             }
-            $basis = $service->buildBasis($checkCode, $expenseContext);
-        }
 
-        $result = $acknowledged
-            ? $service->save($companyId, $accountingPeriodId, $checkCode, (array)$basis, $changedBy, $note)
-            : $service->revoke($companyId, $accountingPeriodId, $checkCode);
-        if (empty($result['success'])) {
+            $result = $acknowledged
+                ? $service->save($companyId, $accountingPeriodId, $checkCode, (array)$basis, $changedBy, $note, true)
+                : $service->revoke($companyId, $accountingPeriodId, $checkCode, true);
+            if (empty($result['success'])) {
+                if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                    \InterfaceDB::rollBack();
+                }
+
+                return $result;
+            }
+
+            $lock->writeAuditLog(
+                $companyId,
+                $accountingPeriodId,
+                $acknowledged ? 'review_check_acknowledged' : 'review_check_reopened',
+                $changedBy,
+                $existing,
+                $acknowledged ? (array)($result['acknowledgement'] ?? []) : ['check_code' => $checkCode, 'acknowledged' => false],
+                trim($note) !== '' ? trim($note) : null,
+                true
+            );
+
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
+
             return $result;
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+
+            throw $exception;
         }
-
-        ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->writeAuditLog(
-            $companyId,
-            $accountingPeriodId,
-            $acknowledged ? 'review_check_acknowledged' : 'review_check_reopened',
-            $changedBy,
-            $existing,
-            $acknowledged ? (array)($result['acknowledgement'] ?? []) : ['check_code' => $checkCode, 'acknowledged' => false],
-            trim($note) !== '' ? trim($note) : null
-        );
-
-        return $result;
     }
 
     public function saveRetainedEarningsCloseAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array {
@@ -530,6 +576,11 @@ final class YearEndChecklistService
         string $note,
         string $changedBy
     ): array {
+        $scopeError = $this->vatSupportScopeMutationError($companyId, 'change a Year End confirmation');
+        if ($scopeError !== null) {
+            return $scopeError;
+        }
+
         ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())
             ->assertUnlocked($companyId, $accountingPeriodId, 'change the year-end review confirmation for this period');
 
@@ -580,6 +631,11 @@ final class YearEndChecklistService
     }
 
     public function unlockPeriod(int $companyId, int $accountingPeriodId, string $changedBy = 'web_app', ?string $notes = null): array {
+        $scopeError = $this->vatSupportScopeMutationError($companyId, 'unlock this accounting period');
+        if ($scopeError !== null) {
+            return $scopeError;
+        }
+
         $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId);
         if (empty($checklistResult['success'])) {
             return $checklistResult;
@@ -597,6 +653,11 @@ final class YearEndChecklistService
     }
 
     public function recalculateChecklist(int $companyId, int $accountingPeriodId, string $changedBy = 'web_app'): array {
+        $scopeError = $this->vatSupportScopeMutationError($companyId, 'recalculate the Year End checklist');
+        if ($scopeError !== null) {
+            return $scopeError;
+        }
+
         ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'refresh the year-end checklist for this period');
         $checklistResult = $this->fetchChecklistResult($companyId, $accountingPeriodId);
         if (empty($checklistResult['success'])) {
@@ -1990,5 +2051,24 @@ final class YearEndChecklistService
         }
 
         return $cache[$table];
+    }
+
+    /** @return array<string, mixed>|null */
+    private function vatSupportScopeMutationError(int $companyId, string $actionLabel): ?array
+    {
+        $scope = (new \eel_accounts\Service\VatSupportScopeService())->fetchForCompany($companyId);
+        if (empty($scope['tax_year_end_read_only'])) {
+            return null;
+        }
+
+        return [
+            'success' => false,
+            'status' => 403,
+            'errors' => [
+                (string)($scope['message'] ?? \eel_accounts\Service\VatSupportScopeService::UNSUPPORTED_MESSAGE)
+                    . ' You cannot ' . trim($actionLabel) . '.',
+            ],
+            'vat_support_scope' => $scope,
+        ];
     }
 }

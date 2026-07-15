@@ -104,6 +104,11 @@ final class DividendReserveClassificationService
 
     public function saveReview(int $companyId, int $accountingPeriodId, array $treatments, string $reviewedBy = 'web_app', ?string $asAtDate = null): array
     {
+        $scopeBlock = (new VatSupportScopeService())->mutationBlockResult($companyId, 'save a Year End dividend reserve review');
+        if ($scopeBlock !== null) {
+            return $scopeBlock;
+        }
+
         (new YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'change the dividend reserve review for this period');
         $context = $this->fetchReviewContext($companyId, $accountingPeriodId, $asAtDate);
         if (empty($context['available'])) {

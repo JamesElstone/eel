@@ -45,6 +45,7 @@ final class _vat_readinessCard extends CardBaseFramework
         $vatNumber = trim((string)($settings['vat_number'] ?? ''));
         $validationStatus = trim((string)($settings['vat_validation_status'] ?? 'unverified'));
         $validationSource = trim((string)($settings['vat_validation_source'] ?? ''));
+        $validationMode = strtoupper(trim((string)($settings['vat_validation_mode'] ?? '')));
         $lastError = trim((string)($settings['vat_last_error'] ?? ''));
         $warnings = trim((string)($settings['pending_vat_mismatch_warnings'] ?? ''));
 
@@ -69,6 +70,15 @@ final class _vat_readinessCard extends CardBaseFramework
             'title' => 'Mismatch review',
             'ok' => $warnings === '',
             'detail' => $warnings === '' ? 'No HMRC vs Companies House mismatch warnings are waiting for review.' : $warnings,
+        ];
+        $items[] = [
+            'title' => 'HMRC environment',
+            'ok' => !$isVatRegistered || $validationMode !== '',
+            'detail' => !$isVatRegistered
+                ? 'Not required while VAT registration is turned off.'
+                : ($validationMode !== ''
+                    ? $validationMode . ' was used for the saved validation.'
+                    : 'No validation environment is stored. Existing records remain outside the VAT support-scope gate until a new validation is completed.'),
         ];
 
         $html = '';

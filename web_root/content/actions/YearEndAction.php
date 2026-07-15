@@ -26,8 +26,11 @@ final class YearEndAction implements ActionInterfaceFramework
         }
 
         try {
-            if ($this->requiresVatRegistrationGuard($intent) && $this->companyIsVatRegistered($companyId)) {
-                return $this->result(false, ['Year-end processing is blocked while this company is marked as VAT registered.']);
+            if ($this->requiresActionVatSupportScopeCheck($intent)) {
+                $vatSupportScope = (new \eel_accounts\Service\VatSupportScopeService())->fetchForCompany($companyId);
+                if (!empty($vatSupportScope['tax_year_end_read_only'])) {
+                    return $this->result(false, [(string)$vatSupportScope['message']]);
+                }
             }
 
             if ($this->requiresSingleDirectorCheck($intent)) {
@@ -248,20 +251,10 @@ final class YearEndAction implements ActionInterfaceFramework
         ], true);
     }
 
-    private function requiresVatRegistrationGuard(string $intent): bool
+    private function requiresActionVatSupportScopeCheck(string $intent): bool
     {
-        return in_array($intent, [
-            'recalculate',
-            'lock_period',
-            'save_opening_balance',
-            'create_adjustment',
-            'save_director_loan_offset_acknowledgement',
-            'save_tax_readiness_acknowledgement',
-            'save_expense_position_acknowledgement',
-            'save_retained_earnings_close_acknowledgement',
-            'save_transaction_tail_acknowledgement',
-            'post_director_loan_offset',
-        ], true);
+        // Expense approval performs this guard once at its mutation boundary.
+        return $intent !== 'save_expense_position_acknowledgement';
     }
 
     private function requiresUnlockedPeriod(string $intent): bool
@@ -289,13 +282,6 @@ final class YearEndAction implements ActionInterfaceFramework
         $session = new SessionAuthenticationService();
         $session->startSession();
         return (new \eel_accounts\Service\BackupAccessService())->canUseBackups($session);
-    }
-
-    private function companyIsVatRegistered(int $companyId): bool
-    {
-        $details = (new \eel_accounts\Repository\CompanyRepository())->fetchCompanyDetails($companyId);
-
-        return !empty($details['is_vat_registered']);
     }
 
     private function directorEligibilityService(): \eel_accounts\Service\CompanyDirectorEligibilityService

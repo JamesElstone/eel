@@ -14,6 +14,11 @@ final class Ct600BuilderService
 {
     public function buildCt600Xml(int $companyId, int $accountingPeriodId): array
     {
+        $scopeBlock = $this->vatSupportScopeBlock($companyId, 'build a CT600 draft');
+        if ($scopeBlock !== null) {
+            return $scopeBlock;
+        }
+
         $periodService = new \eel_accounts\Service\CorporationTaxPeriodService();
         $sync = $periodService->syncForAccountingPeriod($companyId, $accountingPeriodId);
         $ctPeriodId = (int)($sync['periods'][0]['id'] ?? 0);
@@ -26,6 +31,11 @@ final class Ct600BuilderService
 
     public function buildCt600XmlForCtPeriod(int $companyId, int $ctPeriodId): array
     {
+        $scopeBlock = $this->vatSupportScopeBlock($companyId, 'build a CT600 draft for this CT period');
+        if ($scopeBlock !== null) {
+            return $scopeBlock;
+        }
+
         $company = (new \eel_accounts\Repository\CompanyRepository())->fetchCompanyDetails($companyId);
         $ctPeriod = (new \eel_accounts\Service\CorporationTaxPeriodService())->fetch($companyId, $ctPeriodId);
         $accountingPeriodId = (int)($ctPeriod['accounting_period_id'] ?? 0);
@@ -105,6 +115,38 @@ final class Ct600BuilderService
         }
 
         return ['ok' => true, 'path' => $path, 'warnings' => $warnings, 'errors' => [], 'losses' => $losses];
+    }
+
+    /** @return array<string, mixed>|null */
+    private function vatSupportScopeBlock(int $companyId, string $actionLabel): ?array
+    {
+        try {
+            $block = (new VatSupportScopeService())->mutationBlockResult($companyId, $actionLabel);
+        } catch (\Throwable) {
+            $block = [
+                'status' => 503,
+                'errors' => [VatSupportScopeService::SCOPE_EVALUATION_ERROR_MESSAGE],
+                'vat_support_scope' => [
+                    'tax_year_end_read_only' => true,
+                    'supported' => false,
+                    'scope_evaluation_failed' => true,
+                    'message' => VatSupportScopeService::SCOPE_EVALUATION_ERROR_MESSAGE,
+                ],
+            ];
+        }
+
+        if ($block === null) {
+            return null;
+        }
+
+        return [
+            'ok' => false,
+            'path' => null,
+            'status' => (int)($block['status'] ?? 403),
+            'warnings' => ['TODO: Complete CT600 XML schema mapping before production submission.'],
+            'errors' => (array)($block['errors'] ?? [VatSupportScopeService::UNSUPPORTED_MESSAGE]),
+            'vat_support_scope' => (array)($block['vat_support_scope'] ?? []),
+        ];
     }
 
     private function e(string $value): string

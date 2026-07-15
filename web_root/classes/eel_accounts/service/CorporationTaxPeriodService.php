@@ -14,6 +14,10 @@ final class CorporationTaxPeriodService
 {
     private const LOCKED_STATUSES = ['submitted', 'accepted'];
 
+    public function __construct(private readonly ?\Closure $vatSupportScopeFetcher = null)
+    {
+    }
+
     public function ensureSchema(): void
     {
         if (!\InterfaceDB::tableExists('corporation_tax_periods')) {
@@ -65,6 +69,15 @@ final class CorporationTaxPeriodService
 
     public function syncForAccountingPeriod(int $companyId, int $accountingPeriodId): array
     {
+        $scopeError = $this->vatSupportScopeError($companyId);
+        if ($scopeError !== null) {
+            return [
+                'success' => false,
+                'errors' => [$scopeError],
+                'periods' => [],
+            ];
+        }
+
         $this->ensureSchema();
         $accountingPeriod = (new \eel_accounts\Repository\AccountingPeriodRepository())->fetchAccountingPeriod($companyId, $accountingPeriodId);
         if ($accountingPeriod === null) {
@@ -261,6 +274,7 @@ final class CorporationTaxPeriodService
         if ($ctPeriodId <= 0 || $runId <= 0) {
             return;
         }
+        $this->assertCtPeriodMutationSupported($ctPeriodId, 'record a Corporation Tax computation');
 
         \InterfaceDB::prepareExecute(
             'UPDATE corporation_tax_periods
@@ -276,6 +290,7 @@ final class CorporationTaxPeriodService
         if ($ctPeriodId <= 0 || $submissionId <= 0) {
             return;
         }
+        $this->assertCtPeriodMutationSupported($ctPeriodId, 'record a Corporation Tax submission');
 
         $periodStatus = match ($status) {
             'accepted' => 'accepted',
@@ -382,6 +397,42 @@ final class CorporationTaxPeriodService
         }
 
         return $displaySequences;
+    }
+
+    private function assertCtPeriodMutationSupported(int $ctPeriodId, string $actionLabel): void
+    {
+        $companyId = (int)\InterfaceDB::fetchColumn(
+            'SELECT company_id FROM corporation_tax_periods WHERE id = :id LIMIT 1',
+            ['id' => $ctPeriodId]
+        );
+        $scopeError = $this->vatSupportScopeError($companyId);
+        if ($scopeError !== null) {
+            throw new \RuntimeException($scopeError . ' You cannot ' . $actionLabel . '.');
+        }
+    }
+
+    private function vatSupportScopeError(int $companyId): ?string
+    {
+        if ($companyId <= 0) {
+            return null;
+        }
+
+        try {
+            if ($this->vatSupportScopeFetcher !== null) {
+                $scope = ($this->vatSupportScopeFetcher)($companyId);
+                if (!is_array($scope) || !array_key_exists('tax_year_end_read_only', $scope)) {
+                    throw new \RuntimeException('VAT support scope resolver returned an invalid result.');
+                }
+            } else {
+                $scope = (new \eel_accounts\Service\VatSupportScopeService())->fetchForCompany($companyId);
+            }
+        } catch (\Throwable) {
+            return \eel_accounts\Service\VatSupportScopeService::SCOPE_EVALUATION_ERROR_MESSAGE;
+        }
+
+        return !empty($scope['tax_year_end_read_only'])
+            ? (string)($scope['message'] ?? \eel_accounts\Service\VatSupportScopeService::UNSUPPORTED_MESSAGE)
+            : null;
     }
 
     private function displaySequenceKey(int $accountingPeriodId, int $sequenceNo): string

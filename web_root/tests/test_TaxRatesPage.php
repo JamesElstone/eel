@@ -12,6 +12,6 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(_tax_rates::class, static function (GeneratedServiceClassTestHarness $harness, _tax_rates $page): void {
     $harness->check(_tax_rates::class, 'includes rate and treatment rule cards', static function () use ($harness, $page): void {
-        $harness->assertSame(['tax_rates', 'tax_treatment_rules'], $page->cards());
+        $harness->assertSame(['tax_rates_ct', 'tax_rates_vat', 'tax_thresholds_vat', 'tax_treatment_rules'], $page->cards());
     });
 });

@@ -150,6 +150,8 @@ final class CorporationTaxProvisionService
 
     public function postProvision(int $companyId, int $accountingPeriodId, int $ctPeriodId, string $changedBy = 'web_app'): array
     {
+        (new \eel_accounts\Service\VatSupportScopeService())
+            ->assertTaxAndYearEndSupported($companyId, 'post a Corporation Tax Year End provision');
         $ctPeriod = $this->validCtPeriod($companyId, $accountingPeriodId, $ctPeriodId);
         if ($ctPeriod === null) {
             return ['success' => false, 'errors' => ['Select a valid CT period.']];
@@ -244,6 +246,8 @@ final class CorporationTaxProvisionService
 
     public function postProvisionsForAccountingPeriod(int $companyId, int $accountingPeriodId, string $changedBy = 'web_app'): array
     {
+        (new \eel_accounts\Service\VatSupportScopeService())
+            ->assertTaxAndYearEndSupported($companyId, 'post Corporation Tax Year End provisions');
         $position = $this->fetchAccountingPeriodPosition($companyId, $accountingPeriodId);
         if (empty($position['available'])) {
             return ['success' => false, 'errors' => (array)($position['errors'] ?? ['Corporation Tax provision position could not be calculated.'])];

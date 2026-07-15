@@ -21,16 +21,11 @@ final class _vat extends PageContextFramework
 
     public function subtitle(): string
     {
-        return 'Maintain VAT registration details and review validation readiness for the selected company.';
-    }
-
-    public function hiddenSiteContextSelectors(): array
-    {
-        return ['accounting_period_id'];
+        return 'Monitor gross income against VAT registration thresholds and maintain VAT validation details for the selected company.';
     }
 
     public function cards(): array
     {
-        return ['vat_registration', 'vat_readiness'];
+        return ['vat_turnover_monitoring', 'vat_registration', 'vat_readiness'];
     }
 }

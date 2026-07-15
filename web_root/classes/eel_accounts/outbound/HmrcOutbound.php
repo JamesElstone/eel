@@ -123,25 +123,26 @@ final class HmrcOutbound implements \eel_accounts\Service\VatValidationInterface
     {
         $countryCode = strtoupper(trim($countryCode));
         $vatNumber = $this->normaliseVatNumber($vatNumber);
+        $modeMeta = ['mode' => $this->credentialEnvironment()];
 
         if ($countryCode !== 'GB' || $vatNumber === '') {
-            return \eel_accounts\Service\VatValidationResultService::error('hmrc', 'A GB VAT registration number is required.');
+            return \eel_accounts\Service\VatValidationResultService::error('hmrc', 'A GB VAT registration number is required.', $modeMeta);
         }
 
         try {
             $response = $this->lookupVatNumber($vatNumber);
         } catch (\Throwable $e) {
-            return \eel_accounts\Service\VatValidationResultService::error('hmrc', 'Validation service unavailable: ' . $e->getMessage());
+            return \eel_accounts\Service\VatValidationResultService::error('hmrc', 'Validation service unavailable: ' . $e->getMessage(), $modeMeta);
         }
 
         if (($response['status_code'] ?? 0) >= 500) {
-            return \eel_accounts\Service\VatValidationResultService::error('hmrc', 'Validation service unavailable.');
+            return \eel_accounts\Service\VatValidationResultService::error('hmrc', 'Validation service unavailable.', $modeMeta);
         }
 
         $payload = json_decode((string)($response['body'] ?? ''), true);
 
         if (!is_array($payload)) {
-            return \eel_accounts\Service\VatValidationResultService::error('hmrc', 'Unexpected HMRC validation response.');
+            return \eel_accounts\Service\VatValidationResultService::error('hmrc', 'Unexpected HMRC validation response.', $modeMeta);
         }
 
         $target = is_array($payload['target'] ?? null) ? $payload['target'] : $payload;
@@ -150,25 +151,25 @@ final class HmrcOutbound implements \eel_accounts\Service\VatValidationInterface
 
         if (is_bool($payload['valid'] ?? null)) {
             return ($payload['valid']
-                ? \eel_accounts\Service\VatValidationResultService::valid('hmrc', $name, $address, ['payload' => $payload])
-                : \eel_accounts\Service\VatValidationResultService::invalid('hmrc', $name, $address, ['payload' => $payload]));
+                ? \eel_accounts\Service\VatValidationResultService::valid('hmrc', $name, $address, ['payload' => $payload] + $modeMeta)
+                : \eel_accounts\Service\VatValidationResultService::invalid('hmrc', $name, $address, ['payload' => $payload] + $modeMeta));
         }
 
         if (is_array($target) && array_key_exists('vatNumber', $target) && (int)($response['status_code'] ?? 0) === 200) {
-            return \eel_accounts\Service\VatValidationResultService::valid('hmrc', $name, $address, ['payload' => $payload]);
+            return \eel_accounts\Service\VatValidationResultService::valid('hmrc', $name, $address, ['payload' => $payload] + $modeMeta);
         }
 
         if (($response['status_code'] ?? 0) === 404) {
-            return \eel_accounts\Service\VatValidationResultService::invalid('hmrc', $name, $address, ['payload' => $payload]);
+            return \eel_accounts\Service\VatValidationResultService::invalid('hmrc', $name, $address, ['payload' => $payload] + $modeMeta);
         }
 
         if (($response['status_code'] ?? 0) === 401 || ($response['status_code'] ?? 0) === 403) {
-            return \eel_accounts\Service\VatValidationResultService::error('hmrc', 'Invalid HMRC credentials or access token.', ['payload' => $payload]);
+            return \eel_accounts\Service\VatValidationResultService::error('hmrc', 'Invalid HMRC credentials or access token.', ['payload' => $payload] + $modeMeta);
         }
 
         $message = trim((string)($payload['message'] ?? $payload['code'] ?? 'HMRC validation failed.'));
 
-        return \eel_accounts\Service\VatValidationResultService::error('hmrc', $message, ['payload' => $payload]);
+        return \eel_accounts\Service\VatValidationResultService::error('hmrc', $message, ['payload' => $payload] + $modeMeta);
     }
 
     public function normaliseVatNumber(string $vatNumber): string

@@ -79,6 +79,10 @@ final class HmrcSubmissionPackageService
         if ($submission === null) {
             return ['ok' => false, 'path' => null, 'errors' => ['Submission draft could not be found.']];
         }
+        $scope = (new \eel_accounts\Service\VatSupportScopeService())->fetchForCompany((int)($submission['company_id'] ?? 0));
+        if (!empty($scope['tax_year_end_read_only'])) {
+            return ['ok' => false, 'path' => null, 'errors' => [(string)($scope['message'] ?? \eel_accounts\Service\VatSupportScopeService::UNSUPPORTED_MESSAGE)]];
+        }
         foreach (['ct600_xml_path', 'accounts_ixbrl_path', 'computations_ixbrl_path'] as $field) {
             $path = (string)($submission[$field] ?? '');
             if ($path === '' || !is_file($path)) {

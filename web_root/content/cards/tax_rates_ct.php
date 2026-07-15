@@ -7,19 +7,19 @@
  */
 declare(strict_types=1);
 
-final class _tax_ratesCard extends CardBaseFramework
+final class _tax_rates_ctCard extends CardBaseFramework
 {
     private const PAGE_SIZE = 5;
-    private const FILTER_FIELD = 'tax_rates_status';
+    private const FILTER_FIELD = 'tax_rates_ct_status';
 
     public function key(): string
     {
-        return 'tax_rates';
+        return 'tax_rates_ct';
     }
 
     public function title(): string
     {
-        return 'Tax and Allowance Rates';
+        return 'Corporation Tax and Allowance Rates';
     }
 
     protected function additionalInvalidationFacts(): array
@@ -131,7 +131,7 @@ final class _tax_ratesCard extends CardBaseFramework
     private function filteredRules(array $context, string $statusFilter): array
     {
         $rules = array_values(array_filter(
-            (array)($context['tax_rates']['rules'] ?? []),
+            (array)($context['tax_rates_ct']['rules'] ?? []),
             static fn(mixed $rule): bool => is_array($rule)
         ));
 

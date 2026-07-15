@@ -26,6 +26,7 @@ final class CorporationTaxComputationService
     public function __construct(
         private readonly ?\eel_accounts\Service\YearEndMetricsService $metricsService = null,
         private readonly ?\eel_accounts\Service\CorporationTaxRateService $rateService = null,
+        private readonly ?\Closure $vatSupportScopeFetcher = null,
     ) {
     }
 
@@ -44,6 +45,11 @@ final class CorporationTaxComputationService
     }
 
     public function fetchSummary(int $companyId, int $accountingPeriodId): array {
+        $scope = $this->vatSupportScope($companyId);
+        if (!empty($scope['tax_year_end_read_only'])) {
+            return $this->unsupportedVatScopeResult($scope, 'A live accounting-period Corporation Tax computation is not available.');
+        }
+
         $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
         $accountingPeriod = $metrics->fetchAccountingPeriod($companyId, $accountingPeriodId);
         if ($accountingPeriod === null) {
@@ -135,6 +141,27 @@ final class CorporationTaxComputationService
             return $this->ctPeriodSummaryCache[$cacheKey];
         }
 
+        $scope = $this->vatSupportScope($companyId);
+        if (!empty($scope['tax_year_end_read_only'])) {
+            if (!empty($scope['scope_evaluation_failed'])) {
+                return $this->ctPeriodSummaryCache[$cacheKey] = $this->unsupportedVatScopeResult(
+                    $scope,
+                    'No CT computation was read or generated because the support scope could not be verified.'
+                );
+            }
+
+            $stored = $this->storedPersistedSummaryForCtPeriodId($companyId, $ctPeriodId);
+            if ($stored === null) {
+                return $this->ctPeriodSummaryCache[$cacheKey] = $this->unsupportedVatScopeResult(
+                    $scope,
+                    'No persisted historical Corporation Tax computation is available for this CT period.'
+                );
+            }
+            $stored['vat_support_scope'] = $scope;
+
+            return $this->ctPeriodSummaryCache[$cacheKey] = $stored;
+        }
+
         $stored = $this->storedLockedSummaryForCtPeriodId($companyId, $ctPeriodId);
         if ($stored !== null) {
             return $this->ctPeriodSummaryCache[$cacheKey] = $stored;
@@ -145,6 +172,11 @@ final class CorporationTaxComputationService
     }
 
     public function calculateSummaryForCtPeriodId(int $companyId, int $ctPeriodId): array {
+        $scope = $this->vatSupportScope($companyId);
+        if (!empty($scope['tax_year_end_read_only'])) {
+            return $this->unsupportedVatScopeResult($scope, 'A live CT-period computation is not supported.');
+        }
+
         $ctPeriod = $this->fetchCtPeriod($companyId, $ctPeriodId);
         if ($ctPeriod === null) {
             return [
@@ -271,6 +303,16 @@ final class CorporationTaxComputationService
 
     public function persistSummariesForYearEndLock(int $companyId, int $accountingPeriodId): array
     {
+        $scope = $this->vatSupportScope($companyId);
+        if (!empty($scope['tax_year_end_read_only'])) {
+            return [
+                'success' => false,
+                'errors' => [(string)($scope['message'] ?? \eel_accounts\Service\VatSupportScopeService::UNSUPPORTED_MESSAGE)],
+                'summaries' => [],
+                'vat_support_scope' => $scope,
+            ];
+        }
+
         if (!\InterfaceDB::inTransaction()) {
             return [
                 'success' => false,
@@ -313,7 +355,25 @@ final class CorporationTaxComputationService
             return $this->activeCtPeriodsCache[$cacheKey];
         }
 
-        $sync = (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $accountingPeriodId);
+        $periodService = new \eel_accounts\Service\CorporationTaxPeriodService();
+        $scope = $this->vatSupportScope($companyId);
+        if (!empty($scope['scope_evaluation_failed'])) {
+            $sync = [
+                'success' => false,
+                'periods' => [],
+                'errors' => [(string)($scope['message'] ?? VatSupportScopeService::SCOPE_EVALUATION_ERROR_MESSAGE)],
+            ];
+        } elseif (!empty($scope['tax_year_end_read_only'])) {
+            $sync = [
+                'success' => true,
+                'periods' => \InterfaceDB::tableExists('corporation_tax_periods')
+                    ? $periodService->fetchForAccountingPeriod($companyId, $accountingPeriodId)
+                    : [],
+                'errors' => [],
+            ];
+        } else {
+            $sync = $periodService->syncForAccountingPeriod($companyId, $accountingPeriodId);
+        }
         $periods = array_values(array_filter(
             (array)($sync['periods'] ?? []),
             static fn(array $period): bool => (string)($period['status'] ?? '') !== 'superseded'
@@ -352,6 +412,11 @@ final class CorporationTaxComputationService
         string $asAtDate,
         array $preTaxProfitLoss
     ): array {
+        $scope = $this->vatSupportScope($companyId);
+        if (!empty($scope['tax_year_end_read_only'])) {
+            return $this->unsupportedVatScopeResult($scope, 'A live Corporation Tax dividend-capacity estimate is not supported.');
+        }
+
         $active = $this->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId);
         $periods = array_values(array_filter(
             (array)($active['periods'] ?? []),
@@ -705,6 +770,56 @@ final class CorporationTaxComputationService
         return $summary;
     }
 
+    /**
+     * Return the last persisted CT evidence without rebuilding live figures.
+     * This is the only CT view exposed once LIVE HMRC VAT confirmation places
+     * the company outside the supported Tax and Year End scope.
+     */
+    private function storedPersistedSummaryForCtPeriodId(int $companyId, int $ctPeriodId): ?array
+    {
+        $period = (new \eel_accounts\Service\CorporationTaxPeriodService())->fetch($companyId, $ctPeriodId);
+        if ($period === null) {
+            return null;
+        }
+
+        $runId = (int)($period['latest_computation_run_id'] ?? 0);
+        if ($runId <= 0 || !$this->tableExists('corporation_tax_computation_runs')) {
+            return null;
+        }
+
+        $row = \InterfaceDB::fetchOne(
+            'SELECT summary_json, computation_hash, status, generated_at
+             FROM corporation_tax_computation_runs
+             WHERE id = :id
+               AND company_id = :company_id
+               AND ct_period_id = :ct_period_id
+             LIMIT 1',
+            ['id' => $runId, 'company_id' => $companyId, 'ct_period_id' => $ctPeriodId]
+        );
+        $summary = is_array($row) ? json_decode((string)($row['summary_json'] ?? ''), true) : null;
+        if (!is_array($summary)) {
+            return null;
+        }
+
+        $summary['computation_run_id'] = $runId;
+        $summary['summary_source'] = 'persisted_historical_snapshot';
+        $summary['computation_persistence'] = [
+            'status' => 'historical',
+            'status_label' => 'Persisted historical computation',
+            'current' => false,
+            'run_id' => $runId,
+            'stored_hash' => (string)($row['computation_hash'] ?? ''),
+            'live_hash' => '',
+            'generated_at' => (string)($row['generated_at'] ?? ''),
+            'locked_snapshot' => (new \eel_accounts\Service\YearEndLockService())->isLocked(
+                $companyId,
+                (int)($period['accounting_period_id'] ?? 0)
+            ),
+        ];
+
+        return $summary;
+    }
+
     private function withComputationPersistenceState(int $companyId, int $ctPeriodId, array $summary): array
     {
         if (empty($summary['available'])) {
@@ -1044,6 +1159,11 @@ final class CorporationTaxComputationService
         ?array $accountingPeriod = null,
         ?array $profitAndLoss = null
     ): array {
+        $scope = $this->vatSupportScope($companyId);
+        if (!empty($scope['tax_year_end_read_only'])) {
+            return $this->unsupportedVatScopeResult($scope, 'A live current-period Corporation Tax estimate is not supported.');
+        }
+
         $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
         $accountingPeriod ??= $metrics->fetchAccountingPeriod($companyId, $accountingPeriodId);
         if ($accountingPeriod === null) {
@@ -1260,6 +1380,48 @@ final class CorporationTaxComputationService
         $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
         return $this->profitAndLossSummaryCache[$cacheKey] =
             $metrics->profitAndLossSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+    }
+
+    /** @return array<string, mixed> */
+    private function vatSupportScope(int $companyId): array
+    {
+        if ($companyId <= 0) {
+            return ['tax_year_end_read_only' => false, 'message' => ''];
+        }
+
+        try {
+            if ($this->vatSupportScopeFetcher !== null) {
+                $scope = ($this->vatSupportScopeFetcher)($companyId);
+                if (!is_array($scope) || !array_key_exists('tax_year_end_read_only', $scope)) {
+                    throw new \RuntimeException('VAT support scope resolver returned an invalid result.');
+                }
+
+                return $scope;
+            }
+
+            return (new \eel_accounts\Service\VatSupportScopeService())->fetchForCompany($companyId);
+        } catch (\Throwable) {
+            return [
+                'tax_year_end_read_only' => true,
+                'supported' => false,
+                'scope_evaluation_failed' => true,
+                'message' => \eel_accounts\Service\VatSupportScopeService::SCOPE_EVALUATION_ERROR_MESSAGE,
+            ];
+        }
+    }
+
+    /** @param array<string, mixed> $scope */
+    private function unsupportedVatScopeResult(array $scope, string $detail): array
+    {
+        return [
+            'available' => false,
+            'errors' => [
+                (string)($scope['message'] ?? \eel_accounts\Service\VatSupportScopeService::UNSUPPORTED_MESSAGE)
+                    . ' ' . $detail,
+            ],
+            'warnings' => [],
+            'vat_support_scope' => $scope,
+        ];
     }
 
     private function associatedCompanyCount(int $companyId): int {

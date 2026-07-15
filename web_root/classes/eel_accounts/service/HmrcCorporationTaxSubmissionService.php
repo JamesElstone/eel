@@ -14,6 +14,10 @@ final class HmrcCorporationTaxSubmissionService
 {
     public function validatePackage(int $companyId, int $ctPeriodId, string $mode): array
     {
+        $scopeError = $this->vatSupportScopeError($companyId);
+        if ($scopeError !== null) {
+            return ['success' => false, 'submission_id' => 0, 'errors' => [$scopeError], 'warnings' => [], 'validation' => []];
+        }
         $this->ensureSchema();
         $mode = \HelperFramework::normaliseEnvironmentMode($mode);
         $draft = $this->createSubmissionDraft($companyId, $ctPeriodId, $mode);
@@ -114,6 +118,10 @@ final class HmrcCorporationTaxSubmissionService
 
     public function createSubmissionDraft(int $companyId, int $ctPeriodId, string $mode): array
     {
+        $scopeError = $this->vatSupportScopeError($companyId);
+        if ($scopeError !== null) {
+            return ['success' => false, 'errors' => [$scopeError], 'submission_id' => 0];
+        }
         $this->ensureSchema();
         $mode = \HelperFramework::normaliseEnvironmentMode($mode);
         $ctPeriod = (new \eel_accounts\Service\CorporationTaxPeriodService())->fetch($companyId, $ctPeriodId);
@@ -146,6 +154,10 @@ final class HmrcCorporationTaxSubmissionService
         $submission = $this->getSubmission($submissionId);
         if ($submission === null) {
             return ['success' => false, 'errors' => ['Submission draft not found.']];
+        }
+        $scopeError = $this->vatSupportScopeError((int)$submission['company_id']);
+        if ($scopeError !== null) {
+            return ['success' => false, 'errors' => [$scopeError]];
         }
         $ctPeriodId = (int)($submission['ct_period_id'] ?? 0);
         $sequence = (new \eel_accounts\Service\CorporationTaxPeriodService())->canSubmit((int)$submission['company_id'], $ctPeriodId);
@@ -436,6 +448,15 @@ final class HmrcCorporationTaxSubmissionService
         $headers = array_change_key_case((array)($response['headers'] ?? []), CASE_LOWER);
 
         return trim((string)($headers['x-correlation-id'] ?? '')) ?: null;
+    }
+
+    private function vatSupportScopeError(int $companyId): ?string
+    {
+        $scope = (new \eel_accounts\Service\VatSupportScopeService())->fetchForCompany($companyId);
+
+        return !empty($scope['tax_year_end_read_only'])
+            ? (string)($scope['message'] ?? \eel_accounts\Service\VatSupportScopeService::UNSUPPORTED_MESSAGE)
+            : null;
     }
 
     private function companiesHouseComparisonWarnings(int $companyId, int $accountingPeriodId): array

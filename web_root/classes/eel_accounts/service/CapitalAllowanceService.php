@@ -25,6 +25,11 @@ final class CapitalAllowanceService
 
     public function rebuildForCompany(int $companyId): array
     {
+        $scopeBlock = (new VatSupportScopeService())->mutationBlockResult($companyId, 'rebuild Corporation Tax capital allowance data');
+        if ($scopeBlock !== null) {
+            return $scopeBlock;
+        }
+
         if ($companyId <= 0 || !$this->hasRequiredSchema()) {
             return [];
         }

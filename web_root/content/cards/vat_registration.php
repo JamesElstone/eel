@@ -179,6 +179,7 @@ final class _vat_registrationCard extends CardBaseFramework
             ['Validation status', HelperFramework::labelFromKey($status, '_')],
             ['Validated at', $this->displayDateTime((string)($settings['vat_validated_at'] ?? ''))],
             ['Validation source', (string)($settings['vat_validation_source'] ?? '')],
+            ['Validation mode', (string)($settings['vat_validation_mode'] ?? '')],
             ['Business name', (string)($settings['vat_validation_name'] ?? '')],
             ['Address', $this->validationAddress($settings)],
             ['Last error', (string)($settings['vat_last_error'] ?? '')],

@@ -69,6 +69,7 @@ $harness->run(\eel_accounts\Outbound\HmrcOutbound::class, function (GeneratedSer
 
         $harness->assertSame('valid', $result->status);
         $harness->assertSame('EXAMPLE TRADE SUPPLIER', $result->name);
+        $harness->assertSame('TEST', (string)($result->meta['mode'] ?? ''));
     });
 
     $harness->check(\eel_accounts\Outbound\HmrcOutbound::class, 'builds anti-fraud validator config with HMRC defaults', function () use ($harness): void {

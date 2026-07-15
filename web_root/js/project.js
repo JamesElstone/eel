@@ -94,9 +94,9 @@
         });
     }
 
-    function initialiseHmrcFinesCondensedTable(root = document) {
+    function initialiseDefaultCondensedTables(root = document) {
         const toggles = root.querySelectorAll
-            ? root.querySelectorAll('.table-condensed-toggle[data-table-key="hmrc_fines_table"]')
+            ? root.querySelectorAll('.table-condensed-toggle[data-table-key="hmrc_fines_table"], .table-condensed-toggle[data-table-key="vat_turnover_monitoring"], .table-condensed-toggle[data-table-key="tax_rates_vat"], .table-condensed-toggle[data-table-key="tax_thresholds_vat"]')
             : [];
 
         toggles.forEach((toggle) => {
@@ -104,7 +104,11 @@
                 return;
             }
 
-            const storageKey = 'table_condensed_view:hmrc_fines_table';
+            const tableKey = String(toggle.dataset.tableKey || '').trim();
+            if (tableKey === '') {
+                return;
+            }
+            const storageKey = 'table_condensed_view:' + tableKey;
             let hasStoredPreference = false;
             try {
                 hasStoredPreference = window.localStorage.getItem(storageKey) !== null;
@@ -1011,6 +1015,46 @@
         syncCardMaximizedBodyState();
     }
 
+    function applyVatSupportReadOnlyState() {
+        const readOnly = document.querySelector('[data-vat-support-read-only="1"]') !== null;
+        document.querySelectorAll('[data-vat-scope-disabled="1"]').forEach((control) => {
+            if (!readOnly && (
+                control instanceof HTMLInputElement
+                || control instanceof HTMLSelectElement
+                || control instanceof HTMLTextAreaElement
+                || control instanceof HTMLButtonElement
+            )) {
+                control.disabled = false;
+                control.removeAttribute('data-vat-scope-disabled');
+                control.removeAttribute('aria-disabled');
+            }
+        });
+
+        if (!readOnly) {
+            return;
+        }
+
+        document.querySelectorAll('.card[data-card-key]').forEach((card) => {
+            if (!(card instanceof HTMLElement) || ['vat_support_scope', 'tax_period_selector'].includes(String(card.dataset.cardKey || ''))) {
+                return;
+            }
+
+            card.querySelectorAll('button, input:not([type="hidden"]), select, textarea').forEach((control) => {
+                if (!(control instanceof HTMLInputElement)
+                    && !(control instanceof HTMLSelectElement)
+                    && !(control instanceof HTMLTextAreaElement)
+                    && !(control instanceof HTMLButtonElement)) {
+                    return;
+                }
+                if (!control.disabled) {
+                    control.disabled = true;
+                    control.dataset.vatScopeDisabled = '1';
+                    control.setAttribute('aria-disabled', 'true');
+                }
+            });
+        });
+    }
+
     document.addEventListener('click', (event) => {
         const cardSizeToggle = event.target instanceof Element ? event.target.closest('[data-card-size-toggle]') : null;
         if (cardSizeToggle instanceof HTMLButtonElement) {
@@ -1052,7 +1096,7 @@
     });
 
     initialiseManualAssetLegalWarnings(document);
-    initialiseHmrcFinesCondensedTable(document);
+    initialiseDefaultCondensedTables(document);
     initialiseHmrcNoticeRequiredFields(document);
     initialiseDirectorLoanOffsetAcknowledgements(document);
     initialiseUploadProcessingIndicators(document);
@@ -1063,13 +1107,14 @@
     initialiseTransactionAutoApprovalControls(document);
     initialiseYearEndStateForms(document);
     restoreStoredCardMaximizedStates(document);
+    applyVatSupportReadOnlyState();
 
     const observer = new MutationObserver((mutations) => {
         mutations.forEach((mutation) => {
             mutation.addedNodes.forEach((node) => {
                 if (node instanceof HTMLElement) {
                     initialiseManualAssetLegalWarnings(node);
-                    initialiseHmrcFinesCondensedTable(node);
+                    initialiseDefaultCondensedTables(node);
                     initialiseHmrcNoticeRequiredFields(node);
                     initialiseDirectorLoanOffsetAcknowledgements(node);
                     initialiseUploadProcessingIndicators(node);
@@ -1080,6 +1125,7 @@
                     initialiseTransactionAutoApprovalControls(node);
                     initialiseYearEndStateForms(node);
                     restoreStoredCardMaximizedStates(node);
+                    applyVatSupportReadOnlyState();
                 }
             });
         });

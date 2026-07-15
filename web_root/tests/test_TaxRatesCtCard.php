@@ -11,18 +11,18 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 $harness = new GeneratedServiceClassTestHarness();
 
-$harness->run(_tax_ratesCard::class, static function (GeneratedServiceClassTestHarness $harness, _tax_ratesCard $card): void {
+$harness->run(_tax_rates_ctCard::class, static function (GeneratedServiceClassTestHarness $harness, _tax_rates_ctCard $card): void {
     $context = [
         'page' => [
             'page_id' => 'tax_rates',
-            'page_cards' => ['tax_rates'],
+            'page_cards' => ['tax_rates_ct'],
         ],
-        'tax_rates' => [
+        'tax_rates_ct' => [
             'rules' => tax_rates_card_test_rules(),
         ],
     ];
 
-    $harness->check(_tax_ratesCard::class, 'defaults to active rules and paginates to five rows', static function () use ($harness, $card, $context): void {
+    $harness->check(_tax_rates_ctCard::class, 'defaults to active rules and paginates to five rows', static function () use ($harness, $card, $context): void {
         $html = $card->render($context);
 
         $harness->assertTrue(str_contains($html, '<option value="active" selected>Active</option>'));
@@ -33,14 +33,14 @@ $harness->run(_tax_ratesCard::class, static function (GeneratedServiceClassTestH
         $harness->assertTrue(str_contains($html, 'GBP 1,000,000.00'));
         $harness->assertSame(false, str_contains($html, 'active-version-6'));
         $harness->assertSame(false, str_contains($html, 'inactive-version'));
-        $harness->assertTrue(str_contains($html, 'name="tax_rates_status" value="active"'));
+        $harness->assertTrue(str_contains($html, 'name="tax_rates_ct_status" value="active"'));
         $harness->assertTrue(str_contains($html, '<button class="button primary" type="submit">Refresh His Majesty&#039;s Revenue and Customs (HMRC) Rates</button>'));
         $harness->assertSame(false, str_contains($html, 'Import Live His Majesty'));
     });
 
-    $harness->check(_tax_ratesCard::class, 'empty table prompts live HMRC import', static function () use ($harness, $card, $context): void {
+    $harness->check(_tax_rates_ctCard::class, 'empty table prompts live HMRC import', static function () use ($harness, $card, $context): void {
         $emptyContext = $context;
-        $emptyContext['tax_rates']['rules'] = [];
+        $emptyContext['tax_rates_ct']['rules'] = [];
         $html = $card->render($emptyContext);
 
         $harness->assertTrue(str_contains($html, 'No active sourced tax or allowance rules are stored yet.'));
@@ -48,9 +48,9 @@ $harness->run(_tax_ratesCard::class, static function (GeneratedServiceClassTestH
         $harness->assertSame(false, str_contains($html, 'Refresh His Majesty'));
     });
 
-    $harness->check(_tax_ratesCard::class, 'all filter includes superseded rows and exports filtered rows', static function () use ($harness, $card, $context): void {
+    $harness->check(_tax_rates_ctCard::class, 'all filter includes superseded rows and exports filtered rows', static function () use ($harness, $card, $context): void {
         $allContext = $context;
-        $allContext['tax_rates']['status_filter'] = 'all';
+        $allContext['tax_rates_ct']['status_filter'] = 'all';
         $html = $card->render($allContext);
         $tables = $card->tables($allContext);
         $csv = $tables[0]->exportCsv();
@@ -62,10 +62,10 @@ $harness->run(_tax_ratesCard::class, static function (GeneratedServiceClassTestH
         $harness->assertTrue(str_contains($csv, 'inactive-version'));
     });
 
-    $harness->check(_tax_ratesCard::class, 'handle stores normalised filter input', static function () use ($harness, $card, $context): void {
+    $harness->check(_tax_rates_ctCard::class, 'handle stores normalised filter input', static function () use ($harness, $card, $context): void {
         $request = new RequestFramework(
             ['page' => 'tax_rates'],
-            ['tax_rates_status' => 'all'],
+            ['tax_rates_ct_status' => 'all'],
             ['REQUEST_METHOD' => 'POST'],
             [],
             []
@@ -73,7 +73,7 @@ $harness->run(_tax_ratesCard::class, static function (GeneratedServiceClassTestH
         $services = new PageServiceFramework(new AppService(APP_ROOT . 'uploads'));
         $handled = $card->handle($request, $services, $context, ActionResultFramework::none());
 
-        $harness->assertSame('all', (string)$handled['tax_rates']['status_filter']);
+        $harness->assertSame('all', (string)$handled['tax_rates_ct']['status_filter']);
     });
 });
 

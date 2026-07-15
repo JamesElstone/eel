@@ -58,8 +58,16 @@ $singlePointContext = [
     'company' => ['settings' => ['default_currency' => 'GBP']],
     'services' => ['vat_turnover_monitoring' => $singlePointMonitoring],
 ];
+$unavailableThresholdContext = $context;
+$unavailableThresholdContext['services']['vat_turnover_monitoring']['threshold'] = [
+    'available' => false,
+    'registration_threshold' => null,
+];
+$unavailableThresholdContext['services']['vat_turnover_monitoring']['threshold_percentage_used'] = null;
+$unavailableThresholdContext['services']['vat_turnover_monitoring']['threshold_headroom'] = null;
+$unavailableThresholdContext['services']['vat_turnover_monitoring']['threshold_points'] = [];
 
-$harness->run(_vat_turnover_monitoringCard::class, static function (GeneratedServiceClassTestHarness $harness, _vat_turnover_monitoringCard $card) use ($context, $singlePointContext): void {
+$harness->run(_vat_turnover_monitoringCard::class, static function (GeneratedServiceClassTestHarness $harness, _vat_turnover_monitoringCard $card) use ($context, $singlePointContext, $unavailableThresholdContext): void {
     $harness->check(_vat_turnover_monitoringCard::class, 'renders signed monthly data, rolling threshold lines, headroom and coverage', static function () use ($harness, $card, $context): void {
         $html = $card->render($context);
 
@@ -73,7 +81,7 @@ $harness->run(_vat_turnover_monitoringCard::class, static function (GeneratedSer
         $harness->assertSame(true, str_contains($html, 'data-table-key="vat_turnover_monitoring"'));
         $harness->assertSame(2, substr_count($html, '<section class="panel-soft">'));
         $harness->assertSame(true, str_contains($html, '<section class="panel-soft"><div class="helper"><strong>Important limitations and coverage checks</strong>'));
-        $harness->assertSame(true, str_contains($html, '<section class="panel-soft"><div class="table-scroll vat-turnover-monitoring-table"'));
+        $harness->assertSame(true, str_contains($html, '<div class="table-scroll vat-turnover-monitoring-table"'));
         $harness->assertSame(true, str_contains($html, 'table-condensed-toggle'));
         $harness->assertSame(true, str_contains($html, 'name="_table_export_prepare" value="csv"'));
         $harness->assertSame(true, strpos($html, 'Important limitations and coverage checks') < strpos($html, 'summary-grid'));
@@ -97,9 +105,17 @@ $harness->run(_vat_turnover_monitoringCard::class, static function (GeneratedSer
         $harness->assertSame(true, str_contains($html, 'Months 1-13 of 14'));
         $harness->assertSame(1, count($card->tables($pagedContext)));
     });
+
+    $harness->check(_vat_turnover_monitoringCard::class, 'directs the user to import sourced thresholds when none are available', static function () use ($harness, $card, $unavailableThresholdContext): void {
+        $html = $card->render($unavailableThresholdContext);
+
+        $harness->assertTrue(str_contains($html, 'Threshold unavailable.'));
+        $harness->assertTrue(str_contains($html, 'href="?page=tax_rates"'));
+        $harness->assertTrue(str_contains($html, 'Import HMRC VAT thresholds'));
+    });
 });
 
-$harness->run(_tax_vat_thresholdCard::class, static function (GeneratedServiceClassTestHarness $harness, _tax_vat_thresholdCard $card) use ($context): void {
+$harness->run(_tax_vat_thresholdCard::class, static function (GeneratedServiceClassTestHarness $harness, _tax_vat_thresholdCard $card) use ($context, $unavailableThresholdContext): void {
     $harness->check(_tax_vat_thresholdCard::class, 'renders compact AP and trailing VAT threshold summary', static function () use ($harness, $card, $context): void {
         $html = $card->render($context);
 
@@ -107,6 +123,13 @@ $harness->run(_tax_vat_thresholdCard::class, static function (GeneratedServiceCl
         $harness->assertSame(true, str_contains($html, '32.2%'));
         $harness->assertSame(true, str_contains($html, '£ 61,000.00'));
         $harness->assertSame(true, str_contains($html, 'https://www.gov.uk/how-vat-works/vat-thresholds'));
+    });
+
+    $harness->check(_tax_vat_thresholdCard::class, 'directs the user to the source import when the threshold table is empty', static function () use ($harness, $card, $unavailableThresholdContext): void {
+        $html = $card->render($unavailableThresholdContext);
+
+        $harness->assertTrue(str_contains($html, 'Threshold unavailable.'));
+        $harness->assertTrue(str_contains($html, 'Import HMRC VAT thresholds'));
     });
 });
 

@@ -24,7 +24,7 @@ $harness->run(_vat_readinessCard::class, static function (GeneratedServiceClassT
         ]);
 
         $harness->assertTrue(str_contains($html, 'The company is not VAT registered, so VAT accounting is not required.'));
-        $harness->assertSame(4, substr_count($html, '<span class="status-indicator"><span class="status-square ok"></span>Ready</span>'));
+        $harness->assertSame(5, substr_count($html, '<span class="status-indicator"><span class="status-square ok"></span>Ready</span>'));
         $harness->assertSame(false, str_contains($html, 'Needs attention'));
     });
 

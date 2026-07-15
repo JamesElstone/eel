@@ -35,7 +35,7 @@ final class VatRegistrationAction implements ActionInterfaceFramework
                 $settings = $this->clearVatDetails($settings);
             } else {
                 $settings = $vatService->applyManualSaveRules($settings, $previousSettings);
-                if ((string)($settings['vat_validation_status'] ?? '') !== 'valid') {
+                if (!in_array((string)($settings['vat_validation_status'] ?? ''), ['valid', 'mismatch_override'], true)) {
                     return new ActionResultFramework(false, ['vat_registration', 'vat_readiness'], [[
                         'type' => 'error',
                         'message' => 'Check the VAT number and confirm the returned company name matches before saving VAT registration settings.',
@@ -106,12 +106,21 @@ final class VatRegistrationAction implements ActionInterfaceFramework
     private function acceptVatMismatch(RequestFramework $request): ActionResultFramework
     {
         return $this->withSettings($request, function (array $settings, \eel_accounts\Service\VatRegistrationService $vatService) use ($request): ActionResultFramework {
+            $validatedCountry = strtoupper(trim((string)($settings['vat_country_code'] ?? '')));
+            $validatedNumber = $vatService->normaliseVatNumber((string)($settings['vat_number'] ?? ''));
             $settings = $this->submittedVatSettings($request, $settings, $vatService);
 
             if ((string)($settings['vat_validation_status'] ?? '') !== 'mismatch_pending') {
                 return new ActionResultFramework(false, ['vat_registration'], [[
                     'type' => 'error',
                     'message' => 'There is no VAT validation mismatch waiting to be accepted.',
+                ]]);
+            }
+            if ($validatedCountry !== (string)($settings['vat_country_code'] ?? '')
+                || $validatedNumber !== (string)($settings['vat_number'] ?? '')) {
+                return new ActionResultFramework(false, ['vat_registration', 'vat_readiness'], [[
+                    'type' => 'error',
+                    'message' => 'The VAT country or number changed after validation. Check the new VAT number before accepting a mismatch.',
                 ]]);
             }
 
@@ -191,6 +200,7 @@ final class VatRegistrationAction implements ActionInterfaceFramework
             'vat_validation_status',
             'vat_validated_at',
             'vat_validation_source',
+            'vat_validation_mode',
             'vat_validation_name',
             'vat_validation_address_line1',
             'vat_validation_postcode',

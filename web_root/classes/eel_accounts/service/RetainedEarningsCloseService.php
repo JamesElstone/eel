@@ -125,6 +125,8 @@ final class RetainedEarningsCloseService
 
     public function saveAcknowledgement(int $companyId, int $accountingPeriodId, bool $acknowledged, string $changedBy = 'web_app', string $note = ''): array
     {
+        (new \eel_accounts\Service\VatSupportScopeService())
+            ->assertTaxAndYearEndSupported($companyId, 'save a retained earnings Year End acknowledgement');
         if (!$acknowledged) {
             return ($this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService())
                 ->revoke($companyId, $accountingPeriodId, 'retained_earnings_close_confirmation');
@@ -156,6 +158,8 @@ final class RetainedEarningsCloseService
 
     public function postClose(int $companyId, int $accountingPeriodId, string $changedBy = 'web_app', bool $acknowledgementPrevalidated = false): array
     {
+        (new \eel_accounts\Service\VatSupportScopeService())
+            ->assertTaxAndYearEndSupported($companyId, 'post the retained earnings Year End close');
         $context = $this->fetchContext($companyId, $accountingPeriodId);
         if (empty($context['available'])) {
             return $context + ['success' => false];
@@ -224,6 +228,8 @@ final class RetainedEarningsCloseService
 
     public function removeCloseJournal(int $companyId, int $accountingPeriodId, string $changedBy = 'web_app'): array
     {
+        (new \eel_accounts\Service\VatSupportScopeService())
+            ->assertTaxAndYearEndSupported($companyId, 'remove a retained earnings Year End close');
         return ['success' => true, 'deleted' => false, 'skipped' => true];
     }
 

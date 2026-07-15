@@ -23,6 +23,7 @@ final class VatRegistrationService
         $settings['vat_validation_status'] = 'unverified';
         $settings['vat_validated_at'] = '';
         $settings['vat_validation_source'] = '';
+        $settings['vat_validation_mode'] = '';
         $settings['vat_validation_name'] = '';
         $settings['vat_validation_address_line1'] = '';
         $settings['vat_validation_postcode'] = '';
@@ -63,6 +64,7 @@ final class VatRegistrationService
     }
 
     public function updateSettingsFromResult(array $settings, \eel_accounts\Service\VatValidationResultService $result): array {
+        $settings['vat_validation_mode'] = strtoupper(trim((string)($result->meta['mode'] ?? '')));
         if ($result->status === 'valid') {
             $settings['vat_validation_status'] = 'valid';
             $settings['vat_validated_at'] = gmdate('Y-m-d H:i:s');

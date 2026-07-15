@@ -43,6 +43,11 @@ final class OpeningBalanceService
     }
 
     public function saveOpeningBalance(int $companyId, int $accountingPeriodId, array $payload, string $changedBy = 'web_app'): array {
+        $scopeBlock = (new VatSupportScopeService())->mutationBlockResult($companyId, 'save Year End opening balances');
+        if ($scopeBlock !== null) {
+            return $scopeBlock;
+        }
+
         $context = $this->fetchContext($companyId, $accountingPeriodId);
         if (empty($context['available'])) {
             return $context;

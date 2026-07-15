@@ -165,6 +165,11 @@ final class EmptyMonthConfirmationService
         array $monthStarts,
         string $revokedBy = 'web_app'
     ): array {
+        $scopeBlock = (new VatSupportScopeService())->mutationBlockResult($companyId, 'revoke Year End empty-month confirmations');
+        if ($scopeBlock !== null) {
+            return $scopeBlock;
+        }
+
         (new YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'revoke empty-month confirmations for this period');
         if (!$this->tableAvailable()) {
             return $this->failure('Empty month confirmations are not available until the database migration has been applied.');
@@ -231,6 +236,11 @@ final class EmptyMonthConfirmationService
         string $notes = '',
         string $confirmedBy = 'web_app'
     ): array {
+        $scopeBlock = (new VatSupportScopeService())->mutationBlockResult($companyId, 'confirm a Year End empty month');
+        if ($scopeBlock !== null) {
+            return $scopeBlock;
+        }
+
         (new YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'confirm an empty month for this period');
         if (!$this->tableAvailable()) {
             return $this->failure('Empty month confirmations are not available until the database migration has been applied.');
@@ -266,6 +276,11 @@ final class EmptyMonthConfirmationService
         string $notes = '',
         string $confirmedBy = 'web_app'
     ): array {
+        $scopeBlock = (new VatSupportScopeService())->mutationBlockResult($companyId, 'confirm Year End empty months');
+        if ($scopeBlock !== null) {
+            return $scopeBlock;
+        }
+
         (new YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'confirm empty months for this period');
         if (!$this->tableAvailable()) {
             return $this->failure('Empty month confirmations are not available until the database migration has been applied.');
@@ -399,6 +414,11 @@ final class EmptyMonthConfirmationService
         string $monthStart,
         string $revokedBy = 'web_app'
     ): array {
+        $scopeBlock = (new VatSupportScopeService())->mutationBlockResult($companyId, 'revoke a Year End empty-month confirmation');
+        if ($scopeBlock !== null) {
+            return $scopeBlock;
+        }
+
         (new YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'revoke an empty-month confirmation for this period');
         if (!$this->tableAvailable()) {
             return $this->failure('Empty month confirmations are not available until the database migration has been applied.');

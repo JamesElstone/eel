@@ -42,6 +42,11 @@ final class YearEndAdjustmentService
     }
 
     public function createAdjustment(int $companyId, int $accountingPeriodId, array $payload, string $changedBy = 'web_app'): array {
+        $scopeBlock = (new VatSupportScopeService())->mutationBlockResult($companyId, 'create a Year End adjustment');
+        if ($scopeBlock !== null) {
+            return $scopeBlock;
+        }
+
         $context = $this->fetchContext($companyId, $accountingPeriodId);
         if (empty($context['available'])) {
             return $context;

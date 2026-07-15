@@ -16,6 +16,16 @@ $harness->run(\eel_accounts\Service\VatRegistrationService::class, function (Gen
         $reset = $service->resetValidationState(['vat_validation_status' => 'valid']);
 
         $harness->assertSame('unverified', $reset['vat_validation_status']);
+        $harness->assertSame('', $reset['vat_validation_mode']);
+    });
+
+    $harness->check(\eel_accounts\Service\VatRegistrationService::class, 'persists the VAT validation environment from the validator result', function () use ($harness, $service): void {
+        $settings = $service->updateSettingsFromResult(
+            [],
+            \eel_accounts\Service\VatValidationResultService::valid('hmrc', 'VAT Fixture Limited', '', ['mode' => 'LIVE'])
+        );
+
+        $harness->assertSame('LIVE', (string)$settings['vat_validation_mode']);
     });
 
     $harness->check(\eel_accounts\Service\VatRegistrationService::class, 'normalises VAT numbers to uppercase alphanumeric format', function () use ($harness): void {

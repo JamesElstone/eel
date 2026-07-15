@@ -56,18 +56,30 @@ final class _tax extends PageContextFramework
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
         $ctPeriodService = new \eel_accounts\Service\CorporationTaxPeriodService();
-        $sync = $companyId > 0 && $accountingPeriodId > 0
-            ? $ctPeriodService->syncForAccountingPeriod($companyId, $accountingPeriodId)
-            : ['periods' => []];
+        $vatSupportScope = (new \eel_accounts\Service\VatSupportScopeService())->fetchForCompany($companyId);
+        if ($companyId > 0 && $accountingPeriodId > 0 && empty($vatSupportScope['tax_year_end_read_only'])) {
+            $sync = $ctPeriodService->syncForAccountingPeriod($companyId, $accountingPeriodId);
+        } elseif ($companyId > 0 && $accountingPeriodId > 0 && InterfaceDB::tableExists('corporation_tax_periods')) {
+            $sync = [
+                'success' => true,
+                'periods' => $ctPeriodService->fetchForAccountingPeriod($companyId, $accountingPeriodId),
+                'errors' => [],
+            ];
+        } else {
+            $sync = ['success' => true, 'periods' => [], 'errors' => []];
+        }
         $ctPeriods = array_values(array_filter((array)($sync['periods'] ?? []), static fn(array $period): bool => (string)($period['status'] ?? '') !== 'superseded'));
         $requestedCtPeriodId = max(0, (int)$request->input('ct_period_id', 0));
         $selectedCtPeriodId = $this->selectedCtPeriodId($ctPeriods, $requestedCtPeriodId);
         if ($selectedCtPeriodId <= 0) {
-            $selectedCtPeriodId = $ctPeriodService->defaultCtPeriodId($companyId, $accountingPeriodId);
+            $selectedCtPeriodId = !empty($vatSupportScope['tax_year_end_read_only'])
+                ? (int)($ctPeriods[0]['id'] ?? 0)
+                : $ctPeriodService->defaultCtPeriodId($companyId, $accountingPeriodId);
         }
         $selectedCtPeriod = $this->selectedCtPeriod($ctPeriods, $selectedCtPeriodId);
 
         return [
+            'vat_support_scope' => $vatSupportScope,
             'tax' => [
                 'ct_periods' => $ctPeriods,
                 'selected_ct_period_id' => $selectedCtPeriodId,

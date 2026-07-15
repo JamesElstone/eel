@@ -1,0 +1,596 @@
+<?php
+/**
+ * EEL Accounts
+ * Copyright (c) 2026 James Elstone
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3)
+ * See LICENSE file for details.
+ */
+declare(strict_types=1);
+
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+
+/**
+ * Isolated capital-allowance fixtures. Every scenario starts a transaction;
+ * GeneratedServiceClassTestHarness rolls it back even when an assertion fails.
+ */
+final class GoldenCapitalAllowanceMatrixFixture
+{
+    /**
+     * @param list<array{id: int, start: string, end: string}> $periods
+     * @return array{bank: int, sales: int, plant: int, car: int, accumulated_depreciation: int, unreviewed_vehicle: int}
+     */
+    public static function beginScenario(
+        int $companyId,
+        array $periods,
+        string $companyStatus = 'active',
+        bool $isActive = true
+    ): array {
+        InterfaceDB::beginTransaction();
+        self::seedCapitalAllowanceRules();
+
+        self::insert('companies', [
+            'id' => $companyId,
+            'company_name' => 'GOLDEN-TEST Capital Allowance ' . $companyId,
+            'company_number' => 'GCA' . $companyId,
+            'incorporation_date' => '2098-01-01',
+            'company_status' => $companyStatus,
+            'is_vat_registered' => 0,
+            'is_active' => $isActive ? 1 : 0,
+        ]);
+
+        foreach ($periods as $period) {
+            self::insert('accounting_periods', [
+                'id' => $period['id'],
+                'company_id' => $companyId,
+                'label' => $period['start'] . ' to ' . $period['end'],
+                'period_start' => $period['start'],
+                'period_end' => $period['end'],
+            ]);
+        }
+
+        return [
+            'bank' => self::nominal('GCA-BANK-' . $companyId, 'Golden CA bank', 'asset', 'other'),
+            'sales' => self::nominal('GCA-SALES-' . $companyId, 'Golden CA sales', 'income', 'allowable'),
+            'plant' => self::nominal('GCA-PLANT-' . $companyId, 'Golden CA plant', 'asset', 'capital'),
+            'car' => self::nominal('GCA-CAR-' . $companyId, 'Golden CA cars', 'asset', 'capital'),
+            'accumulated_depreciation' => self::nominal('GCA-ACCDEP-' . $companyId, 'Golden CA accumulated depreciation', 'asset', 'capital'),
+            'unreviewed_vehicle' => self::nominal('1320', 'Motor Vehicles', 'asset', 'capital'),
+        ];
+    }
+
+    public static function addAsset(
+        int $id,
+        int $companyId,
+        int $nominalId,
+        int $accumulatedDepreciationNominalId,
+        string $assetCode,
+        string $category,
+        string $purchaseDate,
+        float $cost,
+        array $overrides = []
+    ): void {
+        self::insert('asset_register', array_merge([
+            'id' => $id,
+            'company_id' => $companyId,
+            'asset_code' => $assetCode,
+            'description' => 'GOLDEN-TEST ' . $assetCode,
+            'category' => $category,
+            'nominal_account_id' => $nominalId,
+            'accum_dep_nominal_id' => $accumulatedDepreciationNominalId,
+            'purchase_date' => $purchaseDate,
+            'cost' => $cost,
+            'useful_life_years' => 5,
+            'depreciation_method' => 'straight_line',
+            // Keep the CT reconciliation focused on capital allowances rather
+            // than a separate depreciation-preview calculation.
+            'residual_value' => $cost,
+            'status' => 'active',
+        ], $overrides));
+    }
+
+    public static function addVehicle(
+        int $assetId,
+        int $companyId,
+        string $condition,
+        bool $zeroEmission,
+        ?int $co2,
+        string $firstRegisteredDate = '2098-01-01'
+    ): void {
+        self::insert('asset_vehicle_details', [
+            'asset_id' => $assetId,
+            'company_id' => $companyId,
+            'vehicle_type' => 'car',
+            'first_registered_date' => $firstRegisteredDate,
+            'acquisition_condition' => $condition,
+            'is_zero_emission' => $zeroEmission ? 1 : 0,
+            'co2_emissions_g_km' => $co2,
+            'tax_review_status' => 'reviewed',
+            'reviewed_at' => '2098-01-01 09:00:00',
+            'reviewed_by' => 'golden-test',
+        ]);
+    }
+
+    public static function addSalesJournal(
+        int $id,
+        int $companyId,
+        int $periodId,
+        string $date,
+        int $bankNominalId,
+        int $salesNominalId,
+        float $amount
+    ): void {
+        self::insert('journals', [
+            'id' => $id,
+            'company_id' => $companyId,
+            'accounting_period_id' => $periodId,
+            'source_type' => 'manual',
+            'source_ref' => 'GOLDEN-CA-SALES-' . $id,
+            'journal_date' => $date,
+            'description' => 'GOLDEN-TEST capital allowance reconciliation revenue',
+            'is_posted' => 1,
+        ]);
+        self::insert('journal_lines', [
+            'journal_id' => $id,
+            'nominal_account_id' => $bankNominalId,
+            'debit' => $amount,
+            'credit' => 0.0,
+        ]);
+        self::insert('journal_lines', [
+            'journal_id' => $id,
+            'nominal_account_id' => $salesNominalId,
+            'debit' => 0.0,
+            'credit' => $amount,
+        ]);
+    }
+
+    public static function insertStalePool(int $companyId, int $periodId, int $ctPeriodId): string
+    {
+        $hash = str_repeat('s', 64);
+        self::insert('capital_allowance_pool_runs', [
+            'company_id' => $companyId,
+            'accounting_period_id' => $periodId,
+            'ct_period_id' => $ctPeriodId,
+            'pool_type' => 'main_pool',
+            'opening_wdv' => 999.0,
+            'additions' => 999.0,
+            'aia_claimed' => 0.0,
+            'fya_claimed' => 0.0,
+            'disposal_value' => 0.0,
+            'wda_claimed' => 0.0,
+            'balancing_charge' => 0.0,
+            'balancing_allowance' => 0.0,
+            'closing_wdv' => 999.0,
+            'warnings_json' => '[]',
+            'run_hash' => $hash,
+        ]);
+
+        return $hash;
+    }
+
+    public static function ctPeriodId(int $companyId, int $periodId): int
+    {
+        return (int)InterfaceDB::fetchColumn(
+            'SELECT id
+             FROM corporation_tax_periods
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+               AND status <> :superseded
+             ORDER BY sequence_no ASC, id ASC
+             LIMIT 1',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $periodId,
+                'superseded' => 'superseded',
+            ]
+        );
+    }
+
+    /** @return array<string, array<string, mixed>> */
+    public static function pools(int $companyId, int $periodId, int $ctPeriodId): array
+    {
+        $breakdown = (new \eel_accounts\Service\CapitalAllowanceService())
+            ->fetchPeriodBreakdown($companyId, $periodId, $ctPeriodId);
+        $pools = [];
+        foreach ((array)($breakdown['rows'] ?? []) as $row) {
+            $pools[(string)$row['pool_type']] = $row;
+        }
+
+        return $pools;
+    }
+
+    /** @return list<array<string, mixed>> */
+    public static function assetCalculations(int $companyId, int $periodId): array
+    {
+        return InterfaceDB::fetchAll(
+            'SELECT asset_id, pool_type, allowance_type, addition_amount, allowance_amount, disposal_value, warning
+             FROM capital_allowance_asset_calculations
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+             ORDER BY asset_id ASC, id ASC',
+            ['company_id' => $companyId, 'accounting_period_id' => $periodId]
+        ) ?: [];
+    }
+
+    public static function money(mixed $value): float
+    {
+        return round((float)$value, 2);
+    }
+
+    public static function fixedNineteenPercentRateService(): \eel_accounts\Service\CorporationTaxRateService
+    {
+        $rules = [];
+        foreach ([2098, 2099, 2100] as $financialYear) {
+            $rules[] = [
+                'financial_year_start' => $financialYear . '-04-01',
+                'financial_year_end' => ($financialYear + 1) . '-03-31',
+                'rule_version' => 'golden-ca-' . $financialYear,
+                'main_rate' => 0.19,
+                'small_profits_rate' => null,
+                'lower_limit' => null,
+                'upper_limit' => null,
+                'marginal_relief_fraction' => null,
+                'source_url' => 'https://example.test/golden-capital-allowances',
+                'source_checked_at' => '2026-07-15',
+                'is_active' => 1,
+            ];
+        }
+
+        return new \eel_accounts\Service\CorporationTaxRateService($rules);
+    }
+
+    public static function rollbackAfter(callable $scenario): void
+    {
+        try {
+            $scenario();
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    }
+
+    private static function seedCapitalAllowanceRules(): void
+    {
+        InterfaceDB::prepareExecute(
+            'DELETE FROM tax_rate_rules WHERE tax_domain = :tax_domain',
+            ['tax_domain' => 'capital_allowances']
+        );
+
+        foreach ([
+            ['aia_annual_limit', 'Annual investment allowance limit', 'amount', null, 1000.0],
+            ['main_pool_wda', 'Main pool writing down allowance', 'rate', 0.18, null],
+            ['special_rate_pool_wda', 'Special rate pool writing down allowance', 'rate', 0.06, null],
+        ] as [$key, $label, $type, $rate, $amount]) {
+            self::insert('tax_rate_rules', [
+                'tax_domain' => 'capital_allowances',
+                'regime' => 'plant_machinery',
+                'rule_key' => $key,
+                'rule_label' => $label,
+                'period_start' => '2098-01-01',
+                'period_end' => '2101-12-31',
+                'value_type' => $type,
+                'rate_value' => $rate,
+                'amount_value' => $amount,
+                'source_url' => 'https://example.test/golden-capital-allowances',
+                'source_checked_at' => '2026-07-15',
+                'rule_version' => 'golden-ca-matrix-' . $key,
+                'is_active' => 1,
+            ]);
+        }
+    }
+
+    private static function nominal(string $code, string $name, string $type, string $taxTreatment): int
+    {
+        $existing = (int)InterfaceDB::fetchColumn(
+            'SELECT id FROM nominal_accounts WHERE code = :code LIMIT 1',
+            ['code' => $code]
+        );
+        if ($existing > 0) {
+            return $existing;
+        }
+
+        self::insert('nominal_accounts', [
+            'code' => $code,
+            'name' => $name,
+            'account_type' => $type,
+            'tax_treatment' => $taxTreatment,
+            'is_active' => 1,
+        ]);
+
+        return (int)InterfaceDB::fetchColumn(
+            'SELECT id FROM nominal_accounts WHERE code = :code LIMIT 1',
+            ['code' => $code]
+        );
+    }
+
+    /** @param array<string, scalar|null> $values */
+    private static function insert(string $table, array $values): void
+    {
+        $columns = array_keys($values);
+        $quoted = array_map(static fn(string $column): string => '`' . $column . '`', $columns);
+        $placeholders = array_map(static fn(string $column): string => ':' . $column, $columns);
+        InterfaceDB::execute(
+            'INSERT INTO `' . $table . '` (' . implode(', ', $quoted) . ') VALUES (' . implode(', ', $placeholders) . ')',
+            $values
+        );
+    }
+}
+
+$harness = new GeneratedServiceClassTestHarness();
+$subject = 'GoldenCapitalAllowanceMatrix';
+
+$harness->check($subject, 'distinguishes missing pool state and replaces stale pool state', static function () use ($harness): void {
+    GoldenCapitalAllowanceMatrixFixture::rollbackAfter(static function () use ($harness): void {
+    $companyId = 98101;
+    $periodId = 981011;
+    GoldenCapitalAllowanceMatrixFixture::beginScenario($companyId, [
+        ['id' => $periodId, 'start' => '2099-01-01', 'end' => '2099-12-31'],
+    ]);
+
+    $service = new \eel_accounts\Service\CapitalAllowanceService();
+    $missing = $service->fetchPeriodBreakdown($companyId, $periodId);
+    $harness->assertSame(false, (bool)$missing['available']);
+    $harness->assertSame([], $missing['rows']);
+
+    $sync = (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $periodId);
+    $harness->assertSame(true, (bool)($sync['success'] ?? false));
+    $ctPeriodId = GoldenCapitalAllowanceMatrixFixture::ctPeriodId($companyId, $periodId);
+    $staleHash = GoldenCapitalAllowanceMatrixFixture::insertStalePool($companyId, $periodId, $ctPeriodId);
+    $stale = $service->fetchPeriodBreakdown($companyId, $periodId, $ctPeriodId);
+    $harness->assertSame(999.0, GoldenCapitalAllowanceMatrixFixture::money($stale['rows'][0]['closing_wdv'] ?? 0));
+
+    $service->rebuildForCompany($companyId);
+    $rebuilt = $service->fetchPeriodBreakdown($companyId, $periodId, $ctPeriodId);
+    $harness->assertSame(true, (bool)$rebuilt['available']);
+    $harness->assertCount(2, $rebuilt['rows']);
+    foreach ($rebuilt['rows'] as $row) {
+        $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($row['closing_wdv'] ?? -1));
+    }
+    $remainingStale = (int)InterfaceDB::fetchColumn(
+        'SELECT COUNT(*) FROM capital_allowance_pool_runs WHERE company_id = :company_id AND run_hash = :run_hash',
+        ['company_id' => $companyId, 'run_hash' => $staleHash]
+    );
+    $harness->assertSame(0, $remainingStale);
+    });
+});
+
+$harness->check($subject, 'pro-rates and exhausts AIA then reconciles asset rows, pools and CT summary', static function () use ($harness): void {
+    GoldenCapitalAllowanceMatrixFixture::rollbackAfter(static function () use ($harness): void {
+    $companyId = 98102;
+    $periodId = 981021;
+    $nominals = GoldenCapitalAllowanceMatrixFixture::beginScenario($companyId, [
+        ['id' => $periodId, 'start' => '2099-01-01', 'end' => '2099-06-30'],
+    ]);
+    GoldenCapitalAllowanceMatrixFixture::addAsset(
+        9810201,
+        $companyId,
+        $nominals['plant'],
+        $nominals['accumulated_depreciation'],
+        'GCA-AIA-PRORATED',
+        'tools_equipment',
+        '2099-01-10',
+        1000.0
+    );
+    GoldenCapitalAllowanceMatrixFixture::addSalesJournal(
+        9810291,
+        $companyId,
+        $periodId,
+        '2099-02-01',
+        $nominals['bank'],
+        $nominals['sales'],
+        2000.0
+    );
+
+    $service = new \eel_accounts\Service\CapitalAllowanceService();
+    $result = $service->rebuildForCompany($companyId);
+    $ctPeriodId = GoldenCapitalAllowanceMatrixFixture::ctPeriodId($companyId, $periodId);
+    $pools = GoldenCapitalAllowanceMatrixFixture::pools($companyId, $periodId, $ctPeriodId);
+    $main = $pools['main_pool'];
+
+    $harness->assertSame(495.89, GoldenCapitalAllowanceMatrixFixture::money($main['aia_claimed']));
+    $harness->assertSame(504.11, GoldenCapitalAllowanceMatrixFixture::money($main['additions']));
+    $harness->assertSame(45.0, GoldenCapitalAllowanceMatrixFixture::money($main['wda_claimed']));
+    $harness->assertSame(459.11, GoldenCapitalAllowanceMatrixFixture::money($main['closing_wdv']));
+    $harness->assertSame(540.89, GoldenCapitalAllowanceMatrixFixture::money($result[$periodId]['net_capital_allowances'] ?? 0));
+
+    $assetRows = GoldenCapitalAllowanceMatrixFixture::assetCalculations($companyId, $periodId);
+    $harness->assertCount(2, $assetRows);
+    $harness->assertSame('aia', (string)$assetRows[0]['allowance_type']);
+    $harness->assertSame(1000.0, GoldenCapitalAllowanceMatrixFixture::money($assetRows[0]['addition_amount']));
+    $harness->assertSame(495.89, GoldenCapitalAllowanceMatrixFixture::money($assetRows[0]['allowance_amount']));
+    $harness->assertSame('main_pool_addition', (string)$assetRows[1]['allowance_type']);
+    $harness->assertSame(504.11, GoldenCapitalAllowanceMatrixFixture::money($assetRows[1]['addition_amount']));
+
+    $assetAllowance = array_sum(array_map(
+        static fn(array $row): float => GoldenCapitalAllowanceMatrixFixture::money($row['allowance_amount'] ?? 0),
+        $assetRows
+    ));
+    $poolNet = round(
+        (float)$main['aia_claimed']
+        + (float)$main['fya_claimed']
+        + (float)$main['wda_claimed']
+        + (float)$main['balancing_allowance']
+        - (float)$main['balancing_charge'],
+        2
+    );
+    $harness->assertSame(540.89, round($assetAllowance + (float)$main['wda_claimed'], 2));
+    $harness->assertSame(540.89, $poolNet);
+
+    $ctService = new \eel_accounts\Service\CorporationTaxComputationService(
+        null,
+        GoldenCapitalAllowanceMatrixFixture::fixedNineteenPercentRateService()
+    );
+    $summary = $ctService->fetchSummaryForCtPeriodId($companyId, $ctPeriodId);
+    $harness->assertSame(true, (bool)($summary['available'] ?? false));
+    $harness->assertSame(2000.0, GoldenCapitalAllowanceMatrixFixture::money($summary['accounting_profit'] ?? 0));
+    $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($summary['depreciation_add_back'] ?? -1));
+    $harness->assertSame($poolNet, GoldenCapitalAllowanceMatrixFixture::money($summary['capital_allowances'] ?? 0));
+    $harness->assertSame(1459.11, GoldenCapitalAllowanceMatrixFixture::money($summary['taxable_profit'] ?? 0));
+    $harness->assertSame(277.23, GoldenCapitalAllowanceMatrixFixture::money($summary['estimated_corporation_tax'] ?? 0));
+    });
+});
+
+$harness->check($subject, 'applies FYA and CO2 pool rates while retaining review warnings', static function () use ($harness): void {
+    GoldenCapitalAllowanceMatrixFixture::rollbackAfter(static function () use ($harness): void {
+    $companyId = 98103;
+    $periodId = 981031;
+    $nominals = GoldenCapitalAllowanceMatrixFixture::beginScenario($companyId, [
+        ['id' => $periodId, 'start' => '2099-01-01', 'end' => '2099-12-31'],
+    ]);
+    $accumulatedDepreciation = $nominals['accumulated_depreciation'];
+
+    GoldenCapitalAllowanceMatrixFixture::addAsset(9810301, $companyId, $nominals['car'], $accumulatedDepreciation, 'GCA-FYA-ZERO', 'car', '2099-01-02', 10000.0);
+    GoldenCapitalAllowanceMatrixFixture::addVehicle(9810301, $companyId, 'new_unused', true, 0);
+    GoldenCapitalAllowanceMatrixFixture::addAsset(9810302, $companyId, $nominals['car'], $accumulatedDepreciation, 'GCA-MAIN-CO2-50', 'car', '2099-01-03', 10000.0);
+    GoldenCapitalAllowanceMatrixFixture::addVehicle(9810302, $companyId, 'used', false, 50);
+    GoldenCapitalAllowanceMatrixFixture::addAsset(9810303, $companyId, $nominals['car'], $accumulatedDepreciation, 'GCA-SPECIAL-CO2-51', 'car', '2099-01-04', 10000.0);
+    GoldenCapitalAllowanceMatrixFixture::addVehicle(9810303, $companyId, 'used', false, 51);
+    GoldenCapitalAllowanceMatrixFixture::addAsset(9810304, $companyId, $nominals['car'], $accumulatedDepreciation, 'GCA-MISSING-CO2', 'car', '2099-01-05', 5000.0);
+    GoldenCapitalAllowanceMatrixFixture::addVehicle(9810304, $companyId, 'used', false, null);
+    GoldenCapitalAllowanceMatrixFixture::addAsset(9810305, $companyId, $nominals['unreviewed_vehicle'], $accumulatedDepreciation, 'GCA-UNREVIEWED-1320', 'motor_vehicle', '2099-01-06', 4000.0);
+
+    $service = new \eel_accounts\Service\CapitalAllowanceService();
+    $result = $service->rebuildForCompany($companyId);
+    $ctPeriodId = GoldenCapitalAllowanceMatrixFixture::ctPeriodId($companyId, $periodId);
+    $pools = GoldenCapitalAllowanceMatrixFixture::pools($companyId, $periodId, $ctPeriodId);
+    $main = $pools['main_pool'];
+    $special = $pools['special_rate_pool'];
+
+    $harness->assertSame(10000.0, GoldenCapitalAllowanceMatrixFixture::money($main['fya_claimed']));
+    $harness->assertSame(10000.0, GoldenCapitalAllowanceMatrixFixture::money($main['additions']));
+    $harness->assertSame(1800.0, GoldenCapitalAllowanceMatrixFixture::money($main['wda_claimed']));
+    $harness->assertSame(8200.0, GoldenCapitalAllowanceMatrixFixture::money($main['closing_wdv']));
+    $harness->assertSame(15000.0, GoldenCapitalAllowanceMatrixFixture::money($special['additions']));
+    $harness->assertSame(900.0, GoldenCapitalAllowanceMatrixFixture::money($special['wda_claimed']));
+    $harness->assertSame(14100.0, GoldenCapitalAllowanceMatrixFixture::money($special['closing_wdv']));
+    $harness->assertSame(12700.0, GoldenCapitalAllowanceMatrixFixture::money($result[$periodId]['net_capital_allowances'] ?? 0));
+
+    $warnings = (array)($result[$periodId]['warnings'] ?? []);
+    $harness->assertCount(2, $warnings);
+    $warningText = implode(' ', $warnings);
+    $harness->assertTrue(str_contains($warningText, 'GCA-MISSING-CO2'));
+    $harness->assertTrue(str_contains($warningText, 'GCA-UNREVIEWED-1320'));
+
+    $assetRows = GoldenCapitalAllowanceMatrixFixture::assetCalculations($companyId, $periodId);
+    $types = array_count_values(array_map(static fn(array $row): string => (string)$row['allowance_type'], $assetRows));
+    $harness->assertSame(1, (int)($types['fya'] ?? 0));
+    $harness->assertSame(1, (int)($types['main_pool_addition'] ?? 0));
+    $harness->assertSame(2, (int)($types['special_rate_pool_addition'] ?? 0));
+    $harness->assertSame(2, (int)($types['warning'] ?? 0));
+    $perAssetAllowances = array_sum(array_map(
+        static fn(array $row): float => GoldenCapitalAllowanceMatrixFixture::money($row['allowance_amount'] ?? 0),
+        $assetRows
+    ));
+    $harness->assertSame(12700.0, round($perAssetAllowances + (float)$main['wda_claimed'] + (float)$special['wda_claimed'], 2));
+    });
+});
+
+$harness->check($subject, 'carries WDV through disposal and recognises a balancing charge', static function () use ($harness): void {
+    GoldenCapitalAllowanceMatrixFixture::rollbackAfter(static function () use ($harness): void {
+    $companyId = 98104;
+    $firstPeriodId = 981041;
+    $secondPeriodId = 981042;
+    $nominals = GoldenCapitalAllowanceMatrixFixture::beginScenario($companyId, [
+        ['id' => $firstPeriodId, 'start' => '2099-01-01', 'end' => '2099-12-31'],
+        ['id' => $secondPeriodId, 'start' => '2100-01-01', 'end' => '2100-12-31'],
+    ]);
+    GoldenCapitalAllowanceMatrixFixture::addAsset(
+        9810401,
+        $companyId,
+        $nominals['car'],
+        $nominals['accumulated_depreciation'],
+        'GCA-DISPOSAL-CHARGE',
+        'car',
+        '2099-01-01',
+        10000.0,
+        [
+            'status' => 'disposed',
+            'disposal_date' => '2100-06-30',
+            'disposal_proceeds' => 9000.0,
+            'disposal_event_type' => 'sale',
+        ]
+    );
+    GoldenCapitalAllowanceMatrixFixture::addVehicle(9810401, $companyId, 'used', false, 50);
+
+    $result = (new \eel_accounts\Service\CapitalAllowanceService())->rebuildForCompany($companyId);
+    $firstCtPeriodId = GoldenCapitalAllowanceMatrixFixture::ctPeriodId($companyId, $firstPeriodId);
+    $secondCtPeriodId = GoldenCapitalAllowanceMatrixFixture::ctPeriodId($companyId, $secondPeriodId);
+    $firstMain = GoldenCapitalAllowanceMatrixFixture::pools($companyId, $firstPeriodId, $firstCtPeriodId)['main_pool'];
+    $secondMain = GoldenCapitalAllowanceMatrixFixture::pools($companyId, $secondPeriodId, $secondCtPeriodId)['main_pool'];
+
+    $harness->assertSame(8200.0, GoldenCapitalAllowanceMatrixFixture::money($firstMain['closing_wdv']));
+    $harness->assertSame(8200.0, GoldenCapitalAllowanceMatrixFixture::money($secondMain['opening_wdv']));
+    $harness->assertSame(9000.0, GoldenCapitalAllowanceMatrixFixture::money($secondMain['disposal_value']));
+    $harness->assertSame(800.0, GoldenCapitalAllowanceMatrixFixture::money($secondMain['balancing_charge']));
+    $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($secondMain['wda_claimed']));
+    $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($secondMain['closing_wdv']));
+    $harness->assertSame(-800.0, GoldenCapitalAllowanceMatrixFixture::money($result[$secondPeriodId]['net_capital_allowances'] ?? 0));
+
+    $disposalRows = GoldenCapitalAllowanceMatrixFixture::assetCalculations($companyId, $secondPeriodId);
+    $harness->assertCount(1, $disposalRows);
+    $harness->assertSame('disposal_value', (string)$disposalRows[0]['allowance_type']);
+    $harness->assertSame(9000.0, GoldenCapitalAllowanceMatrixFixture::money($disposalRows[0]['disposal_value']));
+    });
+});
+
+$harness->check($subject, 'recognises the residual pool as a balancing allowance on cessation', static function () use ($harness): void {
+    GoldenCapitalAllowanceMatrixFixture::rollbackAfter(static function () use ($harness): void {
+    $companyId = 98105;
+    $firstPeriodId = 981051;
+    $finalPeriodId = 981052;
+    $nominals = GoldenCapitalAllowanceMatrixFixture::beginScenario(
+        $companyId,
+        [
+            ['id' => $firstPeriodId, 'start' => '2099-01-01', 'end' => '2099-12-31'],
+            ['id' => $finalPeriodId, 'start' => '2100-01-01', 'end' => '2100-12-31'],
+        ],
+        'dissolved',
+        false
+    );
+    GoldenCapitalAllowanceMatrixFixture::addAsset(
+        9810501,
+        $companyId,
+        $nominals['car'],
+        $nominals['accumulated_depreciation'],
+        'GCA-CESSATION-ALLOWANCE',
+        'car',
+        '2099-01-01',
+        10000.0,
+        [
+            'status' => 'disposed',
+            'disposal_date' => '2100-06-30',
+            'disposal_proceeds' => 2000.0,
+            'disposal_event_type' => 'cessation',
+            'disposal_reason' => 'GOLDEN-TEST final disposal on cessation',
+        ]
+    );
+    GoldenCapitalAllowanceMatrixFixture::addVehicle(9810501, $companyId, 'used', false, 50);
+
+    $result = (new \eel_accounts\Service\CapitalAllowanceService())->rebuildForCompany($companyId);
+    $finalCtPeriodId = GoldenCapitalAllowanceMatrixFixture::ctPeriodId($companyId, $finalPeriodId);
+    $finalMain = GoldenCapitalAllowanceMatrixFixture::pools($companyId, $finalPeriodId, $finalCtPeriodId)['main_pool'];
+
+    $expected = [
+        'opening_wdv' => 8200.0,
+        'disposal_value' => 2000.0,
+        'wda_claimed' => 0.0,
+        'balancing_allowance' => 6200.0,
+        'closing_wdv' => 0.0,
+        'net_capital_allowances' => 6200.0,
+    ];
+    $actual = [
+        'opening_wdv' => GoldenCapitalAllowanceMatrixFixture::money($finalMain['opening_wdv']),
+        'disposal_value' => GoldenCapitalAllowanceMatrixFixture::money($finalMain['disposal_value']),
+        'wda_claimed' => GoldenCapitalAllowanceMatrixFixture::money($finalMain['wda_claimed']),
+        'balancing_allowance' => GoldenCapitalAllowanceMatrixFixture::money($finalMain['balancing_allowance']),
+        'closing_wdv' => GoldenCapitalAllowanceMatrixFixture::money($finalMain['closing_wdv']),
+        'net_capital_allowances' => GoldenCapitalAllowanceMatrixFixture::money($result[$finalPeriodId]['net_capital_allowances'] ?? 0),
+    ];
+    if ($expected !== $actual) {
+        throw new RuntimeException(
+            'Cessation pool mismatch. Expected ' . json_encode($expected, JSON_UNESCAPED_SLASHES)
+            . ' but received ' . json_encode($actual, JSON_UNESCAPED_SLASHES) . '.'
+        );
+    }
+    });
+});

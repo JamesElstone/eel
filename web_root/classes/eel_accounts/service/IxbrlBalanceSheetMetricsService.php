@@ -27,7 +27,13 @@ final class IxbrlBalanceSheetMetricsService
         );
     }
 
-    public function fetchClosingMetricsForPeriod(int $companyId, string $periodStart, string $periodEnd, ?int $accountingPeriodId = null): array
+    public function fetchClosingMetricsForPeriod(
+        int $companyId,
+        string $periodStart,
+        string $periodEnd,
+        ?int $accountingPeriodId = null,
+        ?array $depreciationPreview = null
+    ): array
     {
         if ($companyId <= 0 || !$this->validDate($periodEnd)) {
             return $this->emptyResult();
@@ -54,7 +60,13 @@ final class IxbrlBalanceSheetMetricsService
              ORDER BY na.sort_order, na.code',
             $params
         );
-        $rows = $this->applyPendingClosePreviewAdjustments($rows, $companyId, $accountingPeriodId, $periodEnd);
+        $rows = $this->applyPendingClosePreviewAdjustments(
+            $rows,
+            $companyId,
+            $accountingPeriodId,
+            $periodEnd,
+            $depreciationPreview
+        );
 
         $buckets = $this->emptyBuckets();
         $sources = [];
@@ -157,14 +169,20 @@ final class IxbrlBalanceSheetMetricsService
         return is_array($row) ? $row : null;
     }
 
-    private function applyPendingClosePreviewAdjustments(array $rows, int $companyId, ?int $accountingPeriodId, string $periodEnd): array
+    private function applyPendingClosePreviewAdjustments(
+        array $rows,
+        int $companyId,
+        ?int $accountingPeriodId,
+        string $periodEnd,
+        ?array $depreciationPreview = null
+    ): array
     {
         if ($accountingPeriodId === null || $accountingPeriodId <= 0) {
             return $rows;
         }
 
         $adjustments = (new \eel_accounts\Service\YearEndClosePreviewService())
-            ->pendingBalanceSheetAdjustments($companyId, $accountingPeriodId, $periodEnd);
+            ->pendingBalanceSheetAdjustments($companyId, $accountingPeriodId, $periodEnd, $depreciationPreview);
         if ($adjustments === []) {
             return $rows;
         }

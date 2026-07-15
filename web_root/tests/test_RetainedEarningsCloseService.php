@@ -31,17 +31,23 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
                 'creditors_after_more_than_one_year' => 5.0,
                 'equity_capital_reserves' => 125.0,
             ];
+            $precomputedDepreciationPreview = [
+                'success' => false,
+                'errors' => ['Precomputed depreciation preview unavailable for this fixture.'],
+            ];
             $precomputedContext = $service->fetchContext(
                 (int)$fixture['company_id'],
                 (int)$fixture['accounting_period_id'],
                 $precomputedProvision,
-                $precomputedBalanceSheet
+                $precomputedBalanceSheet,
+                $precomputedDepreciationPreview
             );
             $harness->assertSame(true, (bool)($precomputedContext['available'] ?? false));
             $harness->assertSame($precomputedProvision, (array)($precomputedContext['corporation_tax_provision'] ?? []));
             $harness->assertSame(150.0, (float)(($precomputedContext['summary'] ?? [])['assets'] ?? 0));
             $harness->assertSame(25.0, (float)(($precomputedContext['summary'] ?? [])['liabilities'] ?? 0));
             $harness->assertSame(125.0, (float)(($precomputedContext['summary'] ?? [])['equity'] ?? 0));
+            $harness->assertSame($precomputedDepreciationPreview, (array)($precomputedContext['depreciation_preview'] ?? []));
             $harness->assertSame(true, array_key_exists('journal_lines', $precomputedContext));
             $harness->assertSame(true, array_key_exists('depreciation_preview', $precomputedContext));
             $harness->assertSame(false, array_key_exists('preview_deferred', $precomputedContext));

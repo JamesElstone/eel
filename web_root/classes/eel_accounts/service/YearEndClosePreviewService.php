@@ -13,21 +13,39 @@ final class YearEndClosePreviewService
 {
     public const ASSET_DEPRECIATION_SOURCE_TYPE = 'asset_depreciation';
 
-    public function depreciationExpenseForPeriod(int $companyId, int $accountingPeriodId, string $periodStart = '', string $periodEnd = ''): float
+    public function depreciationExpenseForPeriod(
+        int $companyId,
+        int $accountingPeriodId,
+        string $periodStart = '',
+        string $periodEnd = '',
+        ?array $depreciationPreview = null
+    ): float
     {
         $total = 0.0;
-        foreach ($this->depreciationRowsForPeriod($companyId, $accountingPeriodId, $periodStart, $periodEnd) as $row) {
+        foreach ($this->depreciationRowsForPeriod(
+            $companyId,
+            $accountingPeriodId,
+            $periodStart,
+            $periodEnd,
+            $depreciationPreview
+        ) as $row) {
             $total = round($total + (float)($row['amount'] ?? 0), 2);
         }
 
         return round(max(0.0, $total), 2);
     }
 
-    public function depreciationRowsForPeriod(int $companyId, int $accountingPeriodId, string $periodStart = '', string $periodEnd = ''): array
+    public function depreciationRowsForPeriod(
+        int $companyId,
+        int $accountingPeriodId,
+        string $periodStart = '',
+        string $periodEnd = '',
+        ?array $depreciationPreview = null
+    ): array
     {
         $rows = array_merge(
             $this->postedDepreciationRows($companyId, $accountingPeriodId),
-            $this->pendingDepreciationRows($companyId, $accountingPeriodId)
+            $this->pendingDepreciationRows($companyId, $accountingPeriodId, $depreciationPreview)
         );
 
         $allocatedRows = [];
@@ -124,7 +142,12 @@ final class YearEndClosePreviewService
         return $months;
     }
 
-    public function pendingBalanceSheetAdjustments(int $companyId, int $accountingPeriodId, string $periodEnd): array
+    public function pendingBalanceSheetAdjustments(
+        int $companyId,
+        int $accountingPeriodId,
+        string $periodEnd,
+        ?array $depreciationPreview = null
+    ): array
     {
         $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
         if ($accountingPeriod === null || (string)($accountingPeriod['period_end'] ?? '') === '') {
@@ -139,11 +162,19 @@ final class YearEndClosePreviewService
             return [];
         }
 
+        $prepaymentPreview = (new PrepaymentScheduleService())->fetchPreviewAdjustments($companyId, $accountingPeriodId);
+
         return array_merge(
-            $this->pendingPrepaymentBalanceSheetAdjustments($companyId, $accountingPeriodId),
-            $this->pendingDepreciationBalanceSheetAdjustments($companyId, $accountingPeriodId),
+            $this->pendingPrepaymentBalanceSheetAdjustments($prepaymentPreview),
+            $this->pendingDepreciationBalanceSheetAdjustments($companyId, $accountingPeriodId, $depreciationPreview),
             $this->pendingDirectorLoanOffsetAdjustments($companyId, $accountingPeriodId),
-            $this->pendingRetainedEarningsCloseAdjustment($companyId, $accountingPeriodId, $accountingPeriod)
+            $this->pendingRetainedEarningsCloseAdjustment(
+                $companyId,
+                $accountingPeriodId,
+                $accountingPeriod,
+                $depreciationPreview,
+                $prepaymentPreview
+            )
         );
     }
 
@@ -152,10 +183,12 @@ final class YearEndClosePreviewService
         int $companyId,
         int $accountingPeriodId,
         string $periodStart = '',
-        string $periodEnd = ''
+        string $periodEnd = '',
+        ?array $prepaymentPreview = null
     ): array {
         $rows = [];
-        foreach ((new PrepaymentScheduleService())->fetchPreviewAdjustments($companyId, $accountingPeriodId) as $adjustment) {
+        $prepaymentPreview ??= (new PrepaymentScheduleService())->fetchPreviewAdjustments($companyId, $accountingPeriodId);
+        foreach ($prepaymentPreview as $adjustment) {
             $journalDate = (string)($adjustment['journal_date'] ?? '');
             if (($periodStart !== '' && $journalDate < $periodStart)
                 || ($periodEnd !== '' && $journalDate > $periodEnd)) {
@@ -188,11 +221,18 @@ final class YearEndClosePreviewService
         int $companyId,
         int $accountingPeriodId,
         string $periodStart = '',
-        string $periodEnd = ''
+        string $periodEnd = '',
+        ?array $prepaymentPreview = null
     ): float {
         return round(array_sum(array_map(
             static fn(array $row): float => (float)$row['amount'],
-            $this->prepaymentExpenseRowsForPeriod($companyId, $accountingPeriodId, $periodStart, $periodEnd)
+            $this->prepaymentExpenseRowsForPeriod(
+                $companyId,
+                $accountingPeriodId,
+                $periodStart,
+                $periodEnd,
+                $prepaymentPreview
+            )
         )), 2);
     }
 
@@ -251,13 +291,18 @@ final class YearEndClosePreviewService
         ], $rows);
     }
 
-    private function pendingDepreciationRows(int $companyId, int $accountingPeriodId): array
+    private function pendingDepreciationRows(
+        int $companyId,
+        int $accountingPeriodId,
+        ?array $depreciationPreview = null
+    ): array
     {
         if (!$this->tableExists('asset_register')) {
             return [];
         }
 
-        $preview = (new \eel_accounts\Service\AssetService())->previewDepreciationRun($companyId, $accountingPeriodId);
+        $preview = $depreciationPreview
+            ?? (new \eel_accounts\Service\AssetService())->previewDepreciationRun($companyId, $accountingPeriodId);
         $previewRows = array_values(array_filter(
             (array)($preview['rows'] ?? []),
             static fn(mixed $row): bool => is_array($row) && (int)($row['asset_id'] ?? 0) > 0
@@ -286,10 +331,14 @@ final class YearEndClosePreviewService
         return $rows;
     }
 
-    private function pendingDepreciationBalanceSheetAdjustments(int $companyId, int $accountingPeriodId): array
+    private function pendingDepreciationBalanceSheetAdjustments(
+        int $companyId,
+        int $accountingPeriodId,
+        ?array $depreciationPreview = null
+    ): array
     {
         $adjustments = [];
-        foreach ($this->pendingDepreciationRows($companyId, $accountingPeriodId) as $row) {
+        foreach ($this->pendingDepreciationRows($companyId, $accountingPeriodId, $depreciationPreview) as $row) {
             $nominalId = (int)($row['accum_dep_nominal_id'] ?? 0);
             $amount = round((float)($row['amount'] ?? 0), 2);
             if ($nominalId <= 0 || $amount <= 0) {
@@ -312,10 +361,10 @@ final class YearEndClosePreviewService
     }
 
     /** @return list<array<string, mixed>> */
-    private function pendingPrepaymentBalanceSheetAdjustments(int $companyId, int $accountingPeriodId): array
+    private function pendingPrepaymentBalanceSheetAdjustments(array $prepaymentPreview): array
     {
         $adjustments = [];
-        foreach ((new PrepaymentScheduleService())->fetchPreviewAdjustments($companyId, $accountingPeriodId) as $adjustment) {
+        foreach ($prepaymentPreview as $adjustment) {
             $debitNominal = $this->nominalById((int)$adjustment['debit_nominal_id']);
             $creditNominal = $this->nominalById((int)$adjustment['credit_nominal_id']);
             $assetNominal = is_array($debitNominal) && (string)$debitNominal['account_type'] === 'asset'
@@ -363,7 +412,13 @@ final class YearEndClosePreviewService
         return $adjustments;
     }
 
-    private function pendingRetainedEarningsCloseAdjustment(int $companyId, int $accountingPeriodId, array $accountingPeriod): array
+    private function pendingRetainedEarningsCloseAdjustment(
+        int $companyId,
+        int $accountingPeriodId,
+        array $accountingPeriod,
+        ?array $depreciationPreview = null,
+        ?array $prepaymentPreview = null
+    ): array
     {
         if (!$this->tableExists('journal_entry_metadata')) {
             return [];
@@ -381,7 +436,14 @@ final class YearEndClosePreviewService
 
         $periodStart = (string)($accountingPeriod['period_start'] ?? '');
         $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
-        $profitLoss = $this->profitBeforeTaxIncludingDepreciation($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $profitLoss = $this->profitBeforeTaxIncludingDepreciation(
+            $companyId,
+            $accountingPeriodId,
+            $periodStart,
+            $periodEnd,
+            $depreciationPreview,
+            $prepaymentPreview
+        );
 
         $nominal = $this->nominalByCode(\eel_accounts\Service\RetainedEarningsCloseService::RETAINED_EARNINGS_CODE, 'equity');
         if ($nominal === null || abs($profitLoss) < 0.005) {
@@ -396,7 +458,14 @@ final class YearEndClosePreviewService
         ]];
     }
 
-    private function profitBeforeTaxIncludingDepreciation(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): float
+    private function profitBeforeTaxIncludingDepreciation(
+        int $companyId,
+        int $accountingPeriodId,
+        string $periodStart,
+        string $periodEnd,
+        ?array $depreciationPreview = null,
+        ?array $prepaymentPreview = null
+    ): float
     {
         $rows = \InterfaceDB::fetchAll(
             'SELECT na.account_type,
@@ -442,8 +511,20 @@ final class YearEndClosePreviewService
             }
         }
 
-        $expenses = round($expenses + $this->depreciationExpenseForPeriod($companyId, $accountingPeriodId, $periodStart, $periodEnd), 2);
-        $expenses = round($expenses + $this->prepaymentExpenseAdjustmentForPeriod($companyId, $accountingPeriodId, $periodStart, $periodEnd), 2);
+        $expenses = round($expenses + $this->depreciationExpenseForPeriod(
+            $companyId,
+            $accountingPeriodId,
+            $periodStart,
+            $periodEnd,
+            $depreciationPreview
+        ), 2);
+        $expenses = round($expenses + $this->prepaymentExpenseAdjustmentForPeriod(
+            $companyId,
+            $accountingPeriodId,
+            $periodStart,
+            $periodEnd,
+            $prepaymentPreview
+        ), 2);
 
         return round($income - $expenses, 2);
     }

@@ -30,7 +30,8 @@ final class RetainedEarningsCloseService
         int $companyId,
         int $accountingPeriodId,
         ?array $corporationTaxProvision = null,
-        ?array $balanceSheetMetrics = null
+        ?array $balanceSheetMetrics = null,
+        ?array $depreciationPreview = null
     ): array
     {
         $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
@@ -56,7 +57,8 @@ final class RetainedEarningsCloseService
         }
 
         $plRows = $this->profitAndLossRows($companyId, $accountingPeriodId, $periodStart, $periodEnd);
-        $depreciationPreview = ($this->assetService ?? new \eel_accounts\Service\AssetService())->previewDepreciationRun($companyId, $accountingPeriodId);
+        $depreciationPreview ??= ($this->assetService ?? new \eel_accounts\Service\AssetService())
+            ->previewDepreciationRun($companyId, $accountingPeriodId);
         $plRows = $this->includePendingDepreciationRows($plRows, $depreciationPreview);
         $corporationTaxProvision ??= ($this->corporationTaxProvisionService ?? new \eel_accounts\Service\CorporationTaxProvisionService())
             ->fetchAccountingPeriodPosition($companyId, $accountingPeriodId);
@@ -66,7 +68,13 @@ final class RetainedEarningsCloseService
         $closingEquityBeforeClose = $this->equityBalanceUntilDate($companyId, $periodEnd, false, true);
         $expectedClosingEquity = round($openingEquity + (float)$profitAndLoss['profit_before_tax'], 2);
         $balanceSheet = $balanceSheetMetrics
-            ?? $metrics->fetchBalanceSheetMetricValues($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+            ?? $metrics->fetchBalanceSheetMetricValues(
+                $companyId,
+                $accountingPeriodId,
+                $periodStart,
+                $periodEnd,
+                $depreciationPreview
+            );
         $journalLines = $this->buildJournalLines($plRows, (int)$retainedEarningsNominal['id']);
         $existingJournal = ($this->journalService ?? new \eel_accounts\Service\ManualJournalService())->fetchJournalByTag(
             $companyId,

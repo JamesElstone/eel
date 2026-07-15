@@ -85,11 +85,13 @@ final class PreTaxProfitLossService
                 $capital += $amount;
             }
         }
+        $depreciationPreview = (new AssetService())->previewDepreciationRun($companyId, $accountingPeriodId);
         $depreciation = $closePreview->depreciationExpenseForPeriod(
             $companyId,
             $accountingPeriodId,
             $scope->periodStart,
-            $scope->asAtDate
+            $scope->asAtDate,
+            $depreciationPreview
         );
         $operatingExpenses = round($operatingExpenses + $depreciation, 2);
         $income = round($income, 2);
@@ -106,6 +108,7 @@ final class PreTaxProfitLossService
             'posted_operating_expense_total' => round($postedOperatingExpenses, 2),
             'prepayment_expense_adjustment' => round($prepaymentExpenseAdjustment, 2),
             'depreciation_expense' => round($depreciation, 2),
+            'depreciation_preview' => $depreciationPreview,
             'operating_expense_total' => $operatingExpenses,
             'posted_corporation_tax_charge' => round($postedCt, 2),
             'profit_before_tax' => $profitBeforeTax,

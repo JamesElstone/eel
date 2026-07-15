@@ -69,6 +69,7 @@ final class ProfitLossService
             'operating_expense_total' => $operatingExpenseTotal,
             'posted_operating_expense_total' => round((float)($totals['posted_operating_expense_total'] ?? $operatingExpenseTotal), 2),
             'depreciation_expense' => round((float)($totals['depreciation_expense'] ?? 0), 2),
+            'depreciation_preview' => (array)($totals['depreciation_preview'] ?? []),
             'accounting_basis' => 'posted_journals_plus_year_end_close_preview',
             'expense_total' => $expenseTotal,
             'profit_before_tax' => $profitBeforeTax,

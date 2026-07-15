@@ -53,6 +53,10 @@ $harness->run(_year_end_retained_earningsCard::class, static function (Generated
             ':profit_loss.summary.corporation_tax_provision',
             (string)($params['corporationTaxProvision'] ?? '')
         );
+        $harness->assertSame(
+            ':profit_loss.summary.depreciation_preview',
+            (string)($params['depreciationPreview'] ?? '')
+        );
     });
 });
 

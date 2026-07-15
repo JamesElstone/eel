@@ -32,6 +32,7 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
                     'companyId' => ':company.id',
                     'accountingPeriodId' => ':company.accounting_period_id',
                     'corporationTaxProvision' => ':profit_loss.summary.corporation_tax_provision',
+                    'depreciationPreview' => ':profit_loss.summary.depreciation_preview',
                 ],
             ],
         ];

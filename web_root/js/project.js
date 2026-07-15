@@ -96,7 +96,7 @@
 
     function initialiseDefaultCondensedTables(root = document) {
         const toggles = root.querySelectorAll
-            ? root.querySelectorAll('.table-condensed-toggle[data-table-key="hmrc_fines_table"], .table-condensed-toggle[data-table-key="vat_turnover_monitoring"], .table-condensed-toggle[data-table-key="tax_rates_vat"], .table-condensed-toggle[data-table-key="tax_thresholds_vat"]')
+            ? root.querySelectorAll('.table-condensed-toggle[data-table-key="hmrc_fines_table"], .table-condensed-toggle[data-table-key="vat_turnover_monitoring"], .table-condensed-toggle[data-table-key="tax_rates_vat"], .table-condensed-toggle[data-table-key="tax_thresholds_vat"], .table-condensed-toggle[data-table-key="tax_prepayment_treatment"]')
             : [];
 
         toggles.forEach((toggle) => {

@@ -60,6 +60,8 @@ $harness->run(_tax_prepayment_treatmentCard::class, static function (
         ]);
 
         $harness->assertTrue(str_contains($html, '275 of 365 inclusive days'));
+        $harness->assertTrue(str_contains($html, 'Accounting Period Expense'));
+        $harness->assertSame(false, str_contains($html, 'Selected-AP expense'));
         $harness->assertTrue(str_contains($html, 'Closing Prepayments asset'));
         $harness->assertTrue(str_contains($html, 'Not Posted'));
         $harness->assertTrue(str_contains($html, 'later accounting period has not been created'));
@@ -72,9 +74,17 @@ $harness->run(_tax_prepayment_treatmentCard::class, static function (
         $harness->assertTrue(str_contains($html, 'FRC - FRS 105'));
         $harness->assertSame(false, str_contains($html, 'Accounting and tax guidance:'));
         $harness->assertSame(false, str_contains($html, 'FRS 103'));
+        $harness->assertTrue(str_contains($html, 'class="table-scroll panel-soft"'));
+        $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="csv"'));
+        $harness->assertTrue(strpos($html, 'HMRC - BIM42201') < strpos($html, 'Amounts use cumulative half-up rounding'));
+        $harness->assertTrue(strpos($html, 'Amounts use cumulative half-up rounding') < strpos($html, 'Accounting Period Expense'));
+        $harness->assertSame(1, count($card->tables([
+            'company' => ['settings' => ['default_currency' => 'GBP']],
+            'services' => ['prepayment_period_context' => ['schedules' => []]],
+        ])));
     });
 
-    $harness->check(_tax_prepayment_treatmentCard::class, 'labels an unposted open-period calculation as a preview', static function () use ($harness, $card): void {
+    $harness->check(_tax_prepayment_treatmentCard::class, 'renders an open-period calculation without a preview pill', static function () use ($harness, $card): void {
         $html = $card->render([
             'company' => ['settings' => ['default_currency' => 'GBP']],
             'services' => ['prepayment_period_context' => [
@@ -108,7 +118,61 @@ $harness->run(_tax_prepayment_treatmentCard::class, static function (
             ]],
         ]);
 
-        $harness->assertTrue(str_contains($html, 'Preview Only'));
+        $harness->assertSame(false, str_contains($html, 'Preview Only'));
+        $harness->assertTrue(str_contains($html, 'Deferral target'));
         $harness->assertSame(false, str_contains($html, 'Run the automated prepayment schedules migration'));
+    });
+
+    $harness->check(_tax_prepayment_treatmentCard::class, 'paginates five schedules and opts into condensed view by default', static function () use ($harness, $card): void {
+        $schedules = [];
+        for ($index = 1; $index <= 6; $index++) {
+            $schedules[] = [
+                'source_type' => 'transaction',
+                'source_id' => $index,
+                'source_description' => 'Schedule ' . $index,
+                'source_date' => '2024-01-01',
+                'source_amount_pence' => 10000,
+                'expense_nominal_code' => '6100',
+                'expense_nominal_name' => 'Insurance',
+                'service_start_date' => '2024-01-01',
+                'service_end_date' => '2024-12-31',
+                'total_days' => 366,
+                'selected_allocation' => [
+                    'expense_pence' => 2500,
+                    'closing_deferred_pence' => 7500,
+                    'recognised_through_pence' => 2500,
+                    'overlap_days' => 91,
+                    'overlap_start' => '2024-01-01',
+                    'overlap_end' => '2024-03-31',
+                    'journal_state' => 'not_posted',
+                    'posting_role' => 'deferral',
+                    'posting_target_pence' => 7500,
+                ],
+            ];
+        }
+        $context = [
+            'page' => ['page_id' => 'tax', 'page_cards' => ['tax_prepayment_treatment'], 'csrf_token' => 'test-token'],
+            'company' => ['settings' => ['default_currency' => 'GBP']],
+            'services' => ['prepayment_period_context' => [
+                'available' => true,
+                'errors' => [],
+                'total_expense_pence' => 15000,
+                'total_closing_deferred_pence' => 45000,
+                'schedules' => $schedules,
+            ]],
+        ];
+
+        $html = $card->render($context);
+        $harness->assertTrue(str_contains($html, 'Prepayment schedules 1-5 of 6'));
+        $harness->assertTrue(str_contains($html, 'Schedule 5'));
+        $harness->assertSame(false, str_contains($html, 'Schedule 6'));
+        $harness->assertTrue(str_contains($html, 'name="tax_prepayment_treatment_page" value="2"'));
+        $harness->assertTrue(str_contains($html, 'data-table-key="tax_prepayment_treatment"'));
+        $tables = $card->tables($context);
+        $harness->assertSame(1, count($tables));
+        $harness->assertTrue(str_contains($tables[0]->exportCsv(), 'Schedule 6'));
+
+        $projectJs = (string)file_get_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'js' . DIRECTORY_SEPARATOR . 'project.js');
+        $harness->assertTrue(str_contains($projectJs, 'data-table-key="tax_prepayment_treatment"'));
     });
 });

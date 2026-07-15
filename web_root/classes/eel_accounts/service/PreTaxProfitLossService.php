@@ -12,11 +12,17 @@ final class PreTaxProfitLossService
     {
     }
 
-    public function calculate(int $companyId, int $accountingPeriodId, ?string $asAtDate = null, ?string $fromDate = null): array
-    {
+    public function calculate(
+        int $companyId,
+        int $accountingPeriodId,
+        ?string $asAtDate = null,
+        ?string $fromDate = null,
+        ?array $depreciationPreview = null,
+        ?array $prepaymentPreview = null
+    ): array {
         $ledgerService = $this->ledgerService ?? new PeriodLedgerReadService();
         $scope = $ledgerService->scope($companyId, $accountingPeriodId, $asAtDate, $fromDate);
-        $key = $scope->cacheKey();
+        $key = $scope->cacheKey() . ':' . md5(serialize([$depreciationPreview, $prepaymentPreview]));
         if (isset($this->results[$key])) {
             return $this->results[$key];
         }
@@ -69,7 +75,8 @@ final class PreTaxProfitLossService
             $companyId,
             $accountingPeriodId,
             $scope->periodStart,
-            $scope->asAtDate
+            $scope->asAtDate,
+            $prepaymentPreview
         ) as $row) {
             $amount = (float)($row['amount'] ?? 0);
             $prepaymentExpenseAdjustment += $amount;
@@ -85,7 +92,7 @@ final class PreTaxProfitLossService
                 $capital += $amount;
             }
         }
-        $depreciationPreview = (new AssetService())->previewDepreciationRun($companyId, $accountingPeriodId);
+        $depreciationPreview ??= (new AssetService())->previewDepreciationRun($companyId, $accountingPeriodId);
         $depreciation = $closePreview->depreciationExpenseForPeriod(
             $companyId,
             $accountingPeriodId,

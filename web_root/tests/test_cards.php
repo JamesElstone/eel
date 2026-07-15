@@ -238,26 +238,28 @@ final class TestCardsHarness
                 'settings' => ['default_currency_symbol' => '&#36;'],
             ],
             'services' => [
-                'trialBalanceValidation' => [
-                    'available' => true,
-                    'checks' => [
-                        [
-                            'title' => 'Nested metric check',
-                            'status' => 'warning',
-                            'detail' => 'Contains nested metric arrays.',
-                            'metric_value' => [
-                                'difference' => 0.0,
-                                'bank_ledger_reasonableness' => [
-                                    'transaction_movement' => 100.0,
-                                    'ledger_movement' => 100.0,
+                'trialBalanceState' => [
+                    'validation' => [
+                        'available' => true,
+                        'checks' => [
+                            [
+                                'title' => 'Nested metric check',
+                                'status' => 'warning',
+                                'detail' => 'Contains nested metric arrays.',
+                                'metric_value' => [
+                                    'difference' => 0.0,
+                                    'bank_ledger_reasonableness' => [
+                                        'transaction_movement' => 100.0,
+                                        'ledger_movement' => 100.0,
+                                    ],
                                 ],
                             ],
-                        ],
-                        [
-                            'title' => 'Scalar metric check',
-                            'status' => 'pass',
-                            'detail' => 'Contains a top-level numeric metric.',
-                            'metric_value' => 42.5,
+                            [
+                                'title' => 'Scalar metric check',
+                                'status' => 'pass',
+                                'detail' => 'Contains a top-level numeric metric.',
+                                'metric_value' => 42.5,
+                            ],
                         ],
                     ],
                 ],
@@ -280,38 +282,33 @@ final class TestCardsHarness
                 'settings' => ['default_currency_symbol' => '&#36;'],
             ],
             'services' => [
-                'trialBalancePageData' => [
+                'trialBalanceTaxSummary' => [
                     'available' => true,
-                    'summary' => [
-                        'tax_computation' => [
-                            'available' => true,
-                            'summary_scope' => 'accounting_period_ct_periods',
-                            'estimated_corporation_tax' => 300.00,
-                            'taxable_profit' => 1500.00,
+                    'summary_scope' => 'accounting_period_ct_periods',
+                    'estimated_corporation_tax' => 300.00,
+                    'taxable_profit' => 1500.00,
+                    'loss_created_in_period' => 50.00,
+                    'losses_brought_forward' => 25.00,
+                    'losses_used' => 10.00,
+                    'losses_carried_forward' => 65.00,
+                    'periods' => [
+                        [
+                            'period_label' => '1 Jan 2026 to 31 Mar 2026',
+                            'taxable_profit' => 500.00,
+                            'estimated_corporation_tax' => 100.00,
                             'loss_created_in_period' => 50.00,
-                            'losses_brought_forward' => 25.00,
+                            'losses_used' => 0.00,
+                            'losses_carried_forward' => 75.00,
+                            'warnings' => ['Review one'],
+                        ],
+                        [
+                            'period_label' => '1 Apr 2026 to 31 Dec 2026',
+                            'taxable_profit' => 1000.00,
+                            'estimated_corporation_tax' => 200.00,
+                            'loss_created_in_period' => 0.00,
                             'losses_used' => 10.00,
                             'losses_carried_forward' => 65.00,
-                            'periods' => [
-                                [
-                                    'period_label' => '1 Jan 2026 to 31 Mar 2026',
-                                    'taxable_profit' => 500.00,
-                                    'estimated_corporation_tax' => 100.00,
-                                    'loss_created_in_period' => 50.00,
-                                    'losses_used' => 0.00,
-                                    'losses_carried_forward' => 75.00,
-                                    'warnings' => ['Review one'],
-                                ],
-                                [
-                                    'period_label' => '1 Apr 2026 to 31 Dec 2026',
-                                    'taxable_profit' => 1000.00,
-                                    'estimated_corporation_tax' => 200.00,
-                                    'loss_created_in_period' => 0.00,
-                                    'losses_used' => 10.00,
-                                    'losses_carried_forward' => 65.00,
-                                    'warnings' => [],
-                                ],
-                            ],
+                            'warnings' => [],
                         ],
                     ],
                 ],
@@ -328,14 +325,9 @@ final class TestCardsHarness
 
         $errorHtml = $card->render([
             'services' => [
-                'trialBalancePageData' => [
-                    'available' => true,
-                    'summary' => [
-                        'tax_computation' => [
-                            'available' => false,
-                            'errors' => ['No CT period summaries could be generated.'],
-                        ],
-                    ],
+                'trialBalanceTaxSummary' => [
+                    'available' => false,
+                    'errors' => ['No CT period summaries could be generated.'],
                 ],
             ],
         ]);

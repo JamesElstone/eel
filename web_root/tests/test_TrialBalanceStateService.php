@@ -45,13 +45,24 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(true, array_key_exists('tax_computation', $legacySummary));
         });
 
-        $harness->check(\eel_accounts\Service\TrialBalanceStateService::class, 'is the single declared service for the summary card', static function () use ($harness): void {
-            $services = (new _trial_balance_stateCard())->services();
+        $harness->check(\eel_accounts\Service\TrialBalanceStateService::class, 'is the shared declared service for summary and validation cards', static function () use ($harness): void {
+            $summaryServices = (new _trial_balance_stateCard())->services();
+            $validationServices = (new _trial_balance_validationCard())->services();
+
+            $harness->assertCount(1, $summaryServices);
+            $harness->assertSame($summaryServices, $validationServices);
+            $harness->assertSame('trialBalanceState', (string)($summaryServices[0]['key'] ?? ''));
+            $harness->assertSame(\eel_accounts\Service\TrialBalanceStateService::class, (string)($summaryServices[0]['service'] ?? ''));
+            $harness->assertSame('fetchState', (string)($summaryServices[0]['method'] ?? ''));
+        });
+
+        $harness->check(\eel_accounts\Service\TrialBalanceStateService::class, 'keeps the losses card on the focused corporation tax summary service', static function () use ($harness): void {
+            $services = (new _trial_balance_lossesCard())->services();
 
             $harness->assertCount(1, $services);
-            $harness->assertSame('trialBalanceState', (string)($services[0]['key'] ?? ''));
-            $harness->assertSame(\eel_accounts\Service\TrialBalanceStateService::class, (string)($services[0]['service'] ?? ''));
-            $harness->assertSame('fetchState', (string)($services[0]['method'] ?? ''));
+            $harness->assertSame('trialBalanceTaxSummary', (string)($services[0]['key'] ?? ''));
+            $harness->assertSame(\eel_accounts\Service\YearEndTaxReadinessService::class, (string)($services[0]['service'] ?? ''));
+            $harness->assertSame('fetchAccountingPeriodCtSummary', (string)($services[0]['method'] ?? ''));
         });
     }
 );

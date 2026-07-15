@@ -32,7 +32,9 @@ final class IxbrlBalanceSheetMetricsService
         string $periodStart,
         string $periodEnd,
         ?int $accountingPeriodId = null,
-        ?array $depreciationPreview = null
+        ?array $depreciationPreview = null,
+        ?array $prepaymentPreview = null,
+        ?float $profitBeforeTax = null
     ): array
     {
         if ($companyId <= 0 || !$this->validDate($periodEnd)) {
@@ -65,7 +67,9 @@ final class IxbrlBalanceSheetMetricsService
             $companyId,
             $accountingPeriodId,
             $periodEnd,
-            $depreciationPreview
+            $depreciationPreview,
+            $prepaymentPreview,
+            $profitBeforeTax
         );
 
         $buckets = $this->emptyBuckets();
@@ -174,7 +178,9 @@ final class IxbrlBalanceSheetMetricsService
         int $companyId,
         ?int $accountingPeriodId,
         string $periodEnd,
-        ?array $depreciationPreview = null
+        ?array $depreciationPreview = null,
+        ?array $prepaymentPreview = null,
+        ?float $profitBeforeTax = null
     ): array
     {
         if ($accountingPeriodId === null || $accountingPeriodId <= 0) {
@@ -182,7 +188,14 @@ final class IxbrlBalanceSheetMetricsService
         }
 
         $adjustments = (new \eel_accounts\Service\YearEndClosePreviewService())
-            ->pendingBalanceSheetAdjustments($companyId, $accountingPeriodId, $periodEnd, $depreciationPreview);
+            ->pendingBalanceSheetAdjustments(
+                $companyId,
+                $accountingPeriodId,
+                $periodEnd,
+                $depreciationPreview,
+                $prepaymentPreview,
+                $profitBeforeTax
+            );
         if ($adjustments === []) {
             return $rows;
         }

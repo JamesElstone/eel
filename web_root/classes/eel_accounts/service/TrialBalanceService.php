@@ -118,8 +118,27 @@ final class TrialBalanceService
         $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
         $periodStart = (string)($context['accounting_period']['period_start'] ?? '');
         $periodEnd = (string)($context['accounting_period']['period_end'] ?? '');
-        $profitAndLoss = $metrics->profitAndLossSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
-        $balanceSheet = $metrics->fetchBalanceSheetMetricValues($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $depreciationPreview = (new \eel_accounts\Service\AssetService())
+            ->previewDepreciationRun($companyId, $accountingPeriodId);
+        $prepaymentPreview = (new \eel_accounts\Service\PrepaymentScheduleService())
+            ->fetchPreviewAdjustments($companyId, $accountingPeriodId);
+        $profitAndLoss = $metrics->profitAndLossSummary(
+            $companyId,
+            $accountingPeriodId,
+            $periodStart,
+            $periodEnd,
+            $depreciationPreview,
+            $prepaymentPreview
+        );
+        $balanceSheet = $metrics->fetchBalanceSheetMetricValues(
+            $companyId,
+            $accountingPeriodId,
+            $periodStart,
+            $periodEnd,
+            $depreciationPreview,
+            $prepaymentPreview,
+            (float)($profitAndLoss['profit_before_tax'] ?? 0)
+        );
 
         return [
             'available' => true,

@@ -23,15 +23,12 @@ final class _trial_balance_lossesCard extends CardBaseFramework
     {
         return [
             [
-                'key' => 'trialBalancePageData',
-                'service' => \eel_accounts\Service\TrialBalanceService::class,
-                'method' => 'fetchTrialBalance',
+                'key' => 'trialBalanceTaxSummary',
+                'service' => \eel_accounts\Service\YearEndTaxReadinessService::class,
+                'method' => 'fetchAccountingPeriodCtSummary',
                 'params' => [
                     'companyId' => ':company.id',
                     'accountingPeriodId' => ':company.accounting_period_id',
-                    'includeZero' => false,
-                    'includeUnposted' => false,
-                    'filters' => [],
                 ],
             ],
         ];
@@ -44,13 +41,7 @@ final class _trial_balance_lossesCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $trialBalance = (array)($context['services']['trialBalancePageData'] ?? []);
-        if (empty($trialBalance['available'])) {
-            return $this->renderErrors((array)($trialBalance['errors'] ?? ['Trial balance is not available for the selected period.']));
-        }
-
-        $summary = (array)($trialBalance['summary'] ?? []);
-        $taxComputation = (array)($summary['tax_computation'] ?? []);
+        $taxComputation = (array)($context['services']['trialBalanceTaxSummary'] ?? []);
         $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
 
         if (empty($taxComputation['available'])) {

@@ -649,14 +649,18 @@ final class YearEndMetricsService
         int $accountingPeriodId,
         string $periodStart,
         string $periodEnd,
-        ?array $depreciationPreview = null
+        ?array $depreciationPreview = null,
+        ?array $prepaymentPreview = null,
+        ?float $profitBeforeTax = null
     ): array {
         $metrics = (new \eel_accounts\Service\IxbrlBalanceSheetMetricsService())->fetchClosingMetricsForPeriod(
             $companyId,
             $periodStart,
             $periodEnd,
             $accountingPeriodId,
-            $depreciationPreview
+            $depreciationPreview,
+            $prepaymentPreview,
+            $profitBeforeTax
         );
         $buckets = (array)($metrics['buckets'] ?? []);
 
@@ -677,9 +681,23 @@ final class YearEndMetricsService
         ];
     }
 
-    public function profitAndLossSummary(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array {
+    public function profitAndLossSummary(
+        int $companyId,
+        int $accountingPeriodId,
+        string $periodStart,
+        string $periodEnd,
+        ?array $depreciationPreview = null,
+        ?array $prepaymentPreview = null
+    ): array {
         $result = ($this->preTaxProfitLossService ?? new \eel_accounts\Service\PreTaxProfitLossService())
-            ->calculate($companyId, $accountingPeriodId, $periodEnd, $periodStart);
+            ->calculate(
+                $companyId,
+                $accountingPeriodId,
+                $periodEnd,
+                $periodStart,
+                $depreciationPreview,
+                $prepaymentPreview
+            );
 
         return [
             'income' => round((float)$result['income_total'], 2),

@@ -146,7 +146,9 @@ final class YearEndClosePreviewService
         int $companyId,
         int $accountingPeriodId,
         string $periodEnd,
-        ?array $depreciationPreview = null
+        ?array $depreciationPreview = null,
+        ?array $prepaymentPreview = null,
+        ?float $profitBeforeTax = null
     ): array
     {
         $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
@@ -162,7 +164,7 @@ final class YearEndClosePreviewService
             return [];
         }
 
-        $prepaymentPreview = (new PrepaymentScheduleService())->fetchPreviewAdjustments($companyId, $accountingPeriodId);
+        $prepaymentPreview ??= (new PrepaymentScheduleService())->fetchPreviewAdjustments($companyId, $accountingPeriodId);
 
         return array_merge(
             $this->pendingPrepaymentBalanceSheetAdjustments($prepaymentPreview),
@@ -173,7 +175,8 @@ final class YearEndClosePreviewService
                 $accountingPeriodId,
                 $accountingPeriod,
                 $depreciationPreview,
-                $prepaymentPreview
+                $prepaymentPreview,
+                $profitBeforeTax
             )
         );
     }
@@ -417,7 +420,8 @@ final class YearEndClosePreviewService
         int $accountingPeriodId,
         array $accountingPeriod,
         ?array $depreciationPreview = null,
-        ?array $prepaymentPreview = null
+        ?array $prepaymentPreview = null,
+        ?float $profitBeforeTax = null
     ): array
     {
         if (!$this->tableExists('journal_entry_metadata')) {
@@ -436,7 +440,7 @@ final class YearEndClosePreviewService
 
         $periodStart = (string)($accountingPeriod['period_start'] ?? '');
         $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
-        $profitLoss = $this->profitBeforeTaxIncludingDepreciation(
+        $profitLoss = $profitBeforeTax ?? $this->profitBeforeTaxIncludingDepreciation(
             $companyId,
             $accountingPeriodId,
             $periodStart,

@@ -11,15 +11,23 @@ namespace eel_accounts\Service;
 
 final class TrialBalanceStateService
 {
+    /** @var array<string, array<string, mixed>> Request-local workspace cache. */
+    private array $states = [];
+
     public function fetchState(int $companyId, int $accountingPeriodId): array
     {
+        $cacheKey = $companyId . ':' . $accountingPeriodId;
+        if (isset($this->states[$cacheKey])) {
+            return $this->states[$cacheKey];
+        }
+
         $preTax = new PreTaxProfitLossService();
         $metrics = new YearEndMetricsService(null, null, null, null, $preTax);
         $trialBalanceService = new TrialBalanceService($metrics);
         $snapshot = $trialBalanceService->fetchStateSnapshot($companyId, $accountingPeriodId);
 
         if (empty($snapshot['available'])) {
-            return [
+            return $this->states[$cacheKey] = [
                 'trial_balance' => $snapshot,
                 'validation' => [
                     'available' => false,
@@ -31,7 +39,7 @@ final class TrialBalanceStateService
         $validationService = new TrialBalanceValidationService($trialBalanceService, $metrics);
         $validation = $validationService->fetchValidationFromSnapshot($companyId, $accountingPeriodId, $snapshot);
 
-        return [
+        return $this->states[$cacheKey] = [
             'trial_balance' => [
                 'available' => true,
                 'summary' => (array)($snapshot['summary'] ?? []),

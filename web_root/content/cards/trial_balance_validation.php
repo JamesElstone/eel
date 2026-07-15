@@ -23,9 +23,9 @@ final class _trial_balance_validationCard extends CardBaseFramework
     {
         return [
             [
-                'key' => 'trialBalanceValidation',
-                'service' => \eel_accounts\Service\TrialBalanceValidationService::class,
-                'method' => 'fetchValidation',
+                'key' => 'trialBalanceState',
+                'service' => \eel_accounts\Service\TrialBalanceStateService::class,
+                'method' => 'fetchState',
                 'params' => [
                     'companyId' => ':company.id',
                     'accountingPeriodId' => ':company.accounting_period_id',
@@ -41,7 +41,8 @@ final class _trial_balance_validationCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $validation = (array)($context['services']['trialBalanceValidation'] ?? []);
+        $state = (array)($context['services']['trialBalanceState'] ?? []);
+        $validation = (array)($state['validation'] ?? []);
         $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
 
         if (empty($validation['available'])) {

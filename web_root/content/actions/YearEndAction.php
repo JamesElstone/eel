@@ -147,7 +147,8 @@ final class YearEndAction implements ActionInterfaceFramework
         return $this->result(
             !empty($result['success']),
             (array)($result['errors'] ?? []),
-            $this->successMessage($intent, $result)
+            $this->successMessage($intent, $result),
+            $this->changedFacts($intent)
         );
     }
 
@@ -172,7 +173,7 @@ final class YearEndAction implements ActionInterfaceFramework
         return 'web_app';
     }
 
-    private function result(bool $success, array $errors = [], string $successMessage = ''): ActionResultFramework
+    private function result(bool $success, array $errors = [], string $successMessage = '', ?array $changedFacts = null): ActionResultFramework
     {
         $flashMessages = [];
 
@@ -190,7 +191,16 @@ final class YearEndAction implements ActionInterfaceFramework
             }
         }
 
-        return new ActionResultFramework($success, ['page.context', 'year.end.state', 'year.end.checklist', 'year.end.director.loan.offset', 'year.end.tax.readiness', 'year.end.expenses.confirmation', 'year.end.retained.earnings', 'year.end.empty.month.confirmations', 'year.end.transaction.tail', 'year.end.notes', 'year.end.audit.log', 'trial.balance.state', 'nominal.opening.balances', 'nominal.closing.balances', 'cut.off.journals', 'prepayments.state'], $flashMessages);
+        return new ActionResultFramework($success, $changedFacts ?? $this->changedFacts(''), $flashMessages);
+    }
+
+    private function changedFacts(string $intent): array
+    {
+        if (in_array($intent, ['acknowledge_review_check', 'reopen_review_check'], true)) {
+            return ['page.context', 'year.end.checklist', 'year.end.audit.log'];
+        }
+
+        return ['page.context', 'year.end.state', 'year.end.checklist', 'year.end.director.loan.offset', 'year.end.tax.readiness', 'year.end.expenses.confirmation', 'year.end.retained.earnings', 'year.end.empty.month.confirmations', 'year.end.transaction.tail', 'year.end.notes', 'year.end.audit.log', 'trial.balance.state', 'nominal.opening.balances', 'nominal.closing.balances', 'cut.off.journals', 'prepayments.state'];
     }
 
     private function successMessage(string $intent, array $result = []): string

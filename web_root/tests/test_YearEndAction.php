@@ -384,6 +384,10 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             );
 
             $harness->assertSame(true, $prepaymentApproval->isSuccess());
+            $harness->assertSame(true, in_array('year.end.checklist', $prepaymentApproval->changedFacts(), true));
+            $harness->assertSame(true, in_array('year.end.audit.log', $prepaymentApproval->changedFacts(), true));
+            $harness->assertSame(false, in_array('prepayments.state', $prepaymentApproval->changedFacts(), true));
+            $harness->assertSame(false, in_array('year.end.state', $prepaymentApproval->changedFacts(), true));
             $harness->assertSame(1, InterfaceDB::countWhere('year_end_review_acknowledgements', [
                 'company_id' => (int)$fixture['company_id'],
                 'accounting_period_id' => (int)$fixture['accounting_period_id'],

@@ -36,6 +36,7 @@ $harness->run(_journal_cut_off_confirmationCard::class, static function (Generat
         $harness->assertSame('fetchContext', (string)($services[0]['method'] ?? ''));
         $harness->assertSame(\eel_accounts\Service\JournalCutOffReviewService::class, (string)($services[1]['service'] ?? ''));
         $harness->assertSame('fetchContext', (string)($services[1]['method'] ?? ''));
+        $harness->assertSame(true, in_array('year.end.checklist', $card->invalidationFacts(), true));
 
         $html = $card->render(yearEndJournalCutOffCardContext(null));
 

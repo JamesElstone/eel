@@ -31,12 +31,6 @@ final class PrepaymentScheduleService
         if (!is_array($review) || (string)$review['status'] !== 'prepaid') {
             return ['success' => false, 'errors' => ['A saved prepaid review is required before calculating a schedule.']];
         }
-        try {
-            (new VatSupportScopeService())->assertTaxAndYearEndSupported((int)$review['company_id'], 'calculate or change prepayment schedules');
-        } catch (\Throwable $exception) {
-            return ['success' => false, 'errors' => [$exception->getMessage()]];
-        }
-
         $built = $this->buildBasis($review);
         if (empty($built['success']) || !is_array($built['basis'] ?? null)) {
             return ['success' => false, 'errors' => (array)($built['errors'] ?? ['The prepayment schedule basis could not be calculated.'])];
@@ -222,6 +216,145 @@ final class PrepaymentScheduleService
             'success' => $errors === [],
             'errors' => array_values(array_unique($errors)),
             'schedule_ids' => array_values(array_filter(array_unique($scheduleIds))),
+        ];
+    }
+
+    /**
+     * Read-only preview of saved prepaid reviews which pre-date automated
+     * schedules. No schedule or journal is created by this method.
+     *
+     * @return array<string, mixed>
+     */
+    public function fetchRepairContext(int $companyId, int $accountingPeriodId): array
+    {
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || !$this->schemaAvailable()) {
+            return [
+                'available' => false,
+                'errors' => ['Run the automated prepayment schedule repair migration first.'],
+                'missing_reviews' => [],
+                'missing_count' => 0,
+            ];
+        }
+        $period = $this->accountingPeriod($companyId, $accountingPeriodId);
+        if (!is_array($period)) {
+            return ['available' => false, 'errors' => ['The selected accounting period could not be found.'], 'missing_reviews' => [], 'missing_count' => 0];
+        }
+
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT id
+             FROM prepayment_reviews
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+               AND status = :status
+               AND current_schedule_id IS NULL
+             ORDER BY id',
+            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId, 'status' => 'prepaid']
+        );
+        $missing = [];
+        $errors = [];
+        foreach ($rows as $row) {
+            $review = $this->fetchReview((int)$row['id']);
+            if (!is_array($review)) {
+                $errors[] = 'Prepayment review #' . (int)$row['id'] . ' could not be loaded.';
+                continue;
+            }
+            $built = $this->buildBasis($review);
+            if (empty($built['success']) || !is_array($built['basis'] ?? null)) {
+                foreach ((array)($built['errors'] ?? ['The schedule preview could not be calculated.']) as $error) {
+                    $errors[] = 'Prepayment review #' . (int)$review['id'] . ': ' . (string)$error;
+                }
+                continue;
+            }
+            $basis = (array)$built['basis'];
+            $selected = null;
+            foreach ((array)$basis['allocations'] as $allocation) {
+                if ((int)$allocation['accounting_period_id'] === $accountingPeriodId) {
+                    $selected = $allocation;
+                    break;
+                }
+            }
+            $missing[] = [
+                'review_id' => (int)$review['id'],
+                'source_type' => (string)$review['source_type'],
+                'source_id' => (int)$review['source_id'],
+                'source_date' => (string)$basis['source_date'],
+                'source_amount_pence' => (int)$basis['source_amount_pence'],
+                'service_start_date' => (string)$basis['service_start_date'],
+                'service_end_date' => (string)$basis['service_end_date'],
+                'total_days' => (int)$basis['total_days'],
+                'selected_allocation' => $selected,
+                'allocations' => (array)$basis['allocations'],
+                'calculation_hash' => $this->hash($basis),
+            ];
+        }
+
+        return [
+            'available' => true,
+            'errors' => array_values(array_unique($errors)),
+            'accounting_period' => $period,
+            'missing_reviews' => $missing,
+            'missing_count' => count($missing),
+        ];
+    }
+
+    /**
+     * Explicitly creates schedule snapshots for legacy prepaid reviews in the
+     * selected source period. Journals are deliberately left to Year End.
+     *
+     * @return array<string, mixed>
+     */
+    public function syncMissingSchedulesForPeriod(
+        int $companyId,
+        int $accountingPeriodId,
+        string $changedBy = 'web_app'
+    ): array {
+        $preview = $this->fetchRepairContext($companyId, $accountingPeriodId);
+        if (empty($preview['available'])) {
+            return ['success' => false, 'errors' => (array)($preview['errors'] ?? []), 'created_count' => 0, 'schedule_ids' => []];
+        }
+        if ((array)$preview['missing_reviews'] === []) {
+            return ['success' => true, 'errors' => [], 'created_count' => 0, 'schedule_ids' => [], 'no_op' => true];
+        }
+
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
+        }
+        try {
+            (new YearEndLockService())->assertUnlockedForUpdate($companyId, $accountingPeriodId, 'recalculate legacy prepayment schedules');
+            $scheduleIds = [];
+            foreach ((array)$preview['missing_reviews'] as $missing) {
+                $result = $this->syncReviewSchedule((int)$missing['review_id'], $changedBy);
+                if (empty($result['success'])) {
+                    throw new \RuntimeException((string)(($result['errors'] ?? [])[0] ?? 'The legacy prepayment schedule could not be created.'));
+                }
+                $scheduleIds[] = (int)($result['schedule']['id'] ?? 0);
+            }
+            (new YearEndAcknowledgementService())->revoke($companyId, $accountingPeriodId, 'prepayment_approvals', true);
+            (new YearEndLockService())->writeAuditLog(
+                $companyId,
+                $accountingPeriodId,
+                'prepayment_missing_schedules_recalculated',
+                $changedBy,
+                null,
+                ['schedule_ids' => array_values(array_filter($scheduleIds))]
+            );
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+            return ['success' => false, 'errors' => [$exception->getMessage()], 'created_count' => 0, 'schedule_ids' => []];
+        }
+
+        return [
+            'success' => true,
+            'errors' => [],
+            'created_count' => count($scheduleIds),
+            'schedule_ids' => array_values(array_filter($scheduleIds)),
+            'no_op' => $scheduleIds === [],
         ];
     }
 

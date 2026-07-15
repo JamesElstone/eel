@@ -41,6 +41,33 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame(0, $result['unallocated_pence']);
         });
 
+        $harness->check(\eel_accounts\Service\PrepaymentAllocationService::class, 'reconciles the AP79 to AP81 historical correction movements', static function () use ($harness, $service): void {
+            $periods = [
+                ['id' => 79, 'period_start' => '2022-09-05', 'period_end' => '2023-09-30'],
+                ['id' => 80, 'period_start' => '2023-10-01', 'period_end' => '2024-09-30'],
+                ['id' => 81, 'period_start' => '2024-10-01', 'period_end' => '2025-09-30'],
+            ];
+            $first = $service->calculateSchedule(57000, '2022-12-30', '2023-12-29', $periods);
+            $second = $service->calculateSchedule(87747, '2024-01-16', '2025-01-15', $periods);
+
+            $harness->assertSame([42945, 14055], array_column($first['allocations'], 'expense_pence'));
+            $harness->assertSame([14055, 0], array_column($first['allocations'], 'closing_deferred_pence'));
+            $harness->assertSame([62094, 25653], array_column($second['allocations'], 'expense_pence'));
+            $harness->assertSame([25653, 0], array_column($second['allocations'], 'closing_deferred_pence'));
+
+            // Profit/taxable-profit timing changes relative to expensing each purchase in full.
+            $harness->assertSame([14055, 11598, -25653], [
+                57000 - 42945,
+                -14055 + (87747 - 62094),
+                -25653,
+            ]);
+            $harness->assertSame([14055, 25653, 0], [
+                $first['allocations'][0]['closing_deferred_pence'],
+                $second['allocations'][0]['closing_deferred_pence'],
+                $second['allocations'][1]['closing_deferred_pence'],
+            ]);
+        });
+
         $harness->check(\eel_accounts\Service\PrepaymentAllocationService::class, 'reconciles cumulative half-up penny rounding exactly', static function () use ($harness, $service): void {
             $result = $service->calculateSchedule(100, '2024-01-01', '2024-01-03', [
                 ['id' => 1, 'period_start' => '2024-01-01', 'period_end' => '2024-01-01'],

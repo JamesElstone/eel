@@ -72,5 +72,65 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue(str_contains($html, 'Unposted refund candidate'));
             $harness->assertTrue(str_contains($html, 'The source journal is not posted.'));
         });
+
+        $harness->check(_prepayments_reviewCard::class, 'shows historical schedule repair and filing evidence as explicit actions', static function () use ($harness, $card): void {
+            $html = $card->render([
+                'company' => [
+                    'id' => 49,
+                    'accounting_period_id' => 79,
+                    'settings' => ['default_currency_symbol' => '&#163;'],
+                ],
+                'services' => [
+                    'prepaymentsReview' => [
+                        'available' => true,
+                        'accounting_period' => ['id' => 79, 'period_end' => '2023-09-30'],
+                        'total_count' => 0,
+                        'reviewed_count' => 0,
+                        'prepaid_count' => 0,
+                        'pending_count' => 0,
+                        'excluded_count' => 0,
+                        'excluded_items' => [],
+                        'items' => [],
+                    ],
+                    'historicalCorrection' => [
+                        'available' => true,
+                        'posting_permitted' => false,
+                        'repair' => [
+                            'missing_count' => 1,
+                            'missing_reviews' => [[
+                                'review_id' => 14,
+                                'source_type' => 'transaction',
+                                'source_id' => 6151,
+                                'source_date' => '2022-12-30',
+                                'source_amount_pence' => 57000,
+                                'service_start_date' => '2022-12-30',
+                                'service_end_date' => '2023-12-29',
+                                'selected_allocation' => [
+                                    'overlap_days' => 275,
+                                    'expense_pence' => 42945,
+                                    'closing_deferred_pence' => 14055,
+                                ],
+                            ]],
+                        ],
+                        'companies_house_filed' => true,
+                        'companies_house_documents' => [[
+                            'filing_date' => '2024-06-01',
+                            'filing_description' => 'Micro-company accounts',
+                            'document_id' => 'doc-ap79',
+                        ]],
+                        'hmrc_filing' => ['state' => 'unknown'],
+                        'acknowledgement' => ['current' => false],
+                        'has_prepayment_work' => true,
+                        'expected_profit_change_pence' => 14055,
+                    ],
+                ],
+            ]);
+
+            $harness->assertTrue(str_contains($html, 'Saved prepayments missing automated schedules'));
+            $harness->assertTrue(str_contains($html, 'Recalculate schedule'));
+            $harness->assertTrue(str_contains($html, 'Filed-period prepayment correction'));
+            $harness->assertTrue(str_contains($html, 'Record HMRC filing evidence'));
+            $harness->assertTrue(str_contains($html, 'Recalculation creates append-only schedule snapshots only'));
+        });
     }
 );

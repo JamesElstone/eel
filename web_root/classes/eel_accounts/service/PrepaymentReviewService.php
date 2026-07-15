@@ -118,7 +118,6 @@ final class PrepaymentReviewService
 
     public function saveReview(int $companyId, int $accountingPeriodId, array $payload, string $changedBy = 'web_app'): array
     {
-        (new \eel_accounts\Service\VatSupportScopeService())->assertTaxAndYearEndSupported($companyId, 'change prepayment reviews');
         (($this->lockService ?? new \eel_accounts\Service\YearEndLockService()))->assertUnlocked($companyId, $accountingPeriodId, 'save prepayment review decisions');
 
         if (!$this->tableExists('prepayment_reviews')) {

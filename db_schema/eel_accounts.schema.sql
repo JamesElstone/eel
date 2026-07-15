@@ -2658,7 +2658,8 @@ INSERT INTO `schema_migrations` (`migration`) VALUES
   ('2026_07_14_003_vat_monitoring_support_scope.sql'),
   ('2026_07_14_004_tax_prepayment_card_permission.sql'),
   ('2026_07_14_005_vat_reference_rates_and_tax_cards.sql'),
-  ('2026_07_14_006_hmrc_obligation_evidence.sql');
+  ('2026_07_14_006_hmrc_obligation_evidence.sql'),
+  ('2026_07_15_001_prepayment_schedule_repair.sql');
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;

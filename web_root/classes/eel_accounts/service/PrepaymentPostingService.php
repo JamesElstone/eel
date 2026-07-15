@@ -46,11 +46,6 @@ final class PrepaymentPostingService
         bool $lockRows,
         bool $requireZeroAdjustments
     ): array {
-        try {
-            (new VatSupportScopeService())->assertTaxAndYearEndSupported($companyId, 'validate or close Year End prepayments');
-        } catch (\Throwable $exception) {
-            return ['success' => false, 'errors' => [$exception->getMessage()], 'schedules' => [], 'adjustments' => []];
-        }
         $schedules = $this->scheduleService ?? new PrepaymentScheduleService();
         if (!$schedules->hasSchema()) {
             return ['success' => false, 'errors' => ['Run the automated prepayment schedules migration before closing Year End.'], 'schedules' => [], 'adjustments' => []];
@@ -58,8 +53,14 @@ final class PrepaymentPostingService
 
         $errors = [];
         if ($synchronise) {
-            $sync = $schedules->syncForAccountingPeriod($companyId, $accountingPeriodId, 'year_end_validation');
-            $errors = (array)($sync['errors'] ?? []);
+            $historical = (new PrepaymentHistoricalCorrectionService($schedules))->fetchContext($companyId, $accountingPeriodId);
+            if (!empty($historical['companies_house_filed'])
+                && (int)($historical['repair']['missing_count'] ?? 0) > 0) {
+                $errors[] = 'Recalculate the missing legacy prepayment schedules explicitly before closing a filed accounting period.';
+            } else {
+                $sync = $schedules->syncForAccountingPeriod($companyId, $accountingPeriodId, 'year_end_validation');
+                $errors = (array)($sync['errors'] ?? []);
+            }
         }
         $approvalContext = (new PrepaymentApprovalContextService())->fetchContext($companyId, $accountingPeriodId);
         $review = (array)($approvalContext['review'] ?? []);
@@ -98,6 +99,11 @@ final class PrepaymentPostingService
         if ($requireZeroAdjustments && $adjustments !== []) {
             $errors[] = 'Prepayment journals are not at their exact calculated targets; use the normal Year End close to post them before locking this period.';
         }
+        try {
+            (new PrepaymentHistoricalCorrectionService($schedules))->assertPostingPermitted($companyId, $accountingPeriodId);
+        } catch (\Throwable $exception) {
+            $errors[] = $exception->getMessage();
+        }
         $errors = array_values(array_unique(array_filter(array_map('trim', $errors))));
         return [
             'success' => $errors === [],
@@ -120,7 +126,6 @@ final class PrepaymentPostingService
         $journalIds = [];
 
         try {
-            (new VatSupportScopeService())->assertTaxAndYearEndSupported($companyId, 'post prepayment journals');
             ($this->lockService ?? new YearEndLockService())->assertUnlockedForUpdate(
                 $companyId,
                 $accountingPeriodId,
@@ -222,7 +227,6 @@ final class PrepaymentPostingService
         }
         $journalIds = [];
         try {
-            (new VatSupportScopeService())->assertTaxAndYearEndSupported($companyId, 'reopen prepayment schedules');
             $suffix = \InterfaceDB::driverName() === 'sqlite' ? '' : ' FOR UPDATE';
             $review = \InterfaceDB::fetchOne(
                 'SELECT id, company_id, accounting_period_id, current_schedule_id
@@ -264,6 +268,10 @@ final class PrepaymentPostingService
                 ['schedule_id' => (int)$schedule['id'], 'review_id' => $reviewId]
             );
             foreach ($affectedPeriods as $period) {
+                (new PrepaymentHistoricalCorrectionService($schedules))->assertPostingPermitted(
+                    $companyId,
+                    (int)$period['accounting_period_id']
+                );
                 ($this->lockService ?? new YearEndLockService())->assertUnlockedForUpdate(
                     $companyId,
                     (int)$period['accounting_period_id'],
@@ -324,7 +332,8 @@ final class PrepaymentPostingService
             (new YearEndAcknowledgementService())->revoke(
                 $companyId,
                 (int)$review['accounting_period_id'],
-                self::APPROVAL_CHECK_CODE
+                self::APPROVAL_CHECK_CODE,
+                true
             );
             ($this->lockService ?? new YearEndLockService())->writeAuditLog(
                 $companyId,

@@ -40,5 +40,28 @@ $harness->run(
                 }
             }
         );
+
+        $harness->check(
+            \eel_accounts\Service\PrepaymentScheduleService::class,
+            'repair migration restores the partially applied schedule version without posting accounting entries',
+            static function () use ($harness): void {
+                $migrationPath = dirname(__DIR__, 2)
+                    . DIRECTORY_SEPARATOR . 'db_schema'
+                    . DIRECTORY_SEPARATOR . 'migrations'
+                    . DIRECTORY_SEPARATOR . '2026_07_15_001_prepayment_schedule_repair.sql';
+                $sql = (string)file_get_contents($migrationPath);
+
+                $harness->assertTrue(str_contains($sql, 'ADD COLUMN IF NOT EXISTS calculation_version'));
+                $harness->assertTrue(str_contains($sql, 'DEFAULT 1'));
+                $harness->assertTrue(str_contains($sql, 'MODIFY calculation_version'));
+                $harness->assertTrue(str_contains($sql, 'DEFAULT 2'));
+                $harness->assertTrue(str_contains($sql, 'ADD UNIQUE KEY IF NOT EXISTS uq_prepayment_schedules_review_version'));
+                $harness->assertTrue(str_contains($sql, 'FOREIGN KEY IF NOT EXISTS (schedule_period_id)'));
+                $harness->assertTrue(str_contains($sql, 'FOREIGN KEY IF NOT EXISTS (current_schedule_id)'));
+                $harness->assertTrue(str_contains($sql, "'tax_prepayment_treatment'"));
+                $harness->assertSame(false, preg_match('/\b(?:INSERT|UPDATE|DELETE)\s+(?:INTO\s+)?(?:prepayment_schedules|prepayment_schedule_allocations|journals|journal_lines)\b/i', $sql) === 1);
+                $harness->assertSame(false, preg_match('/\b(?:PREPARE|EXECUTE|DEALLOCATE)\b/i', $sql) === 1);
+            }
+        );
     }
 );

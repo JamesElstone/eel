@@ -226,21 +226,17 @@ final class GeneratedServiceClassTestHarness
 
     private function reportPass(string $className, string $description): void
     {
-        test_output_line($className . ': ' . $description . '.');
+        test_output_result($className, $description, 'pass');
     }
 
     private function reportFailure(string $className, string $description, Throwable $exception): void
     {
-        test_output_failure_line(
-            $className . ': ' . $description . ' failed. ' . $exception->getMessage()
-        );
+        test_output_result($className, $description, 'fail', $exception->getMessage());
     }
 
     private function reportSkip(string $className, string $description, string $reason): void
     {
-        test_output_skip_line(
-            $className . ': ' . $description . ' skipped. ' . $reason
-        );
+        test_output_result($className, $description, 'skip', $reason);
     }
 
     public function assertCount(int $expected, array $values): void

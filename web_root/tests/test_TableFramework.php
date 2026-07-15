@@ -226,11 +226,11 @@ $harness->check(TableFramework::class, 'exports ASCII grid tables', function () 
         ->column('display_name', 'display_name');
 
     $harness->assertSame(
-        "+-----+---------------+\n"
-            . "| id  | display_name  |\n"
-            . "+-----+---------------+\n"
+        "+-----+--------------+\n"
+            . "| id  | display_name |\n"
+            . "+-----+--------------+\n"
             . "| 261 | Alex Example |\n"
-            . "+-----+---------------+\n",
+            . "+-----+--------------+\n",
         $table->exportAscii()
     );
 });

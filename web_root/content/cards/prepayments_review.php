@@ -28,17 +28,8 @@ final class _prepayments_reviewCard extends CardBaseFramework
     {
         return [
             [
-                'key' => 'prepaymentsReview',
-                'service' => \eel_accounts\Service\PrepaymentReviewService::class,
-                'method' => 'fetchContext',
-                'params' => [
-                    'companyId' => ':company.id',
-                    'accountingPeriodId' => ':company.accounting_period_id',
-                ],
-            ],
-            [
-                'key' => 'historicalCorrection',
-                'service' => \eel_accounts\Service\PrepaymentHistoricalCorrectionService::class,
+                'key' => 'prepaymentWorkflowContext',
+                'service' => \eel_accounts\Service\PrepaymentWorkflowContextService::class,
                 'method' => 'fetchContext',
                 'params' => [
                     'companyId' => ':company.id',
@@ -60,7 +51,8 @@ final class _prepayments_reviewCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $review = (array)($context['services']['prepaymentsReview'] ?? []);
+        $workflowContext = (array)($context['services']['prepaymentWorkflowContext'] ?? []);
+        $review = (array)($workflowContext['review'] ?? []);
         if (empty($review['available'])) {
             return '<section class="settings-stack" id="prepayments-review">' . $this->renderErrors((array)($review['errors'] ?? ['Prepayment review is not available.'])) . '</section>';
         }
@@ -83,7 +75,7 @@ final class _prepayments_reviewCard extends CardBaseFramework
         $carriedHtml = $this->carriedSchedulesHtml((array)($review['carried_schedules'] ?? []), $companySettings);
         $excludedHtml = $this->excludedCandidatesHtml((array)($review['excluded_items'] ?? []), $companySettings);
         $historicalHtml = $this->historicalCorrectionHtml(
-            (array)($context['services']['historicalCorrection'] ?? []),
+            (array)($workflowContext['historical_correction'] ?? []),
             $companyId,
             $accountingPeriodId,
             $companySettings,

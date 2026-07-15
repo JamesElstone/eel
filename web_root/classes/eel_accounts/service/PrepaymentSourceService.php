@@ -15,6 +15,9 @@ final class PrepaymentSourceService
     public const SOURCE_TRANSACTION_SPLIT_LINE = 'transaction_split_line';
     public const SOURCE_EXPENSE_CLAIM_LINE = 'expense_claim_line';
 
+    /** @var array<string, bool> */
+    private array $tableExistence = [];
+
     /** @return list<array<string, mixed>> */
     public function listCandidates(int $companyId, int $accountingPeriodId): array
     {
@@ -34,29 +37,7 @@ final class PrepaymentSourceService
             $this->expenseClaimLineCandidates($companyId, $accountingPeriodId)
         );
 
-        $eligible = [];
-        $excluded = [];
-        foreach ($rows as $row) {
-            $verification = $this->verify(
-                $companyId,
-                $accountingPeriodId,
-                (string)$row['source_type'],
-                (int)$row['source_id']
-            );
-            if (!empty($verification['success']) && is_array($verification['source'] ?? null)) {
-                $source = array_merge($row, (array)$verification['source']);
-                $source['source_valid'] = true;
-                $source['source_errors'] = [];
-                $eligible[] = $source;
-                continue;
-            }
-            $row['source_valid'] = false;
-            $row['source_errors'] = array_values((array)($verification['errors'] ?? ['The source is not eligible for prepayment review.']));
-            $row['exclusion_reason'] = (string)($row['source_errors'][0] ?? 'The source is not eligible for prepayment review.');
-            $excluded[] = $row;
-        }
-
-        return ['eligible' => $eligible, 'excluded' => $excluded];
+        return $this->verifyCandidateRows($companyId, $accountingPeriodId, $rows);
     }
 
     /** @return array{success: bool, source?: array<string, mixed>, errors: list<string>} */
@@ -322,9 +303,11 @@ final class PrepaymentSourceService
             : '';
 
         return \InterfaceDB::fetchAll(
-            'SELECT \'transaction\' AS source_type, t.id AS source_id, t.txn_date AS source_date,
+            'SELECT \'transaction\' AS source_type, t.id AS source_id,
+                    t.company_id, t.accounting_period_id, t.txn_date AS source_date,
                     COALESCE(t.description, t.counterparty_name, \'\') AS description, ABS(t.amount) AS amount,
-                    na.id AS nominal_account_id, na.code AS nominal_code, na.name AS nominal_name
+                    na.id AS nominal_account_id, na.code AS nominal_code, na.name AS nominal_name,
+                    na.account_type AS nominal_account_type
              FROM transactions t
              INNER JOIN nominal_accounts na ON na.id = t.nominal_account_id
              WHERE t.company_id = :company_id AND t.accounting_period_id = :accounting_period_id
@@ -345,9 +328,11 @@ final class PrepaymentSourceService
         }
 
         return \InterfaceDB::fetchAll(
-            'SELECT \'transaction_split_line\' AS source_type, tsl.id AS source_id, t.txn_date AS source_date,
+            'SELECT \'transaction_split_line\' AS source_type, tsl.id AS source_id,
+                    t.company_id, t.accounting_period_id, t.id AS parent_transaction_id, t.txn_date AS source_date,
                     COALESCE(tsl.description, t.description, \'\') AS description, tsl.amount,
-                    na.id AS nominal_account_id, na.code AS nominal_code, na.name AS nominal_name
+                    na.id AS nominal_account_id, na.code AS nominal_code, na.name AS nominal_name,
+                    na.account_type AS nominal_account_type
              FROM transaction_split_lines tsl
              INNER JOIN transaction_splits ts ON ts.id = tsl.split_id
              INNER JOIN transactions t ON t.id = ts.transaction_id
@@ -369,8 +354,12 @@ final class PrepaymentSourceService
         }
 
         return \InterfaceDB::fetchAll(
-            'SELECT \'expense_claim_line\' AS source_type, ecl.id AS source_id, ecl.expense_date AS source_date,
-                    ecl.description, ecl.amount, na.id AS nominal_account_id, na.code AS nominal_code, na.name AS nominal_name
+            'SELECT \'expense_claim_line\' AS source_type, ecl.id AS source_id,
+                    ec.company_id, ec.accounting_period_id, ec.id AS expense_claim_id,
+                    ec.posted_journal_id, ec.claim_reference_code, ec.period_end AS claim_period_end,
+                    ecl.expense_date AS source_date, ecl.description, ecl.amount,
+                    na.id AS nominal_account_id, na.code AS nominal_code, na.name AS nominal_name,
+                    na.account_type AS nominal_account_type
              FROM expense_claim_lines ecl
              INNER JOIN expense_claims ec ON ec.id = ecl.expense_claim_id
              INNER JOIN nominal_accounts na ON na.id = ecl.nominal_account_id
@@ -468,10 +457,208 @@ final class PrepaymentSourceService
 
     private function tableExists(string $table): bool
     {
-        try {
-            return \InterfaceDB::tableExists($table);
-        } catch (\Throwable) {
-            return false;
+        if (array_key_exists($table, $this->tableExistence)) {
+            return $this->tableExistence[$table];
         }
+
+        try {
+            return $this->tableExistence[$table] = \InterfaceDB::tableExists($table);
+        } catch (\Throwable) {
+            return $this->tableExistence[$table] = false;
+        }
+    }
+
+    /**
+     * @param list<array<string, mixed>> $rows
+     * @return array{eligible: list<array<string, mixed>>, excluded: list<array<string, mixed>>}
+     */
+    private function verifyCandidateRows(int $companyId, int $accountingPeriodId, array $rows): array
+    {
+        if ($rows === []) {
+            return ['eligible' => [], 'excluded' => []];
+        }
+
+        $sources = array_map(
+            fn(array $row): array => $this->normaliseSource($row, (string)$row['source_type']),
+            $rows
+        );
+        $journals = $this->candidateJournals($companyId, $accountingPeriodId, $sources);
+        $journalLines = $this->candidateJournalLines(array_values(array_unique(array_map(
+            static fn(array $journal): int => (int)$journal['id'],
+            $journals
+        ))));
+        $journalsBySource = [];
+        foreach ($journals as $journal) {
+            $journalsBySource[(string)$journal['source_type'] . '|' . (string)$journal['source_ref'] . '|' . (string)$journal['journal_date']][] = $journal;
+            $journalsBySource['id|' . (int)$journal['id']][] = $journal;
+        }
+        $linesByJournal = [];
+        foreach ($journalLines as $line) {
+            $linesByJournal[(int)$line['journal_id']][] = $line;
+        }
+
+        $eligible = [];
+        $excluded = [];
+        foreach ($sources as $source) {
+            $journalResolution = $this->candidateJournalResolution($source, $journalsBySource);
+            if (empty($journalResolution['success']) || !is_array($journalResolution['journal'] ?? null)) {
+                $excluded[] = $this->excludedCandidate($source, (array)($journalResolution['errors'] ?? []));
+                continue;
+            }
+
+            $journal = (array)$journalResolution['journal'];
+            if (empty($journal['is_posted'])) {
+                $excluded[] = $this->excludedCandidate($source, ['The source journal is not posted.']);
+                continue;
+            }
+            $matchingLines = array_values(array_filter(
+                (array)($linesByJournal[(int)$journal['id']] ?? []),
+                static fn(array $line): bool => (int)$line['nominal_account_id'] === (int)$source['nominal_account_id']
+                    && (int)round((float)$line['debit'] * 100) === (int)$source['amount_pence']
+                    && (float)$line['debit'] > 0
+                    && (float)$line['credit'] === 0.0
+            ));
+            if (count($matchingLines) > 1) {
+                $description = trim((string)($source['description'] ?? ''));
+                $descriptionMatches = $description !== '' ? array_values(array_filter(
+                    $matchingLines,
+                    static fn(array $line): bool => trim((string)($line['line_description'] ?? '')) === $description
+                )) : [];
+                if (count($descriptionMatches) === 1) {
+                    $matchingLines = $descriptionMatches;
+                }
+            }
+            if (count($matchingLines) !== 1) {
+                $excluded[] = $this->excludedCandidate($source, [$matchingLines === []
+                    ? 'The posted source journal does not contain the expected positive debit to the candidate expense nominal.'
+                    : 'The posted source journal contains ambiguous matching debit lines; make the source line descriptions unique before treating it as a prepayment.']);
+                continue;
+            }
+
+            $source['source_journal_id'] = (int)$journal['id'];
+            $source['source_journal_line_id'] = (int)$matchingLines[0]['id'];
+            $source['source_journal_date'] = (string)$journal['journal_date'];
+            $source['source_valid'] = true;
+            $source['source_errors'] = [];
+            $eligible[] = $source;
+        }
+
+        return ['eligible' => $eligible, 'excluded' => $excluded];
+    }
+
+    /** @param list<array<string, mixed>> $sources @return list<array<string, mixed>> */
+    private function candidateJournals(int $companyId, int $accountingPeriodId, array $sources): array
+    {
+        $conditions = [];
+        $params = ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId];
+        $bankReferences = [];
+        $expenseJournalIds = [];
+        foreach ($sources as $source) {
+            if ((string)$source['source_type'] === self::SOURCE_EXPENSE_CLAIM_LINE) {
+                $expenseJournalIds[] = (int)($source['posted_journal_id'] ?? 0);
+                continue;
+            }
+            $transactionId = (string)$source['source_type'] === self::SOURCE_TRANSACTION
+                ? (int)$source['source_id']
+                : (int)($source['parent_transaction_id'] ?? 0);
+            if ($transactionId > 0) {
+                $bankReferences[] = 'transaction:' . $transactionId;
+            }
+        }
+        $bankReferences = array_values(array_unique($bankReferences));
+        $expenseJournalIds = array_values(array_unique(array_filter($expenseJournalIds)));
+        if ($bankReferences !== []) {
+            $placeholders = [];
+            foreach ($bankReferences as $index => $reference) {
+                $key = 'bank_ref_' . $index;
+                $placeholders[] = ':' . $key;
+                $params[$key] = $reference;
+            }
+            $conditions[] = '(source_type = \'bank_csv\' AND source_ref IN (' . implode(', ', $placeholders) . '))';
+        }
+        if ($expenseJournalIds !== []) {
+            $placeholders = [];
+            foreach ($expenseJournalIds as $index => $journalId) {
+                $key = 'expense_journal_id_' . $index;
+                $placeholders[] = ':' . $key;
+                $params[$key] = $journalId;
+            }
+            $conditions[] = 'id IN (' . implode(', ', $placeholders) . ')';
+        }
+        if ($conditions === []) {
+            return [];
+        }
+
+        return \InterfaceDB::fetchAll(
+            'SELECT id, company_id, accounting_period_id, source_type, source_ref, journal_date, is_posted
+             FROM journals
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+               AND (' . implode(' OR ', $conditions) . ')
+             ORDER BY id',
+            $params
+        );
+    }
+
+    /** @param list<int> $journalIds @return list<array<string, mixed>> */
+    private function candidateJournalLines(array $journalIds): array
+    {
+        if ($journalIds === []) {
+            return [];
+        }
+        $params = [];
+        $placeholders = [];
+        foreach ($journalIds as $index => $journalId) {
+            $key = 'journal_id_' . $index;
+            $placeholders[] = ':' . $key;
+            $params[$key] = $journalId;
+        }
+
+        return \InterfaceDB::fetchAll(
+            'SELECT id, journal_id, nominal_account_id, debit, credit, COALESCE(line_description, \'\') AS line_description
+             FROM journal_lines
+             WHERE journal_id IN (' . implode(', ', $placeholders) . ')
+               AND debit > 0
+               AND credit = 0
+             ORDER BY journal_id, id',
+            $params
+        );
+    }
+
+    /** @param array<string, list<array<string, mixed>>> $journalsBySource */
+    private function candidateJournalResolution(array $source, array $journalsBySource): array
+    {
+        if ((string)$source['source_type'] === self::SOURCE_EXPENSE_CLAIM_LINE) {
+            $journalId = (int)($source['posted_journal_id'] ?? 0);
+            $matches = array_values(array_filter(
+                (array)($journalsBySource['id|' . $journalId] ?? []),
+                static fn(array $journal): bool => (string)$journal['source_type'] === 'expense_register'
+                    && (string)$journal['source_ref'] === (string)($source['claim_reference_code'] ?? '')
+                    && (string)$journal['journal_date'] === (string)($source['claim_period_end'] ?? '')
+            ));
+            return count($matches) === 1
+                ? ['success' => true, 'journal' => $matches[0], 'errors' => []]
+                : ['success' => false, 'errors' => ['The expense claim is not linked to its exact posted expense-register journal for this company and accounting period.']];
+        }
+
+        $transactionId = (string)$source['source_type'] === self::SOURCE_TRANSACTION
+            ? (int)$source['source_id']
+            : (int)($source['parent_transaction_id'] ?? 0);
+        $key = 'bank_csv|transaction:' . $transactionId . '|' . (string)$source['source_date'];
+        $matches = (array)($journalsBySource[$key] ?? []);
+        if (count($matches) !== 1) {
+            return ['success' => false, 'errors' => [count($matches) === 0
+                ? 'The exact posted bank transaction journal could not be found for this company and accounting period.'
+                : 'More than one production bank journal matches this transaction; resolve the duplicate journals before treating it as a prepayment.']];
+        }
+        return ['success' => true, 'journal' => $matches[0], 'errors' => []];
+    }
+
+    private function excludedCandidate(array $source, array $errors): array
+    {
+        $source['source_valid'] = false;
+        $source['source_errors'] = array_values($errors !== [] ? $errors : ['The source is not eligible for prepayment review.']);
+        $source['exclusion_reason'] = (string)($source['source_errors'][0] ?? 'The source is not eligible for prepayment review.');
+        return $source;
     }
 }

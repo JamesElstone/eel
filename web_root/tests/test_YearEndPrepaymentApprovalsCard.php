@@ -16,9 +16,10 @@ $harness->run(_year_end_prepayment_approvalsCard::class, static function (Genera
         $services = $card->services();
 
         $harness->assertCount(1, $services);
-        $harness->assertSame('prepaymentApprovalContext', (string)($services[0]['key'] ?? ''));
-        $harness->assertSame(\eel_accounts\Service\PrepaymentApprovalContextService::class, (string)($services[0]['service'] ?? ''));
+        $harness->assertSame('prepaymentWorkflowContext', (string)($services[0]['key'] ?? ''));
+        $harness->assertSame(\eel_accounts\Service\PrepaymentWorkflowContextService::class, (string)($services[0]['service'] ?? ''));
         $harness->assertSame('fetchContext', (string)($services[0]['method'] ?? ''));
+        $harness->assertSame($services[0], (new _prepayments_reviewCard())->services()[0] ?? null);
 
         $uncheckedHtml = $card->render(yearEndPrepaymentApprovalsCardContext(null));
 
@@ -105,7 +106,7 @@ function yearEndPrepaymentApprovalsCardContext(?array $acknowledgement, int $pen
             ],
         ],
         'services' => [
-            'prepaymentApprovalContext' => [
+            'prepaymentWorkflowContext' => [
                 'review' => [
                     'available' => true,
                     'items' => $items,

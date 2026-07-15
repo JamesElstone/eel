@@ -12,6 +12,12 @@ namespace eel_accounts\Service;
 
 final class PrepaymentReviewService
 {
+    /** @var array<string, bool> */
+    private array $tableExistence = [];
+
+    /** @var array<string, bool> */
+    private array $columnExistence = [];
+
     public function __construct(
         private readonly ?\eel_accounts\Service\YearEndMetricsService $metricsService = null,
         private readonly ?\eel_accounts\Service\YearEndLockService $lockService = null,
@@ -515,19 +521,28 @@ final class PrepaymentReviewService
 
     private function tableExists(string $table): bool
     {
+        if (array_key_exists($table, $this->tableExistence)) {
+            return $this->tableExistence[$table];
+        }
+
         try {
-            return \InterfaceDB::tableExists($table);
+            return $this->tableExistence[$table] = \InterfaceDB::tableExists($table);
         } catch (\Throwable) {
-            return false;
+            return $this->tableExistence[$table] = false;
         }
     }
 
     private function columnExists(string $table, string $column): bool
     {
+        $key = $table . '.' . $column;
+        if (array_key_exists($key, $this->columnExistence)) {
+            return $this->columnExistence[$key];
+        }
+
         try {
-            return \InterfaceDB::columnExists($table, $column);
+            return $this->columnExistence[$key] = \InterfaceDB::columnExists($table, $column);
         } catch (\Throwable) {
-            return false;
+            return $this->columnExistence[$key] = false;
         }
     }
 }

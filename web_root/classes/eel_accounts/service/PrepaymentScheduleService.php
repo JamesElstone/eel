@@ -11,6 +11,8 @@ namespace eel_accounts\Service;
 
 final class PrepaymentScheduleService
 {
+    private ?bool $schemaAvailable = null;
+
     private const LEGACY_CALCULATION_VERSION = 1;
     private const CURRENT_CALCULATION_VERSION = 2;
 
@@ -1141,14 +1143,18 @@ final class PrepaymentScheduleService
 
     private function schemaAvailable(): bool
     {
+        if ($this->schemaAvailable !== null) {
+            return $this->schemaAvailable;
+        }
+
         try {
-            return \InterfaceDB::tableExists('prepayment_schedules')
+            return $this->schemaAvailable = \InterfaceDB::tableExists('prepayment_schedules')
                 && \InterfaceDB::tableExists('prepayment_schedule_periods')
                 && \InterfaceDB::tableExists('prepayment_schedule_postings')
                 && \InterfaceDB::columnExists('prepayment_reviews', 'current_schedule_id')
                 && \InterfaceDB::columnExists('prepayment_schedules', 'calculation_version');
         } catch (\Throwable) {
-            return false;
+            return $this->schemaAvailable = false;
         }
     }
 }

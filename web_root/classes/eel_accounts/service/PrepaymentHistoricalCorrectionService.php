@@ -20,7 +20,7 @@ final class PrepaymentHistoricalCorrectionService
     }
 
     /** @return array<string, mixed> */
-    public function fetchContext(int $companyId, int $accountingPeriodId): array
+    public function fetchContext(int $companyId, int $accountingPeriodId, ?array $knownScheduleContext = null): array
     {
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return ['available' => false, 'errors' => ['Select a company and accounting period first.']];
@@ -38,9 +38,9 @@ final class PrepaymentHistoricalCorrectionService
 
         $schedules = $this->scheduleService ?? new PrepaymentScheduleService();
         $repair = $schedules->fetchRepairContext($companyId, $accountingPeriodId);
-        $scheduleContext = $schedules->hasSchema()
+        $scheduleContext = $knownScheduleContext ?? ($schedules->hasSchema()
             ? $schedules->fetchPeriodContext($companyId, $accountingPeriodId)
-            : ['available' => false, 'errors' => ['Run the automated prepayment schedule repair migration first.'], 'schedules' => []];
+            : ['available' => false, 'errors' => ['Run the automated prepayment schedule repair migration first.'], 'schedules' => []]);
         $documents = $this->companiesHouseDocuments($companyId, (string)$period['period_end']);
         $hmrc = $this->hmrcFilingEvidence($companyId, $accountingPeriodId);
         $basis = $this->buildBasis($period, $documents, $hmrc, $scheduleContext);

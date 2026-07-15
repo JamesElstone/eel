@@ -25,8 +25,8 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
     {
         return [
             [
-                'key' => 'prepaymentApprovalContext',
-                'service' => \eel_accounts\Service\PrepaymentApprovalContextService::class,
+                'key' => 'prepaymentWorkflowContext',
+                'service' => \eel_accounts\Service\PrepaymentWorkflowContextService::class,
                 'method' => 'fetchContext',
                 'params' => [
                     'companyId' => ':company.id',
@@ -51,7 +51,7 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
         $company = (array)($context['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
-        $approvalContext = (array)($context['services']['prepaymentApprovalContext'] ?? []);
+        $approvalContext = (array)($context['services']['prepaymentWorkflowContext'] ?? []);
         $acknowledgement = $approvalContext['approval'] ?? null;
         $review = (array)($approvalContext['review'] ?? []);
 
@@ -128,7 +128,7 @@ final class _year_end_prepayment_approvalsCard extends CardBaseFramework
     private function prepaidRows(array $context): array
     {
         $rows = [];
-        $approvalContext = (array)($context['services']['prepaymentApprovalContext'] ?? []);
+        $approvalContext = (array)($context['services']['prepaymentWorkflowContext'] ?? []);
         foreach ((array)(($approvalContext['review'] ?? [])['items'] ?? []) as $item) {
             if (!is_array($item)) {
                 continue;

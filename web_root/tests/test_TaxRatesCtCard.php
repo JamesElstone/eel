@@ -34,7 +34,7 @@ $harness->run(_tax_rates_ctCard::class, static function (GeneratedServiceClassTe
         $harness->assertSame(false, str_contains($html, 'active-version-6'));
         $harness->assertSame(false, str_contains($html, 'inactive-version'));
         $harness->assertTrue(str_contains($html, 'name="tax_rates_ct_status" value="active"'));
-        $harness->assertTrue(str_contains($html, '<button class="button primary" type="submit">Refresh His Majesty&#039;s Revenue and Customs (HMRC) Rates</button>'));
+        $harness->assertTrue(str_contains($html, '<button class="button primary" type="submit">Refresh HMRC CT Rates</button>'));
         $harness->assertSame(false, str_contains($html, 'Import Live His Majesty'));
     });
 

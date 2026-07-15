@@ -159,7 +159,47 @@ $harness->check(GoldenAccountsFixture::class, 'keeps every golden period balance
     }
 });
 
-$harness->check(GoldenAccountsFixture::class, 'registers every downstream accounting card and no missing card file', static function () use ($harness): void {
+$harness->check(GoldenAccountsFixture::class, 'populates empty, warning and completed workflow variants with enforceable feature evidence', static function () use ($harness): void {
+    $manifest = GoldenAccountsFixture::build();
+    $coverage = (array)($manifest['feature_coverage'] ?? []);
+    $harness->assertTrue($coverage !== []);
+
+    $expectedPages = array_keys(GoldenCardComparisonRegistry::selectedPages());
+    $coveredPages = [];
+    foreach ($coverage as $domain => $definition) {
+        foreach ((array)($definition['pages'] ?? []) as $page) {
+            $coveredPages[(string)$page] = true;
+        }
+        foreach ((array)($definition['evidence'] ?? []) as $evidence) {
+            $label = (string)($evidence['label'] ?? $domain);
+            $sql = (string)($evidence['sql'] ?? '');
+            $minimum = (int)($evidence['minimum'] ?? 1);
+            $actual = $sql === '' ? 0 : (int)InterfaceDB::fetchColumn($sql);
+            if ($actual < $minimum) {
+                throw new RuntimeException($domain . ' / ' . $label . ': expected at least ' . $minimum . ' evidence rows, actual ' . $actual . '.');
+            }
+        }
+    }
+    sort($expectedPages);
+    $actualPages = array_keys($coveredPages);
+    sort($actualPages);
+    $harness->assertSame($expectedPages, $actualPages);
+
+    $harness->assertSame(0, (int)InterfaceDB::fetchColumn(
+        'SELECT COUNT(*) FROM transactions WHERE company_id = :company_id',
+        ['company_id' => GoldenAccountsFixture::EMPTY_COMPANY_ID]
+    ));
+    $harness->assertTrue((int)InterfaceDB::fetchColumn(
+        'SELECT COUNT(*) FROM transactions WHERE company_id = :company_id AND category_status = :status',
+        ['company_id' => GoldenAccountsFixture::WARNING_COMPANY_ID, 'status' => 'uncategorised']
+    ) > 0);
+    $harness->assertTrue((int)InterfaceDB::fetchColumn(
+        'SELECT COUNT(*) FROM year_end_reviews WHERE company_id = :company_id AND is_locked = 1',
+        ['company_id' => GoldenAccountsFixture::COMPLETE_COMPANY_ID]
+    ) > 0);
+});
+
+$harness->check(GoldenAccountsFixture::class, 'discovers every downstream accounting page card and no missing card file', static function () use ($harness): void {
     $keys = GoldenAccountsFixture::accountingCardKeys();
     $expectations = (array)(GoldenAccountsFixture::manifest()['card_expectations'] ?? []);
     $harness->assertSame(count($keys), count(array_unique($keys)));
@@ -178,6 +218,38 @@ $harness->check(GoldenAccountsFixture::class, 'registers every downstream accoun
         ]);
         $harness->assertTrue(is_string($html));
     }
+});
+
+$harness->check(GoldenAccountsFixture::class, 'keeps published card metrics tied to real golden-period rows', static function () use ($harness): void {
+    $metrics = (array)(GoldenAccountsFixture::manifest()['card_expectations'] ?? []);
+    $periodId = 9114;
+    $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
+
+    $transactionCount = (int)InterfaceDB::fetchColumn(
+        'SELECT COUNT(*) FROM transactions WHERE company_id = :company_id AND accounting_period_id = :period_id',
+        ['company_id' => $companyId, 'period_id' => $periodId]
+    );
+    $claim = InterfaceDB::fetchOne(
+        'SELECT COUNT(*) AS claim_count, COALESCE(SUM(claimed_amount), 0) AS claimed_amount
+         FROM expense_claims WHERE company_id = :company_id AND accounting_period_id = :period_id',
+        ['company_id' => $companyId, 'period_id' => $periodId]
+    );
+    $journals = InterfaceDB::fetchOne(
+        'SELECT COUNT(DISTINCT j.id) AS journal_count,
+                COALESCE(SUM(jl.debit), 0) AS debits,
+                COALESCE(SUM(jl.credit), 0) AS credits
+         FROM journals j
+         INNER JOIN journal_lines jl ON jl.journal_id = j.id
+         WHERE j.company_id = :company_id AND j.accounting_period_id = :period_id AND j.is_posted = 1',
+        ['company_id' => $companyId, 'period_id' => $periodId]
+    );
+
+    $harness->assertSame((int)$metrics['transactions_imported']['metrics']['transaction_count'], $transactionCount);
+    $harness->assertSame((int)$metrics['expense_statistics']['metrics']['claim_count'], (int)$claim['claim_count']);
+    $harness->assertSame((float)$metrics['expense_statistics']['metrics']['claimed_amount'], (float)$claim['claimed_amount']);
+    $harness->assertSame((int)$metrics['journals_list']['metrics']['journal_count'], (int)$journals['journal_count']);
+    $harness->assertSame((float)$metrics['journals_list']['metrics']['debits'], (float)$journals['debits']);
+    $harness->assertSame((float)$metrics['journals_list']['metrics']['credits'], (float)$journals['credits']);
 });
 
 $harness->check(GoldenAccountsFixture::class, 'resolves declared services and renders every accounting card against the golden database', static function () use ($harness): void {

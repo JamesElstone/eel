@@ -8,6 +8,8 @@
 declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'GoldenLedgerSpecification.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'GoldenCardComparisonRegistry.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'GoldenWorkflowCoverageFixture.php';
 
 final class GoldenAccountsFixture
 {
@@ -42,6 +44,7 @@ final class GoldenAccountsFixture
             self::seedCompanies();
             self::seedGoldenCompany();
             self::seedScenarioPeriods();
+            GoldenWorkflowCoverageFixture::seed();
 
             return self::manifest();
         });
@@ -83,7 +86,7 @@ final class GoldenAccountsFixture
             $cardExpectations[$cardKey] = ['scenario' => 'golden', 'renders' => true];
         }
         $cardExpectations['pl_summary']['metrics'] = ['income' => 12000.00, 'expenses' => 1863.00, 'net_profit' => 7137.00];
-        $cardExpectations['transactions_imported']['metrics'] = ['transaction_count' => 3, 'uncategorised_count' => 0];
+        $cardExpectations['transactions_imported']['metrics'] = ['transaction_count' => 4, 'uncategorised_count' => 0];
         $cardExpectations['expense_statistics']['metrics'] = ['claim_count' => 1, 'claimed_amount' => 300.00];
         $cardExpectations['journals_list']['metrics'] = ['journal_count' => 7, 'debits' => 17553.00, 'credits' => 17553.00];
 
@@ -121,6 +124,7 @@ final class GoldenAccountsFixture
                 'synthetic_marker' => 'GOLDEN-TEST-',
             ],
             'card_expectations' => $cardExpectations,
+            'feature_coverage' => GoldenWorkflowCoverageFixture::coverageManifest(),
         ];
     }
 
@@ -134,31 +138,19 @@ final class GoldenAccountsFixture
     /** @return list<string> */
     public static function accountingCardKeys(): array
     {
-        return [
-            'accounting_periods', 'asset_create', 'asset_reconcile_manual', 'asset_register', 'asset_tax',
-            'banking_account_form', 'banking_accounts', 'banking_reconciliation', 'companies_company_settings',
-            'companies_house_snapshot', 'companies_nominals', 'companies_stored_detail', 'company_minutes',
-            'csv_export', 'dashboard_recent_transactions', 'dashboard_year_end_readiness', 'director_loan_state',
-            'dividend_capacity', 'dividend_declare', 'dividend_history', 'dividend_reserve_review', 'dividend_vouchers',
-            'expense_claim_create', 'expense_claim_editor', 'expense_claimants', 'expense_search',
-            'expense_statistics', 'expenses_state', 'hmrc_fines_table', 'hmrc_obligations_action_panel',
-            'hmrc_obligations_summary', 'hmrc_obligations_timeline', 'incorporation_add_shares',
-            'incorporation_payment_matching', 'incorporation_share_capital', 'incorporation_status',
-            'ixbrl_accounts_mapping', 'ixbrl_facts_preview', 'ixbrl_readiness', 'ixbrl_trial_balance',
-            'journal_cut_off_confirmation', 'journal_cut_offs', 'journals_list', 'nominal_closing_balances',
-            'nominal_opening_balances', 'nominals_accounts', 'nominals_add_account', 'not_an_asset',
-            'pl_expense_breakdown', 'pl_income_breakdown', 'pl_monthly_trend', 'pl_net_profit_bridge',
-            'pl_source_coverage', 'pl_summary', 'prepayments_review', 'statement_field_mapping',
-            'tax_prepayment_treatment', 'tax_rates_ct', 'tax_rates_vat', 'tax_thresholds_vat', 'tax_treatment_rules', 'tax_vat_threshold', 'transaction_search', 'transactions_imported', 'transactions_monthly_status',
-            'transactions_rule_form', 'transactions_rules', 'trial_balance_losses', 'trial_balance_state',
-            'trial_balance_validation', 'uploads_bank_transactions', 'uploads_details',
-            'uploads_statement_coverage', 'uploads_validate_commit', 'vat_readiness', 'vat_registration',
-            'vat_support_scope', 'vat_turnover_monitoring',
-            'vehicle_register', 'year_end_companies_house_comparison', 'year_end_director_loan_offset',
-            'year_end_empty_month_confirmations', 'year_end_expenses_confirmation', 'year_end_notes',
-            'year_end_prepayment_approvals', 'year_end_retained_earnings', 'year_end_state',
-            'year_end_tax_readiness', 'year_end_transaction_tail',
-        ];
+        $keys = [];
+        foreach (GoldenCardComparisonRegistry::selectedPages() as $cards) {
+            foreach ($cards as $cardKey) {
+                $keys[$cardKey] = true;
+            }
+        }
+
+        // These downstream accounting cards are intentionally available outside a current page layout.
+        foreach (['asset_tax', 'tax_vat_threshold', 'vat_support_scope'] as $cardKey) {
+            $keys[$cardKey] = true;
+        }
+
+        return array_keys($keys);
     }
 
     private static function assertSqlite(): void

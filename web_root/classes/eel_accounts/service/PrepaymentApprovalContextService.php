@@ -36,7 +36,7 @@ final class PrepaymentApprovalContextService
         }
 
         $basis = !empty($review['available'])
-            ? $acknowledgements->buildBasis(self::CHECK_CODE, $review)
+            ? $this->buildApprovalBasis($review)
             : null;
         $access = ($this->accessService ?? new \eel_accounts\Service\AccountingPeriodAccessService())
             ->fetchDataEntryState($companyId, $accountingPeriodId);
@@ -49,5 +49,40 @@ final class PrepaymentApprovalContextService
             'review' => $review,
             'approval' => $acknowledgement,
         ];
+    }
+
+    /** @return array<string, mixed> */
+    public function buildApprovalBasis(array $review): array
+    {
+        return ($this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService())
+            ->buildBasis(self::CHECK_CODE, $this->withoutPostingState($review));
+    }
+
+    private function withoutPostingState(array $value): array
+    {
+        if (isset($value['calculation_hash'], $value['allocations'])) {
+            // active -> complete is posting progress, not a changed accounting
+            // calculation, and must not stale an approval during close.
+            unset($value['status']);
+        }
+        $volatile = [
+            'generated_journal_id',
+            'reversal_journal_id',
+            'posted_effect_pence',
+            'posting_count',
+            'posting_target_pence',
+            'posting_delta_pence',
+            'journal_state',
+        ];
+        foreach ($value as $key => $item) {
+            if (in_array((string)$key, $volatile, true)) {
+                unset($value[$key]);
+                continue;
+            }
+            if (is_array($item)) {
+                $value[$key] = $this->withoutPostingState($item);
+            }
+        }
+        return $value;
     }
 }

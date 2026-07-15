@@ -33,6 +33,10 @@ final class PrepaymentsAction implements ActionInterfaceFramework
                         'notes' => (string)$request->input('prepayment_notes', ''),
                     ]
                 ),
+                'reopen_schedule' => (new \eel_accounts\Service\PrepaymentPostingService())->reopenSchedule(
+                    $companyId,
+                    (int)$request->input('review_id', 0)
+                ),
                 default => [
                     'success' => false,
                     'errors' => ['The selected prepayment action is not recognised.'],
@@ -45,7 +49,11 @@ final class PrepaymentsAction implements ActionInterfaceFramework
         return $this->result(
             !empty($result['success']),
             (array)($result['errors'] ?? []),
-            $intent === 'save_review' ? 'Prepayment review saved.' : 'Prepayments updated.'
+            match ($intent) {
+                'save_review' => 'Prepayment review and schedule saved.',
+                'reopen_schedule' => 'Prepayment schedule reopened and posted effects compensated.',
+                default => 'Prepayments updated.',
+            }
         );
     }
 

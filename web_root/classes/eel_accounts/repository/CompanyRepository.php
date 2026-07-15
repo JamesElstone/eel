@@ -17,6 +17,7 @@ final class CompanyRepository
         'default_trade_nominal_id',
         'default_expense_nominal_id',
         'tools_small_equipment_nominal_id',
+        'prepayment_asset_nominal_id',
         'director_loan_nominal_id',
         'director_loan_asset_nominal_id',
         'director_loan_liability_nominal_id',

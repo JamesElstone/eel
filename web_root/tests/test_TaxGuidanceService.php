@@ -17,7 +17,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
             $harness->assertTrue(isset($all['capital_allowances']));
             $harness->assertSame('https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim35201', $all['bim35201'] ?? null);
+            $harness->assertSame('https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim42201', $all['bim42201'] ?? null);
+            $harness->assertSame('https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim70066', $all['bim70066'] ?? null);
             $harness->assertSame('https://www.gov.uk/hmrc-internal-manuals/company-taxation-manual/ctm01405', $all['ctm01405'] ?? null);
+            $harness->assertSame('https://www.frc.org.uk/library/standards-codes-policy/accounting-and-reporting/uk-accounting-standards/frs-105/', $all['frs105'] ?? null);
             $harness->assertSame($all['capital_allowances'], \eel_accounts\Service\TaxGuidanceService::url('capital_allowances'));
             $harness->assertSame($all['company_tax_returns'], \eel_accounts\Service\TaxGuidanceService::url('missing-guidance-key'));
         });

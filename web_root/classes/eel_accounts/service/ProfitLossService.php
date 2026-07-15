@@ -169,6 +169,13 @@ final class ProfitLossService
             (string)$accountingPeriod['period_end'],
             (float)($preTax['depreciation_expense'] ?? 0)
         );
+        $breakdown = $this->mergePendingPrepaymentBreakdown(
+            $breakdown,
+            $companyId,
+            $accountingPeriodId,
+            (string)$accountingPeriod['period_start'],
+            (string)$accountingPeriod['period_end']
+        );
 
         $breakdown['positive_non_income_receipts'] = $this->positiveNonIncomeReceipts(
             $companyId,
@@ -177,6 +184,71 @@ final class ProfitLossService
             (string)$accountingPeriod['period_end']
         );
 
+        return $breakdown;
+    }
+
+    /**
+     * Merge preview-only prepayment effects into the same original nominal
+     * rows that ordinary posted journals populate. Consequently callers see
+     * an identical nominal breakdown immediately before and after Year End
+     * posts the schedule journals.
+     */
+    private function mergePendingPrepaymentBreakdown(
+        array $breakdown,
+        int $companyId,
+        int $accountingPeriodId,
+        string $periodStart,
+        string $periodEnd
+    ): array {
+        foreach ((new YearEndClosePreviewService())->prepaymentExpenseRowsForPeriod(
+            $companyId,
+            $accountingPeriodId,
+            $periodStart,
+            $periodEnd
+        ) as $pending) {
+            $group = (string)($pending['account_type'] ?? '') === 'cost_of_sales'
+                ? 'cost_of_sales'
+                : 'expense';
+            $nominalId = (int)($pending['nominal_account_id'] ?? 0);
+            $amount = round((float)($pending['amount'] ?? 0), 2);
+            if ($nominalId <= 0 || abs($amount) < 0.005) {
+                continue;
+            }
+
+            $merged = false;
+            foreach ($breakdown[$group] as $index => $existing) {
+                if ((int)($existing['nominal_account_id'] ?? 0) !== $nominalId) {
+                    continue;
+                }
+                $breakdown[$group][$index]['amount'] = round((float)($existing['amount'] ?? 0) + $amount, 2);
+                if (abs((float)$breakdown[$group][$index]['amount']) < 0.005) {
+                    unset($breakdown[$group][$index]);
+                    $breakdown[$group] = array_values($breakdown[$group]);
+                }
+                $merged = true;
+                break;
+            }
+            if ($merged) {
+                continue;
+            }
+
+            $breakdown[$group][] = [
+                'nominal_account_id' => $nominalId,
+                'code' => (string)($pending['code'] ?? ''),
+                'name' => (string)($pending['name'] ?? ''),
+                'account_type' => $group,
+                'account_subtype_code' => (string)($pending['subtype_code'] ?? ''),
+                'account_subtype_name' => (string)($pending['subtype_name'] ?? ''),
+                'amount' => $amount,
+            ];
+        }
+
+        foreach (['cost_of_sales', 'expense'] as $group) {
+            usort(
+                $breakdown[$group],
+                static fn(array $left, array $right): int => abs((float)$right['amount']) <=> abs((float)$left['amount'])
+            );
+        }
         return $breakdown;
     }
 
@@ -221,11 +293,38 @@ final class ProfitLossService
             (string)$accountingPeriod['period_start'],
             (string)$accountingPeriod['period_end']
         );
+        $prepaymentOperatingByMonth = [];
+        $prepaymentCostByMonth = [];
+        foreach ((new YearEndClosePreviewService())->prepaymentExpenseRowsForPeriod(
+            $companyId,
+            $accountingPeriodId,
+            (string)$accountingPeriod['period_start'],
+            (string)$accountingPeriod['period_end']
+        ) as $prepaymentRow) {
+            $monthStart = substr((string)$prepaymentRow['journal_date'], 0, 7) . '-01';
+            $target = (string)$prepaymentRow['account_type'] === 'cost_of_sales'
+                ? $prepaymentCostByMonth
+                : $prepaymentOperatingByMonth;
+            $target[$monthStart] = round((float)($target[$monthStart] ?? 0) + (float)$prepaymentRow['amount'], 2);
+            if ((string)$prepaymentRow['account_type'] === 'cost_of_sales') {
+                $prepaymentCostByMonth = $target;
+            } else {
+                $prepaymentOperatingByMonth = $target;
+            }
+        }
         foreach ($months as $monthStart => &$month) {
             $month['posted_operating_expense_total'] = round((float)$month['operating_expense_total'], 2);
             $month['depreciation_expense'] = round((float)($depreciationByMonth[$monthStart] ?? 0), 2);
+            $month['prepayment_expense_adjustment'] = round((float)($prepaymentOperatingByMonth[$monthStart] ?? 0), 2);
+            $month['prepayment_cost_of_sales_adjustment'] = round((float)($prepaymentCostByMonth[$monthStart] ?? 0), 2);
+            $month['cost_of_sales_total'] = round(
+                (float)$month['cost_of_sales_total'] + (float)$month['prepayment_cost_of_sales_adjustment'],
+                2
+            );
             $month['operating_expense_total'] = round(
-                (float)$month['posted_operating_expense_total'] + (float)$month['depreciation_expense'],
+                (float)$month['posted_operating_expense_total']
+                    + (float)$month['prepayment_expense_adjustment']
+                    + (float)$month['depreciation_expense'],
                 2
             );
             $month['accounting_basis'] = 'posted_journals_plus_year_end_close_preview';

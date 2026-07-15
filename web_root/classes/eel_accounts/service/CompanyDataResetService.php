@@ -64,9 +64,18 @@ final class CompanyDataResetService
             'SELECT id
              FROM expense_claimants
              WHERE company_id = :company_id',
-            ['company_id' => $companyId]
+             ['company_id' => $companyId]
         );
+        $prepaymentScheduleIds = $this->tableExists('prepayment_schedules')
+            ? $this->fetchIds(
+                'SELECT id FROM prepayment_schedules WHERE company_id = :company_id',
+                ['company_id' => $companyId]
+            )
+            : [];
         $counts = [
+            'prepayment_schedule_postings' => $this->countRowsByIds('prepayment_schedule_postings', 'schedule_id', $prepaymentScheduleIds),
+            'prepayment_schedule_periods' => $this->countRowsByIds('prepayment_schedule_periods', 'schedule_id', $prepaymentScheduleIds),
+            'prepayment_schedules' => count($prepaymentScheduleIds),
             'prepayment_reviews' => $this->countRowsForCompany('prepayment_reviews', $companyId),
             'expense_claim_lines' => $this->countRowsByIds('expense_claim_lines', 'expense_claim_id', $expenseClaimIds),
             'expense_claim_payment_links' => $this->countRowsByIds('expense_claim_payment_links', 'expense_claim_id', $expenseClaimIds),
@@ -88,6 +97,9 @@ final class CompanyDataResetService
         }
 
         try {
+            $this->deleteRowsByIds('prepayment_schedule_postings', 'schedule_id', $prepaymentScheduleIds);
+            $this->deleteRowsByIds('prepayment_schedule_periods', 'schedule_id', $prepaymentScheduleIds);
+            $this->deleteRowsByIds('prepayment_schedules', 'id', $prepaymentScheduleIds);
             $this->deleteRowsForCompany('prepayment_reviews', $companyId);
             $this->deleteRowsByIds('expense_claim_payment_links', 'expense_claim_id', $expenseClaimIds);
             $this->deleteRowsByIds('expense_claim_lines', 'expense_claim_id', $expenseClaimIds);

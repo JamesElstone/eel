@@ -31,6 +31,7 @@ INSERT INTO `nominal_accounts` (`id`,`code`,`name`,`account_type`,`account_subty
 (1,'1000','Bank','asset',1,'allowable',1,10,'2026-03-25 14:48:09'),
 (2,'1100','Trade Debtors','asset',2,'allowable',1,20,'2026-03-25 14:48:09'),
 (3,'1200','Director Loan Asset','asset',3,'allowable',1,30,'2026-03-25 14:48:09'),
+(56,'1150','Prepayments','asset',20,'other',1,25,'2026-07-14 00:00:00'),
 (4,'2000','VAT Control','liability',4,'allowable',1,40,'2026-03-25 14:48:09'),
 (5,'2100','Director Loan Liability','liability',5,'allowable',1,50,'2026-03-25 14:48:09'),
 (6,'2200','Corporation Tax','liability',6,'allowable',1,60,'2026-03-25 14:48:09'),
@@ -108,7 +109,8 @@ INSERT INTO `nominal_account_subtypes` VALUES
 (16,'asset_disposal_loss','Asset Disposal Loss','expense',621,1),
 (17,'dividends_payable','Dividends Payable','liability',56,1),
 (18,'asset_disposal_clearing','Asset Disposal Clearing','asset',149,1),
-(19,'hmrc_payable','HMRC Penalties & Interest Payable','liability',61,1);
+(19,'hmrc_payable','HMRC Penalties & Interest Payable','liability',61,1),
+(20,'prepayments','Prepayments','asset',25,1);
 /*!40000 ALTER TABLE `nominal_account_subtypes` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;

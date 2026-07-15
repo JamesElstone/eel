@@ -62,7 +62,30 @@ final class PreTaxProfitLossService
                 $unknownCount++;
             }
         }
-        $depreciation = (new YearEndClosePreviewService())->depreciationExpenseForPeriod(
+        $postedOperatingExpenses = $operatingExpenses;
+        $closePreview = new YearEndClosePreviewService();
+        $prepaymentExpenseAdjustment = 0.0;
+        foreach ($closePreview->prepaymentExpenseRowsForPeriod(
+            $companyId,
+            $accountingPeriodId,
+            $scope->periodStart,
+            $scope->asAtDate
+        ) as $row) {
+            $amount = (float)($row['amount'] ?? 0);
+            $prepaymentExpenseAdjustment += $amount;
+            if ((string)($row['account_type'] ?? '') === 'cost_of_sales') {
+                $costOfSales += $amount;
+            } else {
+                $operatingExpenses += $amount;
+            }
+            $taxTreatment = (string)($row['tax_treatment'] ?? '');
+            if ($taxTreatment === 'disallowable') {
+                $disallowable += $amount;
+            } elseif ($taxTreatment === 'capital') {
+                $capital += $amount;
+            }
+        }
+        $depreciation = $closePreview->depreciationExpenseForPeriod(
             $companyId,
             $accountingPeriodId,
             $scope->periodStart,
@@ -80,7 +103,8 @@ final class PreTaxProfitLossService
             'income_total' => $income,
             'cost_of_sales_total' => $costOfSales,
             'gross_profit' => $grossProfit,
-            'posted_operating_expense_total' => round($operatingExpenses - $depreciation, 2),
+            'posted_operating_expense_total' => round($postedOperatingExpenses, 2),
+            'prepayment_expense_adjustment' => round($prepaymentExpenseAdjustment, 2),
             'depreciation_expense' => round($depreciation, 2),
             'operating_expense_total' => $operatingExpenses,
             'posted_corporation_tax_charge' => round($postedCt, 2),

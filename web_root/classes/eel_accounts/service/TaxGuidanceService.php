@@ -21,7 +21,10 @@ final class TaxGuidanceService
         'losses' => 'https://www.gov.uk/guidance/corporation-tax-calculating-and-claiming-a-loss',
         'marginal_relief' => 'https://www.gov.uk/guidance/corporation-tax-marginal-relief',
         'bim35201' => 'https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim35201',
+        'bim42201' => 'https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim42201',
+        'bim70066' => 'https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim70066',
         'ctm01405' => 'https://www.gov.uk/hmrc-internal-manuals/company-taxation-manual/ctm01405',
+        'frs105' => 'https://www.frc.org.uk/library/standards-codes-policy/accounting-and-reporting/uk-accounting-standards/frs-105/',
     ];
 
     public static function url(string $key): string

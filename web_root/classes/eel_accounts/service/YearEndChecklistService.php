@@ -155,6 +155,19 @@ final class YearEndChecklistService
                 ]);
             }
 
+            $prepaymentResult = (new \eel_accounts\Service\PrepaymentPostingService())
+                ->postForAccountingPeriod($companyId, $accountingPeriodId, $lockedBy);
+            if (empty($prepaymentResult['success'])) {
+                return $this->rollbackLockTransaction($transaction, [
+                    'success' => false,
+                    'status' => 422,
+                    'errors' => (array)($prepaymentResult['errors'] ?? ['Prepayment journals could not be posted before locking this period.']),
+                    'checklist' => $checklist,
+                    'director_loan_offset' => $directorLoanOffsetResult,
+                    'prepayments' => $prepaymentResult,
+                ]);
+            }
+
             $depreciationResult = ($this->assetService ?? new \eel_accounts\Service\AssetService())->runDepreciation($companyId, $accountingPeriodId);
             if (empty($depreciationResult['success'])) {
                 return $this->rollbackLockTransaction($transaction, [
@@ -163,6 +176,7 @@ final class YearEndChecklistService
                     'errors' => (array)($depreciationResult['errors'] ?? ['Depreciation could not be posted before locking this period.']),
                     'checklist' => $checklist,
                     'director_loan_offset' => $directorLoanOffsetResult,
+                    'prepayments' => $prepaymentResult,
                     'depreciation' => $depreciationResult,
                 ]);
             }
@@ -176,6 +190,7 @@ final class YearEndChecklistService
                     'errors' => (array)($ctProvisionResult['errors'] ?? ['Corporation Tax provisions could not be posted before locking this period.']),
                     'checklist' => $checklist,
                     'director_loan_offset' => $directorLoanOffsetResult,
+                    'prepayments' => $prepaymentResult,
                     'depreciation' => $depreciationResult,
                     'corporation_tax_provision' => $ctProvisionResult,
                 ]);
@@ -190,6 +205,7 @@ final class YearEndChecklistService
                     'errors' => (array)($retainedEarningsCloseResult['errors'] ?? ['Retained earnings close could not be posted before locking this period.']),
                     'checklist' => $checklist,
                     'director_loan_offset' => $directorLoanOffsetResult,
+                    'prepayments' => $prepaymentResult,
                     'depreciation' => $depreciationResult,
                     'corporation_tax_provision' => $ctProvisionResult,
                     'retained_earnings_close' => $retainedEarningsCloseResult,
@@ -205,6 +221,7 @@ final class YearEndChecklistService
                     'errors' => (array)($taxPersistenceResult['errors'] ?? ['Corporation Tax close evidence could not be recorded before locking this period.']),
                     'checklist' => $checklist,
                     'director_loan_offset' => $directorLoanOffsetResult,
+                    'prepayments' => $prepaymentResult,
                     'depreciation' => $depreciationResult,
                     'corporation_tax_provision' => $ctProvisionResult,
                     'retained_earnings_close' => $retainedEarningsCloseResult,
@@ -221,6 +238,7 @@ final class YearEndChecklistService
             $result += [
                 'depreciation' => $depreciationResult,
                 'director_loan_offset' => $directorLoanOffsetResult,
+                'prepayments' => $prepaymentResult,
                 'corporation_tax_provision' => $ctProvisionResult,
                 'retained_earnings_close' => $retainedEarningsCloseResult,
                 'corporation_tax' => $taxPersistenceResult,
@@ -268,6 +286,18 @@ final class YearEndChecklistService
             ];
         }
 
+        $prepaymentValidation = (new \eel_accounts\Service\PrepaymentPostingService())
+            ->validateForYearEndLock($companyId, $accountingPeriodId);
+        if (empty($prepaymentValidation['success'])) {
+            return [
+                'success' => false,
+                'status' => 422,
+                'errors' => (array)($prepaymentValidation['errors'] ?? ['Prepayment schedules could not be validated before locking this period.']),
+                'checklist' => $checklist,
+                'prepayments' => $prepaymentValidation,
+            ];
+        }
+
         $depreciationPreview = ($this->assetService ?? new \eel_accounts\Service\AssetService())->previewDepreciationRun($companyId, $accountingPeriodId);
         if (empty($depreciationPreview['success'])) {
             return [
@@ -281,6 +311,7 @@ final class YearEndChecklistService
 
         return [
             'success' => true,
+            'prepayments' => $prepaymentValidation,
             'depreciation' => $depreciationPreview,
         ];
     }
@@ -1038,7 +1069,9 @@ final class YearEndChecklistService
             'Approve the prepayment review before closing this accounting period.',
             'Pending',
             '?page=prepayments&show_card=year_end_prepayment_approvals',
-            empty($prepaymentReview['available']) ? null : $this->acknowledgementBasis('prepayment_approvals', $prepaymentReview)
+            empty($prepaymentReview['available'])
+                ? null
+                : (new \eel_accounts\Service\PrepaymentApprovalContextService())->buildApprovalBasis($prepaymentReview)
         ), $reviewAcknowledgements);
 
         $sections['year_end_accounts_review'][] = $this->applyReviewAcknowledgement($this->makeCheck(

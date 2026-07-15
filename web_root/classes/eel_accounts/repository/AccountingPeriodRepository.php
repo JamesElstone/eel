@@ -58,15 +58,30 @@ final class AccountingPeriodRepository
             ? trim($label)
             : \eel_accounts\Service\TaxPeriodService::accountingPeriodLabel($periodStart, $periodEnd);
 
-        \InterfaceDB::prepareExecute('UPDATE accounting_periods SET label = ?, period_start = ?, period_end = ? WHERE id = ? AND company_id = ?', [
-            $label,
-            $periodStart,
-            $periodEnd,
-            $accountingPeriodId,
-            $companyId,
-        ]);
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
+        }
+        try {
+            \InterfaceDB::prepareExecute('UPDATE accounting_periods SET label = ?, period_start = ?, period_end = ? WHERE id = ? AND company_id = ?', [
+                $label,
+                $periodStart,
+                $periodEnd,
+                $accountingPeriodId,
+                $companyId,
+            ]);
 
-        (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $accountingPeriodId);
+            (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $accountingPeriodId);
+            $this->syncPrepaymentSchedules($companyId, $accountingPeriodId);
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+            throw $exception;
+        }
     }
 
     public function validateOverlap(int $companyId, int $periodId, string $periodStart, string $periodEnd): array
@@ -150,25 +165,54 @@ final class AccountingPeriodRepository
             $id = (int)$find->fetchColumn();
             if ($id > 0) {
                 (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $id);
+                $this->syncPrepaymentSchedules($companyId, $id);
             }
 
             return $id;
         }
 
-        \InterfaceDB::prepareExecute('INSERT INTO accounting_periods (company_id, label, period_start, period_end) VALUES (?, ?, ?, ?)', [$companyId, $label, $periodStart, $periodEnd]);
-
-        $find = \InterfaceDB::prepareExecute('SELECT id FROM accounting_periods WHERE company_id = ? AND period_start = ? AND period_end = ? ORDER BY id DESC LIMIT 1', [$companyId, $periodStart, $periodEnd]);
-
-        $id = (int)$find->fetchColumn();
-        if ($id > 0) {
-            (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $id);
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
         }
+        try {
+            \InterfaceDB::prepareExecute('INSERT INTO accounting_periods (company_id, label, period_start, period_end) VALUES (?, ?, ?, ?)', [$companyId, $label, $periodStart, $periodEnd]);
 
-        return $id;
+            $find = \InterfaceDB::prepareExecute('SELECT id FROM accounting_periods WHERE company_id = ? AND period_start = ? AND period_end = ? ORDER BY id DESC LIMIT 1', [$companyId, $periodStart, $periodEnd]);
+
+            $id = (int)$find->fetchColumn();
+            if ($id > 0) {
+                (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $id);
+                $this->syncPrepaymentSchedules($companyId, $id);
+            }
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
+            return $id;
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+            throw $exception;
+        }
     }
 
     private function periodsOverlap(string $startA, string $endA, string $startB, string $endB): bool
     {
         return !($endA < $startB || $startA > $endB);
+    }
+
+    private function syncPrepaymentSchedules(int $companyId, int $accountingPeriodId): void
+    {
+        $service = new \eel_accounts\Service\PrepaymentScheduleService();
+        if (!$service->hasSchema()
+            || (new \eel_accounts\Service\VatSupportScopeService())->isTaxAndYearEndReadOnly($companyId)) {
+            return;
+        }
+
+        $result = $service->syncForAccountingPeriod($companyId, $accountingPeriodId, 'accounting_period_change');
+        if (empty($result['success'])) {
+            throw new \RuntimeException((string)(($result['errors'] ?? [])[0] ?? 'Prepayment schedules could not be synchronised for the accounting period.'));
+        }
     }
 }

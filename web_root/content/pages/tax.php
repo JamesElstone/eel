@@ -35,6 +35,7 @@ final class _tax extends PageContextFramework
             'tax_period_selector',
             'tax_corporation_tax_summary',
             'tax_taxable_profit_bridge',
+            'tax_prepayment_treatment',
             'tax_disallowable_add_backs',
             'tax_depreciation_add_back',
             'tax_capital_allowances_summary',

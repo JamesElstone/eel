@@ -140,10 +140,75 @@ final class YearEndClosePreviewService
         }
 
         return array_merge(
+            $this->pendingPrepaymentBalanceSheetAdjustments($companyId, $accountingPeriodId),
             $this->pendingDepreciationBalanceSheetAdjustments($companyId, $accountingPeriodId),
             $this->pendingDirectorLoanOffsetAdjustments($companyId, $accountingPeriodId),
             $this->pendingRetainedEarningsCloseAdjustment($companyId, $accountingPeriodId, $accountingPeriod)
         );
+    }
+
+    /** @return list<array<string, mixed>> */
+    public function prepaymentExpenseRowsForPeriod(
+        int $companyId,
+        int $accountingPeriodId,
+        string $periodStart = '',
+        string $periodEnd = ''
+    ): array {
+        $rows = [];
+        foreach ((new PrepaymentScheduleService())->fetchPreviewAdjustments($companyId, $accountingPeriodId) as $adjustment) {
+            $journalDate = (string)($adjustment['journal_date'] ?? '');
+            if (($periodStart !== '' && $journalDate < $periodStart)
+                || ($periodEnd !== '' && $journalDate > $periodEnd)) {
+                continue;
+            }
+            $debitNominal = $this->nominalById((int)$adjustment['debit_nominal_id']);
+            $creditNominal = $this->nominalById((int)$adjustment['credit_nominal_id']);
+            $expenseNominal = is_array($debitNominal) && in_array((string)$debitNominal['account_type'], ['expense', 'cost_of_sales'], true)
+                ? $debitNominal
+                : (is_array($creditNominal) && in_array((string)$creditNominal['account_type'], ['expense', 'cost_of_sales'], true) ? $creditNominal : null);
+            if (!is_array($expenseNominal)) {
+                continue;
+            }
+            $amount = ((int)$adjustment['amount_pence']) / 100;
+            $signedAmount = (int)$adjustment['debit_nominal_id'] === (int)$expenseNominal['nominal_account_id']
+                ? $amount
+                : -$amount;
+            $rows[] = $expenseNominal + [
+                'journal_date' => $journalDate,
+                'amount' => round($signedAmount, 2),
+                'source' => 'pending_prepayment',
+                'review_id' => (int)$adjustment['review_id'],
+                'schedule_id' => (int)$adjustment['schedule_id'],
+            ];
+        }
+        return $rows;
+    }
+
+    public function prepaymentExpenseAdjustmentForPeriod(
+        int $companyId,
+        int $accountingPeriodId,
+        string $periodStart = '',
+        string $periodEnd = ''
+    ): float {
+        return round(array_sum(array_map(
+            static fn(array $row): float => (float)$row['amount'],
+            $this->prepaymentExpenseRowsForPeriod($companyId, $accountingPeriodId, $periodStart, $periodEnd)
+        )), 2);
+    }
+
+    /** @return array<string, float> */
+    public function monthlyPrepaymentExpenseForPeriod(
+        int $companyId,
+        int $accountingPeriodId,
+        string $periodStart,
+        string $periodEnd
+    ): array {
+        $months = [];
+        foreach ($this->prepaymentExpenseRowsForPeriod($companyId, $accountingPeriodId, $periodStart, $periodEnd) as $row) {
+            $month = substr((string)$row['journal_date'], 0, 7) . '-01';
+            $months[$month] = round((float)($months[$month] ?? 0) + (float)$row['amount'], 2);
+        }
+        return $months;
     }
 
     public function depreciationExpenseNominal(): ?array
@@ -243,6 +308,29 @@ final class YearEndClosePreviewService
             ];
         }
 
+        return $adjustments;
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function pendingPrepaymentBalanceSheetAdjustments(int $companyId, int $accountingPeriodId): array
+    {
+        $adjustments = [];
+        foreach ((new PrepaymentScheduleService())->fetchPreviewAdjustments($companyId, $accountingPeriodId) as $adjustment) {
+            $debitNominal = $this->nominalById((int)$adjustment['debit_nominal_id']);
+            $creditNominal = $this->nominalById((int)$adjustment['credit_nominal_id']);
+            $assetNominal = is_array($debitNominal) && (string)$debitNominal['account_type'] === 'asset'
+                ? $debitNominal
+                : (is_array($creditNominal) && (string)$creditNominal['account_type'] === 'asset' ? $creditNominal : null);
+            if (!is_array($assetNominal)) {
+                continue;
+            }
+            $amount = ((int)$adjustment['amount_pence']) / 100;
+            $adjustments[] = $assetNominal + [
+                'debit' => (int)$adjustment['debit_nominal_id'] === (int)$assetNominal['nominal_account_id'] ? $amount : 0.0,
+                'credit' => (int)$adjustment['credit_nominal_id'] === (int)$assetNominal['nominal_account_id'] ? $amount : 0.0,
+                'source' => 'pending_prepayment',
+            ];
+        }
         return $adjustments;
     }
 
@@ -355,6 +443,7 @@ final class YearEndClosePreviewService
         }
 
         $expenses = round($expenses + $this->depreciationExpenseForPeriod($companyId, $accountingPeriodId, $periodStart, $periodEnd), 2);
+        $expenses = round($expenses + $this->prepaymentExpenseAdjustmentForPeriod($companyId, $accountingPeriodId, $periodStart, $periodEnd), 2);
 
         return round($income - $expenses, 2);
     }
@@ -393,7 +482,8 @@ final class YearEndClosePreviewService
                     COALESCE(na.code, \'\') AS code,
                     COALESCE(na.name, \'\') AS name,
                     COALESCE(na.account_type, \'\') AS account_type,
-                    COALESCE(nas.code, \'\') AS subtype_code
+                    COALESCE(nas.code, \'\') AS subtype_code,
+                    COALESCE(na.tax_treatment, \'\') AS tax_treatment
              FROM nominal_accounts na
              LEFT JOIN nominal_account_subtypes nas ON nas.id = na.account_subtype_id
              WHERE na.id = :id

@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'StandardNominalTestFixture.php';
 
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static function (GeneratedServiceClassTestHarness $harness): void {
@@ -123,10 +124,10 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
     });
 
     $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'director loan offset before lock is gated by acknowledgement', static function () use ($harness): void {
-        yearEndChecklistServiceRequireDirectorLoanOffsetLockSchema($harness);
-
         InterfaceDB::beginTransaction();
         try {
+            yearEndChecklistServiceRequireDirectorLoanOffsetLockTables($harness);
+            StandardNominalTestFixture::ensureNominals(['1200', '2100']);
             $fixture = yearEndChecklistServiceCreateDirectorLoanOffsetFixture();
             $service = new \eel_accounts\Service\YearEndChecklistService();
             $method = new ReflectionMethod($service, 'applyDirectorLoanOffsetBeforeLock');
@@ -512,13 +513,10 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
     });
 
     $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'fixed asset review warns from Tools and Small Equipment threshold candidates', static function () use ($harness): void {
-        yearEndChecklistServiceRequirePostedSourceWorkSchema($harness);
-        if (yearEndChecklistServiceNominalId('6070') <= 0) {
-            $harness->skip('Nominal 6070 is not available.');
-        }
-
         InterfaceDB::beginTransaction();
         try {
+            StandardNominalTestFixture::ensureNominals(['1300', '1330', '6070', '6200']);
+            yearEndChecklistServiceRequirePostedSourceWorkSchema($harness);
             $fixture = yearEndChecklistServiceCreatePostedSourceWorkFixture();
             InterfaceDB::prepareExecute(
                 'UPDATE transactions
@@ -614,10 +612,10 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
     });
 
     $harness->check(\eel_accounts\Service\YearEndMetricsService::class, 'transaction coverage accepts valid transfers and ready splits with null header nominal', static function () use ($harness): void {
-        yearEndChecklistServiceRequireTransactionCoverageSchema($harness);
-
         InterfaceDB::beginTransaction();
         try {
+            StandardNominalTestFixture::ensureNominals(['6200']);
+            yearEndChecklistServiceRequireTransactionCoverageSchema($harness);
             $fixture = yearEndChecklistServiceCreateTransactionCoverageFixture();
             $metrics = new \eel_accounts\Service\YearEndMetricsService();
 
@@ -652,10 +650,10 @@ $harness->run(\eel_accounts\Service\YearEndChecklistService::class, static funct
     });
 
     $harness->check(\eel_accounts\Service\YearEndMetricsService::class, 'posted source work summary tracks unposted transactions expenses and assets', static function () use ($harness): void {
-        yearEndChecklistServiceRequirePostedSourceWorkSchema($harness);
-
         InterfaceDB::beginTransaction();
         try {
+            StandardNominalTestFixture::ensureNominals(['1300', '1330', '6200']);
+            yearEndChecklistServiceRequirePostedSourceWorkSchema($harness);
             $fixture = yearEndChecklistServiceCreatePostedSourceWorkFixture();
             $metrics = new \eel_accounts\Service\YearEndMetricsService();
 
@@ -1175,6 +1173,10 @@ function yearEndChecklistServiceCreateDirectorLoanOffsetFixture(): array
             'company_number' => 'YDL' . substr($marker, 0, 5),
         ]
     );
+    $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
+    $settings->set('director_loan_asset_nominal_id', $assetNominalId, 'int');
+    $settings->set('director_loan_liability_nominal_id', $liabilityNominalId, 'int');
+    $settings->flush();
     InterfaceDB::prepareExecute(
         'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end)
          VALUES (:id, :company_id, :label, :period_start, :period_end)',

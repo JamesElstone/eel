@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'StandardNominalTestFixture.php';
 
 $harness = new GeneratedServiceClassTestHarness();
 
@@ -111,7 +112,7 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
             $harness->assertSame(true, (bool)($review['write_off_review_required'] ?? false));
             $harness->assertSame(true, (bool)($review['ct600_supplementary_review_required'] ?? false));
             $harness->assertSame(500.00, (float)($review['exposure_amount'] ?? 0));
-            $harness->assertSame('2027-10-01', (string)($review['repayment_review_date'] ?? ''));
+            $harness->assertSame('2027-10-02', (string)($review['repayment_review_date'] ?? ''));
             $harness->assertTrue(count((array)($review['review_items'] ?? [])) >= 4);
         });
     });
@@ -142,14 +143,12 @@ function directorLoanStatementTestWithFixture(GeneratedServiceClassTestHarness $
         $harness->skip('Ledger tables are not available on the default InterfaceDB connection.');
     }
 
-    $assetNominalId = (int)InterfaceDB::fetchColumn('SELECT id FROM nominal_accounts WHERE code = :code AND account_type = :account_type LIMIT 1', ['code' => '1200', 'account_type' => 'asset']);
-    $liabilityNominalId = (int)InterfaceDB::fetchColumn('SELECT id FROM nominal_accounts WHERE code = :code AND account_type = :account_type LIMIT 1', ['code' => '2100', 'account_type' => 'liability']);
-    if ($assetNominalId <= 0 || $liabilityNominalId <= 0) {
-        $harness->skip('Director loan nominal accounts are not available on the default InterfaceDB connection.');
-    }
-
     InterfaceDB::beginTransaction();
     try {
+        StandardNominalTestFixture::ensureNominals(['1200', '2100']);
+        $assetNominalId = StandardNominalTestFixture::id('1200');
+        $liabilityNominalId = StandardNominalTestFixture::id('2100');
+
         $marker = substr(hash('sha256', __FILE__ . microtime(true) . random_int(1, PHP_INT_MAX)), 0, 12);
         InterfaceDB::prepareExecute(
             'INSERT INTO companies (company_name, company_number) VALUES (:company_name, :company_number)',

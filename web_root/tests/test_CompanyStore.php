@@ -148,35 +148,38 @@ $harness->run(\eel_accounts\Service\AccountingContextService::class, function (G
         $service
     ): void {
         resetCompanyStoreSession();
-        $companiesCount = InterfaceDB::tableRowCount('companies');
-        if ($companiesCount === InterfaceDB::TABLE_ROW_COUNT_ERROR) {
-            $harness->skip('skipped, due to no data confirmation error');
-        }
-        if ($companiesCount === InterfaceDB::TABLE_ROW_COUNT_TABLE_MISSING) {
-            $harness->skip('skipped, due to companies table not existing');
-        }
-        if ($companiesCount > 0) {
-            $harness->skip('skipped, company data exists');
+        if (!InterfaceDB::tableExists('companies')) {
+            throw new RuntimeException('The companies table is required for the accounting context test fixture.');
         }
 
-        $result = $service->resolveSiteContext(
-            testCompanyStoreRequest(),
-            new TestCompanyStorePage(),
-            createTestPageServiceFramework(),
-            []
-        );
+        InterfaceDB::beginTransaction();
+        try {
+            InterfaceDB::prepareExecute('DELETE FROM companies');
 
-        $context = $result->context();
-        $selectors = $result->selectors();
+            $result = $service->resolveSiteContext(
+                testCompanyStoreRequest(),
+                new TestCompanyStorePage(),
+                createTestPageServiceFramework(),
+                []
+            );
 
-        $harness->assertSame(0, $context['site_context']['company_id'] ?? null);
-        $harness->assertSame(0, $context['site_context']['accounting_period_id'] ?? null);
-        $harness->assertSame('company_id', $selectors[0]['key'] ?? null);
-        $harness->assertSame('sidebar', $selectors[0]['slot'] ?? null);
-        $harness->assertSame(true, $selectors[0]['disabled'] ?? null);
-        $harness->assertSame('accounting_period_id', $selectors[1]['key'] ?? null);
-        $harness->assertSame('topbar', $selectors[1]['slot'] ?? null);
-        $harness->assertSame(true, $selectors[1]['disabled'] ?? null);
+            $context = $result->context();
+            $selectors = $result->selectors();
+
+            $harness->assertSame(0, $context['site_context']['company_id'] ?? null);
+            $harness->assertSame(0, $context['site_context']['accounting_period_id'] ?? null);
+            $harness->assertSame('company_id', $selectors[0]['key'] ?? null);
+            $harness->assertSame('sidebar', $selectors[0]['slot'] ?? null);
+            $harness->assertSame(true, $selectors[0]['disabled'] ?? null);
+            $harness->assertSame('accounting_period_id', $selectors[1]['key'] ?? null);
+            $harness->assertSame('topbar', $selectors[1]['slot'] ?? null);
+            $harness->assertSame(true, $selectors[1]['disabled'] ?? null);
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+            resetCompanyStoreSession();
+        }
     });
 
     $harness->check(\eel_accounts\Service\AccountingContextService::class, 'returns company and topbar accounting-period selectors when companies exist', function () use (

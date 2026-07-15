@@ -8,6 +8,12 @@
 declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'StandardNominalTestFixture.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'UploadedFileTestFixture.php';
+
+if (!class_exists(\eel_accounts\Service\FormattingFramework::class, false)) {
+    class_alias(FormattingFramework::class, \eel_accounts\Service\FormattingFramework::class);
+}
 
 (new GeneratedServiceClassTestHarness())->run(
     \eel_accounts\Service\AssetService::class,
@@ -493,8 +499,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'depreciation_method' => 'straight_line',
                     'residual_value' => '0.00',
                     'manual_addition_reason' => 'delayed_bank_csv',
+                    'manual_asset_legal_acknowledged' => '1',
                 ],
-                $offsetNominalId
+                $offsetNominalId,
+                UploadedFileTestFixture::jpegUpload()
             );
 
             $harness->assertSame(true, (bool)($result['success'] ?? false));
@@ -527,8 +535,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'depreciation_method' => 'straight_line',
                     'residual_value' => '0.00',
                     'manual_addition_reason' => 'supplier_invoice_pending_payment',
+                    'manual_asset_legal_acknowledged' => '1',
                 ],
-                $offsetNominalId
+                $offsetNominalId,
+                UploadedFileTestFixture::jpegUpload('pending-asset.jpg')
             );
             $opening = $service->createManualAsset(
                 $fixture['company_id'],
@@ -542,8 +552,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'depreciation_method' => 'straight_line',
                     'residual_value' => '0.00',
                     'manual_addition_reason' => 'opening_or_historical_asset',
+                    'manual_asset_legal_acknowledged' => '1',
                 ],
-                $offsetNominalId
+                $offsetNominalId,
+                UploadedFileTestFixture::jpegUpload('opening-asset.jpg')
             );
 
             $harness->assertSame(true, (bool)($pending['success'] ?? false));
@@ -573,8 +585,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'depreciation_method' => 'straight_line',
                     'residual_value' => '0.00',
                     'manual_addition_reason' => 'delayed_bank_csv',
+                    'manual_asset_legal_acknowledged' => '1',
                 ],
-                $offsetNominalId
+                $offsetNominalId,
+                UploadedFileTestFixture::jpegUpload('reconciliation-asset.jpg')
             );
 
             $harness->assertSame(true, (bool)($created['success'] ?? false));
@@ -1020,6 +1034,11 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
     }
 );
 
+if (InterfaceDB::inTransaction()) {
+    InterfaceDB::rollBack();
+}
+UploadedFileTestFixture::cleanup();
+
 function assetServiceTestFindNonAssetCandidate(array $rows, string $description): array
 {
     foreach ($rows as $row) {
@@ -1258,30 +1277,23 @@ function assetServiceTestRequireDisposalSchema(GeneratedServiceClassTestHarness 
         }
     }
 
-    foreach (['1000', '1300', '1330', '1490', '4200', '6210'] as $code) {
-        if (assetServiceTestNominalId($code) <= 0) {
-            $harness->skip('Nominal ' . $code . ' is not available.');
-        }
-    }
-
-    foreach (['trade_creditor'] as $code) {
-        if ((int)InterfaceDB::fetchColumn('SELECT id FROM nominal_account_subtypes WHERE code = :code LIMIT 1', ['code' => $code]) <= 0) {
-            $harness->skip('Nominal subtype ' . $code . ' is not available.');
-        }
-    }
 }
 
 function assetServiceTestCreateDisposalFixture(string $suffix): array
 {
+    if (!InterfaceDB::inTransaction()) {
+        InterfaceDB::beginTransaction();
+    }
+    StandardNominalTestFixture::ensureNominals(['1000', '1300', '1330', '1490', '4200', '6210']);
+    StandardNominalTestFixture::ensureSubtypes(['trade_creditor']);
+
     $marker = (string)random_int(100000, 999999);
     $companyId = (int)('81' . $marker);
     $accountingPeriodId = (int)('82' . $marker);
     $accountId = (int)('83' . $marker);
     $uploadId = (int)('84' . $marker);
     $assetId = (int)('85' . $marker);
-    $bankNominalId = assetServiceTestEnsureNominalId('1000', 'Fixture Bank', 'asset', 'allowable');
-    assetServiceTestEnsureNominalId('1300', 'Fixture Plant and Machinery', 'asset', 'capital');
-    assetServiceTestEnsureNominalId('1330', 'Fixture Accumulated Depreciation', 'asset', 'capital');
+    $bankNominalId = StandardNominalTestFixture::id('1000');
 
     InterfaceDB::prepareExecute(
         'INSERT INTO companies (id, company_name, company_number, is_active)
@@ -1314,6 +1326,10 @@ function assetServiceTestCreateDisposalFixture(string $suffix): array
             'nominal_account_id' => $bankNominalId,
         ]
     );
+    $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
+    $settings->set('tools_equipment_asset_cost_nominal_id', StandardNominalTestFixture::id('1300'), 'int');
+    $settings->set('tools_equipment_accum_dep_nominal_id', StandardNominalTestFixture::id('1330'), 'int');
+    $settings->flush();
     InterfaceDB::prepareExecute(
         'INSERT INTO statement_uploads (
             id,

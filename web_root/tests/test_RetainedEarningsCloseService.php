@@ -8,14 +8,15 @@
 declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'StandardNominalTestFixture.php';
 
 $harness = new GeneratedServiceClassTestHarness();
 $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static function (GeneratedServiceClassTestHarness $harness): void {
     $harness->check(\eel_accounts\Service\RetainedEarningsCloseService::class, 'posts loss close to retained earnings without changing source journals', static function () use ($harness): void {
-        retainedEarningsCloseRequireSchema($harness);
-
         InterfaceDB::beginTransaction();
         try {
+            retainedEarningsCloseRequireSchema($harness);
+            StandardNominalTestFixture::ensureNominals(['1000', '3000', '4000', '5000']);
             $fixture = retainedEarningsCloseCreateLossFixture();
             $service = new \eel_accounts\Service\RetainedEarningsCloseService();
             $precomputedProvision = [
@@ -113,10 +114,10 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
     });
 
     $harness->check(\eel_accounts\Service\RetainedEarningsCloseService::class, 'blocks acknowledgement and posting until the prior accounting period is locked', static function () use ($harness): void {
-        retainedEarningsCloseRequireSchema($harness);
-
         InterfaceDB::beginTransaction();
         try {
+            retainedEarningsCloseRequireSchema($harness);
+            StandardNominalTestFixture::ensureNominals(['1000', '3000', '4000', '5000']);
             $fixture = retainedEarningsCloseCreateLossFixture();
             InterfaceDB::prepareExecute(
                 'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
@@ -238,11 +239,6 @@ function retainedEarningsCloseRequireSchema(GeneratedServiceClassTestHarness $ha
         }
     }
 
-    foreach (['1000', '3000', '4000', '5000'] as $code) {
-        if (retainedEarningsCloseNominalId($code) <= 0) {
-            $harness->skip('Nominal ' . $code . ' is not available.');
-        }
-    }
 }
 
 function retainedEarningsCloseRequireDepreciationSchema(GeneratedServiceClassTestHarness $harness): void

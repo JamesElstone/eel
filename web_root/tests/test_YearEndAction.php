@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'PageServiceTestFactory.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'StandardNominalTestFixture.php';
 
 $harness = new GeneratedServiceClassTestHarness();
 
@@ -17,7 +18,7 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
         throw new RuntimeException('Unexpected YearEndAction instance.');
     }
 
-    $harness->check('YearEndAction', 'posts director loan offset journal idempotently', static function () use ($harness, $instance): void {
+    $harness->check('YearEndAction', 'posts one director loan offset and blocks stale reposting', static function () use ($harness, $instance): void {
         yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness, $instance): void {
             $instance = yearEndActionTestInstanceWithDirectorCount(1);
             yearEndActionDirectorLoanTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 1000.00, 0.00, 'asset');
@@ -28,7 +29,8 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             $second = $instance->handle($request, createTestPageServiceFramework());
 
             $harness->assertSame(true, $first->isSuccess());
-            $harness->assertSame(true, $second->isSuccess());
+            $harness->assertSame(false, $second->isSuccess());
+            $harness->assertTrue(str_contains((string)($second->flashMessages()[0]['message'] ?? ''), 'stale director loan offset'));
             $harness->assertSame(1, InterfaceDB::countWhere('journal_entry_metadata', [
                 'company_id' => (int)$fixture['company_id'],
                 'accounting_period_id' => (int)$fixture['accounting_period_id'],
@@ -38,7 +40,8 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
 
             yearEndActionDirectorLoanTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 200.00, 0.00, 'asset-increase');
             $third = $instance->handle($request, createTestPageServiceFramework());
-            $harness->assertSame(true, $third->isSuccess());
+            $harness->assertSame(false, $third->isSuccess());
+            $harness->assertTrue(str_contains((string)($third->flashMessages()[0]['message'] ?? ''), 'stale director loan offset'));
             $harness->assertSame(1, InterfaceDB::countWhere('journal_entry_metadata', [
                 'company_id' => (int)$fixture['company_id'],
                 'accounting_period_id' => (int)$fixture['accounting_period_id'],
@@ -61,7 +64,7 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
                     'nominal_account_id' => (int)$fixture['liability_nominal_id'],
                 ]
             );
-            $harness->assertSame(1200.00, round($offsetDebit, 2));
+            $harness->assertSame(1000.00, round($offsetDebit, 2));
         });
     });
 
@@ -288,12 +291,22 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
         });
     });
 
-    $harness->check('YearEndAction', 'guarded year-end intents are blocked when company is VAT registered', static function () use ($harness): void {
+    $harness->check('YearEndAction', 'year-end intents are blocked after LIVE HMRC VAT confirmation', static function () use ($harness): void {
         yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness): void {
             $instance = yearEndActionTestInstanceWithDirectorCount(1);
             InterfaceDB::prepareExecute(
-                'UPDATE companies SET is_vat_registered = 1 WHERE id = :company_id',
-                ['company_id' => (int)$fixture['company_id']]
+                'UPDATE companies
+                    SET is_vat_registered = 1,
+                        vat_validation_source = :validation_source,
+                        vat_validation_mode = :validation_mode,
+                        vat_validation_status = :validation_status
+                  WHERE id = :company_id',
+                [
+                    'validation_source' => 'hmrc',
+                    'validation_mode' => 'LIVE',
+                    'validation_status' => 'valid',
+                    'company_id' => (int)$fixture['company_id'],
+                ]
             );
 
             $result = $instance->handle(
@@ -302,7 +315,19 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             );
 
             $harness->assertSame(false, $result->isSuccess());
-            $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'VAT registered'));
+            $harness->assertSame(true, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'LIVE HMRC VAT API'));
+
+            $expenseResult = $instance->handle(
+                yearEndActionDirectorLoanTestRequest(
+                    (int)$fixture['company_id'],
+                    (int)$fixture['accounting_period_id'],
+                    'save_expense_position_acknowledgement'
+                ),
+                createTestPageServiceFramework()
+            );
+            $harness->assertSame(false, $expenseResult->isSuccess());
+            $harness->assertSame(true, str_contains((string)($expenseResult->flashMessages()[0]['message'] ?? ''), 'VAT registration'));
+
             if (InterfaceDB::tableExists('year_end_reviews')) {
                 $harness->assertSame(0, InterfaceDB::countWhere('year_end_reviews', [
                     'company_id' => (int)$fixture['company_id'],
@@ -330,20 +355,17 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
             );
 
             $harness->assertSame(false, str_contains((string)($result->flashMessages()[0]['message'] ?? ''), 'exactly 1 active director'));
+            $harness->assertSame(true, $result->isSuccess());
             $harness->assertSame(
-                'Alex Example using the web_app',
+                'Notes from director eligibility test.',
                 (string)InterfaceDB::fetchColumn(
-                    'SELECT action_by
-                       FROM year_end_audit_log
+                    'SELECT review_notes
+                       FROM year_end_reviews
                       WHERE company_id = :company_id
-                        AND accounting_period_id = :accounting_period_id
-                        AND action = :action
-                      ORDER BY id DESC
-                      LIMIT 1',
+                        AND accounting_period_id = :accounting_period_id',
                     [
                         'company_id' => (int)$fixture['company_id'],
                         'accounting_period_id' => (int)$fixture['accounting_period_id'],
-                        'action' => 'notes',
                     ]
                 )
             );
@@ -521,14 +543,12 @@ function yearEndActionDirectorLoanTestWithFixture(GeneratedServiceClassTestHarne
         $harness->skip('Ledger metadata tables are not available on the default InterfaceDB connection.');
     }
 
-    $assetNominalId = (int)InterfaceDB::fetchColumn('SELECT id FROM nominal_accounts WHERE code = :code LIMIT 1', ['code' => '1200']);
-    $liabilityNominalId = (int)InterfaceDB::fetchColumn('SELECT id FROM nominal_accounts WHERE code = :code LIMIT 1', ['code' => '2100']);
-    if ($assetNominalId <= 0 || $liabilityNominalId <= 0) {
-        $harness->skip('Director loan nominal accounts are not available on the default InterfaceDB connection.');
-    }
-
     InterfaceDB::beginTransaction();
     try {
+        StandardNominalTestFixture::ensureNominals(['1200', '2100']);
+        $assetNominalId = StandardNominalTestFixture::id('1200');
+        $liabilityNominalId = StandardNominalTestFixture::id('2100');
+
         $marker = substr(hash('sha256', __FILE__ . microtime(true) . random_int(1, PHP_INT_MAX)), 0, 12);
         InterfaceDB::prepareExecute(
             'INSERT INTO companies (company_name, company_number, incorporation_date) VALUES (:company_name, :company_number, :incorporation_date)',

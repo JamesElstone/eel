@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'StandardNominalTestFixture.php';
 
 (new GeneratedServiceClassTestHarness())->run(
     \eel_accounts\Service\TrialBalanceService::class,
@@ -18,16 +19,14 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $harness->skip($table . ' table is not available.');
                 }
             }
-            $nominals = [];
-            foreach (['1000', '1200', '2100', '3000'] as $code) {
-                $nominals[$code] = (int)InterfaceDB::fetchColumn('SELECT id FROM nominal_accounts WHERE code = :code LIMIT 1', ['code' => $code]);
-                if ($nominals[$code] <= 0) {
-                    $harness->skip('Nominal ' . $code . ' is not available.');
-                }
-            }
-
             InterfaceDB::beginTransaction();
             try {
+                $nominals = [];
+                StandardNominalTestFixture::ensureNominals(['1000', '1200', '2100', '3000']);
+                foreach (['1000', '1200', '2100', '3000'] as $code) {
+                    $nominals[$code] = StandardNominalTestFixture::id($code);
+                }
+
                 $marker = substr(hash('sha256', __FILE__ . microtime(true)), 0, 10);
                 InterfaceDB::prepareExecute(
                     'INSERT INTO companies (company_name, company_number) VALUES (:company_name, :company_number)',

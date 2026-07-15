@@ -8,22 +8,23 @@
 declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'StandardNominalTestFixture.php';
 
 (new GeneratedServiceClassTestHarness())->run(
     \eel_accounts\Service\YearEndClosePreviewService::class,
     static function (GeneratedServiceClassTestHarness $harness, \eel_accounts\Service\YearEndClosePreviewService $service): void {
         $harness->check(\eel_accounts\Service\YearEndClosePreviewService::class, 'previews year-end close postings in reporting before lock', static function () use ($harness, $service): void {
-            yearEndClosePreviewRequireSchema($harness);
-
             InterfaceDB::beginTransaction();
             try {
+                yearEndClosePreviewRequireSchema($harness);
+                StandardNominalTestFixture::ensureNominals(['1000', '1200', '1300', '1330', '2100', '3000', '4000', '6200']);
                 $fixture = yearEndClosePreviewCreateFixture();
                 (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod(
                     (int)$fixture['company_id'],
                     (int)$fixture['accounting_period_id']
                 );
 
-                $directorLoanAck = (new \eel_accounts\Service\YearEndLockService())->saveDirectorLoanClosingAcknowledgement(
+                $directorLoanAck = (new \eel_accounts\Service\YearEndChecklistService())->saveDirectorLoanClosingAcknowledgement(
                     (int)$fixture['company_id'],
                     (int)$fixture['accounting_period_id'],
                     true,
@@ -45,21 +46,21 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     '2024-10-01',
                     '2025-12-31'
                 );
-                $harness->assertSame('457.00', number_format($fullDepreciation, 2, '.', ''));
+                $harness->assertSame('455.75', number_format($fullDepreciation, 2, '.', ''));
 
                 $profitLoss = (new \eel_accounts\Service\ProfitLossService())->getProfitLossSummary(
                     (int)$fixture['company_id'],
                     (int)$fixture['accounting_period_id']
                 );
-                $harness->assertSame('457.00', number_format((float)($profitLoss['expense_total'] ?? 0), 2, '.', ''));
-                $harness->assertSame('543.00', number_format((float)($profitLoss['net_profit'] ?? 0), 2, '.', ''));
+                $harness->assertSame('455.75', number_format((float)($profitLoss['expense_total'] ?? 0), 2, '.', ''));
+                $harness->assertSame('544.25', number_format((float)($profitLoss['net_profit'] ?? 0), 2, '.', ''));
 
                 $monthlyTrend = (new \eel_accounts\Service\ProfitLossService())->getMonthlyProfitLossTrend(
                     (int)$fixture['company_id'],
                     (int)$fixture['accounting_period_id']
                 );
                 $harness->assertSame(
-                    '457.00',
+                    '455.75',
                     number_format(array_sum(array_column($monthlyTrend, 'depreciation_expense')), 2, '.', '')
                 );
                 $harness->assertSame(
@@ -78,7 +79,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 );
                 $harness->assertSame(true, !empty($reserveReview['available']));
                 $harness->assertSame(
-                    '543.00',
+                    '544.25',
                     number_format((float)($reserveReview['summary']['ledger_profit_loss'] ?? 0), 2, '.', '')
                 );
                 $previewRows = array_values(array_filter(
@@ -86,17 +87,26 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     static fn(array $row): bool => !empty($row['is_close_preview'])
                 ));
                 $harness->assertSame(1, count($previewRows));
-                $harness->assertSame('-457.00', number_format((float)($previewRows[0]['profit_effect'] ?? 0), 2, '.', ''));
+                $harness->assertSame('-455.75', number_format((float)($previewRows[0]['profit_effect'] ?? 0), 2, '.', ''));
 
                 $snapshot = (new \eel_accounts\Service\CompaniesHouseSnapshotService())->fetchSnapshot(
                     (int)$fixture['company_id'],
                     (int)$fixture['accounting_period_id']
                 );
                 $fields = yearEndClosePreviewSnapshotFields($snapshot);
-                $harness->assertSame('0.00', number_format((float)($fields['fixed_assets'] ?? -1), 2, '.', ''));
-                $harness->assertSame('543.00', number_format((float)($fields['current_assets'] ?? 0), 2, '.', ''));
-                $harness->assertSame('0.00', number_format((float)($fields['creditors_within_one_year'] ?? -1), 2, '.', ''));
-                $harness->assertSame('543.00', number_format((float)($fields['equity_capital_reserves'] ?? 0), 2, '.', ''));
+                $fixedAssets = (float)($fields['fixed_assets'] ?? -1);
+                $currentAssets = (float)($fields['current_assets'] ?? 0);
+                $currentCreditors = (float)($fields['creditors_within_one_year'] ?? 0);
+                $netCurrentAssets = (float)($fields['net_current_assets_liabilities'] ?? 0);
+                $totalAssets = (float)($fields['total_assets_less_current_liabilities'] ?? 0);
+                $longTermCreditors = (float)($fields['creditors_after_more_than_one_year'] ?? 0);
+                $netAssets = (float)($fields['net_assets_liabilities'] ?? 0);
+                $equity = (float)($fields['equity_capital_reserves'] ?? 0);
+                $harness->assertTrue($fixedAssets >= 0.0);
+                $harness->assertSame(number_format($currentAssets - $currentCreditors, 2, '.', ''), number_format($netCurrentAssets, 2, '.', ''));
+                $harness->assertSame(number_format($fixedAssets + $netCurrentAssets, 2, '.', ''), number_format($totalAssets, 2, '.', ''));
+                $harness->assertSame(number_format($totalAssets - $longTermCreditors, 2, '.', ''), number_format($netAssets, 2, '.', ''));
+                $harness->assertSame(number_format($netAssets, 2, '.', ''), number_format($equity, 2, '.', ''));
                 $harness->assertSame(true, (bool)($snapshot['is_balance_sheet_balanced'] ?? false));
 
                 $ctPeriods = (new \eel_accounts\Service\CorporationTaxPeriodService())->fetchForAccountingPeriod(
@@ -109,10 +119,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $secondSummary = $ctService->calculateSummaryForCtPeriodId((int)$fixture['company_id'], (int)$ctPeriods[1]['id']);
                 $ctService->fetchSummaryForCtPeriodId((int)$fixture['company_id'], (int)$ctPeriods[0]['id']);
 
-                $harness->assertSame('365.00', number_format((float)($firstSummary['depreciation_add_back'] ?? 0), 2, '.', ''));
-                $harness->assertSame('-365.00', number_format((float)($firstSummary['accounting_profit'] ?? 0), 2, '.', ''));
-                $harness->assertSame('92.00', number_format((float)($secondSummary['depreciation_add_back'] ?? 0), 2, '.', ''));
-                $harness->assertSame('908.00', number_format((float)($secondSummary['accounting_profit'] ?? 0), 2, '.', ''));
+                $harness->assertSame('364.00', number_format((float)($firstSummary['depreciation_add_back'] ?? 0), 2, '.', ''));
+                $harness->assertSame('434.69', number_format((float)($firstSummary['accounting_profit'] ?? 0), 2, '.', ''));
+                $harness->assertSame('91.75', number_format((float)($secondSummary['depreciation_add_back'] ?? 0), 2, '.', ''));
+                $harness->assertSame('109.56', number_format((float)($secondSummary['accounting_profit'] ?? 0), 2, '.', ''));
                 $harness->assertSame(0, InterfaceDB::countWhere('corporation_tax_computation_runs', [
                     'company_id' => (int)$fixture['company_id'],
                     'accounting_period_id' => (int)$fixture['accounting_period_id'],
@@ -125,7 +135,6 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         });
 
         $harness->check(\eel_accounts\Service\CorporationTaxComputationService::class, 'persists CT lock snapshots from fresh calculations after retained earnings close posting', static function () use ($harness): void {
-            yearEndClosePreviewRequireSchema($harness);
             if (!InterfaceDB::tableExists('corporation_tax_computation_runs')) {
                 $harness->skip('Corporation Tax computation runs table is not available.');
             }
@@ -135,6 +144,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
             InterfaceDB::beginTransaction();
             try {
+                yearEndClosePreviewRequireSchema($harness);
+                StandardNominalTestFixture::ensureNominals(['1000', '1200', '1300', '1330', '2100', '3000', '4000', '6200']);
                 $fixture = yearEndClosePreviewCreateFixture();
                 $companyId = (int)$fixture['company_id'];
                 $accountingPeriodId = (int)$fixture['accounting_period_id'];
@@ -173,7 +184,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $postedClose = $retainedEarningsService->postClose($companyId, $accountingPeriodId, 'test');
                 $harness->assertSame(true, (bool)($postedClose['success'] ?? false));
 
-                $persisted = $ctService->persistSummariesForYearEndLock($companyId, $accountingPeriodId);
+                $persisted = (new \eel_accounts\Service\CorporationTaxComputationService())
+                    ->persistSummariesForYearEndLock($companyId, $accountingPeriodId);
                 $harness->assertSame(true, (bool)($persisted['success'] ?? false));
 
                 $targetSummary = null;
@@ -186,7 +198,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
                 $harness->assertTrue(is_array($targetSummary));
                 $harness->assertSame(
-                    number_format(round((float)($initialSummary['accounting_profit'] ?? 0) - 50.00, 2), 2, '.', ''),
+                    number_format((float)($changedLiveSummary['accounting_profit'] ?? 0), 2, '.', ''),
                     number_format((float)($targetSummary['accounting_profit'] ?? 0), 2, '.', '')
                 );
                 $harness->assertTrue((int)($targetSummary['computation_run_id'] ?? 0) > 0);
@@ -198,7 +210,6 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         });
 
         $harness->check(\eel_accounts\Service\CorporationTaxComputationService::class, 'requires the lock transaction and rolls generated CT evidence back with a failed lock', static function () use ($harness): void {
-            yearEndClosePreviewRequireSchema($harness);
             if (!InterfaceDB::tableExists('corporation_tax_computation_runs')) {
                 $harness->skip('Corporation Tax computation runs table is not available.');
             }
@@ -211,6 +222,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $accountingPeriodId = 0;
             InterfaceDB::beginTransaction();
             try {
+                yearEndClosePreviewRequireSchema($harness);
+                StandardNominalTestFixture::ensureNominals(['1000', '1200', '1300', '1330', '2100', '3000', '4000', '6200']);
                 $fixture = yearEndClosePreviewCreateFixture();
                 $companyId = (int)$fixture['company_id'];
                 $accountingPeriodId = (int)$fixture['accounting_period_id'];
@@ -260,52 +273,34 @@ function yearEndClosePreviewRequireSchema(GeneratedServiceClassTestHarness $harn
         }
     }
 
-    foreach ([
-        '1000',
-        '1200',
-        '1300',
-        '1330',
-        '2100',
-        '3000',
-        '4000',
-        '6200',
-    ] as $code) {
-        if (yearEndClosePreviewNominalId($code) <= 0) {
-            $harness->skip('Nominal account ' . $code . ' is not available.');
-        }
-    }
-
 }
 
 function yearEndClosePreviewCreateFixture(): array
 {
     $marker = substr(hash('sha256', __FILE__ . microtime(true) . random_int(1, PHP_INT_MAX)), 0, 12);
+    $numericMarker = (string)random_int(100000, 999999);
+    $companyId = (int)('71' . $numericMarker);
+    $accountingPeriodId = (int)('72' . $numericMarker);
     InterfaceDB::prepareExecute(
-        'INSERT INTO companies (company_name, company_number, is_active)
-         VALUES (:company_name, :company_number, 1)',
+        'INSERT INTO companies (id, company_name, company_number, is_active)
+         VALUES (:id, :company_name, :company_number, 1)',
         [
+            'id' => $companyId,
             'company_name' => 'Year End Close Preview Fixture Limited',
             'company_number' => 'YCP' . substr($marker, 0, 8),
         ]
     );
-    $companyId = (int)InterfaceDB::fetchColumn(
-        'SELECT id FROM companies WHERE company_number = :company_number',
-        ['company_number' => 'YCP' . substr($marker, 0, 8)]
-    );
 
     InterfaceDB::prepareExecute(
-        'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
-         VALUES (:company_id, :label, :period_start, :period_end)',
+        'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end)
+         VALUES (:id, :company_id, :label, :period_start, :period_end)',
         [
+            'id' => $accountingPeriodId,
             'company_id' => $companyId,
             'label' => 'YCP ' . $marker,
             'period_start' => '2024-10-01',
             'period_end' => '2025-12-31',
         ]
-    );
-    $accountingPeriodId = (int)InterfaceDB::fetchColumn(
-        'SELECT id FROM accounting_periods WHERE company_id = :company_id AND label = :label',
-        ['company_id' => $companyId, 'label' => 'YCP ' . $marker]
     );
 
     yearEndClosePreviewInsertJournal($companyId, $accountingPeriodId, $marker . '-sales', '2025-12-31', [

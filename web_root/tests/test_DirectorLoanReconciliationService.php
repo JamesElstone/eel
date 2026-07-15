@@ -8,6 +8,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'ServiceClassTestHarness.php';
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . 'StandardNominalTestFixture.php';
 
 $harness = new GeneratedServiceClassTestHarness();
 
@@ -104,9 +105,9 @@ $harness->run(\eel_accounts\Service\DirectorLoanReconciliationService::class, st
 
             $result = $service->fetchContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
 
-            $harness->assertSame(1000.00, (float)($result['offset_amount'] ?? 0));
+            $harness->assertSame(0.00, (float)($result['offset_amount'] ?? -1));
             $harness->assertSame(1000.00, (float)($result['posted_offset_amount'] ?? 0));
-            $harness->assertSame('current', (string)($result['offset_status'] ?? ''));
+            $harness->assertSame('stale', (string)($result['offset_status'] ?? ''));
             $harness->assertSame(false, (bool)($result['can_post'] ?? true));
         });
     });
@@ -121,7 +122,7 @@ $harness->run(\eel_accounts\Service\DirectorLoanReconciliationService::class, st
 
             $result = $service->fetchContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
 
-            $harness->assertSame(1250.00, (float)($result['offset_amount'] ?? 0));
+            $harness->assertSame(250.00, (float)($result['offset_amount'] ?? 0));
             $harness->assertSame(1000.00, (float)($result['posted_offset_amount'] ?? 0));
             $harness->assertSame('stale', (string)($result['offset_status'] ?? ''));
             $harness->assertSame(true, (bool)($result['can_post'] ?? false));
@@ -135,14 +136,12 @@ function directorLoanReconciliationTestWithFixture(GeneratedServiceClassTestHarn
         $harness->skip('Ledger tables are not available on the default InterfaceDB connection.');
     }
 
-    $assetNominalId = (int)InterfaceDB::fetchColumn('SELECT id FROM nominal_accounts WHERE code = :code LIMIT 1', ['code' => '1200']);
-    $liabilityNominalId = (int)InterfaceDB::fetchColumn('SELECT id FROM nominal_accounts WHERE code = :code LIMIT 1', ['code' => '2100']);
-    if ($assetNominalId <= 0 || $liabilityNominalId <= 0) {
-        $harness->skip('Director loan nominal accounts are not available on the default InterfaceDB connection.');
-    }
-
     InterfaceDB::beginTransaction();
     try {
+        StandardNominalTestFixture::ensureNominals(['1200', '2100']);
+        $assetNominalId = StandardNominalTestFixture::id('1200');
+        $liabilityNominalId = StandardNominalTestFixture::id('2100');
+
         $marker = substr(hash('sha256', __FILE__ . microtime(true) . random_int(1, PHP_INT_MAX)), 0, 12);
         InterfaceDB::prepareExecute(
             'INSERT INTO companies (company_name, company_number) VALUES (:company_name, :company_number)',

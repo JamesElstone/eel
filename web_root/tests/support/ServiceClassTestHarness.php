@@ -216,6 +216,13 @@ final class GeneratedServiceClassTestHarness
             $this->reportSkip($className, $description, $exception->getMessage());
         } catch (Throwable $exception) {
             $this->reportFailure($className, $description, $exception);
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+            if (class_exists('UploadedFileTestFixture', false)) {
+                UploadedFileTestFixture::cleanup();
+            }
         }
     }
 

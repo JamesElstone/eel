@@ -114,13 +114,14 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
                 ' . $this->stat('Potential s455 exposure', $this->money($settings, $review['potential_s455_exposure'] ?? 0)) . '
             </div>
             ' . $warnings . '
-            <div class="eyebrow">Per-director facts</div>
-            ' . $this->positionsTable((array)($review['per_director'] ?? []), $settings) . '
-            <div class="eyebrow">Tax flags</div>
-            ' . $this->taxFlags((array)($review['tax_review'] ?? []), $settings) . '
-            <div class="eyebrow">Calculated control-account reclassification</div>
-            ' . $this->proposedLines((array)($review['proposed_lines'] ?? []), $settings) . '
-            <div class="helper">The calculated reclassification is applied automatically during Year End lock. It only reclassifies overlapping asset and liability balances attributed to the same director.</div>
+            <section class="panel-soft settings-stack">
+                <div class="eyebrow">Per-director facts</div>
+                ' . $this->positionsTable((array)($review['per_director'] ?? []), $settings) . '
+                <div class="eyebrow">Tax flags</div>
+                ' . $this->taxFlags((array)($review['tax_review'] ?? []), $settings) . '
+                <div class="eyebrow">Calculated control-account reclassification</div>
+                ' . $this->proposedLines((array)($review['proposed_lines'] ?? []), $settings) . '
+            </section>
             ' . $confirmation . '
         </section>';
     }

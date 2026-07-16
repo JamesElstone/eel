@@ -23,16 +23,35 @@ final class TaxWorkingsService
             return ['available' => false, 'errors' => ['The selected accounting period could not be found.']];
         }
 
+        $computation = new \eel_accounts\Service\CorporationTaxComputationService();
         $ctPeriod = null;
-        if ($ctPeriodId > 0) {
-            $ctPeriod = (new \eel_accounts\Service\CorporationTaxPeriodService())->fetch($companyId, $ctPeriodId);
-            if ($ctPeriod === null || (int)($ctPeriod['accounting_period_id'] ?? 0) !== $accountingPeriodId) {
+        if ($ctPeriodId !== 0) {
+            $transientReference = \eel_accounts\Service\CorporationTaxPeriodService::decodeTransientReferenceId(
+                $ctPeriodId
+            );
+            if ($ctPeriodId < 0
+                && ($transientReference === null
+                    || (int)$transientReference['accounting_period_id'] !== $accountingPeriodId)) {
+                return ['available' => false, 'errors' => ['The selected CT period does not belong to this accounting period.']];
+            }
+
+            $activePeriods = $computation->activeCtPeriodsForAccountingPeriod(
+                $companyId,
+                $accountingPeriodId
+            );
+            foreach ((array)($activePeriods['periods'] ?? []) as $candidate) {
+                if ((int)($candidate['id'] ?? 0) === $ctPeriodId) {
+                    $ctPeriod = $candidate;
+                    break;
+                }
+            }
+            if ($ctPeriod === null) {
                 return ['available' => false, 'errors' => ['The selected CT period does not belong to this accounting period.']];
             }
         }
 
-        $estimate = $ctPeriodId > 0
-            ? (new \eel_accounts\Service\CorporationTaxComputationService())->fetchSummaryForCtPeriodId($companyId, $ctPeriodId)
+        $estimate = $ctPeriodId !== 0
+            ? $computation->fetchSummaryForCtPeriodId($companyId, $ctPeriodId)
             : (new \eel_accounts\Service\YearEndTaxReadinessService($metrics))->fetchCurrentPeriodEstimate($companyId, $accountingPeriodId);
         if (empty($estimate['available'])) {
             return [
@@ -75,9 +94,20 @@ final class TaxWorkingsService
                 $accountingAllocationBasis
             );
         }
-        $poolRows = $this->poolRows($companyId, $accountingPeriodId, (array)($estimate['capital_allowance_breakdown'] ?? []), $ctPeriodId);
-        $assetCalculations = $this->assetCalculationRows($companyId, $accountingPeriodId, $ctPeriodId);
-        $carRows = $this->carRows($companyId, $accountingPeriodId, $ctPeriodId);
+        $capitalAllowanceBreakdown = $this->capitalAllowanceBreakdown(
+            $companyId,
+            $accountingPeriodId,
+            (array)($estimate['capital_allowance_breakdown'] ?? []),
+            $ctPeriodId
+        );
+        $poolRows = (array)($capitalAllowanceBreakdown['rows'] ?? []);
+        $assetCalculations = $this->assetCalculationRows(
+            $companyId,
+            $accountingPeriodId,
+            $ctPeriodId,
+            $capitalAllowanceBreakdown
+        );
+        $carRows = $this->carRows($companyId, $accountingPeriodId, $assetCalculations);
         $warnings = $this->warningRows($estimate, $poolRows, $assetCalculations, $carRows, $companyId, $accountingPeriodId);
 
         return [
@@ -92,7 +122,8 @@ final class TaxWorkingsService
             'depreciation_add_back' => $this->depreciationRows(
                 $companyId,
                 $accountingPeriodId,
-                $ctPeriodId,
+                $period,
+                $ctPeriod,
                 (float)($estimate['depreciation_add_back'] ?? 0)
             ),
             'capital_allowances_summary' => $this->capitalAllowanceSummary($poolRows),
@@ -105,11 +136,15 @@ final class TaxWorkingsService
                 $accountingPeriodId,
                 $ctPeriodId,
                 $periodStart,
-                $periodEnd
+                $periodEnd,
+                $assetCalculations
             ),
             'losses' => (array)($estimate['schedule'] ?? []),
             'rate_bands' => (array)($estimate['ct_rate_bands'] ?? []),
-            'provision' => $ctPeriodId > 0 ? (new \eel_accounts\Service\CorporationTaxProvisionService())->fetchPosition($companyId, $accountingPeriodId, $ctPeriodId) : [],
+            'provision' => $ctPeriodId !== 0
+                ? (new \eel_accounts\Service\CorporationTaxProvisionService($computation))
+                    ->fetchPosition($companyId, $accountingPeriodId, $ctPeriodId, $computation)
+                : [],
             'warnings' => $warnings,
         ];
     }
@@ -361,7 +396,8 @@ final class TaxWorkingsService
     private function depreciationRows(
         int $companyId,
         int $accountingPeriodId,
-        int $ctPeriodId = 0,
+        array $accountingPeriod,
+        ?array $ctPeriod,
         float $expectedAmount = 0.0
     ): array
     {
@@ -383,31 +419,21 @@ final class TaxWorkingsService
         }
         unset($row);
 
-        if ($ctPeriodId > 0) {
-            $periodService = new \eel_accounts\Service\CorporationTaxPeriodService();
-            $ctPeriod = $periodService->fetch($companyId, $ctPeriodId);
-            $accountingPeriod = (new \eel_accounts\Repository\AccountingPeriodRepository())
-                ->fetchAccountingPeriod($companyId, $accountingPeriodId);
-            $activeCtPeriods = array_values(array_filter(
-                $periodService->fetchForAccountingPeriod($companyId, $accountingPeriodId),
-                static fn(array $period): bool => (string)($period['status'] ?? '') !== 'superseded'
-            ));
-            if ($ctPeriod !== null && $accountingPeriod !== null && count($activeCtPeriods) > 1) {
-                $accountingDays = $this->periodDays(
-                    (string)$accountingPeriod['period_start'],
-                    (string)$accountingPeriod['period_end']
-                );
-                $ctPeriodDays = $this->periodDays(
-                    (string)$ctPeriod['period_start'],
-                    (string)$ctPeriod['period_end']
-                );
-                foreach ($rows as &$row) {
-                    $row['amount'] = $accountingDays > 0
-                        ? round((float)($row['amount'] ?? 0) * ($ctPeriodDays / $accountingDays), 2)
-                        : 0.0;
-                }
-                unset($row);
+        if ($ctPeriod !== null) {
+            $accountingDays = $this->periodDays(
+                (string)($accountingPeriod['period_start'] ?? ''),
+                (string)($accountingPeriod['period_end'] ?? '')
+            );
+            $ctPeriodDays = $this->periodDays(
+                (string)($ctPeriod['period_start'] ?? ''),
+                (string)($ctPeriod['period_end'] ?? '')
+            );
+            foreach ($rows as &$row) {
+                $row['amount'] = $accountingDays > 0
+                    ? round((float)($row['amount'] ?? 0) * ($ctPeriodDays / $accountingDays), 2)
+                    : 0.0;
             }
+            unset($row);
         }
 
         $rows = array_values(array_filter(
@@ -440,74 +466,159 @@ final class TaxWorkingsService
         return max(1, (new \DateTimeImmutable($start))->diff(new \DateTimeImmutable($end))->days + 1);
     }
 
-    private function poolRows(int $companyId, int $accountingPeriodId, array $breakdown, int $ctPeriodId = 0): array
+    private function capitalAllowanceBreakdown(
+        int $companyId,
+        int $accountingPeriodId,
+        array $breakdown,
+        int $ctPeriodId = 0
+    ): array
     {
-        $rows = (array)($breakdown['rows'] ?? []);
-        if ($rows !== []) {
-            return $rows;
+        if ((array)($breakdown['rows'] ?? []) !== []
+            || (array)($breakdown['asset_calculations'] ?? []) !== []) {
+            return $breakdown;
         }
 
-        return (array)(new \eel_accounts\Service\CapitalAllowanceService())->fetchPeriodBreakdown($companyId, $accountingPeriodId, $ctPeriodId)['rows'];
+        return (new \eel_accounts\Service\CapitalAllowanceService())
+            ->fetchPeriodBreakdown($companyId, $accountingPeriodId, $ctPeriodId);
     }
 
-    private function assetCalculationRows(int $companyId, int $accountingPeriodId, int $ctPeriodId = 0): array
-    {
-        if (!$this->tableExists('capital_allowance_asset_calculations')) {
+    private function assetCalculationRows(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        array $breakdown
+    ): array {
+        $hasBreakdownCalculations = array_key_exists('asset_calculations', $breakdown);
+        $calculations = array_values((array)($breakdown['asset_calculations'] ?? []));
+        if (!$hasBreakdownCalculations && $this->tableExists('capital_allowance_asset_calculations')) {
+            $sql = 'SELECT *
+                    FROM capital_allowance_asset_calculations
+                    WHERE company_id = :company_id
+                      AND accounting_period_id = :accounting_period_id';
+            $params = [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+            ];
+            if ($ctPeriodId > 0 && \InterfaceDB::columnExists('capital_allowance_asset_calculations', 'ct_period_id')) {
+                $sql .= ' AND ct_period_id = :ct_period_id';
+                $params['ct_period_id'] = $ctPeriodId;
+            }
+            $sql .= ' ORDER BY id ASC';
+            $calculations = \InterfaceDB::fetchAll($sql, $params) ?: [];
+        }
+
+        if ($calculations === []) {
             return [];
         }
 
-        $sql = 'SELECT cac.*,
-                    ar.asset_code,
-                    ar.description,
-                    ar.purchase_date,
-                    ar.cost,
-                    ar.category,
-                    ar.disposal_date,
-                    ar.disposal_proceeds,
-                    na.code AS nominal_code,
-                    na.name AS nominal_name,
-                    vd.vehicle_type,
-                    vd.registration_mark,
-                    vd.co2_emissions_g_km,
-                    vd.acquisition_condition,
-                    vd.is_zero_emission
-             FROM capital_allowance_asset_calculations cac
-             INNER JOIN asset_register ar ON ar.id = cac.asset_id
-             LEFT JOIN nominal_accounts na ON na.id = ar.nominal_account_id
-             LEFT JOIN asset_vehicle_details vd ON vd.asset_id = ar.id
-             WHERE cac.company_id = :company_id
-               AND cac.accounting_period_id = :accounting_period_id';
-        $params = ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId];
-        if ($ctPeriodId > 0 && \InterfaceDB::columnExists('capital_allowance_asset_calculations', 'ct_period_id')) {
-            $sql .= ' AND cac.ct_period_id = :ct_period_id';
-            $params['ct_period_id'] = $ctPeriodId;
+        $assetDetails = $this->capitalAllowanceAssetDetailsById(
+            $companyId,
+            array_values(array_map(
+                static fn(array $row): int => (int)($row['asset_id'] ?? 0),
+                $calculations
+            ))
+        );
+        $rows = [];
+        foreach ($calculations as $calculation) {
+            $assetId = (int)($calculation['asset_id'] ?? 0);
+            $asset = (array)($assetDetails[$assetId] ?? []);
+            $rows[] = [
+                'asset_id' => $assetId,
+                'asset_code' => (string)($asset['asset_code'] ?? ''),
+                'description' => (string)($asset['description'] ?? ''),
+                'purchase_date' => (string)($asset['purchase_date'] ?? ''),
+                'cost' => round((float)($asset['cost'] ?? 0), 2),
+                'category' => (string)($asset['category'] ?? ''),
+                'disposal_date' => (string)($asset['disposal_date'] ?? ''),
+                'disposal_proceeds' => ($asset['disposal_proceeds'] ?? null) === null
+                    ? null
+                    : round((float)$asset['disposal_proceeds'], 2),
+                'nominal_code' => (string)($asset['nominal_code'] ?? ''),
+                'nominal_name' => (string)($asset['nominal_name'] ?? ''),
+                'vehicle_type' => (string)($asset['vehicle_type'] ?? ''),
+                'registration_mark' => (string)($asset['registration_mark'] ?? ''),
+                'make_model' => (string)($asset['make_model'] ?? ''),
+                'first_registered_date' => (string)($asset['first_registered_date'] ?? ''),
+                'co2_emissions_g_km' => ($asset['co2_emissions_g_km'] ?? null) === null
+                    ? null
+                    : (int)$asset['co2_emissions_g_km'],
+                'acquisition_condition' => (string)($asset['acquisition_condition'] ?? ''),
+                'is_zero_emission' => (int)($asset['is_zero_emission'] ?? 0),
+                'pool_type' => (string)($calculation['pool_type'] ?? ''),
+                'allowance_type' => (string)($calculation['allowance_type'] ?? ''),
+                'addition_amount' => round((float)($calculation['addition_amount'] ?? 0), 2),
+                'allowance_amount' => round((float)($calculation['allowance_amount'] ?? 0), 2),
+                'disposal_value' => round((float)($calculation['disposal_value'] ?? 0), 2),
+                'warning' => trim((string)($calculation['warning'] ?? '')),
+            ];
         }
-        $sql .= ' ORDER BY ar.purchase_date ASC, ar.id ASC, cac.id ASC';
 
-        return \InterfaceDB::fetchAll($sql, $params) ?: [];
+        usort($rows, static function (array $left, array $right): int {
+            return [
+                (string)($left['purchase_date'] ?? ''),
+                (int)($left['asset_id'] ?? 0),
+                (string)($left['allowance_type'] ?? ''),
+                (string)($left['pool_type'] ?? ''),
+                (float)($left['addition_amount'] ?? 0),
+                (float)($left['allowance_amount'] ?? 0),
+                (float)($left['disposal_value'] ?? 0),
+                (string)($left['warning'] ?? ''),
+            ] <=> [
+                (string)($right['purchase_date'] ?? ''),
+                (int)($right['asset_id'] ?? 0),
+                (string)($right['allowance_type'] ?? ''),
+                (string)($right['pool_type'] ?? ''),
+                (float)($right['addition_amount'] ?? 0),
+                (float)($right['allowance_amount'] ?? 0),
+                (float)($right['disposal_value'] ?? 0),
+                (string)($right['warning'] ?? ''),
+            ];
+        });
+
+        return $rows;
     }
 
-    private function carRows(int $companyId, int $accountingPeriodId, int $ctPeriodId = 0): array
+    private function carRows(int $companyId, int $accountingPeriodId, array $assetCalculations): array
     {
         if (!$this->tableExists('asset_register') || !$this->tableExists('nominal_accounts')) {
             return [];
         }
 
-        $calcFilter = 'WHERE company_id = :company_id_calc
-                  AND accounting_period_id = :accounting_period_id_calc';
-        $params = [
-                'company_id_calc' => $companyId,
-                'accounting_period_id_calc' => $accountingPeriodId,
-                'company_id' => $companyId,
-                'accounting_period_id' => $accountingPeriodId,
-            ];
-        if ($ctPeriodId > 0 && \InterfaceDB::columnExists('capital_allowance_asset_calculations', 'ct_period_id')) {
-            $calcFilter .= ' AND ct_period_id = :ct_period_id_calc';
-            $params['ct_period_id_calc'] = $ctPeriodId;
+        $calculationsByAsset = [];
+        foreach ($assetCalculations as $calculation) {
+            $assetId = (int)($calculation['asset_id'] ?? 0);
+            if ($assetId <= 0) {
+                continue;
+            }
+            if (!isset($calculationsByAsset[$assetId])) {
+                $calculationsByAsset[$assetId] = [
+                    'pool_types' => [],
+                    'allowance_types' => [],
+                    'allowance_amount' => 0.0,
+                    'warnings' => [],
+                ];
+            }
+            $poolType = trim((string)($calculation['pool_type'] ?? ''));
+            if ($poolType !== '') {
+                $calculationsByAsset[$assetId]['pool_types'][] = $poolType;
+            }
+            $allowanceType = trim((string)($calculation['allowance_type'] ?? ''));
+            if ($allowanceType !== '') {
+                $calculationsByAsset[$assetId]['allowance_types'][] = $allowanceType;
+            }
+            $calculationsByAsset[$assetId]['allowance_amount'] = round(
+                (float)$calculationsByAsset[$assetId]['allowance_amount']
+                    + (float)($calculation['allowance_amount'] ?? 0),
+                2
+            );
+            $warning = trim((string)($calculation['warning'] ?? ''));
+            if ($warning !== '') {
+                $calculationsByAsset[$assetId]['warnings'][] = $warning;
+            }
         }
 
         $rows = \InterfaceDB::fetchAll(
-            'SELECT ar.id,
+            'SELECT ar.id AS asset_id,
                     ar.asset_code,
                     ar.description,
                     ar.purchase_date,
@@ -520,32 +631,26 @@ final class TaxWorkingsService
                     vd.acquisition_condition,
                     vd.is_zero_emission,
                     vd.co2_emissions_g_km,
-                    vd.first_registered_date,
-                    calc.pool_type,
-                    calc.allowance_type,
-                    calc.allowance_amount,
-                    calc.warning
+                    vd.first_registered_date
              FROM asset_register ar
              INNER JOIN nominal_accounts na ON na.id = ar.nominal_account_id
              LEFT JOIN asset_vehicle_details vd ON vd.asset_id = ar.id
-             LEFT JOIN (
-                SELECT asset_id,
-                       MAX(pool_type) AS pool_type,
-                       GROUP_CONCAT(DISTINCT allowance_type ORDER BY allowance_type SEPARATOR \', \') AS allowance_type,
-                       SUM(allowance_amount) AS allowance_amount,
-                       GROUP_CONCAT(DISTINCT warning SEPARATOR \' \') AS warning
-                FROM capital_allowance_asset_calculations
-                ' . $calcFilter . '
-                GROUP BY asset_id
-             ) calc ON calc.asset_id = ar.id
              WHERE ar.company_id = :company_id
                AND ar.accounting_period_id = :accounting_period_id
                AND (na.code = \'1321\' OR ar.category = \'car\' OR vd.vehicle_type = \'car\')
              ORDER BY ar.purchase_date ASC, ar.id ASC',
-            $params
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+            ]
         ) ?: [];
 
         foreach ($rows as $index => $row) {
+            $calculation = (array)($calculationsByAsset[(int)($row['asset_id'] ?? 0)] ?? []);
+            $poolTypes = array_values(array_unique(array_map('strval', (array)($calculation['pool_types'] ?? []))));
+            $allowanceTypes = array_values(array_unique(array_map('strval', (array)($calculation['allowance_types'] ?? []))));
+            sort($poolTypes);
+            sort($allowanceTypes);
             $warnings = [];
             if (trim((string)($row['acquisition_condition'] ?? '')) === '') {
                 $warnings[] = 'Missing new/second-hand status';
@@ -553,9 +658,24 @@ final class TaxWorkingsService
             if (($row['co2_emissions_g_km'] ?? null) === null && !$this->registeredBeforeMarch2001((string)($row['first_registered_date'] ?? ''))) {
                 $warnings[] = 'Missing CO2 emissions';
             }
-            if (trim((string)($row['warning'] ?? '')) !== '') {
-                $warnings[] = trim((string)$row['warning']);
+            foreach ((array)($calculation['warnings'] ?? []) as $warning) {
+                if (trim((string)$warning) !== '') {
+                    $warnings[] = trim((string)$warning);
+                }
             }
+            $rows[$index]['asset_id'] = (int)($row['asset_id'] ?? 0);
+            $rows[$index]['cost'] = round((float)($row['cost'] ?? 0), 2);
+            $rows[$index]['is_zero_emission'] = (int)($row['is_zero_emission'] ?? 0);
+            $rows[$index]['co2_emissions_g_km'] = ($row['co2_emissions_g_km'] ?? null) === null
+                ? null
+                : (int)$row['co2_emissions_g_km'];
+            $rows[$index]['pool_type'] = (string)($poolTypes !== [] ? end($poolTypes) : '');
+            $rows[$index]['allowance_type'] = implode(', ', $allowanceTypes);
+            $rows[$index]['allowance_amount'] = round((float)($calculation['allowance_amount'] ?? 0), 2);
+            $rows[$index]['warning'] = implode(' ', array_values(array_unique(array_map(
+                'strval',
+                (array)($calculation['warnings'] ?? [])
+            ))));
             $rows[$index]['warnings'] = array_values(array_unique($warnings));
         }
 
@@ -567,7 +687,8 @@ final class TaxWorkingsService
         int $accountingPeriodId,
         int $ctPeriodId,
         string $periodStart,
-        string $periodEnd
+        string $periodEnd,
+        array $assetCalculations
     ): array
     {
         if (!$this->tableExists('asset_register')) {
@@ -590,26 +711,12 @@ final class TaxWorkingsService
              ORDER BY ar.disposal_date ASC, ar.id ASC',
             ['company_id' => $companyId, 'period_start' => $periodStart, 'period_end' => $periodEnd]
         ) ?: [];
-        if ($rows === [] || !$this->tableExists('capital_allowance_asset_calculations')) {
+        if ($rows === [] || $assetCalculations === []) {
             return $rows;
         }
 
-        $sql = 'SELECT *
-                FROM capital_allowance_asset_calculations
-                WHERE company_id = :company_id
-                  AND accounting_period_id = :accounting_period_id';
-        $params = [
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-        ];
-        if ($ctPeriodId > 0 && \InterfaceDB::columnExists('capital_allowance_asset_calculations', 'ct_period_id')) {
-            $sql .= ' AND ct_period_id = :ct_period_id';
-            $params['ct_period_id'] = $ctPeriodId;
-        }
-        $sql .= ' ORDER BY asset_id ASC, id ASC';
-
         $calculationsByAsset = [];
-        foreach (\InterfaceDB::fetchAll($sql, $params) ?: [] as $calculation) {
+        foreach ($assetCalculations as $calculation) {
             $assetId = (int)($calculation['asset_id'] ?? 0);
             if ($assetId <= 0) {
                 continue;
@@ -623,8 +730,6 @@ final class TaxWorkingsService
                 'addition_amount',
                 'allowance_amount',
                 'disposal_value',
-                'balancing_charge',
-                'balancing_allowance',
             ] as $amountField) {
                 $current[$amountField] = round(
                     (float)($current[$amountField] ?? 0) + (float)($calculation[$amountField] ?? 0),
@@ -653,6 +758,52 @@ final class TaxWorkingsService
         unset($row);
 
         return $rows;
+    }
+
+    /**
+     * @param list<int> $assetIds
+     * @return array<int, array<string, mixed>>
+     */
+    private function capitalAllowanceAssetDetailsById(int $companyId, array $assetIds): array
+    {
+        $assetIds = array_values(array_filter(array_unique($assetIds), static fn(int $assetId): bool => $assetId > 0));
+        if ($companyId <= 0 || $assetIds === [] || !$this->tableExists('asset_register')) {
+            return [];
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($assetIds), '?'));
+        $rows = \InterfaceDB::prepareExecute(
+            'SELECT ar.id AS asset_id,
+                    ar.asset_code,
+                    ar.description,
+                    ar.purchase_date,
+                    ar.cost,
+                    ar.category,
+                    ar.disposal_date,
+                    ar.disposal_proceeds,
+                    na.code AS nominal_code,
+                    na.name AS nominal_name,
+                    vd.vehicle_type,
+                    vd.registration_mark,
+                    vd.make_model,
+                    vd.first_registered_date,
+                    vd.co2_emissions_g_km,
+                    vd.acquisition_condition,
+                    vd.is_zero_emission
+             FROM asset_register ar
+             LEFT JOIN nominal_accounts na ON na.id = ar.nominal_account_id
+             LEFT JOIN asset_vehicle_details vd ON vd.asset_id = ar.id
+             WHERE ar.company_id = ?
+               AND ar.id IN (' . $placeholders . ')',
+            array_merge([$companyId], $assetIds)
+        )->fetchAll() ?: [];
+
+        $map = [];
+        foreach ($rows as $row) {
+            $map[(int)($row['asset_id'] ?? 0)] = $row;
+        }
+
+        return $map;
     }
 
     /**

@@ -34,21 +34,21 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                             'excluded_count' => 1,
                             'excluded_items' => [[
                                 'source_type' => 'transaction',
-                                'source_id' => 124,
+                                'source_id' => 9308,
                                 'source_date' => '2025-06-16',
                                 'nominal_code' => '6200',
                                 'nominal_name' => 'Software',
-                                'description' => 'Unposted refund candidate',
+                                'description' => 'Synthetic excluded credit candidate',
                                 'amount' => 25.00,
                                 'exclusion_reason' => 'The source journal is not posted.',
                             ]],
                             'items' => [[
                                 'source_type' => 'transaction',
-                                'source_id' => 123,
+                                'source_id' => 9307,
                                 'source_date' => '2025-06-15',
                                 'nominal_code' => '6200',
                                 'nominal_name' => 'Software',
-                                'description' => 'Annual service candidate',
+                                'description' => 'Synthetic pending service candidate',
                                 'amount' => 120.00,
                                 'review' => [
                                     'status' => 'pending',
@@ -66,28 +66,28 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertTrue(str_contains($html, '<div class="month-grid prepayments-summary-grid">'));
             $harness->assertTrue(str_contains($html, 'Review required — choose a decision'));
             $harness->assertTrue(str_contains($html, 'value="pending" selected disabled'));
-            $harness->assertTrue(str_contains($html, 'data-autosave-submit-target=".prepayment-autosave-transaction-123"'));
-            $harness->assertTrue(str_contains($html, '<button class="prepayment-autosave-transaction-123" type="submit" hidden>Autosave decision</button>'));
+            $harness->assertTrue(str_contains($html, 'data-autosave-submit-target=".prepayment-autosave-transaction-9307"'));
+            $harness->assertTrue(str_contains($html, '<button class="prepayment-autosave-transaction-9307" type="submit" hidden>Autosave decision</button>'));
             $harness->assertSame(false, str_contains($html, 'Save decision'));
             $harness->assertSame(false, str_contains($html, 'value="not_prepaid" selected'));
             $harness->assertTrue(str_contains($html, 'Excluded source items'));
             $harness->assertTrue(str_contains($html, 'do not block Year End'));
-            $harness->assertTrue(str_contains($html, 'Unposted refund candidate'));
+            $harness->assertTrue(str_contains($html, 'Synthetic excluded credit candidate'));
             $harness->assertTrue(str_contains($html, 'The source journal is not posted.'));
         });
 
         $harness->check(_prepayments_reviewCard::class, 'shows schedule repair without filed-period correction controls', static function () use ($harness, $card): void {
             $html = $card->render([
                 'company' => [
-                    'id' => 49,
-                    'accounting_period_id' => 79,
+                    'id' => 9107,
+                    'accounting_period_id' => 9207,
                     'settings' => ['default_currency_symbol' => '&#163;'],
                 ],
                 'services' => [
                     'prepaymentWorkflowContext' => [
                         'review' => [
                             'available' => true,
-                            'accounting_period' => ['id' => 79, 'period_end' => '2023-09-30'],
+                            'accounting_period' => ['id' => 9207, 'period_end' => '2023-09-30'],
                             'total_count' => 0,
                             'reviewed_count' => 0,
                             'prepaid_count' => 0,
@@ -100,17 +100,17 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                             'available' => true,
                             'missing_count' => 1,
                             'missing_reviews' => [[
-                                'review_id' => 14,
+                                'review_id' => 9407,
                                 'source_type' => 'transaction',
-                                'source_id' => 6151,
+                                'source_id' => 9307,
                                 'source_date' => '2022-12-30',
-                                'source_amount_pence' => 57000,
+                                'source_amount_pence' => 73000,
                                 'service_start_date' => '2022-12-30',
                                 'service_end_date' => '2023-12-29',
                                 'selected_allocation' => [
                                     'overlap_days' => 275,
-                                    'expense_pence' => 42945,
-                                    'closing_deferred_pence' => 14055,
+                                    'expense_pence' => 55000,
+                                    'closing_deferred_pence' => 18000,
                                 ],
                             ]],
                         ],

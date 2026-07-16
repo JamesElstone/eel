@@ -122,8 +122,8 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         ];
 
         $html = $instance->render($context);
-        $inClaimPosition = strpos($html, '<div class="summary-label">In this claim (B)</div><div class="summary-value">$ 114.99</div>');
-        $carriedForwardPosition = strpos($html, '<div class="summary-label">Carried Forward (D=A+B-C)</div><div class="summary-value">$ 119.99</div>');
+        $inClaimPosition = strpos($html, '<div class="summary-label">In this claim (B)</div><div class="summary-value">$ 103.20</div>');
+        $carriedForwardPosition = strpos($html, '<div class="summary-label">Carried Forward (D=A+B-C)</div><div class="summary-value">$ 108.20</div>');
 
         $harness->assertTrue($inClaimPosition !== false);
         $harness->assertTrue($carriedForwardPosition !== false);
@@ -137,9 +137,9 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $html = $instance->render($context);
 
         $harness->assertTrue(str_contains($html, '<div class="summary-label">Brought Forwards (A)</div><div class="summary-value">€ 0.00</div>'));
-        $harness->assertTrue(str_contains($html, '<div class="summary-label">In this claim (B)</div><div class="summary-value">€ 94.99</div>'));
-        $harness->assertTrue(str_contains($html, '<div class="summary-label">Paid in this period (C)</div><div class="summary-value">€ 75.00</div>'));
-        $harness->assertTrue(str_contains($html, '<div class="summary-label">Carried Forward (D=A+B-C)</div><div class="summary-value">€ 19.99</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">In this claim (B)</div><div class="summary-value">€ 83.20</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">Paid in this period (C)</div><div class="summary-value">€ 60.00</div>'));
+        $harness->assertTrue(str_contains($html, '<div class="summary-label">Carried Forward (D=A+B-C)</div><div class="summary-value">€ 23.20</div>'));
     });
 
     $harness->check(_expense_claim_editorCard::class, 'uses exportable builder tables with 20 row pagination', function () use ($harness, $instance): void {
@@ -230,7 +230,7 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $harness->assertTrue(str_contains($html, '<label for="expense-line-amount">Amount ($)</label>'));
         $harness->assertSame(false, str_contains($html, 'for="expense-line-notes"'));
         $harness->assertSame(false, str_contains($html, 'name="notes"'));
-        $harness->assertTrue(str_contains($html, '$ 94.99'));
+        $harness->assertTrue(str_contains($html, '$ 83.20'));
     });
 
     $harness->check(_expense_claim_editorCard::class, 'renders asset charge details for asset lines', function () use ($harness, $instance): void {
@@ -274,21 +274,21 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $context = expenseClaimEditorCardContext();
         $context['expense_bulk_preview'] = [
             'claim_id' => 42,
-            'source_text' => "5/10/2022\tPreview Only Drill\t£94.99",
+            'source_text' => "5/10/2022\tSynthetic Preview Tool\t£83.20",
             'rows' => [[
                 'expense_date' => '2022-10-05',
                 'expense_date_display' => '05-10-2022',
-                'description' => 'Preview Only Drill',
-                'amount' => 94.99,
+                'description' => 'Synthetic Preview Tool',
+                'amount' => 83.20,
             ]],
-            'total' => 94.99,
+            'total' => 83.20,
         ];
 
         $html = $instance->render($context);
 
         $harness->assertTrue(str_contains($html, 'name="intent" value="bulk_save_lines"'));
         $harness->assertTrue(str_contains($html, 'Import Lines'));
-        $harness->assertSame(false, str_contains($html, 'Preview Only Drill'));
+        $harness->assertSame(false, str_contains($html, 'Synthetic Preview Tool'));
         $harness->assertSame(false, str_contains($html, 'Preview total'));
         $harness->assertSame(false, str_contains($html, 'Import previewed lines'));
     });
@@ -307,8 +307,8 @@ $harness->run(_expense_claim_editorCard::class, function (GeneratedServiceClassT
         $repaymentsHtml = substr($html, (int)$repaymentsPosition, (int)$candidateRepaymentsPosition - (int)$repaymentsPosition);
         $candidateRepaymentsHtml = substr($html, (int)$candidateRepaymentsPosition);
         $harness->assertSame(0, preg_match('/<div class="actions-row">\s*<\/div>/', $repaymentsHtml));
-        $harness->assertTrue(str_contains($repaymentsHtml, '$ 75.00'));
-        $harness->assertSame(2, substr_count($candidateRepaymentsHtml, '$ 75.00'));
+        $harness->assertTrue(str_contains($repaymentsHtml, '$ 60.00'));
+        $harness->assertSame(2, substr_count($candidateRepaymentsHtml, '$ 60.00'));
         $harness->assertTrue(str_contains($candidateRepaymentsHtml, 'name="payment_link_id" value="22"'));
         $harness->assertTrue(str_contains($candidateRepaymentsHtml, '>Unlink</button>'));
         $harness->assertTrue(str_contains($candidateRepaymentsHtml, '>Link</button>'));
@@ -388,10 +388,10 @@ function expenseClaimEditorCardContext(): array
                         'txn_date' => '2022-10-31',
                         'description' => 'Expense repayment',
                         'reference' => 'EXP PAY',
-                        'amount' => 75.00,
-                        'available_amount' => 75.00,
+                        'amount' => 60.00,
+                        'available_amount' => 60.00,
                         'current_link_id' => 22,
-                        'current_link_amount' => 75.00,
+                        'current_link_amount' => 60.00,
                     ],
                     [
                         'id' => 92,
@@ -406,7 +406,7 @@ function expenseClaimEditorCardContext(): array
                 'selected_claim' => [
                     'id' => 42,
                     'claim_reference_code' => 'EXP-2210-TEST',
-                    'claimant_name' => 'Alex Example',
+                    'claimant_name' => 'Taylor Fixture',
                     'claim_month' => 10,
                     'claim_year' => 2022,
                     'period_end' => '2022-10-31',
@@ -414,18 +414,18 @@ function expenseClaimEditorCardContext(): array
                     'is_posted' => false,
                     'control_totals' => [
                         'A' => 0,
-                        'B' => 94.99,
-                        'C' => 75,
-                        'D' => 19.99,
+                        'B' => 83.20,
+                        'C' => 60,
+                        'D' => 23.20,
                     ],
                     'lines' => [
                         [
                             'id' => 11,
                             'expense_date' => '2022-10-05',
-                            'description' => 'ElectricFix, Wall Chaser',
+                            'description' => 'Northbridge Test Supplies, Cable Tracer',
                             'line_type' => 'expense',
                             'nominal_account_id' => null,
-                            'amount' => 94.99,
+                            'amount' => 83.20,
                         ],
                     ],
                     'payment_links' => [
@@ -434,7 +434,7 @@ function expenseClaimEditorCardContext(): array
                             'txn_date' => '2022-10-31',
                             'description' => 'Expense repayment',
                             'reference' => 'EXP PAY',
-                            'linked_amount' => 75.00,
+                            'linked_amount' => 60.00,
                         ],
                     ],
                 ],

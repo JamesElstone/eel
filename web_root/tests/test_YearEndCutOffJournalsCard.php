@@ -59,7 +59,7 @@ $harness->run(_journal_cut_off_confirmationCard::class, static function (Generat
     $harness->check(_journal_cut_off_confirmationCard::class, 'renders local cut-off review reopen action after acknowledgement', static function () use ($harness, $card): void {
         $html = $card->render(yearEndJournalCutOffCardContext([
             'acknowledged_at' => '2026-07-06 10:00:00',
-            'acknowledged_by' => 'James using the web_app',
+            'acknowledged_by' => 'Fixture Reviewer using the web_app',
             'note' => 'Reviewed the year-end cut-off position.',
             'current' => true,
             'state' => 'current',
@@ -68,7 +68,7 @@ $harness->run(_journal_cut_off_confirmationCard::class, static function (Generat
         $harness->assertSame(true, str_contains($html, 'name="intent" value="reopen_review_check"'));
         $harness->assertSame(true, str_contains($html, '<section class="panel-soft success settings-stack">'));
         $harness->assertSame(true, str_contains($html, 'Reviewed the year-end cut-off position.'));
-        $harness->assertSame(true, str_contains($html, 'Approved at 2026-07-06 10:00:00 by James using the web_app.'));
+        $harness->assertSame(true, str_contains($html, 'Approved at 2026-07-06 10:00:00 by Fixture Reviewer using the web_app.'));
         $harness->assertSame(true, str_contains($html, 'Revoke approval'));
         $harness->assertSame(false, str_contains($html, 'name="intent" value="acknowledge_review_check"'));
         $harness->assertSame(false, str_contains($html, 'Mark cut-off journals review complete'));
@@ -77,7 +77,7 @@ $harness->run(_journal_cut_off_confirmationCard::class, static function (Generat
     $harness->check(_journal_cut_off_confirmationCard::class, 'does not offer revoke access for a locked period', static function () use ($harness, $card): void {
         $context = yearEndJournalCutOffCardContext([
             'acknowledged_at' => '2026-07-06 10:00:00',
-            'acknowledged_by' => 'James using the web_app',
+            'acknowledged_by' => 'Fixture Reviewer using the web_app',
             'current' => true,
             'state' => 'current',
         ]);

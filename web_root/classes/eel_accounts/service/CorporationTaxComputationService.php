@@ -13,6 +13,7 @@ namespace eel_accounts\Service;
 final class CorporationTaxComputationService
 {
     public const PREPAYMENT_PREVIEW_WARNING = 'The Corporation Tax estimate omits one or more pending prepayment adjustments because the prepayment preview is unreliable.';
+    private const FINAL_CT_STATUSES = ['submitted', 'accepted'];
 
     private array $accountingPeriodLossScheduleCache = [];
     private array $activeCtPeriodsCache = [];
@@ -336,6 +337,15 @@ final class CorporationTaxComputationService
         }
 
         $this->clearRuntimeCaches();
+        $periodSync = (new \eel_accounts\Service\CorporationTaxPeriodService())
+            ->syncForAccountingPeriod($companyId, $accountingPeriodId);
+        if (empty($periodSync['success'])) {
+            return [
+                'success' => false,
+                'errors' => (array)($periodSync['errors'] ?? ['Corporation Tax periods could not be synchronised for the Year End lock.']),
+                'summaries' => [],
+            ];
+        }
         $activePeriods = $this->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId);
         $periods = (array)($activePeriods['periods'] ?? []);
         $summaries = [];
@@ -343,6 +353,17 @@ final class CorporationTaxComputationService
         foreach ($periods as $period) {
             $ctPeriodId = (int)($period['id'] ?? 0);
             if ($ctPeriodId <= 0) {
+                continue;
+            }
+            if (in_array((string)($period['status'] ?? ''), self::FINAL_CT_STATUSES, true)) {
+                $summary = $this->storedLockedSummaryForCtPeriodId($companyId, $ctPeriodId);
+                if (!is_array($summary) || empty($summary['available'])) {
+                    foreach ((array)($summary['errors'] ?? ['The submitted CT period has no usable persisted computation snapshot.']) as $error) {
+                        $errors[] = (string)($period['display_label'] ?? ('CT Period ' . (int)($period['sequence_no'] ?? 0))) . ': ' . (string)$error;
+                    }
+                    continue;
+                }
+                $summaries[] = $summary;
                 continue;
             }
             $summary = $this->persistSummaryForCtPeriodIdWithCurrentCaches($companyId, $ctPeriodId);
@@ -372,34 +393,44 @@ final class CorporationTaxComputationService
         $periodService = new \eel_accounts\Service\CorporationTaxPeriodService();
         $scope = $this->vatSupportScope($companyId);
         if (!empty($scope['scope_evaluation_failed'])) {
-            $sync = [
+            $projection = [
                 'success' => false,
                 'periods' => [],
                 'errors' => [(string)($scope['message'] ?? VatSupportScopeService::SCOPE_EVALUATION_ERROR_MESSAGE)],
             ];
         } elseif (!empty($scope['tax_year_end_read_only'])) {
-            $sync = [
+            $projection = [
                 'success' => true,
-                'periods' => \InterfaceDB::tableExists('corporation_tax_periods')
-                    ? $periodService->fetchForAccountingPeriod($companyId, $accountingPeriodId)
-                    : [],
+                'periods' => $periodService->fetchExistingForAccountingPeriod($companyId, $accountingPeriodId),
                 'errors' => [],
             ];
         } else {
-            $sync = $periodService->syncForAccountingPeriod($companyId, $accountingPeriodId);
+            $accountingPeriod = ($this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService())
+                ->fetchAccountingPeriod($companyId, $accountingPeriodId);
+            $projection = $periodService->projectForAccountingPeriod(
+                $companyId,
+                $accountingPeriodId,
+                is_array($accountingPeriod) ? $accountingPeriod : null
+            );
         }
         $periods = array_values(array_filter(
-            (array)($sync['periods'] ?? []),
+            (array)($projection['periods'] ?? []),
             static fn(array $period): bool => (string)($period['status'] ?? '') !== 'superseded'
         ));
         usort($periods, static function (array $a, array $b): int {
             $sequenceCompare = (int)($a['sequence_no'] ?? 0) <=> (int)($b['sequence_no'] ?? 0);
             return $sequenceCompare !== 0 ? $sequenceCompare : ((int)($a['id'] ?? 0) <=> (int)($b['id'] ?? 0));
         });
+        foreach ($periods as $period) {
+            $ctPeriodId = (int)($period['id'] ?? 0);
+            if ($ctPeriodId !== 0) {
+                $this->ctPeriodCache[$companyId . ':' . $ctPeriodId] = $period;
+            }
+        }
 
         return $this->activeCtPeriodsCache[$cacheKey] = [
             'periods' => $periods,
-            'errors' => (array)($sync['errors'] ?? []),
+            'errors' => (array)($projection['errors'] ?? []),
         ];
     }
 
@@ -408,7 +439,7 @@ final class CorporationTaxComputationService
         $periods = (array)($this->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId)['periods'] ?? []);
         $lastPeriod = end($periods);
         $lastCtPeriodId = is_array($lastPeriod) ? (int)($lastPeriod['id'] ?? 0) : 0;
-        if ($lastCtPeriodId > 0) {
+        if ($lastCtPeriodId !== 0) {
             $this->ctPeriodLossSchedule($companyId, $lastCtPeriodId);
         }
     }
@@ -444,7 +475,7 @@ final class CorporationTaxComputationService
         $ctPeriodId = (int)($ctPeriod['id'] ?? 0);
         $periodStart = (string)($ctPeriod['period_start'] ?? '');
         $periodEnd = min($asAtDate, (string)($ctPeriod['period_end'] ?? $asAtDate));
-        if ($ctPeriodId <= 0 || $periodStart === '' || $periodEnd < $periodStart) {
+        if ($ctPeriodId === 0 || $periodStart === '' || $periodEnd < $periodStart) {
             return ['available' => false, 'errors' => ['A valid CT period could not be resolved for dividend capacity.'], 'periods' => [], 'totals' => []];
         }
 
@@ -737,10 +768,26 @@ final class CorporationTaxComputationService
         if (count($ctPeriods) <= 1) {
             $pnl = $this->profitAndLossSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
             $days = $this->inclusiveDays($periodStart, $periodEnd);
+            $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
+            $accountingPeriod = $metrics->fetchAccountingPeriod($companyId, $accountingPeriodId);
+            $usesWholeAccountingPeriod = is_array($accountingPeriod)
+                && (string)($accountingPeriod['period_start'] ?? '') === $periodStart
+                && (string)($accountingPeriod['period_end'] ?? '') === $periodEnd;
+            $depreciation = $usesWholeAccountingPeriod
+                ? (float)($this->fetchAssetAdjustments(
+                    $companyId,
+                    $accountingPeriodId
+                )['depreciation_add_back'] ?? 0)
+                : $this->depreciationAddBack(
+                    $companyId,
+                    $accountingPeriodId,
+                    $periodStart,
+                    $periodEnd
+                );
 
             return $this->ctPeriodAccountingAllocationCache[$cacheKey] = [
                 'pnl' => $pnl,
-                'depreciation_add_back' => round($this->depreciationAddBack($companyId, $accountingPeriodId, $periodStart, $periodEnd), 2),
+                'depreciation_add_back' => round($depreciation, 2),
                 'basis' => [
                     'method' => 'journal_date_within_single_ct_period',
                     'time_apportioned' => false,
@@ -767,7 +814,7 @@ final class CorporationTaxComputationService
         $selectedIndex = null;
         foreach ($ctPeriods as $index => $period) {
             $id = (int)($period['id'] ?? 0);
-            if ($id <= 0) {
+            if ($id === 0) {
                 throw new \RuntimeException('A valid CT period is required for CT time apportionment.');
             }
             $periodDays[$id] = $this->inclusiveDays(
@@ -933,13 +980,24 @@ final class CorporationTaxComputationService
     private function storedLockedSummaryForCtPeriodId(int $companyId, int $ctPeriodId): ?array
     {
         $period = (new \eel_accounts\Service\CorporationTaxPeriodService())->fetch($companyId, $ctPeriodId);
-        if ($period === null || !(new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, (int)$period['accounting_period_id'])) {
+        if ($period === null) {
+            return null;
+        }
+        $immutable = in_array((string)($period['status'] ?? ''), self::FINAL_CT_STATUSES, true)
+            || (new \eel_accounts\Service\YearEndLockService())
+                ->isLocked($companyId, (int)$period['accounting_period_id']);
+        if (!$immutable) {
             return null;
         }
 
         $runId = (int)($period['latest_computation_run_id'] ?? 0);
         if ($runId <= 0 || !$this->tableExists('corporation_tax_computation_runs')) {
-            return null;
+            return [
+                'available' => false,
+                'errors' => ['The immutable CT period has no persisted computation snapshot.'],
+                'ct_period_id' => $ctPeriodId,
+                'accounting_period_id' => (int)($period['accounting_period_id'] ?? 0),
+            ];
         }
 
         $row = \InterfaceDB::fetchOne(
@@ -953,7 +1011,12 @@ final class CorporationTaxComputationService
         );
         $summary = is_array($row) ? json_decode((string)($row['summary_json'] ?? ''), true) : null;
         if (!is_array($summary)) {
-            return null;
+            return [
+                'available' => false,
+                'errors' => ['The immutable CT period computation snapshot could not be read.'],
+                'ct_period_id' => $ctPeriodId,
+                'accounting_period_id' => (int)($period['accounting_period_id'] ?? 0),
+            ];
         }
         $summary['computation_run_id'] = $runId;
         $summary['summary_source'] = 'locked_snapshot';
@@ -1148,7 +1211,7 @@ final class CorporationTaxComputationService
             $ctPeriods = (array)($this->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId)['periods'] ?? []);
             foreach ($ctPeriods as $ctPeriod) {
                 $ctPeriodId = (int)($ctPeriod['id'] ?? 0);
-                if ($ctPeriodId <= 0) {
+                if ($ctPeriodId === 0) {
                     continue;
                 }
                 if ($checkpointEnd !== '' && (string)($ctPeriod['period_end'] ?? '') <= $checkpointEnd) {
@@ -1213,6 +1276,7 @@ final class CorporationTaxComputationService
                     ap.period_start AS accounting_period_start,
                     COALESCE(yer.is_locked, 0) AS is_locked,
                     ctp.id AS ct_period_id,
+                    ctp.status AS ct_period_status,
                     ctp.period_end,
                     ctp.latest_computation_run_id,
                     cr.summary_json
@@ -1249,7 +1313,14 @@ final class CorporationTaxComputationService
         $checkpoint = null;
         foreach ($periods as $periodRows) {
             $first = (array)($periodRows[0] ?? []);
-            if ((int)($first['is_locked'] ?? 0) !== 1) {
+            $allCtPeriodsFinal = $periodRows !== [];
+            foreach ($periodRows as $row) {
+                if (!in_array((string)($row['ct_period_status'] ?? ''), self::FINAL_CT_STATUSES, true)) {
+                    $allCtPeriodsFinal = false;
+                    break;
+                }
+            }
+            if ((int)($first['is_locked'] ?? 0) !== 1 && !$allCtPeriodsFinal) {
                 break;
             }
 
@@ -1378,7 +1449,11 @@ final class CorporationTaxComputationService
         $profitAndLoss ??= $this->profitAndLossSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $assetAdjustments = $this->fetchAssetAdjustments($companyId, $accountingPeriodId);
         $taxableBeforeLosses = $this->taxableBeforeLosses($profitAndLoss, $assetAdjustments);
-        $lossesBroughtForward = $this->storedLossesBroughtForward($companyId, $accountingPeriodId, $periodStart);
+        $lossesBroughtForward = $this->previewLossesBroughtForward(
+            $companyId,
+            $accountingPeriodId,
+            $periodStart
+        );
         $lossesUsed = min(max(0.0, $taxableBeforeLosses), $lossesBroughtForward);
         $taxableProfit = max(0.0, round($taxableBeforeLosses - $lossesUsed, 2));
         $lossCreated = $taxableBeforeLosses < 0 ? abs($taxableBeforeLosses) : 0.0;
@@ -1463,6 +1538,103 @@ final class CorporationTaxComputationService
             ],
             'summary_scope' => 'current_period_estimate',
         ];
+    }
+
+    /**
+     * Calculate the provision position from a supplied whole-period pre-tax
+     * P&L without collapsing a long period of account into one CT period.
+     */
+    public function previewProvisionPositionForAccountingPeriod(
+        int $companyId,
+        int $accountingPeriodId,
+        array $accountingPeriod,
+        array $profitAndLoss
+    ): array {
+        $scope = $this->vatSupportScope($companyId);
+        if (!empty($scope['tax_year_end_read_only'])) {
+            return $this->unsupportedVatScopeResult(
+                $scope,
+                'A live accounting-period Corporation Tax provision preview is not supported.'
+            );
+        }
+
+        $periodStart = trim((string)($accountingPeriod['period_start'] ?? ''));
+        $periodEnd = trim((string)($accountingPeriod['period_end'] ?? ''));
+        if ($companyId <= 0
+            || $accountingPeriodId <= 0
+            || $periodStart === ''
+            || $periodEnd === ''
+            || $periodEnd < $periodStart) {
+            return [
+                'available' => false,
+                'errors' => ['A valid accounting period is required for the Corporation Tax provision preview.'],
+                'periods' => [],
+            ];
+        }
+
+        $this->clearRuntimeCaches();
+        $profitAndLossCacheKey = $companyId . ':' . $accountingPeriodId . ':' . $periodStart . ':' . $periodEnd;
+        $this->profitAndLossSummaryCache[$profitAndLossCacheKey] = $profitAndLoss;
+
+        $breakdown = $this->capitalAllowanceBreakdown($companyId, $accountingPeriodId, 0);
+        $depreciation = array_key_exists('depreciation_expense', $profitAndLoss)
+            ? max(0.0, (float)$profitAndLoss['depreciation_expense'])
+            : $this->depreciationAddBack($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $allowances = $this->capitalAllowanceAmountFromBreakdown($breakdown);
+        $warnings = (array)($breakdown['warnings'] ?? []);
+        if ($this->tableExists('asset_register')
+            && $this->countCompanyAssets($companyId) > 0
+            && abs($depreciation) < 0.005
+            && abs($allowances) < 0.005) {
+            $warnings[] = 'Fixed assets exist, but no depreciation entries or capital allowance runs were found.';
+        }
+        $this->assetAdjustmentsCache[$companyId . ':' . $accountingPeriodId . ':0'] = [
+            'depreciation_add_back' => round($depreciation, 2),
+            'capital_allowances' => round($allowances, 2),
+            'warning' => implode(' ', array_values(array_unique(array_filter(array_map(
+                'strval',
+                $warnings
+            ))))),
+            'capital_allowance_breakdown' => $breakdown,
+        ];
+
+        return (new CorporationTaxProvisionService($this))
+            ->fetchAccountingPeriodPosition($companyId, $accountingPeriodId);
+    }
+
+    /**
+     * Use the same chronological CT-period loss schedule as the final Year End
+     * computation. Open predecessor periods are calculated transiently, while
+     * the consecutive locked prefix is taken from immutable persisted
+     * snapshots. Merely viewing a later open period therefore produces the
+     * same brought-forward loss before and after its predecessor is locked.
+     */
+    private function previewLossesBroughtForward(
+        int $companyId,
+        int $accountingPeriodId,
+        string $periodStart
+    ): float
+    {
+        $periods = (array)($this->activeCtPeriodsForAccountingPeriod(
+            $companyId,
+            $accountingPeriodId
+        )['periods'] ?? []);
+        $first = (array)($periods[0] ?? []);
+        $firstCtPeriodId = (int)($first['id'] ?? 0);
+        if ($firstCtPeriodId !== 0) {
+            $position = $this->ctPeriodLossPosition($companyId, $firstCtPeriodId);
+
+            return round(max(0.0, (float)($position['brought_forward'] ?? 0)), 2);
+        }
+
+        return round(max(
+            0.0,
+            $this->storedLossesBroughtForward(
+                $companyId,
+                $accountingPeriodId,
+                $periodStart
+            )
+        ), 2);
     }
 
     /**

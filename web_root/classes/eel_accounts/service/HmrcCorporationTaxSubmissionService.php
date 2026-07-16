@@ -22,6 +22,7 @@ final class HmrcCorporationTaxSubmissionService
         $mode = \HelperFramework::normaliseEnvironmentMode($mode);
         $draft = $this->createSubmissionDraft($companyId, $ctPeriodId, $mode);
         $submissionId = (int)($draft['submission_id'] ?? 0);
+        $ctPeriodId = (int)($draft['ct_period_id'] ?? $ctPeriodId);
         $errors = (array)($draft['errors'] ?? []);
         $warnings = [];
 
@@ -124,7 +125,26 @@ final class HmrcCorporationTaxSubmissionService
         }
         $this->ensureSchema();
         $mode = \HelperFramework::normaliseEnvironmentMode($mode);
-        $ctPeriod = (new \eel_accounts\Service\CorporationTaxPeriodService())->fetch($companyId, $ctPeriodId);
+        $periodService = new \eel_accounts\Service\CorporationTaxPeriodService();
+        $ctPeriod = $ctPeriodId > 0
+            ? $periodService->fetch($companyId, $ctPeriodId)
+            : null;
+        if ($ctPeriod === null && $ctPeriodId < 0) {
+            $resolved = $this->persistTransientCtPeriodReference(
+                $companyId,
+                $ctPeriodId,
+                $periodService
+            );
+            if (empty($resolved['success'])) {
+                return [
+                    'success' => false,
+                    'errors' => (array)($resolved['errors'] ?? ['The selected CT period could not be initialised.']),
+                    'submission_id' => 0,
+                ];
+            }
+            $ctPeriod = (array)($resolved['period'] ?? []);
+            $ctPeriodId = (int)($ctPeriod['id'] ?? 0);
+        }
         $accountingPeriodId = (int)($ctPeriod['accounting_period_id'] ?? 0);
         if ($companyId <= 0 || $ctPeriodId <= 0 || $accountingPeriodId <= 0) {
             return ['success' => false, 'errors' => ['Select a company, accounting period, and CT period.'], 'submission_id' => 0];
@@ -145,7 +165,52 @@ final class HmrcCorporationTaxSubmissionService
             $this->event($id, 'info', 'Submission draft created.', ['mode' => $mode]);
         }
 
-        return ['success' => $id > 0, 'errors' => $id > 0 ? [] : ['Could not create submission draft.'], 'submission_id' => $id];
+        return [
+            'success' => $id > 0,
+            'errors' => $id > 0 ? [] : ['Could not create submission draft.'],
+            'submission_id' => $id,
+            'ct_period_id' => $ctPeriodId,
+        ];
+    }
+
+    private function persistTransientCtPeriodReference(
+        int $companyId,
+        int $ctPeriodId,
+        \eel_accounts\Service\CorporationTaxPeriodService $periodService
+    ): array
+    {
+        $reference = \eel_accounts\Service\CorporationTaxPeriodService::decodeTransientReferenceId(
+            $ctPeriodId
+        );
+        if ($companyId <= 0 || $reference === null) {
+            return ['success' => false, 'errors' => ['Select a valid CT period.']];
+        }
+
+        $sync = $periodService->syncForAccountingPeriod(
+            $companyId,
+            (int)$reference['accounting_period_id']
+        );
+        if (empty($sync['success'])) {
+            return [
+                'success' => false,
+                'errors' => (array)($sync['errors'] ?? ['The selected CT period could not be initialised.']),
+            ];
+        }
+
+        foreach ((array)($sync['periods'] ?? []) as $period) {
+            if ((int)($period['sequence_no'] ?? 0) === (int)$reference['sequence_no']) {
+                return [
+                    'success' => true,
+                    'errors' => [],
+                    'period' => $period,
+                ];
+            }
+        }
+
+        return [
+            'success' => false,
+            'errors' => ['The selected CT period could not be resolved after synchronisation.'],
+        ];
     }
 
     public function submit(int $submissionId, callable $logger): array

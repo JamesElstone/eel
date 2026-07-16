@@ -329,8 +329,11 @@ final class DirectorLoanService
         }
 
         $closingBalance = round((float)($statement['closing_balance'] ?? 0), 2);
-        $directorOwesCompany = $closingBalance < -0.004;
-        $exposureAmount = $directorOwesCompany ? abs($closingBalance) : 0.0;
+        $grossReceivable = round(max(0.0, (float)($statement['asset_receivable'] ?? 0)), 2);
+        $grossPayable = round(max(0.0, (float)($statement['liability_payable'] ?? 0)), 2);
+        $directorOwesCompany = $grossReceivable >= 0.005;
+        $identityNettingRequired = $directorOwesCompany && $grossPayable >= 0.005;
+        $exposureAmount = $directorOwesCompany ? $grossReceivable : 0.0;
         $periodEnd = (string)(($statement['accounting_period'] ?? [])['period_end'] ?? '');
         $repaymentReviewDate = $this->repaymentReviewDate($periodEnd);
         $reviewItems = [];
@@ -342,6 +345,14 @@ final class DirectorLoanService
                 'detail' => 'Director owes the company at period end. Review whether s455 tax is due and how any later repayment affects the position.',
                 'severity' => 'warning',
             ];
+            if ($identityNettingRequired) {
+                $reviewItems[] = [
+                    'key' => 'same_person_netting',
+                    'label' => 'Same-person running-account review',
+                    'detail' => 'Amounts owed by the company must not reduce the tax review exposure unless the entries belong to the same director and form one genuine running account. Balances for different people must be reviewed separately.',
+                    'severity' => 'warning',
+                ];
+            }
             $reviewItems[] = [
                 'key' => 'repayment_timing',
                 'label' => 'Repayment timing',
@@ -378,6 +389,12 @@ final class DirectorLoanService
             'review_required' => $directorOwesCompany,
             'director_owes_company' => $directorOwesCompany,
             'closing_balance' => $closingBalance,
+            'gross_director_receivable' => $grossReceivable,
+            'gross_director_payable' => $grossPayable,
+            'identity_netting_required' => $identityNettingRequired,
+            'tax_review_basis' => $identityNettingRequired
+                ? 'gross_receivable_pending_same_person_review'
+                : ($directorOwesCompany ? 'gross_receivable' : 'no_gross_receivable'),
             'exposure_amount' => round($exposureAmount, 2),
             'repayment_review_date' => $repaymentReviewDate,
             's455_review_required' => $directorOwesCompany,

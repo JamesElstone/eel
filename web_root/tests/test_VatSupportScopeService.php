@@ -86,6 +86,7 @@ $harness->run(\eel_accounts\Service\VatSupportScopeService::class, static functi
             $marker = (string)random_int(100000, 999999);
             $companyId = (int)('85' . $marker);
             $accountingPeriodId = (int)('86' . $marker);
+            $ctPeriodId = (int)('87' . $marker);
             InterfaceDB::prepareExecute(
                 'INSERT INTO companies (
                     id, company_name, company_number, incorporation_date, company_status, is_active,
@@ -113,7 +114,22 @@ $harness->run(\eel_accounts\Service\VatSupportScopeService::class, static functi
                     'company_id' => $companyId,
                     'label' => 'VAT Tax Page ' . $marker,
                     'period_start' => '2024-01-01',
+                    'period_end' => '2025-01-31',
+                ]
+            );
+            InterfaceDB::prepareExecute(
+                'INSERT INTO corporation_tax_periods (
+                    id, company_id, accounting_period_id, sequence_no, period_start, period_end, status
+                 ) VALUES (
+                    :id, :company_id, :accounting_period_id, 1, :period_start, :period_end, :status
+                 )',
+                [
+                    'id' => $ctPeriodId,
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                    'period_start' => '2024-01-01',
                     'period_end' => '2024-12-31',
+                    'status' => 'pending',
                 ]
             );
 
@@ -129,10 +145,16 @@ $harness->run(\eel_accounts\Service\VatSupportScopeService::class, static functi
             );
 
             $harness->assertSame(true, (bool)$context['vat_support_scope']['tax_year_end_read_only']);
-            $harness->assertSame(0, InterfaceDB::countWhere('corporation_tax_periods', [
+            $harness->assertSame(1, InterfaceDB::countWhere('corporation_tax_periods', [
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
             ]));
+            $capitalAllowances = (new \eel_accounts\Service\CapitalAllowanceService())
+                ->calculateForCompany($companyId);
+            $harness->assertSame(
+                [$ctPeriodId],
+                array_map('intval', array_keys((array)($capitalAllowances['ct_periods'] ?? [])))
+            );
         } finally {
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();

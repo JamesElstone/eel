@@ -396,6 +396,21 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     $secondPeriodId,
                     (int)($targetOnlyPeriods[0]['accounting_period_id'] ?? 0)
                 );
+
+                $failedDepreciationContext = $service->pendingBalanceSheetAdjustmentContext(
+                    $companyId,
+                    $secondPeriodId,
+                    '2024-12-31',
+                    ['success' => false, 'errors' => [], 'rows' => []],
+                    [],
+                    null,
+                    false
+                );
+                $harness->assertSame(false, (bool)($failedDepreciationContext['reliable'] ?? true));
+                $harness->assertTrue(str_contains(
+                    implode(' ', array_map('strval', (array)($failedDepreciationContext['warnings'] ?? []))),
+                    'depreciation preview returned an unsuccessful result'
+                ));
             } finally {
                 if (InterfaceDB::inTransaction()) {
                     InterfaceDB::rollBack();

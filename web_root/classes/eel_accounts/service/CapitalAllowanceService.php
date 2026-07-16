@@ -14,8 +14,10 @@ final class CapitalAllowanceService
     private const RUN_HASH_ALGORITHM_VERSION = 'capital_allowance_pool_v2';
     private const RUN_HASH_VERSION_PREFIX = 'ca02:';
 
-    public function __construct(private readonly ?\eel_accounts\Service\TaxRateRuleService $taxRateRuleService = null)
-    {
+    public function __construct(
+        private readonly ?\eel_accounts\Service\TaxRateRuleService $taxRateRuleService = null,
+        private readonly ?\eel_accounts\Service\CorporationTaxPeriodService $corporationTaxPeriodService = null
+    ) {
     }
 
     public function hasRequiredSchema(): bool
@@ -42,8 +44,162 @@ final class CapitalAllowanceService
             return [];
         }
 
+        $transaction = $this->beginMutationTransaction('capital_allowance_rebuild');
+        try {
+            $lockedPeriodIds = $this->lockedPeriodIdsForRebuild($companyId, $periods);
+            $results = $this->buildForCompany($companyId, 'all', 0, $lockedPeriodIds);
+            $results['success'] = true;
+            $results['errors'] = [];
+            $results['locked_period_ids'] = $lockedPeriodIds;
+            $this->commitMutationTransaction($transaction);
+
+            return $results;
+        } catch (\Throwable $exception) {
+            $this->rollBackMutationTransaction($transaction);
+
+            return [
+                'success' => false,
+                'errors' => [$exception->getMessage()],
+            ];
+        }
+    }
+
+    /**
+     * Calculate the complete capital-allowance sequence without changing any
+     * CT-period, pool-run, or asset-calculation rows.
+     */
+    public function calculateForCompany(int $companyId): array
+    {
+        if ($companyId <= 0 || !$this->hasRequiredSchema()) {
+            return [];
+        }
+
+        try {
+            $periods = $this->fetchAccountingPeriods($companyId);
+            $lockedPeriodIds = array_values(array_map(
+                static fn(array $period): int => (int)$period['id'],
+                array_filter(
+                    $periods,
+                    fn(array $period): bool => (new \eel_accounts\Service\YearEndLockService())
+                        ->isLocked($companyId, (int)$period['id'])
+                        || $this->periodHasFinalCtStatus($companyId, (int)$period['id'])
+                )
+            ));
+
+            return $this->buildForCompany($companyId, 'none', 0, $lockedPeriodIds);
+        } catch (\Throwable $exception) {
+            return [
+                'success' => false,
+                'errors' => [$exception->getMessage()],
+            ];
+        }
+    }
+
+    /**
+     * Persist one accounting period's final capital-allowance evidence while
+     * leaving later accounting periods untouched.
+     */
+    public function persistForAccountingPeriod(int $companyId, int $accountingPeriodId): array
+    {
+        $scopeBlock = (new VatSupportScopeService())->mutationBlockResult(
+            $companyId,
+            'persist Corporation Tax capital allowance data for this accounting period'
+        );
+        if ($scopeBlock !== null) {
+            return $scopeBlock;
+        }
+
+        if ($accountingPeriodId <= 0) {
+            return ['success' => false, 'errors' => ['Select an accounting period before persisting capital allowances.']];
+        }
+
+        $period = \InterfaceDB::fetchOne(
+            'SELECT id
+             FROM accounting_periods
+             WHERE id = :accounting_period_id
+               AND company_id = :company_id
+             LIMIT 1',
+            [
+                'accounting_period_id' => $accountingPeriodId,
+                'company_id' => $companyId,
+            ]
+        );
+        if (!is_array($period)) {
+            return ['success' => false, 'errors' => ['The selected accounting period could not be found.']];
+        }
+
+        $transaction = $this->beginMutationTransaction('capital_allowance_period');
+
+        try {
+            if ($this->periodHasFinalCtStatus($companyId, $accountingPeriodId)) {
+                throw new \RuntimeException(
+                    'This accounting period has submitted or accepted Corporation Tax evidence, '
+                    . 'so its capital allowance evidence cannot be replaced.'
+                );
+            }
+            (new \eel_accounts\Service\YearEndLockService())->assertUnlockedForUpdate(
+                $companyId,
+                $accountingPeriodId,
+                'replace capital allowance evidence for this period'
+            );
+            $periods = $this->fetchAccountingPeriods($companyId);
+            $lockedPeriodIds = array_values(array_map(
+                static fn(array $candidate): int => (int)$candidate['id'],
+                array_filter(
+                    $periods,
+                    fn(array $candidate): bool => (int)$candidate['id'] !== $accountingPeriodId
+                        && (
+                            (new \eel_accounts\Service\YearEndLockService())
+                                ->isLocked($companyId, (int)$candidate['id'])
+                            || $this->periodHasFinalCtStatus($companyId, (int)$candidate['id'])
+                        )
+                )
+            ));
+            $results = $this->buildForCompany(
+                $companyId,
+                'period',
+                $accountingPeriodId,
+                $lockedPeriodIds
+            );
+            if (!isset($results[$accountingPeriodId])) {
+                throw new \RuntimeException('Capital allowances could not be calculated for the selected accounting period.');
+            }
+            $this->commitMutationTransaction($transaction);
+
+            return [
+                'success' => true,
+                'errors' => [],
+                'result' => (array)$results[$accountingPeriodId],
+            ];
+        } catch (\Throwable $exception) {
+            $this->rollBackMutationTransaction($transaction);
+
+            return [
+                'success' => false,
+                'errors' => [$exception->getMessage()],
+                'result' => [],
+            ];
+        }
+    }
+
+    private function buildForCompany(
+        int $companyId,
+        string $persistMode,
+        int $targetAccountingPeriodId = 0,
+        array $lockedPeriodIds = []
+    ): array
+    {
+        if ($companyId <= 0 || !$this->hasRequiredSchema()) {
+            return [];
+        }
+
+        $periods = $this->fetchAccountingPeriods($companyId);
+        if ($periods === []) {
+            return [];
+        }
+
         $cessationDate = $this->qualifyingActivityCessationDate($companyId);
-        $this->deleteExistingRows($companyId);
+        $lockedPeriodIds = array_fill_keys(array_map('intval', $lockedPeriodIds), true);
 
         $mainWdv = 0.0;
         $specialWdv = 0.0;
@@ -51,11 +207,37 @@ final class CapitalAllowanceService
         $outstandingPooledAssets = [];
         $results = [];
 
-        $ctPeriodService = new \eel_accounts\Service\CorporationTaxPeriodService();
+        $ctPeriodService = $this->corporationTaxPeriodService
+            ?? new \eel_accounts\Service\CorporationTaxPeriodService();
 
         foreach ($periods as $period) {
             $periodId = (int)$period['id'];
-            $ctPeriods = $this->ctPeriodsForAccountingPeriod($ctPeriodService, $companyId, $period);
+            $locked = isset($lockedPeriodIds[$periodId]);
+            if ($locked) {
+                $this->applyLockedPeriodEvidence(
+                    $companyId,
+                    $period,
+                    $cessationDate,
+                    $mainWdv,
+                    $specialWdv,
+                    $assetPools,
+                    $outstandingPooledAssets,
+                    $results
+                );
+                continue;
+            }
+
+            $persistThisPeriod = $persistMode === 'all'
+                || ($persistMode === 'period' && $periodId === $targetAccountingPeriodId);
+            $ctPeriods = $this->ctPeriodsForAccountingPeriod(
+                $ctPeriodService,
+                $companyId,
+                $period,
+                $persistThisPeriod
+            );
+            if ($persistThisPeriod) {
+                $this->deleteExistingRowsForAccountingPeriod($companyId, $periodId);
+            }
 
             foreach ($ctPeriods as $ctPeriod) {
                 $ctPeriodId = (int)($ctPeriod['id'] ?? 0);
@@ -199,10 +381,12 @@ final class CapitalAllowanceService
                 $main['warnings'] = $warnings;
                 $special['warnings'] = $warnings;
 
-                $this->insertPoolRun($companyId, $periodId, $ctPeriodId, $main);
-                $this->insertPoolRun($companyId, $periodId, $ctPeriodId, $special);
-                foreach ($periodRows as $row) {
-                    $this->insertAssetCalculation($row);
+                if ($persistThisPeriod) {
+                    $this->insertPoolRun($companyId, $periodId, $ctPeriodId, $main);
+                    $this->insertPoolRun($companyId, $periodId, $ctPeriodId, $special);
+                    foreach ($periodRows as $row) {
+                        $this->insertAssetCalculation($row);
+                    }
                 }
 
                 $allowance = round($main['aia_claimed'] + $main['fya_claimed'] + $main['wda_claimed'] + $special['wda_claimed'] + $main['balancing_allowance'] + $special['balancing_allowance'], 2);
@@ -213,6 +397,7 @@ final class CapitalAllowanceService
                     'net_capital_allowances' => round($allowance - $charge, 2),
                     'warnings' => array_values(array_unique($warnings)),
                     'pools' => [$main, $special],
+                    'asset_calculations' => $periodRows,
                     'ct_period_id' => $ctPeriodId,
                     'period_start' => $periodStart,
                     'period_end' => $periodEnd,
@@ -221,13 +406,24 @@ final class CapitalAllowanceService
 
                 $results['ct_periods'][$ctPeriodId] = $result;
                 if (!isset($results[$periodId])) {
-                    $results[$periodId] = ['allowance' => 0.0, 'charge' => 0.0, 'net_capital_allowances' => 0.0, 'warnings' => [], 'pools' => []];
+                    $results[$periodId] = [
+                        'allowance' => 0.0,
+                        'charge' => 0.0,
+                        'net_capital_allowances' => 0.0,
+                        'warnings' => [],
+                        'pools' => [],
+                        'asset_calculations' => [],
+                    ];
                 }
                 $results[$periodId]['allowance'] = round((float)$results[$periodId]['allowance'] + $allowance, 2);
                 $results[$periodId]['charge'] = round((float)$results[$periodId]['charge'] + $charge, 2);
                 $results[$periodId]['net_capital_allowances'] = round((float)$results[$periodId]['allowance'] - (float)$results[$periodId]['charge'], 2);
                 $results[$periodId]['warnings'] = array_values(array_unique(array_merge((array)$results[$periodId]['warnings'], $warnings)));
                 $results[$periodId]['pools'] = array_merge((array)$results[$periodId]['pools'], [$main, $special]);
+                $results[$periodId]['asset_calculations'] = array_merge(
+                    (array)$results[$periodId]['asset_calculations'],
+                    $periodRows
+                );
 
                 if ($cessationInPeriod) {
                     // A qualifying activity has no pool to carry into a later CT
@@ -243,14 +439,194 @@ final class CapitalAllowanceService
         return $results;
     }
 
+    private function applyLockedPeriodEvidence(
+        int $companyId,
+        array $period,
+        string $cessationDate,
+        float &$mainWdv,
+        float &$specialWdv,
+        array &$assetPools,
+        array &$outstandingPooledAssets,
+        array &$results
+    ): void {
+        $periodId = (int)($period['id'] ?? 0);
+        $hasCtPeriodColumn = \InterfaceDB::columnExists('capital_allowance_pool_runs', 'ct_period_id');
+        $poolSql = $hasCtPeriodColumn && \InterfaceDB::tableExists('corporation_tax_periods')
+            ? 'SELECT pr.*, ctp.sequence_no, ctp.period_start AS ct_period_start, ctp.period_end AS ct_period_end
+               FROM capital_allowance_pool_runs pr
+               LEFT JOIN corporation_tax_periods ctp ON ctp.id = pr.ct_period_id
+               WHERE pr.company_id = :company_id
+                 AND pr.accounting_period_id = :accounting_period_id
+               ORDER BY COALESCE(ctp.sequence_no, 1) ASC, pr.ct_period_id ASC, pr.pool_type ASC, pr.id ASC'
+            : 'SELECT pr.*, 1 AS sequence_no, NULL AS ct_period_start, NULL AS ct_period_end
+               FROM capital_allowance_pool_runs pr
+               WHERE pr.company_id = :company_id
+                 AND pr.accounting_period_id = :accounting_period_id
+               ORDER BY pr.pool_type ASC, pr.id ASC';
+        $poolRows = \InterfaceDB::fetchAll(
+            $poolSql,
+            ['company_id' => $companyId, 'accounting_period_id' => $periodId]
+        ) ?: [];
+        if ($poolRows === []) {
+            throw new \RuntimeException(
+                'Locked accounting period ' . $periodId
+                . ' has no persisted capital allowance evidence. Unlock it before rebuilding.'
+            );
+        }
+
+        $assetRows = \InterfaceDB::fetchAll(
+            'SELECT *
+             FROM capital_allowance_asset_calculations
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+             ORDER BY id ASC',
+            ['company_id' => $companyId, 'accounting_period_id' => $periodId]
+        ) ?: [];
+
+        $poolGroups = [];
+        foreach ($poolRows as $row) {
+            $ctPeriodId = $hasCtPeriodColumn ? (int)($row['ct_period_id'] ?? 0) : 0;
+            $poolGroups[$ctPeriodId][] = $row;
+        }
+        $assetGroups = [];
+        foreach ($assetRows as $row) {
+            $ctPeriodId = \InterfaceDB::columnExists('capital_allowance_asset_calculations', 'ct_period_id')
+                ? (int)($row['ct_period_id'] ?? 0)
+                : 0;
+            $assetGroups[$ctPeriodId][] = $row;
+        }
+
+        foreach ($poolGroups as $ctPeriodId => $groupRows) {
+            $pools = [];
+            $warnings = [];
+            foreach ($groupRows as $row) {
+                $decoded = json_decode((string)($row['warnings_json'] ?? '[]'), true);
+                $rowWarnings = array_values(array_map('strval', is_array($decoded) ? $decoded : []));
+                $warnings = array_merge($warnings, $rowWarnings);
+                $pool = $this->normalisePoolBreakdownRow($row);
+                $pool['warnings'] = $rowWarnings;
+                $pools[(string)$pool['pool_type']] = $pool;
+            }
+            if (!isset($pools['main_pool'], $pools['special_rate_pool'])) {
+                throw new \RuntimeException(
+                    'Locked accounting period ' . $periodId
+                    . ' has incomplete capital allowance pool evidence. Unlock it before rebuilding.'
+                );
+            }
+
+            $main = $pools['main_pool'];
+            $special = $pools['special_rate_pool'];
+            $mainWdv = round((float)$main['closing_wdv'], 2);
+            $specialWdv = round((float)$special['closing_wdv'], 2);
+            $periodAssetRows = (array)($assetGroups[$ctPeriodId] ?? []);
+            foreach ($periodAssetRows as $row) {
+                $assetId = (int)($row['asset_id'] ?? 0);
+                $poolType = (string)($row['pool_type'] ?? '');
+                $allowanceType = (string)($row['allowance_type'] ?? '');
+                if ($assetId <= 0) {
+                    continue;
+                }
+                if ($allowanceType === 'disposal_value') {
+                    $assetPools[$assetId] = $poolType;
+                    unset($outstandingPooledAssets[$assetId]);
+                    continue;
+                }
+                if ($poolType === 'unreviewed') {
+                    $assetPools[$assetId] = 'unreviewed';
+                    unset($outstandingPooledAssets[$assetId]);
+                    continue;
+                }
+                if (in_array($poolType, ['main_pool', 'special_rate_pool'], true)) {
+                    $assetPools[$assetId] = $poolType;
+                    $outstandingPooledAssets[$assetId] = [
+                        'asset_id' => $assetId,
+                        'asset_code' => '#' . $assetId,
+                        'description' => '',
+                        'pool' => $poolType,
+                    ];
+                }
+            }
+
+            $warnings = array_values(array_unique($warnings));
+            $allowance = round(
+                (float)$main['aia_claimed']
+                + (float)$main['fya_claimed']
+                + (float)$main['wda_claimed']
+                + (float)$special['wda_claimed']
+                + (float)$main['balancing_allowance']
+                + (float)$special['balancing_allowance'],
+                2
+            );
+            $charge = round(
+                (float)$main['balancing_charge'] + (float)$special['balancing_charge'],
+                2
+            );
+            $firstRow = (array)($groupRows[0] ?? []);
+            $periodStart = trim((string)($firstRow['ct_period_start'] ?? ''));
+            $periodEnd = trim((string)($firstRow['ct_period_end'] ?? ''));
+            if ($periodStart === '') {
+                $periodStart = (string)($period['period_start'] ?? '');
+            }
+            if ($periodEnd === '') {
+                $periodEnd = (string)($period['period_end'] ?? '');
+            }
+            $result = [
+                'allowance' => $allowance,
+                'charge' => $charge,
+                'net_capital_allowances' => round($allowance - $charge, 2),
+                'warnings' => $warnings,
+                'pools' => [$main, $special],
+                'asset_calculations' => $periodAssetRows,
+                'ct_period_id' => (int)$ctPeriodId,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
+                'qualifying_activity_ceased_on' => $cessationDate,
+                'calculation_source' => 'locked_persisted',
+            ];
+
+            $results['ct_periods'][(int)$ctPeriodId] = $result;
+            if (!isset($results[$periodId])) {
+                $results[$periodId] = [
+                    'allowance' => 0.0,
+                    'charge' => 0.0,
+                    'net_capital_allowances' => 0.0,
+                    'warnings' => [],
+                    'pools' => [],
+                    'asset_calculations' => [],
+                    'calculation_source' => 'locked_persisted',
+                ];
+            }
+            $results[$periodId]['allowance'] = round((float)$results[$periodId]['allowance'] + $allowance, 2);
+            $results[$periodId]['charge'] = round((float)$results[$periodId]['charge'] + $charge, 2);
+            $results[$periodId]['net_capital_allowances'] = round(
+                (float)$results[$periodId]['allowance'] - (float)$results[$periodId]['charge'],
+                2
+            );
+            $results[$periodId]['warnings'] = array_values(array_unique(array_merge(
+                (array)$results[$periodId]['warnings'],
+                $warnings
+            )));
+            $results[$periodId]['pools'] = array_merge(
+                (array)$results[$periodId]['pools'],
+                [$main, $special]
+            );
+            $results[$periodId]['asset_calculations'] = array_merge(
+                (array)$results[$periodId]['asset_calculations'],
+                $periodAssetRows
+            );
+
+            if ($cessationDate !== '' && $cessationDate >= $periodStart && $cessationDate <= $periodEnd) {
+                $mainWdv = 0.0;
+                $specialWdv = 0.0;
+                $outstandingPooledAssets = [];
+            }
+        }
+    }
+
     public function fetchPeriodBreakdown(int $companyId, int $accountingPeriodId, int $ctPeriodId = 0): array
     {
         if ($companyId <= 0 || $accountingPeriodId <= 0 || !\InterfaceDB::tableExists('capital_allowance_pool_runs')) {
-            return ['available' => false, 'rows' => [], 'warnings' => []];
-        }
-
-        if ($this->companyNeedsAlgorithmRebuild($companyId)) {
-            $this->rebuildForCompany($companyId);
+            return ['available' => false, 'rows' => [], 'asset_calculations' => [], 'warnings' => []];
         }
 
         $sql = 'SELECT *
@@ -268,6 +644,49 @@ final class CapitalAllowanceService
             $sql,
             $params
         ) ?: [];
+        $locked = (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId)
+            || $this->periodHasFinalCtStatus($companyId, $accountingPeriodId);
+        if (!$locked || $rows === []) {
+            $calculated = $this->calculateForCompany($companyId);
+            if (isset($calculated['success']) && empty($calculated['success'])) {
+                return [
+                    'available' => false,
+                    'rows' => [],
+                    'asset_calculations' => [],
+                    'warnings' => array_values(array_map(
+                        'strval',
+                        (array)($calculated['errors']
+                            ?? ['Capital allowances could not be calculated.'])
+                    )),
+                    'calculation_source' => 'calculation_failed',
+                ];
+            }
+            $calculatedPeriod = $ctPeriodId !== 0
+                ? (array)($calculated['ct_periods'][$ctPeriodId] ?? [])
+                : (array)($calculated[$accountingPeriodId] ?? []);
+            $calculatedPools = (array)($calculatedPeriod['pools'] ?? []);
+            if ($calculatedPools !== []) {
+                $warnings = array_values(array_unique(array_map(
+                    'strval',
+                    (array)($calculatedPeriod['warnings'] ?? [])
+                )));
+
+                return [
+                    'available' => true,
+                    'rows' => array_map(
+                        fn(array $pool): array => $this->normalisePoolBreakdownRow($pool),
+                        $calculatedPools
+                    ),
+                    'asset_calculations' => array_map(
+                        fn(array $row): array => $this->normaliseAssetCalculationRow($row),
+                        (array)($calculatedPeriod['asset_calculations'] ?? [])
+                    ),
+                    'warnings' => $warnings,
+                    'calculation_source' => 'transient',
+                ];
+            }
+        }
+
         $warnings = [];
         foreach ($rows as $row) {
             $decoded = json_decode((string)($row['warnings_json'] ?? '[]'), true);
@@ -278,21 +697,17 @@ final class CapitalAllowanceService
 
         return [
             'available' => $rows !== [],
-            'rows' => array_map(static function (array $row): array {
-                return [
-                    'pool_type' => (string)$row['pool_type'],
-                    'opening_wdv' => round((float)$row['opening_wdv'], 2),
-                    'additions' => round((float)$row['additions'], 2),
-                    'aia_claimed' => round((float)$row['aia_claimed'], 2),
-                    'fya_claimed' => round((float)$row['fya_claimed'], 2),
-                    'disposal_value' => round((float)$row['disposal_value'], 2),
-                    'wda_claimed' => round((float)$row['wda_claimed'], 2),
-                    'balancing_charge' => round((float)$row['balancing_charge'], 2),
-                    'balancing_allowance' => round((float)$row['balancing_allowance'], 2),
-                    'closing_wdv' => round((float)$row['closing_wdv'], 2),
-                ];
-            }, $rows),
+            'rows' => array_map(
+                fn(array $row): array => $this->normalisePoolBreakdownRow($row),
+                $rows
+            ),
+            'asset_calculations' => $this->fetchPersistedAssetCalculationRows(
+                $companyId,
+                $accountingPeriodId,
+                $ctPeriodId
+            ),
             'warnings' => array_values(array_unique($warnings)),
+            'calculation_source' => 'persisted',
         ];
     }
 
@@ -301,7 +716,12 @@ final class CapitalAllowanceService
         return (array)$this->fetchPeriodBreakdown($companyId, $accountingPeriodId, $ctPeriodId)['warnings'];
     }
 
-    private function ctPeriodsForAccountingPeriod(\eel_accounts\Service\CorporationTaxPeriodService $service, int $companyId, array $period): array
+    private function ctPeriodsForAccountingPeriod(
+        \eel_accounts\Service\CorporationTaxPeriodService $service,
+        int $companyId,
+        array $period,
+        bool $synchronise
+    ): array
     {
         if (!\InterfaceDB::columnExists('capital_allowance_pool_runs', 'ct_period_id')
             || !\InterfaceDB::columnExists('capital_allowance_asset_calculations', 'ct_period_id')) {
@@ -316,20 +736,58 @@ final class CapitalAllowanceService
         }
 
         $periodId = (int)($period['id'] ?? 0);
-        $sync = $periodId > 0 ? $service->syncForAccountingPeriod($companyId, $periodId) : ['periods' => []];
-        $rows = array_values(array_filter((array)($sync['periods'] ?? []), static fn(array $row): bool => (string)($row['status'] ?? '') !== 'superseded'));
+        $rows = [];
+        if ($periodId > 0) {
+            if ($synchronise) {
+                $sync = $service->syncForAccountingPeriod($companyId, $periodId);
+                if (empty($sync['success'])) {
+                    throw new \RuntimeException(implode(
+                        ' ',
+                        array_map(
+                            'strval',
+                            (array)($sync['errors'] ?? ['Corporation Tax periods could not be synchronised.'])
+                        )
+                    ));
+                }
+                $rows = (array)($sync['periods'] ?? []);
+            } else {
+                $scope = (new \eel_accounts\Service\VatSupportScopeService())->fetchForCompany($companyId);
+                if (!empty($scope['scope_evaluation_failed'])) {
+                    throw new \RuntimeException((string)(
+                        $scope['message']
+                        ?? \eel_accounts\Service\VatSupportScopeService::SCOPE_EVALUATION_ERROR_MESSAGE
+                    ));
+                }
+                if (!empty($scope['tax_year_end_read_only'])) {
+                    $rows = $service->fetchExistingForAccountingPeriod($companyId, $periodId);
+                } else {
+                    $projection = $service->projectForAccountingPeriod(
+                        $companyId,
+                        $periodId,
+                        $period
+                    );
+                    if (empty($projection['success'])) {
+                        throw new \RuntimeException(implode(
+                            ' ',
+                            array_map(
+                                'strval',
+                                (array)($projection['errors'] ?? ['Corporation Tax periods could not be projected.'])
+                            )
+                        ));
+                    }
+                    $rows = (array)($projection['periods'] ?? []);
+                }
+            }
+        }
+        $rows = array_values(array_filter(
+            $rows,
+            static fn(array $row): bool => (string)($row['status'] ?? '') !== 'superseded'
+        ));
         if ($rows !== []) {
             return $rows;
         }
 
-        return [[
-            'id' => 0,
-            'accounting_period_id' => $periodId,
-            'sequence_no' => 1,
-            'period_start' => (string)($period['period_start'] ?? ''),
-            'period_end' => (string)($period['period_end'] ?? ''),
-            'status' => 'pending',
-        ]];
+        throw new \RuntimeException('No Corporation Tax periods could be resolved for the accounting period.');
     }
 
     private function fetchAccountingPeriods(int $companyId): array
@@ -566,7 +1024,7 @@ final class CapitalAllowanceService
         return [
             'company_id' => $companyId,
             'accounting_period_id' => $periodId,
-            'ct_period_id' => $ctPeriodId > 0 ? $ctPeriodId : null,
+            'ct_period_id' => $ctPeriodId !== 0 ? $ctPeriodId : null,
             'asset_id' => $assetId,
             'pool_type' => $pool,
             'allowance_type' => $type,
@@ -656,47 +1114,178 @@ final class CapitalAllowanceService
         );
     }
 
-    private function deleteExistingRows(int $companyId): void
+    private function deleteExistingRowsForAccountingPeriod(int $companyId, int $accountingPeriodId): void
     {
-        \InterfaceDB::prepareExecute('DELETE FROM capital_allowance_asset_calculations WHERE company_id = :company_id', ['company_id' => $companyId]);
-        \InterfaceDB::prepareExecute('DELETE FROM capital_allowance_pool_runs WHERE company_id = :company_id', ['company_id' => $companyId]);
+        \InterfaceDB::prepareExecute(
+            'DELETE FROM capital_allowance_asset_calculations
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+            ]
+        );
+        \InterfaceDB::prepareExecute(
+            'DELETE FROM capital_allowance_pool_runs
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+            ]
+        );
     }
 
-    private function companyNeedsAlgorithmRebuild(int $companyId): bool
+    private function lockedPeriodIdsForRebuild(int $companyId, array $periods): array
     {
-        $rows = \InterfaceDB::fetchAll(
-            'SELECT *
-             FROM capital_allowance_pool_runs
+        $lockedPeriodIds = [];
+        $lockService = new \eel_accounts\Service\YearEndLockService();
+        foreach ($periods as $period) {
+            $periodId = (int)($period['id'] ?? 0);
+            if ($periodId <= 0) {
+                continue;
+            }
+            if ($lockService->isLocked($companyId, $periodId)
+                || $this->periodHasFinalCtStatus($companyId, $periodId)) {
+                $lockedPeriodIds[] = $periodId;
+                continue;
+            }
+
+            $lockService->assertUnlockedForUpdate(
+                $companyId,
+                $periodId,
+                'rebuild capital allowance evidence for this period'
+            );
+        }
+
+        return array_values(array_unique($lockedPeriodIds));
+    }
+
+    private function periodHasFinalCtStatus(int $companyId, int $accountingPeriodId): bool
+    {
+        if (!\InterfaceDB::tableExists('corporation_tax_periods')) {
+            return false;
+        }
+
+        return (int)\InterfaceDB::fetchColumn(
+            'SELECT COUNT(*)
+             FROM corporation_tax_periods
              WHERE company_id = :company_id
-             ORDER BY id ASC',
-            ['company_id' => $companyId]
-        ) ?: [];
-        if ($rows === []) {
-            return false;
+               AND accounting_period_id = :accounting_period_id
+               AND status IN (\'submitted\', \'accepted\')',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+            ]
+        ) > 0;
+    }
+
+    /** @return array{owns_transaction: bool, savepoint: string} */
+    private function beginMutationTransaction(string $prefix): array
+    {
+        if (!\InterfaceDB::inTransaction()) {
+            \InterfaceDB::beginTransaction();
+
+            return ['owns_transaction' => true, 'savepoint' => ''];
         }
 
-        $hasLegacyServiceRun = false;
-        foreach ($rows as $row) {
-            $storedHash = trim((string)($row['run_hash'] ?? ''));
-            if ($storedHash === '') {
-                return false;
-            }
-            if (hash_equals($this->serviceRunHash($row), $storedHash)) {
-                continue;
-            }
+        $savepoint = preg_replace('/[^a-z0-9_]/i', '_', $prefix)
+            . '_' . bin2hex(random_bytes(6));
+        \InterfaceDB::execute('SAVEPOINT ' . $savepoint);
 
-            $legacyHashes = $this->legacyServiceRunHashes($row);
-            if (in_array($storedHash, $legacyHashes, true)) {
-                $hasLegacyServiceRun = true;
-                continue;
-            }
+        return ['owns_transaction' => false, 'savepoint' => $savepoint];
+    }
 
-            // An unrecognised hash may belong to an intentional fixture or
-            // custom calculation. Do not delete it during an automatic read.
-            return false;
+    /** @param array{owns_transaction: bool, savepoint: string} $transaction */
+    private function commitMutationTransaction(array $transaction): void
+    {
+        if (!empty($transaction['owns_transaction'])) {
+            \InterfaceDB::commit();
+            return;
         }
 
-        return $hasLegacyServiceRun;
+        $savepoint = trim((string)($transaction['savepoint'] ?? ''));
+        if ($savepoint !== '') {
+            \InterfaceDB::execute('RELEASE SAVEPOINT ' . $savepoint);
+        }
+    }
+
+    /** @param array{owns_transaction: bool, savepoint: string} $transaction */
+    private function rollBackMutationTransaction(array $transaction): void
+    {
+        if (!empty($transaction['owns_transaction'])) {
+            if (\InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+            return;
+        }
+
+        $savepoint = trim((string)($transaction['savepoint'] ?? ''));
+        if ($savepoint !== '' && \InterfaceDB::inTransaction()) {
+            \InterfaceDB::execute('ROLLBACK TO SAVEPOINT ' . $savepoint);
+            \InterfaceDB::execute('RELEASE SAVEPOINT ' . $savepoint);
+        }
+    }
+
+    /** @return array<string, float|string> */
+    private function normalisePoolBreakdownRow(array $row): array
+    {
+        return [
+            'pool_type' => (string)($row['pool_type'] ?? ''),
+            'opening_wdv' => round((float)($row['opening_wdv'] ?? 0), 2),
+            'additions' => round((float)($row['additions'] ?? 0), 2),
+            'aia_claimed' => round((float)($row['aia_claimed'] ?? 0), 2),
+            'fya_claimed' => round((float)($row['fya_claimed'] ?? 0), 2),
+            'disposal_value' => round((float)($row['disposal_value'] ?? 0), 2),
+            'wda_claimed' => round((float)($row['wda_claimed'] ?? 0), 2),
+            'balancing_charge' => round((float)($row['balancing_charge'] ?? 0), 2),
+            'balancing_allowance' => round((float)($row['balancing_allowance'] ?? 0), 2),
+            'closing_wdv' => round((float)($row['closing_wdv'] ?? 0), 2),
+        ];
+    }
+
+    /** @return list<array<string, float|int|string>> */
+    private function fetchPersistedAssetCalculationRows(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId
+    ): array {
+        if (!\InterfaceDB::tableExists('capital_allowance_asset_calculations')) {
+            return [];
+        }
+
+        $sql = 'SELECT *
+                FROM capital_allowance_asset_calculations
+                WHERE company_id = :company_id
+                  AND accounting_period_id = :accounting_period_id';
+        $params = [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+        ];
+        if ($ctPeriodId > 0 && \InterfaceDB::columnExists('capital_allowance_asset_calculations', 'ct_period_id')) {
+            $sql .= ' AND ct_period_id = :ct_period_id';
+            $params['ct_period_id'] = $ctPeriodId;
+        }
+        $sql .= ' ORDER BY asset_id ASC, id ASC';
+
+        return array_map(
+            fn(array $row): array => $this->normaliseAssetCalculationRow($row),
+            \InterfaceDB::fetchAll($sql, $params) ?: []
+        );
+    }
+
+    /** @return array<string, float|int|string> */
+    private function normaliseAssetCalculationRow(array $row): array
+    {
+        return [
+            'asset_id' => (int)($row['asset_id'] ?? 0),
+            'pool_type' => (string)($row['pool_type'] ?? ''),
+            'allowance_type' => (string)($row['allowance_type'] ?? ''),
+            'addition_amount' => round((float)($row['addition_amount'] ?? 0), 2),
+            'allowance_amount' => round((float)($row['allowance_amount'] ?? 0), 2),
+            'disposal_value' => round((float)($row['disposal_value'] ?? 0), 2),
+            'warning' => trim((string)($row['warning'] ?? '')),
+        ];
     }
 
     private function serviceRunHash(array $row): string
@@ -711,25 +1300,6 @@ final class CapitalAllowanceService
 
         return self::RUN_HASH_VERSION_PREFIX
             . substr($digest, 0, 64 - strlen(self::RUN_HASH_VERSION_PREFIX));
-    }
-
-    /** @return list<string> */
-    private function legacyServiceRunHashes(array $row): array
-    {
-        $hashes = [
-            hash('sha256', json_encode(
-                $this->canonicalRunHashPayload($row, false),
-                JSON_UNESCAPED_SLASHES
-            )),
-        ];
-        if (\InterfaceDB::columnExists('capital_allowance_pool_runs', 'ct_period_id')) {
-            $hashes[] = hash('sha256', json_encode(
-                $this->canonicalRunHashPayload($row, true),
-                JSON_UNESCAPED_SLASHES
-            ));
-        }
-
-        return array_values(array_unique($hashes));
     }
 
     private function canonicalRunHashPayload(array $row, bool $includeCtPeriodId): array

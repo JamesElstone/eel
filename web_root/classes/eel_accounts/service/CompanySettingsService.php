@@ -240,6 +240,23 @@ final class CompanySettingsService
             if ($periodId <= 0) {
                 continue;
             }
+            if (\InterfaceDB::tableExists('corporation_tax_periods')
+                && (int)\InterfaceDB::fetchColumn(
+                    'SELECT COUNT(*)
+                     FROM corporation_tax_periods
+                     WHERE company_id = :company_id
+                       AND accounting_period_id = :accounting_period_id
+                       AND status IN (\'submitted\', \'accepted\')',
+                    [
+                        'company_id' => $companyId,
+                        'accounting_period_id' => $periodId,
+                    ]
+                ) > 0) {
+                throw new \RuntimeException(
+                    'The qualifying-activity cessation date cannot be changed because it would affect '
+                    . 'submitted or accepted Corporation Tax evidence.'
+                );
+            }
 
             $locks->assertUnlockedForUpdate(
                 $companyId,

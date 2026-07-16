@@ -112,6 +112,55 @@ $harness->run(\eel_accounts\Service\CompanySettingsService::class, static functi
         }
     });
 
+    $harness->check(\eel_accounts\Service\CompanySettingsService::class, 'rejects cessation changes that affect submitted Corporation Tax evidence', static function () use ($harness, $service): void {
+        InterfaceDB::beginTransaction();
+        try {
+            $companyId = 98204;
+            $periodId = 982041;
+            companySettingsServiceSeedCompany($companyId);
+            companySettingsServiceSeedPeriod($companyId, $periodId, '2099-01-01', '2099-12-31');
+            $sync = (new \eel_accounts\Service\CorporationTaxPeriodService())
+                ->syncForAccountingPeriod($companyId, $periodId);
+            $harness->assertSame(true, (bool)($sync['success'] ?? false));
+            InterfaceDB::prepareExecute(
+                'UPDATE corporation_tax_periods
+                 SET status = :status
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id',
+                [
+                    'status' => 'submitted',
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $periodId,
+                ]
+            );
+
+            try {
+                $service->saveCompanySection(
+                    new \eel_accounts\Store\CompanySettingsStore($companyId),
+                    companySettingsServicePayload($companyId, '2099-06-30')
+                );
+                throw new RuntimeException('Expected submitted CT evidence to reject the cessation change.');
+            } catch (Throwable $exception) {
+                $harness->assertTrue(str_contains($exception->getMessage(), 'submitted or accepted'));
+            }
+
+            $harness->assertSame(
+                0,
+                (int)InterfaceDB::fetchColumn(
+                    'SELECT COUNT(*)
+                     FROM company_settings
+                     WHERE company_id = :company_id
+                       AND setting = :setting',
+                    ['company_id' => $companyId, 'setting' => 'qualifying_activity_ceased_on']
+                )
+            );
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
     $harness->check(\eel_accounts\Service\CompanySettingsService::class, 'rejects cessation changes while the VAT support policy makes Tax and Year End read only', static function () use ($harness, $service): void {
         InterfaceDB::beginTransaction();
         try {

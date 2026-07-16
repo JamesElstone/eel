@@ -45,7 +45,7 @@ ensureCompanyAccountsInternalTransferMarkerForCompanyAccountNominalTest();
 
             $result = $method->invoke($service, [
                 'company_id' => $companyId,
-                'account_name' => 'CEF',
+                'account_name' => 'Synthetic Trade Supplier',
                 'account_type' => \eel_accounts\Service\CompanyAccountService::TYPE_TRADE,
             ]);
 

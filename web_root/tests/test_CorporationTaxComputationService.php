@@ -43,10 +43,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
         $harness->check(\eel_accounts\Service\CorporationTaxComputationService::class, 'time apportions pennies by inclusive CT-period days and puts the rounding residual in the final period', static function () use ($harness, $service): void {
             $allocate = new ReflectionMethod($service, 'allocatePenceByInclusiveDays');
             $allocate->setAccessible(true);
-            $result = $allocate->invoke($service, 57000, [1 => 365, 2 => 26], 391);
+            $result = $allocate->invoke($service, 73000, [1 => 365, 2 => 26], 391);
 
-            $harness->assertSame([1 => 53210, 2 => 3790], $result);
-            $harness->assertSame(57000, array_sum($result));
+            $harness->assertSame([1 => 68146, 2 => 4854], $result);
+            $harness->assertSame(73000, array_sum($result));
 
             $negative = $allocate->invoke($service, -101, [1 => 200, 2 => 191], 391);
             $harness->assertSame(-101, array_sum($negative));

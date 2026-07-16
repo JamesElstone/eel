@@ -202,7 +202,7 @@ final class YearEndChecklistService
             }
 
             $retainedEarningsCloseResult = ($this->retainedEarningsCloseService ?? new \eel_accounts\Service\RetainedEarningsCloseService())
-                ->postClose($companyId, $accountingPeriodId, $lockedBy, true);
+                ->postClose($companyId, $accountingPeriodId, $lockedBy);
             if (empty($retainedEarningsCloseResult['success'])) {
                 return $this->rollbackLockTransaction($transaction, [
                     'success' => false,
@@ -751,13 +751,13 @@ final class YearEndChecklistService
                 'errors' => (array)($taxReadiness['errors'] ?? ['The Corporation Tax provision is unavailable.']),
                 'periods' => [],
             ];
-        $retainedEarningsClose = ($this->retainedEarningsCloseService ?? new \eel_accounts\Service\RetainedEarningsCloseService())
-            ->fetchContext(
-                $companyId,
-                $accountingPeriodId,
-                $corporationTaxProvision,
-                $balanceSheetMetrics !== [] ? $balanceSheetMetrics : null
-            );
+        $retainedEarningsService = $this->retainedEarningsCloseService ?? new \eel_accounts\Service\RetainedEarningsCloseService();
+        $retainedEarningsClose = $retainedEarningsService->fetchContext(
+            $companyId,
+            $accountingPeriodId,
+            $corporationTaxProvision,
+            $balanceSheetMetrics !== [] ? $balanceSheetMetrics : null
+        );
         $incorporationShares = (new \eel_accounts\Service\IncorporationShareCapitalService())->fetchSummary($companyId);
         $potentialAssetThreshold = \eel_accounts\Service\AssetService::normalisePotentialAssetThreshold($settings['potential_asset_threshold'] ?? 250);
         $potentialAssetCandidates = ($this->assetService ?? new \eel_accounts\Service\AssetService())->fetchNonAssetCandidates(
@@ -1025,11 +1025,9 @@ final class YearEndChecklistService
                     : 'Review and agree how current profit/loss will be carried into retained earnings before locking.'),
             $retainedEarningsCloseAvailable ? 'Pending' : '',
             '?page=profit_loss&show_card=year_end_retained_earnings',
-            !$retainedEarningsCloseAvailable || !$priorPeriodDependencySatisfied ? null : $this->acknowledgementBasis('retained_earnings_close_confirmation', [
-                'summary' => (array)($retainedEarningsClose['summary'] ?? []),
-                'journal_lines' => (array)($retainedEarningsClose['journal_lines'] ?? []),
-                'prior_period_dependency' => $priorPeriodDependency,
-            ])
+            !$retainedEarningsCloseAvailable || !$priorPeriodDependencySatisfied
+                ? null
+                : $retainedEarningsService->acknowledgementBasisForContext($retainedEarningsClose)
         ), $reviewAcknowledgements);
         $retainedEarningsCloseCurrent = !empty($retainedEarningsConfirmationCheck['acknowledgement_current']);
         $retainedEarningsMovementCheck = $this->makeCheck(
@@ -1039,7 +1037,7 @@ final class YearEndChecklistService
             $equityMovement > 0.99 && !$retainedEarningsCloseCurrent ? 'warning' : 'pass',
             $equityMovement > 0.99
                 ? 'Current profit/loss has not yet been carried into retained earnings for this period.'
-                : 'Opening equity, profit, and closing equity look internally consistent.',
+                : 'Opening equity, direct equity movements, current profit/loss, and closing equity look internally consistent.',
             $this->money($settings, $financialStatements['retained_earnings']['unexplained_movement'] ?? 0),
             '?page=profit_loss&show_card=year_end_retained_earnings'
         );

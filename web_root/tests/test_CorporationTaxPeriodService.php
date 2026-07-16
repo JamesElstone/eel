@@ -60,6 +60,54 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $harness->assertSame('2023-09-05', (string)$periods[1]['period_start']);
             $harness->assertSame('2023-09-30', (string)$periods[1]['period_end']);
 
+            InterfaceDB::prepareExecute(
+                'UPDATE corporation_tax_periods
+                 SET updated_at = :updated_at
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id',
+                [
+                    'updated_at' => '2001-02-03 04:05:06',
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                ]
+            );
+            $beforeRead = InterfaceDB::fetchAll(
+                'SELECT id, status, updated_at
+                 FROM corporation_tax_periods
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id
+                 ORDER BY sequence_no, id',
+                ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+            );
+            $active = (new \eel_accounts\Service\CorporationTaxComputationService())
+                ->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId);
+            $harness->assertCount(2, (array)($active['periods'] ?? []));
+            $harness->assertSame(
+                $beforeRead,
+                InterfaceDB::fetchAll(
+                    'SELECT id, status, updated_at
+                     FROM corporation_tax_periods
+                     WHERE company_id = :company_id
+                       AND accounting_period_id = :accounting_period_id
+                     ORDER BY sequence_no, id',
+                    ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+                )
+            );
+
+            $idempotentSync = $service->syncForAccountingPeriod($companyId, $accountingPeriodId);
+            $harness->assertSame(true, (bool)($idempotentSync['success'] ?? false));
+            $harness->assertSame(
+                $beforeRead,
+                InterfaceDB::fetchAll(
+                    'SELECT id, status, updated_at
+                     FROM corporation_tax_periods
+                     WHERE company_id = :company_id
+                       AND accounting_period_id = :accounting_period_id
+                     ORDER BY sequence_no, id',
+                    ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+                )
+            );
+
             $gate = $service->canSubmit($companyId, (int)$periods[1]['id']);
             $harness->assertSame(false, (bool)($gate['ok'] ?? true));
 
@@ -70,6 +118,159 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
             $gate = $service->canSubmit($companyId, (int)$periods[1]['id']);
             $harness->assertSame(true, (bool)($gate['ok'] ?? false));
+        });
+
+        $harness->check(\eel_accounts\Service\CorporationTaxPeriodService::class, 'projects missing statutory periods without mutating metadata', static function () use ($harness, $service): void {
+            $companyNumber = 'CTPP' . substr(hash('sha256', __FILE__ . microtime(true)), 0, 10);
+
+            InterfaceDB::prepareExecute(
+                'INSERT INTO companies (company_name, company_number) VALUES (:company_name, :company_number)',
+                ['company_name' => 'CT Projection Fixture Limited', 'company_number' => $companyNumber]
+            );
+            $companyId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM companies WHERE company_number = :company_number',
+                ['company_number' => $companyNumber]
+            );
+            InterfaceDB::prepareExecute(
+                'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
+                 VALUES (:company_id, :label, :period_start, :period_end)',
+                [
+                    'company_id' => $companyId,
+                    'label' => 'Synthetic long period',
+                    'period_start' => '2022-09-05',
+                    'period_end' => '2023-09-30',
+                ]
+            );
+            $accountingPeriodId = (int)InterfaceDB::fetchColumn(
+                'SELECT id FROM accounting_periods WHERE company_id = :company_id AND label = :label',
+                ['company_id' => $companyId, 'label' => 'Synthetic long period']
+            );
+
+            $sync = $service->syncForAccountingPeriod($companyId, $accountingPeriodId);
+            $harness->assertSame(true, (bool)($sync['success'] ?? false));
+            InterfaceDB::prepareExecute(
+                'DELETE FROM corporation_tax_periods
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id
+                   AND sequence_no = 2',
+                ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+            );
+
+            $projection = $service->projectForAccountingPeriod($companyId, $accountingPeriodId);
+            $harness->assertSame(true, (bool)($projection['success'] ?? false));
+            $harness->assertSame(true, (bool)($projection['requires_sync'] ?? false));
+            $harness->assertCount(2, (array)($projection['periods'] ?? []));
+            $harness->assertTrue((int)($projection['periods'][0]['id'] ?? 0) > 0);
+            $harness->assertTrue((int)($projection['periods'][1]['id'] ?? 0) < 0);
+            $harness->assertSame('2023-09-05', (string)($projection['periods'][1]['period_start'] ?? ''));
+            $harness->assertSame('2023-09-30', (string)($projection['periods'][1]['period_end'] ?? ''));
+            $harness->assertSame(
+                1,
+                (int)InterfaceDB::fetchColumn(
+                    'SELECT COUNT(*)
+                     FROM corporation_tax_periods
+                     WHERE company_id = :company_id
+                       AND accounting_period_id = :accounting_period_id',
+                    ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+                )
+            );
+
+            InterfaceDB::prepareExecute(
+                'UPDATE corporation_tax_periods
+                 SET period_end = :period_end
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id',
+                [
+                    'period_end' => '2023-08-31',
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                ]
+            );
+            $staleProjection = $service->projectForAccountingPeriod($companyId, $accountingPeriodId);
+            $harness->assertSame(true, (bool)($staleProjection['success'] ?? false));
+            $harness->assertCount(2, (array)($staleProjection['periods'] ?? []));
+            $harness->assertTrue((int)($staleProjection['periods'][0]['id'] ?? 0) < 0);
+            $harness->assertTrue((int)($staleProjection['periods'][1]['id'] ?? 0) < 0);
+
+            $repairSync = $service->syncForAccountingPeriod($companyId, $accountingPeriodId);
+            $harness->assertSame(true, (bool)($repairSync['success'] ?? false));
+            $harness->assertCount(2, (array)($repairSync['periods'] ?? []));
+            $harness->assertSame('2023-09-04', (string)($repairSync['periods'][0]['period_end'] ?? ''));
+            $harness->assertSame('pending', (string)($repairSync['periods'][0]['status'] ?? ''));
+
+            InterfaceDB::prepareExecute(
+                'DELETE FROM corporation_tax_periods
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id
+                   AND sequence_no = 2',
+                ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+            );
+            InterfaceDB::prepareExecute(
+                'UPDATE corporation_tax_periods
+                 SET status = :status
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id',
+                [
+                    'status' => 'accepted',
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                ]
+            );
+            $lockedBefore = InterfaceDB::fetchOne(
+                'SELECT id, sequence_no, period_start, period_end, status, updated_at
+                 FROM corporation_tax_periods
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id
+                   AND sequence_no = 1',
+                ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+            );
+            $lockedProjection = $service->projectForAccountingPeriod($companyId, $accountingPeriodId);
+            $harness->assertSame(true, (bool)($lockedProjection['success'] ?? false));
+            $harness->assertCount(2, (array)($lockedProjection['periods'] ?? []));
+            $harness->assertTrue((int)($lockedProjection['periods'][0]['id'] ?? 0) > 0);
+            $harness->assertTrue((int)($lockedProjection['periods'][1]['id'] ?? 0) < 0);
+            $lockedSync = $service->syncForAccountingPeriod($companyId, $accountingPeriodId);
+            $harness->assertSame(true, (bool)($lockedSync['success'] ?? false));
+            $harness->assertCount(2, (array)($lockedSync['periods'] ?? []));
+            $harness->assertSame(
+                $lockedBefore,
+                InterfaceDB::fetchOne(
+                    'SELECT id, sequence_no, period_start, period_end, status, updated_at
+                     FROM corporation_tax_periods
+                     WHERE company_id = :company_id
+                       AND accounting_period_id = :accounting_period_id
+                       AND sequence_no = 1',
+                    ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+                )
+            );
+
+            InterfaceDB::prepareExecute(
+                'DELETE FROM corporation_tax_periods
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id
+                   AND sequence_no = 2',
+                ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+            );
+            InterfaceDB::prepareExecute(
+                'UPDATE corporation_tax_periods
+                 SET period_end = :period_end
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id
+                   AND sequence_no = 1',
+                [
+                    'period_end' => '2023-08-31',
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                ]
+            );
+            $lockedStaleProjection = $service->projectForAccountingPeriod($companyId, $accountingPeriodId);
+            $harness->assertSame(false, (bool)($lockedStaleProjection['success'] ?? true));
+            $harness->assertTrue(str_contains(
+                implode(' ', array_map('strval', (array)($lockedStaleProjection['errors'] ?? []))),
+                'cannot be repaired automatically'
+            ));
+            $lockedStaleSync = $service->syncForAccountingPeriod($companyId, $accountingPeriodId);
+            $harness->assertSame(false, (bool)($lockedStaleSync['success'] ?? true));
         });
 
         $harness->check(\eel_accounts\Service\CorporationTaxPeriodService::class, 'adds cumulative display numbering across accounting periods', static function () use ($harness, $service): void {

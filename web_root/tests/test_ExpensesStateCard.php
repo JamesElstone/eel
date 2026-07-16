@@ -115,7 +115,7 @@ $harness->run(_expenses_stateCard::class, function (GeneratedServiceClassTestHar
         $harness->assertTrue(str_contains($html, 'EXP-2605-013'));
         $harness->assertSame(false, str_contains($html, 'EXP-2605-014'));
         $harness->assertTrue(str_contains($html, '$ 0.00'));
-        $harness->assertTrue(str_contains($html, '$ 95.99'));
+        $harness->assertTrue(str_contains($html, '$ 84.20'));
         $harness->assertTrue(str_contains($html, '$ 50.00'));
         $harness->assertTrue(str_contains($html, '-$ 50.00'));
 
@@ -199,9 +199,9 @@ function expensesStateCardClaims(array $filters = []): array
             'period_end' => '2026-05-31',
             'claim_reference_code' => 'EXP-2605-' . str_pad((string)$index, 3, '0', STR_PAD_LEFT),
             'A' => 0,
-            'B' => $index === 3 ? 0 : 94.99 + $index,
+            'B' => $index === 3 ? 0 : 83.20 + $index,
             'C' => $index === 3 ? 50 : 0,
-            'D' => $index === 3 ? -50 : 94.99 + $index,
+            'D' => $index === 3 ? -50 : 83.20 + $index,
             'status' => $index % 2 === 0 ? 'posted' : 'draft',
             'line_count' => $index === 3 ? 0 : 1,
             'payment_link_count' => $index === 3 ? 1 : 0,

@@ -71,8 +71,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                      )',
                     [
                         'company_id' => $companyId, 'accounting_period_id' => $ap79,
-                        'statement_month' => '2022-12-01', 'original_filename' => 'prepayment.csv',
-                        'stored_filename' => 'prepayment.csv', 'file_sha256' => hash('sha256', 'prepayment.csv'),
+                        'statement_month' => '2022-12-01', 'original_filename' => 'synthetic-prepayment.csv',
+                        'stored_filename' => 'synthetic-prepayment.csv', 'file_sha256' => hash('sha256', 'synthetic-prepayment.csv'),
                         'workflow_status' => 'committed',
                     ]
                 );
@@ -88,8 +88,9 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     [
                         'company_id' => $companyId, 'accounting_period_id' => $ap79,
                         'statement_upload_id' => $uploadId, 'txn_date' => '2022-12-30',
-                        'description' => 'Annual insurance', 'amount' => -570.00,
-                        'dedupe_hash' => hash('sha256', 'annual-insurance'),
+                        // Deliberately synthetic source fixture; no production transaction is represented.
+                        'description' => 'Synthetic annual service contract', 'amount' => -730.00,
+                        'dedupe_hash' => hash('sha256', 'synthetic-annual-service-contract'),
                         'nominal_account_id' => $expenseNominal, 'category_status' => 'manual',
                     ]
                 );
@@ -100,19 +101,19 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     [
                         'company_id' => $companyId, 'accounting_period_id' => $ap79, 'source_type' => 'bank_csv',
                         'source_ref' => 'transaction:' . $transactionId, 'journal_date' => '2022-12-30',
-                        'description' => 'Annual insurance purchase',
+                        'description' => 'Synthetic annual service purchase',
                     ]
                 );
                 $sourceJournalId = (int)InterfaceDB::fetchColumn('SELECT id FROM journals WHERE company_id = :company_id AND source_ref = :source_ref', ['company_id' => $companyId, 'source_ref' => 'transaction:' . $transactionId]);
                 InterfaceDB::execute(
                     'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit, line_description)
-                     VALUES (:journal_id, :nominal, 570.00, 0.00, :description)',
-                    ['journal_id' => $sourceJournalId, 'nominal' => $expenseNominal, 'description' => 'Annual insurance']
+                     VALUES (:journal_id, :nominal, 730.00, 0.00, :description)',
+                    ['journal_id' => $sourceJournalId, 'nominal' => $expenseNominal, 'description' => 'Synthetic annual service contract']
                 );
                 InterfaceDB::execute(
                     'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit, line_description)
-                     VALUES (:journal_id, :nominal, 0.00, 570.00, :description)',
-                    ['journal_id' => $sourceJournalId, 'nominal' => $bankNominal, 'description' => 'Bank payment']
+                     VALUES (:journal_id, :nominal, 0.00, 730.00, :description)',
+                    ['journal_id' => $sourceJournalId, 'nominal' => $bankNominal, 'description' => 'Synthetic bank payment']
                 );
 
                 $reviewService = new \eel_accounts\Service\PrepaymentReviewService();
@@ -277,12 +278,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'status' => 'prepaid',
                     'service_start_date' => '2022-12-30',
                     'service_end_date' => '2023-12-29',
-                    'notes' => 'Test annual cover',
+                    'notes' => 'Synthetic annual service fixture',
                 ], 'test');
                 $harness->assertTrue(!empty($save['success']));
                 $firstSchedule = (array)$save['schedule'];
                 $harness->assertCount(1, (array)$firstSchedule['allocations']);
-                $harness->assertSame(14055, (int)$firstSchedule['unallocated_pence']);
+                $harness->assertSame(18000, (int)$firstSchedule['unallocated_pence']);
 
                 $periodRepository = new \eel_accounts\Repository\AccountingPeriodRepository();
                 $ap80 = $periodRepository->createPeriod(
@@ -296,7 +297,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertTrue($currentScheduleId !== (int)$firstSchedule['id']);
                 $harness->assertCount(2, (array)$currentSchedule['allocations']);
                 $harness->assertSame(0, (int)$currentSchedule['unallocated_pence']);
-                $harness->assertSame(14055, (int)$currentSchedule['allocations'][1]['expense_pence']);
+                $harness->assertSame(18000, (int)$currentSchedule['allocations'][1]['expense_pence']);
 
                 // Editing an AP away from a service span still resynchronises a
                 // schedule which was formerly allocated to that AP.
@@ -448,7 +449,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'prepayment preview is unreliable'
                 ));
                 InterfaceDB::execute(
-                    'UPDATE transactions SET amount = -570.00 WHERE id = :id',
+                    'UPDATE transactions SET amount = -730.00 WHERE id = :id',
                     ['id' => $transactionId]
                 );
                 $journalCountBeforeDirectLock = (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM journals');
@@ -457,13 +458,13 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertTrue(!(new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $ap79));
                 $harness->assertSame($journalCountBeforeDirectLock, (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM journals'));
                 $closePreview = new \eel_accounts\Service\YearEndClosePreviewService();
-                $harness->assertSame(-140.55, $closePreview->prepaymentExpenseAdjustmentForPeriod($companyId, $ap79, '2022-09-05', '2023-09-30'));
+                $harness->assertSame(-180.00, $closePreview->prepaymentExpenseAdjustmentForPeriod($companyId, $ap79, '2022-09-05', '2023-09-30'));
                 $pendingAssetRows = array_values(array_filter(
                     $closePreview->pendingBalanceSheetAdjustments($companyId, $ap79, '2023-09-30'),
                     static fn(array $row): bool => (string)($row['source'] ?? '') === 'pending_prepayment'
                 ));
                 $harness->assertCount(1, $pendingAssetRows);
-                $harness->assertSame(140.55, (float)$pendingAssetRows[0]['debit']);
+                $harness->assertSame(180.00, (float)$pendingAssetRows[0]['debit']);
                 $previewProfit79 = (new \eel_accounts\Service\PreTaxProfitLossService())->calculate($companyId, $ap79, '2023-09-30', '2022-09-05');
                 $profitLoss = new \eel_accounts\Service\ProfitLossService();
                 $summaryBeforePost79 = $profitLoss->getProfitLossSummary($companyId, $ap79);
@@ -479,7 +480,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $post79 = $posting->postForAccountingPeriod($companyId, $ap79, 'test');
                 $harness->assertTrue(!empty($post79['success']));
                 $harness->assertSame(1, (int)$post79['posted_count']);
-                $harness->assertSame(14055, (new \eel_accounts\Service\PrepaymentScheduleService())->netPostedForReviewPeriod((int)$save['review_id'], $ap79, 'deferral'));
+                $harness->assertSame(18000, (new \eel_accounts\Service\PrepaymentScheduleService())->netPostedForReviewPeriod((int)$save['review_id'], $ap79, 'deferral'));
                 $harness->assertSame(0.0, $closePreview->prepaymentExpenseAdjustmentForPeriod($companyId, $ap79, '2022-09-05', '2023-09-30'));
                 $postedProfit79 = (new \eel_accounts\Service\PreTaxProfitLossService())->calculate($companyId, $ap79, '2023-09-30', '2022-09-05');
                 $harness->assertSame((float)$previewProfit79['profit_before_tax'], (float)$postedProfit79['profit_before_tax']);
@@ -565,12 +566,12 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $harness->assertSame(0, (int)$retry79['posted_count']);
 
                 $approve($ap80);
-                $harness->assertSame(140.55, $closePreview->prepaymentExpenseAdjustmentForPeriod($companyId, $ap80, '2023-10-01', '2024-09-30'));
+                $harness->assertSame(180.00, $closePreview->prepaymentExpenseAdjustmentForPeriod($companyId, $ap80, '2023-10-01', '2024-09-30'));
                 $previewProfit80 = (new \eel_accounts\Service\PreTaxProfitLossService())->calculate($companyId, $ap80, '2024-09-30', '2023-10-01');
                 $post80 = $posting->postForAccountingPeriod($companyId, $ap80, 'test');
                 $harness->assertTrue(!empty($post80['success']));
                 $harness->assertSame(1, (int)$post80['posted_count']);
-                $harness->assertSame(14055, (new \eel_accounts\Service\PrepaymentScheduleService())->netPostedForReviewPeriod((int)$save['review_id'], $ap80, 'release'));
+                $harness->assertSame(18000, (new \eel_accounts\Service\PrepaymentScheduleService())->netPostedForReviewPeriod((int)$save['review_id'], $ap80, 'release'));
                 $postedProfit80 = (new \eel_accounts\Service\PreTaxProfitLossService())->calculate($companyId, $ap80, '2024-09-30', '2023-10-01');
                 $harness->assertSame((float)$previewProfit80['profit_before_tax'], (float)$postedProfit80['profit_before_tax']);
 
@@ -586,7 +587,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'status' => 'prepaid',
                     'service_start_date' => '2022-12-30',
                     'service_end_date' => '2023-12-29',
-                    'notes' => 'Reopened test annual cover',
+                    'notes' => 'Reopened synthetic annual service fixture',
                 ], 'test');
                 $harness->assertTrue(!empty($resave['success']));
                 $newScheduleId = (int)$resave['schedule']['id'];
@@ -600,7 +601,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'status' => 'prepaid',
                     'service_start_date' => '2023-10-01',
                     'service_end_date' => '2024-09-30',
-                    'notes' => 'Service starts after purchase period',
+                    'notes' => 'Synthetic service starts after purchase period',
                 ], 'test');
                 $harness->assertTrue(empty($blockedFutureStart['success']));
                 $harness->assertTrue(str_contains(implode(' ', (array)($blockedFutureStart['errors'] ?? [])), 'Reopen its schedule'));
@@ -612,15 +613,15 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     'status' => 'prepaid',
                     'service_start_date' => '2023-10-01',
                     'service_end_date' => '2024-09-30',
-                    'notes' => 'Service starts after purchase period after explicit reopen',
+                    'notes' => 'Synthetic service starts after purchase period after explicit reopen',
                 ], 'test');
                 $harness->assertTrue(!empty($futureStart['success']));
                 $futureAllocations = (array)$futureStart['schedule']['allocations'];
                 $harness->assertCount(2, $futureAllocations);
                 $harness->assertSame(0, (int)$futureAllocations[0]['expense_pence']);
                 $harness->assertSame(0, (int)$futureAllocations[0]['overlap_days']);
-                $harness->assertSame(57000, (int)$futureAllocations[0]['closing_deferred_pence']);
-                $harness->assertSame(57000, (int)$futureAllocations[1]['opening_deferred_pence']);
+                $harness->assertSame(73000, (int)$futureAllocations[0]['closing_deferred_pence']);
+                $harness->assertSame(73000, (int)$futureAllocations[1]['opening_deferred_pence']);
             } finally {
                 if (InterfaceDB::inTransaction()) {
                     InterfaceDB::rollBack();

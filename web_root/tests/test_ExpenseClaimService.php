@@ -21,17 +21,17 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
 
         $harness->assertSame(true, (bool)($result['success'] ?? false));
         $harness->assertCount(13, (array)($result['rows'] ?? []));
-        $harness->assertSame(1272.40, (float)($result['total'] ?? 0));
+        $harness->assertSame(1115.00, (float)($result['total'] ?? 0));
 
         $rows = (array)$result['rows'];
         $harness->assertSame('2022-10-05', (string)($rows[0]['expense_date'] ?? ''));
         $harness->assertSame('05/10/2022', (string)($rows[0]['expense_date_display'] ?? ''));
-        $harness->assertSame('ElectricFix, Wall Chaser', (string)($rows[0]['description'] ?? ''));
-        $harness->assertSame(94.99, (float)($rows[0]['amount'] ?? 0));
+        $harness->assertSame('Northbridge Test Supplies, Cable Tracer', (string)($rows[0]['description'] ?? ''));
+        $harness->assertSame(83.20, (float)($rows[0]['amount'] ?? 0));
     });
 
     $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'formats bulk preview dates with company display format', function () use ($harness, $instance): void {
-        $source = "DATE\tDESCRIPTION\tAMOUNT CLAIMED\n5/10/2022\tElectricFix, Wall Chaser\t£94.99";
+        $source = "DATE\tDESCRIPTION\tAMOUNT CLAIMED\n5/10/2022\tNorthbridge Test Supplies, Cable Tracer\t£83.20";
 
         $ymd = expenseClaimServiceParseBulkLines($instance, $source, 'Y-m-d');
         $slash = expenseClaimServiceParseBulkLines($instance, $source, 'd/m/Y');
@@ -44,14 +44,14 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
 
     $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'parses TSV claim lines with optional ignored info column', function () use ($harness, $instance): void {
         $source = "DATE\tDESCRIPTION\tInfo\tAMOUNT CLAIMED\n"
-            . "5/10/2022\tCEF, Cable\tReceipt note ignored\t£12.34";
+            . "5/10/2022\tFixture Supplier, Cable\tReceipt note ignored\t£12.34";
         $result = expenseClaimServiceParseBulkLines($instance, $source, 'd/m/Y');
 
         $harness->assertSame(true, (bool)($result['success'] ?? false));
         $harness->assertCount(1, (array)($result['rows'] ?? []));
         $row = (array)(($result['rows'] ?? [])[0] ?? []);
         $harness->assertSame('2022-10-05', (string)($row['expense_date'] ?? ''));
-        $harness->assertSame('CEF, Cable', (string)($row['description'] ?? ''));
+        $harness->assertSame('Fixture Supplier, Cable', (string)($row['description'] ?? ''));
         $harness->assertSame(12.34, (float)($row['amount'] ?? 0));
     });
 
@@ -79,21 +79,21 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
     });
 
     $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'prefers TSV when pasted text contains two or more tabs', function () use ($harness, $instance): void {
-        $source = "DATE\tDESCRIPTION\tAMOUNT CLAIMED\n5/10/2022\tCEF, Cable, Clips\t£12.34";
+        $source = "DATE\tDESCRIPTION\tAMOUNT CLAIMED\n5/10/2022\tFixture Supplier, Cable, Clips\t£12.34";
         $result = expenseClaimServiceParseBulkLines($instance, $source, 'd/m/Y');
 
         $harness->assertSame(true, (bool)($result['success'] ?? false));
-        $harness->assertSame('CEF, Cable, Clips', (string)((($result['rows'] ?? [])[0] ?? [])['description'] ?? ''));
+        $harness->assertSame('Fixture Supplier, Cable, Clips', (string)((($result['rows'] ?? [])[0] ?? [])['description'] ?? ''));
         $harness->assertSame(12.34, (float)((($result['rows'] ?? [])[0] ?? [])['amount'] ?? 0));
     });
 
     $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'ignores non-line rows in pasted claim forms', function () use ($harness, $instance): void {
-        $source = "Claimant\tAlex Example\nYear\t2022\tMonth\tOctober\nDATE\tDESCRIPTION\tAMOUNT CLAIMED\n-\t-\t-\n5/10/2022\tElectricFix, Wall Chaser\t£94.99\nTotal Amount Claimed (sum of above lines)\tB\t£94.99\nDirector's Signature\t\nAmount Paid\t\tDate Paid\t\tFA Proc. Date\t\tFA Ref #\t";
+        $source = "Claimant\tTaylor Fixture\nYear\t2022\tMonth\tOctober\nDATE\tDESCRIPTION\tAMOUNT CLAIMED\n-\t-\t-\n5/10/2022\tNorthbridge Test Supplies, Cable Tracer\t£83.20\nTotal Amount Claimed (sum of above lines)\tB\t£83.20\nDirector's Signature\t\nAmount Paid\t\tDate Paid\t\tFA Proc. Date\t\tFA Ref #\t";
         $result = expenseClaimServiceParseBulkLines($instance, $source, 'd/m/Y');
 
         $harness->assertSame(true, (bool)($result['success'] ?? false));
         $harness->assertCount(1, (array)($result['rows'] ?? []));
-        $harness->assertSame(94.99, (float)($result['total'] ?? 0));
+        $harness->assertSame(83.20, (float)($result['total'] ?? 0));
     });
 
     $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'bulk import skips duplicate claim lines and imports new rows', function () use ($harness, $instance): void {
@@ -271,7 +271,7 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
 
     $harness->check(\eel_accounts\Service\ExpenseClaimService::class, 'links and unlinks repayment on posted claim without changing original claim journal', function () use ($harness, $instance): void {
         expenseClaimServiceWithFixture(static function (array $fixture) use ($harness, $instance): void {
-            expenseClaimServiceInsertLine($fixture, (int)$fixture['claim_id'], 1, '2026-05-05', 'Materials', 94.99);
+            expenseClaimServiceInsertLine($fixture, (int)$fixture['claim_id'], 1, '2026-05-05', 'Synthetic materials', 83.20);
 
             $posted = $instance->postClaim((int)$fixture['company_id'], (int)$fixture['claim_id'], [
                 'default_expense_nominal_id' => (int)$fixture['expense_nominal_id'],
@@ -284,7 +284,7 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
             );
             $harness->assertTrue($postedJournalId > 0);
 
-            $transactionId = expenseClaimServiceInsertTransaction($fixture, -94.99, 'posted-claim-repayment');
+            $transactionId = expenseClaimServiceInsertTransaction($fixture, -83.20, 'synthetic-posted-claim-repayment');
             $linked = $instance->linkPayment((int)$fixture['company_id'], (int)$fixture['claim_id'], [
                 'transaction_id' => $transactionId,
                 'default_expense_nominal_id' => (int)$fixture['expense_nominal_id'],
@@ -294,8 +294,8 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
             $harness->assertSame(true, (bool)($linked['success'] ?? false));
             $harness->assertSame(true, (bool)(($linked['claim'] ?? [])['is_posted'] ?? false));
             $harness->assertSame(1, (int)(($linked['claim'] ?? [])['payment_link_count'] ?? 0));
-            $harness->assertSame([0.00, 94.99, 94.99, 0.00], expenseClaimServiceClaimTotals((int)$fixture['claim_id']));
-            $harness->assertSame(94.99, (float)\InterfaceDB::fetchColumn(
+            $harness->assertSame([0.00, 83.20, 83.20, 0.00], expenseClaimServiceClaimTotals((int)$fixture['claim_id']));
+            $harness->assertSame(83.20, (float)\InterfaceDB::fetchColumn(
                 'SELECT linked_amount FROM expense_claim_payment_links WHERE expense_claim_id = :claim_id AND transaction_id = :transaction_id',
                 ['claim_id' => (int)$fixture['claim_id'], 'transaction_id' => $transactionId]
             ));
@@ -313,8 +313,8 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
                 ['journal_id' => $postedJournalId]
             );
             $harness->assertSame(2, (int)($journalTotals['line_count'] ?? 0));
-            $harness->assertSame(94.99, (float)($journalTotals['debit_total'] ?? 0));
-            $harness->assertSame(94.99, (float)($journalTotals['credit_total'] ?? 0));
+            $harness->assertSame(83.20, (float)($journalTotals['debit_total'] ?? 0));
+            $harness->assertSame(83.20, (float)($journalTotals['credit_total'] ?? 0));
 
             $paymentLinkId = (int)\InterfaceDB::fetchColumn(
                 'SELECT id FROM expense_claim_payment_links WHERE expense_claim_id = :claim_id AND transaction_id = :transaction_id',
@@ -328,7 +328,7 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
             $harness->assertSame(true, (bool)($unlinked['success'] ?? false));
             $harness->assertSame(true, (bool)(($unlinked['claim'] ?? [])['is_posted'] ?? false));
             $harness->assertSame(0, (int)(($unlinked['claim'] ?? [])['payment_link_count'] ?? -1));
-            $harness->assertSame([0.00, 94.99, 0.00, 94.99], expenseClaimServiceClaimTotals((int)$fixture['claim_id']));
+            $harness->assertSame([0.00, 83.20, 0.00, 83.20], expenseClaimServiceClaimTotals((int)$fixture['claim_id']));
             $harness->assertSame(0, (int)\InterfaceDB::fetchColumn(
                 'SELECT COUNT(*) FROM expense_claim_payment_links WHERE id = :id',
                 ['id' => $paymentLinkId]
@@ -497,8 +497,8 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
                 [
                     'expense_claim_id' => (int)$fixture['claim_id'],
                     'expense_date' => '2026-05-05',
-                    'description' => 'Materials',
-                    'amount' => 94.99,
+                    'description' => 'Synthetic materials',
+                    'amount' => 83.20,
                     'nominal_account_id' => (int)$fixture['line_nominal_id'],
                 ]
             );
@@ -522,9 +522,9 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
                 ['claim_id' => (int)$fixture['claim_id']]
             );
             $harness->assertSame((int)$fixture['expense_nominal_id'], (int)($creditLine['nominal_account_id'] ?? 0));
-            $harness->assertSame(94.99, (float)($creditLine['credit'] ?? 0));
+            $harness->assertSame(83.20, (float)($creditLine['credit'] ?? 0));
             $harness->assertSame('Expense claim payable', (string)($creditLine['line_description'] ?? ''));
-            $harness->assertSame(94.99, (float)\InterfaceDB::fetchColumn(
+            $harness->assertSame(83.20, (float)\InterfaceDB::fetchColumn(
                 'SELECT claimed_amount FROM expense_claims WHERE id = :id',
                 ['id' => (int)$fixture['claim_id']]
             ));
@@ -540,7 +540,7 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
             $expenseLineId = (int)($fixture['claim_id'] * 10 + 1);
             $assetLineId = (int)($fixture['claim_id'] * 10 + 2);
             foreach ([
-                [$expenseLineId, 1, 'Materials', 94.99, (int)$fixture['line_nominal_id']],
+                [$expenseLineId, 1, 'Synthetic materials', 83.20, (int)$fixture['line_nominal_id']],
                 [$assetLineId, 2, 'Cordless drill', 180.00, null],
             ] as $line) {
                 \InterfaceDB::prepareExecute(
@@ -593,7 +593,7 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
                 ['id' => (int)$fixture['claim_id']]
             );
             $harness->assertSame(1, (int)\InterfaceDB::fetchColumn(
-                'SELECT COUNT(*) FROM journal_lines WHERE journal_id = :journal_id AND nominal_account_id = :nominal_account_id AND debit = 94.99',
+                'SELECT COUNT(*) FROM journal_lines WHERE journal_id = :journal_id AND nominal_account_id = :nominal_account_id AND debit = 83.20',
                 ['journal_id' => $journalId, 'nominal_account_id' => (int)$fixture['line_nominal_id']]
             ));
             $harness->assertSame(1, (int)\InterfaceDB::fetchColumn(
@@ -633,8 +633,8 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
                     'id' => $lineId,
                     'expense_claim_id' => (int)$fixture['claim_id'],
                     'expense_date' => '2026-05-10',
-                    'description' => 'Posted pliers',
-                    'amount' => 116.24,
+                    'description' => 'Synthetic insulated tool',
+                    'amount' => 108.75,
                     'nominal_account_id' => (int)$fixture['line_nominal_id'],
                 ]
             );
@@ -648,7 +648,7 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
                 ['id' => (int)$fixture['claim_id']]
             );
             $harness->assertSame(1, (int)\InterfaceDB::fetchColumn(
-                'SELECT COUNT(*) FROM journal_lines WHERE journal_id = :journal_id AND nominal_account_id = :nominal_account_id AND debit = 116.24',
+                'SELECT COUNT(*) FROM journal_lines WHERE journal_id = :journal_id AND nominal_account_id = :nominal_account_id AND debit = 108.75',
                 ['journal_id' => $journalId, 'nominal_account_id' => (int)$fixture['line_nominal_id']]
             ));
 
@@ -669,11 +669,11 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
                 ['id' => (int)$fixture['claim_id']]
             ));
             $harness->assertSame(0, (int)\InterfaceDB::fetchColumn(
-                'SELECT COUNT(*) FROM journal_lines WHERE journal_id = :journal_id AND nominal_account_id = :nominal_account_id AND debit = 116.24',
+                'SELECT COUNT(*) FROM journal_lines WHERE journal_id = :journal_id AND nominal_account_id = :nominal_account_id AND debit = 108.75',
                 ['journal_id' => $journalId, 'nominal_account_id' => (int)$fixture['line_nominal_id']]
             ));
             $harness->assertSame(1, (int)\InterfaceDB::fetchColumn(
-                'SELECT COUNT(*) FROM journal_lines WHERE journal_id = :journal_id AND nominal_account_id = :nominal_account_id AND debit = 116.24',
+                'SELECT COUNT(*) FROM journal_lines WHERE journal_id = :journal_id AND nominal_account_id = :nominal_account_id AND debit = 108.75',
                 ['journal_id' => $journalId, 'nominal_account_id' => (int)$fixture['asset_cost_nominal_id']]
             ));
             $asset = \InterfaceDB::fetchOne(
@@ -686,7 +686,7 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
             $harness->assertSame($journalId, (int)($asset['linked_journal_id'] ?? 0));
             $harness->assertSame($lineId, (int)($asset['linked_expense_claim_line_id'] ?? 0));
             $harness->assertSame('tools_equipment', (string)($asset['category'] ?? ''));
-            $harness->assertSame(116.24, (float)($asset['cost'] ?? 0));
+            $harness->assertSame(108.75, (float)($asset['cost'] ?? 0));
             $harness->assertSame((int)($asset['id'] ?? 0), (int)\InterfaceDB::fetchColumn(
                 'SELECT generated_asset_id FROM expense_claim_line_assets WHERE expense_claim_line_id = :line_id',
                 ['line_id' => $lineId]
@@ -793,8 +793,8 @@ $harness->run(\eel_accounts\Service\ExpenseClaimService::class, function (Genera
                 [
                     'expense_claim_id' => (int)$fixture['claim_id'],
                     'expense_date' => '2026-05-05',
-                    'description' => 'Materials',
-                    'amount' => 94.99,
+                    'description' => 'Synthetic materials',
+                    'amount' => 83.20,
                     'nominal_account_id' => (int)$fixture['line_nominal_id'],
                 ]
             );
@@ -1127,30 +1127,31 @@ function expenseClaimServiceParseBulkLines(\eel_accounts\Service\ExpenseClaimSer
 
 function expenseClaimServiceHistoricalPaste(): string
 {
-    return "Claimant\tAlex Example\n"
+    // This fixture is deliberately synthetic; it must not reproduce a real claim.
+    return "Claimant\tTaylor Fixture\n"
         . "Year\t2022\tMonth\tOctober\n"
         . "DATE\tDESCRIPTION\tAMOUNT CLAIMED\n"
-        . "5/10/2022\tElectricFix, Wall Chaser\t£94.99\n"
-        . "6/10/2022\tVirgin Media Broadband Connection\t£47.60\n"
-        . "8/10/2022\tTrade Skills 4 U Limited, Course Materials\t£140.00\n"
-        . "10/10/2022\tRS Components, VDE Plyers\t£116.24\n"
-        . "11/10/2022\tKnaphill Print Co Ltd, Business Cards\t£54.00\n"
-        . "14/10/2022\tCEF, Cable and Labels\t£62.09\n"
-        . "17/10/2022\tElectricFix, Training Equipment\t£74.95\n"
-        . "17/10/2022\tExample Trade Supplier, Training Equipment\t£357.42\n"
-        . "22/10/2022\tWickes, USB LED Light\t£16.65\n"
-        . "22/10/2022\tCEF, Heat Gun & Battery, Wiring Regulations\t£205.68\n"
-        . "23/10/2022\tCEF, Area Light\t£71.94\n"
-        . "23/10/2022\tFuel\t£18.69\n"
-        . "28/10/2022\tWickes, Plywood for Training Equipment\t£12.15\n"
+        . "5/10/2022\tNorthbridge Test Supplies, Cable Tracer\t£83.20\n"
+        . "6/10/2022\tExample Telecom Services, Setup Charge\t£42.50\n"
+        . "8/10/2022\tTraining Fixture Limited, Reference Materials\t£125.00\n"
+        . "10/10/2022\tSample Components Limited, Insulated Pliers\t£108.75\n"
+        . "11/10/2022\tDemo Print Studio, Appointment Cards\t£36.40\n"
+        . "14/10/2022\tFictional Electrical Wholesale, Cable Markers\t£58.30\n"
+        . "17/10/2022\tNorthbridge Test Supplies, Demonstration Equipment\t£67.80\n"
+        . "17/10/2022\tSample Wholesale Limited, Workshop Equipment\t£240.00\n"
+        . "22/10/2022\tSample Hardware Store, Rechargeable Work Light\t£22.45\n"
+        . "22/10/2022\tFictional Electrical Wholesale, Heat Tool, Reference Manual\t£189.60\n"
+        . "23/10/2022\tFictional Electrical Wholesale, Inspection Lamp\t£64.25\n"
+        . "23/10/2022\tExample Fuel Station, Test Fuel\t£31.10\n"
+        . "28/10/2022\tSample Hardware Store, Plywood Test Board\t£45.65\n"
         . "-\t-\t-\n"
-        . "Total Amount Claimed (sum of above lines)\tB\t£1,272.40\n"
+        . "Total Amount Claimed (sum of above lines)\tB\t£1,115.00\n"
         . "Claimant's Signature\t\n"
         . "----- OFFICE USE ONLY BELOW THIS LINE -----\n"
         . "A\t(Unpaid) Balance outstanding to claimant brought forwards from previous period claim form\tNIL (First Claim)\n"
-        . "B\tAmount claimed during month\t£1,272.40\n"
+        . "B\tAmount claimed during month\t£1,115.00\n"
         . "C\tPayments made to claimant during this month\t£0.00\n"
-        . "D\tBalance outstanding to claimant\t£1,272.40";
+        . "D\tBalance outstanding to claimant\t£1,115.00";
 }
 
 function expenseClaimServiceWithFixture(callable $callback): void

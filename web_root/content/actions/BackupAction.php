@@ -66,7 +66,13 @@ final class BackupAction implements ActionInterfaceFramework
 
         try {
             @set_time_limit(0);
-            $restore = (new \eel_accounts\Service\DatabaseBackupService())->restoreBackup($filename);
+            $backupService = new \eel_accounts\Service\DatabaseBackupService();
+            $databaseName = $backupService->currentDatabaseName();
+            $restore = $backupService->restoreBackup(
+                $filename,
+                $databaseName,
+                $databaseName
+            );
         } catch (Throwable $exception) {
             return $this->error('Database restore failed: ' . $exception->getMessage());
         }

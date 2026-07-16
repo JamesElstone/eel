@@ -17,10 +17,370 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 $harness = new GeneratedServiceClassTestHarness();
 GoldenAccountsFixture::build();
 
+$harness->check('GoldenYearEndLifecycle', 'does not leak stale persisted AP80 asset rows into a transient capital-allowance view', static function () use ($harness): void {
+    $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
+    $ap80 = 9112;
+
+    InterfaceDB::beginTransaction();
+    try {
+        InterfaceDB::execute(
+            'UPDATE asset_register
+             SET purchase_date = :purchase_date
+             WHERE id = :asset_id
+               AND company_id = :company_id',
+            [
+                'purchase_date' => '2024-10-01',
+                'asset_id' => 9254,
+                'company_id' => $companyId,
+            ]
+        );
+        InterfaceDB::execute(
+            'INSERT INTO capital_allowance_asset_calculations (
+                company_id, accounting_period_id, ct_period_id, asset_id,
+                pool_type, allowance_type, addition_amount, allowance_amount,
+                disposal_value, warning
+             ) VALUES (
+                :company_id, :accounting_period_id, NULL, :asset_id,
+                :pool_type, :allowance_type, :addition_amount, :allowance_amount,
+                0.00, :warning
+             )',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $ap80,
+                'asset_id' => 9254,
+                'pool_type' => 'main_pool',
+                'allowance_type' => 'aia',
+                'addition_amount' => 999.00,
+                'allowance_amount' => 999.00,
+                'warning' => 'Deliberately stale AP80 row.',
+            ]
+        );
+
+        $workings = (new \eel_accounts\Service\TaxWorkingsService())
+            ->fetchWorkings($companyId, $ap80, 0);
+        $harness->assertSame(true, (bool)($workings['available'] ?? false));
+        $harness->assertSame([], (array)($workings['aia_allocation'] ?? []));
+        $harness->assertSame(
+            '0.00',
+            number_format((float)($workings['capital_allowances_summary']['net_capital_allowances'] ?? 0), 2, '.', '')
+        );
+    } finally {
+        if (InterfaceDB::inTransaction()) {
+            InterfaceDB::rollBack();
+        }
+    }
+});
+
+$harness->check('GoldenYearEndLifecycle', 'previews the split-period CT provision that Year End will actually post', static function () use ($harness): void {
+    $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
+    $accountingPeriodId = 9111;
+
+    InterfaceDB::beginTransaction();
+    try {
+        // Create an intentionally uneven CT-period result: capital allowances
+        // create a loss in CT period 1, while period 2 enters marginal relief.
+        // Treating the 391-day period of account as one CT period understates
+        // the provision, so this directly controls the AP79 close preview.
+        InterfaceDB::execute(
+            'UPDATE asset_register
+             SET cost = cost + 57000.00
+             WHERE id = :asset_id
+               AND company_id = :company_id',
+            [
+                'asset_id' => 9251,
+                'company_id' => $companyId,
+            ]
+        );
+        InterfaceDB::execute(
+            'INSERT INTO journals (
+                company_id, accounting_period_id, source_type, source_ref,
+                journal_date, description, is_posted
+             ) VALUES (
+                :company_id, :accounting_period_id, :source_type, :source_ref,
+                :journal_date, :description, 1
+             )',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'source_type' => 'manual',
+                'source_ref' => 'golden-split-ct-provision-preview',
+                'journal_date' => '2023-09-30',
+                'description' => 'Synthetic split-period CT provision control',
+            ]
+        );
+        $journalId = (int)InterfaceDB::fetchColumn(
+            'SELECT id
+             FROM journals
+             WHERE company_id = :company_id
+               AND source_ref = :source_ref
+             LIMIT 1',
+            [
+                'company_id' => $companyId,
+                'source_ref' => 'golden-split-ct-provision-preview',
+            ]
+        );
+        InterfaceDB::execute(
+            'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit)
+             VALUES (:journal_id, :nominal_account_id, 60000.00, 0.00)',
+            ['journal_id' => $journalId, 'nominal_account_id' => 91001]
+        );
+        InterfaceDB::execute(
+            'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit)
+             VALUES (:journal_id, :nominal_account_id, 0.00, 60000.00)',
+            ['journal_id' => $journalId, 'nominal_account_id' => 91002]
+        );
+
+        $periodService = new \eel_accounts\Service\CorporationTaxPeriodService();
+        $initialSync = $periodService->syncForAccountingPeriod($companyId, $accountingPeriodId);
+        $harness->assertSame(true, (bool)($initialSync['success'] ?? false));
+        $harness->assertCount(2, (array)($initialSync['periods'] ?? []));
+        $initialEvidence = (new \eel_accounts\Service\CorporationTaxComputationService())
+            ->persistSummariesForYearEndLock($companyId, $accountingPeriodId);
+        $harness->assertSame(true, (bool)($initialEvidence['success'] ?? false));
+        $acceptedPeriod = InterfaceDB::fetchOne(
+            'SELECT id, latest_computation_run_id
+             FROM corporation_tax_periods
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+               AND sequence_no = 1',
+            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+        );
+        $acceptedCtPeriodId = (int)($acceptedPeriod['id'] ?? 0);
+        $acceptedRunId = (int)($acceptedPeriod['latest_computation_run_id'] ?? 0);
+        $harness->assertTrue($acceptedCtPeriodId > 0);
+        $harness->assertTrue($acceptedRunId > 0);
+        InterfaceDB::execute(
+            'UPDATE corporation_tax_periods
+             SET status = :status
+             WHERE id = :id',
+            ['status' => 'accepted', 'id' => $acceptedCtPeriodId]
+        );
+        InterfaceDB::execute(
+            'DELETE FROM corporation_tax_periods
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+               AND sequence_no = 2',
+            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+        );
+        $harness->assertSame(
+            1,
+            (int)InterfaceDB::fetchColumn(
+                'SELECT COUNT(*)
+                 FROM corporation_tax_periods
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id',
+                ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+            )
+        );
+
+        $metrics = new \eel_accounts\Service\YearEndMetricsService();
+        $accountingPeriod = (array)$metrics->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        $profitAndLoss = (new \eel_accounts\Service\PreTaxProfitLossService())->calculate(
+            $companyId,
+            $accountingPeriodId,
+            (string)$accountingPeriod['period_end'],
+            (string)$accountingPeriod['period_start']
+        );
+        $wholePeriodEstimate = (new \eel_accounts\Service\CorporationTaxComputationService())
+            ->fetchCurrentPeriodEstimate(
+                $companyId,
+                $accountingPeriodId,
+                $accountingPeriod,
+                $profitAndLoss
+            );
+
+        $preview = (new \eel_accounts\Service\YearEndClosePreviewService())
+            ->pendingBalanceSheetAdjustmentContext(
+                $companyId,
+                $accountingPeriodId,
+                (string)$accountingPeriod['period_end'],
+                null,
+                null,
+                null,
+                false
+            );
+        $harness->assertSame(true, (bool)($preview['reliable'] ?? false));
+        $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
+        $liabilityNominalId = (int)($settings['corporation_tax_liability_nominal_id'] ?? 0);
+        $previewedProvision = 0.0;
+        foreach ((array)($preview['adjustments'] ?? []) as $adjustment) {
+            if ((int)($adjustment['nominal_account_id'] ?? 0) !== $liabilityNominalId
+                || !str_starts_with(
+                    (string)($adjustment['source'] ?? ''),
+                    'pending_corporation_tax_provision'
+                )) {
+                continue;
+            }
+            $previewedProvision += (float)($adjustment['credit'] ?? 0)
+                - (float)($adjustment['debit'] ?? 0);
+        }
+        $harness->assertSame(
+            1,
+            (int)InterfaceDB::fetchColumn(
+                'SELECT COUNT(*)
+                 FROM corporation_tax_periods
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id',
+                ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId]
+            )
+        );
+
+        $postingSync = $periodService->syncForAccountingPeriod($companyId, $accountingPeriodId);
+        $harness->assertSame(true, (bool)($postingSync['success'] ?? false));
+        $harness->assertCount(2, (array)($postingSync['periods'] ?? []));
+        $postingBasis = (new \eel_accounts\Service\CorporationTaxComputationService())
+            ->previewProvisionPositionForAccountingPeriod(
+                $companyId,
+                $accountingPeriodId,
+                $accountingPeriod,
+                $profitAndLoss
+            );
+        $harness->assertSame(true, (bool)($postingBasis['available'] ?? false));
+        $finalEvidence = (new \eel_accounts\Service\CorporationTaxComputationService())
+            ->persistSummariesForYearEndLock($companyId, $accountingPeriodId);
+        $harness->assertSame(true, (bool)($finalEvidence['success'] ?? false));
+        $acceptedAfter = InterfaceDB::fetchOne(
+            'SELECT status, latest_computation_run_id
+             FROM corporation_tax_periods
+             WHERE id = :id',
+            ['id' => $acceptedCtPeriodId]
+        );
+        $harness->assertSame('accepted', (string)($acceptedAfter['status'] ?? ''));
+        $harness->assertSame($acceptedRunId, (int)($acceptedAfter['latest_computation_run_id'] ?? 0));
+        $statutoryProvision = round(
+            (float)($postingBasis['estimated_corporation_tax'] ?? 0),
+            2
+        );
+        $harness->assertTrue(
+            abs(
+                $statutoryProvision
+                - (float)($wholePeriodEstimate['estimated_corporation_tax'] ?? 0)
+            ) >= 0.01
+        );
+        $harness->assertSame(
+            number_format($statutoryProvision, 2, '.', ''),
+            number_format($previewedProvision, 2, '.', '')
+        );
+    } finally {
+        if (InterfaceDB::inTransaction()) {
+            InterfaceDB::rollBack();
+        }
+    }
+});
+
+$harness->check('GoldenYearEndLifecycle', 'keeps a following-period profit estimate stable when an open predecessor tax loss is locked', static function () use ($harness): void {
+    $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
+    $ap79 = 9111;
+    $ap80 = 9112;
+
+    InterfaceDB::beginTransaction();
+    try {
+        // Keep AP80 profitable for tax after loss relief by moving its synthetic
+        // van acquisition outside the period, then create an AP79 trading loss.
+        InterfaceDB::execute(
+            'UPDATE asset_register
+             SET purchase_date = :purchase_date
+             WHERE id = :asset_id
+               AND company_id = :company_id',
+            [
+                'purchase_date' => '2024-10-01',
+                'asset_id' => 9254,
+                'company_id' => $companyId,
+            ]
+        );
+        InterfaceDB::execute(
+            'INSERT INTO journals (
+                company_id, accounting_period_id, source_type, source_ref,
+                journal_date, description, is_posted
+             ) VALUES (
+                :company_id, :accounting_period_id, :source_type, :source_ref,
+                :journal_date, :description, 1
+             )',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $ap79,
+                'source_type' => 'manual',
+                'source_ref' => 'golden-ap79-loss-to-ap80-profit',
+                'journal_date' => '2023-08-31',
+                'description' => 'Golden AP79 loss to AP80 profit control',
+            ]
+        );
+        $lossJournalId = (int)InterfaceDB::fetchColumn(
+            'SELECT id
+             FROM journals
+             WHERE company_id = :company_id
+               AND source_ref = :source_ref
+             LIMIT 1',
+            [
+                'company_id' => $companyId,
+                'source_ref' => 'golden-ap79-loss-to-ap80-profit',
+            ]
+        );
+        InterfaceDB::execute(
+            'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit)
+             VALUES (:journal_id, :nominal_account_id, 8000.00, 0.00)',
+            ['journal_id' => $lossJournalId, 'nominal_account_id' => 91004]
+        );
+        InterfaceDB::execute(
+            'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit)
+             VALUES (:journal_id, :nominal_account_id, 0.00, 8000.00)',
+            ['journal_id' => $lossJournalId, 'nominal_account_id' => 91001]
+        );
+
+        $beforeRaw = goldenFollowingPeriodRawState($companyId, $ap80);
+        $before = goldenFollowingPeriodEconomicSnapshot($companyId, $ap80);
+        $harness->assertSame([], (array)($beforeRaw['capital_allowance_pool_runs'] ?? []));
+        $harness->assertSame([], (array)($beforeRaw['capital_allowance_asset_calculations'] ?? []));
+        $harness->assertSame([], (array)($beforeRaw['corporation_tax_periods'] ?? []));
+        $harness->assertSame('transient', (string)($before['assets']['capital_allowance_source'] ?? ''));
+        $beforeTax = (array)($before['reporting']['tax'] ?? []);
+        $harness->assertTrue((float)($beforeTax['losses_brought_forward'] ?? 0) > 0);
+        $harness->assertTrue((float)($beforeTax['losses_used'] ?? 0) > 0);
+        $harness->assertTrue((float)($beforeTax['taxable_profit'] ?? 0) > 0);
+        $harness->assertTrue((float)($beforeTax['estimated_corporation_tax'] ?? 0) > 0);
+        goldenAssertFollowingPeriodComplete($harness, $before);
+
+        goldenClosePeriodForFollowingPeriodControl($harness, $companyId, $ap79);
+
+        $after = goldenFollowingPeriodEconomicSnapshot($companyId, $ap80);
+        $afterRaw = goldenFollowingPeriodRawState($companyId, $ap80);
+        goldenAssertFollowingPeriodInvariant($before, $after, $ap80, 'loss_to_profit_outputs');
+        goldenAssertFollowingPeriodInvariant($beforeRaw, $afterRaw, $ap80, 'loss_to_profit_raw_state');
+    } finally {
+        if (InterfaceDB::inTransaction()) {
+            InterfaceDB::rollBack();
+        }
+    }
+});
+
 $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves reporting semantics when completed periods are locked', static function () use ($harness): void {
     $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
     $periods = [9111, 9112, 9113];
     $hmrcExpected = GoldenHmrcCorporationTaxOracle::calculateSequence(GoldenLedgerSpecification::hmrcTaxFacts());
+    $followingPeriodRawBefore = goldenFollowingPeriodRawState($companyId, 9112);
+    $followingPeriodOutputsBefore = goldenFollowingPeriodEconomicSnapshot($companyId, 9112);
+    $harness->assertSame([], (array)($followingPeriodRawBefore['capital_allowance_pool_runs'] ?? []));
+    $harness->assertSame([], (array)($followingPeriodRawBefore['capital_allowance_asset_calculations'] ?? []));
+    $harness->assertSame([], (array)($followingPeriodRawBefore['corporation_tax_periods'] ?? []));
+    $harness->assertSame(
+        'transient',
+        (string)($followingPeriodOutputsBefore['assets']['capital_allowance_source'] ?? '')
+    );
+    $followingAiaRows = (array)($followingPeriodOutputsBefore['reporting']['tax_detail']['aia_allocation'] ?? []);
+    $harness->assertCount(1, $followingAiaRows);
+    $harness->assertSame(
+        ['GOLDEN-VAN-001', '9000.00', '9000.00'],
+        [
+            (string)($followingAiaRows[0]['asset_code'] ?? ''),
+            number_format((float)($followingAiaRows[0]['addition_amount'] ?? 0), 2, '.', ''),
+            number_format((float)($followingAiaRows[0]['allowance_amount'] ?? 0), 2, '.', ''),
+        ]
+    );
+    $harness->assertCount(
+        1,
+        (array)($followingPeriodOutputsBefore['assets']['capital_allowance_asset_calculations'] ?? [])
+    );
+    goldenAssertFollowingPeriodComplete($harness, $followingPeriodOutputsBefore);
 
     foreach ($periods as $periodId) {
         $expected = GoldenLedgerSpecification::yearEndAssetExpectations()[$periodId];
@@ -144,6 +504,18 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
         }
 
         if ($periodId === 9111) {
+            goldenAssertFollowingPeriodInvariant(
+                $followingPeriodRawBefore,
+                goldenFollowingPeriodRawState($companyId, 9112),
+                9112,
+                'raw_state'
+            );
+            goldenAssertFollowingPeriodInvariant(
+                $followingPeriodOutputsBefore,
+                goldenFollowingPeriodEconomicSnapshot($companyId, 9112),
+                9112,
+                'calculated_outputs'
+            );
             goldenAssertFirstPeriodLockBoundary($harness, $companyId);
         }
     }
@@ -154,6 +526,458 @@ $harness->check('GoldenYearEndLifecycle', 'performs close tasks and preserves re
         $harness->assertTrue(!empty($unlock['success']));
     }
 });
+
+function goldenClosePeriodForFollowingPeriodControl(
+    GeneratedServiceClassTestHarness $harness,
+    int $companyId,
+    int $accountingPeriodId
+): void {
+    $depreciation = (new \eel_accounts\Service\AssetService())
+        ->runDepreciation($companyId, $accountingPeriodId);
+    $harness->assertTrue(!empty($depreciation['success']));
+
+    $provision = (new \eel_accounts\Service\CorporationTaxProvisionService())
+        ->postProvisionsForAccountingPeriod($companyId, $accountingPeriodId, 'golden_following_period_control');
+    $harness->assertTrue(!empty($provision['success']));
+
+    $acknowledgement = (new \eel_accounts\Service\YearEndChecklistService())
+        ->saveRetainedEarningsCloseAcknowledgement(
+            $companyId,
+            $accountingPeriodId,
+            true,
+            'golden_following_period_control',
+            'Golden following-period control figures agreed.'
+        );
+    $harness->assertTrue(!empty($acknowledgement['success']));
+
+    $retainedEarnings = (new \eel_accounts\Service\RetainedEarningsCloseService())
+        ->postClose($companyId, $accountingPeriodId, 'golden_following_period_control');
+    $harness->assertTrue(!empty($retainedEarnings['success']));
+
+    $taxPersistence = (new \eel_accounts\Service\CorporationTaxComputationService())
+        ->persistSummariesForYearEndLock($companyId, $accountingPeriodId);
+    $harness->assertTrue(!empty($taxPersistence['success']));
+
+    $lock = (new \eel_accounts\Service\YearEndLockService())
+        ->lockPeriod($companyId, $accountingPeriodId, 'golden_following_period_control');
+    $harness->assertTrue(!empty($lock['success']));
+}
+
+/** @return array<string, mixed> */
+function goldenFollowingPeriodEconomicSnapshot(int $companyId, int $accountingPeriodId): array
+{
+    $trialBalance = (new \eel_accounts\Service\TrialBalanceService())
+        ->fetchStateSnapshot($companyId, $accountingPeriodId);
+    $trialBalanceRows = [];
+    foreach ((array)($trialBalance['rows'] ?? []) as $row) {
+        $trialBalanceRows[(string)($row['nominal_code'] ?? '')] = goldenYearEndSelect($row, [
+            'nominal_account_id',
+            'total_debit',
+            'total_credit',
+            'net_movement',
+            'display_debit',
+            'display_credit',
+            'closing_balance_nature',
+            'journal_count',
+        ]);
+    }
+
+    $depreciation = (new \eel_accounts\Service\AssetService())
+        ->previewDepreciationRun($companyId, $accountingPeriodId);
+    $capitalAllowances = (new \eel_accounts\Service\CapitalAllowanceService())
+        ->fetchPeriodBreakdown($companyId, $accountingPeriodId, 0);
+    $prepayments = (new \eel_accounts\Service\PrepaymentScheduleService())
+        ->fetchPreviewAdjustmentContext($companyId, $accountingPeriodId);
+
+    return [
+        'reporting' => goldenYearEndReportingSnapshot($companyId, $accountingPeriodId),
+        'trial_balance' => [
+            'rows' => $trialBalanceRows,
+            'totals' => (array)($trialBalance['totals'] ?? []),
+            'summary' => (array)($trialBalance['summary'] ?? []),
+        ],
+        'assets' => [
+            'pending_depreciation_total' => round((float)($depreciation['total_amount'] ?? 0), 2),
+            'pending_depreciation_rows' => array_values((array)($depreciation['rows'] ?? [])),
+            'capital_allowances' => array_values((array)($capitalAllowances['rows'] ?? [])),
+            'capital_allowance_asset_calculations' => array_values(
+                (array)($capitalAllowances['asset_calculations'] ?? [])
+            ),
+            'capital_allowance_warnings' => array_values((array)($capitalAllowances['warnings'] ?? [])),
+            'capital_allowance_source' => (string)($capitalAllowances['calculation_source'] ?? ''),
+        ],
+        'prepayments' => [
+            'reliable' => !empty($prepayments['success']),
+            'adjustments' => array_values((array)($prepayments['adjustments'] ?? [])),
+            'errors' => array_values((array)($prepayments['errors'] ?? [])),
+        ],
+    ];
+}
+
+/** @return array<string, list<array<string, mixed>>> */
+function goldenFollowingPeriodRawState(int $companyId, int $accountingPeriodId): array
+{
+    $period = InterfaceDB::fetchOne(
+        'SELECT period_start, period_end
+         FROM accounting_periods
+         WHERE id = :accounting_period_id
+           AND company_id = :company_id
+         LIMIT 1',
+        [
+            'accounting_period_id' => $accountingPeriodId,
+            'company_id' => $companyId,
+        ]
+    );
+    if (!is_array($period)) {
+        throw new RuntimeException('The following accounting period could not be loaded for fingerprinting.');
+    }
+
+    $params = [
+        'company_id' => $companyId,
+        'accounting_period_id' => $accountingPeriodId,
+    ];
+    $assetParams = $params + [
+        'period_start' => (string)$period['period_start'],
+        'period_end' => (string)$period['period_end'],
+    ];
+
+    return [
+        'accounting_periods' => goldenFollowingPeriodRows(
+            'accounting_periods',
+            'SELECT *
+             FROM accounting_periods
+             WHERE company_id = :company_id
+               AND id = :accounting_period_id
+             ORDER BY id',
+            $params
+        ),
+        'statement_uploads' => goldenFollowingPeriodRows(
+            'statement_uploads',
+            'SELECT *
+             FROM statement_uploads
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+             ORDER BY id',
+            $params
+        ),
+        'transactions' => goldenFollowingPeriodRows(
+            'transactions',
+            'SELECT *
+             FROM transactions
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+             ORDER BY id',
+            $params
+        ),
+        'transaction_split_lines' => goldenFollowingPeriodRows(
+            'transaction_split_lines',
+            'SELECT tsl.*
+             FROM transaction_split_lines tsl
+             INNER JOIN transactions t ON t.id = tsl.transaction_id
+             WHERE t.company_id = :company_id
+               AND t.accounting_period_id = :accounting_period_id
+             ORDER BY tsl.id',
+            $params
+        ),
+        'expense_claims' => goldenFollowingPeriodRows(
+            'expense_claims',
+            'SELECT *
+             FROM expense_claims
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+             ORDER BY id',
+            $params
+        ),
+        'expense_claim_lines' => goldenFollowingPeriodRows(
+            'expense_claim_lines',
+            'SELECT ecl.*
+             FROM expense_claim_lines ecl
+             INNER JOIN expense_claims ec ON ec.id = ecl.expense_claim_id
+             WHERE ec.company_id = :company_id
+               AND ec.accounting_period_id = :accounting_period_id
+             ORDER BY ecl.id',
+            $params
+        ),
+        'journals' => goldenFollowingPeriodRows(
+            'journals',
+            'SELECT *
+             FROM journals
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+             ORDER BY id',
+            $params
+        ),
+        'journal_lines' => goldenFollowingPeriodRows(
+            'journal_lines',
+            'SELECT jl.*
+             FROM journal_lines jl
+             INNER JOIN journals j ON j.id = jl.journal_id
+             WHERE j.company_id = :company_id
+               AND j.accounting_period_id = :accounting_period_id
+             ORDER BY jl.id',
+            $params
+        ),
+        'journal_entry_metadata' => goldenFollowingPeriodRows(
+            'journal_entry_metadata',
+            'SELECT jem.*
+             FROM journal_entry_metadata jem
+             INNER JOIN journals j ON j.id = jem.journal_id
+             WHERE j.company_id = :company_id
+               AND j.accounting_period_id = :accounting_period_id
+             ORDER BY jem.id',
+            $params
+        ),
+        'accounting_period_adjustments' => goldenFollowingPeriodRows(
+            'accounting_period_adjustments',
+            'SELECT *
+             FROM accounting_period_adjustments
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+             ORDER BY id',
+            $params
+        ),
+        'asset_register' => goldenFollowingPeriodRows(
+            'asset_register',
+            'SELECT *
+             FROM asset_register
+             WHERE company_id = :company_id
+               AND purchase_date BETWEEN :period_start AND :period_end
+             ORDER BY id',
+            $assetParams
+        ),
+        'asset_vehicle_details' => goldenFollowingPeriodRows(
+            'asset_vehicle_details',
+            'SELECT avd.*
+             FROM asset_vehicle_details avd
+             INNER JOIN asset_register ar ON ar.id = avd.asset_id
+             WHERE ar.company_id = :company_id
+               AND ar.purchase_date BETWEEN :period_start AND :period_end
+             ORDER BY avd.asset_id',
+            $assetParams
+        ),
+        'asset_depreciation_entries' => goldenFollowingPeriodRows(
+            'asset_depreciation_entries',
+            'SELECT ade.*
+             FROM asset_depreciation_entries ade
+             INNER JOIN asset_register ar ON ar.id = ade.asset_id
+             WHERE ar.company_id = :company_id
+               AND ade.accounting_period_id = :accounting_period_id
+             ORDER BY ade.id',
+            $params
+        ),
+        'capital_allowance_pool_runs' => goldenFollowingPeriodRows(
+            'capital_allowance_pool_runs',
+            'SELECT *
+             FROM capital_allowance_pool_runs
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+             ORDER BY id',
+            $params
+        ),
+        'capital_allowance_asset_calculations' => goldenFollowingPeriodRows(
+            'capital_allowance_asset_calculations',
+            'SELECT *
+             FROM capital_allowance_asset_calculations
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+             ORDER BY id',
+            $params
+        ),
+        'prepayment_schedules' => goldenFollowingPeriodRows(
+            'prepayment_schedules',
+            'SELECT ps.*
+             FROM prepayment_schedules ps
+             WHERE ps.company_id = :company_id
+               AND EXISTS (
+                   SELECT 1
+                   FROM prepayment_schedule_periods psp
+                   WHERE psp.schedule_id = ps.id
+                     AND psp.accounting_period_id = :accounting_period_id
+               )
+             ORDER BY ps.id',
+            $params
+        ),
+        'prepayment_schedule_periods' => goldenFollowingPeriodRows(
+            'prepayment_schedule_periods',
+            'SELECT psp.*
+             FROM prepayment_schedule_periods psp
+             INNER JOIN prepayment_schedules ps ON ps.id = psp.schedule_id
+             WHERE ps.company_id = :company_id
+               AND psp.accounting_period_id = :accounting_period_id
+             ORDER BY psp.id',
+            $params
+        ),
+        'prepayment_schedule_postings' => goldenFollowingPeriodRows(
+            'prepayment_schedule_postings',
+            'SELECT psp.*
+             FROM prepayment_schedule_postings psp
+             INNER JOIN prepayment_schedules ps ON ps.id = psp.schedule_id
+             WHERE ps.company_id = :company_id
+               AND psp.accounting_period_id = :accounting_period_id
+             ORDER BY psp.id',
+            $params
+        ),
+        'corporation_tax_periods' => goldenFollowingPeriodRows(
+            'corporation_tax_periods',
+            'SELECT *
+             FROM corporation_tax_periods
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+             ORDER BY id',
+            $params
+        ),
+        'corporation_tax_computation_runs' => goldenFollowingPeriodRows(
+            'corporation_tax_computation_runs',
+            'SELECT *
+             FROM corporation_tax_computation_runs
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+             ORDER BY id',
+            $params
+        ),
+        'tax_loss_carryforwards' => goldenFollowingPeriodRows(
+            'tax_loss_carryforwards',
+            'SELECT *
+             FROM tax_loss_carryforwards
+             WHERE company_id = :company_id
+               AND origin_accounting_period_id = :accounting_period_id
+             ORDER BY id',
+            $params
+        ),
+        'tax_loss_movement_history' => goldenFollowingPeriodRows(
+            'tax_loss_movement_history',
+            'SELECT *
+             FROM tax_loss_movement_history
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+             ORDER BY id',
+            $params
+        ),
+        'hmrc_obligations' => goldenFollowingPeriodRows(
+            'hmrc_obligations',
+            'SELECT *
+             FROM hmrc_obligations
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+             ORDER BY id',
+            $params
+        ),
+        'accounting_period_month_confirmations' => goldenFollowingPeriodRows(
+            'accounting_period_month_confirmations',
+            'SELECT *
+             FROM accounting_period_month_confirmations
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+             ORDER BY id',
+            $params
+        ),
+        'year_end_reviews' => goldenFollowingPeriodRows(
+            'year_end_reviews',
+            'SELECT *
+             FROM year_end_reviews
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+             ORDER BY id',
+            $params
+        ),
+        'year_end_review_acknowledgements' => goldenFollowingPeriodRows(
+            'year_end_review_acknowledgements',
+            'SELECT *
+             FROM year_end_review_acknowledgements
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+             ORDER BY id',
+            $params
+        ),
+        'year_end_audit_log' => goldenFollowingPeriodRows(
+            'year_end_audit_log',
+            'SELECT *
+             FROM year_end_audit_log
+             WHERE company_id = :company_id
+               AND accounting_period_id = :accounting_period_id
+             ORDER BY id',
+            $params
+        ),
+    ];
+}
+
+/** @return list<array<string, mixed>> */
+function goldenFollowingPeriodRows(string $table, string $sql, array $params): array
+{
+    if (!InterfaceDB::tableExists($table)) {
+        return [];
+    }
+
+    return array_values(InterfaceDB::fetchAll($sql, $params) ?: []);
+}
+
+function goldenAssertFollowingPeriodInvariant(
+    array $expected,
+    array $actual,
+    int $accountingPeriodId,
+    string $field
+): void {
+    if ($expected === $actual) {
+        return;
+    }
+
+    throw new RuntimeException(GoldenComparisonReporter::report([[
+        'page' => 'year_end',
+        'card' => 'following_period_immutability',
+        'period' => $accountingPeriodId,
+        'field' => $field,
+        'expected' => $expected,
+        'actual' => $actual,
+    ]]));
+}
+
+function goldenAssertFollowingPeriodComplete(
+    GeneratedServiceClassTestHarness $harness,
+    array $snapshot
+): void {
+    $reporting = (array)($snapshot['reporting'] ?? []);
+    $tax = (array)($reporting['tax'] ?? []);
+    $profitLoss = (array)($reporting['profit_loss'] ?? []);
+    $companiesHouse = (array)($reporting['companies_house'] ?? []);
+    $trialBalance = (array)($snapshot['trial_balance'] ?? []);
+    $trialBalanceSummary = (array)($trialBalance['summary'] ?? []);
+    $trialBalanceStatus = (array)($trialBalanceSummary['trial_balance_status'] ?? []);
+    $taxDetail = (array)($reporting['tax_detail'] ?? []);
+    $capitalAllowanceSummary = (array)($taxDetail['capital_allowances_summary'] ?? []);
+
+    $harness->assertSame(
+        number_format((float)($tax['estimated_corporation_tax'] ?? 0), 2, '.', ''),
+        number_format((float)($profitLoss['estimated_corporation_tax'] ?? 0), 2, '.', '')
+    );
+    $harness->assertSame(
+        number_format(
+            (float)($profitLoss['profit_before_tax'] ?? 0)
+                - (float)($tax['estimated_corporation_tax'] ?? 0),
+            2,
+            '.',
+            ''
+        ),
+        number_format((float)($profitLoss['profit_after_estimated_tax'] ?? 0), 2, '.', '')
+    );
+    $harness->assertTrue(!empty($companiesHouse['is_balance_sheet_balanced']));
+    $harness->assertTrue(!empty($trialBalanceStatus['is_balanced']));
+    $harness->assertSame(
+        number_format((float)($companiesHouse['net_assets_liabilities'] ?? 0), 2, '.', ''),
+        number_format((float)($trialBalanceSummary['net_assets'] ?? 0), 2, '.', '')
+    );
+    $harness->assertSame(
+        number_format((float)($tax['capital_allowances'] ?? 0), 2, '.', ''),
+        number_format((float)($capitalAllowanceSummary['net_capital_allowances'] ?? 0), 2, '.', '')
+    );
+    $harness->assertSame(
+        'main_pool',
+        (string)($taxDetail['main_rate_pool']['pool_type'] ?? '')
+    );
+    $harness->assertSame(
+        'special_rate_pool',
+        (string)($taxDetail['special_rate_pool']['pool_type'] ?? '')
+    );
+}
 
 function goldenAssertFirstPeriodLockBoundary(GeneratedServiceClassTestHarness $harness, int $companyId): void
 {
@@ -321,6 +1145,15 @@ function goldenYearEndReportingSnapshot(int $companyId, int $periodId): array
             'taxable_before_losses', 'taxable_profit', 'taxable_loss', 'estimated_corporation_tax',
             'losses_brought_forward', 'losses_used', 'losses_carried_forward',
         ]),
+        'tax_detail' => [
+            'capital_allowances_summary' => (array)($tax['capital_allowances_summary'] ?? []),
+            'aia_allocation' => array_values((array)($tax['aia_allocation'] ?? [])),
+            'main_rate_pool' => (array)($tax['main_rate_pool'] ?? []),
+            'special_rate_pool' => (array)($tax['special_rate_pool'] ?? []),
+            'car_co2_treatment' => array_values((array)($tax['car_co2_treatment'] ?? [])),
+            'disposals_balancing' => array_values((array)($tax['disposals_balancing'] ?? [])),
+            'warnings' => array_values((array)($tax['warnings'] ?? [])),
+        ],
         'companies_house' => [
             'fixed_assets' => $companiesHouseFields['fixed_assets'] ?? null,
             'current_assets' => $companiesHouseFields['current_assets'] ?? null,

@@ -115,11 +115,21 @@ final class GoldenAccountingOracle
         $expenses = $periodResult['operating_expenses'];
         $profit = $periodResult['profit_before_tax'];
         $disallowableAddBack = round((float)($period['disallowable_add_back'] ?? 0), 2);
-        $taxableProfit = round(max(0, $profit + $disallowableAddBack + $depreciation), 2);
-        $tax = round($taxableProfit * (float)$period['tax_rate'], 2);
+        $taxResult = (array)(self::hmrcTaxSequence()[$periodId] ?? []);
+        $capitalAllowances = round((float)($taxResult['capital_allowances'] ?? 0), 2);
+        $taxableBeforeLosses = round((float)($taxResult['taxable_before_losses'] ?? 0), 2);
+        $taxableProfit = round((float)($taxResult['taxable_profit'] ?? 0), 2);
+        $taxableLoss = round(max(0.0, 0 - $taxableBeforeLosses), 2);
+        $tax = round((float)($taxResult['corporation_tax'] ?? 0), 2);
+        $estimatedRate = $taxableProfit > 0
+            ? round($tax / $taxableProfit, 6)
+            : 0.0;
+        $aiaAllocations = self::aiaAllocationsForPeriod($periodId);
+        $poolSummaries = self::capitalAllowancePoolSummaries($capitalAllowances);
 
         $closingAccounts = self::accountsThroughPeriod($periodId);
         $cumulativeDepreciation = self::cumulativeDepreciationThroughPeriod($periodId);
+        $cumulativeCorporationTax = self::cumulativeCorporationTaxThroughPeriod($periodId);
         $fixedAssets = round((float)($closingAccounts['fixed_assets']['net'] ?? 0) - $cumulativeDepreciation, 2);
         $hmrcPayable = (float)($closingAccounts['hmrc_payable']['net'] ?? 0);
         $directorLoan = (float)($closingAccounts['director_loan']['net'] ?? 0);
@@ -130,15 +140,36 @@ final class GoldenAccountingOracle
             + max(0, $directorLoan),
             2
         );
-        $creditorsWithinOneYear = round(max(0, -$directorLoan) + max(0, -$hmrcPayable), 2);
+        $creditorsWithinOneYear = round(
+            max(0, -$directorLoan)
+                + max(0, -$hmrcPayable)
+                + $cumulativeCorporationTax,
+            2
+        );
         $creditorsAfterOneYear = 0.00;
         $netCurrentAssets = round($currentAssets - $creditorsWithinOneYear, 2);
         $totalAssetsLessCurrentLiabilities = round($fixedAssets + $netCurrentAssets, 2);
         $totalNetAssets = round($totalAssetsLessCurrentLiabilities - $creditorsAfterOneYear, 2);
         $explicitEquity = round(-(float)($closingAccounts['equity']['net'] ?? 0), 2);
-        $capitalAndReserves = round($explicitEquity + self::cumulativeProfitThroughPeriod($periodId), 2);
+        $capitalAndReserves = round(
+            $explicitEquity
+                + self::cumulativeProfitThroughPeriod($periodId)
+                - $cumulativeCorporationTax,
+            2
+        );
         $balanceEquationDifference = round($totalNetAssets - $capitalAndReserves, 2);
         $hasFixedAssets = (float)($closingAccounts['fixed_assets']['net'] ?? 0) > 0.004;
+        $warningMessages = [];
+        if ($tax > 0) {
+            $warningMessages[] = 'Corporation Tax estimate assumes non-ring-fence profits.';
+            $warningMessages[] = 'Corporation Tax estimate assumes augmented profits equal taxable profits; review if exempt distributions were received.';
+        }
+        if ($hasFixedAssets && $depreciation < 0.005 && $capitalAllowances < 0.005) {
+            array_unshift(
+                $warningMessages,
+                'Fixed assets exist, but no depreciation entries or capital allowance runs were found.'
+            );
+        }
 
         $trialDebits = 0.0;
         $trialCredits = 0.0;
@@ -177,15 +208,20 @@ final class GoldenAccountingOracle
                 'accounting_profit' => $profit,
                 'disallowable_add_backs' => $disallowableAddBack,
                 'depreciation_add_back' => $depreciation,
-                'capital_allowances' => 0.00,
-                'taxable_before_losses' => $taxableProfit,
+                'capital_allowances' => $capitalAllowances,
+                'taxable_before_losses' => $taxableBeforeLosses,
                 'taxable_profit' => $taxableProfit,
-                'taxable_loss' => 0.00,
+                'taxable_loss' => $taxableLoss,
                 'estimated_corporation_tax' => $tax,
-                'estimated_rate' => (float)$period['tax_rate'],
-                'losses_used' => 0.00,
+                'estimated_rate' => $estimatedRate,
+                'losses_brought_forward' => round((float)($taxResult['losses_brought_forward'] ?? 0), 2),
+                'losses_used' => round((float)($taxResult['losses_used'] ?? 0), 2),
+                'losses_carried_forward' => round((float)($taxResult['losses_carried_forward'] ?? 0), 2),
                 'depreciation_row_count' => self::depreciationPreviewRowCount($periodId),
-                'warning_count' => 2 + (int)($hasFixedAssets && $depreciation < 0.005),
+                'aia_allocations' => $aiaAllocations,
+                'pool_summaries' => $poolSummaries,
+                'warning_count' => count($warningMessages),
+                'warning_messages' => $warningMessages,
             ],
             'companies_house' => [
                 'company_name' => 'Golden Electrical Test Limited',
@@ -361,6 +397,86 @@ final class GoldenAccountingOracle
         }
 
         return $total;
+    }
+
+    /** @return array<int, array<string, float>> */
+    private static function hmrcTaxSequence(): array
+    {
+        static $sequence = null;
+        if ($sequence === null) {
+            $sequence = GoldenHmrcCorporationTaxOracle::calculateSequence(
+                GoldenLedgerSpecification::hmrcTaxFacts()
+            );
+        }
+
+        return $sequence;
+    }
+
+    private static function cumulativeCorporationTaxThroughPeriod(int $periodId): float
+    {
+        $total = 0.0;
+        foreach (self::hmrcTaxSequence() as $candidatePeriodId => $taxResult) {
+            $total = round($total + (float)($taxResult['corporation_tax'] ?? 0), 2);
+            if ($candidatePeriodId === $periodId) {
+                break;
+            }
+        }
+
+        return $total;
+    }
+
+    /** @return list<array{asset_code: string, purchase_date: string, addition_amount: float, allowance_amount: float}> */
+    private static function aiaAllocationsForPeriod(int $periodId): array
+    {
+        $period = GoldenLedgerSpecification::periods()[$periodId] ?? null;
+        if (!is_array($period)) {
+            return [];
+        }
+
+        $rows = [];
+        foreach ((array)($period['asset_purchases'] ?? []) as $asset) {
+            if (!in_array((string)($asset['category'] ?? ''), ['tools_equipment', 'plant_machinery', 'van'], true)) {
+                continue;
+            }
+            $amount = round((float)($asset['cost'] ?? 0), 2);
+            $rows[] = [
+                'asset_code' => (string)($asset['code'] ?? ''),
+                'purchase_date' => (string)($asset['purchase_date'] ?? ''),
+                'addition_amount' => $amount,
+                'allowance_amount' => $amount,
+            ];
+        }
+
+        usort($rows, static function (array $left, array $right): int {
+            $date = strcmp($left['purchase_date'], $right['purchase_date']);
+            return $date !== 0 ? $date : strcmp($left['asset_code'], $right['asset_code']);
+        });
+
+        return $rows;
+    }
+
+    /** @return array<string, array<string, float|string>> */
+    private static function capitalAllowancePoolSummaries(float $capitalAllowances): array
+    {
+        $empty = [
+            'opening_wdv' => 0.0,
+            'additions' => 0.0,
+            'aia_claimed' => 0.0,
+            'fya_claimed' => 0.0,
+            'disposal_value' => 0.0,
+            'wda_claimed' => 0.0,
+            'balancing_charge' => 0.0,
+            'balancing_allowance' => 0.0,
+            'closing_wdv' => 0.0,
+        ];
+
+        return [
+            'main_rate_pool' => ['pool_type' => 'main_pool'] + array_replace(
+                $empty,
+                ['aia_claimed' => round($capitalAllowances, 2)]
+            ),
+            'special_rate_pool' => ['pool_type' => 'special_rate_pool'] + $empty,
+        ];
     }
 
     private static function depreciationPreviewRowCount(int $periodId): int

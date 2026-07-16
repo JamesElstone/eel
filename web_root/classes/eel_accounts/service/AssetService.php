@@ -1318,10 +1318,7 @@ final class AssetService
 
         $assets = $this->fetchDepreciableAssets($companyId, (string)$accountingPeriod['period_start'], (string)$accountingPeriod['period_end']);
         $summary = ['success' => true, 'created' => 0, 'skipped' => 0, 'errors' => []];
-        $ownsTransaction = !\InterfaceDB::inTransaction();
-        if ($ownsTransaction) {
-            \InterfaceDB::beginTransaction();
-        }
+        $transaction = $this->beginAssetMutationTransaction('asset_depreciation');
 
         try {
             foreach ($assets as $asset) {
@@ -1364,18 +1361,25 @@ final class AssetService
                 $summary['created']++;
             }
 
-            if ($ownsTransaction) {
-                \InterfaceDB::commit();
+            $capitalAllowances = (new \eel_accounts\Service\CapitalAllowanceService())
+                ->persistForAccountingPeriod($companyId, $accountingPeriodId);
+            if (empty($capitalAllowances['success'])) {
+                throw new \RuntimeException(implode(
+                    ' ',
+                    array_map(
+                        'strval',
+                        (array)($capitalAllowances['errors']
+                            ?? ['Capital allowances could not be persisted for this accounting period.'])
+                    )
+                ));
             }
+
+            $this->commitAssetMutationTransaction($transaction);
         } catch (\Throwable $exception) {
-            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
-                \InterfaceDB::rollBack();
-            }
+            $this->rollBackAssetMutationTransaction($transaction);
 
             return ['success' => false, 'errors' => ['Depreciation could not be posted: ' . $exception->getMessage()]];
         }
-
-        $this->refreshTaxData($companyId);
 
         return $summary;
     }
@@ -1530,10 +1534,7 @@ final class AssetService
         }
         (new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'dispose assets in this period');
 
-        $ownsTransaction = !\InterfaceDB::inTransaction();
-        if ($ownsTransaction) {
-            \InterfaceDB::beginTransaction();
-        }
+        $transaction = $this->beginAssetMutationTransaction('asset_nil_disposal');
 
         try {
             $summary = $this->postAssetDisposalJournalAndStatus(
@@ -1547,18 +1548,25 @@ final class AssetService
                 (string)$metadata['reason']
             );
 
-            if ($ownsTransaction) {
-                \InterfaceDB::commit();
+            $capitalAllowances = (new \eel_accounts\Service\CapitalAllowanceService())
+                ->persistForAccountingPeriod($companyId, $accountingPeriodId);
+            if (empty($capitalAllowances['success'])) {
+                throw new \RuntimeException(implode(
+                    ' ',
+                    array_map(
+                        'strval',
+                        (array)($capitalAllowances['errors']
+                            ?? ['Capital allowances could not be persisted for the disposal period.'])
+                    )
+                ));
             }
+
+            $this->commitAssetMutationTransaction($transaction);
         } catch (\Throwable $exception) {
-            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
-                \InterfaceDB::rollBack();
-            }
+            $this->rollBackAssetMutationTransaction($transaction);
 
             return ['success' => false, 'errors' => ['The asset disposal could not be posted: ' . $exception->getMessage()]];
         }
-
-        $this->refreshTaxData($companyId);
 
         return $this->disposalSuccessResponse($summary);
     }
@@ -1603,10 +1611,7 @@ final class AssetService
         (new \eel_accounts\Service\YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'dispose assets in this period');
 
         $proceeds = round(abs((float)$transaction['amount']), 2);
-        $ownsTransaction = !\InterfaceDB::inTransaction();
-        if ($ownsTransaction) {
-            \InterfaceDB::beginTransaction();
-        }
+        $transaction = $this->beginAssetMutationTransaction('asset_receipt_disposal');
 
         try {
             $saveResult = $this->categorisationService->saveManualCategorisation(
@@ -1643,18 +1648,25 @@ final class AssetService
             );
             $this->insertDisposalTransactionLink($assetId, $transactionId, $proceeds);
 
-            if ($ownsTransaction) {
-                \InterfaceDB::commit();
+            $capitalAllowances = (new \eel_accounts\Service\CapitalAllowanceService())
+                ->persistForAccountingPeriod($companyId, $accountingPeriodId);
+            if (empty($capitalAllowances['success'])) {
+                throw new \RuntimeException(implode(
+                    ' ',
+                    array_map(
+                        'strval',
+                        (array)($capitalAllowances['errors']
+                            ?? ['Capital allowances could not be persisted for the disposal period.'])
+                    )
+                ));
             }
+
+            $this->commitAssetMutationTransaction($transaction);
         } catch (\Throwable $exception) {
-            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
-                \InterfaceDB::rollBack();
-            }
+            $this->rollBackAssetMutationTransaction($transaction);
 
             return ['success' => false, 'errors' => ['The asset disposal could not be posted: ' . $exception->getMessage()]];
         }
-
-        $this->refreshTaxData($companyId);
 
         return $this->disposalSuccessResponse($summary);
     }
@@ -1772,6 +1784,53 @@ final class AssetService
     public function refreshTaxData(int $companyId): array
     {
         return (new \eel_accounts\Service\CapitalAllowanceService())->rebuildForCompany($companyId);
+    }
+
+    /** @return array{owns_transaction: bool, savepoint: string} */
+    private function beginAssetMutationTransaction(string $prefix): array
+    {
+        if (!\InterfaceDB::inTransaction()) {
+            \InterfaceDB::beginTransaction();
+
+            return ['owns_transaction' => true, 'savepoint' => ''];
+        }
+
+        $savepoint = preg_replace('/[^a-z0-9_]/i', '_', $prefix)
+            . '_' . bin2hex(random_bytes(6));
+        \InterfaceDB::execute('SAVEPOINT ' . $savepoint);
+
+        return ['owns_transaction' => false, 'savepoint' => $savepoint];
+    }
+
+    /** @param array{owns_transaction: bool, savepoint: string} $transaction */
+    private function commitAssetMutationTransaction(array $transaction): void
+    {
+        if (!empty($transaction['owns_transaction'])) {
+            \InterfaceDB::commit();
+            return;
+        }
+
+        $savepoint = trim((string)($transaction['savepoint'] ?? ''));
+        if ($savepoint !== '') {
+            \InterfaceDB::execute('RELEASE SAVEPOINT ' . $savepoint);
+        }
+    }
+
+    /** @param array{owns_transaction: bool, savepoint: string} $transaction */
+    private function rollBackAssetMutationTransaction(array $transaction): void
+    {
+        if (!empty($transaction['owns_transaction'])) {
+            if (\InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+            return;
+        }
+
+        $savepoint = trim((string)($transaction['savepoint'] ?? ''));
+        if ($savepoint !== '' && \InterfaceDB::inTransaction()) {
+            \InterfaceDB::execute('ROLLBACK TO SAVEPOINT ' . $savepoint);
+            \InterfaceDB::execute('RELEASE SAVEPOINT ' . $savepoint);
+        }
     }
 
     private function postAssetDisposalJournalAndStatus(

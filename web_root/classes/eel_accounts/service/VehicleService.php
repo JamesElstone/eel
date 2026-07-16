@@ -198,10 +198,7 @@ final class VehicleService
             return ['success' => false, 'errors' => ['The required motor vehicle nominal is missing.']];
         }
 
-        $ownsTransaction = !\InterfaceDB::inTransaction();
-        if ($ownsTransaction) {
-            \InterfaceDB::beginTransaction();
-        }
+        $transaction = $this->beginVehicleMutationTransaction();
 
         try {
             $this->upsertVehicleDetails($companyId, $assetId, $normalised['values'], $changedBy);
@@ -214,18 +211,25 @@ final class VehicleService
                 $this->syncLinkedSourceNominal($asset, $targetNominalId, $oldNominalId, $defaultBankNominalId);
             }
 
-            if ($ownsTransaction) {
-                \InterfaceDB::commit();
+            $capitalAllowances = (new \eel_accounts\Service\CapitalAllowanceService())
+                ->persistForAccountingPeriod($companyId, (int)$asset['accounting_period_id']);
+            if (empty($capitalAllowances['success'])) {
+                throw new \RuntimeException(implode(
+                    ' ',
+                    array_map(
+                        'strval',
+                        (array)($capitalAllowances['errors']
+                            ?? ['Capital allowances could not be persisted for this accounting period.'])
+                    )
+                ));
             }
+
+            $this->commitVehicleMutationTransaction($transaction);
         } catch (\Throwable $exception) {
-            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
-                \InterfaceDB::rollBack();
-            }
+            $this->rollBackVehicleMutationTransaction($transaction);
 
             return ['success' => false, 'errors' => ['Vehicle details could not be saved: ' . $exception->getMessage()]];
         }
-
-        (new \eel_accounts\Service\AssetService())->refreshTaxData($companyId);
 
         return [
             'success' => true,
@@ -307,6 +311,52 @@ final class VehicleService
         }
 
         return array_values(array_unique(array_filter($warnings)));
+    }
+
+    /** @return array{owns_transaction: bool, savepoint: string} */
+    private function beginVehicleMutationTransaction(): array
+    {
+        if (!\InterfaceDB::inTransaction()) {
+            \InterfaceDB::beginTransaction();
+
+            return ['owns_transaction' => true, 'savepoint' => ''];
+        }
+
+        $savepoint = 'vehicle_details_' . bin2hex(random_bytes(6));
+        \InterfaceDB::execute('SAVEPOINT ' . $savepoint);
+
+        return ['owns_transaction' => false, 'savepoint' => $savepoint];
+    }
+
+    /** @param array{owns_transaction: bool, savepoint: string} $transaction */
+    private function commitVehicleMutationTransaction(array $transaction): void
+    {
+        if (!empty($transaction['owns_transaction'])) {
+            \InterfaceDB::commit();
+            return;
+        }
+
+        $savepoint = trim((string)($transaction['savepoint'] ?? ''));
+        if ($savepoint !== '') {
+            \InterfaceDB::execute('RELEASE SAVEPOINT ' . $savepoint);
+        }
+    }
+
+    /** @param array{owns_transaction: bool, savepoint: string} $transaction */
+    private function rollBackVehicleMutationTransaction(array $transaction): void
+    {
+        if (!empty($transaction['owns_transaction'])) {
+            if (\InterfaceDB::inTransaction()) {
+                \InterfaceDB::rollBack();
+            }
+            return;
+        }
+
+        $savepoint = trim((string)($transaction['savepoint'] ?? ''));
+        if ($savepoint !== '' && \InterfaceDB::inTransaction()) {
+            \InterfaceDB::execute('ROLLBACK TO SAVEPOINT ' . $savepoint);
+            \InterfaceDB::execute('RELEASE SAVEPOINT ' . $savepoint);
+        }
     }
 
     private function fetchAsset(int $companyId, int $assetId): ?array

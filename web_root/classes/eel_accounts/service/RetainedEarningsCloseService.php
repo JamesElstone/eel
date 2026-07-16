@@ -23,6 +23,7 @@ final class RetainedEarningsCloseService
         private readonly ?\eel_accounts\Service\AssetService $assetService = null,
         private readonly ?\eel_accounts\Service\CorporationTaxProvisionService $corporationTaxProvisionService = null,
         private readonly ?\eel_accounts\Service\YearEndAcknowledgementService $acknowledgementService = null,
+        private readonly ?\Closure $prepaymentPreviewContextFetcher = null,
     ) {
     }
 
@@ -61,8 +62,44 @@ final class RetainedEarningsCloseService
         $depreciationPreview ??= ($this->assetService ?? new \eel_accounts\Service\AssetService())
             ->previewDepreciationRun($companyId, $accountingPeriodId);
         $plRows = $this->includePendingDepreciationRows($plRows, $depreciationPreview);
-        $prepaymentPreview ??= (new \eel_accounts\Service\PrepaymentScheduleService())
-            ->fetchPreviewAdjustments($companyId, $accountingPeriodId);
+        $prepaymentPreviewContext = [
+            'available' => true,
+            'success' => true,
+            'errors' => [],
+            'adjustments' => $prepaymentPreview ?? [],
+        ];
+        if ($prepaymentPreview === null) {
+            $prepaymentPreviewContext = $this->prepaymentPreviewContextFetcher !== null
+                ? (array)($this->prepaymentPreviewContextFetcher)($companyId, $accountingPeriodId)
+                : (new \eel_accounts\Service\PrepaymentScheduleService())
+                    ->fetchPreviewAdjustmentContext($companyId, $accountingPeriodId);
+            $prepaymentPreview = (array)($prepaymentPreviewContext['adjustments'] ?? []);
+        }
+        if (empty($prepaymentPreviewContext['available']) || empty($prepaymentPreviewContext['success'])) {
+            $prepaymentErrors = array_values(array_unique(array_filter(array_map(
+                'strval',
+                (array)($prepaymentPreviewContext['errors'] ?? ['The prepayment preview is unavailable or unreliable.'])
+            ))));
+
+            return [
+                'available' => false,
+                'errors' => $prepaymentErrors !== [] ? $prepaymentErrors : ['The prepayment preview is unavailable or unreliable.'],
+                'company_id' => $companyId,
+                'accounting_period' => $accountingPeriod,
+                'settings' => $settings,
+                'retained_earnings_nominal' => $retainedEarningsNominal,
+                'depreciation_preview' => $depreciationPreview,
+                'prepayment_preview' => $prepaymentPreview,
+                'prepayment_preview_context' => $prepaymentPreviewContext,
+                'prepayment_preview_reliable' => false,
+                'prior_period_dependency' => $priorPeriodDependency,
+                'acknowledged' => false,
+                'acknowledgement_stale' => true,
+                'acknowledgement_state' => 'unverifiable',
+                'can_acknowledge' => false,
+                'can_post' => false,
+            ];
+        }
         $plRows = $this->includePendingPrepaymentRows(
             $plRows,
             $companyId,
@@ -77,7 +114,19 @@ final class RetainedEarningsCloseService
         $profitAndLoss = $this->profitAndLossTotals($plRows);
         $openingEquity = $this->equityBalanceUntilDate($companyId, $periodStart, true, false);
         $closingEquityBeforeClose = $this->equityBalanceUntilDate($companyId, $periodEnd, false, true);
-        $expectedClosingEquity = round($openingEquity + (float)$profitAndLoss['profit_before_tax'], 2);
+        $directEquityMovement = round($closingEquityBeforeClose - $openingEquity, 2);
+        $shareCapitalMovement = $this->equityNominalMovementForPeriod(
+            $companyId,
+            $periodStart,
+            $periodEnd,
+            '3010',
+            true
+        );
+        $otherDirectEquityMovement = round($directEquityMovement - $shareCapitalMovement, 2);
+        $expectedClosingEquity = round(
+            $openingEquity + $directEquityMovement + (float)$profitAndLoss['profit_before_tax'],
+            2
+        );
         $balanceSheet = $balanceSheetMetrics
             ?? $metrics->fetchBalanceSheetMetricValues(
                 $companyId,
@@ -111,6 +160,9 @@ final class RetainedEarningsCloseService
             'current_profit_loss' => round((float)$profitAndLoss['profit_before_tax'], 2),
             'closing_equity_before_close' => round($closingEquityBeforeClose, 2),
             'expected_closing_equity' => $expectedClosingEquity,
+            'direct_equity_movement' => $directEquityMovement,
+            'share_capital_movement' => $shareCapitalMovement,
+            'other_direct_equity_movement' => $otherDirectEquityMovement,
             'retained_earnings_movement' => round((float)$profitAndLoss['profit_before_tax'], 2),
             'unexplained_movement_before_close' => round($closingEquityBeforeClose - $expectedClosingEquity, 2),
             'assets' => $assets,
@@ -131,6 +183,8 @@ final class RetainedEarningsCloseService
             'summary' => $summary,
             'depreciation_preview' => $depreciationPreview,
             'prepayment_preview' => $prepaymentPreview,
+            'prepayment_preview_context' => $prepaymentPreviewContext,
+            'prepayment_preview_reliable' => true,
             'corporation_tax_provision' => $corporationTaxProvision,
             'profit_and_loss_rows' => $plRows,
             'journal_lines' => $journalLines,
@@ -144,7 +198,7 @@ final class RetainedEarningsCloseService
         $acknowledgement = $service->fetch($companyId, $accountingPeriodId, 'retained_earnings_close_confirmation');
         $evaluation = $service->evaluate(
             $acknowledgement,
-            $this->acknowledgementBasis($service, $context),
+            $this->acknowledgementBasisForContext($context),
             ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId)
         );
 
@@ -185,7 +239,7 @@ final class RetainedEarningsCloseService
             $companyId,
             $accountingPeriodId,
             'retained_earnings_close_confirmation',
-            $this->acknowledgementBasis($service, $context),
+            $this->acknowledgementBasisForContext($context),
             $changedBy,
             $note
         );
@@ -208,20 +262,20 @@ final class RetainedEarningsCloseService
             ];
         }
 
-        if (!$acknowledgementPrevalidated && empty($context['acknowledged'])) {
-            return [
-                'success' => false,
-                'status' => 422,
-                'errors' => ['Review and agree the retained earnings close before locking this accounting period.'],
-                'context' => $context,
-            ];
-        }
-
-        if (!$acknowledgementPrevalidated && !empty($context['acknowledgement_stale'])) {
+        if (!empty($context['acknowledgement_stale'])) {
             return [
                 'success' => false,
                 'status' => 422,
                 'errors' => ['The retained earnings figures have changed since acknowledgement. Review and agree the retained earnings close again.'],
+                'context' => $context,
+            ];
+        }
+
+        if (empty($context['acknowledged'])) {
+            return [
+                'success' => false,
+                'status' => 422,
+                'errors' => ['Review and agree the retained earnings close before locking this accounting period.'],
                 'context' => $context,
             ];
         }
@@ -268,13 +322,31 @@ final class RetainedEarningsCloseService
         return ['success' => true, 'deleted' => false, 'skipped' => true];
     }
 
-    private function acknowledgementBasis(YearEndAcknowledgementService $service, array $context): array
+    public function acknowledgementBasisForContext(array $context): array
     {
-        return $service->buildBasis('retained_earnings_close_confirmation', [
-            'summary' => (array)($context['summary'] ?? []),
-            'journal_lines' => (array)($context['journal_lines'] ?? []),
-            'prior_period_dependency' => (array)($context['prior_period_dependency'] ?? []),
-        ]);
+        return ($this->acknowledgementService ?? new \eel_accounts\Service\YearEndAcknowledgementService())
+            ->buildBasis('retained_earnings_close_confirmation', [
+                'summary' => $this->stableAcknowledgementSummary((array)($context['summary'] ?? [])),
+                'journal_lines' => (array)($context['journal_lines'] ?? []),
+                'prior_period_dependency' => (array)($context['prior_period_dependency'] ?? []),
+            ]);
+    }
+
+    private function stableAcknowledgementSummary(array $summary): array
+    {
+        return array_intersect_key($summary, array_flip([
+            'opening_equity',
+            'current_profit_loss',
+            'closing_equity_before_close',
+            'expected_closing_equity',
+            'direct_equity_movement',
+            'share_capital_movement',
+            'other_direct_equity_movement',
+            'retained_earnings_movement',
+            'unexplained_movement_before_close',
+            'balance_equation_difference',
+            'is_balance_sheet_balanced',
+        ]));
     }
 
     private function priorPeriodDependency(int $companyId, string $periodStart): array
@@ -694,6 +766,46 @@ final class RetainedEarningsCloseService
                AND j.is_posted = 1
                AND j.journal_date ' . $operator . ' :date
                AND na.account_type = :account_type'
+             . $where,
+            $params
+        ), 2);
+    }
+
+    private function equityNominalMovementForPeriod(
+        int $companyId,
+        string $periodStart,
+        string $periodEnd,
+        string $nominalCode,
+        bool $excludeCloseJournal
+    ): float {
+        $join = '';
+        $where = '';
+        $params = [
+            'company_id' => $companyId,
+            'period_start' => $periodStart,
+            'period_end' => $periodEnd,
+            'account_type' => 'equity',
+            'nominal_code' => $nominalCode,
+        ];
+        if ($excludeCloseJournal) {
+            $join = ' LEFT JOIN journal_entry_metadata jem_close
+                ON jem_close.journal_id = j.id
+               AND jem_close.journal_tag = :close_journal_tag';
+            $where = ' AND jem_close.id IS NULL';
+            $params['close_journal_tag'] = self::JOURNAL_TAG;
+        }
+
+        return round((float)\InterfaceDB::fetchColumn(
+            'SELECT COALESCE(SUM(COALESCE(jl.credit, 0) - COALESCE(jl.debit, 0)), 0)
+             FROM journals j
+             INNER JOIN journal_lines jl ON jl.journal_id = j.id
+             INNER JOIN nominal_accounts na ON na.id = jl.nominal_account_id'
+             . $join . '
+             WHERE j.company_id = :company_id
+               AND j.is_posted = 1
+               AND j.journal_date BETWEEN :period_start AND :period_end
+               AND na.account_type = :account_type
+               AND na.code = :nominal_code'
              . $where,
             $params
         ), 2);

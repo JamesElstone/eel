@@ -353,7 +353,7 @@ final class GoldenCapitalAllowanceMatrixFixture
 $harness = new GeneratedServiceClassTestHarness();
 $subject = 'GoldenCapitalAllowanceMatrix';
 
-$harness->check($subject, 'distinguishes missing pool state and replaces stale pool state', static function () use ($harness): void {
+$harness->check($subject, 'calculates missing and stale open-period pool state without mutating it on read', static function () use ($harness): void {
     GoldenCapitalAllowanceMatrixFixture::rollbackAfter(static function () use ($harness): void {
     $companyId = 98101;
     $periodId = 981011;
@@ -363,15 +363,41 @@ $harness->check($subject, 'distinguishes missing pool state and replaces stale p
 
     $service = new \eel_accounts\Service\CapitalAllowanceService();
     $missing = $service->fetchPeriodBreakdown($companyId, $periodId);
-    $harness->assertSame(false, (bool)$missing['available']);
-    $harness->assertSame([], $missing['rows']);
+    $harness->assertSame(true, (bool)$missing['available']);
+    $harness->assertSame('transient', (string)($missing['calculation_source'] ?? ''));
+    $harness->assertCount(2, (array)$missing['rows']);
+    $harness->assertSame(
+        0,
+        (int)InterfaceDB::fetchColumn(
+            'SELECT COUNT(*) FROM capital_allowance_pool_runs WHERE company_id = :company_id',
+            ['company_id' => $companyId]
+        )
+    );
+    $harness->assertSame(
+        0,
+        (int)InterfaceDB::fetchColumn(
+            'SELECT COUNT(*) FROM corporation_tax_periods WHERE company_id = :company_id',
+            ['company_id' => $companyId]
+        )
+    );
 
     $sync = (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $periodId);
     $harness->assertSame(true, (bool)($sync['success'] ?? false));
     $ctPeriodId = GoldenCapitalAllowanceMatrixFixture::ctPeriodId($companyId, $periodId);
     $staleHash = GoldenCapitalAllowanceMatrixFixture::insertStalePool($companyId, $periodId, $ctPeriodId);
     $stale = $service->fetchPeriodBreakdown($companyId, $periodId, $ctPeriodId);
-    $harness->assertSame(999.0, GoldenCapitalAllowanceMatrixFixture::money($stale['rows'][0]['closing_wdv'] ?? 0));
+    $harness->assertSame('transient', (string)($stale['calculation_source'] ?? ''));
+    $harness->assertCount(2, (array)($stale['rows'] ?? []));
+    foreach ((array)($stale['rows'] ?? []) as $row) {
+        $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($row['closing_wdv'] ?? -1));
+    }
+    $harness->assertSame(
+        1,
+        (int)InterfaceDB::fetchColumn(
+            'SELECT COUNT(*) FROM capital_allowance_pool_runs WHERE company_id = :company_id AND run_hash = :run_hash',
+            ['company_id' => $companyId, 'run_hash' => $staleHash]
+        )
+    );
 
     $service->rebuildForCompany($companyId);
     $rebuilt = $service->fetchPeriodBreakdown($companyId, $periodId, $ctPeriodId);
@@ -388,7 +414,7 @@ $harness->check($subject, 'distinguishes missing pool state and replaces stale p
     });
 });
 
-$harness->check($subject, 'automatically replaces recognisable legacy service runs without deleting custom hashes', static function () use ($harness): void {
+$harness->check($subject, 'leaves recognisable legacy runs untouched on read and replaces them only on explicit rebuild', static function () use ($harness): void {
     GoldenCapitalAllowanceMatrixFixture::rollbackAfter(static function () use ($harness): void {
     $companyId = 98111;
     $periodId = 981111;
@@ -407,10 +433,22 @@ $harness->check($subject, 'automatically replaces recognisable legacy service ru
         ->fetchPeriodBreakdown($companyId, $periodId, $ctPeriodId);
 
     $harness->assertSame(true, (bool)($breakdown['available'] ?? false));
+    $harness->assertSame('transient', (string)($breakdown['calculation_source'] ?? ''));
     $harness->assertCount(2, (array)($breakdown['rows'] ?? []));
     foreach ((array)($breakdown['rows'] ?? []) as $row) {
         $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($row['closing_wdv'] ?? -1));
     }
+    $harness->assertSame(
+        1,
+        (int)InterfaceDB::fetchColumn(
+            'SELECT COUNT(*)
+             FROM capital_allowance_pool_runs
+             WHERE company_id = :company_id
+               AND run_hash = :run_hash',
+            ['company_id' => $companyId, 'run_hash' => $legacyHash]
+        )
+    );
+    (new \eel_accounts\Service\CapitalAllowanceService())->rebuildForCompany($companyId);
     $harness->assertSame(
         0,
         (int)InterfaceDB::fetchColumn(
@@ -434,6 +472,254 @@ $harness->check($subject, 'automatically replaces recognisable legacy service ru
         $harness->assertSame(64, strlen($hash));
         $harness->assertTrue(str_starts_with($hash, 'ca02:'));
     }
+    });
+});
+
+$harness->check($subject, 'preserves locked prior-period evidence when a later-period asset changes', static function () use ($harness): void {
+    GoldenCapitalAllowanceMatrixFixture::rollbackAfter(static function () use ($harness): void {
+    $companyId = 98115;
+    $firstPeriodId = 981151;
+    $secondPeriodId = 981152;
+    $nominals = GoldenCapitalAllowanceMatrixFixture::beginScenario($companyId, [
+        ['id' => $firstPeriodId, 'start' => '2099-01-01', 'end' => '2099-12-31'],
+        ['id' => $secondPeriodId, 'start' => '2100-01-01', 'end' => '2100-12-31'],
+    ]);
+    GoldenCapitalAllowanceMatrixFixture::addAsset(
+        9811501,
+        $companyId,
+        $nominals['car'],
+        $nominals['accumulated_depreciation'],
+        'GCA-LOCKED-PRIOR-CAR',
+        'car',
+        '2099-01-15',
+        10000.0
+    );
+    GoldenCapitalAllowanceMatrixFixture::addVehicle(9811501, $companyId, 'second_hand', false, 75);
+    GoldenCapitalAllowanceMatrixFixture::addAsset(
+        9811503,
+        $companyId,
+        $nominals['car'],
+        $nominals['accumulated_depreciation'],
+        'GCA-LOCKED-PRIOR-FYA',
+        'car',
+        '2099-02-01',
+        2000.0,
+        [
+            'status' => 'disposed',
+            'disposal_date' => '2100-06-30',
+            'disposal_proceeds' => 800.0,
+            'disposal_event_type' => 'sale',
+        ]
+    );
+    GoldenCapitalAllowanceMatrixFixture::addVehicle(9811503, $companyId, 'new_unused', true, 0);
+    GoldenCapitalAllowanceMatrixFixture::addAsset(
+        9811504,
+        $companyId,
+        $nominals['plant'],
+        $nominals['accumulated_depreciation'],
+        'GCA-LOCKED-PRIOR-AIA',
+        'tools_equipment',
+        '2099-03-01',
+        300.0,
+        [
+            'status' => 'disposed',
+            'disposal_date' => '2100-07-01',
+            'disposal_proceeds' => 100.0,
+            'disposal_event_type' => 'sale',
+        ]
+    );
+    GoldenCapitalAllowanceMatrixFixture::addAsset(
+        9811502,
+        $companyId,
+        $nominals['plant'],
+        $nominals['accumulated_depreciation'],
+        'GCA-LATER-ASSET',
+        'tools_equipment',
+        '2100-02-01',
+        500.0
+    );
+
+    $service = new \eel_accounts\Service\CapitalAllowanceService();
+    $initial = $service->rebuildForCompany($companyId);
+    $harness->assertSame(true, (bool)($initial['success'] ?? false));
+    InterfaceDB::prepareExecute(
+        'UPDATE year_end_reviews
+         SET is_locked = 1, locked_at = CURRENT_TIMESTAMP, locked_by = :locked_by
+         WHERE company_id = :company_id
+           AND accounting_period_id = :accounting_period_id',
+        [
+            'locked_by' => 'golden-test',
+            'company_id' => $companyId,
+            'accounting_period_id' => $firstPeriodId,
+        ]
+    );
+    $priorPools = InterfaceDB::fetchAll(
+        'SELECT id, ct_period_id, pool_type, opening_wdv, additions, aia_claimed, fya_claimed,
+                disposal_value, wda_claimed, balancing_charge, balancing_allowance, closing_wdv,
+                warnings_json, run_hash
+         FROM capital_allowance_pool_runs
+         WHERE company_id = :company_id
+           AND accounting_period_id = :accounting_period_id
+         ORDER BY id ASC',
+        ['company_id' => $companyId, 'accounting_period_id' => $firstPeriodId]
+    ) ?: [];
+    $priorAssets = InterfaceDB::fetchAll(
+        'SELECT id, ct_period_id, asset_id, pool_type, allowance_type,
+                addition_amount, allowance_amount, disposal_value, warning
+         FROM capital_allowance_asset_calculations
+         WHERE company_id = :company_id
+           AND accounting_period_id = :accounting_period_id
+         ORDER BY id ASC',
+        ['company_id' => $companyId, 'accounting_period_id' => $firstPeriodId]
+    ) ?: [];
+
+    InterfaceDB::prepareExecute(
+        'UPDATE asset_register SET cost = :cost WHERE id = :id',
+        ['cost' => 750.0, 'id' => 9811502]
+    );
+    $rebuilt = $service->rebuildForCompany($companyId);
+    $harness->assertSame(true, (bool)($rebuilt['success'] ?? false));
+    $harness->assertSame($priorPools, InterfaceDB::fetchAll(
+        'SELECT id, ct_period_id, pool_type, opening_wdv, additions, aia_claimed, fya_claimed,
+                disposal_value, wda_claimed, balancing_charge, balancing_allowance, closing_wdv,
+                warnings_json, run_hash
+         FROM capital_allowance_pool_runs
+         WHERE company_id = :company_id
+           AND accounting_period_id = :accounting_period_id
+         ORDER BY id ASC',
+        ['company_id' => $companyId, 'accounting_period_id' => $firstPeriodId]
+    ) ?: []);
+    $harness->assertSame($priorAssets, InterfaceDB::fetchAll(
+        'SELECT id, ct_period_id, asset_id, pool_type, allowance_type,
+                addition_amount, allowance_amount, disposal_value, warning
+         FROM capital_allowance_asset_calculations
+         WHERE company_id = :company_id
+           AND accounting_period_id = :accounting_period_id
+         ORDER BY id ASC',
+        ['company_id' => $companyId, 'accounting_period_id' => $firstPeriodId]
+    ) ?: []);
+
+    $blocked = $service->persistForAccountingPeriod($companyId, $firstPeriodId);
+    $harness->assertSame(false, (bool)($blocked['success'] ?? true));
+    $harness->assertTrue(str_contains(
+        implode(' ', array_map('strval', (array)($blocked['errors'] ?? []))),
+        'locked'
+    ));
+
+    $firstSpecial = GoldenCapitalAllowanceMatrixFixture::pools(
+        $companyId,
+        $firstPeriodId,
+        GoldenCapitalAllowanceMatrixFixture::ctPeriodId($companyId, $firstPeriodId)
+    )['special_rate_pool'];
+    $secondSpecial = GoldenCapitalAllowanceMatrixFixture::pools(
+        $companyId,
+        $secondPeriodId,
+        GoldenCapitalAllowanceMatrixFixture::ctPeriodId($companyId, $secondPeriodId)
+    )['special_rate_pool'];
+    $harness->assertSame(
+        GoldenCapitalAllowanceMatrixFixture::money($firstSpecial['closing_wdv'] ?? 0),
+        GoldenCapitalAllowanceMatrixFixture::money($secondSpecial['opening_wdv'] ?? -1)
+    );
+    $secondMain = GoldenCapitalAllowanceMatrixFixture::pools(
+        $companyId,
+        $secondPeriodId,
+        GoldenCapitalAllowanceMatrixFixture::ctPeriodId($companyId, $secondPeriodId)
+    )['main_pool'];
+    $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($secondMain['opening_wdv'] ?? -1));
+    $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($secondMain['additions'] ?? -1));
+    $harness->assertSame(900.0, GoldenCapitalAllowanceMatrixFixture::money($secondMain['disposal_value'] ?? 0));
+    $harness->assertSame(900.0, GoldenCapitalAllowanceMatrixFixture::money($secondMain['balancing_charge'] ?? 0));
+    $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($secondMain['closing_wdv'] ?? -1));
+    });
+});
+
+$harness->check($subject, 'reports read calculation failure and rolls back a CT-period synchronisation failure', static function () use ($harness): void {
+    GoldenCapitalAllowanceMatrixFixture::rollbackAfter(static function () use ($harness): void {
+    $companyId = 98116;
+    $periodId = 981161;
+    GoldenCapitalAllowanceMatrixFixture::beginScenario($companyId, [
+        ['id' => $periodId, 'start' => '2099-01-01', 'end' => '2099-12-31'],
+    ]);
+    $initialService = new \eel_accounts\Service\CapitalAllowanceService();
+    $initial = $initialService->rebuildForCompany($companyId);
+    $harness->assertSame(true, (bool)($initial['success'] ?? false));
+    $before = InterfaceDB::fetchAll(
+        'SELECT id, pool_type, opening_wdv, closing_wdv, run_hash
+         FROM capital_allowance_pool_runs
+         WHERE company_id = :company_id
+         ORDER BY id ASC',
+        ['company_id' => $companyId]
+    ) ?: [];
+    InterfaceDB::prepareExecute(
+        'UPDATE corporation_tax_periods
+         SET status = :status
+         WHERE company_id = :company_id
+           AND accounting_period_id = :accounting_period_id',
+        [
+            'status' => 'submitted',
+            'company_id' => $companyId,
+            'accounting_period_id' => $periodId,
+        ]
+    );
+    $finalRead = $initialService->fetchPeriodBreakdown(
+        $companyId,
+        $periodId,
+        GoldenCapitalAllowanceMatrixFixture::ctPeriodId($companyId, $periodId)
+    );
+    $harness->assertSame('persisted', (string)($finalRead['calculation_source'] ?? ''));
+    $harness->assertCount(2, (array)($finalRead['rows'] ?? []));
+    InterfaceDB::prepareExecute(
+        'UPDATE corporation_tax_periods
+         SET status = :status
+         WHERE company_id = :company_id
+           AND accounting_period_id = :accounting_period_id',
+        [
+            'status' => 'pending',
+            'company_id' => $companyId,
+            'accounting_period_id' => $periodId,
+        ]
+    );
+    InterfaceDB::prepareExecute(
+        'UPDATE tax_rate_rules
+         SET is_active = 0
+         WHERE tax_domain = :tax_domain',
+        ['tax_domain' => 'capital_allowances']
+    );
+    $failedRead = $initialService->fetchPeriodBreakdown(
+        $companyId,
+        $periodId,
+        GoldenCapitalAllowanceMatrixFixture::ctPeriodId($companyId, $periodId)
+    );
+    $harness->assertSame(false, (bool)($failedRead['available'] ?? true));
+    $harness->assertSame('calculation_failed', (string)($failedRead['calculation_source'] ?? ''));
+    $harness->assertSame([], (array)($failedRead['rows'] ?? ['unexpected']));
+    InterfaceDB::prepareExecute(
+        'UPDATE tax_rate_rules
+         SET is_active = 1
+         WHERE tax_domain = :tax_domain',
+        ['tax_domain' => 'capital_allowances']
+    );
+
+    $failingCtPeriodService = new \eel_accounts\Service\CorporationTaxPeriodService(
+        static fn(int $candidateCompanyId): array => [
+            'tax_year_end_read_only' => $candidateCompanyId === $companyId,
+            'message' => 'Synthetic CT synchronisation failure.',
+        ]
+    );
+    $service = new \eel_accounts\Service\CapitalAllowanceService(null, $failingCtPeriodService);
+    $failed = $service->rebuildForCompany($companyId);
+    $harness->assertSame(false, (bool)($failed['success'] ?? true));
+    $harness->assertTrue(str_contains(
+        implode(' ', array_map('strval', (array)($failed['errors'] ?? []))),
+        'Synthetic CT synchronisation failure'
+    ));
+    $harness->assertSame($before, InterfaceDB::fetchAll(
+        'SELECT id, pool_type, opening_wdv, closing_wdv, run_hash
+         FROM capital_allowance_pool_runs
+         WHERE company_id = :company_id
+         ORDER BY id ASC',
+        ['company_id' => $companyId]
+    ) ?: []);
     });
 });
 

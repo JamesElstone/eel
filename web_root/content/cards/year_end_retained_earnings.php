@@ -106,6 +106,8 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
             <div class="month-grid">
                 ' . $this->summaryCard('Opening equity', $this->money($companySettings, $summary['opening_equity'] ?? 0)) . '
                 ' . $this->summaryCard('Current profit / loss', $this->money($companySettings, $summary['current_profit_loss'] ?? 0)) . '
+                ' . $this->summaryCard('Direct equity movements', $this->money($companySettings, $summary['direct_equity_movement'] ?? 0)) . '
+                ' . $this->summaryCard('Share capital movement', $this->money($companySettings, $summary['share_capital_movement'] ?? 0)) . '
                 ' . $this->summaryCard('Closing equity before close', $this->money($companySettings, $summary['closing_equity_before_close'] ?? 0)) . '
                 ' . $this->summaryCard('Retained earnings movement', $this->money($companySettings, $summary['retained_earnings_movement'] ?? 0)) . '
             </div>

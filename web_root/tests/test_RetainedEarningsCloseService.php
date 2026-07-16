@@ -66,6 +66,22 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
             );
             $harness->assertSame(false, (bool)($context['acknowledged'] ?? true));
 
+            $bypassAttempt = $service->postClose(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                'test',
+                true
+            );
+            $harness->assertSame(false, (bool)($bypassAttempt['success'] ?? true));
+            $harness->assertSame(
+                0,
+                InterfaceDB::countWhere('journal_entry_metadata', [
+                    'company_id' => (int)$fixture['company_id'],
+                    'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                    'journal_tag' => \eel_accounts\Service\RetainedEarningsCloseService::JOURNAL_TAG,
+                ])
+            );
+
             $acknowledged = $service->saveAcknowledgement((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], true, 'test');
             $harness->assertSame(true, (bool)($acknowledged['success'] ?? false));
 
@@ -190,6 +206,8 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
             $harness->assertSame(0, (int)(($afterPosting['depreciation_preview'] ?? [])['created'] ?? -1));
             $harness->assertSame('600.00', number_format((float)(($afterPosting['summary'] ?? [])['current_profit_loss'] ?? 0), 2, '.', ''));
             $harness->assertSame(false, (bool)($afterPosting['acknowledgement_stale'] ?? true));
+            $postedClose = $service->postClose((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'test');
+            $harness->assertSame(true, (bool)($postedClose['success'] ?? false));
         } finally {
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();
@@ -228,6 +246,118 @@ $harness->run(\eel_accounts\Service\RetainedEarningsCloseService::class, static 
         $harness->assertSame('100.00', (string)$withReversal[0]['total_debit']);
         $harness->assertSame('25.50', (string)$withReversal[0]['total_credit']);
         $harness->assertSame('-25.50', (string)$withReversal[0]['pending_corporation_tax_provision']);
+    });
+
+    $harness->check(\eel_accounts\Service\RetainedEarningsCloseService::class, 'blocks approval when the prepayment preview is unreliable', static function () use ($harness): void {
+        InterfaceDB::beginTransaction();
+        try {
+            retainedEarningsCloseRequireSchema($harness);
+            StandardNominalTestFixture::ensureNominals(['1000', '3000', '4000', '5000']);
+            $fixture = retainedEarningsCloseCreateLossFixture();
+            $service = new \eel_accounts\Service\RetainedEarningsCloseService(
+                prepaymentPreviewContextFetcher: static fn(int $companyId, int $accountingPeriodId): array => [
+                    'available' => true,
+                    'success' => false,
+                    'errors' => ['Prepayment source evidence no longer matches the approved schedule.'],
+                    'adjustments' => [],
+                ]
+            );
+
+            $context = $service->fetchContext(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                ['available' => true, 'unposted_corporation_tax_adjustment' => 0.0],
+                [
+                    'fixed_assets' => 0.0,
+                    'current_assets' => 0.0,
+                    'creditors_within_one_year' => 0.0,
+                    'creditors_after_more_than_one_year' => 0.0,
+                    'equity_capital_reserves' => 0.0,
+                ],
+                ['success' => true, 'created' => 0, 'total_amount' => 0.0]
+            );
+
+            $harness->assertSame(false, (bool)($context['available'] ?? true));
+            $harness->assertSame(false, (bool)($context['prepayment_preview_reliable'] ?? true));
+            $harness->assertSame(false, (bool)($context['can_acknowledge'] ?? true));
+            $harness->assertSame(false, (bool)($context['can_post'] ?? true));
+            $harness->assertTrue(str_contains(implode(' ', (array)($context['errors'] ?? [])), 'no longer matches'));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
+    $harness->check(\eel_accounts\Service\RetainedEarningsCloseService::class, 'separates share capital from the unposted profit and loss equity bridge', static function () use ($harness): void {
+        InterfaceDB::beginTransaction();
+        try {
+            retainedEarningsCloseRequireSchema($harness);
+            StandardNominalTestFixture::ensureNominals(['1000', '3000', '4000', '5000']);
+            retainedEarningsCloseEnsureNominal('3010', 'Ordinary Share Capital', 'equity');
+            $fixture = retainedEarningsCloseCreateLossFixture();
+            retainedEarningsCloseInsertJournal(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                (string)$fixture['marker'] . '-share-capital',
+                '2026-01-10',
+                [
+                    [
+                        'nominal_account_id' => retainedEarningsCloseNominalId('1000'),
+                        'debit' => '500.00',
+                        'credit' => '0.00',
+                        'line_description' => 'Share capital received',
+                    ],
+                    [
+                        'nominal_account_id' => retainedEarningsCloseNominalId('3010'),
+                        'debit' => '0.00',
+                        'credit' => '500.00',
+                        'line_description' => 'Ordinary share capital',
+                    ],
+                ]
+            );
+
+            $companyId = (int)$fixture['company_id'];
+            $accountingPeriodId = (int)$fixture['accounting_period_id'];
+            $service = new \eel_accounts\Service\RetainedEarningsCloseService();
+            $context = $service->fetchContext($companyId, $accountingPeriodId);
+            $summary = (array)($context['summary'] ?? []);
+
+            $harness->assertSame('500.00', number_format((float)($summary['direct_equity_movement'] ?? 0), 2, '.', ''));
+            $harness->assertSame('500.00', number_format((float)($summary['share_capital_movement'] ?? 0), 2, '.', ''));
+            $harness->assertSame('0.00', number_format((float)($summary['other_direct_equity_movement'] ?? 0), 2, '.', ''));
+            $harness->assertSame('300.00', number_format((float)($summary['expected_closing_equity'] ?? 0), 2, '.', ''));
+            $harness->assertSame('200.00', number_format((float)($summary['unexplained_movement_before_close'] ?? 0), 2, '.', ''));
+
+            $beforeClose = (new \eel_accounts\Service\YearEndMetricsService())->financialStatementsSummary(
+                $companyId,
+                $accountingPeriodId,
+                '2026-01-01',
+                '2026-12-31'
+            );
+            $beforeBridge = (array)($beforeClose['retained_earnings'] ?? []);
+            $harness->assertSame('500.00', number_format((float)($beforeBridge['share_capital_movement'] ?? 0), 2, '.', ''));
+            $harness->assertSame('200.00', number_format((float)($beforeBridge['unexplained_movement'] ?? 0), 2, '.', ''));
+
+            $acknowledged = $service->saveAcknowledgement($companyId, $accountingPeriodId, true, 'test');
+            $harness->assertSame(true, (bool)($acknowledged['success'] ?? false));
+            $posted = $service->postClose($companyId, $accountingPeriodId, 'test');
+            $harness->assertSame(true, (bool)($posted['success'] ?? false));
+
+            $afterClose = (new \eel_accounts\Service\YearEndMetricsService())->financialStatementsSummary(
+                $companyId,
+                $accountingPeriodId,
+                '2026-01-01',
+                '2026-12-31'
+            );
+            $afterBridge = (array)($afterClose['retained_earnings'] ?? []);
+            $harness->assertSame('500.00', number_format((float)($afterBridge['share_capital_movement'] ?? 0), 2, '.', ''));
+            $harness->assertSame('0.00', number_format((float)($afterBridge['unexplained_movement'] ?? 0), 2, '.', ''));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
     });
 });
 

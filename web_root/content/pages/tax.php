@@ -90,26 +90,21 @@ final class _tax extends PageContextFramework
         $company = (array)($baseContext['company'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
         $accountingPeriodId = (int)($company['accounting_period_id'] ?? 0);
-        $ctPeriodService = new \eel_accounts\Service\CorporationTaxPeriodService();
         $vatSupportScope = (new \eel_accounts\Service\VatSupportScopeService())->fetchForCompany($companyId);
-        if ($companyId > 0 && $accountingPeriodId > 0 && empty($vatSupportScope['tax_year_end_read_only'])) {
-            $sync = $ctPeriodService->syncForAccountingPeriod($companyId, $accountingPeriodId);
-        } elseif ($companyId > 0 && $accountingPeriodId > 0 && InterfaceDB::tableExists('corporation_tax_periods')) {
-            $sync = [
-                'success' => true,
-                'periods' => $ctPeriodService->fetchForAccountingPeriod($companyId, $accountingPeriodId),
-                'errors' => [],
-            ];
-        } else {
-            $sync = ['success' => true, 'periods' => [], 'errors' => []];
-        }
-        $ctPeriods = array_values(array_filter((array)($sync['periods'] ?? []), static fn(array $period): bool => (string)($period['status'] ?? '') !== 'superseded'));
-        $requestedCtPeriodId = max(0, (int)$request->input('ct_period_id', 0));
+        $available = $companyId > 0 && $accountingPeriodId > 0
+            ? (new \eel_accounts\Service\CorporationTaxComputationService())
+                ->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId)
+            : ['periods' => [], 'errors' => []];
+        $ctPeriods = array_values(array_filter(
+            (array)($available['periods'] ?? []),
+            static fn(array $period): bool => (string)($period['status'] ?? '') !== 'superseded'
+        ));
+        $requestedCtPeriodId = (int)$request->input('ct_period_id', 0);
         $selectedCtPeriodId = $this->selectedCtPeriodId($ctPeriods, $requestedCtPeriodId);
-        if ($selectedCtPeriodId <= 0) {
+        if ($selectedCtPeriodId === 0) {
             $selectedCtPeriodId = !empty($vatSupportScope['tax_year_end_read_only'])
-                ? (int)($ctPeriods[0]['id'] ?? 0)
-                : $ctPeriodService->defaultCtPeriodId($companyId, $accountingPeriodId);
+                ? $this->historicalDefaultCtPeriodId($ctPeriods)
+                : $this->defaultCtPeriodId($ctPeriods);
         }
         $selectedCtPeriod = $this->selectedCtPeriod($ctPeriods, $selectedCtPeriodId);
 
@@ -120,14 +115,14 @@ final class _tax extends PageContextFramework
                 'selected_ct_period_id' => $selectedCtPeriodId,
                 'selected_ct_period' => $selectedCtPeriod,
                 'selected_ct_period_helper' => $this->selectedCtPeriodHelper($selectedCtPeriod),
-                'sync_errors' => (array)($sync['errors'] ?? []),
+                'sync_errors' => (array)($available['errors'] ?? []),
             ],
         ];
     }
 
     private function selectedCtPeriodId(array $ctPeriods, int $requestedCtPeriodId): int
     {
-        if ($requestedCtPeriodId <= 0) {
+        if ($requestedCtPeriodId === 0) {
             return 0;
         }
         foreach ($ctPeriods as $period) {
@@ -139,9 +134,36 @@ final class _tax extends PageContextFramework
         return 0;
     }
 
+    private function defaultCtPeriodId(array $ctPeriods): int
+    {
+        foreach ($ctPeriods as $period) {
+            if ((string)($period['status'] ?? '') !== 'accepted') {
+                return (int)($period['id'] ?? 0);
+            }
+        }
+
+        return (int)($ctPeriods[0]['id'] ?? 0);
+    }
+
+    private function historicalDefaultCtPeriodId(array $ctPeriods): int
+    {
+        foreach ($ctPeriods as $period) {
+            if ((int)($period['latest_computation_run_id'] ?? 0) > 0) {
+                return (int)($period['id'] ?? 0);
+            }
+        }
+        foreach ($ctPeriods as $period) {
+            if (in_array((string)($period['status'] ?? ''), ['accepted', 'submitted'], true)) {
+                return (int)($period['id'] ?? 0);
+            }
+        }
+
+        return (int)($ctPeriods[0]['id'] ?? 0);
+    }
+
     private function selectedCtPeriod(array $ctPeriods, int $selectedCtPeriodId): array
     {
-        if ($selectedCtPeriodId <= 0) {
+        if ($selectedCtPeriodId === 0) {
             return [];
         }
 

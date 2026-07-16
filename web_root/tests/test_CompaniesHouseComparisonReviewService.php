@@ -256,8 +256,8 @@ function companiesHouseComparisonReviewSeed(array $fixture): void
             'context_fk' => $fixture['context_id'],
             'concept_fk' => $fixture['metric_concept_id'],
             'fact_name' => 'Current assets',
-            'raw_value' => '275.00',
-            'normalised_numeric' => 275.00,
+            'raw_value' => '2300.00',
+            'normalised_numeric' => 2300.00,
         ]
     );
 }

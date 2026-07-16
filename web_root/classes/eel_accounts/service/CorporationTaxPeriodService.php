@@ -18,6 +18,40 @@ final class CorporationTaxPeriodService
     {
     }
 
+    /**
+     * Stable read-only reference used while a derived CT period has not yet
+     * been persisted. An accounting period can contain at most two statutory
+     * CT periods, so one decimal digit is sufficient for the local sequence.
+     */
+    public static function transientReferenceId(int $accountingPeriodId, int $sequenceNo): int
+    {
+        if ($accountingPeriodId <= 0 || $sequenceNo <= 0 || $sequenceNo > 9) {
+            return 0;
+        }
+
+        return 0 - (($accountingPeriodId * 10) + $sequenceNo);
+    }
+
+    /** @return array{accounting_period_id: int, sequence_no: int}|null */
+    public static function decodeTransientReferenceId(int $ctPeriodId): ?array
+    {
+        if ($ctPeriodId >= 0) {
+            return null;
+        }
+
+        $encoded = abs($ctPeriodId);
+        $sequenceNo = $encoded % 10;
+        $accountingPeriodId = intdiv($encoded, 10);
+        if (self::transientReferenceId($accountingPeriodId, $sequenceNo) !== $ctPeriodId) {
+            return null;
+        }
+
+        return [
+            'accounting_period_id' => $accountingPeriodId,
+            'sequence_no' => $sequenceNo,
+        ];
+    }
+
     public function ensureSchema(): void
     {
         if (!\InterfaceDB::tableExists('corporation_tax_periods')) {
@@ -85,17 +119,38 @@ final class CorporationTaxPeriodService
         }
 
         $existing = $this->fetchForAccountingPeriod($companyId, $accountingPeriodId);
-        foreach ($existing as $period) {
-            if (in_array((string)($period['status'] ?? ''), self::LOCKED_STATUSES, true)) {
-                return ['success' => false, 'errors' => ['Submitted CT periods cannot be regenerated automatically.'], 'periods' => $existing];
-            }
-        }
-
-        $derived = (new \eel_accounts\Service\TaxPeriodService())->derive(
+        $derived = array_values((new \eel_accounts\Service\TaxPeriodService())->derive(
             (string)$accountingPeriod['period_start'],
             (string)$accountingPeriod['period_end'],
             $companyId
-        );
+        ));
+        $derivedBySequence = [];
+        foreach ($derived as $index => $period) {
+            $derivedBySequence[$index + 1] = $period;
+        }
+        $existingBySequence = [];
+        foreach ($existing as $period) {
+            $sequenceNo = (int)($period['sequence_no'] ?? 0);
+            if ($sequenceNo > 0) {
+                $existingBySequence[$sequenceNo] = $period;
+            }
+            if (!in_array((string)($period['status'] ?? ''), self::LOCKED_STATUSES, true)) {
+                continue;
+            }
+
+            $expected = $derivedBySequence[$sequenceNo] ?? null;
+            if (!is_array($expected)
+                || (string)($period['period_start'] ?? '') !== (string)($expected['start'] ?? '')
+                || (string)($period['period_end'] ?? '') !== (string)($expected['end'] ?? '')) {
+                return [
+                    'success' => false,
+                    'errors' => [
+                        'Submitted or accepted CT period metadata does not match the statutory accounting-period calendar and cannot be regenerated automatically.',
+                    ],
+                    'periods' => $existing,
+                ];
+            }
+        }
 
         $ownsTransaction = !\InterfaceDB::inTransaction();
         if ($ownsTransaction) {
@@ -104,9 +159,14 @@ final class CorporationTaxPeriodService
 
         try {
             $seen = [];
-            foreach (array_values($derived) as $index => $period) {
+            foreach ($derived as $index => $period) {
                 $sequence = $index + 1;
                 $seen[] = $sequence;
+                $stored = $existingBySequence[$sequence] ?? null;
+                if (is_array($stored)
+                    && in_array((string)($stored['status'] ?? ''), self::LOCKED_STATUSES, true)) {
+                    continue;
+                }
                 $upsertSql = 'INSERT INTO corporation_tax_periods (
                         company_id, accounting_period_id, sequence_no, period_start, period_end, status
                      ) VALUES (
@@ -116,17 +176,65 @@ final class CorporationTaxPeriodService
                 if (\InterfaceDB::driverName() === 'sqlite') {
                     $upsertSql .= '
                      ON CONFLICT(accounting_period_id, sequence_no) DO UPDATE SET
+                        updated_at = CASE
+                            WHEN period_start <> excluded.period_start
+                              OR period_end <> excluded.period_end
+                              OR status = \'superseded\'
+                            THEN CURRENT_TIMESTAMP
+                            ELSE updated_at
+                        END,
+                        latest_computation_run_id = CASE
+                            WHEN period_start <> excluded.period_start
+                              OR period_end <> excluded.period_end
+                            THEN NULL
+                            ELSE latest_computation_run_id
+                        END,
+                        latest_submission_id = CASE
+                            WHEN period_start <> excluded.period_start
+                              OR period_end <> excluded.period_end
+                            THEN NULL
+                            ELSE latest_submission_id
+                        END,
+                        status = CASE
+                            WHEN period_start <> excluded.period_start
+                              OR period_end <> excluded.period_end
+                              OR status = \'superseded\'
+                            THEN \'pending\'
+                            ELSE status
+                        END,
                         period_start = excluded.period_start,
-                        period_end = excluded.period_end,
-                        status = CASE WHEN status = \'superseded\' THEN \'pending\' ELSE status END,
-                        updated_at = CURRENT_TIMESTAMP';
+                        period_end = excluded.period_end';
                 } else {
                     $upsertSql .= '
                      ON DUPLICATE KEY UPDATE
+                        updated_at = CASE
+                            WHEN period_start <> VALUES(period_start)
+                              OR period_end <> VALUES(period_end)
+                              OR status = \'superseded\'
+                            THEN CURRENT_TIMESTAMP
+                            ELSE updated_at
+                        END,
+                        latest_computation_run_id = CASE
+                            WHEN period_start <> VALUES(period_start)
+                              OR period_end <> VALUES(period_end)
+                            THEN NULL
+                            ELSE latest_computation_run_id
+                        END,
+                        latest_submission_id = CASE
+                            WHEN period_start <> VALUES(period_start)
+                              OR period_end <> VALUES(period_end)
+                            THEN NULL
+                            ELSE latest_submission_id
+                        END,
+                        status = CASE
+                            WHEN period_start <> VALUES(period_start)
+                              OR period_end <> VALUES(period_end)
+                              OR status = \'superseded\'
+                            THEN \'pending\'
+                            ELSE status
+                        END,
                         period_start = VALUES(period_start),
-                        period_end = VALUES(period_end),
-                        status = CASE WHEN status = \'superseded\' THEN \'pending\' ELSE status END,
-                        updated_at = CURRENT_TIMESTAMP';
+                        period_end = VALUES(period_end)';
                 }
 
                 \InterfaceDB::prepareExecute(
@@ -150,7 +258,7 @@ final class CorporationTaxPeriodService
                      WHERE company_id = ?
                        AND accounting_period_id = ?
                        AND sequence_no NOT IN (' . $placeholders . ')
-                       AND status NOT IN (\'submitted\', \'accepted\')',
+                       AND status NOT IN (\'submitted\', \'accepted\', \'superseded\')',
                     array_merge([$companyId, $accountingPeriodId], $seen)
                 );
             }
@@ -172,6 +280,19 @@ final class CorporationTaxPeriodService
     public function fetchForAccountingPeriod(int $companyId, int $accountingPeriodId): array
     {
         $this->ensureSchema();
+        return $this->fetchExistingForAccountingPeriod($companyId, $accountingPeriodId);
+    }
+
+    /**
+     * Read already-initialised CT periods without creating schema or
+     * synchronising period rows. Reporting services must use this path so a
+     * page refresh cannot alter CT metadata.
+     */
+    public function fetchExistingForAccountingPeriod(int $companyId, int $accountingPeriodId): array
+    {
+        if (!\InterfaceDB::tableExists('corporation_tax_periods')) {
+            return [];
+        }
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return [];
         }
@@ -186,6 +307,136 @@ final class CorporationTaxPeriodService
         );
 
         return $this->withDisplaySequences($companyId, $periods);
+    }
+
+    /**
+     * Build the statutory CT-period calendar without changing stored metadata.
+     *
+     * Existing rows are reused only when their sequence and dates match the
+     * accounting-period-derived calendar. Missing or stale open rows are
+     * represented by stable transient references so previews match the rows a
+     * later synchronisation will create. Submitted or accepted rows cannot be
+     * repaired automatically, so any locked inconsistency is returned as an
+     * explicit error instead of producing a misleading preview.
+     *
+     * @param array<string, mixed>|null $accountingPeriod
+     * @return array{success: bool, periods: list<array<string, mixed>>, errors: list<string>, requires_sync: bool}
+     */
+    public function projectForAccountingPeriod(
+        int $companyId,
+        int $accountingPeriodId,
+        ?array $accountingPeriod = null
+    ): array {
+        if ($companyId <= 0 || $accountingPeriodId <= 0) {
+            return [
+                'success' => false,
+                'periods' => [],
+                'errors' => ['A valid company and accounting period are required.'],
+                'requires_sync' => false,
+            ];
+        }
+
+        $accountingPeriod ??= (new \eel_accounts\Repository\AccountingPeriodRepository())
+            ->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if (!is_array($accountingPeriod)) {
+            return [
+                'success' => false,
+                'periods' => [],
+                'errors' => ['The accounting period could not be found.'],
+                'requires_sync' => false,
+            ];
+        }
+
+        try {
+            $derived = array_values((new \eel_accounts\Service\TaxPeriodService())->derive(
+                (string)($accountingPeriod['period_start'] ?? ''),
+                (string)($accountingPeriod['period_end'] ?? ''),
+                $companyId
+            ));
+        } catch (\Throwable $exception) {
+            return [
+                'success' => false,
+                'periods' => [],
+                'errors' => [$exception->getMessage()],
+                'requires_sync' => false,
+            ];
+        }
+
+        $existing = array_values(array_filter(
+            $this->fetchExistingForAccountingPeriod($companyId, $accountingPeriodId),
+            static fn(array $period): bool => (string)($period['status'] ?? '') !== 'superseded'
+        ));
+        $existingBySequence = [];
+        foreach ($existing as $period) {
+            $sequenceNo = (int)($period['sequence_no'] ?? 0);
+            if ($sequenceNo > 0 && !isset($existingBySequence[$sequenceNo])) {
+                $existingBySequence[$sequenceNo] = $period;
+            }
+        }
+
+        $periods = [];
+        $requiresSync = false;
+        $lockedInconsistency = false;
+        foreach ($derived as $index => $derivedPeriod) {
+            $sequenceNo = $index + 1;
+            $periodStart = (string)($derivedPeriod['start'] ?? '');
+            $periodEnd = (string)($derivedPeriod['end'] ?? '');
+            $stored = $existingBySequence[$sequenceNo] ?? null;
+            unset($existingBySequence[$sequenceNo]);
+
+            if (is_array($stored)
+                && (string)($stored['period_start'] ?? '') === $periodStart
+                && (string)($stored['period_end'] ?? '') === $periodEnd) {
+                $periods[] = $stored;
+                continue;
+            }
+
+            $requiresSync = true;
+            if (is_array($stored)
+                && in_array((string)($stored['status'] ?? ''), self::LOCKED_STATUSES, true)) {
+                $lockedInconsistency = true;
+            }
+            $displaySequenceNo = $this->displaySequenceNo(
+                $companyId,
+                $accountingPeriodId,
+                $sequenceNo
+            );
+            $periods[] = [
+                'id' => self::transientReferenceId($accountingPeriodId, $sequenceNo),
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'sequence_no' => $sequenceNo,
+                'display_sequence_no' => $displaySequenceNo,
+                'display_label' => 'CT Period ' . $displaySequenceNo,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
+                'status' => 'transient',
+                'latest_computation_run_id' => null,
+                'latest_submission_id' => null,
+            ];
+        }
+
+        if ($existingBySequence !== []) {
+            $requiresSync = true;
+            foreach ($existingBySequence as $stored) {
+                if (in_array((string)($stored['status'] ?? ''), self::LOCKED_STATUSES, true)) {
+                    $lockedInconsistency = true;
+                    break;
+                }
+            }
+        }
+
+        $errors = [];
+        if ($lockedInconsistency) {
+            $errors[] = 'Submitted or accepted CT period metadata does not match the statutory accounting-period calendar and cannot be repaired automatically.';
+        }
+
+        return [
+            'success' => $errors === [],
+            'periods' => $periods,
+            'errors' => $errors,
+            'requires_sync' => $requiresSync,
+        ];
     }
 
     public function fetch(int $companyId, int $ctPeriodId): ?array
@@ -358,21 +609,6 @@ final class CorporationTaxPeriodService
             ];
         });
 
-        $storedPeriods = \InterfaceDB::fetchAll(
-            'SELECT accounting_period_id, sequence_no, status
-             FROM corporation_tax_periods
-             WHERE company_id = :company_id
-             ORDER BY accounting_period_id ASC, sequence_no ASC, id ASC',
-            ['company_id' => $companyId]
-        );
-        $storedByAccountingPeriod = [];
-        foreach ($storedPeriods as $period) {
-            if ((string)($period['status'] ?? '') === 'superseded') {
-                continue;
-            }
-            $storedByAccountingPeriod[(int)($period['accounting_period_id'] ?? 0)][] = $period;
-        }
-
         $displaySequences = [];
         $displaySequence = 1;
         $taxPeriodService = new \eel_accounts\Service\TaxPeriodService();
@@ -382,27 +618,13 @@ final class CorporationTaxPeriodService
                 continue;
             }
 
-            $periods = (array)($storedByAccountingPeriod[$accountingPeriodId] ?? []);
-            if ($periods === []) {
-                $periods = array_map(
-                    static fn(int $index): array => ['sequence_no' => $index + 1],
-                    array_keys(array_values($taxPeriodService->derive(
-                        (string)($accountingPeriod['period_start'] ?? ''),
-                        (string)($accountingPeriod['period_end'] ?? ''),
-                        $companyId
-                    )))
-                );
-            }
-
-            usort($periods, static function (array $a, array $b): int {
-                return (int)($a['sequence_no'] ?? 0) <=> (int)($b['sequence_no'] ?? 0);
-            });
-
-            foreach ($periods as $period) {
-                $sequenceNo = (int)($period['sequence_no'] ?? 0);
-                if ($sequenceNo <= 0) {
-                    continue;
-                }
+            $periods = array_values($taxPeriodService->derive(
+                (string)($accountingPeriod['period_start'] ?? ''),
+                (string)($accountingPeriod['period_end'] ?? ''),
+                $companyId
+            ));
+            foreach (array_keys($periods) as $index) {
+                $sequenceNo = $index + 1;
                 $displaySequences[$this->displaySequenceKey($accountingPeriodId, $sequenceNo)] = $displaySequence;
                 $displaySequence++;
             }

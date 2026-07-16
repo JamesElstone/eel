@@ -53,4 +53,11 @@ $harness->run(BackupAction::class, static function (GeneratedServiceClassTestHar
 
     $harness->assertTrue(!$downloadDenied->isSuccess());
     $harness->assertSame(['backup.database'], $downloadDenied->changedFacts());
+
+    $source = (string)file_get_contents(
+        dirname(__DIR__) . DIRECTORY_SEPARATOR . 'content' . DIRECTORY_SEPARATOR . 'actions'
+        . DIRECTORY_SEPARATOR . 'BackupAction.php'
+    );
+    $harness->assertTrue(str_contains($source, 'currentDatabaseName()'));
+    $harness->assertTrue(str_contains($source, '$databaseName,'));
 });

@@ -20,6 +20,8 @@ $harness->run(_year_end_retained_earningsCard::class, static function (Generated
         $harness->assertSame(true, str_contains($html, 'carry current profit/loss into 3000 Retained Earnings'));
         $harness->assertSame(true, str_contains($html, 'reset income and expense nominal balances for the next period (clear them)'));
         $harness->assertSame(true, str_contains($html, 'Original transactions, expense claims, and source journals are not changed.'));
+        $harness->assertSame(true, str_contains($html, 'Direct equity movements'));
+        $harness->assertSame(true, str_contains($html, 'Share capital movement'));
         $harness->assertSame(true, str_contains($html, 'I confirm that I have reviewed the retained earnings close shown above and approve it as accurate for Year End.'));
         $harness->assertSame(true, str_contains($html, 'type="submit" disabled title="Complete and lock the prior accounting period before closing retained earnings."'));
         $harness->assertSame(false, str_contains($html, 'disabled data-year-end-ack-submit'));
@@ -30,7 +32,7 @@ $harness->run(_year_end_retained_earningsCard::class, static function (Generated
     $harness->check(_year_end_retained_earningsCard::class, 'renders agreement details and revoke action when current', static function () use ($harness, $card): void {
         $html = $card->render(yearEndRetainedEarningsCardContext(true, false));
 
-        $harness->assertSame(true, str_contains($html, 'Approved at 2026-07-06 10:00:00 by Alex Example using the web_app.'));
+        $harness->assertSame(true, str_contains($html, 'Approved at 2026-07-06 10:00:00 by Fixture Reviewer using the web_app.'));
         $harness->assertSame(true, str_contains($html, 'name="retained_earnings_close_acknowledgement" value="0"'));
         $harness->assertSame(true, str_contains($html, 'Revoke approval'));
         $harness->assertSame(false, str_contains($html, 'checked required'));
@@ -48,19 +50,19 @@ $harness->run(_year_end_retained_earningsCard::class, static function (Generated
         $html = $card->render(yearEndRetainedEarningsCardContext(false, false, [
             'summary' => [
                 'opening_equity' => 0,
-                'current_profit_loss' => -396.91,
+                'current_profit_loss' => -275.50,
                 'closing_equity_before_close' => 0,
-                'retained_earnings_movement' => -396.91,
-                'assets' => 990.44,
-                'liabilities' => 1387.35,
-                'equity' => -300.00,
-                'balance_equation_difference' => -96.91,
+                'retained_earnings_movement' => -275.50,
+                'assets' => 1850.00,
+                'liabilities' => 2125.50,
+                'equity' => -200.00,
+                'balance_equation_difference' => -75.50,
                 'is_balance_sheet_balanced' => false,
             ],
         ]));
 
         $harness->assertSame(true, str_contains($html, 'do not agree to equity'));
-        $harness->assertSame(true, str_contains($html, 'difference -£ 96.91'));
+        $harness->assertSame(true, str_contains($html, 'difference -£ 75.50'));
     });
 
     $harness->check(_year_end_retained_earningsCard::class, 'reuses the profit and loss corporation tax provision', static function () use ($harness, $card): void {
@@ -84,16 +86,16 @@ function yearEndRetainedEarningsCardContext(bool $acknowledged, bool $stale, arr
     $close = array_merge([
         'available' => true,
         'accounting_period' => [
-            'id' => 79,
-            'period_start' => '2022-09-05',
-            'period_end' => '2023-09-30',
+            'id' => 9456,
+            'period_start' => '2025-01-01',
+            'period_end' => '2025-12-31',
         ],
         'acknowledged' => $acknowledged,
         'acknowledgement_stale' => $stale,
         'acknowledgement_state' => $stale ? 'stale' : ($acknowledged ? 'current' : 'absent'),
         'acknowledgement' => $acknowledged ? [
             'acknowledged_at' => '2026-07-06 10:00:00',
-            'acknowledged_by' => 'Alex Example using the web_app',
+            'acknowledged_by' => 'Fixture Reviewer using the web_app',
         ] : null,
         'can_acknowledge' => false,
         'prior_period_dependency' => [
@@ -106,25 +108,25 @@ function yearEndRetainedEarningsCardContext(bool $acknowledged, bool $stale, arr
         ],
         'summary' => [
             'opening_equity' => 0,
-            'current_profit_loss' => -396.91,
+            'current_profit_loss' => -275.50,
             'closing_equity_before_close' => 0,
-            'retained_earnings_movement' => -396.91,
-            'assets' => 990.44,
-            'liabilities' => 1387.35,
-            'equity' => -396.91,
+            'retained_earnings_movement' => -275.50,
+            'assets' => 1850.00,
+            'liabilities' => 2125.50,
+            'equity' => -275.50,
         ],
         'journal_lines' => [
             [
                 'nominal_code' => '4000',
                 'nominal_name' => 'Sales',
-                'debit' => '9676.95',
+                'debit' => '8250.00',
                 'credit' => '0.00',
                 'line_description' => 'Move 4000 Sales into retained earnings',
             ],
             [
                 'nominal_code' => '3000',
                 'nominal_name' => 'Retained Earnings',
-                'debit' => '396.91',
+                'debit' => '275.50',
                 'credit' => '0.00',
                 'line_description' => 'Carry loss into retained earnings',
             ],
@@ -136,8 +138,8 @@ function yearEndRetainedEarningsCardContext(bool $acknowledged, bool $stale, arr
             'page_id' => 'profit_loss',
         ],
         'company' => [
-            'id' => 49,
-            'accounting_period_id' => 79,
+            'id' => 9123,
+            'accounting_period_id' => 9456,
             'settings' => ['default_currency_symbol' => '&#163;'],
         ],
         'services' => [

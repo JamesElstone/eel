@@ -25,7 +25,7 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
             ],
         ],
         'transaction_search' => [
-            'keyword' => 'Brian',
+            'keyword' => 'Northstar',
             'amount' => '42.50',
             'flow' => 'out',
             'source_account_id' => 7,
@@ -55,7 +55,7 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
                 'txn_date' => '2026-04-12',
                 'month_key' => '2026-04-01',
                 'txn_type' => 'card',
-                'description' => 'Brian Supplies',
+                'description' => 'Northstar Supplies',
                 'reference' => 'INV-22',
                 'amount' => '42.50',
                 'currency' => 'GBP',
@@ -70,7 +70,7 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
                 'assigned_nominal' => 'Purchases',
                 'category_status' => 'auto',
                 'auto_rule_id' => 5,
-                'auto_rule_match_value' => 'Brian',
+                'auto_rule_match_value' => 'Northstar',
                 'auto_rule_reference_match_value' => '',
                 'is_auto_excluded' => 0,
                 'auto_approval_state' => 'confirmed',
@@ -87,7 +87,7 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
     $harness->check(_transaction_searchCard::class, 'renders search controls and full audit result columns', static function () use ($harness, $card, $context): void {
         $html = $card->render($context);
 
-        $harness->assertTrue(str_contains($html, 'name="transaction_search_keyword" value="Brian"'));
+        $harness->assertTrue(str_contains($html, 'name="transaction_search_keyword" value="Northstar"'));
         $harness->assertTrue(str_contains($html, 'name="transaction_search_amount" inputmode="decimal" value="-42.50"'));
         $harness->assertTrue(strpos($html, 'id="transaction_search_amount"') < strpos($html, 'id="transaction_search_flow"'));
         $harness->assertTrue(str_contains($html, 'name="transaction_search_flow"'));
@@ -129,9 +129,9 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         $harness->assertSame(false, str_contains($html, '<span class="table-sort-label">Notes</span>'));
         $harness->assertSame(false, str_contains($html, '<span class="table-sort-label">Created</span>'));
         $harness->assertSame(false, str_contains($html, '<span class="table-sort-label">Updated</span>'));
-        $harness->assertTrue(str_contains($html, 'Brian Supplies'));
+        $harness->assertTrue(str_contains($html, 'Northstar Supplies'));
         $harness->assertTrue(str_contains($html, '$ 42.50'));
-        $harness->assertTrue(str_contains($html, 'Rule #5 | Description: Brian'));
+        $harness->assertTrue(str_contains($html, 'Rule #5 | Description: Northstar'));
         $harness->assertSame(false, str_contains($html, 'name="global_action" value="sync_auto_approval_state"'));
         $harness->assertSame(false, str_contains($html, 'data-auto-approval-batch-form="true"'));
         $harness->assertSame(false, str_contains($html, 'data-auto-approval-control="true"'));
@@ -168,7 +168,7 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         $request = new RequestFramework(
             ['page' => 'transactions'],
             [
-                'transaction_search_keyword' => ' Brian ',
+                'transaction_search_keyword' => ' Northstar ',
                 'transaction_search_amount' => "-\xC2\xA31000",
                 'transaction_search_flow' => 'any',
                 'transaction_search_source_account_id' => '7',
@@ -181,7 +181,7 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         $services = new PageServiceFramework(new AppService(APP_ROOT . 'uploads'));
         $handled = $card->handle($request, $services, $context, ActionResultFramework::none());
 
-        $harness->assertSame('Brian', (string)$handled['transaction_search']['keyword']);
+        $harness->assertSame('Northstar', (string)$handled['transaction_search']['keyword']);
         $harness->assertSame('-1000.00', (string)$handled['transaction_search']['amount']);
         $harness->assertSame('any', (string)$handled['transaction_search']['flow']);
         $harness->assertSame(7, (int)$handled['transaction_search']['source_account_id']);
@@ -297,7 +297,7 @@ $harness->run(_transaction_searchCard::class, static function (GeneratedServiceC
         $harness->assertTrue(str_contains($csv, 'ID'));
         $harness->assertSame(false, str_contains($csv, 'Created'));
         $harness->assertSame(false, str_contains($csv, 'Updated'));
-        $harness->assertTrue(str_contains($csv, 'Brian Supplies'));
+        $harness->assertTrue(str_contains($csv, 'Northstar Supplies'));
         $harness->assertTrue(str_contains($csv, '2026-04-01'));
     });
 });

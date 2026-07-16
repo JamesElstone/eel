@@ -82,7 +82,7 @@ $harness->run(\eel_accounts\Service\BankingReconciliationService::class, static 
                         '2024-09-01',
                         '2024-09-30',
                         62.31,
-                        124.14
+                        719.06
                     ),
                 ],
                 $ledgerDeltas,
@@ -91,7 +91,7 @@ $harness->run(\eel_accounts\Service\BankingReconciliationService::class, static 
             );
 
             $harness->assertSame('pass', (string)($summary['status'] ?? ''));
-            $harness->assertSame(124.14, (float)($summary['ledger_balance'] ?? 0));
+            $harness->assertSame(719.06, (float)($summary['ledger_balance'] ?? 0));
             $harness->assertSame(0.0, (float)($summary['difference'] ?? 0));
             $harness->assertSame('Ledger reconciliation uses the cumulative posted balance for this company account nominal.', (string)($summary['scope_note'] ?? ''));
         });
@@ -171,9 +171,9 @@ function banking_reconciliation_fixture(string $label, callable $callback): void
             ]
         );
 
-        banking_reconciliation_insert_journal_line($companyId, $priorPeriodId, $bankNominalId, '2023-09-30', 714.26, 0.0, 'Opening year one bank balance');
-        banking_reconciliation_insert_journal_line($companyId, $currentPeriodId, $bankNominalId, '2024-09-30', 0.0, 590.12, 'Year two bank movement');
-        banking_reconciliation_insert_journal_line($companyId, $currentPeriodId, $bankNominalId, '2024-10-01', 50.0, 0.0, 'Future movement outside latest statement date');
+        banking_reconciliation_insert_journal_line($companyId, $priorPeriodId, $bankNominalId, '2023-09-30', 1137.42, 0.0, 'Synthetic opening bank balance');
+        banking_reconciliation_insert_journal_line($companyId, $currentPeriodId, $bankNominalId, '2024-09-30', 0.0, 418.36, 'Synthetic current-year bank movement');
+        banking_reconciliation_insert_journal_line($companyId, $currentPeriodId, $bankNominalId, '2024-10-01', 50.0, 0.0, 'Synthetic future movement outside statement date');
 
         $callback([
             'company_id' => $companyId,

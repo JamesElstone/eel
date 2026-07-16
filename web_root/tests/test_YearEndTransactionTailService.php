@@ -13,25 +13,26 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
     $harness->check(\eel_accounts\Service\YearEndTransactionTailService::class, 'uses same-day statement balance chain to select final transaction', static function () use ($harness, $service): void {
         $selectLastTransaction = year_end_transaction_tail_private_method($service, 'selectLastTransactionForDate');
 
+        // Synthetic same-day chain; descriptions and balances are not copied from a bank statement.
         $selected = $selectLastTransaction->invoke($service, [
             [
                 'id' => 102,
                 'txn_date' => '2023-09-29',
-                'description' => 'LAURA IRVINE',
-                'amount' => '379.41',
-                'balance' => '461.87',
+                'description' => 'FIXTURE CUSTOMER ALPHA',
+                'amount' => '125.00',
+                'balance' => '425.00',
             ],
             [
                 'id' => 103,
                 'txn_date' => '2023-09-29',
-                'description' => 'R Howard',
-                'amount' => '252.39',
-                'balance' => '714.26',
+                'description' => 'FIXTURE CUSTOMER BETA',
+                'amount' => '175.00',
+                'balance' => '600.00',
             ],
         ]);
 
-        $harness->assertSame('R Howard', (string)($selected['description'] ?? ''));
-        $harness->assertSame('714.26', (string)($selected['balance'] ?? ''));
+        $harness->assertSame('FIXTURE CUSTOMER BETA', (string)($selected['description'] ?? ''));
+        $harness->assertSame('600.00', (string)($selected['balance'] ?? ''));
     });
 });
 

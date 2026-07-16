@@ -20,11 +20,13 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
 {
     private array $dbConfig;
     private string $backupDirectory;
+    private ?PDO $connection;
 
-    public function __construct(?array $dbConfig = null, ?string $backupDirectory = null)
+    public function __construct(?array $dbConfig = null, ?string $backupDirectory = null, ?PDO $connection = null)
     {
         $this->dbConfig = $dbConfig ?? (array)\AppConfigurationStore::get('db', []);
         $this->backupDirectory = $backupDirectory ?? $this->defaultBackupDirectory();
+        $this->connection = $connection;
     }
 
     public function fetchBackupStatus(): array
@@ -81,14 +83,16 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
         $this->ensureBackupDirectory();
         $pdo = $this->connect();
         $databaseName = $this->databaseName($pdo);
-        $timestamp = (new DateTimeImmutable())->format('Ymd_His');
-        $baseName = $this->safeFilename($databaseName !== '' ? $databaseName : 'database') . '_' . $timestamp;
+        $timestamp = (new DateTimeImmutable())->format('Ymd_His_u');
+        $baseName = $this->safeFilename($databaseName !== '' ? $databaseName : 'database')
+            . '_' . $timestamp
+            . '_' . bin2hex(random_bytes(4));
         $sqlPath = $this->backupDirectory . DIRECTORY_SEPARATOR . $baseName . '.sql';
         $zipPath = $this->backupDirectory . DIRECTORY_SEPARATOR . $baseName . '.sql.zip';
 
         try {
             $tableCount = $this->writeSqlDump($pdo, $sqlPath, $databaseName);
-            $this->zipSqlDump($sqlPath, $zipPath, basename($sqlPath));
+            $this->publishZipAtomically($sqlPath, $zipPath, basename($sqlPath));
         } finally {
             if (is_file($sqlPath)) {
                 @unlink($sqlPath);
@@ -107,16 +111,32 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
         ];
     }
 
-    public function restoreBackup(string $filename): array
+    public function restoreBackup(
+        string $filename,
+        ?string $expectedTargetDatabase = null,
+        ?string $expectedSourceDatabase = null
+    ): array
     {
         $backupPath = $this->resolveBackupPath($filename);
         $sql = $this->extractSqlFromBackup($backupPath);
+        $sourceDatabase = $this->databaseNameFromSqlDump($sql);
+        $pdo = null;
+
+        if ($expectedTargetDatabase === null || $expectedSourceDatabase === null) {
+            $pdo = $this->connect();
+            $connectedDatabase = $this->requireConnectedDatabaseName($pdo);
+            $expectedTargetDatabase ??= $connectedDatabase;
+            $expectedSourceDatabase ??= $connectedDatabase;
+        }
+
+        $this->assertExpectedBackupSource($sourceDatabase, $expectedSourceDatabase);
         $statements = $this->splitSqlStatements($sql);
         if ($statements === []) {
             throw new RuntimeException('The selected backup does not contain SQL statements to restore.');
         }
 
-        $pdo = $this->connect();
+        $pdo ??= $this->connect();
+        $this->assertExpectedRestoreTarget($pdo, $expectedTargetDatabase);
         $executed = 0;
 
         foreach ($statements as $statement) {
@@ -136,8 +156,15 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
             'directory' => $this->backupDirectory,
             'size_bytes' => is_file($backupPath) ? (int)filesize($backupPath) : 0,
             'statement_count' => $executed,
+            'source_database' => $sourceDatabase,
+            'target_database' => $this->connectedDatabaseName($pdo),
             'restored_at' => (new DateTimeImmutable())->format('Y-m-d H:i:s'),
         ];
+    }
+
+    public function currentDatabaseName(): string
+    {
+        return $this->requireConnectedDatabaseName($this->connect());
     }
 
     public function backupFileForDownload(string $filename): array
@@ -158,12 +185,26 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
             throw new RuntimeException('Unable to create SQL dump file: ' . $sqlPath);
         }
 
-        $tables = $this->tableNames($pdo, $databaseName);
+        $tables = [];
+        $snapshotStarted = false;
+        $dumpException = null;
 
         try {
+            $this->beginConsistentDumpSnapshot($pdo);
+            $snapshotStarted = true;
+            $tables = $this->tableNames($pdo, $databaseName);
+
             $this->write($handle, "-- EEL Accounts database backup\n");
             $this->write($handle, '-- Created: ' . (new DateTimeImmutable())->format('Y-m-d H:i:s') . "\n");
-            $this->write($handle, '-- Database: ' . ($databaseName !== '' ? $databaseName : 'unknown') . "\n\n");
+            $this->write(
+                $handle,
+                '-- Database: ' . $this->databaseNameForComment($databaseName !== '' ? $databaseName : 'unknown') . "\n"
+            );
+            $this->write(
+                $handle,
+                '-- Database-Name-Base64: ' . base64_encode($databaseName) . "\n\n"
+            );
+            $this->write($handle, "-- Data snapshot: REPEATABLE READ consistent snapshot (transactional tables)\n\n");
             $this->write($handle, "SET NAMES utf8mb4;\n");
             $this->write($handle, "SET FOREIGN_KEY_CHECKS=0;\n");
             $this->write($handle, "SET SQL_MODE='NO_AUTO_VALUE_ON_ZERO';\n\n");
@@ -173,11 +214,36 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
             }
 
             $this->write($handle, "SET FOREIGN_KEY_CHECKS=1;\n");
+        } catch (Throwable $exception) {
+            $dumpException = $exception;
+            throw $exception;
         } finally {
+            $snapshotException = null;
+            if ($snapshotStarted) {
+                try {
+                    $this->endConsistentDumpSnapshot($pdo);
+                } catch (Throwable $exception) {
+                    $snapshotException = $exception;
+                }
+            }
             fclose($handle);
+            if (!$dumpException instanceof Throwable && $snapshotException instanceof Throwable) {
+                throw $snapshotException;
+            }
         }
 
         return count($tables);
+    }
+
+    private function beginConsistentDumpSnapshot(PDO $pdo): void
+    {
+        $pdo->exec('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+        $pdo->exec('START TRANSACTION WITH CONSISTENT SNAPSHOT, READ ONLY');
+    }
+
+    private function endConsistentDumpSnapshot(PDO $pdo): void
+    {
+        $pdo->exec('ROLLBACK');
     }
 
     private function writeTable(PDO $pdo, mixed $handle, string $tableName): void
@@ -375,8 +441,172 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
         }
     }
 
+    private function publishZipAtomically(string $sqlPath, string $zipPath, string $entryName): void
+    {
+        $temporaryZipPath = $zipPath . '.partial-' . bin2hex(random_bytes(8));
+
+        try {
+            $this->zipSqlDump($sqlPath, $temporaryZipPath, $entryName);
+            $expectedHash = hash_file('sha256', $sqlPath);
+            if (!is_string($expectedHash)) {
+                throw new RuntimeException('Unable to calculate SQL dump verification hash.');
+            }
+            $this->verifyStoredSqlZip($temporaryZipPath, $expectedHash);
+            if (file_exists($zipPath)) {
+                throw new RuntimeException('A database backup with this timestamp already exists.');
+            }
+            if (!@rename($temporaryZipPath, $zipPath)) {
+                throw new RuntimeException('Unable to publish the completed backup ZIP atomically.');
+            }
+        } finally {
+            if (is_file($temporaryZipPath)) {
+                @unlink($temporaryZipPath);
+            }
+        }
+    }
+
+    private function verifyStoredSqlZip(string $zipPath, string $expectedSqlHash): void
+    {
+        $handle = @fopen($zipPath, 'rb');
+        if (!is_resource($handle)) {
+            throw new RuntimeException('Unable to read the completed backup ZIP.');
+        }
+
+        try {
+            $localHeaderContent = $this->readExactly(
+                $handle,
+                30,
+                'The completed backup ZIP header is malformed.'
+            );
+            $localHeader = unpack(
+                'Vsignature/vversion/vflags/vmethod/vtime/vdate/Vcrc/Vcompressed_size/Vuncompressed_size/vname_length/vextra_length',
+                $localHeaderContent
+            );
+            if (!is_array($localHeader) || (int)($localHeader['signature'] ?? 0) !== 0x04034b50) {
+                throw new RuntimeException('The completed backup ZIP header is malformed.');
+            }
+
+            $flags = (int)$localHeader['flags'];
+            $method = (int)$localHeader['method'];
+            $compressedSize = (int)$localHeader['compressed_size'];
+            $uncompressedSize = (int)$localHeader['uncompressed_size'];
+            $nameLength = (int)$localHeader['name_length'];
+            $extraLength = (int)$localHeader['extra_length'];
+            if (
+                $flags !== 0
+                || $method !== 0
+                || $compressedSize < 0
+                || $compressedSize !== $uncompressedSize
+                || $nameLength <= 0
+                || $extraLength < 0
+            ) {
+                throw new RuntimeException('The completed backup ZIP entry is malformed.');
+            }
+
+            $entryName = $this->readExactly(
+                $handle,
+                $nameLength,
+                'The completed backup ZIP entry name is malformed.'
+            );
+            if (!str_ends_with(strtolower($entryName), '.sql')) {
+                throw new RuntimeException('The completed backup ZIP does not contain a SQL dump.');
+            }
+            if ($extraLength > 0) {
+                $this->readExactly(
+                    $handle,
+                    $extraLength,
+                    'The completed backup ZIP entry metadata is malformed.'
+                );
+            }
+
+            $shaContext = hash_init('sha256');
+            $crcContext = hash_init('crc32b');
+            $remaining = $compressedSize;
+            while ($remaining > 0) {
+                $chunk = fread($handle, min(1024 * 1024, $remaining));
+                if (!is_string($chunk) || $chunk === '') {
+                    throw new RuntimeException('The completed backup ZIP SQL entry is truncated.');
+                }
+
+                hash_update($shaContext, $chunk);
+                hash_update($crcContext, $chunk);
+                $remaining -= strlen($chunk);
+            }
+
+            $expectedCrc = sprintf('%08x', (int)$localHeader['crc']);
+            $actualCrc = hash_final($crcContext);
+            if (!hash_equals($expectedCrc, $actualCrc)) {
+                throw new RuntimeException('The completed backup ZIP failed its integrity checksum.');
+            }
+
+            $actualHash = hash_final($shaContext);
+            if (!hash_equals($expectedSqlHash, $actualHash)) {
+                throw new RuntimeException('The completed backup ZIP did not match the SQL dump.');
+            }
+
+            $tail = stream_get_contents($handle);
+            if (!is_string($tail) || strlen($tail) < 68) {
+                throw new RuntimeException('The completed backup ZIP directory is malformed.');
+            }
+
+            $endOffset = strlen($tail) - 22;
+            $endRecord = unpack(
+                'Vsignature/vdisk/vcentral_disk/ventries_disk/ventries_total/Vcentral_size/Vcentral_offset/vcomment_length',
+                substr($tail, $endOffset, 22)
+            );
+            if (
+                !is_array($endRecord)
+                || (int)($endRecord['signature'] ?? 0) !== 0x06054b50
+                || (int)$endRecord['disk'] !== 0
+                || (int)$endRecord['central_disk'] !== 0
+                || (int)$endRecord['entries_disk'] !== 1
+                || (int)$endRecord['entries_total'] !== 1
+                || (int)$endRecord['comment_length'] !== 0
+            ) {
+                throw new RuntimeException('The completed backup ZIP directory is malformed.');
+            }
+
+            $centralHeader = unpack(
+                'Vsignature/vversion_made/vversion_needed/vflags/vmethod/vtime/vdate/Vcrc/Vcompressed_size/Vuncompressed_size/vname_length/vextra_length/vcomment_length/vdisk_start/vinternal_attributes/Vexternal_attributes/Vlocal_offset',
+                substr($tail, 0, 46)
+            );
+            if (!is_array($centralHeader) || (int)($centralHeader['signature'] ?? 0) !== 0x02014b50) {
+                throw new RuntimeException('The completed backup ZIP directory is malformed.');
+            }
+
+            $centralNameLength = (int)$centralHeader['name_length'];
+            $centralExtraLength = (int)$centralHeader['extra_length'];
+            $centralCommentLength = (int)$centralHeader['comment_length'];
+            $expectedCentralSize = 46 + $centralNameLength + $centralExtraLength + $centralCommentLength;
+            $expectedCentralOffset = 30 + $nameLength + $extraLength + $compressedSize;
+            $centralEntryName = substr($tail, 46, $centralNameLength);
+            if (
+                (int)$endRecord['central_size'] !== $expectedCentralSize
+                || (int)$endRecord['central_offset'] !== $expectedCentralOffset
+                || $endOffset !== $expectedCentralSize
+                || (int)$centralHeader['flags'] !== $flags
+                || (int)$centralHeader['method'] !== $method
+                || (int)$centralHeader['crc'] !== (int)$localHeader['crc']
+                || (int)$centralHeader['compressed_size'] !== $compressedSize
+                || (int)$centralHeader['uncompressed_size'] !== $uncompressedSize
+                || (int)$centralHeader['local_offset'] !== 0
+                || $centralEntryName !== $entryName
+            ) {
+                throw new RuntimeException('The completed backup ZIP directory is malformed.');
+            }
+        } finally {
+            fclose($handle);
+        }
+    }
+
     private function connect(): PDO
     {
+        if ($this->connection instanceof PDO) {
+            $this->configureDumpConnection($this->connection);
+
+            return $this->connection;
+        }
+
         $dsn = trim((string)($this->dbConfig['dsn'] ?? ''));
         if ($dsn === '') {
             throw new RuntimeException('Database DSN is not configured.');
@@ -393,6 +623,7 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
                 ]
             );
             $this->configureDumpConnection($pdo);
+            $this->connection = $pdo;
 
             return $pdo;
         } catch (PDOException $exception) {
@@ -410,19 +641,123 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
 
     private function databaseName(PDO $pdo): string
     {
+        $connectedDatabase = $this->connectedDatabaseName($pdo);
+        if ($connectedDatabase !== '') {
+            return $connectedDatabase;
+        }
+
+        if (preg_match('/(?:^|;)dbname=([^;]+)/i', (string)($this->dbConfig['dsn'] ?? ''), $matches) === 1) {
+            return (string)$matches[1];
+        }
+
+        return '';
+    }
+
+    private function connectedDatabaseName(PDO $pdo): string
+    {
         try {
             $stmt = $pdo->query('SELECT DATABASE()');
             if ($stmt instanceof PDOStatement) {
-                return $this->safeIdentifierText((string)$stmt->fetchColumn());
+                $databaseName = $stmt->fetchColumn();
+
+                return is_string($databaseName) ? $databaseName : '';
             }
         } catch (Throwable) {
         }
 
-        if (preg_match('/(?:^|;)dbname=([^;]+)/i', (string)($this->dbConfig['dsn'] ?? ''), $matches) === 1) {
-            return $this->safeIdentifierText($matches[1]);
+        return '';
+    }
+
+    private function requireConnectedDatabaseName(PDO $pdo): string
+    {
+        $databaseName = $this->connectedDatabaseName($pdo);
+        if ($databaseName === '') {
+            throw new RuntimeException('The connected database name could not be verified.');
+        }
+        $this->assertValidDatabaseIdentity($databaseName, 'connected database');
+
+        return $databaseName;
+    }
+
+    private function assertExpectedRestoreTarget(PDO $pdo, string $expectedTargetDatabase): void
+    {
+        $this->assertValidDatabaseIdentity($expectedTargetDatabase, 'expected restore target database');
+
+        $actualDatabase = $this->connectedDatabaseName($pdo);
+        if ($actualDatabase !== '') {
+            $this->assertValidDatabaseIdentity($actualDatabase, 'connected database');
+        }
+        if ($actualDatabase === '' || !hash_equals($expectedTargetDatabase, $actualDatabase)) {
+            throw new RuntimeException(
+                'Database restore target mismatch: expected '
+                . $this->databaseIdentityForMessage($expectedTargetDatabase)
+                . ', connected to '
+                . ($actualDatabase !== '' ? $this->databaseIdentityForMessage($actualDatabase) : 'an unknown database')
+                . '.'
+            );
+        }
+    }
+
+    private function databaseNameFromSqlDump(string $sql): string
+    {
+        $header = substr($sql, 0, 4096);
+        if (preg_match('/^-- Database-Name-Base64:\s*([A-Za-z0-9+\/]*={0,2})\s*$/mi', $header, $matches) === 1) {
+            $databaseName = base64_decode((string)$matches[1], true);
+            if (!is_string($databaseName)) {
+                throw new RuntimeException('The selected backup records an invalid source database identity.');
+            }
+            $this->assertValidDatabaseIdentity($databaseName, 'backup source database');
+
+            return $databaseName;
         }
 
-        return '';
+        if (preg_match('/^-- Database:[ \t](.*)$/mi', $header, $matches) !== 1) {
+            return '';
+        }
+
+        $databaseName = rtrim((string)$matches[1], " \t\r");
+        $this->assertValidDatabaseIdentity($databaseName, 'backup source database');
+
+        return $databaseName;
+    }
+
+    private function assertExpectedBackupSource(string $sourceDatabase, string $expectedSourceDatabase): void
+    {
+        $this->assertValidDatabaseIdentity($expectedSourceDatabase, 'expected backup source database');
+        if ($sourceDatabase !== '') {
+            $this->assertValidDatabaseIdentity($sourceDatabase, 'backup source database');
+        }
+        if ($sourceDatabase === '' || !hash_equals($expectedSourceDatabase, $sourceDatabase)) {
+            throw new RuntimeException(
+                'Database backup source mismatch: expected '
+                . $this->databaseIdentityForMessage($expectedSourceDatabase)
+                . ', backup records '
+                . ($sourceDatabase !== '' ? $this->databaseIdentityForMessage($sourceDatabase) : 'an unknown database')
+                . '.'
+            );
+        }
+    }
+
+    private function assertValidDatabaseIdentity(string $databaseName, string $label): void
+    {
+        if ($databaseName === '') {
+            throw new RuntimeException('The ' . $label . ' name is required.');
+        }
+        if (str_contains($databaseName, "\0") || !$this->isValidUtf8($databaseName)) {
+            throw new RuntimeException('The ' . $label . ' name is invalid.');
+        }
+    }
+
+    private function databaseNameForComment(string $databaseName): string
+    {
+        return str_replace(["\r", "\n"], ['\\r', '\\n'], $databaseName);
+    }
+
+    private function databaseIdentityForMessage(string $databaseName): string
+    {
+        $encoded = json_encode($databaseName, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+        return is_string($encoded) ? $encoded : '[invalid database name]';
     }
 
     private function ensureBackupDirectory(): void
@@ -492,6 +827,11 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
             $entryData = substr($content, $dataOffset, $compressedSize);
             if ($method !== 0 || strlen($entryData) !== $uncompressedSize) {
                 throw new RuntimeException('The selected backup ZIP uses an unsupported compression method.');
+            }
+            $expectedCrc = sprintf('%08x', (int)$header['crc']);
+            $actualCrc = hash('crc32b', $entryData);
+            if (!hash_equals($expectedCrc, $actualCrc)) {
+                throw new RuntimeException('The selected backup ZIP failed its integrity checksum.');
             }
 
             $entries[] = [
@@ -633,9 +973,32 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
 
     private function write(mixed $handle, string $content): void
     {
-        if (@fwrite($handle, $content) === false) {
-            throw new RuntimeException('Unable to write SQL dump content.');
+        $length = strlen($content);
+        $offset = 0;
+
+        while ($offset < $length) {
+            $written = @fwrite($handle, substr($content, $offset));
+            if (!is_int($written) || $written <= 0) {
+                throw new RuntimeException('Unable to write SQL dump content.');
+            }
+
+            $offset += $written;
         }
+    }
+
+    private function readExactly(mixed $handle, int $length, string $errorMessage): string
+    {
+        $content = '';
+
+        while (strlen($content) < $length) {
+            $chunk = fread($handle, $length - strlen($content));
+            if (!is_string($chunk) || $chunk === '') {
+                throw new RuntimeException($errorMessage);
+            }
+            $content .= $chunk;
+        }
+
+        return $content;
     }
 
     private function sqlLiteral(mixed $value, string $tableName = '', string $columnName = '', string $rowKey = ''): string
@@ -712,11 +1075,6 @@ final class DatabaseBackupService implements \eel_accounts\Contract\DatabaseBack
         $safe = trim($safe, '_');
 
         return $safe !== '' ? $safe : 'database';
-    }
-
-    private function safeIdentifierText(string $value): string
-    {
-        return trim(preg_replace('/[^A-Za-z0-9_ -]+/', '', $value) ?? '');
     }
 
     private function defaultBackupDirectory(): string

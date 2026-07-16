@@ -470,8 +470,8 @@ final class TestCardsHarness
                             'account' => 'Example Bank - Current Account',
                             'account_type' => 'bank',
                             'last_transaction_date' => '2023-09-29',
-                            'last_transaction_desc' => 'LAURA IRVINE',
-                            'last_transaction_amount' => '379.41',
+                            'last_transaction_desc' => 'FIXTURE CUSTOMER ALPHA',
+                            'last_transaction_amount' => '125.00',
                             'balance' => '1234.56',
                         ],
                         [

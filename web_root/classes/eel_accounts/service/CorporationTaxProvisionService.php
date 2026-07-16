@@ -24,17 +24,32 @@ final class CorporationTaxProvisionService
         ?CorporationTaxComputationService $computationService = null
     ): array
     {
-        $ctPeriod = $this->validCtPeriod($companyId, $accountingPeriodId, $ctPeriodId);
+        $computation = $computationService ?? $this->computationService ?? new CorporationTaxComputationService();
+        $ctPeriod = $this->validCtPeriod(
+            $companyId,
+            $accountingPeriodId,
+            $ctPeriodId,
+            $computation
+        );
         if ($ctPeriod === null) {
             return ['available' => false, 'errors' => ['Select a valid CT period.']];
         }
+        $resolvedCtPeriodId = (int)($ctPeriod['id'] ?? 0);
+        if ($resolvedCtPeriodId === 0) {
+            return ['available' => false, 'errors' => ['Select a valid CT period.']];
+        }
 
-        $summary = ($computationService ?? $this->computationService ?? new CorporationTaxComputationService())->fetchSummaryForCtPeriodId($companyId, $ctPeriodId);
+        $summary = $computation->fetchSummaryForCtPeriodId($companyId, $resolvedCtPeriodId);
         if (empty($summary['available'])) {
             return ['available' => false, 'errors' => (array)($summary['errors'] ?? ['The CT estimate is not available.'])];
         }
 
-        return $this->positionFromSummary($companyId, $accountingPeriodId, $ctPeriodId, $summary);
+        return $this->positionFromSummary(
+            $companyId,
+            $accountingPeriodId,
+            $resolvedCtPeriodId,
+            $summary
+        );
     }
 
     private function positionFromSummary(int $companyId, int $accountingPeriodId, int $ctPeriodId, array $summary): array
@@ -94,7 +109,7 @@ final class CorporationTaxProvisionService
                 continue;
             }
             $ctPeriodId = (int)($summary['ct_period_id'] ?? 0);
-            if ($ctPeriodId > 0) {
+            if ($ctPeriodId !== 0) {
                 $precomputedByCtPeriodId[$ctPeriodId] = $summary;
             }
         }
@@ -103,7 +118,7 @@ final class CorporationTaxProvisionService
         $errors = (array)($activePeriods['errors'] ?? []);
         foreach ($ctPeriods as $ctPeriod) {
             $ctPeriodId = (int)($ctPeriod['id'] ?? 0);
-            if ($ctPeriodId <= 0) {
+            if ($ctPeriodId === 0) {
                 continue;
             }
 
@@ -152,12 +167,29 @@ final class CorporationTaxProvisionService
     {
         (new \eel_accounts\Service\VatSupportScopeService())
             ->assertTaxAndYearEndSupported($companyId, 'post a Corporation Tax Year End provision');
-        $ctPeriod = $this->validCtPeriod($companyId, $accountingPeriodId, $ctPeriodId);
-        if ($ctPeriod === null) {
-            return ['success' => false, 'errors' => ['Select a valid CT period.']];
-        }
 
-        $position = $this->fetchPosition($companyId, $accountingPeriodId, $ctPeriodId);
+        $computation = $this->computationService ?? new CorporationTaxComputationService();
+        $resolved = $this->synchroniseProvisionPeriod(
+            $companyId,
+            $accountingPeriodId,
+            $ctPeriodId,
+            $computation
+        );
+        if (empty($resolved['success'])) {
+            return [
+                'success' => false,
+                'errors' => (array)($resolved['errors'] ?? ['Select a valid CT period.']),
+            ];
+        }
+        $ctPeriodId = (int)($resolved['ct_period_id'] ?? 0);
+        $ctPeriod = (array)($resolved['period'] ?? []);
+
+        $position = $this->fetchPosition(
+            $companyId,
+            $accountingPeriodId,
+            $ctPeriodId,
+            $computation
+        );
         if (empty($position['available'])) {
             return ['success' => false, 'errors' => (array)($position['errors'] ?? ['The CT provision could not be calculated.'])];
         }
@@ -240,7 +272,13 @@ final class CorporationTaxProvisionService
         }
 
         return $result + [
-            'position' => $this->fetchPosition($companyId, $accountingPeriodId, $ctPeriodId),
+            'ct_period_id' => $ctPeriodId,
+            'position' => $this->fetchPosition(
+                $companyId,
+                $accountingPeriodId,
+                $ctPeriodId,
+                $computation
+            ),
         ];
     }
 
@@ -248,6 +286,21 @@ final class CorporationTaxProvisionService
     {
         (new \eel_accounts\Service\VatSupportScopeService())
             ->assertTaxAndYearEndSupported($companyId, 'post Corporation Tax Year End provisions');
+
+        $periodSync = (new \eel_accounts\Service\CorporationTaxPeriodService())
+            ->syncForAccountingPeriod($companyId, $accountingPeriodId);
+        if (empty($periodSync['success'])) {
+            return [
+                'success' => false,
+                'errors' => (array)($periodSync['errors'] ?? ['Corporation Tax periods could not be synchronised before posting provisions.']),
+                'results' => [],
+                'position' => [],
+            ];
+        }
+        if ($this->computationService !== null) {
+            $this->computationService->clearRuntimeCaches();
+        }
+
         $position = $this->fetchAccountingPeriodPosition($companyId, $accountingPeriodId);
         if (empty($position['available'])) {
             return ['success' => false, 'errors' => (array)($position['errors'] ?? ['Corporation Tax provision position could not be calculated.'])];
@@ -292,14 +345,100 @@ final class CorporationTaxProvisionService
         ];
     }
 
-    private function validCtPeriod(int $companyId, int $accountingPeriodId, int $ctPeriodId): ?array
+    private function validCtPeriod(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        ?CorporationTaxComputationService $computationService = null
+    ): ?array
     {
-        $ctPeriod = (new \eel_accounts\Service\CorporationTaxPeriodService())->fetch($companyId, $ctPeriodId);
-        if ($ctPeriod === null || (int)($ctPeriod['accounting_period_id'] ?? 0) !== $accountingPeriodId) {
+        if ($ctPeriodId > 0) {
+            $ctPeriod = (new \eel_accounts\Service\CorporationTaxPeriodService())->fetch($companyId, $ctPeriodId);
+            if ($ctPeriod === null || (int)($ctPeriod['accounting_period_id'] ?? 0) !== $accountingPeriodId) {
+                return null;
+            }
+
+            return $ctPeriod;
+        }
+
+        if ($ctPeriodId >= 0) {
             return null;
         }
 
-        return $ctPeriod;
+        $activePeriods = ($computationService ?? $this->computationService ?? new CorporationTaxComputationService())
+            ->activeCtPeriodsForAccountingPeriod($companyId, $accountingPeriodId);
+        foreach ((array)($activePeriods['periods'] ?? []) as $ctPeriod) {
+            if (
+                (int)($ctPeriod['id'] ?? 0) === $ctPeriodId
+                || \eel_accounts\Service\CorporationTaxPeriodService::transientReferenceId(
+                    $accountingPeriodId,
+                    (int)($ctPeriod['sequence_no'] ?? 0)
+                ) === $ctPeriodId
+            ) {
+                return $ctPeriod;
+            }
+        }
+
+        return null;
+    }
+
+    private function synchroniseProvisionPeriod(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        CorporationTaxComputationService $computation
+    ): array
+    {
+        $previewPeriod = $this->validCtPeriod(
+            $companyId,
+            $accountingPeriodId,
+            $ctPeriodId,
+            $computation
+        );
+        if ($previewPeriod === null) {
+            return ['success' => false, 'errors' => ['Select a valid CT period.']];
+        }
+
+        $periodService = new \eel_accounts\Service\CorporationTaxPeriodService();
+        $sync = $periodService->syncForAccountingPeriod($companyId, $accountingPeriodId);
+        if (empty($sync['success'])) {
+            return [
+                'success' => false,
+                'errors' => (array)($sync['errors'] ?? ['Corporation Tax periods could not be synchronised before posting the provision.']),
+            ];
+        }
+
+        $resolvedPeriod = null;
+        foreach ((array)($sync['periods'] ?? []) as $period) {
+            if (
+                ($ctPeriodId > 0 && (int)($period['id'] ?? 0) === $ctPeriodId)
+                || (
+                    $ctPeriodId < 0
+                    && (int)($period['sequence_no'] ?? 0) === (int)($previewPeriod['sequence_no'] ?? 0)
+                    && (string)($period['period_start'] ?? '') === (string)($previewPeriod['period_start'] ?? '')
+                    && (string)($period['period_end'] ?? '') === (string)($previewPeriod['period_end'] ?? '')
+                )
+            ) {
+                $resolvedPeriod = $period;
+                break;
+            }
+        }
+
+        if ($resolvedPeriod === null) {
+            return [
+                'success' => false,
+                'errors' => ['The selected CT period could not be resolved after synchronisation.'],
+            ];
+        }
+
+        $computation->clearRuntimeCaches();
+
+        return [
+            'success' => true,
+            'errors' => [],
+            'ct_period_id' => (int)($resolvedPeriod['id'] ?? 0),
+            'period' => $resolvedPeriod,
+        ];
     }
 
     private function journalKey(int $ctPeriodId): string

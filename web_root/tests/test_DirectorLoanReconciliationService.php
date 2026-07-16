@@ -71,18 +71,19 @@ $harness->run(\eel_accounts\Service\DirectorLoanReconciliationService::class, st
 
     $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'rolls prior period balances into the closing offset proposal', static function () use ($harness, $service): void {
         directorLoanReconciliationTestWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
-            directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 253.00, 0.00, 'prior-asset', (int)$fixture['prior_accounting_period_id'], '2024-12-31');
-            directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 0.00, 1288.63, 'prior-liability', (int)$fixture['prior_accounting_period_id'], '2024-12-31');
-            directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 4620.83, 0.00, 'current-asset');
-            directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 0.00, 10873.46, 'current-liability');
+            // Synthetic figures mirror the closing-balance behaviour without publishing company data.
+            directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 286.19, 0.00, 'synthetic-prior-receivable', (int)$fixture['prior_accounting_period_id'], '2024-12-31');
+            directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 0.00, 2074.83, 'synthetic-prior-payable', (int)$fixture['prior_accounting_period_id'], '2024-12-31');
+            directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 3462.71, 0.00, 'synthetic-current-receivable');
+            directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 0.00, 7931.58, 'synthetic-current-payable');
 
             $result = $service->fetchContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
 
-            $harness->assertSame(4873.83, (float)($result['asset_receivable'] ?? 0));
-            $harness->assertSame(12162.09, (float)($result['liability_payable'] ?? 0));
-            $harness->assertSame(4873.83, (float)($result['required_offset_amount'] ?? 0));
+            $harness->assertSame(3748.90, (float)($result['asset_receivable'] ?? 0));
+            $harness->assertSame(10006.41, (float)($result['liability_payable'] ?? 0));
+            $harness->assertSame(3748.90, (float)($result['required_offset_amount'] ?? 0));
             $harness->assertSame(0.00, (float)($result['offset_amount'] ?? -1));
-            $harness->assertSame(7288.26, (float)($result['net_position'] ?? 0));
+            $harness->assertSame(6257.51, (float)($result['net_position'] ?? 0));
         });
     });
 

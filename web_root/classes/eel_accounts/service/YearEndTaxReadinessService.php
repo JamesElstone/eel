@@ -73,7 +73,7 @@ final class YearEndTaxReadinessService
 
         foreach ($ctPeriods as $ctPeriod) {
             $ctPeriodId = (int)($ctPeriod['id'] ?? 0);
-            if ($ctPeriodId <= 0) {
+            if ($ctPeriodId === 0) {
                 continue;
             }
 

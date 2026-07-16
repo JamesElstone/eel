@@ -26,7 +26,7 @@ $harness->run(_year_end_companies_house_comparisonCard::class, static function (
     $harness->check(_year_end_companies_house_comparisonCard::class, 'renders comparison rows and pending approval controls', static function () use ($harness, $card): void {
         $html = $card->render(companiesHouseComparisonCardContext(null));
 
-        $harness->assertSame(true, str_contains($html, 'Stored filing date: 2025-05-29'));
+        $harness->assertSame(true, str_contains($html, 'Stored filing date: 2026-02-14'));
         $harness->assertSame(true, str_contains($html, 'Fixed assets'));
         $harness->assertSame(true, str_contains($html, 'Current assets'));
         $harness->assertSame(true, str_contains($html, 'name="intent" value="acknowledge_review_check"'));
@@ -96,10 +96,10 @@ function companiesHouseComparisonCardContext(?array $acknowledgement, bool $lock
                 'comparison' => [
                     'available' => true,
                     'comparison_note' => 'An exact-period Companies House filing was selected, but 2 of 2 comparable values differ from the current reconstructed accounts.',
-                    'filing' => ['filing_date' => '2025-05-29'],
+                    'filing' => ['filing_date' => '2026-02-14'],
                     'rows' => [
-                        ['label' => 'Fixed assets', 'app_value' => 208.41, 'filed_value' => 0.00, 'variance' => 208.41, 'status' => 'fail'],
-                        ['label' => 'Current assets', 'app_value' => 1038.26, 'filed_value' => 275.00, 'variance' => 763.26, 'status' => 'fail'],
+                        ['label' => 'Fixed assets', 'app_value' => 420.00, 'filed_value' => 250.00, 'variance' => 170.00, 'status' => 'fail'],
+                        ['label' => 'Current assets', 'app_value' => 2750.00, 'filed_value' => 2300.00, 'variance' => 450.00, 'status' => 'fail'],
                     ],
                 ],
                 'acknowledgement' => $acknowledgement,

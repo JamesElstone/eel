@@ -227,29 +227,47 @@ final class YearEndClosePreviewService
                     $periodPrepaymentPreview = (array)($periodPrepaymentContext['adjustments'] ?? []);
                 }
 
-                if (empty($periodDepreciationPreview['success'])
-                    && (array)($periodDepreciationPreview['errors'] ?? []) !== []) {
+                if (empty($periodDepreciationPreview['success'])) {
                     $reliable = false;
+                    $depreciationErrors = array_values(array_filter(array_map(
+                        'strval',
+                        (array)($periodDepreciationPreview['errors'] ?? [])
+                    )));
                     $warnings[] = 'Pending depreciation could not be calculated for the open period ending '
                         . (string)($period['period_end'] ?? '') . ': '
-                        . implode(' ', array_map('strval', (array)$periodDepreciationPreview['errors']));
+                        . ($depreciationErrors !== []
+                            ? implode(' ', $depreciationErrors)
+                            : 'The depreciation preview returned an unsuccessful result.');
                 }
-                if (empty($periodPrepaymentContext['success'])
-                    && (array)($periodPrepaymentContext['errors'] ?? []) !== []) {
+                if (empty($periodPrepaymentContext['success'])) {
                     $reliable = false;
+                    $prepaymentErrors = array_values(array_filter(array_map(
+                        'strval',
+                        (array)($periodPrepaymentContext['errors'] ?? [])
+                    )));
                     $warnings[] = 'Pending prepayments could not be calculated reliably for the open period ending '
                         . (string)($period['period_end'] ?? '') . ': '
-                        . implode(' ', array_map('strval', (array)$periodPrepaymentContext['errors']));
+                        . ($prepaymentErrors !== []
+                            ? implode(' ', $prepaymentErrors)
+                            : 'The prepayment preview returned an unsuccessful result.');
                 }
 
+                $periodWarnings = [];
+                $periodReliable = true;
                 $periodAdjustments = $this->pendingBalanceSheetAdjustmentsForPeriod(
                     $companyId,
                     $periodId,
                     $period,
                     $periodDepreciationPreview,
                     $periodPrepaymentPreview,
-                    $isTarget ? $profitBeforeTax : null
+                    $isTarget ? $profitBeforeTax : null,
+                    $periodWarnings,
+                    $periodReliable
                 );
+                if (!$periodReliable) {
+                    $reliable = false;
+                }
+                $warnings = array_merge($warnings, $periodWarnings);
                 $directorLoanOffset = $this->pendingDirectorLoanOffsetAdjustmentContext(
                     $companyId,
                     $periodId,
@@ -296,18 +314,40 @@ final class YearEndClosePreviewService
         array $accountingPeriod,
         ?array $depreciationPreview,
         array $prepaymentPreview,
-        ?float $profitBeforeTax
+        ?float $profitBeforeTax,
+        ?array &$warnings = null,
+        ?bool &$reliable = null
     ): array {
+        $corporationTax = $this->pendingCorporationTaxProvisionAdjustmentContext(
+            $companyId,
+            $accountingPeriodId,
+            $accountingPeriod,
+            $depreciationPreview,
+            $prepaymentPreview,
+            $profitBeforeTax
+        );
+        $warnings = array_values(array_unique(array_map(
+            'strval',
+            (array)($corporationTax['warnings'] ?? [])
+        )));
+        $reliable = !empty($corporationTax['reliable']);
+
         return array_merge(
             $this->pendingPrepaymentBalanceSheetAdjustments($prepaymentPreview),
             $this->pendingDepreciationBalanceSheetAdjustments($companyId, $accountingPeriodId, $depreciationPreview),
+            (array)($corporationTax['adjustments'] ?? []),
             $this->pendingRetainedEarningsCloseAdjustment(
                 $companyId,
                 $accountingPeriodId,
                 $accountingPeriod,
                 $depreciationPreview,
                 $prepaymentPreview,
-                $profitBeforeTax
+                $profitBeforeTax,
+                (float)($corporationTax[
+                    !empty($corporationTax['reliable'])
+                        ? 'estimated_corporation_tax'
+                        : 'posted_corporation_tax_charge'
+                ] ?? 0)
             )
         );
     }
@@ -614,13 +654,140 @@ final class YearEndClosePreviewService
         ];
     }
 
+    /**
+     * Preview the exact CT provision delta which Year End will post. The
+     * pre-tax calculation is supplied directly so this path cannot recurse
+     * through the balance-sheet preview that called it.
+     *
+     * @return array{
+     *   adjustments: list<array<string, mixed>>,
+     *   estimated_corporation_tax: float,
+     *   posted_corporation_tax_charge: float,
+     *   unposted_corporation_tax_adjustment: float,
+     *   reliable: bool,
+     *   warnings: list<string>
+     * }
+     */
+    private function pendingCorporationTaxProvisionAdjustmentContext(
+        int $companyId,
+        int $accountingPeriodId,
+        array $accountingPeriod,
+        ?array $depreciationPreview,
+        array $prepaymentPreview,
+        ?float $profitBeforeTax
+    ): array
+    {
+        $periodStart = (string)($accountingPeriod['period_start'] ?? '');
+        $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
+        $profitAndLoss = (new PreTaxProfitLossService())->calculate(
+            $companyId,
+            $accountingPeriodId,
+            $periodEnd,
+            $periodStart,
+            $depreciationPreview,
+            $prepaymentPreview
+        );
+        if ($profitBeforeTax !== null) {
+            $profitAndLoss['profit_before_tax'] = round($profitBeforeTax, 2);
+        }
+
+        $estimate = (new CorporationTaxComputationService())
+            ->previewProvisionPositionForAccountingPeriod(
+                $companyId,
+                $accountingPeriodId,
+                $accountingPeriod,
+                $profitAndLoss
+            );
+        if (empty($estimate['available'])) {
+            return [
+                'adjustments' => [],
+                'estimated_corporation_tax' => 0.0,
+                'posted_corporation_tax_charge' => round((float)($profitAndLoss['posted_corporation_tax_charge'] ?? 0), 2),
+                'unposted_corporation_tax_adjustment' => 0.0,
+                'reliable' => false,
+                'warnings' => array_values(array_map(
+                    'strval',
+                    (array)($estimate['errors'] ?? ['The Corporation Tax provision preview is unavailable.'])
+                )),
+            ];
+        }
+
+        $estimated = round((float)($estimate['estimated_corporation_tax'] ?? 0), 2);
+        $posted = round((float)($estimate['posted_corporation_tax_charge'] ?? 0), 2);
+        $delta = round(
+            (float)($estimate['unposted_corporation_tax_adjustment'] ?? ($estimated - $posted)),
+            2
+        );
+        if (abs($delta) < 0.005) {
+            return [
+                'adjustments' => [],
+                'estimated_corporation_tax' => $estimated,
+                'posted_corporation_tax_charge' => $posted,
+                'unposted_corporation_tax_adjustment' => 0.0,
+                'reliable' => true,
+                'warnings' => [],
+            ];
+        }
+
+        $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
+        $expenseNominal = $this->nominalById((int)($settings['corporation_tax_expense_nominal_id'] ?? 0));
+        $liabilityNominal = $this->nominalById((int)($settings['corporation_tax_liability_nominal_id'] ?? 0));
+        if ($expenseNominal === null || $liabilityNominal === null) {
+            return [
+                'adjustments' => [],
+                'estimated_corporation_tax' => $estimated,
+                'posted_corporation_tax_charge' => $posted,
+                'unposted_corporation_tax_adjustment' => $delta,
+                'reliable' => false,
+                'warnings' => ['Corporation Tax expense and liability nominals are required for the Year End close preview.'],
+            ];
+        }
+
+        $amount = abs($delta);
+        $adjustments = $delta > 0
+            ? [
+                $expenseNominal + [
+                    'debit' => $amount,
+                    'credit' => 0.0,
+                    'source' => 'pending_corporation_tax_provision',
+                ],
+                $liabilityNominal + [
+                    'debit' => 0.0,
+                    'credit' => $amount,
+                    'source' => 'pending_corporation_tax_provision',
+                ],
+            ]
+            : [
+                $liabilityNominal + [
+                    'debit' => $amount,
+                    'credit' => 0.0,
+                    'source' => 'pending_corporation_tax_provision_reversal',
+                ],
+                $expenseNominal + [
+                    'debit' => 0.0,
+                    'credit' => $amount,
+                    'source' => 'pending_corporation_tax_provision_reversal',
+                ],
+            ];
+
+        return [
+            'adjustments' => $adjustments,
+            'estimated_corporation_tax' => $estimated,
+            'posted_corporation_tax_charge' => $posted,
+            'unposted_corporation_tax_adjustment' => $delta,
+            'reliable' => true,
+            'warnings' => [],
+        ];
+    }
+
     private function pendingRetainedEarningsCloseAdjustment(
         int $companyId,
         int $accountingPeriodId,
         array $accountingPeriod,
         ?array $depreciationPreview = null,
         ?array $prepaymentPreview = null,
-        ?float $profitBeforeTax = null
+        ?float $profitBeforeTax = null,
+        float $estimatedCorporationTax = 0.0
     ): array
     {
         if (!$this->tableExists('journal_entry_metadata')) {
@@ -639,7 +806,7 @@ final class YearEndClosePreviewService
 
         $periodStart = (string)($accountingPeriod['period_start'] ?? '');
         $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
-        $profitLoss = $profitBeforeTax ?? $this->profitBeforeTaxIncludingDepreciation(
+        $profitBeforeTax = $profitBeforeTax ?? $this->profitBeforeTaxIncludingDepreciation(
             $companyId,
             $accountingPeriodId,
             $periodStart,
@@ -647,6 +814,7 @@ final class YearEndClosePreviewService
             $depreciationPreview,
             $prepaymentPreview
         );
+        $profitLoss = round($profitBeforeTax - $estimatedCorporationTax, 2);
 
         $nominal = $this->nominalByCode(\eel_accounts\Service\RetainedEarningsCloseService::RETAINED_EARNINGS_CODE, 'equity');
         if ($nominal === null || abs($profitLoss) < 0.005) {

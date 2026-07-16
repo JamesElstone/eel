@@ -72,7 +72,8 @@ $harness->check('GoldenTaxControlMatrix', 'raises s455 and lock-readiness review
         $harness->assertTrue(!empty($review['available']));
         $harness->assertTrue(!empty($review['review_required']));
         $harness->assertTrue(!empty($review['s455_review_required']));
-        $harness->assertSame('800.00', goldenTaxControlMoney($review['exposure_amount'] ?? 0));
+        $harness->assertSame('2000.00', goldenTaxControlMoney($review['exposure_amount'] ?? 0));
+        $harness->assertTrue(!empty($review['identity_netting_required']));
 
         $checklist = (new \eel_accounts\Service\YearEndChecklistService())
             ->fetchChecklist(GoldenAccountsFixture::GOLDEN_COMPANY_ID, 9114);
@@ -264,6 +265,8 @@ $harness->check('GoldenTaxControlMatrix', 'blocks submission for both unpersiste
         $submissions = new \eel_accounts\Service\HmrcCorporationTaxSubmissionService();
         $draft = $submissions->createSubmissionDraft($companyId, $ctPeriodId, 'TEST');
         goldenTaxControlRequireSuccess($draft);
+        $ctPeriodId = (int)($draft['ct_period_id'] ?? 0);
+        $harness->assertTrue($ctPeriodId > 0);
         $notPersisted = $submissions->submit(
             (int)$draft['submission_id'],
             static function (string $level, string $message): void {

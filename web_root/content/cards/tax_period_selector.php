@@ -27,7 +27,7 @@ final class _tax_period_selectorCard extends CardBaseFramework
         $html = '';
         foreach ($ctPeriods as $period) {
             $id = (int)($period['id'] ?? 0);
-            if ($id <= 0) {
+            if ($id === 0) {
                 continue;
             }
             $label = (string)($period['display_label'] ?? ('CT Period ' . (int)($period['sequence_no'] ?? 0)))

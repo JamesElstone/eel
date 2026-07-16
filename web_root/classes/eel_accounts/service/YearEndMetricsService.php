@@ -625,7 +625,14 @@ final class YearEndMetricsService
         $profitAndLoss = $this->profitAndLossSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $openingEquity = $this->equityBalanceUntilDate($companyId, $periodStart, true);
         $closingEquity = $this->equityBalanceUntilDate($companyId, $periodEnd, false);
-        $expectedClosingEquity = round($openingEquity + (float)($profitAndLoss['profit_before_tax'] ?? 0), 2);
+        $directEquity = $this->directEquityMovementForPeriod($companyId, $periodStart, $periodEnd);
+        $directEquityMovement = round((float)($directEquity['total'] ?? 0), 2);
+        $shareCapitalMovement = round((float)($directEquity['share_capital'] ?? 0), 2);
+        $otherDirectEquityMovement = round($directEquityMovement - $shareCapitalMovement, 2);
+        $expectedClosingEquity = round(
+            $openingEquity + $directEquityMovement + (float)($profitAndLoss['profit_before_tax'] ?? 0),
+            2
+        );
 
         return [
             'trial_balance' => $trialBalance,
@@ -638,6 +645,9 @@ final class YearEndMetricsService
                 'opening_equity' => round($openingEquity, 2),
                 'closing_equity' => round($closingEquity, 2),
                 'expected_closing_equity' => $expectedClosingEquity,
+                'direct_equity_movement' => $directEquityMovement,
+                'share_capital_movement' => $shareCapitalMovement,
+                'other_direct_equity_movement' => $otherDirectEquityMovement,
                 'unexplained_movement' => round($closingEquity - $expectedClosingEquity, 2),
             ],
             'fixed_asset_hint_count' => $this->likelyCapitalPurchaseCount($companyId, $accountingPeriodId, $periodStart, $periodEnd),
@@ -1091,6 +1101,50 @@ final class YearEndMetricsService
             'date' => $date,
             'account_type' => 'equity',
         ]), 2);
+    }
+
+    /**
+     * Direct equity postings are part of the equity bridge in their own right.
+     * Exclude the tagged retained-earnings close journal so current profit/loss
+     * is included exactly once in expected closing equity.
+     *
+     * @return array{total: float, share_capital: float}
+     */
+    private function directEquityMovementForPeriod(int $companyId, string $periodStart, string $periodEnd): array
+    {
+        $row = \InterfaceDB::fetchOne(
+            'SELECT COALESCE(SUM(COALESCE(jl.credit, 0) - COALESCE(jl.debit, 0)), 0) AS total,
+                    COALESCE(SUM(
+                        CASE WHEN na.code = :share_capital_code
+                            THEN COALESCE(jl.credit, 0) - COALESCE(jl.debit, 0)
+                            ELSE 0
+                        END
+                    ), 0) AS share_capital
+             FROM journals j
+             INNER JOIN journal_lines jl ON jl.journal_id = j.id
+             INNER JOIN nominal_accounts na ON na.id = jl.nominal_account_id
+             LEFT JOIN journal_entry_metadata jem_close
+               ON jem_close.journal_id = j.id
+              AND jem_close.journal_tag = :close_journal_tag
+             WHERE j.company_id = :company_id
+               AND j.is_posted = 1
+               AND j.journal_date BETWEEN :period_start AND :period_end
+               AND na.account_type = :account_type
+               AND jem_close.id IS NULL',
+            [
+                'share_capital_code' => '3010',
+                'close_journal_tag' => \eel_accounts\Service\RetainedEarningsCloseService::JOURNAL_TAG,
+                'company_id' => $companyId,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
+                'account_type' => 'equity',
+            ]
+        );
+
+        return [
+            'total' => round((float)($row['total'] ?? 0), 2),
+            'share_capital' => round((float)($row['share_capital'] ?? 0), 2),
+        ];
     }
 
     private function likelyCapitalPurchaseCount(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): int {

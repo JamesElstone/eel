@@ -125,9 +125,33 @@ $harness->check(GoldenCardComparisonRegistry::class, 'classifies every selected 
 
 $harness->check(GoldenAccountingOracle::class, 'applies the year-two HMRC penalty, year-three interest, and year-four payment to the correct P and L and tax periods', static function () use ($harness): void {
     $expected = [
-        9112 => ['profit_before_tax' => 1506.81, 'add_back' => 600.00, 'taxable_profit' => 7134.00, 'tax' => 1355.46],
-        9113 => ['profit_before_tax' => 1949.62, 'add_back' => 0.00, 'taxable_profit' => 6953.00, 'tax' => 1321.07],
-        9114 => ['profit_before_tax' => 7137.00, 'add_back' => 0.00, 'taxable_profit' => 7137.00, 'tax' => 1356.03],
+        9112 => [
+            'profit_before_tax' => 1506.81,
+            'add_back' => 600.00,
+            'capital_allowances' => 9000.00,
+            'taxable_before_losses' => -1866.00,
+            'losses_used' => 0.00,
+            'taxable_profit' => 0.00,
+            'tax' => 0.00,
+        ],
+        9113 => [
+            'profit_before_tax' => 1949.62,
+            'add_back' => 0.00,
+            'capital_allowances' => 0.00,
+            'taxable_before_losses' => 6953.00,
+            'losses_used' => 1866.00,
+            'taxable_profit' => 5087.00,
+            'tax' => 966.53,
+        ],
+        9114 => [
+            'profit_before_tax' => 7137.00,
+            'add_back' => 0.00,
+            'capital_allowances' => 0.00,
+            'taxable_before_losses' => 7137.00,
+            'losses_used' => 0.00,
+            'taxable_profit' => 7137.00,
+            'tax' => 1356.03,
+        ],
     ];
     foreach ($expected as $periodId => $values) {
         $oracle = GoldenAccountingOracle::expected($periodId);
@@ -136,6 +160,9 @@ $harness->check(GoldenAccountingOracle::class, 'applies the year-two HMRC penalt
         $harness->assertSame($values['profit_before_tax'], (float)$oracle['profit_loss']['profit_before_tax']);
         $harness->assertSame($values['add_back'], (float)$oracle['corporation_tax']['disallowable_add_backs']);
         $harness->assertSame($values['add_back'], (float)($tax['summary']['disallowable_add_backs'] ?? 0));
+        $harness->assertSame($values['capital_allowances'], (float)($tax['summary']['capital_allowances'] ?? 0));
+        $harness->assertSame($values['taxable_before_losses'], (float)($tax['summary']['taxable_before_losses'] ?? 0));
+        $harness->assertSame($values['losses_used'], (float)($tax['summary']['losses_used'] ?? 0));
         $harness->assertSame($values['taxable_profit'], (float)($tax['summary']['taxable_profit'] ?? 0));
         $harness->assertSame($values['tax'], (float)($tax['summary']['estimated_corporation_tax'] ?? 0));
     }
@@ -182,7 +209,7 @@ $harness->check(GoldenAccountingOracle::class, 'matches real journal, trial bala
         goldenCompare($failures, 'director_loans', 'director_loan_state', $periodId, 'closing_balance', $expected['director_loan']['closing'], $directorLoan['closing_balance'] ?? null);
         goldenCompare($failures, 'tax', 'tax_corporation_tax_summary', $periodId, 'taxable_profit', $expected['corporation_tax']['taxable_profit'], $tax['summary']['taxable_profit'] ?? null);
         goldenCompare($failures, 'tax', 'tax_corporation_tax_summary', $periodId, 'estimated_corporation_tax', $expected['profit_loss']['estimated_corporation_tax'], $tax['summary']['estimated_corporation_tax'] ?? null);
-        foreach (['accounting_profit', 'disallowable_add_backs', 'depreciation_add_back', 'capital_allowances', 'taxable_before_losses', 'taxable_profit', 'taxable_loss', 'estimated_corporation_tax', 'estimated_rate', 'losses_used'] as $field) {
+        foreach (['accounting_profit', 'disallowable_add_backs', 'depreciation_add_back', 'capital_allowances', 'taxable_before_losses', 'taxable_profit', 'taxable_loss', 'estimated_corporation_tax', 'estimated_rate', 'losses_brought_forward', 'losses_used', 'losses_carried_forward'] as $field) {
             goldenCompare($failures, 'tax', 'tax_taxable_profit_bridge', $periodId, $field, $expected['corporation_tax'][$field], $tax['summary'][$field] ?? null);
         }
         goldenCompare($failures, 'tax', 'tax_disallowable_add_backs', $periodId, 'row_count', $expected['corporation_tax']['disallowable_add_backs'] > 0 ? 1 : 0, count((array)($tax['disallowable_add_backs'] ?? [])));
@@ -195,13 +222,59 @@ $harness->check(GoldenAccountingOracle::class, 'matches real journal, trial bala
             $expected['corporation_tax']['depreciation_row_count'],
             count((array)($tax['depreciation_add_back'] ?? []))
         );
-        goldenCompare($failures, 'tax', 'tax_capital_allowances_summary', $periodId, 'net_capital_allowances', 0.00, $tax['capital_allowances_summary']['net_capital_allowances'] ?? null);
-        foreach (['tax_aia_allocation' => 'aia_allocation', 'tax_main_rate_pool' => 'main_rate_pool', 'tax_special_rate_pool' => 'special_rate_pool', 'tax_car_co2_treatment' => 'car_co2_treatment', 'tax_disposals_balancing' => 'disposals_balancing'] as $card => $key) {
+        goldenCompare(
+            $failures,
+            'tax',
+            'tax_capital_allowances_summary',
+            $periodId,
+            'net_capital_allowances',
+            $expected['corporation_tax']['capital_allowances'],
+            $tax['capital_allowances_summary']['net_capital_allowances'] ?? null
+        );
+        $expectedAiaRows = goldenCanonicalAiaRows((array)$expected['corporation_tax']['aia_allocations']);
+        $actualAiaRows = goldenCanonicalAiaRows((array)($tax['aia_allocation'] ?? []));
+        goldenCompare(
+            $failures,
+            'tax',
+            'tax_aia_allocation',
+            $periodId,
+            'row_count',
+            count($expectedAiaRows),
+            count($actualAiaRows)
+        );
+        goldenCompare(
+            $failures,
+            'tax',
+            'tax_aia_allocation',
+            $periodId,
+            'allocation_rows',
+            $expectedAiaRows,
+            $actualAiaRows
+        );
+        foreach (['main_rate_pool', 'special_rate_pool'] as $poolKey) {
+            $card = $poolKey === 'main_rate_pool' ? 'tax_main_rate_pool' : 'tax_special_rate_pool';
+            $expectedPool = (array)$expected['corporation_tax']['pool_summaries'][$poolKey];
+            $actualPool = (array)($tax[$poolKey] ?? []);
+            goldenCompare($failures, 'tax', $card, $periodId, 'available', true, $actualPool !== []);
+            foreach (['pool_type', 'opening_wdv', 'additions', 'aia_claimed', 'fya_claimed', 'disposal_value', 'wda_claimed', 'balancing_charge', 'balancing_allowance', 'closing_wdv'] as $field) {
+                goldenCompare($failures, 'tax', $card, $periodId, $field, $expectedPool[$field], $actualPool[$field] ?? null);
+            }
+        }
+        foreach (['tax_car_co2_treatment' => 'car_co2_treatment', 'tax_disposals_balancing' => 'disposals_balancing'] as $card => $key) {
             goldenCompare($failures, 'tax', $card, $periodId, 'row_count', 0, count((array)($tax[$key] ?? [])));
         }
-        goldenCompare($failures, 'tax', 'tax_losses', $periodId, 'losses_used', 0.00, $tax['summary']['losses_used'] ?? null);
+        goldenCompare($failures, 'tax', 'tax_losses', $periodId, 'losses_used', $expected['corporation_tax']['losses_used'], $tax['summary']['losses_used'] ?? null);
         goldenCompare($failures, 'tax', 'tax_rate_bands', $periodId, 'total_liability', $expected['corporation_tax']['estimated_corporation_tax'], array_sum(array_column((array)($tax['rate_bands'] ?? []), 'liability')));
         goldenCompare($failures, 'tax', 'tax_warnings', $periodId, 'warning_count', $expected['corporation_tax']['warning_count'], count((array)($tax['warnings'] ?? [])));
+        goldenCompare(
+            $failures,
+            'tax',
+            'tax_warnings',
+            $periodId,
+            'warning_messages',
+            goldenSortedStrings((array)$expected['corporation_tax']['warning_messages']),
+            goldenSortedStrings(array_column((array)($tax['warnings'] ?? []), 'message'))
+        );
 
         $snapshot = (new \eel_accounts\Service\CompaniesHouseSnapshotService())->fetchSnapshot(GoldenAccountsFixture::GOLDEN_COMPANY_ID, $periodId);
         $snapshotFields = goldenFieldsByKey((array)($snapshot['fields'] ?? []));
@@ -238,6 +311,32 @@ function goldenValidationPassed(array $validation, string $code): bool
         }
     }
     return false;
+}
+
+/** @param list<array<string, mixed>> $rows @return list<array<string, float|string>> */
+function goldenCanonicalAiaRows(array $rows): array
+{
+    $canonical = array_map(static fn(array $row): array => [
+        'asset_code' => (string)($row['asset_code'] ?? ''),
+        'purchase_date' => (string)($row['purchase_date'] ?? ''),
+        'addition_amount' => round((float)($row['addition_amount'] ?? 0), 2),
+        'allowance_amount' => round((float)($row['allowance_amount'] ?? 0), 2),
+    ], $rows);
+    usort($canonical, static function (array $left, array $right): int {
+        $date = strcmp((string)$left['purchase_date'], (string)$right['purchase_date']);
+        return $date !== 0 ? $date : strcmp((string)$left['asset_code'], (string)$right['asset_code']);
+    });
+
+    return $canonical;
+}
+
+/** @param list<mixed> $values @return list<string> */
+function goldenSortedStrings(array $values): array
+{
+    $values = array_values(array_map('strval', $values));
+    sort($values);
+
+    return $values;
 }
 
 /** @param list<array<string, mixed>> $fields @return array<string, mixed> */

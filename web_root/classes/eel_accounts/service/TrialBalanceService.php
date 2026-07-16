@@ -390,6 +390,7 @@ final class TrialBalanceService
         $vatNominalId = (int)($settings['vat_nominal_id'] ?? 0);
         $uncategorisedNominalId = (int)($settings['uncategorised_nominal_id'] ?? 0);
         $defaultBankNominalId = (int)($settings['default_bank_nominal_id'] ?? 0);
+        $corporationTaxLiabilityNominalId = (int)($settings['corporation_tax_liability_nominal_id'] ?? 0);
 
         foreach ($rows as $row) {
             $totalDebits += (float)($row['display_debit'] ?? 0);
@@ -421,8 +422,36 @@ final class TrialBalanceService
             if ($nominalId === $uncategorisedNominalId || $code === '9990' || str_contains($name, 'suspense')) {
                 $uncategorisedExposure += $net;
             }
-            if ($subtypeCode === 'corp_tax' || str_contains($name, 'corporation tax')) {
+            if (($corporationTaxLiabilityNominalId > 0 && $nominalId === $corporationTaxLiabilityNominalId)
+                || ($corporationTaxLiabilityNominalId <= 0
+                    && ($subtypeCode === 'corp_tax' || str_contains($name, 'corporation tax')))) {
                 $corporationTaxBalance += $net;
+            }
+        }
+
+        $companyId = (int)($context['company']['id'] ?? 0);
+        $accountingPeriodId = (int)($context['accounting_period']['id'] ?? 0);
+        $periodEnd = (string)($context['accounting_period']['period_end'] ?? '');
+        if ($companyId > 0
+            && $accountingPeriodId > 0
+            && $periodEnd !== ''
+            && $corporationTaxLiabilityNominalId > 0) {
+            $pendingClose = (new \eel_accounts\Service\YearEndClosePreviewService())
+                ->pendingBalanceSheetAdjustmentContext(
+                    $companyId,
+                    $accountingPeriodId,
+                    $periodEnd
+                );
+            if (!empty($pendingClose['reliable'])) {
+                foreach ((array)($pendingClose['adjustments'] ?? []) as $adjustment) {
+                    if ((int)($adjustment['nominal_account_id'] ?? 0) !== $corporationTaxLiabilityNominalId) {
+                        continue;
+                    }
+                    $corporationTaxBalance += round(
+                        (float)($adjustment['debit'] ?? 0) - (float)($adjustment['credit'] ?? 0),
+                        2
+                    );
+                }
             }
         }
 

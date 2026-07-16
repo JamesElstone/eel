@@ -117,6 +117,31 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
         });
     });
 
+    $harness->check(\eel_accounts\Service\DirectorLoanService::class, 'does not offset a gross director receivable against an unresolved director payable', static function () use ($harness, $service): void {
+        directorLoanStatementTestWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            directorLoanStatementTestInsertSetting($fixture, 'director_loan_asset_nominal_id', (string)$fixture['asset_nominal_id']);
+            directorLoanStatementTestInsertSetting($fixture, 'director_loan_liability_nominal_id', (string)$fixture['liability_nominal_id']);
+            directorLoanStatementTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 250.00, 0.00, '2026-03-01', 'gross-receivable');
+            directorLoanStatementTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 0.00, 1000.00, '2026-03-02', 'unresolved-payable');
+
+            $review = $service->fetchTaxReview((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
+
+            $harness->assertSame(true, (bool)($review['available'] ?? false));
+            $harness->assertSame('review_required', (string)($review['status'] ?? ''));
+            $harness->assertSame(true, (bool)($review['director_owes_company'] ?? false));
+            $harness->assertSame(true, (bool)($review['identity_netting_required'] ?? false));
+            $harness->assertSame('gross_receivable_pending_same_person_review', (string)($review['tax_review_basis'] ?? ''));
+            $harness->assertSame(250.00, (float)($review['gross_director_receivable'] ?? 0));
+            $harness->assertSame(1000.00, (float)($review['gross_director_payable'] ?? 0));
+            $harness->assertSame(250.00, (float)($review['exposure_amount'] ?? 0));
+            $harness->assertTrue(in_array(
+                'same_person_netting',
+                array_map(static fn(array $item): string => (string)($item['key'] ?? ''), (array)($review['review_items'] ?? [])),
+                true
+            ));
+        });
+    });
+
     $harness->check(\eel_accounts\Service\DirectorLoanService::class, 'tax review summary matches full statement review without statement rows', static function () use ($harness, $service): void {
         directorLoanStatementTestWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
             directorLoanStatementTestInsertSetting($fixture, 'director_loan_asset_nominal_id', (string)$fixture['asset_nominal_id']);

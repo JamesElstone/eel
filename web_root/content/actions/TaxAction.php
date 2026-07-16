@@ -13,10 +13,10 @@ final class TaxAction implements ActionInterfaceFramework
     {
         $companyId = max(0, (int)$request->input('company_id', 0));
         $accountingPeriodId = max(0, (int)$request->input('accounting_period_id', 0));
-        $ctPeriodId = max(0, (int)$request->input('ct_period_id', 0));
+        $ctPeriodId = (int)$request->input('ct_period_id', 0);
         $intent = trim((string)$request->input('intent', ''));
 
-        if ($companyId <= 0 || $accountingPeriodId <= 0 || $ctPeriodId <= 0) {
+        if ($companyId <= 0 || $accountingPeriodId <= 0 || $ctPeriodId === 0) {
             return $this->result(false, ['Select a company, accounting period, and CT period first.'], $ctPeriodId);
         }
 
@@ -50,7 +50,7 @@ final class TaxAction implements ActionInterfaceFramework
             $success,
             ['page.context', 'tax.workings', 'trial.balance.state', 'profit.loss', 'year.end.retained.earnings', 'dividend.reserve'],
             $messages,
-            $ctPeriodId > 0 ? ['ct_period_id' => (string)$ctPeriodId] : []
+            $ctPeriodId !== 0 ? ['ct_period_id' => (string)$ctPeriodId] : []
         );
     }
 }

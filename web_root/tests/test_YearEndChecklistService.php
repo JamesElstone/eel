@@ -1237,7 +1237,7 @@ function yearEndChecklistServiceCreateDirectorLoanOffsetFixture(): array
             'company_id' => $companyId,
             'source' => 'companies_house',
             'external_key' => 'year-end-checklist:' . $marker,
-            'full_name' => 'James Example',
+            'full_name' => 'Primary Director',
             'officer_role' => 'director',
             'appointed_on' => '2020-01-01',
         ]

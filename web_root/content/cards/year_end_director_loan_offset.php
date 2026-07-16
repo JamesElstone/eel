@@ -66,6 +66,9 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
 
         $warnings = '';
         foreach ((array)($review['warnings'] ?? []) as $warning) {
+            if (preg_match('/^\d+ Director Loan entries are not attributed to a valid same-company director\.$/i', trim((string)$warning)) === 1) {
+                continue;
+            }
             $warnings .= '<div class="panel-soft warn helper">' . HelperFramework::escape((string)$warning) . '</div>';
         }
 
@@ -114,7 +117,7 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
                 ' . $this->stat('Potential s455 exposure', $this->money($settings, $review['potential_s455_exposure'] ?? 0)) . '
             </div>
             ' . $warnings . '
-            <section class="panel-soft settings-stack">
+            <section class="settings-stack">
                 <div class="eyebrow">Per-director facts</div>
                 ' . $this->positionsTable((array)($review['per_director'] ?? []), $settings) . '
                 <div class="eyebrow">Tax flags</div>
@@ -142,7 +145,7 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
                 <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['potential_s455_exposure'] ?? 0)) . '</td>
             </tr>';
         }
-        return '<div class="table-scroll"><table>
+        return '<div class="panel-soft table-scroll"><table>
             <thead><tr><th>Director</th><th>Gross asset</th><th>Gross liability</th><th>Reclassification</th><th>Net closing</th><th>Potential s455</th></tr></thead>
             <tbody>' . $rows . '</tbody>
         </table></div>';
@@ -162,7 +165,7 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
                 <td class="numeric">' . HelperFramework::escape($this->money($settings, $flag['potential_s455_exposure'] ?? 0)) . '</td>
             </tr>';
         }
-        return '<div class="table-scroll"><table>
+        return '<div class="panel-soft table-scroll"><table>
             <thead><tr><th>Director</th><th>Tax flag</th><th>Potential s455</th></tr></thead>
             <tbody>' . $rows . '</tbody>
         </table></div>';
@@ -181,7 +184,7 @@ final class _year_end_director_loan_offsetCard extends CardBaseFramework
                 <td class="numeric">' . HelperFramework::escape($this->money($settings, $line['credit'] ?? 0)) . '</td>
             </tr>';
         }
-        return '<div class="table-scroll"><table>
+        return '<div class="panel-soft table-scroll"><table>
             <thead><tr><th>Attributed line</th><th>Debit</th><th>Credit</th></tr></thead>
             <tbody>' . $rows . '</tbody>
         </table></div>';

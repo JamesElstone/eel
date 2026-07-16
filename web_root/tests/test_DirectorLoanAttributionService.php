@@ -50,7 +50,7 @@ $harness->run(\eel_accounts\Service\DirectorLoanAttributionService::class, stati
                     'company_id' => $companyId,
                     'source' => 'companies_house',
                     'external_key' => 'test:' . $marker,
-                    'full_name' => 'James Example',
+                    'full_name' => 'Primary Director',
                     'officer_role' => 'director',
                     'appointed_on' => '2020-01-01',
                 ]
@@ -87,7 +87,7 @@ $harness->run(\eel_accounts\Service\DirectorLoanAttributionService::class, stati
             InterfaceDB::prepareExecute(
                 'INSERT INTO journal_lines (journal_id, nominal_account_id, debit, credit, line_description)
                  VALUES (:journal_id, :nominal_id, 253.00, 0.00, :description)',
-                ['journal_id' => $journalId, 'nominal_id' => $assetNominalId, 'description' => 'Brian advanced funds for James']
+                ['journal_id' => $journalId, 'nominal_id' => $assetNominalId, 'description' => 'External counterparty advanced funds for primary director']
             );
             $lineId = (int)InterfaceDB::fetchColumn(
                 'SELECT id FROM journal_lines WHERE journal_id = :journal_id',

@@ -291,7 +291,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                         'company_id' => $companyId,
                         'source' => 'companies_house',
                         'external_key' => 'sequential-preview:' . $marker,
-                        'full_name' => 'James Example',
+                        'full_name' => 'Primary Director',
                         'officer_role' => 'director',
                         'appointed_on' => '2020-01-01',
                     ]
@@ -464,7 +464,7 @@ function yearEndClosePreviewCreateFixture(): array
             'company_id' => $companyId,
             'source' => 'companies_house',
             'external_key' => 'year-end-preview:' . $marker,
-            'full_name' => 'James Example',
+            'full_name' => 'Primary Director',
             'officer_role' => 'director',
             'appointed_on' => '2020-01-01',
         ]

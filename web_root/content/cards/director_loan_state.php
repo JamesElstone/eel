@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 final class _director_loan_stateCard extends CardBaseFramework
 {
+    private const POSITION_TABLE_KEY = 'director_loan_positions';
+    private const POSITION_PAGE_SIZE = 5;
     private const ATTRIBUTION_TABLE_KEY = 'director_loan_attribution';
     private const ATTRIBUTION_PAGE_SIZE = 10;
 
@@ -70,9 +72,23 @@ final class _director_loan_stateCard extends CardBaseFramework
         return '';
     }
 
+    public function handle(
+        RequestFramework $request,
+        PageServiceFramework $services,
+        array $pageContext,
+        ActionResultFramework $actionResult
+    ): array {
+        $pageContext = parent::handle($request, $services, $pageContext, $actionResult);
+
+        return $this->applyPaginationContext($request, $pageContext, 'positions');
+    }
+
     public function tables(array $context): array
     {
-        return [$this->configuredAttributionTable($context)];
+        return [
+            $this->configuredPositionTable($context),
+            $this->configuredAttributionTable($context),
+        ];
     }
 
     public function render(array $context): string
@@ -99,7 +115,7 @@ final class _director_loan_stateCard extends CardBaseFramework
                 ' . $this->stat('Unattributed entries', (string)($unattributedCount + $invalidCount)) . '
             </div>
             ' . (($unattributedCount + $invalidCount) > 0
-                ? '<div class="panel-soft warn helper">Every Director Loan entry must be attributed before the Year End confirmation can be saved or the period can be locked.</div>'
+                ? ''
                 : '<div class="panel-soft success helper">All Director Loan entries relevant to this period have a valid same-company director attribution.</div>') . '
             ' . $this->reportingPresentation(
                 $presentation,
@@ -108,11 +124,14 @@ final class _director_loan_stateCard extends CardBaseFramework
             ) . '
             <section class="panel-soft settings-stack">
                 <div class="eyebrow">Per-director position</div>
-                ' . $this->positionsTable((array)($statement['per_director'] ?? []), $settings) . '
+                ' . $this->configuredPositionTable($context)->render($context, [
+                    'cards[]' => (array)($context['page']['page_cards'] ?? [$this->key()]),
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $accountingPeriodId,
+                ]) . '
             </section>
             <section class="settings-stack">
                 <div class="eyebrow">Director attribution</div>
-                <div class="helper">For example, Brian can remain the counterparty while the Director loan account is James.</div>
                 ' . $this->configuredAttributionTable($context)->render($context, [
                     'cards[]' => (array)($context['page']['page_cards'] ?? [$this->key()]),
                     'company_id' => $companyId,
@@ -202,50 +221,91 @@ final class _director_loan_stateCard extends CardBaseFramework
         </section>';
     }
 
-    private function positionsTable(array $positions, array $settings): string
+    private function configuredPositionTable(array $context): TableFramework
     {
-        if ($positions === []) {
-            return '<div class="helper">No Director Loan activity or balance exists for this period.</div>';
-        }
+        $hiddenFields = $this->tableHiddenFields($context);
+        $table = $this->positionTable($context);
+        $pagination = HelperFramework::paginateArray(
+            $table->sortedRows(),
+            $this->paginationPage($context, 'positions'),
+            self::POSITION_PAGE_SIZE
+        );
 
-        $rows = '';
-        foreach ($positions as $position) {
-            $rows .= '<tr>
-                <td>' . HelperFramework::escape((string)($position['director_name'] ?? 'Unattributed')) . '</td>
-                <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['gross_asset'] ?? 0)) . '</td>
-                <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['gross_liability'] ?? 0)) . '</td>
-                <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['desired_reclassification'] ?? 0)) . '</td>
-                <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['net_closing_position'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape((string)($position['net_position_label'] ?? '')) . '</td>
-                <td class="numeric">' . HelperFramework::escape($this->money($settings, $position['potential_s455_exposure'] ?? 0)) . '</td>
-            </tr>';
-        }
+        return $table
+            ->visibleRows((array)$pagination['items'])
+            ->pagination(
+                $pagination,
+                'Per-director positions',
+                $this->paginationPageField('positions'),
+                $hiddenFields
+            );
+    }
 
-        return '<div class="table-scroll"><table>
-            <thead><tr>
-                <th>Director loan account</th>
-                <th>Gross asset</th>
-                <th>Gross liability</th>
-                <th>Reclassification</th>
-                <th>Net closing</th>
-                <th>Position</th>
-                <th>Potential s455</th>
-            </tr></thead>
-            <tbody>' . $rows . '</tbody>
-        </table></div>';
+    private function positionTable(array $context): TableFramework
+    {
+        $statement = (array)($context['services']['directorLoanStatement'] ?? []);
+        $positions = array_values(array_filter(
+            (array)($statement['per_director'] ?? []),
+            static fn(mixed $position): bool => is_array($position)
+        ));
+        $settings = ['default_currency_symbol' => (string)($statement['default_currency_symbol'] ?? '&#163;')];
+
+        return TableFramework::make(self::POSITION_TABLE_KEY, $positions)
+            ->filename('director-loan-positions')
+            ->exportLimit(5000)
+            ->empty('No Director Loan activity or balance exists for this period.')
+            ->textColumn('director_name', 'Director loan account', fallback: 'Unattributed')
+            ->column(
+                'gross_asset',
+                'Gross asset',
+                html: fn(array $row): string => HelperFramework::escape($this->money($settings, $row['gross_asset'] ?? 0)),
+                export: static fn(array $row): string => number_format((float)($row['gross_asset'] ?? 0), 2, '.', ''),
+                headerClass: 'numeric',
+                cellClass: 'numeric',
+                exportType: 'number'
+            )
+            ->column(
+                'gross_liability',
+                'Gross liability',
+                html: fn(array $row): string => HelperFramework::escape($this->money($settings, $row['gross_liability'] ?? 0)),
+                export: static fn(array $row): string => number_format((float)($row['gross_liability'] ?? 0), 2, '.', ''),
+                headerClass: 'numeric',
+                cellClass: 'numeric',
+                exportType: 'number'
+            )
+            ->column(
+                'desired_reclassification',
+                'Reclassification',
+                html: fn(array $row): string => HelperFramework::escape($this->money($settings, $row['desired_reclassification'] ?? 0)),
+                export: static fn(array $row): string => number_format((float)($row['desired_reclassification'] ?? 0), 2, '.', ''),
+                headerClass: 'numeric',
+                cellClass: 'numeric',
+                exportType: 'number'
+            )
+            ->column(
+                'net_closing_position',
+                'Net closing',
+                html: fn(array $row): string => HelperFramework::escape($this->money($settings, $row['net_closing_position'] ?? 0)),
+                export: static fn(array $row): string => number_format((float)($row['net_closing_position'] ?? 0), 2, '.', ''),
+                headerClass: 'numeric',
+                cellClass: 'numeric',
+                exportType: 'number'
+            )
+            ->textColumn('net_position_label', 'Position')
+            ->column(
+                'potential_s455_exposure',
+                'Potential s455',
+                html: fn(array $row): string => HelperFramework::escape($this->money($settings, $row['potential_s455_exposure'] ?? 0)),
+                export: static fn(array $row): string => number_format((float)($row['potential_s455_exposure'] ?? 0), 2, '.', ''),
+                headerClass: 'numeric',
+                cellClass: 'numeric',
+                exportType: 'number'
+            );
     }
 
     private function configuredAttributionTable(array $context): TableFramework
     {
-        $hiddenFields = [
-            'page' => (string)($context['page']['page_id'] ?? 'director_loans'),
-            '_pagination' => '1',
-            '_invalidate_fact' => $this->tableInvalidationFact(),
-            'cards[]' => [$this->key()],
-            'show_card' => $this->key(),
-            'company_id' => (int)($context['company']['id'] ?? 0),
-            'accounting_period_id' => (int)($context['company']['accounting_period_id'] ?? 0),
-        ];
+        $hiddenFields = $this->tableHiddenFields($context);
         $table = $this->attributionTable($context);
         $pagination = HelperFramework::paginateArray(
             $table->sortedRows(),
@@ -261,6 +321,19 @@ final class _director_loan_stateCard extends CardBaseFramework
                 $this->paginationPageField(),
                 $hiddenFields
             );
+    }
+
+    private function tableHiddenFields(array $context): array
+    {
+        return [
+            'page' => (string)($context['page']['page_id'] ?? 'director_loans'),
+            '_pagination' => '1',
+            '_invalidate_fact' => $this->tableInvalidationFact(),
+            'cards[]' => [$this->key()],
+            'show_card' => $this->key(),
+            'company_id' => (int)($context['company']['id'] ?? 0),
+            'accounting_period_id' => (int)($context['company']['accounting_period_id'] ?? 0),
+        ];
     }
 
     private function attributionTable(array $context): TableFramework
@@ -380,7 +453,6 @@ final class _director_loan_stateCard extends CardBaseFramework
             <input type="hidden" name="accounting_period_id" value="' . $accountingPeriodId . '">
             <input type="hidden" name="journal_line_id" value="' . (int)($entry['journal_line_id'] ?? 0) . '">
             <select class="input" name="director_id" required>' . $options . '</select>
-            <button class="button button-inline" type="submit">Save</button>
         </form>';
     }
 

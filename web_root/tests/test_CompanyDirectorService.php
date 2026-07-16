@@ -18,13 +18,13 @@ $harness->run(\eel_accounts\Service\CompanyDirectorService::class, static functi
         $directors = $service->previewFromStoredOfficersJson(json_encode([
             'items' => [
                 [
-                    'name' => 'James Example',
+                    'name' => 'Primary Director',
                     'officer_role' => 'director',
                     'appointed_on' => '2020-01-01',
                     'links' => ['officer' => ['appointments' => '/officers/abc123/appointments']],
                 ],
                 [
-                    'name' => 'Brian Example',
+                    'name' => 'Secondary Director',
                     'officer_role' => 'director',
                     'appointed_on' => '2018-01-01',
                     'resigned_on' => '2021-12-31',
@@ -58,17 +58,17 @@ $harness->run(\eel_accounts\Service\CompanyDirectorService::class, static functi
             $json = json_encode([
                 'items' => [
                     [
-                        'name' => 'Brian Example',
+                        'name' => 'Secondary Director',
                         'officer_role' => 'director',
                         'appointed_on' => '2018-01-01',
                         'resigned_on' => '2021-12-31',
-                        'links' => ['officer' => ['appointments' => '/officers/brian/appointments']],
+                        'links' => ['officer' => ['appointments' => '/officers/secondary/appointments']],
                     ],
                     [
-                        'name' => 'James Example',
+                        'name' => 'Primary Director',
                         'officer_role' => 'director',
                         'appointed_on' => '2022-01-01',
-                        'links' => ['officer' => ['appointments' => '/officers/james/appointments']],
+                        'links' => ['officer' => ['appointments' => '/officers/primary/appointments']],
                     ],
                 ],
             ], JSON_UNESCAPED_SLASHES);
@@ -81,7 +81,7 @@ $harness->run(\eel_accounts\Service\CompanyDirectorService::class, static functi
             $harness->assertSame(true, (bool)($first['success'] ?? false));
             $harness->assertSame(true, (bool)($second['success'] ?? false));
             $harness->assertCount(2, $rows);
-            $harness->assertSame('James Example', (string)($matched['full_name'] ?? ''));
+            $harness->assertSame('Primary Director', (string)($matched['full_name'] ?? ''));
         } finally {
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();

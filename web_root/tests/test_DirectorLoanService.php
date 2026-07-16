@@ -15,25 +15,25 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
     GeneratedServiceClassTestHarness $harness,
     \eel_accounts\Service\DirectorLoanService $service
 ): void {
-    $harness->check(\eel_accounts\Service\DirectorLoanService::class, 'calculates James example by director while preserving Brian as counterparty', static function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\DirectorLoanService::class, 'calculates the primary director position while preserving the external counterparty', static function () use ($harness, $service): void {
         directorLoanStatementWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
-            $jamesId = (int)$fixture['james_director_id'];
+            $primaryDirectorId = (int)$fixture['primary_director_id'];
             $otherId = (int)$fixture['other_director_id'];
 
             directorLoanStatementInsertTransactionJournal(
                 $fixture,
                 (int)$fixture['asset_nominal_id'],
                 253.00,
-                $jamesId,
-                'Brian Example'
+                $primaryDirectorId,
+                'External Counterparty'
             );
             directorLoanStatementInsertManualLine(
                 $fixture,
                 (int)$fixture['liability_nominal_id'],
                 0.00,
                 1288.63,
-                $jamesId,
-                'James funds introduced'
+                $primaryDirectorId,
+                'Primary director funds introduced'
             );
             directorLoanStatementInsertManualLine(
                 $fixture,
@@ -50,27 +50,27 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
             foreach ((array)($statement['per_director'] ?? []) as $position) {
                 $positions[(int)($position['director_id'] ?? 0)] = $position;
             }
-            $james = (array)($positions[$jamesId] ?? []);
+            $primaryDirector = (array)($positions[$primaryDirectorId] ?? []);
             $other = (array)($positions[$otherId] ?? []);
-            $brianEntry = array_values(array_filter(
+            $externalCounterpartyEntry = array_values(array_filter(
                 (array)($statement['attribution_entries'] ?? []),
-                static fn(array $entry): bool => (string)($entry['counterparty_name'] ?? '') === 'Brian Example'
+                static fn(array $entry): bool => (string)($entry['counterparty_name'] ?? '') === 'External Counterparty'
             ));
 
             $harness->assertSame(true, (bool)($statement['success'] ?? false));
-            $harness->assertSame('253.00', directorLoanStatementMoney($james['gross_asset'] ?? 0));
-            $harness->assertSame('1288.63', directorLoanStatementMoney($james['gross_liability'] ?? 0));
-            $harness->assertSame('253.00', directorLoanStatementMoney($james['desired_reclassification'] ?? 0));
-            $harness->assertSame('1035.63', directorLoanStatementMoney($james['net_closing_position'] ?? 0));
-            $harness->assertSame('0.00', directorLoanStatementMoney($james['potential_s455_exposure'] ?? 0));
+            $harness->assertSame('253.00', directorLoanStatementMoney($primaryDirector['gross_asset'] ?? 0));
+            $harness->assertSame('1288.63', directorLoanStatementMoney($primaryDirector['gross_liability'] ?? 0));
+            $harness->assertSame('253.00', directorLoanStatementMoney($primaryDirector['desired_reclassification'] ?? 0));
+            $harness->assertSame('1035.63', directorLoanStatementMoney($primaryDirector['net_closing_position'] ?? 0));
+            $harness->assertSame('0.00', directorLoanStatementMoney($primaryDirector['potential_s455_exposure'] ?? 0));
             $harness->assertSame('0.00', directorLoanStatementMoney($other['desired_reclassification'] ?? 0));
             $harness->assertSame('100.00', directorLoanStatementMoney($other['potential_s455_exposure'] ?? 0));
             $harness->assertSame('253.00', directorLoanStatementMoney($statement['desired_reclassification'] ?? 0));
             $harness->assertSame('100.00', directorLoanStatementMoney($statement['potential_s455_exposure'] ?? 0));
             $harness->assertSame('100.00', directorLoanStatementMoney($taxReview['exposure_amount'] ?? 0));
-            $harness->assertCount(1, $brianEntry);
-            $harness->assertSame($jamesId, (int)($brianEntry[0]['director_id'] ?? 0));
-            $harness->assertSame(true, str_contains((string)($brianEntry[0]['source_url'] ?? ''), 'transaction_id='));
+            $harness->assertCount(1, $externalCounterpartyEntry);
+            $harness->assertSame($primaryDirectorId, (int)($externalCounterpartyEntry[0]['director_id'] ?? 0));
+            $harness->assertSame(true, str_contains((string)($externalCounterpartyEntry[0]['source_url'] ?? ''), 'transaction_id='));
         });
     });
 
@@ -81,8 +81,8 @@ $harness->run(\eel_accounts\Service\DirectorLoanService::class, static function 
                 (int)$fixture['asset_nominal_id'],
                 500.00,
                 0.00,
-                (int)$fixture['james_director_id'],
-                'James receivable'
+                (int)$fixture['primary_director_id'],
+                'Primary director receivable'
             );
             directorLoanStatementInsertManualLine(
                 $fixture,
@@ -147,7 +147,7 @@ function directorLoanStatementWithFixture(GeneratedServiceClassTestHarness $harn
             ['company_id' => $companyId]
         );
         foreach ([
-            ['key' => 'james:' . $marker, 'name' => 'James Example', 'appointed' => '2020-01-01'],
+            ['key' => 'primary-director:' . $marker, 'name' => 'Primary Director', 'appointed' => '2020-01-01'],
             ['key' => 'other:' . $marker, 'name' => 'Other Director', 'appointed' => '2021-01-01'],
         ] as $director) {
             InterfaceDB::prepareExecute(
@@ -166,9 +166,9 @@ function directorLoanStatementWithFixture(GeneratedServiceClassTestHarness $harn
                 ]
             );
         }
-        $jamesId = (int)InterfaceDB::fetchColumn(
+        $primaryDirectorId = (int)InterfaceDB::fetchColumn(
             'SELECT id FROM company_directors WHERE company_id = :company_id AND full_name = :name',
-            ['company_id' => $companyId, 'name' => 'James Example']
+            ['company_id' => $companyId, 'name' => 'Primary Director']
         );
         $otherId = (int)InterfaceDB::fetchColumn(
             'SELECT id FROM company_directors WHERE company_id = :company_id AND full_name = :name',
@@ -181,7 +181,7 @@ function directorLoanStatementWithFixture(GeneratedServiceClassTestHarness $harn
             'accounting_period_id' => $accountingPeriodId,
             'asset_nominal_id' => $assetNominalId,
             'liability_nominal_id' => $liabilityNominalId,
-            'james_director_id' => $jamesId,
+            'primary_director_id' => $primaryDirectorId,
             'other_director_id' => $otherId,
         ]);
     } finally {
@@ -274,7 +274,7 @@ function directorLoanStatementInsertTransactionJournal(
             'period_id' => (int)$fixture['accounting_period_id'],
             'upload_id' => $uploadId,
             'txn_date' => '2025-06-30',
-            'description' => 'Funds advanced on James behalf',
+            'description' => 'Funds advanced on the primary director account',
             'amount' => number_format($amount, 2, '.', ''),
             'counterparty_name' => $counterparty,
             'dedupe_hash' => hash('sha256', 'dla-transaction:' . $fixture['marker']),
@@ -296,7 +296,7 @@ function directorLoanStatementInsertTransactionJournal(
             'source_type' => 'bank_csv',
             'source_ref' => 'transaction:' . $transactionId,
             'journal_date' => '2025-06-30',
-            'description' => 'Funds advanced on James behalf',
+            'description' => 'Funds advanced on the primary director account',
         ]
     );
     $journalId = (int)InterfaceDB::fetchColumn(
@@ -311,7 +311,7 @@ function directorLoanStatementInsertTransactionJournal(
             'nominal_id' => $nominalId,
             'director_id' => $directorId,
             'debit' => number_format($amount, 2, '.', ''),
-            'description' => 'Funds advanced on James behalf',
+            'description' => 'Funds advanced on the primary director account',
         ]
     );
 }

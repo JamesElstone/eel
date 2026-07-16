@@ -39,12 +39,12 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
                     'unattributed_count' => 0,
                     'invalid_director_count' => 0,
                     'directors' => [
-                        ['id' => 9, 'full_name' => 'James Example', 'is_active' => 1],
+                        ['id' => 9, 'full_name' => 'Primary Director', 'is_active' => 1],
                         ['id' => 10, 'full_name' => 'Former Director', 'is_active' => 0],
                     ],
                     'per_director' => [[
                         'director_id' => 9,
-                        'director_name' => 'James Example',
+                        'director_name' => 'Primary Director',
                         'gross_asset' => 253.00,
                         'gross_liability' => 1288.63,
                         'desired_reclassification' => 253.00,
@@ -55,8 +55,8 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
                     'attribution_entries' => [[
                         'journal_line_id' => 123,
                         'journal_date' => '2025-06-30',
-                        'description' => 'Funds advanced on James behalf',
-                        'counterparty_name' => 'Brian Example',
+                        'description' => 'Funds advanced on the primary director account',
+                        'counterparty_name' => 'External Counterparty',
                         'source_label' => 'Transaction #456',
                         'source_url' => '?page=transactions&show_card=transactions_imported&transaction_id=456',
                         'signed_amount' => -253.00,
@@ -77,13 +77,15 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
         ]);
 
         $harness->assertSame('Assign each posted Director Loan control-account entry to the director whose loan account it belongs to. The transaction counterparty remains separate.', $card->helper([]));
-        $harness->assertTrue(str_contains($html, 'Brian Example'));
-        $harness->assertTrue(str_contains($html, 'James Example'));
+        $harness->assertTrue(str_contains($html, 'External Counterparty'));
+        $harness->assertTrue(str_contains($html, 'Primary Director'));
+        $harness->assertSame(false, str_contains($html, 'For example,'));
         $harness->assertTrue(str_contains($html, 'Former Director (former director)'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="set_director_loan_attribution"'));
         $harness->assertTrue(str_contains($html, 'name="journal_line_id" value="123"'));
         $harness->assertTrue(str_contains($html, '<select class="input" name="director_id" required>'));
         $harness->assertTrue(str_contains($html, 'value="9" selected'));
+        $harness->assertSame(false, str_contains($html, '<button class="button button-inline" type="submit">Save</button>'));
         $harness->assertTrue(str_contains($html, 'Calculated reclassification'));
         $harness->assertTrue(str_contains($html, 'Potential s455 exposure'));
         $harness->assertTrue(str_contains($html, 'name="card_action" value="DirectorLoan"'));
@@ -96,7 +98,7 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
         $harness->assertSame(false, str_contains($html, 'director_loan_state.php'));
     });
 
-    $harness->check(_director_loan_stateCard::class, 'blocks confirmation visibly when entries are unattributed', static function () use ($harness, $card): void {
+    $harness->check(_director_loan_stateCard::class, 'keeps unattributed entries selectable without the removed warning', static function () use ($harness, $card): void {
         $html = $card->render([
             'company' => ['id' => 47, 'accounting_period_id' => 74],
             'services' => [
@@ -109,7 +111,7 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
                     'potential_s455_exposure' => 10,
                     'unattributed_count' => 1,
                     'invalid_director_count' => 0,
-                    'directors' => [['id' => 9, 'full_name' => 'James Example', 'is_active' => 1]],
+                    'directors' => [['id' => 9, 'full_name' => 'Primary Director', 'is_active' => 1]],
                     'per_director' => [],
                     'attribution_entries' => [[
                         'journal_line_id' => 124,
@@ -133,7 +135,7 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
             ],
         ]);
 
-        $harness->assertTrue(str_contains($html, 'must be attributed before the Year End confirmation'));
+        $harness->assertSame(false, str_contains($html, 'Every Director Loan entry must be attributed'));
         $harness->assertTrue(str_contains($html, 'Choose director'));
         $harness->assertTrue(str_contains($html, 'value="" disabled selected'));
         $harness->assertTrue(str_contains($html, 'name="classification" value="after_more_than_one_year" checked required'));
@@ -174,7 +176,7 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
                     'unattributed_count' => 0,
                     'invalid_director_count' => 0,
                     'directors' => [
-                        ['id' => 9, 'full_name' => 'James Example', 'is_active' => 1],
+                        ['id' => 9, 'full_name' => 'Primary Director', 'is_active' => 1],
                     ],
                     'per_director' => [],
                     'attribution_entries' => $entries,
@@ -208,16 +210,94 @@ $harness->run(_director_loan_stateCard::class, static function (GeneratedService
         $harness->assertSame(false, str_contains($pageTwoHtml, 'Attribution fixture 10'));
 
         $tables = $card->tables($context);
-        $harness->assertCount(1, $tables);
-        $harness->assertTrue($tables[0] instanceof TableFramework);
-        $export = $tables[0]->exportCsv();
+        $harness->assertCount(2, $tables);
+        $harness->assertTrue($tables[1] instanceof TableFramework);
+        $export = $tables[1]->exportCsv();
         $harness->assertTrue(str_contains($export, 'Attribution fixture 01'));
         $harness->assertTrue(str_contains($export, 'Attribution fixture 11'));
-        $harness->assertTrue(str_contains($export, 'James Example'));
+        $harness->assertTrue(str_contains($export, 'Primary Director'));
         $harness->assertTrue(str_contains($export, '-11.00'));
         $harness->assertSame(false, str_contains($export, '<form'));
         $harness->assertSame(false, str_contains($export, '<select'));
         $harness->assertSame(false, str_contains($export, 'set_director_loan_attribution'));
         $harness->assertSame(false, str_contains($export, 'journal_line_id'));
+    });
+
+    $harness->check(_director_loan_stateCard::class, 'paginates per-director positions at five and exports every position', static function () use ($harness, $card): void {
+        $positions = [];
+        for ($index = 1; $index <= 6; $index++) {
+            $positions[] = [
+                'director_id' => $index,
+                'director_name' => 'Position director ' . str_pad((string)$index, 2, '0', STR_PAD_LEFT),
+                'gross_asset' => 100 + $index,
+                'gross_liability' => 200 + $index,
+                'desired_reclassification' => 10 + $index,
+                'net_closing_position' => 90 + $index,
+                'net_position_label' => $index % 2 === 0 ? 'Company owes director' : 'Director owes company',
+                'potential_s455_exposure' => 30 + $index,
+            ];
+        }
+
+        $context = [
+            'company' => ['id' => 47, 'accounting_period_id' => 74],
+            'page' => [
+                'page_id' => 'director_loans',
+                'page_cards' => ['director_loan_state'],
+                'csrf_token' => 'test-csrf-token',
+                'director_loan_state_positions' => 1,
+            ],
+            'services' => [
+                'directorLoanStatement' => [
+                    'success' => true,
+                    'default_currency_symbol' => '£',
+                    'asset_receivable' => 621,
+                    'liability_payable' => 1221,
+                    'desired_reclassification' => 81,
+                    'net_position' => 600,
+                    'potential_s455_exposure' => 201,
+                    'unattributed_count' => 0,
+                    'invalid_director_count' => 0,
+                    'directors' => [],
+                    'per_director' => $positions,
+                    'attribution_entries' => [],
+                ],
+                'directorLoanReportingPresentation' => [
+                    'success' => true,
+                    'classification' => 'within_one_year',
+                    'explicit' => false,
+                    'schema_ready' => true,
+                    'is_locked' => false,
+                    'liability_nominal' => ['id' => 5, 'code' => '2100', 'name' => 'Director Loan Liability'],
+                ],
+            ],
+        ];
+
+        $pageOneHtml = $card->render($context);
+        $harness->assertTrue(str_contains($pageOneHtml, 'data-table-key="director_loan_positions"'));
+        $harness->assertTrue(str_contains($pageOneHtml, 'data-table-pagination-field="director_loan_state_positions"'));
+        $harness->assertTrue(str_contains($pageOneHtml, 'Per-director positions 1-5 of 6'));
+        $harness->assertTrue(str_contains($pageOneHtml, 'Position director 05'));
+        $harness->assertSame(false, str_contains($pageOneHtml, 'Position director 06'));
+        $harness->assertTrue(str_contains($pageOneHtml, 'name="director_loan_state_positions" value="2"'));
+        $harness->assertTrue(str_contains($pageOneHtml, 'name="table_key" value="director_loan_positions"'));
+
+        $pageTwoContext = $context;
+        $pageTwoContext['page']['director_loan_state_positions'] = 2;
+        $pageTwoHtml = $card->render($pageTwoContext);
+        $harness->assertTrue(str_contains($pageTwoHtml, 'Per-director positions 6 of 6'));
+        $harness->assertTrue(str_contains($pageTwoHtml, 'Position director 06'));
+        $harness->assertSame(false, str_contains($pageTwoHtml, 'Position director 05'));
+
+        $tables = $card->tables($context);
+        $harness->assertCount(2, $tables);
+        $harness->assertTrue($tables[0] instanceof TableFramework);
+        $export = $tables[0]->exportCsv();
+        $harness->assertTrue(str_contains($export, 'Position director 01'));
+        $harness->assertTrue(str_contains($export, 'Position director 06'));
+        $harness->assertTrue(str_contains($export, '106.00'));
+        $harness->assertTrue(str_contains($export, '206.00'));
+        $harness->assertTrue(str_contains($export, '36.00'));
+        $harness->assertSame(false, str_contains($export, '&pound;'));
+        $harness->assertSame(false, str_contains($export, '<table'));
     });
 });

@@ -46,7 +46,7 @@ $withCompletionInvite = function (callable $callback) use ($harness, $completion
                 :role_id
             )',
             [
-                'display_name' => 'James Example',
+                'display_name' => 'Test User',
                 'email_address' => 'pending-' . $marker . '@example.test',
                 'mobile_number' => '+447700900123',
                 'account_status' => 'pending_invitation',
@@ -89,7 +89,7 @@ $harness->check(AccountCompletionService::class, 'requires token-linked contact 
 
         $completed = $service->completeAccount(
             $session,
-            'James Example',
+            'Test User',
             'completed-' . bin2hex(random_bytes(4)) . '@example.test',
             '+44',
             '07700 900123',

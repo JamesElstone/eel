@@ -17,8 +17,8 @@ $harness->run(\eel_accounts\Service\DirectorLoanReconciliationService::class, st
 ): void {
     $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'requires one factual confirmation and posts an attributed same-director reclassification', static function () use ($harness, $service): void {
         directorLoanReclassificationWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
-            directorLoanReclassificationInsertLine($fixture, (int)$fixture['asset_nominal_id'], 253.00, 0.00, (int)$fixture['james_director_id'], 'asset');
-            directorLoanReclassificationInsertLine($fixture, (int)$fixture['liability_nominal_id'], 0.00, 1288.63, (int)$fixture['james_director_id'], 'liability');
+            directorLoanReclassificationInsertLine($fixture, (int)$fixture['asset_nominal_id'], 253.00, 0.00, (int)$fixture['primary_director_id'], 'asset');
+            directorLoanReclassificationInsertLine($fixture, (int)$fixture['liability_nominal_id'], 0.00, 1288.63, (int)$fixture['primary_director_id'], 'liability');
 
             $before = $service->fetchContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
             $harness->assertSame('253.00', directorLoanReclassificationMoney($before['desired_reclassification_amount'] ?? 0));
@@ -27,7 +27,7 @@ $harness->run(\eel_accounts\Service\DirectorLoanReconciliationService::class, st
             $harness->assertSame(false, (bool)($before['can_post'] ?? true));
             $harness->assertCount(2, (array)($before['proposed_lines'] ?? []));
             foreach ((array)$before['proposed_lines'] as $line) {
-                $harness->assertSame((int)$fixture['james_director_id'], (int)($line['director_id'] ?? 0));
+                $harness->assertSame((int)$fixture['primary_director_id'], (int)($line['director_id'] ?? 0));
             }
 
             $confirmation = $service->saveYearEndReview(
@@ -64,7 +64,7 @@ $harness->run(\eel_accounts\Service\DirectorLoanReconciliationService::class, st
                     'company_id' => (int)$fixture['company_id'],
                     'period_id' => (int)$fixture['accounting_period_id'],
                     'journal_tag' => \eel_accounts\Service\DirectorLoanReconciliationService::OFFSET_JOURNAL_TAG,
-                    'director_id' => (int)$fixture['james_director_id'],
+                    'director_id' => (int)$fixture['primary_director_id'],
                 ]
             ));
         });
@@ -72,7 +72,7 @@ $harness->run(\eel_accounts\Service\DirectorLoanReconciliationService::class, st
 
     $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'never offsets balances belonging to different directors', static function () use ($harness, $service): void {
         directorLoanReclassificationWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
-            directorLoanReclassificationInsertLine($fixture, (int)$fixture['asset_nominal_id'], 500.00, 0.00, (int)$fixture['james_director_id'], 'james-asset');
+            directorLoanReclassificationInsertLine($fixture, (int)$fixture['asset_nominal_id'], 500.00, 0.00, (int)$fixture['primary_director_id'], 'primary-asset');
             directorLoanReclassificationInsertLine($fixture, (int)$fixture['liability_nominal_id'], 0.00, 500.00, (int)$fixture['other_director_id'], 'other-liability');
 
             $context = $service->fetchContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
@@ -85,8 +85,8 @@ $harness->run(\eel_accounts\Service\DirectorLoanReconciliationService::class, st
 
     $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'makes the confirmation stale when attribution changes but not when its journal posts', static function () use ($harness, $service): void {
         directorLoanReclassificationWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
-            $assetLineId = directorLoanReclassificationInsertLine($fixture, (int)$fixture['asset_nominal_id'], 100.00, 0.00, (int)$fixture['james_director_id'], 'asset');
-            directorLoanReclassificationInsertLine($fixture, (int)$fixture['liability_nominal_id'], 0.00, 150.00, (int)$fixture['james_director_id'], 'liability');
+            $assetLineId = directorLoanReclassificationInsertLine($fixture, (int)$fixture['asset_nominal_id'], 100.00, 0.00, (int)$fixture['primary_director_id'], 'asset');
+            directorLoanReclassificationInsertLine($fixture, (int)$fixture['liability_nominal_id'], 0.00, 150.00, (int)$fixture['primary_director_id'], 'liability');
             $service->saveYearEndReview((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], true, 'test');
             $service->postOffset((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'test');
 
@@ -109,8 +109,8 @@ $harness->run(\eel_accounts\Service\DirectorLoanReconciliationService::class, st
 
     $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'reverses only the reduction in a previously posted cumulative reclassification', static function () use ($harness, $service): void {
         directorLoanReclassificationWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
-            $assetLineId = directorLoanReclassificationInsertLine($fixture, (int)$fixture['asset_nominal_id'], 253.00, 0.00, (int)$fixture['james_director_id'], 'asset');
-            directorLoanReclassificationInsertLine($fixture, (int)$fixture['liability_nominal_id'], 0.00, 1288.63, (int)$fixture['james_director_id'], 'liability');
+            $assetLineId = directorLoanReclassificationInsertLine($fixture, (int)$fixture['asset_nominal_id'], 253.00, 0.00, (int)$fixture['primary_director_id'], 'asset');
+            directorLoanReclassificationInsertLine($fixture, (int)$fixture['liability_nominal_id'], 0.00, 1288.63, (int)$fixture['primary_director_id'], 'liability');
             $service->saveYearEndReview((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], true, 'test');
             $service->postOffset((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'test');
 
@@ -174,7 +174,7 @@ function directorLoanReclassificationWithFixture(GeneratedServiceClassTestHarnes
             'SELECT id FROM accounting_periods WHERE company_id = :company_id',
             ['company_id' => $companyId]
         );
-        foreach (['James Example', 'Other Director'] as $index => $name) {
+        foreach (['Primary Director', 'Other Director'] as $index => $name) {
             InterfaceDB::prepareExecute(
                 'INSERT INTO company_directors (
                     company_id, source, external_key, full_name, officer_role, appointed_on, is_active
@@ -198,9 +198,9 @@ function directorLoanReclassificationWithFixture(GeneratedServiceClassTestHarnes
             'accounting_period_id' => $periodId,
             'asset_nominal_id' => $assetNominalId,
             'liability_nominal_id' => $liabilityNominalId,
-            'james_director_id' => (int)InterfaceDB::fetchColumn(
+            'primary_director_id' => (int)InterfaceDB::fetchColumn(
                 'SELECT id FROM company_directors WHERE company_id = :company_id AND full_name = :name',
-                ['company_id' => $companyId, 'name' => 'James Example']
+                ['company_id' => $companyId, 'name' => 'Primary Director']
             ),
             'other_director_id' => (int)InterfaceDB::fetchColumn(
                 'SELECT id FROM company_directors WHERE company_id = :company_id AND full_name = :name',

@@ -31,9 +31,12 @@ $harness->run(_year_end_director_loan_offsetCard::class, static function (Genera
             'posted_reclassification_amount' => 0.00,
             'pending_adjustment_amount' => 253.00,
             'potential_s455_exposure' => 0.00,
-            'warnings' => [],
+            'warnings' => [
+                '118 Director Loan entries are not attributed to a valid same-company director.',
+                'A separate review warning remains relevant.',
+            ],
             'per_director' => [[
-                'director_name' => 'James Example',
+                'director_name' => 'Primary Director',
                 'gross_asset' => 253.00,
                 'gross_liability' => 1288.63,
                 'desired_reclassification' => 253.00,
@@ -42,14 +45,14 @@ $harness->run(_year_end_director_loan_offsetCard::class, static function (Genera
             ]],
             'tax_review' => [
                 'director_flags' => [[
-                    'director_name' => 'James Example',
+                    'director_name' => 'Primary Director',
                     'review_required' => false,
                     'potential_s455_exposure' => 0.00,
                 ]],
             ],
             'proposed_lines' => [
-                ['line_description' => 'Director loan control reclassification - James Example', 'debit' => 253.00, 'credit' => 0.00],
-                ['line_description' => 'Director loan control reclassification - James Example', 'debit' => 0.00, 'credit' => 253.00],
+                ['line_description' => 'Director loan control reclassification - Primary Director', 'debit' => 253.00, 'credit' => 0.00],
+                ['line_description' => 'Director loan control reclassification - Primary Director', 'debit' => 0.00, 'credit' => 253.00],
             ],
             'acknowledgement_current' => false,
             'acknowledgement_state' => 'absent',
@@ -60,9 +63,12 @@ $harness->run(_year_end_director_loan_offsetCard::class, static function (Genera
         $harness->assertTrue(str_contains($html, $confirmation));
         $harness->assertTrue(str_contains($html, 'name="intent" value="save_director_loan_year_end_review"'));
         $harness->assertTrue(str_contains($html, 'name="director_loan_year_end_review" value="1"'));
-        $harness->assertTrue(str_contains($html, 'James Example'));
+        $harness->assertTrue(str_contains($html, 'Primary Director'));
         $harness->assertTrue(str_contains($html, 'Calculated control-account reclassification'));
-        $harness->assertTrue(str_contains($html, 'applied automatically during Year End lock'));
+        $harness->assertTrue(str_contains($html, '<div class="panel-soft table-scroll"><table>'));
+        $harness->assertSame(3, substr_count($html, '<div class="panel-soft table-scroll"><table>'));
+        $harness->assertSame(false, str_contains($html, '118 Director Loan entries are not attributed'));
+        $harness->assertTrue(str_contains($html, 'A separate review warning remains relevant.'));
         $harness->assertSame(false, str_contains($html, 'director_loan_legally_enforceable_right'));
         $harness->assertSame(false, str_contains($html, 'director_loan_net_settlement_intent'));
         $harness->assertSame(false, str_contains($html, 'director_loan_set_off_evidence_note'));

@@ -14,14 +14,14 @@ $harness->run(_director_loan_directorsCard::class, static function (GeneratedSer
     $harness->check(_director_loan_directorsCard::class, 'renders active and former Companies House facts read-only', static function () use ($harness, $card): void {
         $html = $card->render(['services' => ['directors' => [
             [
-                'full_name' => 'James Example',
+                'full_name' => 'Primary Director',
                 'officer_role' => 'director',
                 'appointed_on' => '2020-01-01',
                 'resigned_on' => null,
                 'last_synced_at' => '2026-07-16 12:00:00',
             ],
             [
-                'full_name' => 'Brian Example',
+                'full_name' => 'Secondary Director',
                 'officer_role' => 'director',
                 'appointed_on' => '2018-01-01',
                 'resigned_on' => '2021-12-31',
@@ -29,8 +29,8 @@ $harness->run(_director_loan_directorsCard::class, static function (GeneratedSer
             ],
         ]]]);
 
-        $harness->assertTrue(str_contains($html, 'James Example'));
-        $harness->assertTrue(str_contains($html, 'Brian Example'));
+        $harness->assertTrue(str_contains($html, 'Primary Director'));
+        $harness->assertTrue(str_contains($html, 'Secondary Director'));
         $harness->assertTrue(str_contains($html, 'Active'));
         $harness->assertTrue(str_contains($html, 'Resigned / status'));
         $harness->assertSame(false, str_contains($html, '<form'));

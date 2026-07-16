@@ -57,11 +57,32 @@ final class PreTaxProfitLossService
             } else {
                 $operatingExpenses += $amount;
             }
-            $taxTreatment = (string)($rules->resolveTaxTreatment($row, $scope->periodStart, $scope->asAtDate)['tax_treatment'] ?? '');
+        }
+        foreach ((new DatedTaxTreatmentLedgerService())->fetch($scope) as $row) {
+            if ($ctExpenseNominalId > 0
+                && (int)($row['nominal_account_id'] ?? 0) === $ctExpenseNominalId) {
+                continue;
+            }
+            $amount = (float)($row['total_debit'] ?? 0) - (float)($row['total_credit'] ?? 0);
+            $journalDate = (string)($row['journal_date'] ?? '');
+            $taxTreatment = (string)($rules->resolveTaxTreatment(
+                $row,
+                $journalDate,
+                $journalDate
+            )['tax_treatment'] ?? '');
+            if ((string)($row['account_type'] ?? '') === 'income') {
+                if ($taxTreatment === 'capital') {
+                    // A credit income movement is negative on the signed
+                    // debit-minus-credit bridge, removing the gain from
+                    // taxable trading profit at its actual journal date.
+                    $capital += $amount;
+                }
+                continue;
+            }
             if ($taxTreatment === 'disallowable') {
-                $disallowable += abs($amount);
+                $disallowable += $amount;
             } elseif ($taxTreatment === 'capital') {
-                $capital += abs($amount);
+                $capital += $amount;
             } elseif ($taxTreatment === 'other') {
                 $otherCount++;
             } elseif (!in_array($taxTreatment, ['allowable', 'disallowable', 'capital', 'other'], true)) {
@@ -71,6 +92,18 @@ final class PreTaxProfitLossService
         $postedOperatingExpenses = $operatingExpenses;
         $closePreview = new YearEndClosePreviewService();
         $prepaymentExpenseAdjustment = 0.0;
+        $prepaymentPreviewReliable = true;
+        $prepaymentPreviewWarnings = [];
+        if ($prepaymentPreview === null) {
+            $prepaymentContext = (new PrepaymentScheduleService())
+                ->fetchPreviewAdjustmentContext($companyId, $accountingPeriodId);
+            $prepaymentPreview = (array)($prepaymentContext['adjustments'] ?? []);
+            $prepaymentPreviewReliable = !empty($prepaymentContext['success']);
+            $prepaymentPreviewWarnings = array_values(array_unique(array_map(
+                'strval',
+                (array)($prepaymentContext['errors'] ?? [])
+            )));
+        }
         foreach ($closePreview->prepaymentExpenseRowsForPeriod(
             $companyId,
             $accountingPeriodId,
@@ -85,7 +118,12 @@ final class PreTaxProfitLossService
             } else {
                 $operatingExpenses += $amount;
             }
-            $taxTreatment = (string)($row['tax_treatment'] ?? '');
+            $journalDate = (string)($row['journal_date'] ?? '');
+            $taxTreatment = (string)($rules->resolveTaxTreatment(
+                $row,
+                $journalDate,
+                $journalDate
+            )['tax_treatment'] ?? '');
             if ($taxTreatment === 'disallowable') {
                 $disallowable += $amount;
             } elseif ($taxTreatment === 'capital') {
@@ -114,6 +152,8 @@ final class PreTaxProfitLossService
             'gross_profit' => $grossProfit,
             'posted_operating_expense_total' => round($postedOperatingExpenses, 2),
             'prepayment_expense_adjustment' => round($prepaymentExpenseAdjustment, 2),
+            'prepayment_preview_reliable' => $prepaymentPreviewReliable,
+            'prepayment_preview_warnings' => $prepaymentPreviewWarnings,
             'depreciation_expense' => round($depreciation, 2),
             'depreciation_preview' => $depreciationPreview,
             'operating_expense_total' => $operatingExpenses,

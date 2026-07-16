@@ -41,4 +41,38 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             }
         }
     });
+
+    $harness->check(\eel_accounts\Service\PreTaxProfitLossService::class, 'nets expense credits against signed disallowable add-backs', static function () use ($harness): void {
+        InterfaceDB::beginTransaction();
+        try {
+            $fixture = periodLedgerTestCreateFixture();
+            periodLedgerTestInsertJournal(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                '2025-04-15',
+                'period-ledger-disallowable-reversal-' . (string)$fixture['accounting_period_id'],
+                [
+                    [(int)$fixture['asset_nominal_id'], 30.0, 0.0],
+                    [(int)$fixture['disallowable_nominal_id'], 0.0, 30.0],
+                ]
+            );
+
+            $result = (new \eel_accounts\Service\PreTaxProfitLossService())
+                ->calculate(
+                    (int)$fixture['company_id'],
+                    (int)$fixture['accounting_period_id'],
+                    '2025-06-30',
+                    null,
+                    ['success' => true, 'rows' => []],
+                    []
+                );
+
+            $harness->assertSame('680.00', number_format((float)($result['profit_before_tax'] ?? 0), 2, '.', ''));
+            $harness->assertSame('20.00', number_format((float)($result['disallowable_add_backs'] ?? 0), 2, '.', ''));
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
 });

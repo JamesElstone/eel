@@ -17,6 +17,7 @@ declare(strict_types=1);
 final class GoldenWorkflowCoverageFixture
 {
     public const WARNING_PERIOD_ID = 9311;
+    public const COMPLETE_PRIOR_PERIOD_ID = 9410;
     public const COMPLETE_PERIOD_ID = 9411;
     public const COMPLETE_NEXT_PERIOD_ID = 9412;
 
@@ -79,7 +80,7 @@ final class GoldenWorkflowCoverageFixture
                     self::evidence('asset disposal link', 'SELECT COUNT(*) FROM asset_disposal_transaction_links WHERE asset_id = 9560', 1),
                     self::evidence('expense-backed asset candidate', 'SELECT COUNT(*) FROM expense_claim_line_assets WHERE generated_asset_id = 9561', 1),
                     self::evidence('depreciation entries', 'SELECT COUNT(*) FROM asset_depreciation_entries WHERE asset_id = 9560', 1),
-                    self::evidence('reviewed and warning vehicles', 'SELECT COUNT(*) FROM asset_vehicle_details WHERE company_id IN (9100, 9400)', 2),
+                    self::evidence('reviewed and warning vehicles', 'SELECT COUNT(*) FROM asset_vehicle_details WHERE company_id IN (9100, 9300, 9400)', 3),
                 ],
             ],
             'journals_and_year_end' => [
@@ -117,11 +118,11 @@ final class GoldenWorkflowCoverageFixture
             'reporting_and_tax' => [
                 'pages' => ['trial_balance', 'profit_loss', 'tax', 'tax_rates'],
                 'evidence' => [
-                    self::evidence('corporation-tax periods', 'SELECT COUNT(*) FROM corporation_tax_periods WHERE company_id IN (9100, 9400)', 1),
-                    self::evidence('persisted computation runs', 'SELECT COUNT(*) FROM corporation_tax_computation_runs WHERE company_id = 9400', 1),
-                    self::evidence('tax loss history', 'SELECT COUNT(*) FROM tax_loss_movement_history WHERE company_id = 9400', 1),
-                    self::evidence('capital allowance pools', 'SELECT COUNT(*) FROM capital_allowance_pool_runs WHERE company_id = 9400', 1),
-                    self::evidence('asset allowance calculations', 'SELECT COUNT(*) FROM capital_allowance_asset_calculations WHERE company_id = 9400', 1),
+                    self::evidence('corporation-tax periods', 'SELECT COUNT(*) FROM corporation_tax_periods WHERE company_id IN (9100, 9400)', 2),
+                    self::evidence('persisted computation runs', 'SELECT COUNT(*) FROM corporation_tax_computation_runs WHERE company_id = 9400', 2),
+                    self::evidence('tax loss history', 'SELECT COUNT(*) FROM tax_loss_movement_history WHERE company_id = 9400', 2),
+                    self::evidence('capital allowance pools', 'SELECT COUNT(*) FROM capital_allowance_pool_runs WHERE company_id = 9400', 2),
+                    self::evidence('asset allowance calculations', 'SELECT COUNT(*) FROM capital_allowance_asset_calculations WHERE company_id = 9400', 5),
                 ],
             ],
             'vat_boundary' => [
@@ -163,7 +164,7 @@ final class GoldenWorkflowCoverageFixture
     private static function seedAdditionalNominals(): void
     {
         $subtypeIds = [];
-        foreach (['bank', 'capital_reserves', 'overhead'] as $code) {
+        foreach (['bank', 'capital_reserves', 'fixed_asset', 'overhead'] as $code) {
             $subtypeIds[$code] = (int)InterfaceDB::fetchColumn(
                 'SELECT id FROM nominal_account_subtypes WHERE code = :code LIMIT 1',
                 ['code' => $code]
@@ -178,6 +179,7 @@ final class GoldenWorkflowCoverageFixture
             [91024, '3100', 'Golden Test Share Capital', 'equity', 'other', $subtypeIds['capital_reserves']],
             [91025, '6250', 'Golden Test Asset Disposal Loss', 'expense', 'allowable', $subtypeIds['overhead']],
             [91026, '9999', 'Golden Test Uncategorised', 'expense', 'other', $subtypeIds['overhead']],
+            [91027, '1321', 'Golden Test Motor Vehicles - Cars', 'asset', 'capital', $subtypeIds['fixed_asset']],
         ] as [$id, $code, $name, $accountType, $taxTreatment, $subtypeId]) {
             self::insert('nominal_accounts', [
                 'id' => $id,
@@ -248,7 +250,7 @@ final class GoldenWorkflowCoverageFixture
                 'vat_number' => 'GB999999973',
                 'validation_status' => 'valid',
                 'validated_at' => '2026-01-15 10:00:00',
-                'validation_source' => 'hmrc_api',
+                'validation_source' => 'hmrc',
                 'validation_mode' => 'LIVE',
                 'validation_name' => 'Warning Scenario Test Limited',
                 'address' => '1 Synthetic Warning Way',
@@ -284,6 +286,13 @@ final class GoldenWorkflowCoverageFixture
             ]
         );
 
+        self::insert('accounting_periods', [
+            'id' => self::COMPLETE_PRIOR_PERIOD_ID,
+            'company_id' => GoldenAccountsFixture::COMPLETE_COMPANY_ID,
+            'label' => '01/10/2024 to 30/09/2025',
+            'period_start' => '2024-10-01',
+            'period_end' => '2025-09-30',
+        ]);
         self::insert('accounting_periods', [
             'id' => self::COMPLETE_NEXT_PERIOD_ID,
             'company_id' => GoldenAccountsFixture::COMPLETE_COMPANY_ID,
@@ -495,6 +504,45 @@ final class GoldenWorkflowCoverageFixture
             'source' => 'hmrc_notice',
             'source_reference' => 'GOLDEN-WARNING-OVERDUE-CT',
             'notes' => 'GOLDEN-TEST overdue obligation.',
+        ]);
+        self::insert('asset_register', [
+            'id' => 9361,
+            'company_id' => GoldenAccountsFixture::WARNING_COMPANY_ID,
+            'asset_code' => 'GOLDEN-WARNING-CAR',
+            'description' => 'GOLDEN-TEST vehicle awaiting tax review',
+            'category' => 'car',
+            'nominal_account_id' => 91027,
+            'accum_dep_nominal_id' => 91016,
+            'purchase_date' => '2026-02-01',
+            'cost' => 500.00,
+            'useful_life_years' => 4,
+            'depreciation_method' => 'straight_line',
+            'residual_value' => 0.00,
+            'status' => 'active',
+            'manual_addition_reason' => 'opening_balance',
+            'manual_offset_nominal_id' => 91007,
+            'manual_evidence_path' => 'GOLDEN-TEST/evidence/warning-car.pdf',
+            'manual_evidence_sha256' => hash('sha256', 'GOLDEN-TEST-warning-car-evidence'),
+            'manual_evidence_original_filename' => 'golden-test-warning-car.pdf',
+            'manual_evidence_content_type' => 'application/pdf',
+            'manual_evidence_size_bytes' => 512,
+            'manual_legal_warning_version' => 'golden-test-v1',
+            'manual_legal_acknowledged_at' => '2026-02-01 09:00:00',
+        ]);
+        self::insert('asset_vehicle_details', [
+            'asset_id' => 9361,
+            'company_id' => GoldenAccountsFixture::WARNING_COMPANY_ID,
+            'vehicle_type' => 'car',
+            'registration_mark' => 'WARN 9300',
+            'make_model' => 'Synthetic Unreviewed Car',
+            'colour' => 'Grey',
+            'first_registered_date' => '2024-02-01',
+            'acquisition_condition' => null,
+            'is_zero_emission' => 0,
+            'co2_emissions_g_km' => null,
+            'contract_date' => '2026-02-01',
+            'tax_review_status' => 'unreviewed',
+            'notes' => 'GOLDEN-TEST deliberately incomplete vehicle tax evidence.',
         ]);
         self::insert('year_end_reviews', [
             'id' => 9380,
@@ -767,6 +815,58 @@ final class GoldenWorkflowCoverageFixture
 
     private static function seedCompleteTaxSubmissionAndIxbrl(): void
     {
+        $priorComputationHash = hash('sha256', 'GOLDEN-TEST-prior-loss-ct-computation');
+        self::insert('corporation_tax_periods', [
+            'id' => 9538,
+            'company_id' => GoldenAccountsFixture::COMPLETE_COMPANY_ID,
+            'accounting_period_id' => self::COMPLETE_PRIOR_PERIOD_ID,
+            'sequence_no' => 1,
+            'period_start' => '2024-10-01',
+            'period_end' => '2025-09-30',
+            'status' => 'computed',
+        ]);
+        self::insert('corporation_tax_computation_runs', [
+            'id' => 9539,
+            'company_id' => GoldenAccountsFixture::COMPLETE_COMPANY_ID,
+            'accounting_period_id' => self::COMPLETE_PRIOR_PERIOD_ID,
+            'ct_period_id' => 9538,
+            'period_start' => '2024-10-01',
+            'period_end' => '2025-09-30',
+            'status' => 'generated',
+            'computation_hash' => $priorComputationHash,
+            'summary_json' => json_encode(self::priorLossCtSummary($priorComputationHash)),
+            'generated_path' => 'GOLDEN-TEST/ct/computation-9539.json',
+            'generated_at' => '2025-09-30 13:00:00',
+        ]);
+        InterfaceDB::execute(
+            'UPDATE corporation_tax_periods SET latest_computation_run_id = :run_id WHERE id = :period_id',
+            ['run_id' => 9539, 'period_id' => 9538]
+        );
+        self::insert('year_end_reviews', [
+            'id' => 9537,
+            'company_id' => GoldenAccountsFixture::COMPLETE_COMPANY_ID,
+            'accounting_period_id' => self::COMPLETE_PRIOR_PERIOD_ID,
+            'is_locked' => 1,
+            'locked_at' => '2025-09-30 16:00:00',
+            'locked_by' => 'golden-test',
+            'review_notes' => 'GOLDEN-TEST prior loss period locked before the completed period.',
+        ]);
+        self::insert('tax_loss_movement_history', [
+            'id' => 9536,
+            'company_id' => GoldenAccountsFixture::COMPLETE_COMPANY_ID,
+            'accounting_period_id' => self::COMPLETE_PRIOR_PERIOD_ID,
+            'ct_period_id' => 9538,
+            'computation_hash' => $priorComputationHash,
+            'loss_created' => 100.00,
+            'loss_brought_forward' => 0.00,
+            'loss_utilised' => 0.00,
+            'loss_carried_forward' => 100.00,
+            'taxable_before_losses' => -100.00,
+            'taxable_profit' => 0.00,
+            'computed_at' => '2025-09-30 13:00:00',
+        ]);
+
+        $currentComputationHash = hash('sha256', 'GOLDEN-TEST-complete-ct-computation');
         self::insert('corporation_tax_periods', [
             'id' => 9540,
             'company_id' => GoldenAccountsFixture::COMPLETE_COMPANY_ID,
@@ -784,16 +884,8 @@ final class GoldenWorkflowCoverageFixture
             'period_start' => '2025-10-01',
             'period_end' => '2026-09-30',
             'status' => 'generated',
-            'computation_hash' => hash('sha256', 'GOLDEN-TEST-complete-ct-computation'),
-            'summary_json' => json_encode([
-                'accounting_profit' => 1500.00,
-                'disallowable_add_backs' => 200.00,
-                'capital_allowances' => 1000.00,
-                'taxable_before_losses' => 700.00,
-                'losses_used' => 100.00,
-                'taxable_profit' => 600.00,
-                'estimated_corporation_tax' => 114.00,
-            ]),
+            'computation_hash' => $currentComputationHash,
+            'summary_json' => json_encode(self::completedCtSummary($currentComputationHash)),
             'generated_path' => 'GOLDEN-TEST/ct/computation-9541.json',
             'generated_at' => '2026-09-30 13:00:00',
         ]);
@@ -804,8 +896,8 @@ final class GoldenWorkflowCoverageFixture
         self::insert('tax_loss_carryforwards', [
             'id' => 9542,
             'company_id' => GoldenAccountsFixture::COMPLETE_COMPANY_ID,
-            'origin_accounting_period_id' => self::COMPLETE_PERIOD_ID,
-            'origin_ct_period_id' => 9540,
+            'origin_accounting_period_id' => self::COMPLETE_PRIOR_PERIOD_ID,
+            'origin_ct_period_id' => 9538,
             'amount_originated' => 100.00,
             'amount_used' => 100.00,
             'amount_remaining' => 0.00,
@@ -816,13 +908,13 @@ final class GoldenWorkflowCoverageFixture
             'company_id' => GoldenAccountsFixture::COMPLETE_COMPANY_ID,
             'accounting_period_id' => self::COMPLETE_PERIOD_ID,
             'ct_period_id' => 9540,
-            'computation_hash' => hash('sha256', 'GOLDEN-TEST-complete-ct-computation'),
+            'computation_hash' => $currentComputationHash,
             'loss_created' => 0.00,
             'loss_brought_forward' => 100.00,
             'loss_utilised' => 100.00,
             'loss_carried_forward' => 0.00,
-            'taxable_before_losses' => 700.00,
-            'taxable_profit' => 600.00,
+            'taxable_before_losses' => 552.00,
+            'taxable_profit' => 452.00,
             'computed_at' => '2026-09-30 13:00:00',
         ]);
         self::insert('hmrc_ct600_submissions', [
@@ -961,11 +1053,11 @@ final class GoldenWorkflowCoverageFixture
         self::insert('asset_register', [
             'id' => 9563,
             'company_id' => GoldenAccountsFixture::COMPLETE_COMPANY_ID,
-            'asset_code' => 'GOLDEN-COMPLETE-MANUAL-ASSET',
-            'description' => 'GOLDEN-TEST evidenced manual opening asset',
-            'category' => 'tools_equipment',
-            'nominal_account_id' => 91013,
-            'accum_dep_nominal_id' => 91014,
+            'asset_code' => 'GOLDEN-COMPLETE-HIGH-CO2-CAR',
+            'description' => 'GOLDEN-TEST evidenced used high-CO2 car',
+            'category' => 'car',
+            'nominal_account_id' => 91027,
+            'accum_dep_nominal_id' => 91016,
             'purchase_date' => '2025-10-01',
             'cost' => 800.00,
             'useful_life_years' => 4,
@@ -974,9 +1066,9 @@ final class GoldenWorkflowCoverageFixture
             'status' => 'active',
             'manual_addition_reason' => 'opening_balance',
             'manual_offset_nominal_id' => 91007,
-            'manual_evidence_path' => 'GOLDEN-TEST/evidence/manual-asset.pdf',
-            'manual_evidence_sha256' => hash('sha256', 'GOLDEN-TEST-manual-asset-evidence'),
-            'manual_evidence_original_filename' => 'golden-test-manual-asset.pdf',
+            'manual_evidence_path' => 'GOLDEN-TEST/evidence/used-high-co2-car.pdf',
+            'manual_evidence_sha256' => hash('sha256', 'GOLDEN-TEST-used-high-co2-car-evidence'),
+            'manual_evidence_original_filename' => 'golden-test-used-high-co2-car.pdf',
             'manual_evidence_content_type' => 'application/pdf',
             'manual_evidence_size_bytes' => 1024,
             'manual_legal_warning_version' => 'golden-test-v1',
@@ -997,7 +1089,7 @@ final class GoldenWorkflowCoverageFixture
             'tax_review_status' => 'reviewed',
             'reviewed_at' => '2025-10-01 10:00:00',
             'reviewed_by' => 'golden-test',
-            'notes' => 'GOLDEN-TEST reviewed main-pool car.',
+            'notes' => 'GOLDEN-TEST reviewed used high-CO2 special-rate pool car.',
         ]);
         self::insert('expense_claim_line_assets', [
             'id' => 9572,
@@ -1029,28 +1121,93 @@ final class GoldenWorkflowCoverageFixture
             'company_id' => GoldenAccountsFixture::COMPLETE_COMPANY_ID,
             'accounting_period_id' => self::COMPLETE_PERIOD_ID,
             'ct_period_id' => 9540,
-            'pool_type' => 'main_rate',
-            'opening_wdv' => 500.00,
-            'additions' => 1500.00,
-            'aia_claimed' => 600.00,
+            'pool_type' => 'main_pool',
+            'opening_wdv' => 0.00,
+            'additions' => 0.00,
+            'aia_claimed' => 1700.00,
             'disposal_value' => 400.00,
-            'wda_claimed' => 180.00,
-            'closing_wdv' => 820.00,
+            'wda_claimed' => 0.00,
+            'balancing_charge' => 400.00,
+            'closing_wdv' => 0.00,
             'warnings_json' => json_encode([]),
-            'run_hash' => hash('sha256', 'GOLDEN-TEST-capital-allowance-pool'),
+            'run_hash' => hash('sha256', 'GOLDEN-TEST-main-capital-allowance-pool'),
             'computed_at' => '2026-09-30 13:00:00',
         ]);
-        self::insert('capital_allowance_asset_calculations', [
+        self::insert('capital_allowance_pool_runs', [
             'id' => 9574,
             'company_id' => GoldenAccountsFixture::COMPLETE_COMPANY_ID,
             'accounting_period_id' => self::COMPLETE_PERIOD_ID,
             'ct_period_id' => 9540,
+            'pool_type' => 'special_rate_pool',
+            'opening_wdv' => 0.00,
+            'additions' => 800.00,
+            'aia_claimed' => 0.00,
+            'disposal_value' => 0.00,
+            'wda_claimed' => 48.00,
+            'closing_wdv' => 752.00,
+            'warnings_json' => json_encode([]),
+            'run_hash' => hash('sha256', 'GOLDEN-TEST-special-capital-allowance-pool'),
+            'computed_at' => '2026-09-30 13:00:00',
+        ]);
+        self::insert('capital_allowance_asset_calculations', [
+            'id' => 9575,
+            'company_id' => GoldenAccountsFixture::COMPLETE_COMPANY_ID,
+            'accounting_period_id' => self::COMPLETE_PERIOD_ID,
+            'ct_period_id' => 9540,
             'asset_id' => 9560,
-            'pool_type' => 'main_rate',
-            'allowance_type' => 'wda',
+            'pool_type' => 'main_pool',
+            'allowance_type' => 'aia',
             'addition_amount' => 1000.00,
-            'allowance_amount' => 180.00,
+            'allowance_amount' => 1000.00,
+            'disposal_value' => 0.00,
+        ]);
+        self::insert('capital_allowance_asset_calculations', [
+            'id' => 9576,
+            'company_id' => GoldenAccountsFixture::COMPLETE_COMPANY_ID,
+            'accounting_period_id' => self::COMPLETE_PERIOD_ID,
+            'ct_period_id' => 9540,
+            'asset_id' => 9560,
+            'pool_type' => 'main_pool',
+            'allowance_type' => 'disposal_value',
+            'addition_amount' => 0.00,
+            'allowance_amount' => 0.00,
             'disposal_value' => 400.00,
+        ]);
+        self::insert('capital_allowance_asset_calculations', [
+            'id' => 9577,
+            'company_id' => GoldenAccountsFixture::COMPLETE_COMPANY_ID,
+            'accounting_period_id' => self::COMPLETE_PERIOD_ID,
+            'ct_period_id' => 9540,
+            'asset_id' => 9561,
+            'pool_type' => 'main_pool',
+            'allowance_type' => 'aia',
+            'addition_amount' => 600.00,
+            'allowance_amount' => 600.00,
+            'disposal_value' => 0.00,
+        ]);
+        self::insert('capital_allowance_asset_calculations', [
+            'id' => 9578,
+            'company_id' => GoldenAccountsFixture::COMPLETE_COMPANY_ID,
+            'accounting_period_id' => self::COMPLETE_PERIOD_ID,
+            'ct_period_id' => 9540,
+            'asset_id' => 9562,
+            'pool_type' => 'main_pool',
+            'allowance_type' => 'aia',
+            'addition_amount' => 100.00,
+            'allowance_amount' => 100.00,
+            'disposal_value' => 0.00,
+        ]);
+        self::insert('capital_allowance_asset_calculations', [
+            'id' => 9579,
+            'company_id' => GoldenAccountsFixture::COMPLETE_COMPANY_ID,
+            'accounting_period_id' => self::COMPLETE_PERIOD_ID,
+            'ct_period_id' => 9540,
+            'asset_id' => 9563,
+            'pool_type' => 'special_rate_pool',
+            'allowance_type' => 'special_rate_pool_addition',
+            'addition_amount' => 800.00,
+            'allowance_amount' => 0.00,
+            'disposal_value' => 0.00,
         ]);
 
         self::insert('hmrc_obligations', [
@@ -1203,6 +1360,233 @@ final class GoldenWorkflowCoverageFixture
             'request_uri' => '/?page=year_end',
             'occurred_at' => '2026-09-30 16:00:00',
         ]);
+    }
+
+    /** @return array<string, mixed> */
+    private static function completedCtSummary(string $computationHash): array
+    {
+        $capitalAllowanceBreakdown = [
+            'available' => true,
+            'rows' => [
+                [
+                    'pool_type' => 'main_pool',
+                    'opening_wdv' => 0.00,
+                    'additions' => 0.00,
+                    'aia_claimed' => 1700.00,
+                    'fya_claimed' => 0.00,
+                    'disposal_value' => 400.00,
+                    'wda_claimed' => 0.00,
+                    'balancing_charge' => 400.00,
+                    'balancing_allowance' => 0.00,
+                    'closing_wdv' => 0.00,
+                ],
+                [
+                    'pool_type' => 'special_rate_pool',
+                    'opening_wdv' => 0.00,
+                    'additions' => 800.00,
+                    'aia_claimed' => 0.00,
+                    'fya_claimed' => 0.00,
+                    'disposal_value' => 0.00,
+                    'wda_claimed' => 48.00,
+                    'balancing_charge' => 0.00,
+                    'balancing_allowance' => 0.00,
+                    'closing_wdv' => 752.00,
+                ],
+            ],
+            'warnings' => [],
+        ];
+        $rateBands = [
+            [
+                'financial_year' => 'FY2025',
+                'taxable_profit' => 225.38,
+                'augmented_profit' => 225.38,
+                'lower_limit' => 24931.51,
+                'upper_limit' => 249315.07,
+                'main_rate' => 0.25,
+                'small_profits_rate' => 0.19,
+                'marginal_relief' => 0.00,
+                'liability' => 42.82,
+                'basis' => 'small_profits_rate',
+                'rule_version' => 'golden-test-v1',
+                'source_url' => 'https://www.gov.uk/corporation-tax-rates',
+                'source_checked_at' => '2026-07-15 12:00:00',
+            ],
+            [
+                'financial_year' => 'FY2026',
+                'taxable_profit' => 226.62,
+                'augmented_profit' => 226.62,
+                'lower_limit' => 25068.49,
+                'upper_limit' => 250684.93,
+                'main_rate' => 0.25,
+                'small_profits_rate' => 0.19,
+                'marginal_relief' => 0.00,
+                'liability' => 43.06,
+                'basis' => 'small_profits_rate',
+                'rule_version' => 'golden-test-v1',
+                'source_url' => 'https://www.gov.uk/corporation-tax-rates',
+                'source_checked_at' => '2026-07-15 12:00:00',
+            ],
+        ];
+
+        return [
+            'available' => true,
+            'accounting_profit' => 1500.00,
+            'disallowable_add_backs' => 200.00,
+            'capital_add_backs' => 0.00,
+            'depreciation_add_back' => 200.00,
+            'capital_allowances' => 1348.00,
+            'taxable_before_losses' => 552.00,
+            'taxable_profit' => 452.00,
+            'taxable_loss' => 0.00,
+            'estimated_corporation_tax' => 85.88,
+            'estimated_rate' => 0.19,
+            'associated_company_count' => 0,
+            'ct_rate_bands' => $rateBands,
+            'loss_created_in_period' => 0.00,
+            'losses_brought_forward' => 100.00,
+            'losses_used' => 100.00,
+            'losses_carried_forward' => 0.00,
+            'other_treatment_count' => 0,
+            'unknown_treatment_count' => 0,
+            'warnings' => [],
+            'calculation_status' => 'estimate',
+            'confidence_status' => 'ready_for_review',
+            'confidence_label' => 'Ready for review',
+            'steps' => [
+                ['label' => 'Accounting profit or loss', 'amount' => 1500.00],
+                ['label' => 'Add back disallowable expenses', 'amount' => 200.00],
+                ['label' => 'Add back capital expenditure', 'amount' => 0.00],
+                ['label' => 'Add back depreciation', 'amount' => 200.00],
+                ['label' => 'Deduct capital allowances', 'amount' => -1348.00],
+                ['label' => 'Taxable result before losses', 'amount' => 552.00],
+                ['label' => 'Less losses brought forward utilised', 'amount' => -100.00],
+                ['label' => 'Taxable profit after losses', 'amount' => 452.00],
+                ['label' => 'Estimated corporation tax', 'amount' => 85.88],
+            ],
+            'schedule' => [
+                [
+                    'accounting_period_id' => self::COMPLETE_PERIOD_ID,
+                    'ct_period_id' => 9540,
+                    'label' => 'CT Period 2',
+                    'loss_created' => 0.00,
+                    'loss_brought_forward' => 100.00,
+                    'loss_utilised' => 100.00,
+                    'loss_carried_forward' => 0.00,
+                    'capital_add_backs' => 0.00,
+                    'taxable_before_losses' => 552.00,
+                    'taxable_profit' => 452.00,
+                ],
+            ],
+            'ct_period_id' => 9540,
+            'accounting_period_id' => self::COMPLETE_PERIOD_ID,
+            'ct_period_sequence_no' => 1,
+            'ct_period_display_sequence_no' => 2,
+            'period_start' => '2025-10-01',
+            'period_end' => '2026-09-30',
+            'capital_allowance_breakdown' => $capitalAllowanceBreakdown,
+            'accounting_allocation_basis' => [
+                'method' => 'journal_date_within_single_ct_period',
+                'time_apportioned' => false,
+                'ct_period_days' => 365,
+                'accounting_period_days' => 365,
+                'rounding' => 'pennies_half_up',
+            ],
+            'computation_hash' => $computationHash,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private static function priorLossCtSummary(string $computationHash): array
+    {
+        return [
+            'available' => true,
+            'accounting_profit' => -100.00,
+            'disallowable_add_backs' => 0.00,
+            'capital_add_backs' => 0.00,
+            'depreciation_add_back' => 0.00,
+            'capital_allowances' => 0.00,
+            'taxable_before_losses' => -100.00,
+            'taxable_profit' => 0.00,
+            'taxable_loss' => 100.00,
+            'estimated_corporation_tax' => 0.00,
+            'estimated_rate' => 0.00,
+            'associated_company_count' => 0,
+            'ct_rate_bands' => [],
+            'loss_created_in_period' => 100.00,
+            'losses_brought_forward' => 0.00,
+            'losses_used' => 0.00,
+            'losses_carried_forward' => 100.00,
+            'other_treatment_count' => 0,
+            'unknown_treatment_count' => 0,
+            'warnings' => [],
+            'calculation_status' => 'estimate',
+            'confidence_status' => 'ready_for_review',
+            'confidence_label' => 'Ready for review',
+            'steps' => [
+                ['label' => 'Accounting profit or loss', 'amount' => -100.00],
+                ['label' => 'Add back disallowable expenses', 'amount' => 0.00],
+                ['label' => 'Add back capital expenditure', 'amount' => 0.00],
+                ['label' => 'Add back depreciation', 'amount' => 0.00],
+                ['label' => 'Deduct capital allowances', 'amount' => 0.00],
+                ['label' => 'Taxable result before losses', 'amount' => -100.00],
+                ['label' => 'Less losses brought forward utilised', 'amount' => 0.00],
+                ['label' => 'Taxable profit after losses', 'amount' => 0.00],
+                ['label' => 'Estimated corporation tax', 'amount' => 0.00],
+            ],
+            'schedule' => [
+                [
+                    'accounting_period_id' => self::COMPLETE_PRIOR_PERIOD_ID,
+                    'ct_period_id' => 9538,
+                    'label' => 'CT Period 1',
+                    'loss_created' => 100.00,
+                    'loss_brought_forward' => 0.00,
+                    'loss_utilised' => 0.00,
+                    'loss_carried_forward' => 100.00,
+                    'capital_add_backs' => 0.00,
+                    'taxable_before_losses' => -100.00,
+                    'taxable_profit' => 0.00,
+                ],
+            ],
+            'ct_period_id' => 9538,
+            'accounting_period_id' => self::COMPLETE_PRIOR_PERIOD_ID,
+            'ct_period_sequence_no' => 1,
+            'ct_period_display_sequence_no' => 1,
+            'period_start' => '2024-10-01',
+            'period_end' => '2025-09-30',
+            'capital_allowance_breakdown' => [
+                'available' => true,
+                'rows' => [
+                    self::emptyCapitalAllowancePool('main_pool'),
+                    self::emptyCapitalAllowancePool('special_rate_pool'),
+                ],
+                'warnings' => [],
+            ],
+            'accounting_allocation_basis' => [
+                'method' => 'journal_date_within_single_ct_period',
+                'time_apportioned' => false,
+                'ct_period_days' => 365,
+                'accounting_period_days' => 365,
+                'rounding' => 'pennies_half_up',
+            ],
+            'computation_hash' => $computationHash,
+        ];
+    }
+
+    /** @return array<string, float|string> */
+    private static function emptyCapitalAllowancePool(string $poolType): array
+    {
+        return [
+            'pool_type' => $poolType,
+            'opening_wdv' => 0.00,
+            'additions' => 0.00,
+            'aia_claimed' => 0.00,
+            'fya_claimed' => 0.00,
+            'disposal_value' => 0.00,
+            'wda_claimed' => 0.00,
+            'balancing_charge' => 0.00,
+            'balancing_allowance' => 0.00,
+            'closing_wdv' => 0.00,
+        ];
     }
 
     /** @param array<string, scalar|null> $overrides */

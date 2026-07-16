@@ -33,6 +33,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     ['company_name' => 'Trial Balance Closing Fixture', 'company_number' => 'TBC' . $marker]
                 );
                 $companyId = (int)InterfaceDB::fetchColumn('SELECT id FROM companies WHERE company_number = :company_number', ['company_number' => 'TBC' . $marker]);
+                $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
+                $settings->set('director_loan_asset_nominal_id', $nominals['1200'], 'int');
+                $settings->set('director_loan_liability_nominal_id', $nominals['2100'], 'int');
+                $settings->flush();
                 $periodIds = [];
                 foreach ([
                     'prior' => ['2024-01-01', '2024-12-31'],

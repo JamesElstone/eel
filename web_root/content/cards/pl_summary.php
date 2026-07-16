@@ -34,6 +34,20 @@ final class _pl_summaryCard extends CardBaseFramework
         } elseif (!$hasJournals) {
             $notice = '<div class="helper">No posted journals or transactions exist yet for this period.</div>';
         }
+        if (array_key_exists('prepayment_preview_reliable', $summary)
+            && empty($summary['prepayment_preview_reliable'])) {
+            $warnings = array_values(array_filter(array_map(
+                'strval',
+                (array)($summary['prepayment_preview_warnings'] ?? [])
+            )));
+            $notice .= '<div class="helper"><span class="badge warning">Prepayment preview incomplete</span> '
+                . HelperFramework::escape(
+                    $warnings !== []
+                        ? implode(' ', $warnings)
+                        : 'One or more prepayment adjustments could not be verified.'
+                )
+                . '</div>';
+        }
         return '<div class="settings-stack">
             <div class="pl-summary-topline">
                 <div class="summary-card summary-card-fit"><div class="summary-label">Profitability</div><div class="summary-value ' . HelperFramework::escape($this->resultClass($netProfit)) . '">' . HelperFramework::escape($this->resultLabel($netProfit)) . '</div></div>

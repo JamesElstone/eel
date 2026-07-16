@@ -110,6 +110,130 @@ $harness->check('GoldenTaxTreatmentRateMatrix', 'applies dated treatment overrid
     $harness->assertSame('corporation_tax_treatment_rules', (string)$after['source']);
 });
 
+$harness->check('GoldenTaxTreatmentRateMatrix', 'classifies disposal losses as capital ahead of broad expense rules', static function () use ($harness): void {
+    $service = new \eel_accounts\Service\CorporationTaxTreatmentRuleService([
+        [
+            'id' => 10,
+            'priority' => 1,
+            'account_type' => 'expense',
+            'tax_treatment' => 'allowable',
+            'is_active' => 1,
+        ],
+    ]);
+
+    foreach ([
+        ['nominal_account_id' => 201, 'code' => '6210', 'account_type' => 'expense', 'tax_treatment' => 'allowable'],
+        ['nominal_account_id' => 202, 'code' => 'GX-DISPOSAL', 'subtype_code' => 'asset_disposal_loss', 'account_type' => 'expense', 'tax_treatment' => 'disallowable'],
+    ] as $nominal) {
+        $resolved = $service->resolveTaxTreatment($nominal, '2025-01-01', '2025-12-31');
+        $harness->assertSame('capital', (string)($resolved['tax_treatment'] ?? ''));
+        $harness->assertSame('asset_disposal_loss_invariant', (string)($resolved['source'] ?? ''));
+    }
+});
+
+$harness->check('GoldenTaxTreatmentRateMatrix', 'classifies disposal gains by nominal subtype or disposal journal source', static function () use ($harness): void {
+    $service = new \eel_accounts\Service\CorporationTaxTreatmentRuleService([
+        [
+            'id' => 11,
+            'priority' => 1,
+            'account_type' => 'income',
+            'tax_treatment' => 'allowable',
+            'is_active' => 1,
+        ],
+    ]);
+
+    foreach ([
+        ['nominal_account_id' => 203, 'code' => '4200', 'account_type' => 'income', 'tax_treatment' => 'allowable'],
+        ['nominal_account_id' => 204, 'code' => 'GX-GAIN', 'account_subtype_code' => 'asset_disposal_gain', 'account_type' => 'income', 'tax_treatment' => 'allowable'],
+        ['nominal_account_id' => 205, 'code' => 'GX-INCOME', 'journal_source_type' => 'asset_disposal', 'account_type' => 'income', 'tax_treatment' => 'allowable'],
+    ] as $nominal) {
+        $resolved = $service->resolveTaxTreatment($nominal, '2025-01-01', '2025-12-31');
+        $harness->assertSame('capital', (string)($resolved['tax_treatment'] ?? ''));
+        $harness->assertSame('asset_disposal_gain_invariant', (string)($resolved['source'] ?? ''));
+    }
+});
+
+$harness->check('GoldenTaxTreatmentRateMatrix', 'removes disposal gains from taxable trading profit without removing ordinary income', static function () use ($harness): void {
+    InterfaceDB::beginTransaction();
+    try {
+        $fixture = periodLedgerTestCreateFixture();
+        $suffix = (string)$fixture['accounting_period_id'];
+        $gainNominalId = (int)InterfaceDB::fetchColumn(
+            'SELECT id FROM nominal_accounts WHERE code = :code LIMIT 1',
+            ['code' => '4200']
+        );
+        if ($gainNominalId <= 0) {
+            $gainNominalId = periodLedgerTestInsertNominal(
+                '4200',
+                'Profit on Disposal',
+                'income',
+                'allowable'
+            );
+        }
+
+        periodLedgerTestInsertJournal(
+            (int)$fixture['company_id'],
+            (int)$fixture['accounting_period_id'],
+            '2025-04-15',
+            'golden-ordinary-income-' . $suffix,
+            [
+                [(int)$fixture['asset_nominal_id'], 100.0, 0.0],
+                [(int)$fixture['income_nominal_id'], 0.0, 100.0],
+            ]
+        );
+        $disposalJournalId = periodLedgerTestInsertJournal(
+            (int)$fixture['company_id'],
+            (int)$fixture['accounting_period_id'],
+            '2025-04-15',
+            'golden-disposal-source-income-' . $suffix,
+            [
+                [(int)$fixture['asset_nominal_id'], 80.0, 0.0],
+                [(int)$fixture['income_nominal_id'], 0.0, 80.0],
+            ]
+        );
+        InterfaceDB::prepareExecute(
+            'UPDATE journals SET source_type = :source_type WHERE id = :id',
+            ['source_type' => 'asset_disposal', 'id' => $disposalJournalId]
+        );
+        periodLedgerTestInsertJournal(
+            (int)$fixture['company_id'],
+            (int)$fixture['accounting_period_id'],
+            '2025-04-15',
+            'golden-4200-disposal-gain-' . $suffix,
+            [
+                [(int)$fixture['asset_nominal_id'], 25.0, 0.0],
+                [$gainNominalId, 0.0, 25.0],
+            ]
+        );
+
+        $result = (new \eel_accounts\Service\PreTaxProfitLossService(new \eel_accounts\Service\PeriodLedgerReadService()))
+            ->calculate(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                '2025-06-30',
+                null,
+                ['success' => true, 'rows' => []],
+                []
+            );
+
+        $harness->assertSame('1205.00', goldenTaxTreatmentRateMatrixMoney($result['income_total'] ?? 0));
+        $harness->assertSame('855.00', goldenTaxTreatmentRateMatrixMoney($result['profit_before_tax'] ?? 0));
+        $harness->assertSame('-105.00', goldenTaxTreatmentRateMatrixMoney($result['capital_add_backs'] ?? 0));
+        $harness->assertSame(
+            '800.00',
+            goldenTaxTreatmentRateMatrixMoney(
+                (float)($result['profit_before_tax'] ?? 0)
+                + (float)($result['disallowable_add_backs'] ?? 0)
+                + (float)($result['capital_add_backs'] ?? 0)
+            )
+        );
+    } finally {
+        if (InterfaceDB::inTransaction()) {
+            InterfaceDB::rollBack();
+        }
+    }
+});
+
 $harness->check('GoldenTaxTreatmentRateMatrix', 'turns ledger treatment semantics into the expected P and L bridge', static function () use ($harness): void {
     InterfaceDB::beginTransaction();
     try {
@@ -230,6 +354,197 @@ $harness->check('GoldenTaxTreatmentRateMatrix', 'keeps a dated rule override ide
         );
         $harness->assertSame('150.00', goldenTaxTreatmentRateMatrixMoney($posted['disallowable_add_backs'] ?? 0));
         $harness->assertSame('150.00', goldenTaxTreatmentRateMatrixMoney($pending['disallowable_add_backs'] ?? 0));
+    } finally {
+        if (InterfaceDB::inTransaction()) {
+            InterfaceDB::rollBack();
+        }
+    }
+});
+
+$harness->check('GoldenTaxTreatmentRateMatrix', 'applies a dated rule to each posted journal date in both the CT bridge and Tax Workings', static function () use ($harness): void {
+    InterfaceDB::beginTransaction();
+    try {
+        $fixture = periodLedgerTestCreateFixture();
+        $suffix = (string)$fixture['accounting_period_id'];
+        $expenseCode = 'GXDAT' . $suffix;
+        $expenseNominalId = periodLedgerTestInsertNominal(
+            $expenseCode,
+            'ZXQ exact dated treatment ' . $suffix,
+            'expense',
+            'allowable'
+        );
+        $incomeCode = 'GXDGI' . $suffix;
+        $incomeNominalId = periodLedgerTestInsertNominal(
+            $incomeCode,
+            'ZXQ exact dated capital income ' . $suffix,
+            'income',
+            'allowable'
+        );
+
+        InterfaceDB::prepareExecute(
+            'INSERT INTO corporation_tax_treatment_rules (
+                rule_code, rule_version, priority, nominal_account_id, nominal_code,
+                tax_treatment, effective_from, effective_to, source_url,
+                source_checked_at, rationale, review_status, is_active
+             ) VALUES (
+                :rule_code, :rule_version, :priority, :nominal_account_id, :nominal_code,
+                :tax_treatment, :effective_from, :effective_to, :source_url,
+                :source_checked_at, :rationale, :review_status, 1
+             )',
+            [
+                'rule_code' => 'golden_exact_dated_' . $suffix,
+                'rule_version' => 'golden-exact-date-' . $suffix,
+                'priority' => -100,
+                'nominal_account_id' => $expenseNominalId,
+                'nominal_code' => $expenseCode,
+                'tax_treatment' => 'disallowable',
+                'effective_from' => '2025-04-01',
+                'effective_to' => '2025-04-30',
+                'source_url' => 'https://example.test/golden-exact-dated-treatment',
+                'source_checked_at' => '2026-07-16',
+                'rationale' => 'Golden regression for per-journal-date treatment.',
+                'review_status' => 'reviewed',
+            ]
+        );
+        InterfaceDB::prepareExecute(
+            'INSERT INTO corporation_tax_treatment_rules (
+                rule_code, rule_version, priority, nominal_account_id, nominal_code,
+                tax_treatment, effective_from, effective_to, source_url,
+                source_checked_at, rationale, review_status, is_active
+             ) VALUES (
+                :rule_code, :rule_version, :priority, :nominal_account_id, :nominal_code,
+                :tax_treatment, :effective_from, :effective_to, :source_url,
+                :source_checked_at, :rationale, :review_status, 1
+             )',
+            [
+                'rule_code' => 'golden_exact_dated_income_' . $suffix,
+                'rule_version' => 'golden-exact-date-income-' . $suffix,
+                'priority' => -100,
+                'nominal_account_id' => $incomeNominalId,
+                'nominal_code' => $incomeCode,
+                'tax_treatment' => 'capital',
+                'effective_from' => '2025-04-01',
+                'effective_to' => '2025-04-30',
+                'source_url' => 'https://example.test/golden-exact-dated-income-treatment',
+                'source_checked_at' => '2026-07-16',
+                'rationale' => 'Golden regression for per-journal-date capital income treatment.',
+                'review_status' => 'reviewed',
+            ]
+        );
+        foreach ([
+            ['2025-03-31', 'before', 10.0],
+            ['2025-04-15', 'during', 10.0],
+        ] as [$journalDate, $marker, $amount]) {
+            periodLedgerTestInsertJournal(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                $journalDate,
+                'golden-exact-dated-' . $marker . '-' . $suffix,
+                [
+                    [$expenseNominalId, $amount, 0.0],
+                    [(int)$fixture['asset_nominal_id'], 0.0, $amount],
+                ]
+            );
+        }
+        foreach ([
+            ['2025-03-31', 'before', 20.0],
+            ['2025-04-15', 'during', 30.0],
+        ] as [$journalDate, $marker, $amount]) {
+            periodLedgerTestInsertJournal(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                $journalDate,
+                'golden-exact-dated-income-' . $marker . '-' . $suffix,
+                [
+                    [(int)$fixture['asset_nominal_id'], $amount, 0.0],
+                    [$incomeNominalId, 0.0, $amount],
+                ]
+            );
+        }
+
+        $result = (new \eel_accounts\Service\PreTaxProfitLossService())
+            ->calculate(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                '2025-12-31',
+                null,
+                ['success' => true, 'rows' => []],
+                []
+            );
+        $harness->assertSame('880.00', goldenTaxTreatmentRateMatrixMoney($result['profit_before_tax'] ?? 0));
+        $harness->assertSame('60.00', goldenTaxTreatmentRateMatrixMoney($result['disallowable_add_backs'] ?? 0));
+        $harness->assertSame('-30.00', goldenTaxTreatmentRateMatrixMoney($result['capital_add_backs'] ?? 0));
+
+        $workingsService = new \eel_accounts\Service\TaxWorkingsService();
+        $addBackRows = new ReflectionMethod($workingsService, 'addBackRows');
+        $addBackRows->setAccessible(true);
+        $rows = $addBackRows->invoke(
+            $workingsService,
+            (int)$fixture['company_id'],
+            (int)$fixture['accounting_period_id'],
+            '2025-01-01',
+            '2025-12-31',
+            []
+        );
+        $datedRows = array_values(array_filter(
+            (array)($rows['disallowable'] ?? []),
+            static fn(array $row): bool => (string)($row['nominal_code'] ?? '') === $expenseCode
+        ));
+        $harness->assertCount(1, $datedRows);
+        $harness->assertSame('2025-04-15', (string)($datedRows[0]['journal_date'] ?? ''));
+        $harness->assertSame('10.00', goldenTaxTreatmentRateMatrixMoney($datedRows[0]['amount'] ?? 0));
+        $datedIncomeRows = array_values(array_filter(
+            (array)($rows['capital'] ?? []),
+            static fn(array $row): bool => (string)($row['nominal_code'] ?? '') === $incomeCode
+        ));
+        $harness->assertCount(1, $datedIncomeRows);
+        $harness->assertSame('2025-04-15', (string)($datedIncomeRows[0]['journal_date'] ?? ''));
+        $harness->assertSame('-30.00', goldenTaxTreatmentRateMatrixMoney($datedIncomeRows[0]['amount'] ?? 0));
+        $harness->assertSame(
+            goldenTaxTreatmentRateMatrixMoney($result['capital_add_backs'] ?? 0),
+            goldenTaxTreatmentRateMatrixMoney(array_sum(array_map(
+                static fn(array $row): float => (float)($row['amount'] ?? 0),
+                (array)($rows['capital'] ?? [])
+            )))
+        );
+    } finally {
+        if (InterfaceDB::inTransaction()) {
+            InterfaceDB::rollBack();
+        }
+    }
+});
+
+$harness->check('GoldenTaxTreatmentRateMatrix', 'nets a pending prepayment expense credit against the disallowable add-back', static function () use ($harness): void {
+    InterfaceDB::beginTransaction();
+    try {
+        $fixture = periodLedgerTestCreateFixture();
+        $suffix = (string)$fixture['accounting_period_id'];
+        $prepaymentNominalId = periodLedgerTestInsertNominal(
+            'GXPR' . $suffix,
+            'ZXQ prepayment reversal asset ' . $suffix,
+            'asset',
+            'other'
+        );
+
+        $result = (new \eel_accounts\Service\PreTaxProfitLossService(new \eel_accounts\Service\PeriodLedgerReadService()))
+            ->calculate(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                '2025-06-30',
+                null,
+                ['success' => true, 'rows' => []],
+                [[
+                    'review_id' => 1,
+                    'schedule_id' => 1,
+                    'amount_pence' => 3000,
+                    'debit_nominal_id' => $prepaymentNominalId,
+                    'credit_nominal_id' => (int)$fixture['disallowable_nominal_id'],
+                    'journal_date' => '2025-03-31',
+                ]]
+            );
+
+        $harness->assertSame('680.00', goldenTaxTreatmentRateMatrixMoney($result['profit_before_tax'] ?? 0));
+        $harness->assertSame('20.00', goldenTaxTreatmentRateMatrixMoney($result['disallowable_add_backs'] ?? 0));
     } finally {
         if (InterfaceDB::inTransaction()) {
             InterfaceDB::rollBack();

@@ -380,7 +380,7 @@ final class YearEndChecklistService
         $offsetService = new \eel_accounts\Service\DirectorLoanReconciliationService();
         $offsetContext = $offsetService->fetchContext($companyId, $accountingPeriodId);
 
-        if (empty($offsetContext['available']) || empty($offsetContext['can_post'])) {
+        if (empty($offsetContext['available'])) {
             return [
                 'success' => true,
                 'skipped' => true,
@@ -388,12 +388,23 @@ final class YearEndChecklistService
             ];
         }
 
-        $closingBalanceCheck = $this->findChecklistCheck($checklist, 'director_loan_closing_balance');
-        if (empty($closingBalanceCheck['acknowledgement_current'])) {
+        $pendingAdjustment = round((float)($offsetContext['pending_adjustment_amount'] ?? 0), 2);
+        if (abs($pendingAdjustment) >= 0.005 && empty($offsetContext['can_post'])) {
             return [
                 'success' => false,
                 'status' => 422,
-                'errors' => ['Save the director loan offset acknowledgement before locking this accounting period.'],
+                'errors' => [
+                    (string)($offsetContext['post_blocked_reason']
+                        ?? 'The director loan closing presentation could not be adjusted safely before locking this accounting period.'),
+                ],
+                'context' => $offsetContext,
+            ];
+        }
+
+        if (empty($offsetContext['can_post'])) {
+            return [
+                'success' => true,
+                'skipped' => true,
                 'context' => $offsetContext,
             ];
         }

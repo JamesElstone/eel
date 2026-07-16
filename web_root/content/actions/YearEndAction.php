@@ -92,6 +92,15 @@ final class YearEndAction implements ActionInterfaceFramework
                     $actor,
                     (string)$request->input('approval_note', '')
                 ),
+                'save_director_loan_set_off_evidence' => (new \eel_accounts\Service\DirectorLoanReconciliationService())->saveSetOffEvidence(
+                    $companyId,
+                    $accountingPeriodId,
+                    $this->truthy($request->input('director_loan_set_off_evidence', '0')),
+                    $this->truthy($request->input('director_loan_legally_enforceable_right', '0')),
+                    $this->truthy($request->input('director_loan_net_settlement_intent', '0')),
+                    (string)$request->input('director_loan_set_off_evidence_note', ''),
+                    $actor
+                ),
                 'save_tax_readiness_acknowledgement' => (new \eel_accounts\Service\YearEndChecklistService())->saveTaxReadinessAcknowledgement(
                     $companyId,
                     $accountingPeriodId,
@@ -225,6 +234,7 @@ final class YearEndAction implements ActionInterfaceFramework
             'save_opening_balance' => 'Opening balance journal saved.',
             'create_adjustment' => 'Year-end adjustment posted.',
             'save_director_loan_offset_acknowledgement' => 'Director loan offset approval saved.',
+            'save_director_loan_set_off_evidence' => 'Director loan set-off evidence saved.',
             'save_tax_readiness_acknowledgement' => 'Tax readiness approval saved.',
             'save_expense_position_acknowledgement' => 'Expense position approval saved.',
             'save_retained_earnings_close_acknowledgement' => 'Retained earnings approval saved.',
@@ -244,6 +254,7 @@ final class YearEndAction implements ActionInterfaceFramework
             'save_opening_balance',
             'create_adjustment',
             'save_director_loan_offset_acknowledgement',
+            'save_director_loan_set_off_evidence',
             'save_tax_readiness_acknowledgement',
             'save_retained_earnings_close_acknowledgement',
             'save_transaction_tail_acknowledgement',
@@ -268,6 +279,7 @@ final class YearEndAction implements ActionInterfaceFramework
             'save_opening_balance',
             'create_adjustment',
             'save_director_loan_offset_acknowledgement',
+            'save_director_loan_set_off_evidence',
             'save_tax_readiness_acknowledgement',
             'save_retained_earnings_close_acknowledgement',
             'save_transaction_tail_acknowledgement',

@@ -49,6 +49,32 @@ final class TaxWorkingsService
 
         $periodStart = $ctPeriod !== null ? (string)$ctPeriod['period_start'] : (string)$period['period_start'];
         $periodEnd = $ctPeriod !== null ? (string)$ctPeriod['period_end'] : (string)$period['period_end'];
+        $accountingAllocationBasis = (array)($estimate['accounting_allocation_basis'] ?? []);
+        $timeApportioned = !empty($accountingAllocationBasis['time_apportioned']);
+        $detailPeriodStart = $timeApportioned ? (string)$period['period_start'] : $periodStart;
+        $detailPeriodEnd = $timeApportioned ? (string)$period['period_end'] : $periodEnd;
+        $prepaymentContext = (new PrepaymentScheduleService())
+            ->fetchPreviewAdjustmentContext($companyId, $accountingPeriodId);
+        $estimate = $this->applyPrepaymentReliabilityToEstimate($estimate, $prepaymentContext);
+        $addBackRows = $this->addBackRows(
+            $companyId,
+            $accountingPeriodId,
+            $detailPeriodStart,
+            $detailPeriodEnd,
+            (array)($prepaymentContext['adjustments'] ?? [])
+        );
+        if ($timeApportioned) {
+            $addBackRows['disallowable'] = $this->apportionAddBackRows(
+                (array)($addBackRows['disallowable'] ?? []),
+                (float)($estimate['disallowable_add_backs'] ?? 0),
+                $accountingAllocationBasis
+            );
+            $addBackRows['capital'] = $this->apportionAddBackRows(
+                (array)($addBackRows['capital'] ?? []),
+                (float)($estimate['capital_add_backs'] ?? 0),
+                $accountingAllocationBasis
+            );
+        }
         $poolRows = $this->poolRows($companyId, $accountingPeriodId, (array)($estimate['capital_allowance_breakdown'] ?? []), $ctPeriodId);
         $assetCalculations = $this->assetCalculationRows($companyId, $accountingPeriodId, $ctPeriodId);
         $carRows = $this->carRows($companyId, $accountingPeriodId, $ctPeriodId);
@@ -61,14 +87,26 @@ final class TaxWorkingsService
             'selected_ct_period' => $ctPeriod,
             'summary' => $estimate,
             'bridge' => (array)($estimate['steps'] ?? []),
-            'disallowable_add_backs' => $this->disallowableAddBackRows($companyId, $accountingPeriodId, $periodStart, $periodEnd),
-            'depreciation_add_back' => $this->depreciationRows($companyId, $accountingPeriodId, $ctPeriodId),
+            'disallowable_add_backs' => (array)($addBackRows['disallowable'] ?? []),
+            'capital_add_backs' => (array)($addBackRows['capital'] ?? []),
+            'depreciation_add_back' => $this->depreciationRows(
+                $companyId,
+                $accountingPeriodId,
+                $ctPeriodId,
+                (float)($estimate['depreciation_add_back'] ?? 0)
+            ),
             'capital_allowances_summary' => $this->capitalAllowanceSummary($poolRows),
             'aia_allocation' => array_values(array_filter($assetCalculations, static fn(array $row): bool => (string)$row['allowance_type'] === 'aia')),
             'main_rate_pool' => $this->poolByType($poolRows, 'main_pool'),
             'special_rate_pool' => $this->poolByType($poolRows, 'special_rate_pool'),
             'car_co2_treatment' => $carRows,
-            'disposals_balancing' => $this->disposalRows($assetCalculations, $companyId, $accountingPeriodId, $periodStart, $periodEnd),
+            'disposals_balancing' => $this->disposalRows(
+                $companyId,
+                $accountingPeriodId,
+                $ctPeriodId,
+                $periodStart,
+                $periodEnd
+            ),
             'losses' => (array)($estimate['schedule'] ?? []),
             'rate_bands' => (array)($estimate['ct_rate_bands'] ?? []),
             'provision' => $ctPeriodId > 0 ? (new \eel_accounts\Service\CorporationTaxProvisionService())->fetchPosition($companyId, $accountingPeriodId, $ctPeriodId) : [],
@@ -113,6 +151,7 @@ final class TaxWorkingsService
             'summary' => $estimate,
             'bridge' => (array)($estimate['steps'] ?? []),
             'disallowable_add_backs' => [],
+            'capital_add_backs' => [],
             'depreciation_add_back' => [],
             'capital_allowances_summary' => $this->capitalAllowanceSummary(
                 (array)($estimate['capital_allowance_breakdown']['rows'] ?? [])
@@ -129,115 +168,265 @@ final class TaxWorkingsService
         ];
     }
 
-    private function disallowableAddBackRows(int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array
+    /**
+     * Build the signed nominal movements behind the ordinary P&L add-backs.
+     * This deliberately uses the same ledger reader, close-journal exclusions,
+     * Corporation Tax expense exclusion and dated prepayment treatment as
+     * PreTaxProfitLossService.
+     *
+     * @return array{disallowable: list<array<string, mixed>>, capital: list<array<string, mixed>>}
+     */
+    private function addBackRows(
+        int $companyId,
+        int $accountingPeriodId,
+        string $periodStart,
+        string $periodEnd,
+        array $prepaymentPreview = []
+    ): array
     {
         if (!$this->tableExists('journals') || !$this->tableExists('journal_lines') || !$this->tableExists('nominal_accounts')) {
-            return [];
+            return ['disallowable' => [], 'capital' => []];
         }
 
-        $rows = \InterfaceDB::fetchAll(
-            'SELECT na.id,
-                    na.code,
-                    na.name,
-                    na.account_type,
-                    COALESCE(na.tax_treatment, \'allowable\') AS tax_treatment,
-                    SUM(COALESCE(jl.debit, 0)) AS total_debit,
-                    SUM(COALESCE(jl.credit, 0)) AS total_credit
-             FROM journals j
-             INNER JOIN journal_lines jl ON jl.journal_id = j.id
-             INNER JOIN nominal_accounts na ON na.id = jl.nominal_account_id
-             LEFT JOIN journal_entry_metadata jem_close
-               ON jem_close.journal_id = j.id
-              AND jem_close.journal_tag = :close_journal_tag
-             WHERE j.company_id = :company_id
-               AND j.accounting_period_id = :accounting_period_id
-               AND j.is_posted = 1
-               AND j.journal_date BETWEEN :period_start AND :period_end
-               AND jem_close.id IS NULL
-               AND (na.account_type = :cost_type OR na.account_type = :expense_type)
-             GROUP BY na.id, na.code, na.name, na.account_type, na.tax_treatment
-             ORDER BY na.code ASC, na.name ASC',
-            [
-                'close_journal_tag' => \eel_accounts\Service\RetainedEarningsCloseService::JOURNAL_TAG,
-                'company_id' => $companyId,
-                'accounting_period_id' => $accountingPeriodId,
-                'period_start' => $periodStart,
-                'period_end' => $periodEnd,
-                'cost_type' => 'cost_of_sales',
-                'expense_type' => 'expense',
-            ]
-        ) ?: [];
+        $ledger = new PeriodLedgerReadService();
+        $scope = $ledger->scope($companyId, $accountingPeriodId, $periodEnd, $periodStart);
+        $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
+        $ctExpenseNominalId = (int)($settings['corporation_tax_expense_nominal_id'] ?? 0);
+        $rules = new CorporationTaxTreatmentRuleService();
+        $result = ['disallowable' => [], 'capital' => []];
 
-        $rules = new \eel_accounts\Service\CorporationTaxTreatmentRuleService();
-        $result = [];
-        foreach ($rows as $row) {
-            $treatment = (string)($rules->resolveTaxTreatment($row, $periodStart, $periodEnd)['tax_treatment'] ?? '');
-            if (!in_array($treatment, ['disallowable', 'other'], true) && in_array($treatment, ['allowable', 'capital'], true)) {
+        foreach ((new DatedTaxTreatmentLedgerService())->fetch($scope) as $row) {
+            if ($ctExpenseNominalId > 0
+                && (int)($row['nominal_account_id'] ?? 0) === $ctExpenseNominalId) {
+                continue;
+            }
+            $journalDate = (string)($row['journal_date'] ?? '');
+            $treatment = (string)($rules->resolveTaxTreatment(
+                $row,
+                $journalDate,
+                $journalDate
+            )['tax_treatment'] ?? '');
+            if ((string)($row['account_type'] ?? '') === 'income' && $treatment !== 'capital') {
+                continue;
+            }
+            if (!in_array($treatment, ['disallowable', 'capital'], true)) {
                 continue;
             }
             $amount = round((float)($row['total_debit'] ?? 0) - (float)($row['total_credit'] ?? 0), 2);
-            if ($amount == 0.0 && $treatment !== 'other') {
+            if (abs($amount) < 0.005) {
                 continue;
             }
-            $result[] = [
-                'nominal_code' => (string)$row['code'],
-                'nominal_name' => (string)$row['name'],
-                'tax_treatment' => $treatment !== '' ? $treatment : 'unknown',
-                'amount' => abs($amount),
+            $result[$treatment][] = [
+                'nominal_code' => (string)($row['code'] ?? ''),
+                'nominal_name' => (string)($row['name'] ?? ''),
+                'tax_treatment' => $treatment,
+                'journal_date' => $journalDate,
+                'source' => 'posted_ledger',
+                'source_label' => 'Posted ledger',
+                'amount' => $amount,
             ];
+        }
+
+        foreach ((new YearEndClosePreviewService())->prepaymentExpenseRowsForPeriod(
+            $companyId,
+            $accountingPeriodId,
+            $periodStart,
+            $periodEnd,
+            $prepaymentPreview
+        ) as $row) {
+            $journalDate = (string)($row['journal_date'] ?? '');
+            $treatment = (string)($rules->resolveTaxTreatment(
+                $row,
+                $journalDate,
+                $journalDate
+            )['tax_treatment'] ?? '');
+            if (!in_array($treatment, ['disallowable', 'capital'], true)) {
+                continue;
+            }
+            $amount = round((float)($row['amount'] ?? 0), 2);
+            if (abs($amount) < 0.005) {
+                continue;
+            }
+            $result[$treatment][] = [
+                'nominal_code' => (string)($row['code'] ?? ''),
+                'nominal_name' => (string)($row['name'] ?? ''),
+                'tax_treatment' => $treatment,
+                'journal_date' => $journalDate,
+                'source' => 'pending_prepayment',
+                'source_label' => 'Pending prepayment',
+                'amount' => $amount,
+            ];
+        }
+
+        foreach (['disallowable', 'capital'] as $treatment) {
+            usort($result[$treatment], static function (array $left, array $right): int {
+                return [
+                    (string)($left['journal_date'] ?? ''),
+                    (string)($left['nominal_code'] ?? ''),
+                    (string)($left['source'] ?? ''),
+                ] <=> [
+                    (string)($right['journal_date'] ?? ''),
+                    (string)($right['nominal_code'] ?? ''),
+                    (string)($right['source'] ?? ''),
+                ];
+            });
         }
 
         return $result;
     }
 
-    private function depreciationRows(int $companyId, int $accountingPeriodId, int $ctPeriodId = 0): array
+    /**
+     * Keep Tax Workings conservative even when it is displaying an older
+     * persisted summary which predates prepayment-reliability fields.
+     *
+     * @param array<string, mixed> $estimate
+     * @param array<string, mixed> $prepaymentContext
+     * @return array<string, mixed>
+     */
+    private function applyPrepaymentReliabilityToEstimate(array $estimate, array $prepaymentContext): array
     {
-        if (!$this->tableExists('asset_depreciation_entries')) {
+        if (!empty($prepaymentContext['success'])) {
+            return $estimate;
+        }
+
+        $warnings = array_merge(
+            (array)($estimate['warnings'] ?? []),
+            [CorporationTaxComputationService::PREPAYMENT_PREVIEW_WARNING],
+            array_map('strval', (array)($prepaymentContext['errors'] ?? []))
+        );
+        $estimate['warnings'] = array_values(array_unique(array_filter(
+            array_map('trim', array_map('strval', $warnings)),
+            static fn(string $warning): bool => $warning !== ''
+        )));
+        $estimate['prepayment_preview_reliable'] = false;
+        $estimate['prepayment_preview_warnings'] = array_values(array_unique(array_filter(
+            array_map('trim', array_map(
+                'strval',
+                (array)($prepaymentContext['errors'] ?? [])
+            )),
+            static fn(string $warning): bool => $warning !== ''
+        )));
+        $estimate['confidence_status'] = 'review_required';
+        $estimate['confidence_label'] = 'Review required';
+
+        return $estimate;
+    }
+
+    /**
+     * The CT computation allocates whole-accounting-period ordinary P&L
+     * add-backs by inclusive days when an accounting period is split. Apply the
+     * same ratio to each signed detail movement, then put only the penny
+     * rounding residual on the final row so the visible detail cross-casts to
+     * the selected CT-period summary.
+     *
+     * @param list<array<string, mixed>> $rows
+     * @param array<string, mixed> $basis
+     * @return list<array<string, mixed>>
+     */
+    private function apportionAddBackRows(array $rows, float $expectedAmount, array $basis): array
+    {
+        if ($rows === []) {
             return [];
         }
 
-        $periodFilter = '';
-        $params = [
-            'company_id' => $companyId,
-            'accounting_period_id' => $accountingPeriodId,
-        ];
-        if ($ctPeriodId > 0) {
-            $ctPeriod = (new \eel_accounts\Service\CorporationTaxPeriodService())->fetch($companyId, $ctPeriodId);
-            if ($ctPeriod !== null) {
-                $periodFilter = ' AND ade.period_start <= :period_end AND ade.period_end >= :period_start';
-                $params['period_start'] = (string)$ctPeriod['period_start'];
-                $params['period_end'] = (string)$ctPeriod['period_end'];
-            }
-        }
-
-        $sql = 'SELECT ade.amount,
-                    ade.period_start,
-                    ade.period_end,
-                    \'add\' AS direction,
-                    ar.asset_code,
-                    ar.description
-             FROM asset_depreciation_entries ade
-             INNER JOIN asset_register ar ON ar.id = ade.asset_id
-             WHERE ar.company_id = :company_id
-               AND ade.accounting_period_id = :accounting_period_id'
-            . $periodFilter
-            . ' ORDER BY ar.purchase_date ASC, ar.id ASC, ade.id ASC';
-
-        $rows = \InterfaceDB::fetchAll($sql, $params) ?: [];
-        if ($ctPeriodId <= 0 || !isset($params['period_start'], $params['period_end'])) {
+        $accountingDays = (int)($basis['accounting_period_days'] ?? 0);
+        $ctPeriodDays = (int)($basis['ct_period_days'] ?? 0);
+        if ($accountingDays <= 0 || $ctPeriodDays <= 0) {
             return $rows;
         }
 
+        $allocatedTotal = 0.0;
         foreach ($rows as &$row) {
-            $entryStart = (string)($row['period_start'] ?? '');
-            $entryEnd = (string)($row['period_end'] ?? '');
-            $entryDays = $this->periodDays($entryStart, $entryEnd);
-            $overlapDays = $this->overlapDays($entryStart, $entryEnd, (string)$params['period_start'], (string)$params['period_end']);
-            $row['amount'] = $entryDays > 0 && $overlapDays > 0
-                ? round((float)($row['amount'] ?? 0) * ($overlapDays / $entryDays), 2)
-                : 0.0;
+            $wholePeriodAmount = round((float)($row['amount'] ?? 0), 2);
+            $row['whole_period_amount'] = $wholePeriodAmount;
+            $row['amount'] = round($wholePeriodAmount * ($ctPeriodDays / $accountingDays), 2);
+            $row['allocation_basis'] = 'whole_accounting_period_inclusive_days';
+            $allocatedTotal = round($allocatedTotal + (float)$row['amount'], 2);
         }
         unset($row);
+
+        $residual = round($expectedAmount - $allocatedTotal, 2);
+        if (abs($residual) >= 0.005) {
+            $lastIndex = array_key_last($rows);
+            $rows[$lastIndex]['amount'] = round((float)$rows[$lastIndex]['amount'] + $residual, 2);
+            $rows[$lastIndex]['rounding_residual'] = $residual;
+        }
+
+        return array_values(array_filter(
+            $rows,
+            static fn(array $row): bool => abs((float)($row['amount'] ?? 0)) >= 0.005
+        ));
+    }
+
+    private function depreciationRows(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId = 0,
+        float $expectedAmount = 0.0
+    ): array
+    {
+        $rows = (new \eel_accounts\Service\YearEndClosePreviewService())
+            ->depreciationRowsForPeriod($companyId, $accountingPeriodId);
+        if ($rows === []) {
+            return [];
+        }
+
+        $assetDetails = $this->assetDetailsById(array_values(array_unique(array_map(
+            static fn(array $row): int => (int)($row['asset_id'] ?? 0),
+            $rows
+        ))));
+        foreach ($rows as &$row) {
+            $details = (array)($assetDetails[(int)($row['asset_id'] ?? 0)] ?? []);
+            $row['asset_code'] = (string)($row['asset_code'] ?? $details['asset_code'] ?? '');
+            $row['description'] = (string)($row['description'] ?? $details['description'] ?? '');
+            $row['direction'] = 'add';
+        }
+        unset($row);
+
+        if ($ctPeriodId > 0) {
+            $periodService = new \eel_accounts\Service\CorporationTaxPeriodService();
+            $ctPeriod = $periodService->fetch($companyId, $ctPeriodId);
+            $accountingPeriod = (new \eel_accounts\Repository\AccountingPeriodRepository())
+                ->fetchAccountingPeriod($companyId, $accountingPeriodId);
+            $activeCtPeriods = array_values(array_filter(
+                $periodService->fetchForAccountingPeriod($companyId, $accountingPeriodId),
+                static fn(array $period): bool => (string)($period['status'] ?? '') !== 'superseded'
+            ));
+            if ($ctPeriod !== null && $accountingPeriod !== null && count($activeCtPeriods) > 1) {
+                $accountingDays = $this->periodDays(
+                    (string)$accountingPeriod['period_start'],
+                    (string)$accountingPeriod['period_end']
+                );
+                $ctPeriodDays = $this->periodDays(
+                    (string)$ctPeriod['period_start'],
+                    (string)$ctPeriod['period_end']
+                );
+                foreach ($rows as &$row) {
+                    $row['amount'] = $accountingDays > 0
+                        ? round((float)($row['amount'] ?? 0) * ($ctPeriodDays / $accountingDays), 2)
+                        : 0.0;
+                }
+                unset($row);
+            }
+        }
+
+        $rows = array_values(array_filter(
+            $rows,
+            static fn(array $row): bool => (float)($row['amount'] ?? 0) > 0
+        ));
+        if ($rows === []) {
+            return [];
+        }
+
+        $detailTotal = round(array_sum(array_map(
+            static fn(array $row): float => (float)($row['amount'] ?? 0),
+            $rows
+        )), 2);
+        $residual = round($expectedAmount - $detailTotal, 2);
+        if (abs($residual) >= 0.005) {
+            $lastIndex = array_key_last($rows);
+            $rows[$lastIndex]['amount'] = round((float)$rows[$lastIndex]['amount'] + $residual, 2);
+        }
 
         return $rows;
     }
@@ -249,11 +438,6 @@ final class TaxWorkingsService
         }
 
         return max(1, (new \DateTimeImmutable($start))->diff(new \DateTimeImmutable($end))->days + 1);
-    }
-
-    private function overlapDays(string $firstStart, string $firstEnd, string $secondStart, string $secondEnd): int
-    {
-        return $this->periodDays(max($firstStart, $secondStart), min($firstEnd, $secondEnd));
     }
 
     private function poolRows(int $companyId, int $accountingPeriodId, array $breakdown, int $ctPeriodId = 0): array
@@ -378,19 +562,21 @@ final class TaxWorkingsService
         return $rows;
     }
 
-    private function disposalRows(array $assetCalculations, int $companyId, int $accountingPeriodId, string $periodStart, string $periodEnd): array
+    private function disposalRows(
+        int $companyId,
+        int $accountingPeriodId,
+        int $ctPeriodId,
+        string $periodStart,
+        string $periodEnd
+    ): array
     {
-        $rows = array_values(array_filter($assetCalculations, static fn(array $row): bool => (float)($row['disposal_value'] ?? 0) > 0 || (float)($row['disposal_proceeds'] ?? 0) > 0));
-        if ($rows !== []) {
-            return $rows;
-        }
-
         if (!$this->tableExists('asset_register')) {
             return [];
         }
 
-        return \InterfaceDB::fetchAll(
-            'SELECT ar.asset_code,
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT ar.id AS asset_id,
+                    ar.asset_code,
                     ar.description,
                     ar.disposal_date,
                     ar.disposal_proceeds,
@@ -399,12 +585,101 @@ final class TaxWorkingsService
              FROM asset_register ar
              LEFT JOIN nominal_accounts na ON na.id = ar.nominal_account_id
              WHERE ar.company_id = :company_id
-               AND ar.accounting_period_id = :accounting_period_id
                AND ar.disposal_date IS NOT NULL
                AND ar.disposal_date BETWEEN :period_start AND :period_end
              ORDER BY ar.disposal_date ASC, ar.id ASC',
-            ['company_id' => $companyId, 'accounting_period_id' => $accountingPeriodId, 'period_start' => $periodStart, 'period_end' => $periodEnd]
+            ['company_id' => $companyId, 'period_start' => $periodStart, 'period_end' => $periodEnd]
         ) ?: [];
+        if ($rows === [] || !$this->tableExists('capital_allowance_asset_calculations')) {
+            return $rows;
+        }
+
+        $sql = 'SELECT *
+                FROM capital_allowance_asset_calculations
+                WHERE company_id = :company_id
+                  AND accounting_period_id = :accounting_period_id';
+        $params = [
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+        ];
+        if ($ctPeriodId > 0 && \InterfaceDB::columnExists('capital_allowance_asset_calculations', 'ct_period_id')) {
+            $sql .= ' AND ct_period_id = :ct_period_id';
+            $params['ct_period_id'] = $ctPeriodId;
+        }
+        $sql .= ' ORDER BY asset_id ASC, id ASC';
+
+        $calculationsByAsset = [];
+        foreach (\InterfaceDB::fetchAll($sql, $params) ?: [] as $calculation) {
+            $assetId = (int)($calculation['asset_id'] ?? 0);
+            if ($assetId <= 0) {
+                continue;
+            }
+            if (!isset($calculationsByAsset[$assetId])) {
+                $calculationsByAsset[$assetId] = $calculation;
+                continue;
+            }
+            $current = &$calculationsByAsset[$assetId];
+            foreach ([
+                'addition_amount',
+                'allowance_amount',
+                'disposal_value',
+                'balancing_charge',
+                'balancing_allowance',
+            ] as $amountField) {
+                $current[$amountField] = round(
+                    (float)($current[$amountField] ?? 0) + (float)($calculation[$amountField] ?? 0),
+                    2
+                );
+            }
+            $allowanceTypes = array_values(array_unique(array_filter([
+                trim((string)($current['allowance_type'] ?? '')),
+                trim((string)($calculation['allowance_type'] ?? '')),
+            ])));
+            $current['allowance_type'] = implode(', ', $allowanceTypes);
+            $warnings = array_values(array_unique(array_filter([
+                trim((string)($current['warning'] ?? '')),
+                trim((string)($calculation['warning'] ?? '')),
+            ])));
+            $current['warning'] = implode(' ', $warnings);
+            unset($current);
+        }
+
+        foreach ($rows as &$row) {
+            $calculation = $calculationsByAsset[(int)($row['asset_id'] ?? 0)] ?? null;
+            if (is_array($calculation)) {
+                $row = array_merge($row, $calculation);
+            }
+        }
+        unset($row);
+
+        return $rows;
+    }
+
+    /**
+     * @param list<int> $assetIds
+     * @return array<int, array<string, mixed>>
+     */
+    private function assetDetailsById(array $assetIds): array
+    {
+        $assetIds = array_values(array_filter(array_unique($assetIds), static fn(int $assetId): bool => $assetId > 0));
+        if ($assetIds === [] || !$this->tableExists('asset_register')) {
+            return [];
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($assetIds), '?'));
+        $rows = \InterfaceDB::prepareExecute(
+            'SELECT id, asset_code, description
+             FROM asset_register
+             WHERE id IN (' . $placeholders . ')',
+            $assetIds
+        )->fetchAll() ?: [];
+
+        $map = [];
+        foreach ($rows as $row) {
+            $map[(int)($row['id'] ?? 0)] = $row;
+        }
+
+        return $map;
     }
 
     private function capitalAllowanceSummary(array $poolRows): array

@@ -12,10 +12,20 @@ namespace eel_accounts\Service;
 
 final class IxbrlAccountsMappingService
 {
-    public function getAccountsMapping(int $companyId, int $accountingPeriodId): array
+    public function getAccountsMapping(
+        int $companyId,
+        int $accountingPeriodId,
+        bool $includeYearEndCardPreviews = false
+    ): array
     {
         $trialBalance = (new \eel_accounts\Service\IxbrlTrialBalanceService())->getTrialBalance($companyId, $accountingPeriodId);
-        $closingMetrics = (new \eel_accounts\Service\IxbrlBalanceSheetMetricsService())->fetchClosingMetrics($companyId, $accountingPeriodId);
+        $closingMetrics = (new \eel_accounts\Service\IxbrlBalanceSheetMetricsService())
+            ->fetchClosingMetrics(
+                $companyId,
+                $accountingPeriodId,
+                $includeYearEndCardPreviews,
+                $includeYearEndCardPreviews
+            );
         $closingBuckets = (array)($closingMetrics['buckets'] ?? []);
         $closingSources = (array)($closingMetrics['sources'] ?? []);
         $buckets = $this->emptyBuckets();

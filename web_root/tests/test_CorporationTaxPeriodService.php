@@ -136,5 +136,16 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
             $harness->assertSame(5, $service->displaySequenceNo($companyId, $accountingPeriodIds[3], 1));
         });
+
+        $harness->check(\eel_accounts\Service\CorporationTaxPeriodService::class, 'validates twelve calendar months rather than a fixed 365-day limit', static function () use ($harness, $service): void {
+            $leapSpan = $service->validateMaximumPeriodLength('2023-03-01', '2024-02-29');
+            $harness->assertTrue((bool)($leapSpan['valid'] ?? false));
+            $harness->assertSame(366, (int)($leapSpan['days'] ?? 0));
+            $harness->assertSame('2024-02-29', (string)($leapSpan['maximum_end'] ?? ''));
+
+            $tooLong = $service->validateMaximumPeriodLength('2023-03-01', '2024-03-01');
+            $harness->assertFalse((bool)($tooLong['valid'] ?? true));
+            $harness->assertTrue(str_contains((string)($tooLong['error'] ?? ''), 'exceeds 12 months'));
+        });
     }
 );

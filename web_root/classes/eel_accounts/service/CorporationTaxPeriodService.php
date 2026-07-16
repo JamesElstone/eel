@@ -234,6 +234,18 @@ final class CorporationTaxPeriodService
         return (int)($displaySequences[$this->displaySequenceKey($accountingPeriodId, $sequenceNo)] ?? $sequenceNo);
     }
 
+    /**
+     * Validate the statutory calendar limit of twelve months. The inclusive
+     * day count may therefore be 366 when the period spans 29 February.
+     *
+     * @return array{valid: bool, days: int, maximum_end: string, error: string}
+     */
+    public function validateMaximumPeriodLength(string $periodStart, string $periodEnd): array
+    {
+        return (new \eel_accounts\Service\TaxPeriodService())
+            ->validateMaximumPeriodLength($periodStart, $periodEnd);
+    }
+
     public function canSubmit(int $companyId, int $ctPeriodId): array
     {
         $period = $this->fetch($companyId, $ctPeriodId);

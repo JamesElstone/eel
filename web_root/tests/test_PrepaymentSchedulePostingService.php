@@ -388,6 +388,69 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 };
 
                 $approve($ap79);
+                $previewContext = $scheduleService->fetchPreviewAdjustmentContext($companyId, $ap79);
+                $harness->assertTrue(!empty($previewContext['success']));
+                $harness->assertCount(1, (array)($previewContext['adjustments'] ?? []));
+                InterfaceDB::execute(
+                    'UPDATE transactions SET amount = -571.00 WHERE id = :id',
+                    ['id' => $transactionId]
+                );
+                $invalidPreviewContext = $scheduleService->fetchPreviewAdjustmentContext($companyId, $ap79);
+                $harness->assertSame(false, (bool)($invalidPreviewContext['success'] ?? true));
+                $harness->assertSame([], (array)($invalidPreviewContext['adjustments'] ?? []));
+                $harness->assertTrue((array)($invalidPreviewContext['errors'] ?? []) !== []);
+                $invalidCloseContext = (new \eel_accounts\Service\YearEndClosePreviewService())
+                    ->pendingBalanceSheetAdjustmentContext($companyId, $ap79, '2023-09-30');
+                $harness->assertSame(false, (bool)($invalidCloseContext['reliable'] ?? true));
+                $ixbrlMetrics = (new \eel_accounts\Service\IxbrlBalanceSheetMetricsService())
+                    ->fetchClosingMetrics($companyId, $ap79, false, false);
+                $harness->assertSame(
+                    true,
+                    (bool)(($ixbrlMetrics['pending_close_preview'] ?? [])['reliable'] ?? false)
+                );
+                $harness->assertSame(false, str_contains(
+                    implode(' ', array_map('strval', (array)($ixbrlMetrics['warnings'] ?? []))),
+                    'prepayment'
+                ));
+                $cardMetrics = (new \eel_accounts\Service\IxbrlBalanceSheetMetricsService())
+                    ->fetchClosingMetrics($companyId, $ap79, true, true);
+                $harness->assertSame(
+                    false,
+                    (bool)(($cardMetrics['pending_close_preview'] ?? [])['reliable'] ?? true)
+                );
+                $harness->assertTrue(str_contains(
+                    implode(' ', array_map('strval', (array)($cardMetrics['warnings'] ?? []))),
+                    'prepayment'
+                ));
+                $invalidProfit = (new \eel_accounts\Service\PreTaxProfitLossService())
+                    ->calculate($companyId, $ap79, '2023-09-30', '2022-09-05');
+                $harness->assertSame(false, (bool)($invalidProfit['prepayment_preview_reliable'] ?? true));
+                $invalidTax = (new \eel_accounts\Service\CorporationTaxComputationService())
+                    ->fetchCurrentPeriodEstimate($companyId, $ap79);
+                $harness->assertSame(false, (bool)($invalidTax['prepayment_preview_reliable'] ?? true));
+                $harness->assertSame('review_required', (string)($invalidTax['confidence_status'] ?? ''));
+                $harness->assertTrue(str_contains(
+                    implode(' ', (array)($invalidTax['warnings'] ?? [])),
+                    'prepayment preview is unreliable'
+                ));
+                $invalidWorkings = (new \eel_accounts\Service\TaxWorkingsService())
+                    ->fetchWorkings($companyId, $ap79);
+                $harness->assertTrue(!empty($invalidWorkings['available']));
+                $harness->assertSame(
+                    'review_required',
+                    (string)($invalidWorkings['summary']['confidence_status'] ?? '')
+                );
+                $harness->assertTrue(str_contains(
+                    implode(' ', array_map(
+                        static fn(array $warning): string => (string)($warning['message'] ?? ''),
+                        (array)($invalidWorkings['warnings'] ?? [])
+                    )),
+                    'prepayment preview is unreliable'
+                ));
+                InterfaceDB::execute(
+                    'UPDATE transactions SET amount = -570.00 WHERE id = :id',
+                    ['id' => $transactionId]
+                );
                 $journalCountBeforeDirectLock = (int)InterfaceDB::fetchColumn('SELECT COUNT(*) FROM journals');
                 $directUnpostedLock = (new \eel_accounts\Service\YearEndLockService())->lockPeriod($companyId, $ap79, 'test');
                 $harness->assertTrue(empty($directUnpostedLock['success']));

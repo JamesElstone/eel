@@ -125,8 +125,8 @@ $harness->check(GoldenCardComparisonRegistry::class, 'classifies every selected 
 
 $harness->check(GoldenAccountingOracle::class, 'applies the year-two HMRC penalty, year-three interest, and year-four payment to the correct P and L and tax periods', static function () use ($harness): void {
     $expected = [
-        9112 => ['profit_before_tax' => 1502.22, 'add_back' => 600.00, 'taxable_profit' => 7134.00, 'tax' => 1355.46],
-        9113 => ['profit_before_tax' => 1958.74, 'add_back' => 0.00, 'taxable_profit' => 6953.00, 'tax' => 1321.07],
+        9112 => ['profit_before_tax' => 1506.81, 'add_back' => 600.00, 'taxable_profit' => 7134.00, 'tax' => 1355.46],
+        9113 => ['profit_before_tax' => 1949.62, 'add_back' => 0.00, 'taxable_profit' => 6953.00, 'tax' => 1321.07],
         9114 => ['profit_before_tax' => 7137.00, 'add_back' => 0.00, 'taxable_profit' => 7137.00, 'tax' => 1356.03],
     ];
     foreach ($expected as $periodId => $values) {
@@ -186,7 +186,15 @@ $harness->check(GoldenAccountingOracle::class, 'matches real journal, trial bala
             goldenCompare($failures, 'tax', 'tax_taxable_profit_bridge', $periodId, $field, $expected['corporation_tax'][$field], $tax['summary'][$field] ?? null);
         }
         goldenCompare($failures, 'tax', 'tax_disallowable_add_backs', $periodId, 'row_count', $expected['corporation_tax']['disallowable_add_backs'] > 0 ? 1 : 0, count((array)($tax['disallowable_add_backs'] ?? [])));
-        goldenCompare($failures, 'tax', 'tax_depreciation_add_back', $periodId, 'row_count', 0, count((array)($tax['depreciation_add_back'] ?? [])));
+        goldenCompare(
+            $failures,
+            'tax',
+            'tax_depreciation_add_back',
+            $periodId,
+            'row_count',
+            $expected['corporation_tax']['depreciation_row_count'],
+            count((array)($tax['depreciation_add_back'] ?? []))
+        );
         goldenCompare($failures, 'tax', 'tax_capital_allowances_summary', $periodId, 'net_capital_allowances', 0.00, $tax['capital_allowances_summary']['net_capital_allowances'] ?? null);
         foreach (['tax_aia_allocation' => 'aia_allocation', 'tax_main_rate_pool' => 'main_rate_pool', 'tax_special_rate_pool' => 'special_rate_pool', 'tax_car_co2_treatment' => 'car_co2_treatment', 'tax_disposals_balancing' => 'disposals_balancing'] as $card => $key) {
             goldenCompare($failures, 'tax', $card, $periodId, 'row_count', 0, count((array)($tax[$key] ?? [])));

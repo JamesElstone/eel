@@ -22,6 +22,7 @@ final class _tax_special_rate_poolCard extends CardBaseFramework
                 ['Additions', \eel_accounts\Renderer\TaxCardRenderer::money($context, $pool['additions'] ?? 0)],
                 ['Disposals', \eel_accounts\Renderer\TaxCardRenderer::money($context, $pool['disposal_value'] ?? 0)],
                 ['Writing Down Allowance (WDA)', \eel_accounts\Renderer\TaxCardRenderer::money($context, $pool['wda_claimed'] ?? 0)],
+                ['Balancing allowance', \eel_accounts\Renderer\TaxCardRenderer::money($context, $pool['balancing_allowance'] ?? 0)],
                 ['Balancing charge', \eel_accounts\Renderer\TaxCardRenderer::money($context, $pool['balancing_charge'] ?? 0)],
                 ['Closing Written Down Value (WDV)', \eel_accounts\Renderer\TaxCardRenderer::money($context, $pool['closing_wdv'] ?? 0)],
             ]);

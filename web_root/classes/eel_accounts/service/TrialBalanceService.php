@@ -276,6 +276,7 @@ final class TrialBalanceService
                    COALESCE(na.name, \'\') AS nominal_name,
                    COALESCE(na.account_type, \'\') AS account_type,
                    COALESCE(na.tax_treatment, \'allowable\') AS tax_treatment,
+                   COALESCE(na.is_active, 0) AS is_active,
                    COALESCE(na.sort_order, 100) AS sort_order,
                    COALESCE(nas.code, \'\') AS subtype_code,
                    COALESCE(nas.name, \'\') AS subtype_name,
@@ -300,8 +301,8 @@ final class TrialBalanceService
                   ' . $postingPredicate . '
                 GROUP BY jl.nominal_account_id
             ) agg ON agg.nominal_account_id = na.id
-            WHERE COALESCE(na.is_active, 0) = 1
-            GROUP BY na.id, na.code, na.name, na.account_type, na.tax_treatment, na.sort_order, nas.code, nas.name, agg.total_debit, agg.total_credit, agg.journal_count, agg.has_manual_journal, agg.has_activity
+            WHERE COALESCE(na.is_active, 0) = 1 OR COALESCE(agg.has_activity, 0) = 1
+            GROUP BY na.id, na.code, na.name, na.account_type, na.tax_treatment, na.is_active, na.sort_order, nas.code, nas.name, agg.total_debit, agg.total_credit, agg.journal_count, agg.has_manual_journal, agg.has_activity
             ORDER BY COALESCE(na.sort_order, 100) ASC, COALESCE(na.code, \'\') ASC, COALESCE(na.name, \'\') ASC, na.id ASC';
 
         $rowsData = \InterfaceDB::fetchAll( $sql, [
@@ -323,6 +324,7 @@ final class TrialBalanceService
                 'subtype_code' => (string)($row['subtype_code'] ?? ''),
                 'subtype_name' => (string)($row['subtype_name'] ?? ''),
                 'tax_treatment' => (string)($row['tax_treatment'] ?? 'allowable'),
+                'is_active' => (int)($row['is_active'] ?? 0) === 1,
                 'sort_order' => (int)($row['sort_order'] ?? 100),
                 'total_debit' => $debit,
                 'total_credit' => $credit,

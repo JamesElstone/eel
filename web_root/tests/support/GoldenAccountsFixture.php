@@ -460,7 +460,7 @@ final class GoldenAccountsFixture
         self::journal($baseJournalId, $periodId, $activityDate, 'bank_csv', 'transaction:' . $baseTransactionId, 91001, 91002, 12000.00);
         self::journal($baseJournalId + 1, $periodId, $activityDate, 'bank_csv', 'transaction:' . ($baseTransactionId + 1), 91003, 91001, 3000.00);
         self::journal($baseJournalId + 2, $periodId, $activityDate, 'bank_csv', 'transaction:' . ($baseTransactionId + 2), 91004, 91001, 1200.00);
-        self::journal($baseJournalId + 3, $periodId, $activityDate, 'expense_register', 'golden-claim-' . $periodId, 91004, 91005, 300.00);
+        self::journal($baseJournalId + 3, $periodId, $activityDate, 'expense_register', 'GOLDEN-' . $periodId, 91004, 91005, 300.00);
 
         self::insert('expense_claims', [
             'id' => $claimId, 'company_id' => self::GOLDEN_COMPANY_ID, 'accounting_period_id' => $periodId,

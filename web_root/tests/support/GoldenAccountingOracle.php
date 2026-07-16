@@ -107,21 +107,20 @@ final class GoldenAccountingOracle
             ];
         }
 
-        $income = (float)$accounts['sales']['credit'];
-        $costOfSales = (float)$accounts['materials']['debit'];
-        $ledgerExpenses = (float)$accounts['overheads']['debit']
-            + (float)($accounts['hmrc_penalty']['debit'] ?? 0)
-            + (float)($accounts['hmrc_interest']['debit'] ?? 0)
-            + (float)($accounts['prepayment_expense']['net'] ?? 0);
-        $depreciation = self::depreciationPreviewForPeriod($periodId);
-        $expenses = round($ledgerExpenses + $depreciation, 2);
-        $profit = round($income - $costOfSales - $expenses, 2);
+        $periodResult = self::periodFinancialResult($periodId);
+        $income = $periodResult['income'];
+        $costOfSales = $periodResult['cost_of_sales'];
+        $ledgerExpenses = $periodResult['ledger_expenses'];
+        $depreciation = $periodResult['depreciation'];
+        $expenses = $periodResult['operating_expenses'];
+        $profit = $periodResult['profit_before_tax'];
         $disallowableAddBack = round((float)($period['disallowable_add_back'] ?? 0), 2);
         $taxableProfit = round(max(0, $profit + $disallowableAddBack + $depreciation), 2);
         $tax = round($taxableProfit * (float)$period['tax_rate'], 2);
 
         $closingAccounts = self::accountsThroughPeriod($periodId);
-        $fixedAssets = round((float)($closingAccounts['fixed_assets']['net'] ?? 0) - $depreciation, 2);
+        $cumulativeDepreciation = self::cumulativeDepreciationThroughPeriod($periodId);
+        $fixedAssets = round((float)($closingAccounts['fixed_assets']['net'] ?? 0) - $cumulativeDepreciation, 2);
         $hmrcPayable = (float)($closingAccounts['hmrc_payable']['net'] ?? 0);
         $directorLoan = (float)($closingAccounts['director_loan']['net'] ?? 0);
         $currentAssets = round(
@@ -137,7 +136,7 @@ final class GoldenAccountingOracle
         $totalAssetsLessCurrentLiabilities = round($fixedAssets + $netCurrentAssets, 2);
         $totalNetAssets = round($totalAssetsLessCurrentLiabilities - $creditorsAfterOneYear, 2);
         $explicitEquity = round(-(float)($closingAccounts['equity']['net'] ?? 0), 2);
-        $capitalAndReserves = round($explicitEquity + $profit, 2);
+        $capitalAndReserves = round($explicitEquity + self::cumulativeProfitThroughPeriod($periodId), 2);
         $balanceEquationDifference = round($totalNetAssets - $capitalAndReserves, 2);
         $hasFixedAssets = (float)($closingAccounts['fixed_assets']['net'] ?? 0) > 0.004;
 
@@ -185,6 +184,7 @@ final class GoldenAccountingOracle
                 'estimated_corporation_tax' => $tax,
                 'estimated_rate' => (float)$period['tax_rate'],
                 'losses_used' => 0.00,
+                'depreciation_row_count' => self::depreciationPreviewRowCount($periodId),
                 'warning_count' => 2 + (int)($hasFixedAssets && $depreciation < 0.005),
             ],
             'companies_house' => [
@@ -243,20 +243,15 @@ final class GoldenAccountingOracle
     }
 
     /**
-     * Derive the unposted straight-line charge from immutable asset facts.
-     * The clean golden fixture has no brought-forward depreciation entries, so
-     * each open period is intentionally previewed from a zero posted opening.
+     * Derive the period's straight-line charge from immutable asset facts.
+     * Each endpoint is rounded independently, so adjacent periods telescope to
+     * the exact cumulative useful-life target without calendar-year distortion.
      */
     private static function depreciationPreviewForPeriod(int $periodId): float
     {
         $periods = GoldenLedgerSpecification::periods();
         $period = $periods[$periodId] ?? null;
-        if (!is_array($period)) {
-            return 0.0;
-        }
-
-        $periodEnd = self::prepaymentDate((string)$period['end'], 'accounting period end');
-        if (new DateTimeImmutable('today') <= $periodEnd) {
+        if (!is_array($period) || empty($period['audit_complete'])) {
             return 0.0;
         }
 
@@ -269,28 +264,131 @@ final class GoldenAccountingOracle
         }
 
         $periodStart = self::prepaymentDate((string)$period['start'], 'accounting period start');
+        $periodEnd = self::prepaymentDate((string)$period['end'], 'accounting period end');
+        $openingDate = $periodStart->modify('-1 day');
         $total = 0.0;
         foreach ($assets as $asset) {
-            $purchaseDate = self::prepaymentDate((string)($asset['purchase_date'] ?? ''), 'asset purchase date');
-            $lifeYears = max(1, (int)($asset['life_years'] ?? 1));
-            $lifeEnd = $purchaseDate->modify('+' . $lifeYears . ' years')->modify('-1 day');
-            $depreciationStart = $periodStart > $purchaseDate ? $periodStart : $purchaseDate;
-            $depreciationEnd = $periodEnd < $lifeEnd ? $periodEnd : $lifeEnd;
-            if ($depreciationEnd < $depreciationStart) {
-                continue;
-            }
-
-            $days = (int)$depreciationStart->diff($depreciationEnd->modify('+1 day'))->days;
-            $calendarYearStart = new DateTimeImmutable($depreciationStart->format('Y-01-01'));
-            $calendarYearEnd = new DateTimeImmutable($depreciationStart->format('Y-12-31'));
-            $yearDays = (int)$calendarYearStart->diff($calendarYearEnd->modify('+1 day'))->days;
-            $cost = round((float)($asset['cost'] ?? 0), 2);
-            $residual = round((float)($asset['residual_value'] ?? 0), 2);
-            $depreciableAmount = max(0.0, $cost - $residual);
-            $annualAmount = $depreciableAmount / $lifeYears;
-            $total = round($total + round(min($depreciableAmount, $annualAmount * ($days / max(365, $yearDays))), 2), 2);
+            $closingTarget = self::assetCumulativeDepreciationAt($asset, $periodEnd);
+            $openingTarget = self::assetCumulativeDepreciationAt($asset, $openingDate);
+            $total = round($total + max(0.0, $closingTarget - $openingTarget), 2);
         }
 
         return $total;
+    }
+
+    /** @return array{income: float, cost_of_sales: float, ledger_expenses: float, depreciation: float, operating_expenses: float, profit_before_tax: float} */
+    private static function periodFinancialResult(int $periodId): array
+    {
+        $period = GoldenLedgerSpecification::periods()[$periodId] ?? null;
+        if (!is_array($period)) {
+            throw new InvalidArgumentException('Unknown golden accounting period: ' . $periodId);
+        }
+
+        $balances = [];
+        foreach ((array)($period['journals'] ?? []) as $journal) {
+            $amount = round((float)($journal['amount'] ?? 0), 2);
+            $debit = (string)($journal['debit'] ?? '');
+            $credit = (string)($journal['credit'] ?? '');
+            $balances[$debit] = round((float)($balances[$debit] ?? 0) + $amount, 2);
+            $balances[$credit] = round((float)($balances[$credit] ?? 0) - $amount, 2);
+        }
+
+        $income = round(0 - (float)($balances['sales'] ?? 0), 2);
+        $costOfSales = round((float)($balances['materials'] ?? 0), 2);
+        $ledgerExpenses = round(
+            (float)($balances['overheads'] ?? 0)
+            + (float)($balances['hmrc_penalty'] ?? 0)
+            + (float)($balances['hmrc_interest'] ?? 0)
+            + (float)($balances['prepayment_expense'] ?? 0),
+            2
+        );
+        $depreciation = self::depreciationPreviewForPeriod($periodId);
+        $operatingExpenses = round($ledgerExpenses + $depreciation, 2);
+
+        return [
+            'income' => $income,
+            'cost_of_sales' => $costOfSales,
+            'ledger_expenses' => $ledgerExpenses,
+            'depreciation' => $depreciation,
+            'operating_expenses' => $operatingExpenses,
+            'profit_before_tax' => round($income - $costOfSales - $operatingExpenses, 2),
+        ];
+    }
+
+    private static function assetCumulativeDepreciationAt(array $asset, DateTimeImmutable $referenceEnd): float
+    {
+        $purchaseDate = self::prepaymentDate((string)($asset['purchase_date'] ?? ''), 'asset purchase date');
+        if ($referenceEnd < $purchaseDate) {
+            return 0.0;
+        }
+
+        $lifeYears = max(1, (int)($asset['life_years'] ?? 1));
+        $lifeEnd = $purchaseDate->modify('+' . $lifeYears . ' years')->modify('-1 day');
+        $boundedEnd = $referenceEnd < $lifeEnd ? $referenceEnd : $lifeEnd;
+        $lifeDays = (int)$purchaseDate->diff($lifeEnd->modify('+1 day'))->days;
+        $elapsedDays = (int)$purchaseDate->diff($boundedEnd->modify('+1 day'))->days;
+        $cost = round((float)($asset['cost'] ?? 0), 2);
+        $residual = round((float)($asset['residual_value'] ?? 0), 2);
+        $depreciableAmount = max(0.0, $cost - $residual);
+
+        return round(min($depreciableAmount, $depreciableAmount * ($elapsedDays / max(1, $lifeDays))), 2);
+    }
+
+    private static function cumulativeDepreciationThroughPeriod(int $periodId): float
+    {
+        $total = 0.0;
+        foreach (GoldenLedgerSpecification::periods() as $candidatePeriodId => $_period) {
+            $total = round($total + self::depreciationPreviewForPeriod((int)$candidatePeriodId), 2);
+            if ($candidatePeriodId === $periodId) {
+                break;
+            }
+        }
+
+        return $total;
+    }
+
+    private static function cumulativeProfitThroughPeriod(int $periodId): float
+    {
+        $total = 0.0;
+        foreach (GoldenLedgerSpecification::periods() as $candidatePeriodId => $_period) {
+            $total = round(
+                $total + self::periodFinancialResult((int)$candidatePeriodId)['profit_before_tax'],
+                2
+            );
+            if ($candidatePeriodId === $periodId) {
+                break;
+            }
+        }
+
+        return $total;
+    }
+
+    private static function depreciationPreviewRowCount(int $periodId): int
+    {
+        $periods = GoldenLedgerSpecification::periods();
+        $period = $periods[$periodId] ?? null;
+        if (!is_array($period) || empty($period['audit_complete'])) {
+            return 0;
+        }
+
+        $periodStart = self::prepaymentDate((string)$period['start'], 'accounting period start');
+        $periodEnd = self::prepaymentDate((string)$period['end'], 'accounting period end');
+        $count = 0;
+        foreach ($periods as $candidatePeriodId => $candidatePeriod) {
+            foreach ((array)($candidatePeriod['asset_purchases'] ?? []) as $asset) {
+                $purchaseDate = self::prepaymentDate((string)($asset['purchase_date'] ?? ''), 'asset purchase date');
+                $lifeEnd = $purchaseDate
+                    ->modify('+' . max(1, (int)($asset['life_years'] ?? 1)) . ' years')
+                    ->modify('-1 day');
+                if ($purchaseDate <= $periodEnd && $lifeEnd >= $periodStart) {
+                    $count++;
+                }
+            }
+            if ($candidatePeriodId === $periodId) {
+                break;
+            }
+        }
+
+        return $count;
     }
 }

@@ -218,6 +218,19 @@ $harness->run(_pl_summaryCard::class, static function (GeneratedServiceClassTest
             ],
         ],
     ]);
+    $unreliablePreviewHtml = $card->render([
+        'profit_loss' => [
+            'summary' => [
+                'available' => true,
+                'has_journals' => true,
+                'net_profit' => 0,
+                'prepayment_preview_reliable' => false,
+                'prepayment_preview_warnings' => [
+                    'The linked source amount no longer matches the schedule.',
+                ],
+            ],
+        ],
+    ]);
 
     $harness->check(_pl_summaryCard::class, 'renders summary and health metrics without selected period label', static function () use ($harness, $html): void {
         $harness->assertSame(false, str_contains($html, '05/09/2022 to 30/09/2023'));
@@ -289,6 +302,11 @@ $harness->run(_pl_summaryCard::class, static function (GeneratedServiceClassTest
         $harness->assertTrue(str_contains($lossHtml, '<div class="summary-card pl-profit-before-tax-negative"><div class="summary-label">Profit before tax</div>'));
         $harness->assertTrue(str_contains($nillHtml, '<div class="summary-label">Profitability</div><div class="summary-value pl-profitability-value pl-profitability-value-nill">Nill</div>'));
         $harness->assertTrue(str_contains($nillHtml, '<div class="summary-card"><div class="summary-label">Profit before tax</div>'));
+    });
+
+    $harness->check(_pl_summaryCard::class, 'shows an explicit warning when the prepayment close preview is unreliable', static function () use ($harness, $unreliablePreviewHtml): void {
+        $harness->assertTrue(str_contains($unreliablePreviewHtml, 'Prepayment preview incomplete'));
+        $harness->assertTrue(str_contains($unreliablePreviewHtml, 'linked source amount no longer matches'));
     });
 
     $harness->check(_pl_summaryCard::class, 'renders loss as an incoming balancing Sankey flow', static function () use ($harness, $lossFlowHtml): void {
@@ -416,7 +434,7 @@ $harness->run(_pl_monthly_trendCard::class, static function (GeneratedServiceCla
         $harness->assertTrue(str_contains($html, 'Income - 1'));
         $harness->assertTrue(str_contains($html, 'Cost of sales - 1'));
         $harness->assertTrue(str_contains($html, 'Operating expenses - 1'));
-        $harness->assertTrue(str_contains($html, 'After tax - 1'));
+        $harness->assertTrue(str_contains($html, 'After estimated tax - 1'));
         $harness->assertSame(false, str_contains($html, 'Income - January 2026'));
     });
 });

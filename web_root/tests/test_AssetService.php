@@ -298,7 +298,7 @@ if (!class_exists(\eel_accounts\Service\FormattingFramework::class, false)) {
                 $asset = (array)(($pageData['assets'] ?? [])[0] ?? []);
 
                 $harness->assertSame($assetId, (int)($asset['id'] ?? 0));
-                $harness->assertSame('180.98', number_format((float)($asset['period_depreciation'] ?? 0), 2, '.', ''));
+                $harness->assertSame('181.48', number_format((float)($asset['period_depreciation'] ?? 0), 2, '.', ''));
                 $harness->assertSame('1018.52', number_format((float)($asset['resale_value'] ?? 0), 2, '.', ''));
                 $harness->assertSame('120.00', number_format((float)($asset['residual_value'] ?? 0), 2, '.', ''));
 
@@ -461,6 +461,264 @@ if (!class_exists(\eel_accounts\Service\FormattingFramework::class, false)) {
 
             $harness->assertSame(false, (bool)($result['success'] ?? true));
             $harness->assertTrue(str_contains((string)(($result['errors'] ?? [])[0] ?? ''), 'after the accounting period end date'));
+        });
+
+        $harness->check(\eel_accounts\Service\AssetService::class, 'out-of-order depreciation posting matches each accounting-period preview without catch-up', static function () use ($harness, $service): void {
+            assetServiceTestRequireTaxViewSchema($harness);
+
+            InterfaceDB::beginTransaction();
+            try {
+                StandardNominalTestFixture::ensureNominals(['1300', '1330', '6200']);
+                $marker = (string)random_int(100000, 999999);
+                $companyId = (int)('91' . $marker);
+                $firstPeriodId = (int)('92' . $marker);
+                $secondPeriodId = (int)('93' . $marker);
+                $assetId = (int)('94' . $marker);
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO companies (id, company_name, company_number, is_active)
+                     VALUES (:id, :company_name, :company_number, 1)',
+                    [
+                        'id' => $companyId,
+                        'company_name' => 'Period-specific depreciation fixture ' . $marker,
+                        'company_number' => 'PD' . $marker,
+                    ]
+                );
+                foreach ([
+                    [$firstPeriodId, '2022-01-01', '2022-12-31'],
+                    [$secondPeriodId, '2023-01-01', '2023-12-31'],
+                ] as [$periodId, $periodStart, $periodEnd]) {
+                    InterfaceDB::prepareExecute(
+                        'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end)
+                         VALUES (:id, :company_id, :label, :period_start, :period_end)',
+                        [
+                            'id' => $periodId,
+                            'company_id' => $companyId,
+                            'label' => 'Period-specific depreciation ' . $periodEnd,
+                            'period_start' => $periodStart,
+                            'period_end' => $periodEnd,
+                        ]
+                    );
+                }
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO asset_register (
+                        id, company_id, asset_code, description, category,
+                        nominal_account_id, accum_dep_nominal_id, purchase_date,
+                        cost, useful_life_years, depreciation_method,
+                        residual_value, status
+                     ) VALUES (
+                        :id, :company_id, :asset_code, :description, :category,
+                        :nominal_account_id, :accum_dep_nominal_id, :purchase_date,
+                        :cost, :useful_life_years, :depreciation_method,
+                        :residual_value, :status
+                     )',
+                    [
+                        'id' => $assetId,
+                        'company_id' => $companyId,
+                        'asset_code' => 'PD-' . $marker,
+                        'description' => 'Period-specific depreciation asset',
+                        'category' => 'tools_equipment',
+                        'nominal_account_id' => StandardNominalTestFixture::id('1300'),
+                        'accum_dep_nominal_id' => StandardNominalTestFixture::id('1330'),
+                        'purchase_date' => '2022-01-01',
+                        'cost' => 730.00,
+                        'useful_life_years' => 2,
+                        'depreciation_method' => 'straight_line',
+                        'residual_value' => 0.00,
+                        'status' => 'active',
+                    ]
+                );
+
+                $firstPreview = $service->previewDepreciationRun($companyId, $firstPeriodId);
+                $secondPreview = $service->previewDepreciationRun($companyId, $secondPeriodId);
+                $harness->assertTrue(!empty($firstPreview['success']));
+                $harness->assertTrue(!empty($secondPreview['success']));
+
+                $secondPost = $service->runDepreciation($companyId, $secondPeriodId);
+                $harness->assertTrue(!empty($secondPost['success']));
+                $harness->assertSame(1, (int)($secondPost['created'] ?? 0));
+                $secondPostedAmount = (float)InterfaceDB::fetchColumn(
+                    'SELECT COALESCE(SUM(amount), 0)
+                     FROM asset_depreciation_entries
+                     WHERE asset_id = :asset_id
+                       AND accounting_period_id = :accounting_period_id',
+                    [
+                        'asset_id' => $assetId,
+                        'accounting_period_id' => $secondPeriodId,
+                    ]
+                );
+                $harness->assertSame(
+                    number_format((float)($secondPreview['total_amount'] ?? 0), 2, '.', ''),
+                    number_format($secondPostedAmount, 2, '.', '')
+                );
+
+                $firstStillPending = $service->previewDepreciationRun($companyId, $firstPeriodId);
+                $harness->assertSame(
+                    number_format((float)($firstPreview['total_amount'] ?? 0), 2, '.', ''),
+                    number_format((float)($firstStillPending['total_amount'] ?? 0), 2, '.', '')
+                );
+                $firstPost = $service->runDepreciation($companyId, $firstPeriodId);
+                $harness->assertTrue(!empty($firstPost['success']));
+                $harness->assertSame(1, (int)($firstPost['created'] ?? 0));
+                $harness->assertSame(
+                    '0.00',
+                    number_format(
+                        (float)($service->previewDepreciationRun($companyId, $secondPeriodId)['total_amount'] ?? 0),
+                        2,
+                        '.',
+                        ''
+                    )
+                );
+            } finally {
+                if (InterfaceDB::inTransaction()) {
+                    InterfaceDB::rollBack();
+                }
+            }
+        });
+
+        $harness->check(\eel_accounts\Service\AssetService::class, 'partial interval depreciation is topped up by the preview residual and remains idempotent', static function () use ($harness, $service): void {
+            assetServiceTestRequireTaxViewSchema($harness);
+
+            InterfaceDB::beginTransaction();
+            try {
+                $fixture = assetServiceTestCreateDepreciationFixture(
+                    'partial-top-up',
+                    [
+                        ['period_start' => '2022-01-01', 'period_end' => '2022-12-31'],
+                    ],
+                    '2022-01-01',
+                    730.00,
+                    2
+                );
+                $periodId = (int)$fixture['accounting_period_ids'][0];
+                $assetId = (int)$fixture['asset_id'];
+                $periodStart = '2022-01-01';
+                $periodEnd = '2022-12-31';
+                $fullPreview = $service->previewDepreciationRun((int)$fixture['company_id'], $periodId);
+                $fullAmount = round((float)($fullPreview['total_amount'] ?? 0), 2);
+                $partialAmount = 100.00;
+
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO journals (
+                        company_id, accounting_period_id, source_type, source_ref,
+                        journal_date, description, is_posted
+                     ) VALUES (
+                        :company_id, :accounting_period_id, :source_type, :source_ref,
+                        :journal_date, :description, 1
+                     )',
+                    [
+                        'company_id' => $fixture['company_id'],
+                        'accounting_period_id' => $periodId,
+                        'source_type' => 'asset_depreciation',
+                        'source_ref' => 'asset:' . $assetId . ':depreciation:' . $periodId . ':' . $periodStart . ':' . $periodEnd,
+                        'journal_date' => $periodEnd,
+                        'description' => 'Partial depreciation fixture',
+                    ]
+                );
+                $partialJournalId = (int)InterfaceDB::fetchColumn(
+                    'SELECT id
+                     FROM journals
+                     WHERE company_id = :company_id
+                       AND source_ref = :source_ref
+                     ORDER BY id DESC
+                     LIMIT 1',
+                    [
+                        'company_id' => $fixture['company_id'],
+                        'source_ref' => 'asset:' . $assetId . ':depreciation:' . $periodId . ':' . $periodStart . ':' . $periodEnd,
+                    ]
+                );
+                foreach ([
+                    [StandardNominalTestFixture::id('6200'), $partialAmount, 0.00],
+                    [StandardNominalTestFixture::id('1330'), 0.00, $partialAmount],
+                ] as [$nominalId, $debit, $credit]) {
+                    InterfaceDB::prepareExecute(
+                        'INSERT INTO journal_lines (
+                            journal_id, nominal_account_id, debit, credit, line_description
+                         ) VALUES (
+                            :journal_id, :nominal_account_id, :debit, :credit, :line_description
+                         )',
+                        [
+                            'journal_id' => $partialJournalId,
+                            'nominal_account_id' => $nominalId,
+                            'debit' => $debit,
+                            'credit' => $credit,
+                            'line_description' => 'Partial depreciation fixture',
+                        ]
+                    );
+                }
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO asset_depreciation_entries (
+                        asset_id, accounting_period_id, period_start, period_end, amount, journal_id
+                     ) VALUES (
+                        :asset_id, :accounting_period_id, :period_start, :period_end, :amount, :journal_id
+                     )',
+                    [
+                        'asset_id' => $assetId,
+                        'accounting_period_id' => $periodId,
+                        'period_start' => $periodStart,
+                        'period_end' => $periodEnd,
+                        'amount' => $partialAmount,
+                        'journal_id' => $partialJournalId,
+                    ]
+                );
+
+                $residualPreview = $service->previewDepreciationRun((int)$fixture['company_id'], $periodId);
+                $expectedResidual = round($fullAmount - $partialAmount, 2);
+                $harness->assertSame(
+                    number_format($expectedResidual, 2, '.', ''),
+                    number_format((float)($residualPreview['total_amount'] ?? 0), 2, '.', '')
+                );
+
+                $posted = $service->runDepreciation((int)$fixture['company_id'], $periodId);
+                $harness->assertTrue(!empty($posted['success']));
+                $harness->assertSame(1, (int)($posted['created'] ?? 0));
+
+                $entries = InterfaceDB::fetchAll(
+                    'SELECT period_start, period_end, amount, journal_id
+                     FROM asset_depreciation_entries
+                     WHERE asset_id = :asset_id
+                       AND accounting_period_id = :accounting_period_id
+                     ORDER BY id',
+                    [
+                        'asset_id' => $assetId,
+                        'accounting_period_id' => $periodId,
+                    ]
+                );
+                $harness->assertCount(2, $entries);
+                $harness->assertSame(
+                    number_format($fullAmount, 2, '.', ''),
+                    number_format(array_sum(array_map(
+                        static fn(array $row): float => (float)($row['amount'] ?? 0),
+                        $entries
+                    )), 2, '.', '')
+                );
+                $harness->assertSame(
+                    number_format($expectedResidual, 2, '.', ''),
+                    number_format((float)($entries[1]['amount'] ?? 0), 2, '.', '')
+                );
+                $harness->assertSame($periodEnd, (string)($entries[1]['period_start'] ?? ''));
+                $harness->assertSame($periodEnd, (string)($entries[1]['period_end'] ?? ''));
+                $harness->assertTrue((int)($entries[1]['journal_id'] ?? 0) > 0);
+
+                $retry = $service->runDepreciation((int)$fixture['company_id'], $periodId);
+                $harness->assertTrue(!empty($retry['success']));
+                $harness->assertSame(0, (int)($retry['created'] ?? 0));
+                $harness->assertSame('0.00', number_format(
+                    (float)($service->previewDepreciationRun((int)$fixture['company_id'], $periodId)['total_amount'] ?? 0),
+                    2,
+                    '.',
+                    ''
+                ));
+                $harness->assertSame(2, (int)InterfaceDB::fetchColumn(
+                    'SELECT COUNT(*)
+                     FROM asset_depreciation_entries
+                     WHERE asset_id = :asset_id',
+                    ['asset_id' => $assetId]
+                ));
+            } finally {
+                if (InterfaceDB::inTransaction()) {
+                    InterfaceDB::rollBack();
+                }
+            }
         });
 
         $harness->check(\eel_accounts\Service\AssetService::class, 'manual asset offset nominal must use a funding subtype', static function () use ($harness, $service): void {
@@ -917,6 +1175,199 @@ if (!class_exists(\eel_accounts\Service\FormattingFramework::class, false)) {
             $harness->assertSame(0.0, assetServiceTestJournalLineAmount($assetJournalId, $fixture['bank_nominal_id'], 'debit'));
         });
 
+        $harness->check(\eel_accounts\Service\AssetService::class, 'disposal posts exact pending depreciation before derecognition without duplicates', static function () use ($harness, $service): void {
+            assetServiceTestRequireDisposalSchema($harness);
+            $fixture = assetServiceTestCreateDisposalFixture('pending-depreciation');
+            StandardNominalTestFixture::ensureNominals(['6200']);
+            InterfaceDB::prepareExecute(
+                'UPDATE asset_register
+                 SET depreciation_method = :method
+                 WHERE id = :id',
+                ['method' => 'straight_line', 'id' => $fixture['asset_id']]
+            );
+
+            $purchaseDate = new DateTimeImmutable('2026-01-10');
+            $disposalDate = new DateTimeImmutable('2026-07-03');
+            $lifeEnd = $purchaseDate->modify('+3 years')->modify('-1 day');
+            $lifeDays = (int)$purchaseDate->diff($lifeEnd)->days + 1;
+            $elapsedDays = (int)$purchaseDate->diff($disposalDate)->days + 1;
+            $expectedDepreciation = round(1000.00 * ($elapsedDays / $lifeDays), 2);
+
+            $result = $service->disposeAssetAtNilValue(
+                $fixture['company_id'],
+                $fixture['asset_id'],
+                $disposalDate->format('Y-m-d'),
+                'scrapped_no_proceeds',
+                'No recoverable value after inspection'
+            );
+            $harness->assertSame(true, (bool)($result['success'] ?? false));
+
+            $entries = InterfaceDB::fetchAll(
+                'SELECT amount, journal_id
+                 FROM asset_depreciation_entries
+                 WHERE asset_id = :asset_id',
+                ['asset_id' => $fixture['asset_id']]
+            );
+            $harness->assertCount(1, $entries);
+            $harness->assertSame(
+                number_format($expectedDepreciation, 2, '.', ''),
+                number_format((float)($entries[0]['amount'] ?? 0), 2, '.', '')
+            );
+            $harness->assertTrue((int)($entries[0]['journal_id'] ?? 0) > 0);
+
+            $assetJournalId = assetServiceTestJournalId(
+                $fixture['company_id'],
+                'asset_disposal',
+                'asset:' . $fixture['asset_id'] . ':disposal'
+            );
+            $harness->assertSame(
+                number_format($expectedDepreciation, 2, '.', ''),
+                number_format(
+                    assetServiceTestJournalLineAmount(
+                        $assetJournalId,
+                        assetServiceTestNominalId('1330'),
+                        'debit'
+                    ),
+                    2,
+                    '.',
+                    ''
+                )
+            );
+
+            $retry = $service->disposeAssetAtNilValue(
+                $fixture['company_id'],
+                $fixture['asset_id'],
+                $disposalDate->format('Y-m-d'),
+                'scrapped_no_proceeds',
+                'No recoverable value after inspection'
+            );
+            $harness->assertSame(false, (bool)($retry['success'] ?? true));
+            $harness->assertSame(1, (int)InterfaceDB::fetchColumn(
+                'SELECT COUNT(*)
+                 FROM asset_depreciation_entries
+                 WHERE asset_id = :asset_id',
+                ['asset_id' => $fixture['asset_id']]
+            ));
+        });
+
+        $harness->check(\eel_accounts\Service\AssetService::class, 'disposal blocks omitted prior-period depreciation instead of moving it into the disposal period', static function () use ($harness, $service): void {
+            assetServiceTestRequireDisposalSchema($harness);
+            assetServiceTestRequireTaxViewSchema($harness);
+
+            $ownsTransaction = !InterfaceDB::inTransaction();
+            if ($ownsTransaction) {
+                InterfaceDB::beginTransaction();
+            }
+            try {
+                $fixture = assetServiceTestCreateDepreciationFixture(
+                    'disposal-prior-period',
+                    [
+                        ['period_start' => '2022-01-01', 'period_end' => '2022-12-31'],
+                        ['period_start' => '2023-01-01', 'period_end' => '2023-12-31'],
+                    ],
+                    '2022-01-01',
+                    1096.00,
+                    3
+                );
+                $companyId = (int)$fixture['company_id'];
+                $assetId = (int)$fixture['asset_id'];
+                $priorPeriodId = (int)$fixture['accounting_period_ids'][0];
+                $disposalPeriodId = (int)$fixture['accounting_period_ids'][1];
+                $disposalDate = '2023-06-30';
+
+                $blocked = $service->disposeAssetAtNilValue(
+                    $companyId,
+                    $assetId,
+                    $disposalDate,
+                    'scrapped_no_proceeds',
+                    'No recoverable value after inspection'
+                );
+                $harness->assertSame(false, (bool)($blocked['success'] ?? true));
+                $blockedError = implode(' ', array_map('strval', (array)($blocked['errors'] ?? [])));
+                $harness->assertTrue(str_contains($blockedError, 'prior accounting period'));
+                $harness->assertTrue(str_contains($blockedError, 'will not be moved into the disposal period'));
+                $harness->assertSame(0, (int)InterfaceDB::fetchColumn(
+                    'SELECT COUNT(*)
+                     FROM asset_depreciation_entries
+                     WHERE asset_id = :asset_id',
+                    ['asset_id' => $assetId]
+                ));
+                $harness->assertSame('active', (string)InterfaceDB::fetchColumn(
+                    'SELECT status
+                     FROM asset_register
+                     WHERE id = :asset_id',
+                    ['asset_id' => $assetId]
+                ));
+
+                $priorPost = $service->runDepreciation($companyId, $priorPeriodId);
+                $harness->assertTrue(!empty($priorPost['success']));
+                $harness->assertSame(1, (int)($priorPost['created'] ?? 0));
+
+                $disposed = $service->disposeAssetAtNilValue(
+                    $companyId,
+                    $assetId,
+                    $disposalDate,
+                    'scrapped_no_proceeds',
+                    'No recoverable value after inspection'
+                );
+                $harness->assertSame(true, (bool)($disposed['success'] ?? false));
+
+                $periodAmounts = InterfaceDB::fetchAll(
+                    'SELECT accounting_period_id, COALESCE(SUM(amount), 0) AS amount
+                     FROM asset_depreciation_entries
+                     WHERE asset_id = :asset_id
+                     GROUP BY accounting_period_id
+                     ORDER BY accounting_period_id',
+                    ['asset_id' => $assetId]
+                );
+                $harness->assertCount(2, $periodAmounts);
+                $amountByPeriod = [];
+                foreach ($periodAmounts as $row) {
+                    $amountByPeriod[(int)($row['accounting_period_id'] ?? 0)] = round((float)($row['amount'] ?? 0), 2);
+                }
+                $harness->assertSame('365.00', number_format((float)($amountByPeriod[$priorPeriodId] ?? 0), 2, '.', ''));
+                $harness->assertSame('181.00', number_format((float)($amountByPeriod[$disposalPeriodId] ?? 0), 2, '.', ''));
+
+                $assetJournalId = assetServiceTestJournalId(
+                    $companyId,
+                    'asset_disposal',
+                    'asset:' . $assetId . ':disposal'
+                );
+                $harness->assertSame(
+                    '546.00',
+                    number_format(
+                        assetServiceTestJournalLineAmount(
+                            $assetJournalId,
+                            StandardNominalTestFixture::id('1330'),
+                            'debit'
+                        ),
+                        2,
+                        '.',
+                        ''
+                    )
+                );
+
+                $retry = $service->disposeAssetAtNilValue(
+                    $companyId,
+                    $assetId,
+                    $disposalDate,
+                    'scrapped_no_proceeds',
+                    'No recoverable value after inspection'
+                );
+                $harness->assertSame(false, (bool)($retry['success'] ?? true));
+                $harness->assertSame(2, (int)InterfaceDB::fetchColumn(
+                    'SELECT COUNT(*)
+                     FROM asset_depreciation_entries
+                     WHERE asset_id = :asset_id',
+                    ['asset_id' => $assetId]
+                ));
+            } finally {
+                if ($ownsTransaction && InterfaceDB::inTransaction()) {
+                    InterfaceDB::rollBack();
+                }
+            }
+        });
+
         $harness->check(\eel_accounts\Service\AssetService::class, 'non-asset candidates combine unlinked transactions and expense claim lines over threshold', static function () use ($harness, $service): void {
             assetServiceTestRequireTaxViewSchema($harness);
             foreach (['expense_claimants', 'expense_claims', 'expense_claim_lines'] as $table) {
@@ -1277,6 +1728,81 @@ function assetServiceTestRequireDisposalSchema(GeneratedServiceClassTestHarness 
         }
     }
 
+}
+
+function assetServiceTestCreateDepreciationFixture(
+    string $suffix,
+    array $periods,
+    string $purchaseDate,
+    float $cost,
+    int $usefulLifeYears
+): array {
+    StandardNominalTestFixture::ensureNominals(['1300', '1330', '6200', '4200', '6210', '1490']);
+
+    $marker = (string)random_int(100000, 999999);
+    $companyId = (int)('95' . $marker);
+    $assetId = (int)('96' . $marker);
+    $periodIds = [];
+
+    InterfaceDB::prepareExecute(
+        'INSERT INTO companies (id, company_name, company_number, is_active)
+         VALUES (:id, :company_name, :company_number, 1)',
+        [
+            'id' => $companyId,
+            'company_name' => 'Depreciation ' . $suffix . ' ' . $marker,
+            'company_number' => 'DP' . substr($marker, 0, 6),
+        ]
+    );
+    foreach (array_values($periods) as $index => $period) {
+        $periodId = (int)('97' . substr($marker, 0, 5) . (string)($index + 1));
+        $periodIds[] = $periodId;
+        InterfaceDB::prepareExecute(
+            'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end)
+             VALUES (:id, :company_id, :label, :period_start, :period_end)',
+            [
+                'id' => $periodId,
+                'company_id' => $companyId,
+                'label' => 'Depreciation ' . $suffix . ' ' . (string)($period['period_end'] ?? ''),
+                'period_start' => (string)($period['period_start'] ?? ''),
+                'period_end' => (string)($period['period_end'] ?? ''),
+            ]
+        );
+    }
+    InterfaceDB::prepareExecute(
+        'INSERT INTO asset_register (
+            id, company_id, asset_code, description, category,
+            nominal_account_id, accum_dep_nominal_id, purchase_date,
+            cost, useful_life_years, depreciation_method,
+            residual_value, status
+         ) VALUES (
+            :id, :company_id, :asset_code, :description, :category,
+            :nominal_account_id, :accum_dep_nominal_id, :purchase_date,
+            :cost, :useful_life_years, :depreciation_method,
+            :residual_value, :status
+         )',
+        [
+            'id' => $assetId,
+            'company_id' => $companyId,
+            'asset_code' => 'DP-' . $marker,
+            'description' => 'Depreciation fixture asset ' . $suffix,
+            'category' => 'tools_equipment',
+            'nominal_account_id' => StandardNominalTestFixture::id('1300'),
+            'accum_dep_nominal_id' => StandardNominalTestFixture::id('1330'),
+            'purchase_date' => $purchaseDate,
+            'cost' => round($cost, 2),
+            'useful_life_years' => $usefulLifeYears,
+            'depreciation_method' => 'straight_line',
+            'residual_value' => 0.00,
+            'status' => 'active',
+        ]
+    );
+
+    return [
+        'company_id' => $companyId,
+        'asset_id' => $assetId,
+        'accounting_period_ids' => $periodIds,
+        'marker' => $marker,
+    ];
 }
 
 function assetServiceTestCreateDisposalFixture(string $suffix): array

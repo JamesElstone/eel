@@ -44,10 +44,15 @@ $harness->run(\eel_accounts\Service\DirectorLoanReconciliationService::class, st
             $harness->assertSame(true, (bool)($result['available'] ?? false));
             $harness->assertSame(10000.00, (float)($result['asset_receivable'] ?? 0));
             $harness->assertSame(15000.00, (float)($result['liability_payable'] ?? 0));
-            $harness->assertSame(10000.00, (float)($result['offset_amount'] ?? 0));
+            $harness->assertSame(10000.00, (float)($result['required_offset_amount'] ?? 0));
+            $harness->assertSame(0.00, (float)($result['desired_offset_amount'] ?? -1));
+            $harness->assertSame(0.00, (float)($result['pending_adjustment_amount'] ?? -1));
+            $harness->assertSame(0.00, (float)($result['offset_amount'] ?? -1));
             $harness->assertSame(5000.00, (float)($result['net_position'] ?? 0));
-            $harness->assertSame('missing', (string)($result['offset_status'] ?? ''));
-            $harness->assertSame(true, (bool)($result['can_post'] ?? false));
+            $harness->assertSame('gross_presentation', (string)($result['offset_status'] ?? ''));
+            $harness->assertSame(true, (bool)($result['offset_candidate_available'] ?? false));
+            $harness->assertSame(false, (bool)($result['can_post'] ?? true));
+            $harness->assertSame(false, (bool)($result['set_off_evidence_current'] ?? true));
         });
     });
 
@@ -75,7 +80,8 @@ $harness->run(\eel_accounts\Service\DirectorLoanReconciliationService::class, st
 
             $harness->assertSame(4873.83, (float)($result['asset_receivable'] ?? 0));
             $harness->assertSame(12162.09, (float)($result['liability_payable'] ?? 0));
-            $harness->assertSame(4873.83, (float)($result['offset_amount'] ?? 0));
+            $harness->assertSame(4873.83, (float)($result['required_offset_amount'] ?? 0));
+            $harness->assertSame(0.00, (float)($result['offset_amount'] ?? -1));
             $harness->assertSame(7288.26, (float)($result['net_position'] ?? 0));
         });
     });
@@ -99,6 +105,7 @@ $harness->run(\eel_accounts\Service\DirectorLoanReconciliationService::class, st
         directorLoanReconciliationTestWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
             directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 1000.00, 0.00, 'asset-receivable');
             directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 0.00, 1500.00, 'liability-payable');
+            directorLoanReconciliationTestApproveOffset($service, $fixture);
 
             $postResult = $service->postOffset((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'test');
             $harness->assertSame(true, (bool)($postResult['success'] ?? false));
@@ -106,26 +113,283 @@ $harness->run(\eel_accounts\Service\DirectorLoanReconciliationService::class, st
             $result = $service->fetchContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
 
             $harness->assertSame(0.00, (float)($result['offset_amount'] ?? -1));
+            $harness->assertSame(1000.00, (float)($result['required_offset_amount'] ?? 0));
             $harness->assertSame(1000.00, (float)($result['posted_offset_amount'] ?? 0));
-            $harness->assertSame('stale', (string)($result['offset_status'] ?? ''));
+            $harness->assertSame('current', (string)($result['offset_status'] ?? ''));
+            $harness->assertSame(true, (bool)($result['current_offset_journal_posted'] ?? false));
+            $harness->assertSame(true, (bool)($result['set_off_evidence_current'] ?? false));
             $harness->assertSame(false, (bool)($result['can_post'] ?? true));
         });
     });
 
-    $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'flags stale existing offset after underlying balances change', static function () use ($harness, $service): void {
+    $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'rejects revoking evidence while the current offset journal remains posted', static function () use ($harness, $service): void {
+        directorLoanReconciliationTestWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            $companyId = (int)$fixture['company_id'];
+            $accountingPeriodId = (int)$fixture['accounting_period_id'];
+            directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 1000.00, 0.00, 'asset-receivable');
+            directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 0.00, 1500.00, 'liability-payable');
+            directorLoanReconciliationTestApproveOffset($service, $fixture);
+            $service->postOffset($companyId, $accountingPeriodId, 'test');
+
+            $result = $service->saveSetOffEvidence(
+                $companyId,
+                $accountingPeriodId,
+                false,
+                false,
+                false,
+                '',
+                'test'
+            );
+            $acknowledgement = (new \eel_accounts\Service\YearEndAcknowledgementService())->fetch(
+                $companyId,
+                $accountingPeriodId,
+                \eel_accounts\Service\DirectorLoanReconciliationService::SET_OFF_ACKNOWLEDGEMENT_CODE
+            );
+            $context = $service->fetchContext($companyId, $accountingPeriodId);
+
+            $harness->assertSame(false, (bool)($result['success'] ?? true));
+            $harness->assertSame(422, (int)($result['status'] ?? 0));
+            $harness->assertSame(
+                true,
+                str_contains(implode(' ', array_map('strval', (array)($result['errors'] ?? []))), 'remains posted')
+            );
+            $harness->assertSame(true, is_array($acknowledgement));
+            $harness->assertSame('current', (string)($context['offset_status'] ?? ''));
+            $harness->assertSame(true, (bool)($context['set_off_evidence_current'] ?? false));
+        });
+    });
+
+    $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'allows revoking evidence before an offset journal is posted', static function () use ($harness, $service): void {
+        directorLoanReconciliationTestWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            $companyId = (int)$fixture['company_id'];
+            $accountingPeriodId = (int)$fixture['accounting_period_id'];
+            directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 1000.00, 0.00, 'asset-receivable');
+            directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 0.00, 1500.00, 'liability-payable');
+            directorLoanReconciliationTestApproveOffset($service, $fixture);
+
+            $result = $service->saveSetOffEvidence(
+                $companyId,
+                $accountingPeriodId,
+                false,
+                false,
+                false,
+                '',
+                'test'
+            );
+            $acknowledgement = (new \eel_accounts\Service\YearEndAcknowledgementService())->fetch(
+                $companyId,
+                $accountingPeriodId,
+                \eel_accounts\Service\DirectorLoanReconciliationService::SET_OFF_ACKNOWLEDGEMENT_CODE
+            );
+
+            $harness->assertSame(true, (bool)($result['success'] ?? false));
+            $harness->assertSame(null, $acknowledgement);
+        });
+    });
+
+    $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'stale evidence makes the signed pending adjustment reverse the posted offset to gross', static function () use ($harness, $service): void {
         directorLoanReconciliationTestWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
             directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 1000.00, 0.00, 'asset-receivable');
             directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 0.00, 1500.00, 'liability-payable');
+            directorLoanReconciliationTestApproveOffset($service, $fixture);
             $service->postOffset((int)$fixture['company_id'], (int)$fixture['accounting_period_id'], 'test');
 
             directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 250.00, 0.00, 'asset-increase');
 
             $result = $service->fetchContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
 
-            $harness->assertSame(250.00, (float)($result['offset_amount'] ?? 0));
+            $harness->assertSame(-1000.00, (float)($result['offset_amount'] ?? 0));
+            $harness->assertSame(-1000.00, (float)($result['pending_adjustment_amount'] ?? 0));
+            $harness->assertSame(1250.00, (float)($result['required_offset_amount'] ?? 0));
             $harness->assertSame(1000.00, (float)($result['posted_offset_amount'] ?? 0));
             $harness->assertSame('stale', (string)($result['offset_status'] ?? ''));
+            $harness->assertSame(false, (bool)($result['set_off_evidence_current'] ?? true));
             $harness->assertSame(true, (bool)($result['can_post'] ?? false));
+            $harness->assertSame(true, (bool)($result['offset_candidate_available'] ?? false));
+            $harness->assertSame(true, (bool)($result['offset_journal_posted'] ?? false));
+
+            $revoke = $service->saveSetOffEvidence(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                false,
+                false,
+                false,
+                '',
+                'test'
+            );
+            $harness->assertSame(false, (bool)($revoke['success'] ?? true));
+        });
+    });
+
+    $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'carries a prior offset without contaminating next-period gross balances and needs fresh evidence', static function () use ($harness, $service): void {
+        directorLoanReconciliationTestWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            $companyId = (int)$fixture['company_id'];
+            $priorPeriodId = (int)$fixture['prior_accounting_period_id'];
+            $currentPeriodId = (int)$fixture['accounting_period_id'];
+            directorLoanReconciliationTestInsertLineJournal(
+                $fixture,
+                (int)$fixture['asset_nominal_id'],
+                1000.00,
+                0.00,
+                'prior-asset',
+                $priorPeriodId,
+                '2024-12-31'
+            );
+            directorLoanReconciliationTestInsertLineJournal(
+                $fixture,
+                (int)$fixture['liability_nominal_id'],
+                0.00,
+                1500.00,
+                'prior-liability',
+                $priorPeriodId,
+                '2024-12-31'
+            );
+            directorLoanReconciliationTestApproveOffset($service, $fixture, $priorPeriodId);
+            $posted = $service->postOffset($companyId, $priorPeriodId, 'test');
+            $harness->assertSame(true, (bool)($posted['success'] ?? false));
+
+            $beforeFreshEvidence = $service->fetchContext($companyId, $currentPeriodId);
+            $harness->assertSame(1000.00, (float)($beforeFreshEvidence['asset_receivable'] ?? 0));
+            $harness->assertSame(1500.00, (float)($beforeFreshEvidence['liability_payable'] ?? 0));
+            $harness->assertSame(1000.00, (float)($beforeFreshEvidence['required_offset_amount'] ?? 0));
+            $harness->assertSame(1000.00, (float)($beforeFreshEvidence['posted_offset_amount'] ?? 0));
+            $harness->assertSame(0.00, (float)($beforeFreshEvidence['desired_offset_amount'] ?? -1));
+            $harness->assertSame(-1000.00, (float)($beforeFreshEvidence['pending_adjustment_amount'] ?? 0));
+
+            directorLoanReconciliationTestApproveOffset($service, $fixture, $currentPeriodId);
+            $afterFreshEvidence = $service->fetchContext($companyId, $currentPeriodId);
+            $harness->assertSame(true, (bool)($afterFreshEvidence['closing_balance_acknowledged'] ?? false));
+            $harness->assertSame(true, (bool)($afterFreshEvidence['set_off_evidence_current'] ?? false));
+            $harness->assertSame(1000.00, (float)($afterFreshEvidence['desired_offset_amount'] ?? 0));
+            $harness->assertSame(0.00, (float)($afterFreshEvidence['pending_adjustment_amount'] ?? -1));
+
+            $idempotent = $service->postOffset($companyId, $currentPeriodId, 'test');
+            $harness->assertSame(true, (bool)($idempotent['success'] ?? false));
+            $harness->assertSame(true, (bool)($idempotent['already_current'] ?? false));
+            $harness->assertSame(1, directorLoanReconciliationTestOffsetJournalCount($companyId));
+        });
+    });
+
+    $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'stale evidence with unchanged required amount is reversed to gross before lock', static function () use ($harness, $service): void {
+        directorLoanReconciliationTestWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            $companyId = (int)$fixture['company_id'];
+            $accountingPeriodId = (int)$fixture['accounting_period_id'];
+            directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 1000.00, 0.00, 'asset');
+            directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 0.00, 1500.00, 'liability');
+            directorLoanReconciliationTestApproveOffset($service, $fixture);
+            $service->postOffset($companyId, $accountingPeriodId, 'test');
+
+            directorLoanReconciliationTestInsertLineJournal(
+                $fixture,
+                $fixture['liability_nominal_id'],
+                0.00,
+                200.00,
+                'liability-evidence-change'
+            );
+            $stale = $service->fetchContext($companyId, $accountingPeriodId);
+            $harness->assertSame(1000.00, (float)($stale['required_offset_amount'] ?? 0));
+            $harness->assertSame(false, (bool)($stale['set_off_evidence_current'] ?? true));
+            $harness->assertSame(-1000.00, (float)($stale['pending_adjustment_amount'] ?? 0));
+
+            $checklist = new \eel_accounts\Service\YearEndChecklistService();
+            $apply = new ReflectionMethod($checklist, 'applyDirectorLoanOffsetBeforeLock');
+            $apply->setAccessible(true);
+            $result = $apply->invoke($checklist, $companyId, $accountingPeriodId, ['checks_flat' => []], 'test');
+            $harness->assertSame(true, (bool)($result['success'] ?? false));
+
+            $gross = $service->fetchContext($companyId, $accountingPeriodId);
+            $harness->assertSame(0.00, (float)($gross['posted_offset_amount'] ?? -1));
+            $harness->assertSame(0.00, (float)($gross['pending_adjustment_amount'] ?? -1));
+            $harness->assertSame('gross_presentation', (string)($gross['offset_status'] ?? ''));
+            $harness->assertSame(false, (bool)($gross['offset_journal_posted'] ?? true));
+            $harness->assertSame(false, (bool)($gross['current_offset_journal_posted'] ?? true));
+            $harness->assertSame(2, directorLoanReconciliationTestOffsetJournalCount($companyId));
+
+            $revoked = $service->saveSetOffEvidence(
+                $companyId,
+                $accountingPeriodId,
+                false,
+                false,
+                false,
+                '',
+                'test'
+            );
+            $harness->assertSame(true, (bool)($revoked['success'] ?? false));
+        });
+    });
+
+    $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'appends exact increase and decrease deltas and repeated posting is idempotent', static function () use ($harness, $service): void {
+        directorLoanReconciliationTestWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            $companyId = (int)$fixture['company_id'];
+            $accountingPeriodId = (int)$fixture['accounting_period_id'];
+            directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 1000.00, 0.00, 'asset');
+            directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 0.00, 1500.00, 'liability');
+            directorLoanReconciliationTestApproveOffset($service, $fixture);
+            $service->postOffset($companyId, $accountingPeriodId, 'test');
+
+            directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 250.00, 0.00, 'asset-increase');
+            directorLoanReconciliationTestApproveOffset($service, $fixture);
+            $increase = $service->fetchContext($companyId, $accountingPeriodId);
+            $harness->assertSame(250.00, (float)($increase['pending_adjustment_amount'] ?? 0));
+            $service->postOffset($companyId, $accountingPeriodId, 'test');
+            $harness->assertSame(1250.00, directorLoanReconciliationTestCumulativeOffset($companyId, $fixture));
+
+            directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 0.00, 350.00, 'asset-decrease');
+            directorLoanReconciliationTestApproveOffset($service, $fixture);
+            $decrease = $service->fetchContext($companyId, $accountingPeriodId);
+            $harness->assertSame(-350.00, (float)($decrease['pending_adjustment_amount'] ?? 0));
+            $service->postOffset($companyId, $accountingPeriodId, 'test');
+            $harness->assertSame(900.00, directorLoanReconciliationTestCumulativeOffset($companyId, $fixture));
+            $harness->assertSame(3, directorLoanReconciliationTestOffsetJournalCount($companyId));
+
+            $repeat = $service->postOffset($companyId, $accountingPeriodId, 'test');
+            $harness->assertSame(true, (bool)($repeat['success'] ?? false));
+            $harness->assertSame(true, (bool)($repeat['already_current'] ?? false));
+            $harness->assertSame(3, directorLoanReconciliationTestOffsetJournalCount($companyId));
+            $harness->assertSame(900.00, directorLoanReconciliationTestCumulativeOffset($companyId, $fixture));
+        });
+    });
+
+    $harness->check(\eel_accounts\Service\DirectorLoanReconciliationService::class, 'requires both FRS 105 criteria and a supporting note', static function () use ($harness, $service): void {
+        directorLoanReconciliationTestWithFixture($harness, static function (array $fixture) use ($harness, $service): void {
+            directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 1000.00, 0.00, 'asset-receivable');
+            directorLoanReconciliationTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 0.00, 1500.00, 'liability-payable');
+
+            $oneCriterion = $service->saveSetOffEvidence(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                true,
+                true,
+                false,
+                'Agreement reviewed.',
+                'test'
+            );
+            $noNote = $service->saveSetOffEvidence(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                true,
+                true,
+                true,
+                '',
+                'test'
+            );
+            $complete = $service->saveSetOffEvidence(
+                (int)$fixture['company_id'],
+                (int)$fixture['accounting_period_id'],
+                true,
+                true,
+                true,
+                'Executed agreement clause 4 and simultaneous settlement instruction.',
+                'test'
+            );
+
+            $harness->assertSame(false, (bool)($oneCriterion['success'] ?? true));
+            $harness->assertSame(false, (bool)($noNote['success'] ?? true));
+            $harness->assertSame(true, (bool)($complete['success'] ?? false));
+            $harness->assertSame(
+                true,
+                (bool)(($service->fetchContext((int)$fixture['company_id'], (int)$fixture['accounting_period_id']))['set_off_evidence_current'] ?? false)
+            );
         });
     });
 });
@@ -176,6 +440,10 @@ function directorLoanReconciliationTestWithFixture(GeneratedServiceClassTestHarn
             'SELECT id FROM accounting_periods WHERE company_id = :company_id AND label = :label',
             ['company_id' => $companyId, 'label' => 'DLO ' . $marker]
         );
+        $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
+        $settings->set('director_loan_asset_nominal_id', $assetNominalId, 'int');
+        $settings->set('director_loan_liability_nominal_id', $liabilityNominalId, 'int');
+        $settings->flush();
 
         $callback([
             'marker' => $marker,
@@ -226,4 +494,68 @@ function directorLoanReconciliationTestInsertLineJournal(array $fixture, int $no
             'line_description' => 'Director loan test fixture',
         ]
     );
+}
+
+function directorLoanReconciliationTestApproveOffset(
+    \eel_accounts\Service\DirectorLoanReconciliationService $service,
+    array $fixture,
+    ?int $accountingPeriodId = null
+): void {
+    $companyId = (int)$fixture['company_id'];
+    $accountingPeriodId ??= (int)$fixture['accounting_period_id'];
+    $acknowledgements = new \eel_accounts\Service\YearEndAcknowledgementService();
+    $directorLoanSummary = (new \eel_accounts\Service\YearEndMetricsService())
+        ->directorLoanSummary($companyId, $accountingPeriodId);
+    $acknowledgements->save(
+        $companyId,
+        $accountingPeriodId,
+        'director_loan_closing_balance',
+        $acknowledgements->buildBasis('director_loan_closing_balance', [
+            'closing_balance' => number_format((float)($directorLoanSummary['closing_balance'] ?? 0), 2, '.', ''),
+        ]),
+        'test',
+        'Closing balance agreed.'
+    );
+    $service->saveSetOffEvidence(
+        $companyId,
+        $accountingPeriodId,
+        true,
+        true,
+        true,
+        'Executed agreement clause 4 and simultaneous settlement instruction.',
+        'test'
+    );
+}
+
+function directorLoanReconciliationTestOffsetJournalCount(int $companyId): int
+{
+    return (int)InterfaceDB::fetchColumn(
+        'SELECT COUNT(*)
+         FROM journal_entry_metadata
+         WHERE company_id = :company_id
+           AND journal_tag = :journal_tag',
+        [
+            'company_id' => $companyId,
+            'journal_tag' => \eel_accounts\Service\DirectorLoanReconciliationService::OFFSET_JOURNAL_TAG,
+        ]
+    );
+}
+
+function directorLoanReconciliationTestCumulativeOffset(int $companyId, array $fixture): float
+{
+    $liabilitySigned = (float)InterfaceDB::fetchColumn(
+        'SELECT COALESCE(SUM(jl.debit - jl.credit), 0)
+         FROM journal_entry_metadata jem
+         INNER JOIN journal_lines jl ON jl.journal_id = jem.journal_id
+         WHERE jem.company_id = :company_id
+           AND jem.journal_tag = :journal_tag
+           AND jl.nominal_account_id = :nominal_account_id',
+        [
+            'company_id' => $companyId,
+            'journal_tag' => \eel_accounts\Service\DirectorLoanReconciliationService::OFFSET_JOURNAL_TAG,
+            'nominal_account_id' => (int)$fixture['liability_nominal_id'],
+        ]
+    );
+
+    return round($liabilitySigned, 2);
 }

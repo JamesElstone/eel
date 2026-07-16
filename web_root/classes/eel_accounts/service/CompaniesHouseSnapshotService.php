@@ -30,7 +30,7 @@ final class CompaniesHouseSnapshotService
         }
 
         $mapping = ($this->mappingService ?? new \eel_accounts\Service\IxbrlAccountsMappingService())
-            ->getAccountsMapping($companyId, $accountingPeriodId);
+            ->getAccountsMapping($companyId, $accountingPeriodId, true);
         $buckets = (array)($mapping['buckets'] ?? []);
         $sources = (array)($mapping['sources'] ?? []);
         $company = (array)($context['company'] ?? []);

@@ -76,6 +76,11 @@ final class PrepaymentPostingService
         $errors = array_merge($errors, (array)($context['errors'] ?? []));
         $validatedPostingReviews = [];
         foreach ((array)($context['schedules'] ?? []) as $schedule) {
+            if (!empty($schedule['preview_only'])) {
+                $errors[] = 'Prepayment review #' . (int)($schedule['review_id'] ?? 0)
+                    . ' is still a preview-only calculation and must be synchronised before posting.';
+                continue;
+            }
             if (empty($schedule['source_valid'])) {
                 $errors = array_merge($errors, (array)($schedule['source_errors'] ?? ['A prepayment source is no longer valid.']));
             }
@@ -153,6 +158,11 @@ final class PrepaymentPostingService
             }
 
             foreach ($adjustments as $adjustment) {
+                if (!empty($adjustment['preview_only'])
+                    || (int)($adjustment['schedule_id'] ?? 0) <= 0
+                    || (int)($adjustment['schedule_period_id'] ?? 0) <= 0) {
+                    throw new \RuntimeException('A preview-only prepayment adjustment cannot be posted until its schedule has been synchronised.');
+                }
                 $this->lockSchedulePeriod((int)$adjustment['schedule_period_id']);
                 $role = (string)$adjustment['posting_role'];
                 $currentNet = ($this->scheduleService ?? new PrepaymentScheduleService())->netPostedForReviewPeriod(

@@ -23,6 +23,21 @@ final class CorporationTaxTreatmentRuleService
 
     public function resolveTaxTreatment(array $nominal, string $periodStart = '', string $periodEnd = ''): array
     {
+        if ($this->isAssetDisposalLoss($nominal)) {
+            return [
+                'tax_treatment' => 'capital',
+                'source' => 'asset_disposal_loss_invariant',
+                'rule' => null,
+            ];
+        }
+        if ($this->isAssetDisposalGain($nominal)) {
+            return [
+                'tax_treatment' => 'capital',
+                'source' => 'asset_disposal_gain_invariant',
+                'rule' => null,
+            ];
+        }
+
         $fallback = trim((string)($nominal['tax_treatment'] ?? 'allowable'));
         foreach ($this->activeRules($periodStart, $periodEnd) as $rule) {
             if (!$this->ruleMatches($rule, $nominal, $periodStart, $periodEnd)) {
@@ -163,7 +178,7 @@ final class CorporationTaxTreatmentRuleService
             return false;
         }
 
-        $nominalId = (int)($nominal['id'] ?? 0);
+        $nominalId = (int)($nominal['id'] ?? $nominal['nominal_account_id'] ?? 0);
         $ruleNominalId = (int)($rule['nominal_account_id'] ?? 0);
         if ($ruleNominalId > 0 && $nominalId === $ruleNominalId) {
             return true;
@@ -187,6 +202,29 @@ final class CorporationTaxTreatmentRuleService
         }
 
         return $accountTypeMatches || $nameMatches;
+    }
+
+    private function isAssetDisposalLoss(array $nominal): bool
+    {
+        $nominalCode = trim((string)($nominal['code'] ?? $nominal['nominal_code'] ?? ''));
+        $subtypeCode = trim((string)($nominal['subtype_code'] ?? $nominal['account_subtype_code'] ?? ''));
+
+        return strcasecmp($nominalCode, '6210') === 0
+            || strcasecmp($subtypeCode, 'asset_disposal_loss') === 0;
+    }
+
+    private function isAssetDisposalGain(array $nominal): bool
+    {
+        $nominalCode = trim((string)($nominal['code'] ?? $nominal['nominal_code'] ?? ''));
+        $subtypeCode = trim((string)($nominal['subtype_code'] ?? $nominal['account_subtype_code'] ?? ''));
+        $journalSourceType = trim((string)($nominal['journal_source_type'] ?? $nominal['source_type'] ?? ''));
+
+        return strcasecmp($nominalCode, '4200') === 0
+            || strcasecmp($subtypeCode, 'asset_disposal_gain') === 0
+            || (
+                strcasecmp($journalSourceType, 'asset_disposal') === 0
+                && strcasecmp((string)($nominal['account_type'] ?? ''), 'income') === 0
+            );
     }
 
     private function dateWindowMatches(array $rule, string $periodStart, string $periodEnd): bool

@@ -1337,56 +1337,29 @@ final class AssetService
                     continue;
                 }
 
-                if ($this->depreciationEntryExists((int)$asset['id'], $accountingPeriodId, $periodStart, $periodEnd)) {
-                    $summary['skipped']++;
-                    continue;
-                }
-
-                $amount = $this->calculateDepreciationAmount($asset, $periodStart, $periodEnd);
+                $expectedPeriodAmount = $this->calculateExpectedDepreciationForInterval(
+                    $asset,
+                    $periodStart,
+                    $periodEnd
+                );
+                $postedPeriodAmount = $this->sumDepreciationForAccountingPeriod(
+                    (int)$asset['id'],
+                    $accountingPeriodId
+                );
+                $amount = round(max(0.0, $expectedPeriodAmount - $postedPeriodAmount), 2);
                 if ($amount <= 0) {
                     $summary['skipped']++;
                     continue;
                 }
 
-                $journalId = $this->insertJournal([
-                    'company_id' => $companyId,
-                    'accounting_period_id' => $accountingPeriodId,
-                    'source_type' => 'asset_depreciation',
-                    'source_ref' => 'asset:' . (int)$asset['id'] . ':depreciation:' . $accountingPeriodId . ':' . $periodStart . ':' . $periodEnd,
-                    'journal_date' => $periodEnd,
-                    'description' => 'Depreciation ' . (string)$asset['asset_code'],
-                ]);
-                $lineDescription = 'Depreciation ' . (string)$asset['asset_code'] . ' ' . $periodStart . ' to ' . $periodEnd;
-                $this->insertJournalLine($journalId, $this->findNominalIdByCode('6200'), $amount, 0.0, $lineDescription);
-                $this->insertJournalLine($journalId, (int)$asset['accum_dep_nominal_id'], 0.0, $amount, $lineDescription);
-
-                $stmt = \InterfaceDB::prepare(
-                    'INSERT INTO asset_depreciation_entries (
-                        asset_id,
-                        accounting_period_id,
-                        period_start,
-                        period_end,
-                        amount,
-                        journal_id,
-                        created_at
-                    ) VALUES (
-                        :asset_id,
-                        :accounting_period_id,
-                        :period_start,
-                        :period_end,
-                        :amount,
-                        :journal_id,
-                        CURRENT_TIMESTAMP
-                    )'
+                $this->postDepreciationCharge(
+                    $companyId,
+                    $asset,
+                    $accountingPeriodId,
+                    $periodStart,
+                    $periodEnd,
+                    $amount
                 );
-                $stmt->execute([
-                    'asset_id' => (int)$asset['id'],
-                    'accounting_period_id' => $accountingPeriodId,
-                    'period_start' => $periodStart,
-                    'period_end' => $periodEnd,
-                    'amount' => $amount,
-                    'journal_id' => $journalId,
-                ]);
 
                 $summary['created']++;
             }
@@ -1453,12 +1426,16 @@ final class AssetService
                 continue;
             }
 
-            if ($this->depreciationEntryExists((int)$asset['id'], $accountingPeriodId, $depreciationPeriodStart, $depreciationPeriodEnd)) {
-                $skipped++;
-                continue;
-            }
-
-            $amount = $this->calculateDepreciationAmount($asset, $depreciationPeriodStart, $depreciationPeriodEnd);
+            $expectedPeriodAmount = $this->calculateExpectedDepreciationForInterval(
+                $asset,
+                $depreciationPeriodStart,
+                $depreciationPeriodEnd
+            );
+            $postedPeriodAmount = $this->sumDepreciationForAccountingPeriod(
+                (int)$asset['id'],
+                $accountingPeriodId
+            );
+            $amount = round(max(0.0, $expectedPeriodAmount - $postedPeriodAmount), 2);
             if ($amount <= 0) {
                 $skipped++;
                 continue;
@@ -1482,6 +1459,46 @@ final class AssetService
             'total_amount' => $total,
             'rows' => $rows,
         ];
+    }
+
+    /**
+     * Return the accounting charge belonging to this interval independently
+     * of whether another accounting period has posted its journal yet. Both
+     * preview and posting use this basis so out-of-order runs remain assigned
+     * to their proper accounting periods.
+     */
+    private function calculateExpectedDepreciationForInterval(
+        array $asset,
+        string $periodStart,
+        string $periodEnd
+    ): float {
+        $boundedPeriodEnd = $this->boundedDepreciationPeriodEnd($asset, $periodStart, $periodEnd);
+        $purchaseDate = trim((string)($asset['purchase_date'] ?? ''));
+        if ($boundedPeriodEnd === null || !$this->isIsoDate($purchaseDate)) {
+            return 0.0;
+        }
+
+        $closingTarget = $this->calculateDepreciationToDateAmount($asset, $boundedPeriodEnd);
+        $openingDate = (new \DateTimeImmutable($periodStart))->modify('-1 day')->format('Y-m-d');
+        $openingTarget = $openingDate >= $purchaseDate
+            ? $this->calculateDepreciationToDateAmount($asset, $openingDate)
+            : 0.0;
+
+        return round(max(0.0, $closingTarget - $openingTarget), 2);
+    }
+
+    private function sumDepreciationForAccountingPeriod(int $assetId, int $accountingPeriodId): float
+    {
+        return round((float)\InterfaceDB::fetchColumn(
+            'SELECT COALESCE(SUM(amount), 0)
+             FROM asset_depreciation_entries
+             WHERE asset_id = :asset_id
+               AND accounting_period_id = :accounting_period_id',
+            [
+                'asset_id' => $assetId,
+                'accounting_period_id' => $accountingPeriodId,
+            ]
+        ), 2);
     }
 
     public function disposeAsset(int $companyId, int $assetId, string $disposalDate, float $proceeds, int $bankNominalId): array {
@@ -1769,6 +1786,12 @@ final class AssetService
     ): array {
         $assetId = (int)$asset['id'];
         $proceeds = round(max(0.0, $proceeds), 2);
+        $this->postPendingDepreciationThroughDisposalDate(
+            $companyId,
+            $asset,
+            $accountingPeriodId,
+            $disposalDate
+        );
         $accumulatedDepreciation = $this->sumDepreciationToDate($assetId, $disposalDate);
         $nbv = round(max(0.0, (float)$asset['cost'] - $accumulatedDepreciation), 2);
         $profit = round($proceeds - $nbv, 2);
@@ -1808,6 +1831,340 @@ final class AssetService
             'proceeds' => $proceeds,
             'profit' => $profit,
         ];
+    }
+
+    private function postPendingDepreciationThroughDisposalDate(
+        int $companyId,
+        array $asset,
+        int $accountingPeriodId,
+        string $disposalDate
+    ): void {
+        if ((string)($asset['depreciation_method'] ?? 'straight_line') === 'none') {
+            return;
+        }
+
+        $assetId = (int)($asset['id'] ?? 0);
+        $purchaseDate = trim((string)($asset['purchase_date'] ?? ''));
+        if ($assetId <= 0 || !$this->isIsoDate($purchaseDate) || !$this->isIsoDate($disposalDate)) {
+            return;
+        }
+
+        $depreciationEnd = min(
+            $disposalDate,
+            $this->usefulLifeEndDate($purchaseDate, (int)($asset['useful_life_years'] ?? 1))
+        );
+        if ($depreciationEnd < $purchaseDate) {
+            return;
+        }
+
+        $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($accountingPeriod === null) {
+            throw new \RuntimeException('The disposal accounting period could not be loaded for depreciation.');
+        }
+
+        $accountingPeriodStart = trim((string)($accountingPeriod['period_start'] ?? ''));
+        if (!$this->isIsoDate($accountingPeriodStart)) {
+            throw new \RuntimeException('The disposal accounting period has an invalid start date.');
+        }
+
+        $this->assertPriorPeriodDepreciationPosted(
+            $companyId,
+            $asset,
+            $accountingPeriodStart
+        );
+
+        $periodStart = max($purchaseDate, $accountingPeriodStart);
+        if ($periodStart > $depreciationEnd) {
+            return;
+        }
+
+        $expectedPeriodAmount = $this->calculateExpectedDepreciationForInterval(
+            $asset,
+            $periodStart,
+            $depreciationEnd
+        );
+        $postDisposalDepreciation = round((float)\InterfaceDB::fetchColumn(
+            'SELECT COALESCE(SUM(amount), 0)
+             FROM asset_depreciation_entries
+             WHERE asset_id = :asset_id
+               AND accounting_period_id = :accounting_period_id
+               AND period_end > :depreciation_end',
+            [
+                'asset_id' => $assetId,
+                'accounting_period_id' => $accountingPeriodId,
+                'depreciation_end' => $depreciationEnd,
+            ]
+        ), 2);
+        if ($postDisposalDepreciation >= 0.005) {
+            throw new \RuntimeException(
+                'Depreciation is already posted after the disposal date in the disposal accounting period. '
+                . 'Correct that depreciation before disposing the asset.'
+            );
+        }
+        $postedPeriodAmount = $this->sumDepreciationForAccountingPeriod(
+            $assetId,
+            $accountingPeriodId
+        );
+        if ($postedPeriodAmount - $expectedPeriodAmount >= 0.005) {
+            throw new \RuntimeException(
+                'Depreciation already posted in the disposal accounting period exceeds the exact charge through '
+                . $disposalDate
+                . '. Correct that depreciation before disposing the asset.'
+            );
+        }
+
+        $pendingAmount = round(max(0.0, $expectedPeriodAmount - $postedPeriodAmount), 2);
+        if ($pendingAmount < 0.005) {
+            return;
+        }
+
+        $this->postDepreciationCharge(
+            $companyId,
+            $asset,
+            $accountingPeriodId,
+            $periodStart,
+            $depreciationEnd,
+            $pendingAmount,
+            true
+        );
+    }
+
+    private function assertPriorPeriodDepreciationPosted(
+        int $companyId,
+        array $asset,
+        string $currentPeriodStart
+    ): void {
+        $assetId = (int)($asset['id'] ?? 0);
+        $purchaseDate = trim((string)($asset['purchase_date'] ?? ''));
+        if ($assetId <= 0 || !$this->isIsoDate($purchaseDate) || !$this->isIsoDate($currentPeriodStart)) {
+            return;
+        }
+
+        $priorPeriodEnd = min(
+            (new \DateTimeImmutable($currentPeriodStart))->modify('-1 day')->format('Y-m-d'),
+            $this->usefulLifeEndDate($purchaseDate, (int)($asset['useful_life_years'] ?? 1))
+        );
+        if ($priorPeriodEnd < $purchaseDate) {
+            return;
+        }
+
+        $priorPeriods = \InterfaceDB::fetchAll(
+            'SELECT id, label, period_start, period_end
+             FROM accounting_periods
+             WHERE company_id = :company_id
+               AND period_start <= :prior_period_end
+               AND period_end >= :purchase_date
+               AND period_end < :current_period_start
+             ORDER BY period_start ASC, id ASC',
+            [
+                'company_id' => $companyId,
+                'prior_period_end' => $priorPeriodEnd,
+                'purchase_date' => $purchaseDate,
+                'current_period_start' => $currentPeriodStart,
+            ]
+        ) ?: [];
+        foreach ($priorPeriods as $priorPeriod) {
+            $periodStart = max($purchaseDate, (string)($priorPeriod['period_start'] ?? ''));
+            $periodEnd = min($priorPeriodEnd, (string)($priorPeriod['period_end'] ?? ''));
+            if ($periodEnd < $periodStart) {
+                continue;
+            }
+
+            $expectedPeriodAmount = $this->calculateExpectedDepreciationForInterval(
+                $asset,
+                $periodStart,
+                $periodEnd
+            );
+            $postedPeriodAmount = $this->sumDepreciationForAccountingPeriod(
+                $assetId,
+                (int)($priorPeriod['id'] ?? 0)
+            );
+            $variance = round($expectedPeriodAmount - $postedPeriodAmount, 2);
+            if (abs($variance) < 0.005) {
+                continue;
+            }
+
+            $periodLabel = trim((string)($priorPeriod['label'] ?? ''));
+            if ($periodLabel === '') {
+                $periodLabel = $periodStart . ' to ' . $periodEnd;
+            }
+            if ($variance > 0) {
+                throw new \RuntimeException(
+                    'Depreciation of £'
+                    . number_format($variance, 2, '.', ',')
+                    . ' remains unposted in prior accounting period '
+                    . $periodLabel
+                    . '. Post or correct prior-period depreciation before disposing this asset; '
+                    . 'it will not be moved into the disposal period.'
+                );
+            }
+
+            throw new \RuntimeException(
+                'Depreciation in prior accounting period '
+                . $periodLabel
+                . ' exceeds the exact charge by £'
+                . number_format(abs($variance), 2, '.', ',')
+                . '. Correct prior-period depreciation before disposing this asset.'
+            );
+        }
+
+        $expectedPriorAmount = $this->calculateDepreciationToDateAmount($asset, $priorPeriodEnd);
+        $postedPriorAmount = round((float)\InterfaceDB::fetchColumn(
+            'SELECT COALESCE(SUM(ade.amount), 0)
+             FROM asset_depreciation_entries ade
+             INNER JOIN accounting_periods ap ON ap.id = ade.accounting_period_id
+             WHERE ade.asset_id = :asset_id
+               AND ap.company_id = :company_id
+               AND ap.period_end < :current_period_start
+               AND ade.period_end <= :prior_period_end',
+            [
+                'asset_id' => $assetId,
+                'company_id' => $companyId,
+                'current_period_start' => $currentPeriodStart,
+                'prior_period_end' => $priorPeriodEnd,
+            ]
+        ), 2);
+        $unallocatedPriorAmount = round($expectedPriorAmount - $postedPriorAmount, 2);
+        if (abs($unallocatedPriorAmount) < 0.005) {
+            return;
+        }
+
+        $direction = $unallocatedPriorAmount > 0
+            ? 'remains unposted before the disposal accounting period'
+            : 'is over-posted before the disposal accounting period';
+        throw new \RuntimeException(
+            'Depreciation of £'
+            . number_format(abs($unallocatedPriorAmount), 2, '.', ',')
+            . ' '
+            . $direction
+            . '. Create or correct the prior accounting-period allocation before disposing this asset; '
+            . 'prior-period depreciation will not be moved into the disposal period.'
+        );
+    }
+
+    private function postDepreciationCharge(
+        int $companyId,
+        array $asset,
+        int $accountingPeriodId,
+        string $periodStart,
+        string $periodEnd,
+        float $amount,
+        bool $throughDisposal = false
+    ): void {
+        $assetId = (int)($asset['id'] ?? 0);
+        $amount = round($amount, 2);
+        if ($assetId <= 0 || $amount < 0.005) {
+            return;
+        }
+
+        $isAdjustment = $this->sumDepreciationForAccountingPeriod($assetId, $accountingPeriodId) >= 0.005;
+        $entryPeriodStart = $periodStart;
+        $entryPeriodEnd = $periodEnd;
+        if ($isAdjustment) {
+            $entryPeriodStart = $this->availableDepreciationAdjustmentDate(
+                $assetId,
+                $accountingPeriodId,
+                $periodStart,
+                $periodEnd
+            );
+            $entryPeriodEnd = $entryPeriodStart;
+        }
+
+        $sourceRef = 'asset:' . $assetId
+            . ':depreciation:' . $accountingPeriodId
+            . ':' . $periodStart
+            . ':' . $periodEnd;
+        if ($isAdjustment) {
+            $sourceRef .= ':topup:' . $entryPeriodStart;
+        }
+        if ($throughDisposal) {
+            $sourceRef .= ':disposal';
+        }
+
+        $assetCode = (string)($asset['asset_code'] ?? '');
+        $journalId = $this->insertJournal([
+            'company_id' => $companyId,
+            'accounting_period_id' => $accountingPeriodId,
+            'source_type' => 'asset_depreciation',
+            'source_ref' => $sourceRef,
+            'journal_date' => $periodEnd,
+            'description' => ($throughDisposal
+                ? 'Depreciation to disposal '
+                : ($isAdjustment ? 'Depreciation top-up ' : 'Depreciation ')
+            ) . $assetCode,
+        ]);
+        $lineDescription = 'Depreciation ' . $assetCode . ' ' . $periodStart . ' to ' . $periodEnd;
+        if ($isAdjustment) {
+            $lineDescription .= ' (top-up adjustment)';
+        }
+        $this->insertJournalLine(
+            $journalId,
+            $this->findNominalIdByCode('6200'),
+            $amount,
+            0.0,
+            $lineDescription
+        );
+        $this->insertJournalLine(
+            $journalId,
+            (int)$asset['accum_dep_nominal_id'],
+            0.0,
+            $amount,
+            $lineDescription
+        );
+
+        \InterfaceDB::prepareExecute(
+            'INSERT INTO asset_depreciation_entries (
+                asset_id,
+                accounting_period_id,
+                period_start,
+                period_end,
+                amount,
+                journal_id,
+                created_at
+             ) VALUES (
+                :asset_id,
+                :accounting_period_id,
+                :period_start,
+                :period_end,
+                :amount,
+                :journal_id,
+                CURRENT_TIMESTAMP
+             )',
+            [
+                'asset_id' => $assetId,
+                'accounting_period_id' => $accountingPeriodId,
+                'period_start' => $entryPeriodStart,
+                'period_end' => $entryPeriodEnd,
+                'amount' => $amount,
+                'journal_id' => $journalId,
+            ]
+        );
+    }
+
+    private function availableDepreciationAdjustmentDate(
+        int $assetId,
+        int $accountingPeriodId,
+        string $periodStart,
+        string $periodEnd
+    ): string {
+        $candidate = $periodEnd;
+        while ($candidate >= $periodStart && $this->depreciationEntryExists(
+            $assetId,
+            $accountingPeriodId,
+            $candidate,
+            $candidate
+        )) {
+            $candidate = (new \DateTimeImmutable($candidate))->modify('-1 day')->format('Y-m-d');
+        }
+
+        if ($candidate >= $periodStart) {
+            return $candidate;
+        }
+
+        throw new \RuntimeException(
+            'The depreciation residual could not be recorded as a distinct adjustment. '
+            . 'Correct the existing depreciation entries before posting again.'
+        );
     }
 
     private function markAssetDisposed(int $companyId, int $assetId, string $disposalDate, float $proceeds, string $disposalEventType, string $disposalReason): void
@@ -2116,6 +2473,18 @@ final class AssetService
     }
 
     private function calculateDepreciationAmount(array $asset, string $periodStart, string $periodEnd): float {
+        if ((string)($asset['depreciation_method'] ?? 'straight_line') === 'straight_line') {
+            $boundedPeriodEnd = $this->boundedDepreciationPeriodEnd($asset, $periodStart, $periodEnd);
+            if ($boundedPeriodEnd === null) {
+                return 0.0;
+            }
+
+            $targetDepreciation = $this->calculateDepreciationToDateAmount($asset, $boundedPeriodEnd);
+            $postedDepreciation = $this->sumDepreciationToDate((int)$asset['id'], $boundedPeriodEnd);
+
+            return round(max(0.0, $targetDepreciation - $postedDepreciation), 2);
+        }
+
         $openingDepreciation = $this->sumDepreciationToDate((int)$asset['id'], (new \DateTimeImmutable($periodStart))->modify('-1 day')->format('Y-m-d'));
 
         return $this->calculateDepreciationAmountFromOpening($asset, $periodStart, $periodEnd, $openingDepreciation);
@@ -2137,6 +2506,25 @@ final class AssetService
         $residual = round((float)($asset['residual_value'] ?? 0), 2);
         $lifeYears = max(1, (int)($asset['useful_life_years'] ?? 1));
 
+        if ($method === 'straight_line') {
+            $purchaseDate = trim((string)($asset['purchase_date'] ?? ''));
+            if (!$this->isIsoDate($purchaseDate)) {
+                return 0.0;
+            }
+
+            $depreciableAmount = max(0.0, $cost - $residual);
+            $lifeEnd = $this->usefulLifeEndDate($purchaseDate, $lifeYears);
+            $lifeDays = max(1, $this->dateDiffDaysInclusive($purchaseDate, $lifeEnd));
+            $elapsedDays = max(0, $this->dateDiffDaysInclusive($purchaseDate, $periodEnd));
+            $cumulativeTarget = round(
+                min($depreciableAmount, $depreciableAmount * ($elapsedDays / $lifeDays)),
+                2
+            );
+            $remainingCap = max(0.0, $depreciableAmount - $openingDepreciation);
+
+            return round(max(0.0, min($remainingCap, $cumulativeTarget - $openingDepreciation)), 2);
+        }
+
         $daysInPeriod = max(1, $this->dateDiffDaysInclusive($periodStart, $periodEnd));
         $yearDays = max(365, $this->dateDiffDaysInclusive(
             (new \DateTimeImmutable($periodStart))->format('Y-01-01'),
@@ -2146,8 +2534,6 @@ final class AssetService
         if ($method === 'reducing_balance') {
             $openingNbv = max($residual, $cost - $openingDepreciation);
             $annualAmount = $openingNbv * (1 / $lifeYears);
-        } else {
-            $annualAmount = max(0.0, ($cost - $residual) / $lifeYears);
         }
 
         $remainingCap = max(0.0, ($cost - $residual) - $openingDepreciation);

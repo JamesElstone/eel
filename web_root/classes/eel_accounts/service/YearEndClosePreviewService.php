@@ -151,25 +151,156 @@ final class YearEndClosePreviewService
         ?float $profitBeforeTax = null
     ): array
     {
-        $accountingPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
-        if ($accountingPeriod === null || (string)($accountingPeriod['period_end'] ?? '') === '') {
-            return [];
+        return (array)($this->pendingBalanceSheetAdjustmentContext(
+            $companyId,
+            $accountingPeriodId,
+            $periodEnd,
+            $depreciationPreview,
+            $prepaymentPreview,
+            $profitBeforeTax
+        )['adjustments'] ?? []);
+    }
+
+    public function pendingBalanceSheetAdjustmentContext(
+        int $companyId,
+        int $accountingPeriodId,
+        string $periodEnd,
+        ?array $depreciationPreview = null,
+        ?array $prepaymentPreview = null,
+        ?float $profitBeforeTax = null,
+        bool $includePriorOpenPeriods = true
+    ): array {
+        $targetPeriod = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
+        if ($targetPeriod === null || (string)($targetPeriod['period_end'] ?? '') === '') {
+            return [
+                'adjustments' => [],
+                'reliable' => false,
+                'warnings' => ['The selected accounting period could not be resolved for closing previews.'],
+                'periods' => [],
+            ];
         }
 
-        if ($periodEnd !== '' && $periodEnd < (string)$accountingPeriod['period_end']) {
-            return [];
+        $targetPeriodEnd = (string)$targetPeriod['period_end'];
+        if ($periodEnd !== '' && $periodEnd < $targetPeriodEnd) {
+            return [
+                'adjustments' => [],
+                'reliable' => true,
+                'warnings' => [],
+                'periods' => [],
+            ];
         }
 
-        if ((new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId)) {
-            return [];
+        $periods = $includePriorOpenPeriods
+            ? (\InterfaceDB::fetchAll(
+                'SELECT id, company_id, period_start, period_end
+                 FROM accounting_periods
+                 WHERE company_id = :company_id
+                   AND period_end <= :period_end
+                 ORDER BY period_end ASC, id ASC',
+                ['company_id' => $companyId, 'period_end' => $targetPeriodEnd]
+            ) ?: [])
+            : [$targetPeriod];
+        $lockService = new YearEndLockService();
+        $adjustments = [];
+        $warnings = [];
+        $periodContexts = [];
+        $reliable = true;
+        $previewedDirectorLoanOffsetAmount = 0.0;
+
+        foreach ($periods as $period) {
+            $periodId = (int)($period['id'] ?? 0);
+            if ($periodId <= 0 || $lockService->isLocked($companyId, $periodId)) {
+                continue;
+            }
+
+            $isTarget = $periodId === $accountingPeriodId;
+            try {
+                $periodDepreciationPreview = $isTarget && $depreciationPreview !== null
+                    ? $depreciationPreview
+                    : (new AssetService())->previewDepreciationRun($companyId, $periodId);
+                if ($isTarget && $prepaymentPreview !== null) {
+                    $periodPrepaymentPreview = $prepaymentPreview;
+                    $periodPrepaymentContext = ['success' => true, 'errors' => []];
+                } else {
+                    $periodPrepaymentContext = (new PrepaymentScheduleService())
+                        ->fetchPreviewAdjustmentContext($companyId, $periodId);
+                    $periodPrepaymentPreview = (array)($periodPrepaymentContext['adjustments'] ?? []);
+                }
+
+                if (empty($periodDepreciationPreview['success'])
+                    && (array)($periodDepreciationPreview['errors'] ?? []) !== []) {
+                    $reliable = false;
+                    $warnings[] = 'Pending depreciation could not be calculated for the open period ending '
+                        . (string)($period['period_end'] ?? '') . ': '
+                        . implode(' ', array_map('strval', (array)$periodDepreciationPreview['errors']));
+                }
+                if (empty($periodPrepaymentContext['success'])
+                    && (array)($periodPrepaymentContext['errors'] ?? []) !== []) {
+                    $reliable = false;
+                    $warnings[] = 'Pending prepayments could not be calculated reliably for the open period ending '
+                        . (string)($period['period_end'] ?? '') . ': '
+                        . implode(' ', array_map('strval', (array)$periodPrepaymentContext['errors']));
+                }
+
+                $periodAdjustments = $this->pendingBalanceSheetAdjustmentsForPeriod(
+                    $companyId,
+                    $periodId,
+                    $period,
+                    $periodDepreciationPreview,
+                    $periodPrepaymentPreview,
+                    $isTarget ? $profitBeforeTax : null
+                );
+                $directorLoanOffset = $this->pendingDirectorLoanOffsetAdjustmentContext(
+                    $companyId,
+                    $periodId,
+                    $previewedDirectorLoanOffsetAmount
+                );
+                if (empty($directorLoanOffset['reliable'])) {
+                    $reliable = false;
+                    $warnings = array_merge($warnings, (array)($directorLoanOffset['warnings'] ?? []));
+                }
+                $directorLoanAdjustments = (array)($directorLoanOffset['adjustments'] ?? []);
+                $periodHasDirectorLoanOffset = $directorLoanAdjustments !== [];
+                $previewedDirectorLoanOffsetAmount = round(
+                    $previewedDirectorLoanOffsetAmount
+                        + (float)($directorLoanOffset['adjustment_amount'] ?? 0),
+                    2
+                );
+                $periodAdjustments = array_merge($periodAdjustments, $directorLoanAdjustments);
+                $adjustments = array_merge($adjustments, $periodAdjustments);
+                $periodContexts[] = [
+                    'accounting_period_id' => $periodId,
+                    'period_end' => (string)($period['period_end'] ?? ''),
+                    'adjustment_count' => count($periodAdjustments),
+                    'prepayment_preview_reliable' => !empty($periodPrepaymentContext['success']),
+                    'director_loan_offset_previewed' => $periodHasDirectorLoanOffset,
+                ];
+            } catch (\Throwable $exception) {
+                $reliable = false;
+                $warnings[] = 'Closing preview adjustments could not be calculated for the open period ending '
+                    . (string)($period['period_end'] ?? '') . ': ' . $exception->getMessage();
+            }
         }
 
-        $prepaymentPreview ??= (new PrepaymentScheduleService())->fetchPreviewAdjustments($companyId, $accountingPeriodId);
+        return [
+            'adjustments' => $adjustments,
+            'reliable' => $reliable,
+            'warnings' => array_values(array_unique($warnings)),
+            'periods' => $periodContexts,
+        ];
+    }
 
+    private function pendingBalanceSheetAdjustmentsForPeriod(
+        int $companyId,
+        int $accountingPeriodId,
+        array $accountingPeriod,
+        ?array $depreciationPreview,
+        array $prepaymentPreview,
+        ?float $profitBeforeTax
+    ): array {
         return array_merge(
             $this->pendingPrepaymentBalanceSheetAdjustments($prepaymentPreview),
             $this->pendingDepreciationBalanceSheetAdjustments($companyId, $accountingPeriodId, $depreciationPreview),
-            $this->pendingDirectorLoanOffsetAdjustments($companyId, $accountingPeriodId),
             $this->pendingRetainedEarningsCloseAdjustment(
                 $companyId,
                 $accountingPeriodId,
@@ -386,15 +517,78 @@ final class YearEndClosePreviewService
         return $adjustments;
     }
 
-    private function pendingDirectorLoanOffsetAdjustments(int $companyId, int $accountingPeriodId): array
+    private function pendingDirectorLoanOffsetAdjustmentContext(
+        int $companyId,
+        int $accountingPeriodId,
+        float $previewedPriorOffsetAmount
+    ): array
     {
         $context = (new \eel_accounts\Service\DirectorLoanReconciliationService())->fetchContext($companyId, $accountingPeriodId);
-        if (empty($context['available']) || empty($context['can_post']) || empty($context['closing_balance_acknowledged'])) {
-            return [];
+        if (empty($context['available'])) {
+            return [
+                'adjustments' => [],
+                'adjustment_amount' => 0.0,
+                'reliable' => true,
+                'warnings' => [],
+            ];
         }
 
+        $warnings = (array)($context['warnings'] ?? []);
+        if ($warnings !== [] || empty($context['posted_offset_reliable'])) {
+            return [
+                'adjustments' => [],
+                'adjustment_amount' => 0.0,
+                'reliable' => false,
+                'warnings' => [
+                    'Pending director loan set-off adjustments could not be calculated reliably for accounting period '
+                        . $accountingPeriodId . ': '
+                        . implode(' ', array_map('strval', $warnings !== []
+                            ? $warnings
+                            : ['The cumulative posted offset could not be verified.'])),
+                ],
+            ];
+        }
+
+        $adjustmentAmount = round(
+            (float)($context['pending_adjustment_amount'] ?? 0) - $previewedPriorOffsetAmount,
+            2
+        );
+        if (abs($adjustmentAmount) < 0.005) {
+            return [
+                'adjustments' => [],
+                'adjustment_amount' => 0.0,
+                'reliable' => true,
+                'warnings' => [],
+            ];
+        }
+
+        $assetNominalId = (int)(($context['asset_nominal'] ?? [])['id'] ?? 0);
+        $liabilityNominalId = (int)(($context['liability_nominal'] ?? [])['id'] ?? 0);
+        if ($assetNominalId <= 0 || $liabilityNominalId <= 0) {
+            return [
+                'adjustments' => [],
+                'adjustment_amount' => 0.0,
+                'reliable' => false,
+                'warnings' => ['Pending director loan set-off adjustments could not resolve both configured nominals.'],
+            ];
+        }
+
+        $amount = abs($adjustmentAmount);
+        $applyingSetOff = $adjustmentAmount > 0;
+        $lines = [
+            [
+                'nominal_account_id' => $applyingSetOff ? $liabilityNominalId : $assetNominalId,
+                'debit' => $amount,
+                'credit' => 0.0,
+            ],
+            [
+                'nominal_account_id' => $applyingSetOff ? $assetNominalId : $liabilityNominalId,
+                'debit' => 0.0,
+                'credit' => $amount,
+            ],
+        ];
         $adjustments = [];
-        foreach ((array)($context['proposed_lines'] ?? []) as $line) {
+        foreach ($lines as $line) {
             if (!is_array($line)) {
                 continue;
             }
@@ -412,7 +606,12 @@ final class YearEndClosePreviewService
             ];
         }
 
-        return $adjustments;
+        return [
+            'adjustments' => $adjustments,
+            'adjustment_amount' => $adjustmentAmount,
+            'reliable' => true,
+            'warnings' => [],
+        ];
     }
 
     private function pendingRetainedEarningsCloseAdjustment(

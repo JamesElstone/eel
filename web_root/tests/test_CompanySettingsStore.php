@@ -20,6 +20,7 @@ $harness->run(\eel_accounts\Store\CompanySettingsStore::class, function (Generat
         $harness->assertSame('/var/eel_accounts/uploads', $defaults['uploads_path'] ?? null);
         $harness->assertSame('', $defaults['tools_small_equipment_nominal_id'] ?? null);
         $harness->assertSame('250', $defaults['potential_asset_threshold'] ?? null);
+        $harness->assertSame('', $defaults['qualifying_activity_ceased_on'] ?? null);
     });
 
     $harness->check(\eel_accounts\Store\CompanySettingsStore::class, 'includes duplicate row check in definitions', function () use ($harness): void {
@@ -28,5 +29,6 @@ $harness->run(\eel_accounts\Store\CompanySettingsStore::class, function (Generat
         $harness->assertTrue(isset($definitions['hmrc_mode']));
         $harness->assertSame('int', (string)($definitions['tools_small_equipment_nominal_id']['type'] ?? ''));
         $harness->assertSame('int', (string)($definitions['potential_asset_threshold']['type'] ?? ''));
+        $harness->assertSame('char', (string)($definitions['qualifying_activity_ceased_on']['type'] ?? ''));
     });
 });

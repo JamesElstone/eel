@@ -68,6 +68,10 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
         $pendingDepreciationHtml = $pendingDepreciationCount > 0 && abs($pendingDepreciationAmount) >= 0.005
             ? '<div class="helper">These figures include ' . HelperFramework::escape((string)$pendingDepreciationCount) . ' pending depreciation posting(s) totalling ' . HelperFramework::escape($this->money($companySettings, $pendingDepreciationAmount)) . ', which will be posted automatically when Year End is locked.</div>'
             : '';
+        $pendingPrepaymentAmount = (float)($summary['prepayment_expense_adjustment'] ?? 0);
+        $pendingPrepaymentHtml = abs($pendingPrepaymentAmount) >= 0.005
+            ? '<div class="helper">These figures include a pending prepayment expense adjustment of ' . HelperFramework::escape($this->money($companySettings, $pendingPrepaymentAmount)) . '.</div>'
+            : '';
         $acknowledged = !empty($close['acknowledged']);
         $stale = !empty($close['acknowledgement_stale']);
         $journalLinesHtml = $this->journalLinesHtml((array)($close['journal_lines'] ?? []), $companySettings);
@@ -106,7 +110,7 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
                 ' . $this->summaryCard('Retained earnings movement', $this->money($companySettings, $summary['retained_earnings_movement'] ?? 0)) . '
             </div>
             <div class="helper">' . HelperFramework::escape($this->balanceEquation($companySettings, $summary)) . '</div>
-            ' . $dependencyHtml . $pendingDepreciationHtml . $staleHtml . $existingHtml . '
+            ' . $dependencyHtml . $pendingDepreciationHtml . $pendingPrepaymentHtml . $staleHtml . $existingHtml . '
             <div class="table-scroll panel-soft">
                 <table>
                     <thead><tr><th>Nominal</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead>
@@ -170,9 +174,17 @@ final class _year_end_retained_earningsCard extends CardBaseFramework
 
     private function balanceEquation(array $companySettings, array $summary): string
     {
-        return 'Assets (' . $this->money($companySettings, $summary['assets'] ?? 0) . ') - Liabilities ('
-            . $this->money($companySettings, $summary['liabilities'] ?? 0) . ') = Equity ('
-            . $this->money($companySettings, $summary['equity'] ?? 0) . ')';
+        $netAssets = round((float)($summary['assets'] ?? 0) - (float)($summary['liabilities'] ?? 0), 2);
+        $equity = round((float)($summary['equity'] ?? 0), 2);
+        $difference = round((float)($summary['balance_equation_difference'] ?? ($netAssets - $equity)), 2);
+        if (!empty($summary['is_balance_sheet_balanced']) || abs($difference) < 0.005) {
+            return 'Net assets (' . $this->money($companySettings, $netAssets) . ') agree to equity ('
+                . $this->money($companySettings, $equity) . ').';
+        }
+
+        return 'Net assets (' . $this->money($companySettings, $netAssets) . ') do not agree to equity ('
+            . $this->money($companySettings, $equity) . '); difference '
+            . $this->money($companySettings, $difference) . '.';
     }
 
     private function money(array $companySettings, float|int|string|null $value): string

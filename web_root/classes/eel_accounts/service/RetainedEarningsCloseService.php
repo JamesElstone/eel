@@ -31,7 +31,8 @@ final class RetainedEarningsCloseService
         int $accountingPeriodId,
         ?array $corporationTaxProvision = null,
         ?array $balanceSheetMetrics = null,
-        ?array $depreciationPreview = null
+        ?array $depreciationPreview = null,
+        ?array $prepaymentPreview = null
     ): array
     {
         $metrics = $this->metricsService ?? new \eel_accounts\Service\YearEndMetricsService();
@@ -60,6 +61,16 @@ final class RetainedEarningsCloseService
         $depreciationPreview ??= ($this->assetService ?? new \eel_accounts\Service\AssetService())
             ->previewDepreciationRun($companyId, $accountingPeriodId);
         $plRows = $this->includePendingDepreciationRows($plRows, $depreciationPreview);
+        $prepaymentPreview ??= (new \eel_accounts\Service\PrepaymentScheduleService())
+            ->fetchPreviewAdjustments($companyId, $accountingPeriodId);
+        $plRows = $this->includePendingPrepaymentRows(
+            $plRows,
+            $companyId,
+            $accountingPeriodId,
+            $periodStart,
+            $periodEnd,
+            $prepaymentPreview
+        );
         $corporationTaxProvision ??= ($this->corporationTaxProvisionService ?? new \eel_accounts\Service\CorporationTaxProvisionService())
             ->fetchAccountingPeriodPosition($companyId, $accountingPeriodId);
         $plRows = $this->includePendingCorporationTaxProvisionRows($plRows, $corporationTaxProvision);
@@ -73,7 +84,8 @@ final class RetainedEarningsCloseService
                 $accountingPeriodId,
                 $periodStart,
                 $periodEnd,
-                $depreciationPreview
+                $depreciationPreview,
+                $prepaymentPreview
             );
         $journalLines = $this->buildJournalLines($plRows, (int)$retainedEarningsNominal['id']);
         $existingJournal = ($this->journalService ?? new \eel_accounts\Service\ManualJournalService())->fetchJournalByTag(
@@ -81,6 +93,17 @@ final class RetainedEarningsCloseService
             $accountingPeriodId,
             self::JOURNAL_TAG,
             self::JOURNAL_KEY
+        );
+        $assets = round((float)($balanceSheet['fixed_assets'] ?? 0) + (float)($balanceSheet['current_assets'] ?? 0), 2);
+        $liabilities = round((float)($balanceSheet['creditors_within_one_year'] ?? 0) + (float)($balanceSheet['creditors_after_more_than_one_year'] ?? 0), 2);
+        $equity = round((float)($balanceSheet['equity_capital_reserves'] ?? 0), 2);
+        $balanceEquationDifference = round($assets - $liabilities - $equity, 2);
+        $prepaymentExpenseAdjustment = (new YearEndClosePreviewService())->prepaymentExpenseAdjustmentForPeriod(
+            $companyId,
+            $accountingPeriodId,
+            $periodStart,
+            $periodEnd,
+            $prepaymentPreview
         );
 
         $summary = [
@@ -90,9 +113,12 @@ final class RetainedEarningsCloseService
             'expected_closing_equity' => $expectedClosingEquity,
             'retained_earnings_movement' => round((float)$profitAndLoss['profit_before_tax'], 2),
             'unexplained_movement_before_close' => round($closingEquityBeforeClose - $expectedClosingEquity, 2),
-            'assets' => round((float)($balanceSheet['fixed_assets'] ?? 0) + (float)($balanceSheet['current_assets'] ?? 0), 2),
-            'liabilities' => round((float)($balanceSheet['creditors_within_one_year'] ?? 0) + (float)($balanceSheet['creditors_after_more_than_one_year'] ?? 0), 2),
-            'equity' => round((float)($balanceSheet['equity_capital_reserves'] ?? 0), 2),
+            'assets' => $assets,
+            'liabilities' => $liabilities,
+            'equity' => $equity,
+            'balance_equation_difference' => $balanceEquationDifference,
+            'is_balance_sheet_balanced' => abs($balanceEquationDifference) < 0.005,
+            'prepayment_expense_adjustment' => round($prepaymentExpenseAdjustment, 2),
         ];
 
         $context = [
@@ -104,6 +130,7 @@ final class RetainedEarningsCloseService
             'retained_earnings_nominal' => $retainedEarningsNominal,
             'summary' => $summary,
             'depreciation_preview' => $depreciationPreview,
+            'prepayment_preview' => $prepaymentPreview,
             'corporation_tax_provision' => $corporationTaxProvision,
             'profit_and_loss_rows' => $plRows,
             'journal_lines' => $journalLines,
@@ -411,6 +438,77 @@ final class RetainedEarningsCloseService
             'total_credit' => '0.00',
             'pending_year_end_depreciation' => number_format($amount, 2, '.', ''),
         ];
+
+        return $plRows;
+    }
+
+    private function includePendingPrepaymentRows(
+        array $plRows,
+        int $companyId,
+        int $accountingPeriodId,
+        string $periodStart,
+        string $periodEnd,
+        array $prepaymentPreview
+    ): array {
+        $rows = (new \eel_accounts\Service\YearEndClosePreviewService())->prepaymentExpenseRowsForPeriod(
+            $companyId,
+            $accountingPeriodId,
+            $periodStart,
+            $periodEnd,
+            $prepaymentPreview
+        );
+        foreach ($rows as $pendingRow) {
+            $nominalId = (int)($pendingRow['nominal_account_id'] ?? 0);
+            $amount = round((float)($pendingRow['amount'] ?? 0), 2);
+            if ($nominalId <= 0 || abs($amount) < 0.005) {
+                continue;
+            }
+
+            $matched = false;
+            foreach ($plRows as $index => $row) {
+                if ((int)($row['id'] ?? 0) !== $nominalId) {
+                    continue;
+                }
+
+                if ($amount > 0) {
+                    $plRows[$index]['total_debit'] = number_format(
+                        round((float)($row['total_debit'] ?? 0) + $amount, 2),
+                        2,
+                        '.',
+                        ''
+                    );
+                } else {
+                    $plRows[$index]['total_credit'] = number_format(
+                        round((float)($row['total_credit'] ?? 0) + abs($amount), 2),
+                        2,
+                        '.',
+                        ''
+                    );
+                }
+                $plRows[$index]['pending_prepayment_adjustment'] = number_format(
+                    round((float)($row['pending_prepayment_adjustment'] ?? 0) + $amount, 2),
+                    2,
+                    '.',
+                    ''
+                );
+                $matched = true;
+                break;
+            }
+            if ($matched) {
+                continue;
+            }
+
+            $plRows[] = [
+                'id' => $nominalId,
+                'code' => (string)($pendingRow['code'] ?? ''),
+                'name' => (string)($pendingRow['name'] ?? ''),
+                'account_type' => (string)($pendingRow['account_type'] ?? 'expense'),
+                'tax_treatment' => (string)($pendingRow['tax_treatment'] ?? 'allowable'),
+                'total_debit' => $amount > 0 ? number_format($amount, 2, '.', '') : '0.00',
+                'total_credit' => $amount < 0 ? number_format(abs($amount), 2, '.', '') : '0.00',
+                'pending_prepayment_adjustment' => number_format($amount, 2, '.', ''),
+            ];
+        }
 
         return $plRows;
     }

@@ -93,7 +93,10 @@ $harness->run(\eel_accounts\Service\ProfitLossService::class, static function (G
 
             $trend = $service->getMonthlyProfitLossTrend($companyId, $periodId);
             $december = array_values(array_filter($trend, static fn(array $row): bool => (string)($row['month_start'] ?? '') === '2025-12-01'))[0] ?? [];
-            $harness->assertSame('190.00', number_format((float)($december['corporation_tax_expense_total'] ?? 0), 2, '.', ''));
+            $harness->assertSame('190.00', number_format((float)($december['posted_corporation_tax_charge'] ?? 0), 2, '.', ''));
+            $harness->assertSame('-38.00', number_format((float)($december['estimated_corporation_tax_adjustment'] ?? 0), 2, '.', ''));
+            $harness->assertSame('152.00', number_format((float)($december['corporation_tax_expense_total'] ?? 0), 2, '.', ''));
+            $harness->assertSame('-152.00', number_format((float)($december['profit_after_estimated_tax'] ?? 0), 2, '.', ''));
         } finally {
             if (InterfaceDB::inTransaction()) {
                 InterfaceDB::rollBack();

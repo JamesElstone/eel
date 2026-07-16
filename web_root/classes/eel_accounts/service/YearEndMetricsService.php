@@ -660,7 +660,9 @@ final class YearEndMetricsService
             $accountingPeriodId,
             $depreciationPreview,
             $prepaymentPreview,
-            $profitBeforeTax
+            $profitBeforeTax,
+            true,
+            true
         );
         $buckets = (array)($metrics['buckets'] ?? []);
 
@@ -706,6 +708,12 @@ final class YearEndMetricsService
             'disallowable_add_backs' => round((float)$result['disallowable_add_backs'], 2),
             'capital_add_backs' => round((float)$result['capital_add_backs'], 2),
             'depreciation_expense' => round((float)$result['depreciation_expense'], 2),
+            'prepayment_preview_reliable' => !array_key_exists('prepayment_preview_reliable', $result)
+                || !empty($result['prepayment_preview_reliable']),
+            'prepayment_preview_warnings' => array_values(array_unique(array_map(
+                'strval',
+                (array)($result['prepayment_preview_warnings'] ?? [])
+            ))),
             'other_treatment_count' => (int)$result['other_treatment_count'],
             'unknown_treatment_count' => (int)$result['unknown_treatment_count'],
         ];

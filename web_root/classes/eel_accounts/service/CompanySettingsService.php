@@ -128,22 +128,60 @@ final class CompanySettingsService
 
     public function saveCompanySection(\eel_accounts\Store\CompanySettingsStore $settingsStore, array $settings): void
     {
+        $companyId = (int)($settings['company_id'] ?? $settingsStore->companyId());
+        $hasCessationSetting = array_key_exists('qualifying_activity_ceased_on', $settings);
+        $existingCessationDate = trim((string)$settingsStore->get('qualifying_activity_ceased_on', ''));
+        $cessationDate = $hasCessationSetting
+            ? $this->normaliseQualifyingActivityCessationDate((string)$settings['qualifying_activity_ceased_on'])
+            : $existingCessationDate;
+        $cessationChanged = $hasCessationSetting && $cessationDate !== $existingCessationDate;
+
+        if ($cessationChanged) {
+            (new VatSupportScopeService())->assertTaxAndYearEndSupported(
+                $companyId,
+                'change the qualifying-activity cessation date'
+            );
+        }
+
         $companyRepository = new \eel_accounts\Repository\CompanyRepository();
         $settings['utr'] = $this->normaliseUtr((string)($settings['utr'] ?? ''));
-        \InterfaceDB::beginTransaction();
+        $ownsTransaction = !\InterfaceDB::inTransaction();
+        if ($ownsTransaction) {
+            \InterfaceDB::beginTransaction();
+        }
 
         try {
+            if ($cessationChanged) {
+                $this->assertCessationChangeUnlocked(
+                    $companyId,
+                    $existingCessationDate,
+                    $cessationDate
+                );
+            }
+
             $companyRepository->saveCompanySection($settings);
 
             $settingsStore->set('utr', $settings['utr'], 'int');
             $settingsStore->set('associated_company_count', $settings['associated_company_count'] ?? 0, 'int');
+            if ($hasCessationSetting) {
+                $settingsStore->set('qualifying_activity_ceased_on', $cessationDate, 'char');
+            }
             $settingsStore->set('default_currency', $settings['default_currency'], 'char');
             $settingsStore->set('date_format', $settings['date_format'], 'char');
             $settingsStore->flush();
 
-            \InterfaceDB::commit();
+            if ($cessationChanged) {
+                $rebuild = (new CapitalAllowanceService())->rebuildForCompany($companyId);
+                if (isset($rebuild['success']) && empty($rebuild['success'])) {
+                    throw new \RuntimeException((string)(($rebuild['errors'] ?? [])[0] ?? 'Capital allowances could not be rebuilt.'));
+                }
+            }
+
+            if ($ownsTransaction) {
+                \InterfaceDB::commit();
+            }
         } catch (\Throwable $e) {
-            if (\InterfaceDB::inTransaction()) {
+            if ($ownsTransaction && \InterfaceDB::inTransaction()) {
                 \InterfaceDB::rollBack();
             }
             throw $e;
@@ -153,6 +191,62 @@ final class CompanySettingsService
     private function normaliseUtr(string $utr): string
     {
         return preg_replace('/\s+/', '', trim($utr)) ?? '';
+    }
+
+    private function normaliseQualifyingActivityCessationDate(string $date): string
+    {
+        $date = trim($date);
+        if ($date === '') {
+            return '';
+        }
+
+        $parsed = \DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+        $errors = \DateTimeImmutable::getLastErrors();
+        if (!$parsed instanceof \DateTimeImmutable
+            || $parsed->format('Y-m-d') !== $date
+            || (is_array($errors) && ((int)$errors['warning_count'] > 0 || (int)$errors['error_count'] > 0))) {
+            throw new \RuntimeException('The qualifying-activity cessation date must use the YYYY-MM-DD format.');
+        }
+
+        return $date;
+    }
+
+    private function assertCessationChangeUnlocked(
+        int $companyId,
+        string $existingDate,
+        string $newDate
+    ): void {
+        $affectedFrom = $existingDate === ''
+            ? $newDate
+            : ($newDate === '' ? $existingDate : min($existingDate, $newDate));
+        if ($companyId <= 0 || $affectedFrom === '') {
+            return;
+        }
+
+        $periodIds = \InterfaceDB::fetchAll(
+            'SELECT id
+             FROM accounting_periods
+             WHERE company_id = :company_id
+               AND period_end >= :affected_from
+             ORDER BY period_start ASC, id ASC',
+            [
+                'company_id' => $companyId,
+                'affected_from' => $affectedFrom,
+            ]
+        ) ?: [];
+        $locks = new YearEndLockService();
+        foreach ($periodIds as $row) {
+            $periodId = (int)($row['id'] ?? 0);
+            if ($periodId <= 0) {
+                continue;
+            }
+
+            $locks->assertUnlockedForUpdate(
+                $companyId,
+                $periodId,
+                'change the qualifying-activity cessation date because it affects this period or a later period'
+            );
+        }
     }
 
     public function saveAccountingSection(\eel_accounts\Store\CompanySettingsStore $settingsStore, array &$settings): void

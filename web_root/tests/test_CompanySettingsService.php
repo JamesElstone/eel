@@ -19,6 +19,132 @@ $harness->run(\eel_accounts\Service\CompanySettingsService::class, static functi
         $harness->assertSame('2794616478', $method->invoke($service, " 27946\t16478\n"));
     });
 
+    $harness->check(\eel_accounts\Service\CompanySettingsService::class, 'accepts only blank or strict ISO qualifying activity cessation dates', static function () use ($harness, $service): void {
+        $method = new ReflectionMethod(\eel_accounts\Service\CompanySettingsService::class, 'normaliseQualifyingActivityCessationDate');
+        $method->setAccessible(true);
+
+        $harness->assertSame('', $method->invoke($service, '  '));
+        $harness->assertSame('2026-02-28', $method->invoke($service, '2026-02-28'));
+
+        try {
+            $method->invoke($service, '2026-02-30');
+            throw new RuntimeException('Expected an invalid cessation date to be rejected.');
+        } catch (ReflectionException $exception) {
+            throw $exception;
+        } catch (Throwable $exception) {
+            $harness->assertTrue(str_contains($exception->getMessage(), 'YYYY-MM-DD'));
+        }
+    });
+
+    $harness->check(\eel_accounts\Service\CompanySettingsService::class, 'saves a cessation date and rebuilds capital allowance pools for affected open periods', static function () use ($harness, $service): void {
+        InterfaceDB::beginTransaction();
+        try {
+            $companyId = 98201;
+            $periodId = 982011;
+            companySettingsServiceSeedCompany($companyId);
+            companySettingsServiceSeedPeriod($companyId, $periodId, '2099-01-01', '2099-12-31');
+
+            $store = new \eel_accounts\Store\CompanySettingsStore($companyId);
+            $service->saveCompanySection($store, companySettingsServicePayload($companyId, '2099-06-30'));
+
+            $harness->assertSame('2099-06-30', (string)$store->get('qualifying_activity_ceased_on', ''));
+            $harness->assertSame(
+                2,
+                (int)InterfaceDB::fetchColumn(
+                    'SELECT COUNT(*)
+                     FROM capital_allowance_pool_runs
+                     WHERE company_id = :company_id
+                       AND accounting_period_id = :accounting_period_id',
+                    ['company_id' => $companyId, 'accounting_period_id' => $periodId]
+                )
+            );
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
+    $harness->check(\eel_accounts\Service\CompanySettingsService::class, 'rejects cessation changes that affect a locked accounting period', static function () use ($harness, $service): void {
+        InterfaceDB::beginTransaction();
+        try {
+            $companyId = 98202;
+            $periodId = 982021;
+            companySettingsServiceSeedCompany($companyId);
+            companySettingsServiceSeedPeriod($companyId, $periodId, '2099-01-01', '2099-12-31');
+            InterfaceDB::prepareExecute(
+                'INSERT INTO year_end_reviews (
+                    company_id, accounting_period_id, is_locked, locked_at, locked_by
+                 ) VALUES (
+                    :company_id, :accounting_period_id, 1, CURRENT_TIMESTAMP, :locked_by
+                 )',
+                [
+                    'company_id' => $companyId,
+                    'accounting_period_id' => $periodId,
+                    'locked_by' => 'company-settings-test',
+                ]
+            );
+
+            try {
+                $service->saveCompanySection(
+                    new \eel_accounts\Store\CompanySettingsStore($companyId),
+                    companySettingsServicePayload($companyId, '2099-06-30')
+                );
+                throw new RuntimeException('Expected the locked affected period to reject the cessation change.');
+            } catch (Throwable $exception) {
+                $harness->assertTrue(str_contains($exception->getMessage(), 'locked'));
+            }
+
+            $harness->assertSame(
+                0,
+                (int)InterfaceDB::fetchColumn(
+                    'SELECT COUNT(*)
+                     FROM company_settings
+                     WHERE company_id = :company_id
+                       AND setting = :setting',
+                    ['company_id' => $companyId, 'setting' => 'qualifying_activity_ceased_on']
+                )
+            );
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
+    $harness->check(\eel_accounts\Service\CompanySettingsService::class, 'rejects cessation changes while the VAT support policy makes Tax and Year End read only', static function () use ($harness, $service): void {
+        InterfaceDB::beginTransaction();
+        try {
+            $companyId = 98203;
+            companySettingsServiceSeedCompany($companyId, true);
+
+            try {
+                $service->saveCompanySection(
+                    new \eel_accounts\Store\CompanySettingsStore($companyId),
+                    companySettingsServicePayload($companyId, '2099-06-30', true)
+                );
+                throw new RuntimeException('Expected the VAT support scope to reject the cessation change.');
+            } catch (Throwable $exception) {
+                $harness->assertTrue(str_contains($exception->getMessage(), 'read only'));
+            }
+
+            $harness->assertSame(
+                0,
+                (int)InterfaceDB::fetchColumn(
+                    'SELECT COUNT(*)
+                     FROM company_settings
+                     WHERE company_id = :company_id
+                       AND setting = :setting',
+                    ['company_id' => $companyId, 'setting' => 'qualifying_activity_ceased_on']
+                )
+            );
+        } finally {
+            if (InterfaceDB::inTransaction()) {
+                InterfaceDB::rollBack();
+            }
+        }
+    });
+
     $harness->check(\eel_accounts\Service\CompanySettingsService::class, 'suggests a default trade nominal from trade creditor liabilities', static function () use ($harness, $service): void {
         $method = new ReflectionMethod(\eel_accounts\Service\CompanySettingsService::class, 'buildNominalDefaultSuggestions');
         $method->setAccessible(true);
@@ -80,3 +206,80 @@ $harness->run(\eel_accounts\Service\CompanySettingsService::class, static functi
         $harness->assertSame('<span class="amount-negative">-$ 50.00</span>', $service->moneyHtml(['default_currency_symbol' => '$'], -50));
     });
 });
+
+function companySettingsServiceSeedCompany(int $companyId, bool $liveHmrcVat = false): void
+{
+    InterfaceDB::prepareExecute(
+        'INSERT INTO companies (
+            id, company_name, company_number, is_vat_registered,
+            vat_country_code, vat_number, vat_validation_status,
+            vat_validation_source, vat_validation_mode
+         ) VALUES (
+            :id, :company_name, :company_number, :is_vat_registered,
+            :vat_country_code, :vat_number, :vat_validation_status,
+            :vat_validation_source, :vat_validation_mode
+         )',
+        [
+            'id' => $companyId,
+            'company_name' => 'Company settings test ' . $companyId,
+            'company_number' => 'CST' . $companyId,
+            'is_vat_registered' => $liveHmrcVat ? 1 : 0,
+            'vat_country_code' => $liveHmrcVat ? 'GB' : null,
+            'vat_number' => $liveHmrcVat ? '123456789' : null,
+            'vat_validation_status' => $liveHmrcVat ? 'valid' : null,
+            'vat_validation_source' => $liveHmrcVat ? 'hmrc' : null,
+            'vat_validation_mode' => $liveHmrcVat ? 'LIVE' : null,
+        ]
+    );
+}
+
+function companySettingsServiceSeedPeriod(
+    int $companyId,
+    int $periodId,
+    string $start,
+    string $end
+): void {
+    InterfaceDB::prepareExecute(
+        'INSERT INTO accounting_periods (
+            id, company_id, label, period_start, period_end
+         ) VALUES (
+            :id, :company_id, :label, :period_start, :period_end
+         )',
+        [
+            'id' => $periodId,
+            'company_id' => $companyId,
+            'label' => $start . ' to ' . $end,
+            'period_start' => $start,
+            'period_end' => $end,
+        ]
+    );
+}
+
+function companySettingsServicePayload(
+    int $companyId,
+    string $cessationDate,
+    bool $liveHmrcVat = false
+): array {
+    return [
+        'company_id' => (string)$companyId,
+        'company_name' => 'Company settings test ' . $companyId,
+        'companies_house_number' => 'CST' . $companyId,
+        'utr' => '',
+        'associated_company_count' => '0',
+        'qualifying_activity_ceased_on' => $cessationDate,
+        'default_currency' => 'GBP',
+        'date_format' => 'd/m/Y',
+        'is_vat_registered' => $liveHmrcVat,
+        'vat_country_code' => $liveHmrcVat ? 'GB' : '',
+        'vat_number' => $liveHmrcVat ? '123456789' : '',
+        'vat_validation_status' => $liveHmrcVat ? 'valid' : '',
+        'vat_validated_at' => '',
+        'vat_validation_source' => $liveHmrcVat ? 'hmrc' : '',
+        'vat_validation_mode' => $liveHmrcVat ? 'LIVE' : '',
+        'vat_validation_name' => '',
+        'vat_validation_address_line1' => '',
+        'vat_validation_postcode' => '',
+        'vat_validation_country_code' => '',
+        'vat_last_error' => '',
+    ];
+}

@@ -648,15 +648,48 @@ final class PrepaymentScheduleService
     /** @return list<array<string, mixed>> */
     public function fetchPreviewAdjustments(int $companyId, int $accountingPeriodId): array
     {
+        return (array)($this->fetchPreviewAdjustmentContext(
+            $companyId,
+            $accountingPeriodId
+        )['adjustments'] ?? []);
+    }
+
+    /**
+     * @return array{
+     *   available: bool,
+     *   success: bool,
+     *   errors: list<string>,
+     *   adjustments: list<array<string, mixed>>
+     * }
+     */
+    public function fetchPreviewAdjustmentContext(int $companyId, int $accountingPeriodId): array
+    {
         $context = $this->fetchPeriodContext($companyId, $accountingPeriodId);
         if (empty($context['available'])) {
-            return [];
+            return [
+                'available' => false,
+                'success' => false,
+                'errors' => array_values(array_unique(array_map(
+                    'strval',
+                    (array)($context['errors'] ?? ['The prepayment preview is unavailable.'])
+                ))),
+                'adjustments' => [],
+            ];
         }
+        $errors = array_map('strval', (array)($context['errors'] ?? []));
         $adjustments = [];
         foreach ((array)$context['schedules'] as $schedule) {
-            if (!empty($schedule['preview_only'])) {
+            if (array_key_exists('source_valid', $schedule) && empty($schedule['source_valid'])) {
+                $sourceErrors = array_map('strval', (array)($schedule['source_errors'] ?? []));
+                $errors = array_merge(
+                    $errors,
+                    $sourceErrors !== []
+                        ? $sourceErrors
+                        : ['A prepayment schedule source could not be verified.']
+                );
                 continue;
             }
+            $previewOnly = !empty($schedule['preview_only']);
             $allocation = (array)($schedule['selected_allocation'] ?? []);
             $delta = (int)($allocation['posting_delta_pence'] ?? 0);
             if ($delta === 0) {
@@ -669,8 +702,8 @@ final class PrepaymentScheduleService
             $normalCredit = $role === 'deferral' ? $expenseNominalId : $assetNominalId;
             $adjustments[] = [
                 'review_id' => (int)$schedule['review_id'],
-                'schedule_id' => (int)$schedule['id'],
-                'schedule_period_id' => (int)$allocation['id'],
+                'schedule_id' => $previewOnly ? 0 : (int)($schedule['id'] ?? 0),
+                'schedule_period_id' => $previewOnly ? 0 : (int)($allocation['id'] ?? 0),
                 'accounting_period_id' => $accountingPeriodId,
                 'posting_role' => $role,
                 'target_pence' => (int)$allocation['posting_target_pence'],
@@ -683,9 +716,17 @@ final class PrepaymentScheduleService
                     ? (string)$allocation['period_end']
                     : (string)$allocation['overlap_start'],
                 'calculation_hash' => (string)$schedule['calculation_hash'],
+                'preview_only' => $previewOnly,
             ];
         }
-        return $adjustments;
+        $errors = array_values(array_unique(array_filter(array_map('trim', $errors))));
+
+        return [
+            'available' => true,
+            'success' => $errors === [],
+            'errors' => $errors,
+            'adjustments' => $adjustments,
+        ];
     }
 
     public function netPostedForReview(int $reviewId): int

@@ -69,6 +69,12 @@ final class ProfitLossService
             'operating_expense_total' => $operatingExpenseTotal,
             'posted_operating_expense_total' => round((float)($totals['posted_operating_expense_total'] ?? $operatingExpenseTotal), 2),
             'depreciation_expense' => round((float)($totals['depreciation_expense'] ?? 0), 2),
+            'prepayment_expense_adjustment' => round((float)($totals['prepayment_expense_adjustment'] ?? 0), 2),
+            'prepayment_preview_reliable' => !empty($totals['prepayment_preview_reliable']),
+            'prepayment_preview_warnings' => array_values(array_unique(array_map(
+                'strval',
+                (array)($totals['prepayment_preview_warnings'] ?? [])
+            ))),
             'depreciation_preview' => (array)($totals['depreciation_preview'] ?? []),
             'accounting_basis' => 'posted_journals_plus_year_end_close_preview',
             'expense_total' => $expenseTotal,
@@ -281,12 +287,19 @@ final class ProfitLossService
             } elseif ($accountType === 'expense') {
                 $amount = round($debit - $credit, 2);
                 if ($this->isCorporationTaxExpenseRow((array)$row, $companyId)) {
-                    $months[$month]['corporation_tax_expense_total'] += $amount;
+                    $months[$month]['posted_corporation_tax_charge'] += $amount;
                 } else {
                     $months[$month]['operating_expense_total'] += $amount;
                 }
             }
         }
+
+        $estimatedTaxAdjustments = $this->monthlyEstimatedCorporationTaxAdjustments(
+            $companyId,
+            $accountingPeriodId,
+            $accountingPeriod,
+            $preTax
+        );
 
         $depreciationByMonth = (new YearEndClosePreviewService())->monthlyDepreciationExpenseForPeriod(
             $companyId,
@@ -332,10 +345,19 @@ final class ProfitLossService
             $month['income_total'] = round((float)$month['income_total'], 2);
             $month['cost_of_sales_total'] = round((float)$month['cost_of_sales_total'], 2);
             $month['operating_expense_total'] = round((float)$month['operating_expense_total'], 2);
-            $month['corporation_tax_expense_total'] = round((float)$month['corporation_tax_expense_total'], 2);
+            $month['posted_corporation_tax_charge'] = round((float)$month['posted_corporation_tax_charge'], 2);
+            $month['estimated_corporation_tax_adjustment'] = round(
+                (float)($estimatedTaxAdjustments[$monthStart] ?? 0),
+                2
+            );
+            $month['corporation_tax_expense_total'] = round(
+                $month['posted_corporation_tax_charge'] + $month['estimated_corporation_tax_adjustment'],
+                2
+            );
             $month['expense_total'] = round($month['operating_expense_total'] + $month['corporation_tax_expense_total'], 2);
             $month['profit_before_tax'] = round($month['income_total'] - $month['cost_of_sales_total'] - $month['operating_expense_total'], 2);
             $month['profit_after_tax'] = round($month['profit_before_tax'] - $month['corporation_tax_expense_total'], 2);
+            $month['profit_after_estimated_tax'] = $month['profit_after_tax'];
             $month['net_profit'] = $month['profit_after_tax'];
         }
         unset($month);
@@ -514,6 +536,9 @@ final class ProfitLossService
             $source['debit_total'] = 0.0;
             $source['credit_total'] = 0.0;
             $source['present'] = false;
+            $source['verified_journal_count'] = 0;
+            $source['unverified_journal_count'] = 0;
+            $source['evidence_failures'] = [];
         }
         unset($source);
 
@@ -526,6 +551,7 @@ final class ProfitLossService
             'SELECT j.id,
                     COALESCE(j.source_type, \'\') AS source_type,
                     COALESCE(j.source_ref, \'\') AS source_ref,
+                    j.journal_date,
                     COALESCE(j.description, \'\') AS description,
                     COALESCE(SUM(jl.debit), 0) AS debit_total,
                     COALESCE(SUM(jl.credit), 0) AS credit_total
@@ -539,7 +565,7 @@ final class ProfitLossService
                AND j.is_posted = 1
                AND j.journal_date BETWEEN :period_start AND :period_end
                AND jem_close.id IS NULL
-             GROUP BY j.id, j.source_type, j.source_ref, j.description',
+             GROUP BY j.id, j.source_type, j.source_ref, j.journal_date, j.description',
             [
                 'close_journal_tag' => \eel_accounts\Service\RetainedEarningsCloseService::JOURNAL_TAG,
                 'company_id' => $companyId,
@@ -548,8 +574,12 @@ final class ProfitLossService
                 'period_end' => $periodEnd,
             ]
         );
+        $evidenceByJournal = (new JournalSourceEvidenceService())
+            ->verify($rows, $companyId, $accountingPeriodId);
 
         foreach ($rows as $row) {
+            $journalId = (int)($row['id'] ?? 0);
+            $evidence = (array)($evidenceByJournal[$journalId] ?? []);
             $sourceRef = (string)($row['source_ref'] ?? '');
             $description = strtolower((string)($row['description'] ?? ''));
             $sourceType = str_starts_with($sourceRef, 'meta:director_loan') || str_contains($description, 'director loan')
@@ -562,31 +592,48 @@ final class ProfitLossService
             $sources[$sourceType]['debit_total'] = round((float)$sources[$sourceType]['debit_total'] + (float)($row['debit_total'] ?? 0), 2);
             $sources[$sourceType]['credit_total'] = round((float)$sources[$sourceType]['credit_total'] + (float)($row['credit_total'] ?? 0), 2);
             $sources[$sourceType]['present'] = true;
+            if (!empty($evidence['verified'])) {
+                $sources[$sourceType]['verified_journal_count']++;
+            } else {
+                $sources[$sourceType]['unverified_journal_count']++;
+                $sources[$sourceType]['evidence_failures'][] = [
+                    'journal_id' => $journalId,
+                    'source_ref' => $sourceRef,
+                    'reason' => (string)($evidence['reason'] ?? 'Source evidence could not be verified.'),
+                ];
+            }
         }
 
-        $sources['coverage_summary'] = $this->sourceCoverageSummary($rows, $sources);
+        $sources['coverage_summary'] = $this->sourceCoverageSummary($rows, $sources, $evidenceByJournal);
         return $sources;
     }
 
-    private function sourceCoverageSummary(array $rows, array $sources): array
+    private function sourceCoverageSummary(array $rows, array $sources, array $evidenceByJournal = []): array
     {
         $coveredJournalCount = 0;
         $coveredDebitTotal = 0.0;
         $coveredCreditTotal = 0.0;
-        foreach ($sources as $source) {
-            if (!is_array($source) || !array_key_exists('journal_count', $source)) {
-                continue;
-            }
-            $coveredJournalCount += (int)($source['journal_count'] ?? 0);
-            $coveredDebitTotal += (float)($source['debit_total'] ?? 0);
-            $coveredCreditTotal += (float)($source['credit_total'] ?? 0);
-        }
 
         $postedDebitTotal = 0.0;
         $postedCreditTotal = 0.0;
+        $evidenceFailures = [];
         foreach ($rows as $row) {
             $postedDebitTotal += (float)($row['debit_total'] ?? 0);
             $postedCreditTotal += (float)($row['credit_total'] ?? 0);
+            $journalId = (int)($row['id'] ?? 0);
+            $evidence = (array)($evidenceByJournal[$journalId] ?? []);
+            if (!empty($evidence['verified'])) {
+                $coveredJournalCount++;
+                $coveredDebitTotal += (float)($row['debit_total'] ?? 0);
+                $coveredCreditTotal += (float)($row['credit_total'] ?? 0);
+                continue;
+            }
+            $evidenceFailures[] = [
+                'journal_id' => $journalId,
+                'source_type' => (string)($row['source_type'] ?? ''),
+                'source_ref' => (string)($row['source_ref'] ?? ''),
+                'reason' => (string)($evidence['reason'] ?? 'Source evidence could not be verified.'),
+            ];
         }
 
         $postedJournalCount = count($rows);
@@ -605,6 +652,7 @@ final class ProfitLossService
             'covered_credit_total' => round($coveredCreditTotal, 2),
             'reconciled' => $reconciled,
             'status' => $reconciled ? 'pass' : 'warning',
+            'evidence_failures' => $evidenceFailures,
         ];
     }
 
@@ -777,6 +825,12 @@ final class ProfitLossService
                     'capital_add_backs' => (float)($preTax['capital_add_backs'] ?? 0),
                     'other_treatment_count' => (int)($preTax['other_treatment_count'] ?? 0),
                     'unknown_treatment_count' => (int)($preTax['unknown_treatment_count'] ?? 0),
+                    'prepayment_preview_reliable' => !array_key_exists('prepayment_preview_reliable', $preTax)
+                        || !empty($preTax['prepayment_preview_reliable']),
+                    'prepayment_preview_warnings' => array_values(array_unique(array_map(
+                        'strval',
+                        (array)($preTax['prepayment_preview_warnings'] ?? [])
+                    ))),
                 ]);
                 $posted = (float)($preTax['posted_corporation_tax_charge'] ?? 0);
                 $estimated = (float)($estimate['estimated_corporation_tax'] ?? 0);
@@ -929,6 +983,8 @@ final class ProfitLossService
                 'operating_expense_total' => 0.0,
                 'posted_operating_expense_total' => 0.0,
                 'depreciation_expense' => 0.0,
+                'posted_corporation_tax_charge' => 0.0,
+                'estimated_corporation_tax_adjustment' => 0.0,
                 'corporation_tax_expense_total' => 0.0,
                 'expense_total' => 0.0,
                 'profit_before_tax' => 0.0,
@@ -950,6 +1006,105 @@ final class ProfitLossService
         }
 
         return $months;
+    }
+
+    /** @return array<string, float> */
+    private function monthlyEstimatedCorporationTaxAdjustments(
+        int $companyId,
+        int $accountingPeriodId,
+        array $accountingPeriod,
+        array $preTax
+    ): array {
+        $periods = $this->activeCtPeriods($companyId, $accountingPeriodId, $accountingPeriod);
+        $adjustments = [];
+        $allPeriodEstimatesAvailable = $periods !== [];
+        $computation = new CorporationTaxComputationService();
+
+        foreach ($periods as $period) {
+            $ctPeriodId = (int)($period['id'] ?? 0);
+            if ($ctPeriodId <= 0) {
+                $allPeriodEstimatesAvailable = false;
+                break;
+            }
+
+            $summary = $computation->fetchSummaryForCtPeriodId($companyId, $ctPeriodId);
+            if (empty($summary['available'])) {
+                $allPeriodEstimatesAvailable = false;
+                break;
+            }
+
+            $periodStart = (string)($period['period_start'] ?? '');
+            $periodEnd = (string)($period['period_end'] ?? '');
+            $monthStart = substr($periodEnd, 0, 7) . '-01';
+            $posted = $this->postedCorporationTaxChargeForDateRange(
+                $companyId,
+                $accountingPeriodId,
+                $periodStart,
+                $periodEnd
+            );
+            $adjustments[$monthStart] = round(
+                (float)($adjustments[$monthStart] ?? 0)
+                    + (float)($summary['estimated_corporation_tax'] ?? 0)
+                    - $posted,
+                2
+            );
+        }
+
+        if ($allPeriodEstimatesAvailable) {
+            return $adjustments;
+        }
+
+        $position = $this->corporationTaxProvisionPosition(
+            $companyId,
+            $accountingPeriodId,
+            $this->preTaxService,
+            $accountingPeriod,
+            (string)($accountingPeriod['period_end'] ?? ''),
+            $preTax
+        );
+        if (empty($position['available'])) {
+            return [];
+        }
+
+        $monthStart = substr((string)($accountingPeriod['period_end'] ?? ''), 0, 7) . '-01';
+        return [
+            $monthStart => round(
+                (float)($position['estimated_corporation_tax'] ?? 0)
+                    - (float)($preTax['posted_corporation_tax_charge'] ?? 0),
+                2
+            ),
+        ];
+    }
+
+    private function postedCorporationTaxChargeForDateRange(
+        int $companyId,
+        int $accountingPeriodId,
+        string $periodStart,
+        string $periodEnd
+    ): float {
+        $settings = (new \eel_accounts\Store\CompanySettingsStore($companyId))->all();
+        $nominalId = (int)($settings['corporation_tax_expense_nominal_id'] ?? 0);
+        if ($nominalId <= 0 || $periodStart === '' || $periodEnd === '') {
+            return 0.0;
+        }
+
+        return round((float)\InterfaceDB::fetchColumn(
+            'SELECT COALESCE(SUM(COALESCE(jl.debit, 0) - COALESCE(jl.credit, 0)), 0)
+             FROM journals j
+             INNER JOIN journal_lines jl ON jl.journal_id = j.id
+             WHERE j.company_id = :company_id
+               AND j.accounting_period_id = :accounting_period_id
+               AND j.is_posted = 1
+               AND j.journal_date BETWEEN :period_start AND :period_end
+               AND jl.nominal_account_id = :nominal_account_id',
+            [
+                'company_id' => $companyId,
+                'accounting_period_id' => $accountingPeriodId,
+                'period_start' => $periodStart,
+                'period_end' => $periodEnd,
+                'nominal_account_id' => $nominalId,
+            ]
+        ), 2);
     }
 
     private function emptyMonthConfirmationMonths(int $companyId, int $accountingPeriodId): array

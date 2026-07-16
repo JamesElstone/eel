@@ -44,6 +44,25 @@ $harness->run(_year_end_retained_earningsCard::class, static function (Generated
         $harness->assertSame(true, str_contains($html, 'type="submit" disabled title="Complete and lock the prior accounting period before closing retained earnings."'));
     });
 
+    $harness->check(_year_end_retained_earningsCard::class, 'does not present an unbalanced balance sheet as an equality', static function () use ($harness, $card): void {
+        $html = $card->render(yearEndRetainedEarningsCardContext(false, false, [
+            'summary' => [
+                'opening_equity' => 0,
+                'current_profit_loss' => -396.91,
+                'closing_equity_before_close' => 0,
+                'retained_earnings_movement' => -396.91,
+                'assets' => 990.44,
+                'liabilities' => 1387.35,
+                'equity' => -300.00,
+                'balance_equation_difference' => -96.91,
+                'is_balance_sheet_balanced' => false,
+            ],
+        ]));
+
+        $harness->assertSame(true, str_contains($html, 'do not agree to equity'));
+        $harness->assertSame(true, str_contains($html, 'difference -£ 96.91'));
+    });
+
     $harness->check(_year_end_retained_earningsCard::class, 'reuses the profit and loss corporation tax provision', static function () use ($harness, $card): void {
         $services = $card->services();
         $params = (array)($services[0]['params'] ?? []);

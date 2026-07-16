@@ -145,6 +145,57 @@ final class TaxPeriodService
         return $periods;
     }
 
+    /**
+     * Validate the statutory calendar limit of twelve months. The inclusive
+     * day count may therefore be 366 when the period spans 29 February.
+     *
+     * @return array{valid: bool, days: int, maximum_end: string, error: string}
+     */
+    public function validateMaximumPeriodLength(string $periodStart, string $periodEnd): array
+    {
+        if (
+            preg_match('/^\d{4}-\d{2}-\d{2}$/', $periodStart) !== 1
+            || preg_match('/^\d{4}-\d{2}-\d{2}$/', $periodEnd) !== 1
+        ) {
+            return [
+                'valid' => false,
+                'days' => 0,
+                'maximum_end' => '',
+                'error' => 'CT period dates must use YYYY-MM-DD.',
+            ];
+        }
+
+        try {
+            $start = new \DateTimeImmutable($periodStart);
+            $end = new \DateTimeImmutable($periodEnd);
+        } catch (\Throwable) {
+            return [
+                'valid' => false,
+                'days' => 0,
+                'maximum_end' => '',
+                'error' => 'CT period dates are invalid.',
+            ];
+        }
+        if ($start->format('Y-m-d') !== $periodStart || $end->format('Y-m-d') !== $periodEnd || $end < $start) {
+            return [
+                'valid' => false,
+                'days' => 0,
+                'maximum_end' => '',
+                'error' => 'The CT period end must be on or after its start.',
+            ];
+        }
+
+        $maximumEnd = $start->modify('+1 year')->modify('-1 day');
+        $valid = $end <= $maximumEnd;
+
+        return [
+            'valid' => $valid,
+            'days' => (int)$start->diff($end)->days + 1,
+            'maximum_end' => $maximumEnd->format('Y-m-d'),
+            'error' => $valid ? '' : 'The CT period exceeds 12 months.',
+        ];
+    }
+
     private function validateDerivedCoverage(array $periods, \DateTimeImmutable $accountingStart, \DateTimeImmutable $accountingEnd): void {
         if (empty($periods)) {
             throw new \RuntimeException('At least one CT period must be derived.');
@@ -164,10 +215,12 @@ final class TaxPeriodService
                 throw new \RuntimeException('A CT period start cannot be after its end.');
             }
 
-            $maxEnd = $periodStart->modify('+1 year')->modify('-1 day');
-
-            if ($periodEnd > $maxEnd) {
-                throw new \RuntimeException('A CT period cannot exceed 12 months.');
+            $length = $this->validateMaximumPeriodLength(
+                $periodStart->format('Y-m-d'),
+                $periodEnd->format('Y-m-d')
+            );
+            if (empty($length['valid'])) {
+                throw new \RuntimeException((string)($length['error'] ?? 'A CT period cannot exceed 12 months.'));
             }
 
             if ($index > 0) {

@@ -492,7 +492,7 @@ final class CompanyAction implements ActionInterfaceFramework
             $settingsStore = new \eel_accounts\Store\CompanySettingsStore($companyId);
             $settingsService = new \eel_accounts\Service\CompanySettingsService();
 
-            $settingsService->saveCompanySection($settingsStore, [
+            $settings = [
                 'company_id' => (string)$companyId,
                 'company_name' => (string)($company['company_name'] ?? ''),
                 'companies_house_number' => (string)($company['company_number'] ?? ''),
@@ -511,7 +511,12 @@ final class CompanyAction implements ActionInterfaceFramework
                 'vat_validation_postcode' => (string)($company['vat_validation_postcode'] ?? ''),
                 'vat_validation_country_code' => (string)($company['vat_validation_country_code'] ?? ''),
                 'vat_last_error' => (string)($company['vat_last_error'] ?? ''),
-            ]);
+            ];
+            if (array_key_exists('qualifying_activity_ceased_on', $request->postValues())) {
+                $settings['qualifying_activity_ceased_on'] = trim((string)$request->post('qualifying_activity_ceased_on', ''));
+            }
+
+            $settingsService->saveCompanySection($settingsStore, $settings);
 
             return ActionResultFramework::success(
                 ['page.context'],

@@ -15,6 +15,7 @@ $cardClasses = [
     _tax_corporation_tax_summaryCard::class,
     _tax_taxable_profit_bridgeCard::class,
     _tax_disallowable_add_backsCard::class,
+    _tax_capital_add_backsCard::class,
     _tax_depreciation_add_backCard::class,
     _tax_capital_allowances_summaryCard::class,
     _tax_aia_allocationCard::class,
@@ -68,6 +69,7 @@ foreach ($cardClasses as $className) {
             _tax_corporation_tax_summaryCard::class,
             _tax_taxable_profit_bridgeCard::class,
             _tax_disallowable_add_backsCard::class,
+            _tax_capital_add_backsCard::class,
             _tax_capital_allowances_summaryCard::class,
             _tax_aia_allocationCard::class,
         ], true)) {
@@ -109,6 +111,19 @@ foreach ($cardClasses as $className) {
             });
         }
 
+        if (in_array($className, [_tax_main_rate_poolCard::class, _tax_special_rate_poolCard::class], true)) {
+            $harness->check($className, 'shows balancing allowances separately from balancing charges', static function () use ($harness, $card): void {
+                $context = taxWorkingsCardsContext();
+                $poolKey = $card instanceof _tax_main_rate_poolCard ? 'main_rate_pool' : 'special_rate_pool';
+                $context['services']['taxWorkings'][$poolKey]['balancing_allowance'] = 321.45;
+
+                $html = $card->render($context);
+
+                $harness->assertTrue(str_contains($html, 'Balancing allowance'));
+                $harness->assertTrue(str_contains($html, '$ 321.45'));
+            });
+        }
+
         if ($className === _tax_taxable_profit_bridgeCard::class) {
             $harness->check($className, 'renders depreciation and apportionment guidance beside the general HMRC link', static function () use ($harness, $card): void {
                 $html = $card->render(taxWorkingsCardsContext());
@@ -117,6 +132,26 @@ foreach ($cardClasses as $className) {
                 $harness->assertTrue(str_contains($html, 'HMRC - CTM01405: Apportionment'));
                 $harness->assertTrue(str_contains($html, 'https://www.gov.uk/hmrc-internal-manuals/business-income-manual/bim35201'));
                 $harness->assertTrue(str_contains($html, 'https://www.gov.uk/hmrc-internal-manuals/company-taxation-manual/ctm01405'));
+            });
+        }
+
+        if ($className === _tax_disallowable_add_backsCard::class) {
+            $harness->check($className, 'renders signed pending-prepayment movements without capital rows', static function () use ($harness, $card): void {
+                $html = $card->render(taxWorkingsCardsContext());
+
+                $harness->assertTrue(str_contains($html, 'Pending prepayment'));
+                $harness->assertTrue(str_contains($html, 'Signed add-back'));
+                $harness->assertSame(false, str_contains($html, 'Loss on disposal'));
+            });
+        }
+
+        if ($className === _tax_capital_add_backsCard::class) {
+            $harness->check($className, 'renders capital movements in their own card', static function () use ($harness, $card): void {
+                $html = $card->render(taxWorkingsCardsContext());
+
+                $harness->assertTrue(str_contains($html, 'Loss on disposal'));
+                $harness->assertTrue(str_contains($html, 'Posted ledger'));
+                $harness->assertSame(false, str_contains($html, 'Entertaining'));
             });
         }
 
@@ -172,7 +207,11 @@ function taxWorkingsCardsContext(): array
                     ['label' => 'Estimated corporation tax', 'amount' => 2280],
                 ],
                 'disallowable_add_backs' => [
-                    ['nominal_code' => '7400', 'nominal_name' => 'Entertaining', 'tax_treatment' => 'disallowable', 'amount' => 500],
+                    ['nominal_code' => '7400', 'nominal_name' => 'Entertaining', 'tax_treatment' => 'disallowable', 'source_label' => 'Posted ledger', 'amount' => 500],
+                    ['nominal_code' => '7400', 'nominal_name' => 'Entertaining', 'tax_treatment' => 'disallowable', 'source_label' => 'Pending prepayment', 'amount' => -25],
+                ],
+                'capital_add_backs' => [
+                    ['nominal_code' => '6210', 'nominal_name' => 'Loss on disposal', 'tax_treatment' => 'capital', 'source_label' => 'Posted ledger', 'amount' => 100],
                 ],
                 'depreciation_add_back' => [
                     ['asset_code' => 'FA-1', 'description' => 'Laptop', 'direction' => 'add', 'amount' => 1500],
@@ -195,6 +234,7 @@ function taxWorkingsCardsContext(): array
                     'fya_claimed' => 5000,
                     'disposal_value' => 0,
                     'wda_claimed' => 0,
+                    'balancing_allowance' => 0,
                     'balancing_charge' => 0,
                     'closing_wdv' => 0,
                 ],
@@ -203,6 +243,7 @@ function taxWorkingsCardsContext(): array
                     'additions' => 0,
                     'disposal_value' => 0,
                     'wda_claimed' => 600,
+                    'balancing_allowance' => 0,
                     'balancing_charge' => 0,
                     'closing_wdv' => 9400,
                 ],

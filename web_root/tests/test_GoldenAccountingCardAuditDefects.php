@@ -221,6 +221,241 @@ $harness->check('GoldenAccountingCardAuditDefects', 'reconciles pending deprecia
     );
 });
 
+$harness->check('GoldenAccountingCardAuditDefects', 'reconciles split CT-period depreciation pennies to each tax summary', static function () use ($harness): void {
+    $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
+    $periodService = new \eel_accounts\Service\CorporationTaxPeriodService();
+    $sync = $periodService->syncForAccountingPeriod($companyId, 9111);
+    $harness->assertTrue((bool)($sync['success'] ?? false));
+    $periods = array_values(array_filter(
+        (array)($sync['periods'] ?? []),
+        static fn(array $period): bool => (string)($period['status'] ?? '') !== 'superseded'
+    ));
+    $harness->assertCount(2, $periods);
+
+    $detailAcrossPeriods = 0.0;
+    $summaryAcrossPeriods = 0.0;
+    foreach ($periods as $period) {
+        $workings = (new \eel_accounts\Service\TaxWorkingsService())
+            ->fetchWorkings($companyId, 9111, (int)($period['id'] ?? 0));
+        $detail = round(array_sum(array_map(
+            static fn(array $row): float => (float)($row['amount'] ?? 0),
+            (array)($workings['depreciation_add_back'] ?? [])
+        )), 2);
+        $summary = round((float)(($workings['summary'] ?? [])['depreciation_add_back'] ?? 0), 2);
+        $harness->assertSame(goldenCardAuditMoney($summary), goldenCardAuditMoney($detail));
+        $detailAcrossPeriods = round($detailAcrossPeriods + $detail, 2);
+        $summaryAcrossPeriods = round($summaryAcrossPeriods + $summary, 2);
+    }
+
+    $full = (new \eel_accounts\Service\TaxWorkingsService())->fetchWorkings($companyId, 9111, 0);
+    $harness->assertSame(
+        [
+            goldenCardAuditMoney(($full['summary'] ?? [])['depreciation_add_back'] ?? 0),
+            goldenCardAuditMoney(($full['summary'] ?? [])['depreciation_add_back'] ?? 0),
+        ],
+        [
+            goldenCardAuditMoney($detailAcrossPeriods),
+            goldenCardAuditMoney($summaryAcrossPeriods),
+        ]
+    );
+});
+
+$harness->check('GoldenAccountingCardAuditDefects', 'keeps signed disallowable and capital detail separate while reconciling split CT periods', static function () use ($harness): void {
+    InterfaceDB::beginTransaction();
+    try {
+        $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
+        $accountingPeriodId = 9111;
+        $before = (new \eel_accounts\Service\TaxWorkingsService())
+            ->fetchWorkings($companyId, $accountingPeriodId, 0);
+        $disallowableNominalId = goldenCardAuditEnsureNominal(
+            99101,
+            'GOLD-DIS-SIGNED',
+            'Golden signed disallowable movement',
+            'expense',
+            'disallowable'
+        );
+        $capitalNominalId = goldenCardAuditEnsureNominal(
+            99102,
+            'GOLD-CAP-SIGNED',
+            'Golden signed capital movement',
+            'expense',
+            'capital'
+        );
+
+        goldenCardAuditPostJournal(
+            99111,
+            $accountingPeriodId,
+            '2022-10-10',
+            'manual',
+            'golden-audit-signed-disallowable-debit',
+            $disallowableNominalId,
+            91001,
+            100.00,
+            'Golden signed disallowable debit'
+        );
+        goldenCardAuditPostJournal(
+            99112,
+            $accountingPeriodId,
+            '2023-03-10',
+            'manual',
+            'golden-audit-signed-disallowable-credit',
+            91001,
+            $disallowableNominalId,
+            20.00,
+            'Golden signed disallowable credit'
+        );
+        goldenCardAuditPostJournal(
+            99113,
+            $accountingPeriodId,
+            '2022-11-10',
+            'manual',
+            'golden-audit-signed-capital-debit',
+            $capitalNominalId,
+            91001,
+            50.00,
+            'Golden signed capital debit'
+        );
+        goldenCardAuditPostJournal(
+            99114,
+            $accountingPeriodId,
+            '2023-04-10',
+            'manual',
+            'golden-audit-signed-capital-credit',
+            91001,
+            $capitalNominalId,
+            10.00,
+            'Golden signed capital credit'
+        );
+
+        $full = (new \eel_accounts\Service\TaxWorkingsService())
+            ->fetchWorkings($companyId, $accountingPeriodId, 0);
+        $disallowableRows = array_values(array_filter(
+            (array)($full['disallowable_add_backs'] ?? []),
+            static fn(array $row): bool => (string)($row['nominal_code'] ?? '') === 'GOLD-DIS-SIGNED'
+        ));
+        $capitalRows = array_values(array_filter(
+            (array)($full['capital_add_backs'] ?? []),
+            static fn(array $row): bool => (string)($row['nominal_code'] ?? '') === 'GOLD-CAP-SIGNED'
+        ));
+        $disallowableAmounts = array_map(static fn(array $row): float => (float)($row['amount'] ?? 0), $disallowableRows);
+        $capitalAmounts = array_map(static fn(array $row): float => (float)($row['amount'] ?? 0), $capitalRows);
+        sort($disallowableAmounts);
+        sort($capitalAmounts);
+
+        $harness->assertSame(['-20.00', '100.00'], array_map('goldenCardAuditMoney', $disallowableAmounts));
+        $harness->assertSame(['-10.00', '50.00'], array_map('goldenCardAuditMoney', $capitalAmounts));
+        $harness->assertSame(
+            goldenCardAuditMoney((float)(($before['summary'] ?? [])['disallowable_add_backs'] ?? 0) + 80.00),
+            goldenCardAuditMoney(($full['summary'] ?? [])['disallowable_add_backs'] ?? 0)
+        );
+        $harness->assertSame(
+            goldenCardAuditMoney((float)(($before['summary'] ?? [])['capital_add_backs'] ?? 0) + 40.00),
+            goldenCardAuditMoney(($full['summary'] ?? [])['capital_add_backs'] ?? 0)
+        );
+
+        $periodService = new \eel_accounts\Service\CorporationTaxPeriodService();
+        $sync = $periodService->syncForAccountingPeriod($companyId, $accountingPeriodId);
+        $harness->assertTrue((bool)($sync['success'] ?? false));
+        $periods = array_values(array_filter(
+            (array)($sync['periods'] ?? []),
+            static fn(array $period): bool => (string)($period['status'] ?? '') !== 'superseded'
+        ));
+        $harness->assertCount(2, $periods);
+
+        $detailAcrossPeriods = ['disallowable_add_backs' => 0.0, 'capital_add_backs' => 0.0];
+        foreach ($periods as $period) {
+            $workings = (new \eel_accounts\Service\TaxWorkingsService())
+                ->fetchWorkings($companyId, $accountingPeriodId, (int)($period['id'] ?? 0));
+            foreach (array_keys($detailAcrossPeriods) as $key) {
+                $detail = round(array_sum(array_map(
+                    static fn(array $row): float => (float)($row['amount'] ?? 0),
+                    (array)($workings[$key] ?? [])
+                )), 2);
+                $summary = round((float)(($workings['summary'] ?? [])[$key] ?? 0), 2);
+                $harness->assertSame(goldenCardAuditMoney($summary), goldenCardAuditMoney($detail));
+                $detailAcrossPeriods[$key] = round($detailAcrossPeriods[$key] + $detail, 2);
+            }
+            $harness->assertSame(
+                [],
+                array_values(array_filter(
+                    (array)($workings['disallowable_add_backs'] ?? []),
+                    static fn(array $row): bool => (string)($row['tax_treatment'] ?? '') !== 'disallowable'
+                ))
+            );
+            $harness->assertSame(
+                [],
+                array_values(array_filter(
+                    (array)($workings['capital_add_backs'] ?? []),
+                    static fn(array $row): bool => (string)($row['tax_treatment'] ?? '') !== 'capital'
+                ))
+            );
+        }
+
+        $harness->assertSame(
+            [
+                goldenCardAuditMoney(($full['summary'] ?? [])['disallowable_add_backs'] ?? 0),
+                goldenCardAuditMoney(($full['summary'] ?? [])['capital_add_backs'] ?? 0),
+            ],
+            [
+                goldenCardAuditMoney($detailAcrossPeriods['disallowable_add_backs']),
+                goldenCardAuditMoney($detailAcrossPeriods['capital_add_backs']),
+            ]
+        );
+    } finally {
+        goldenCardAuditRollback();
+    }
+});
+
+$harness->check('GoldenAccountingCardAuditDefects', 'includes signed pending prepayment movements in disallowable detail and summary', static function () use ($harness): void {
+    InterfaceDB::beginTransaction();
+    try {
+        InterfaceDB::prepareExecute(
+            'UPDATE nominal_accounts SET tax_treatment = :tax_treatment WHERE id = :id',
+            ['tax_treatment' => 'disallowable', 'id' => 91019]
+        );
+        $companyId = GoldenAccountsFixture::GOLDEN_COMPANY_ID;
+        $accountingPeriodId = 9112;
+        $before = (new \eel_accounts\Service\TaxWorkingsService())
+            ->fetchWorkings($companyId, $accountingPeriodId, 0);
+        $beforeDetail = round(array_sum(array_map(
+            static fn(array $row): float => (float)($row['amount'] ?? 0),
+            (array)($before['disallowable_add_backs'] ?? [])
+        )), 2);
+
+        goldenCardAuditSeedAnnualPrepayment(false);
+
+        $after = (new \eel_accounts\Service\TaxWorkingsService())
+            ->fetchWorkings($companyId, $accountingPeriodId, 0);
+        $afterDetail = round(array_sum(array_map(
+            static fn(array $row): float => (float)($row['amount'] ?? 0),
+            (array)($after['disallowable_add_backs'] ?? [])
+        )), 2);
+        $pendingRows = array_values(array_filter(
+            (array)($after['disallowable_add_backs'] ?? []),
+            static fn(array $row): bool => (string)($row['source'] ?? '') === 'pending_prepayment'
+                && (string)($row['nominal_code'] ?? '') === 'GOLD-PREPAY-EXP'
+        ));
+
+        $harness->assertCount(1, $pendingRows);
+        $harness->assertSame('2024-09-30', (string)($pendingRows[0]['journal_date'] ?? ''));
+        $harness->assertSame('-107.00', goldenCardAuditMoney($pendingRows[0]['amount'] ?? 0));
+        $harness->assertSame(
+            goldenCardAuditMoney($beforeDetail + 259.00),
+            goldenCardAuditMoney($afterDetail)
+        );
+        $harness->assertSame(
+            goldenCardAuditMoney((float)(($before['summary'] ?? [])['disallowable_add_backs'] ?? 0) + 259.00),
+            goldenCardAuditMoney(($after['summary'] ?? [])['disallowable_add_backs'] ?? 0)
+        );
+        $harness->assertSame(
+            goldenCardAuditMoney(($after['summary'] ?? [])['disallowable_add_backs'] ?? 0),
+            goldenCardAuditMoney($afterDetail)
+        );
+    } finally {
+        goldenCardAuditRollback();
+    }
+});
+
 $harness->check('GoldenAccountingCardAuditDefects', 'adds an accounting fixed-asset disposal loss back for corporation tax', static function () use ($harness): void {
     InterfaceDB::beginTransaction();
     try {
@@ -242,22 +477,28 @@ $harness->check('GoldenAccountingCardAuditDefects', 'adds an accounting fixed-as
         $after = (new \eel_accounts\Service\TaxWorkingsService())
             ->fetchWorkings(GoldenAccountsFixture::GOLDEN_COMPANY_ID, 9112, 0);
         $disposalDetail = 0.0;
-        foreach ((array)($after['disallowable_add_backs'] ?? []) as $row) {
+        $disposalTreatment = '';
+        foreach ((array)($after['capital_add_backs'] ?? []) as $row) {
             if ((string)($row['nominal_code'] ?? '') === '6210') {
                 $disposalDetail += (float)($row['amount'] ?? 0);
+                $disposalTreatment = (string)($row['tax_treatment'] ?? '');
             }
         }
 
         $harness->assertSame(
             [
-                goldenCardAuditMoney((float)(($before['summary'] ?? [])['disallowable_add_backs'] ?? 0) + 100.00),
+                goldenCardAuditMoney(($before['summary'] ?? [])['disallowable_add_backs'] ?? 0),
+                goldenCardAuditMoney((float)(($before['summary'] ?? [])['capital_add_backs'] ?? 0) + 100.00),
                 goldenCardAuditMoney(($before['summary'] ?? [])['taxable_before_losses'] ?? 0),
                 '100.00',
+                'capital',
             ],
             [
                 goldenCardAuditMoney(($after['summary'] ?? [])['disallowable_add_backs'] ?? 0),
+                goldenCardAuditMoney(($after['summary'] ?? [])['capital_add_backs'] ?? 0),
                 goldenCardAuditMoney(($after['summary'] ?? [])['taxable_before_losses'] ?? 0),
                 goldenCardAuditMoney($disposalDetail),
+                $disposalTreatment,
             ]
         );
     } finally {
@@ -364,6 +605,10 @@ $harness->check('GoldenAccountingCardAuditDefects', 'cross-foots monthly after-t
 $harness->check('GoldenAccountingCardAuditDefects', 'does not mark a journal with a nonexistent source reference as covered and reconciled', static function () use ($harness): void {
     InterfaceDB::beginTransaction();
     try {
+        $service = new \eel_accounts\Service\ProfitLossService();
+        $baselineCoverage = $service
+            ->getSourceCoverage(GoldenAccountsFixture::GOLDEN_COMPANY_ID, 9114);
+        $baselineUncovered = (int)(($baselineCoverage['coverage_summary'] ?? [])['uncovered_journal_count'] ?? 0);
         goldenCardAuditPostJournal(
             99061,
             9114,
@@ -375,17 +620,30 @@ $harness->check('GoldenAccountingCardAuditDefects', 'does not mark a journal wit
             25.00,
             'Golden audit broken transaction source reference'
         );
-        $coverage = (new \eel_accounts\Service\ProfitLossService())
-            ->getSourceCoverage(GoldenAccountsFixture::GOLDEN_COMPANY_ID, 9114);
+        $coverage = $service->getSourceCoverage(GoldenAccountsFixture::GOLDEN_COMPANY_ID, 9114);
         $summary = (array)($coverage['coverage_summary'] ?? []);
 
         $harness->assertSame(
-            [1, false],
+            [$baselineUncovered + 1, false],
             [(int)($summary['uncovered_journal_count'] ?? 0), (bool)($summary['reconciled'] ?? true)]
         );
     } finally {
         goldenCardAuditRollback();
     }
+});
+
+$harness->check('GoldenAccountingCardAuditDefects', 'does not treat tagged prepayment metadata as independent proof of journal accounting', static function () use ($harness): void {
+    $coverage = (new \eel_accounts\Service\ProfitLossService())
+        ->getSourceCoverage(GoldenAccountsFixture::GOLDEN_COMPANY_ID, 9114);
+    $failures = array_values(array_filter(
+        (array)(($coverage['coverage_summary'] ?? [])['evidence_failures'] ?? []),
+        static fn(array $failure): bool =>
+            str_starts_with((string)($failure['source_ref'] ?? ''), 'meta:prepayment_')
+            && str_contains((string)($failure['reason'] ?? ''), 'no independent content verifier')
+    ));
+
+    $harness->assertCount(2, $failures);
+    $harness->assertSame(false, (bool)(($coverage['coverage_summary'] ?? [])['reconciled'] ?? true));
 });
 
 $harness->check('GoldenAccountingCardAuditDefects', 'retains historical journal balances after a nominal is deactivated', static function () use ($harness): void {

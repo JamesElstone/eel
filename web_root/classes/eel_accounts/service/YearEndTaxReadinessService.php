@@ -107,6 +107,18 @@ final class YearEndTaxReadinessService
 
         $totals = $this->totals($periodSummaries);
         $warnings = $this->warnings($periodSummaries);
+        $prepaymentPreviewWarnings = array_values(array_unique(array_merge(...array_map(
+            static fn(array $period): array => array_map(
+                'strval',
+                (array)($period['prepayment_preview_warnings'] ?? [])
+            ),
+            $periodSummaries
+        ))));
+        $prepaymentPreviewReliable = !in_array(false, array_map(
+            static fn(array $period): bool => !array_key_exists('prepayment_preview_reliable', $period)
+                || !empty($period['prepayment_preview_reliable']),
+            $periodSummaries
+        ), true);
         $confidenceStatus = $warnings === [] ? 'ready_for_review' : 'review_required';
         $provision = ($this->provisionService ?? new \eel_accounts\Service\CorporationTaxProvisionService())
             ->fetchAccountingPeriodPosition($companyId, $accountingPeriodId, $periodSummaries);
@@ -117,6 +129,8 @@ final class YearEndTaxReadinessService
             'periods' => $periodSummaries,
             'totals' => $totals,
             'warnings' => $warnings,
+            'prepayment_preview_reliable' => $prepaymentPreviewReliable,
+            'prepayment_preview_warnings' => $prepaymentPreviewWarnings,
             'provision' => $provision,
             'calculation_status' => 'estimate',
             'confidence_status' => $confidenceStatus,
@@ -130,6 +144,7 @@ final class YearEndTaxReadinessService
         $fields = [
             'accounting_profit',
             'disallowable_add_backs',
+            'capital_add_backs',
             'depreciation_add_back',
             'capital_allowances',
             'taxable_before_losses',

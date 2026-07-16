@@ -32,6 +32,8 @@ final class _pl_monthly_trendCard extends CardBaseFramework
                 <td>' . HelperFramework::escape($this->money($companySettings, $row['cost_of_sales_total'] ?? 0)) . '</td>
                 <td>' . HelperFramework::escape($this->money($companySettings, $row['operating_expense_total'] ?? ($row['expense_total'] ?? 0))) . '</td>
                 <td>' . HelperFramework::escape($this->money($companySettings, $row['depreciation_expense'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $row['posted_corporation_tax_charge'] ?? 0)) . '</td>
+                <td>' . HelperFramework::escape($this->money($companySettings, $row['estimated_corporation_tax_adjustment'] ?? 0)) . '</td>
                 <td>' . HelperFramework::escape($this->money($companySettings, $row['corporation_tax_expense_total'] ?? 0)) . '</td>
                 <td>' . HelperFramework::escape($this->money($companySettings, $row['profit_before_tax'] ?? 0)) . '</td>
                 <td><span class="badge ' . ($net >= 0 ? 'success' : 'danger') . '">' . HelperFramework::escape($this->money($companySettings, $net)) . '</span></td>
@@ -40,7 +42,7 @@ final class _pl_monthly_trendCard extends CardBaseFramework
 
         return '<div class="pl-monthly-trend-layout">
             <div class="table-scroll pl-monthly-trend-table"><table>
-                <thead><tr><th>Month</th><th>Income</th><th>Cost of sales</th><th>Operating expenses</th><th>Depreciation preview</th><th>CT charge</th><th>Profit before tax</th><th>After tax</th></tr></thead>
+                <thead><tr><th>Month</th><th>Income</th><th>Cost of sales</th><th>Operating expenses</th><th>Depreciation preview</th><th>Posted CT</th><th>Estimated CT adjustment</th><th>Estimated CT total</th><th>Profit before tax</th><th>After estimated tax</th></tr></thead>
                 <tbody>' . $html . '</tbody>
             </table></div>
             <div class="pl-monthly-trend-chart">
@@ -73,7 +75,7 @@ final class _pl_monthly_trendCard extends CardBaseFramework
                 'points' => $this->points($rows, 'profit_before_tax'),
             ],
             [
-                'label' => 'After tax',
+                'label' => 'After estimated tax',
                 'color' => '#16a34a',
                 'points' => $this->points($rows, 'profit_after_tax'),
             ],

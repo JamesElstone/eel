@@ -27,7 +27,19 @@ goldenTaxFixtureIntegrityCheck($harness, 'makes the completed CT snapshot consum
         );
     }
 
-    $harness->assertSame('locked_snapshot', (string)(($workings['summary'] ?? [])['summary_source'] ?? ''));
+    $summary = (array)($workings['summary'] ?? []);
+    $harness->assertSame('locked_snapshot', (string)($summary['summary_source'] ?? ''));
+    $harness->assertTrue(!empty($summary['available']));
+    $harness->assertSame('1500.00', number_format((float)($summary['accounting_profit'] ?? 0), 2, '.', ''));
+    $harness->assertSame('200.00', number_format((float)($summary['disallowable_add_backs'] ?? 0), 2, '.', ''));
+    $harness->assertSame('200.00', number_format((float)($summary['depreciation_add_back'] ?? 0), 2, '.', ''));
+    $harness->assertSame('1348.00', number_format((float)($summary['capital_allowances'] ?? 0), 2, '.', ''));
+    $harness->assertSame('552.00', number_format((float)($summary['taxable_before_losses'] ?? 0), 2, '.', ''));
+    $harness->assertSame('452.00', number_format((float)($summary['taxable_profit'] ?? 0), 2, '.', ''));
+    $harness->assertSame('85.88', number_format((float)($summary['estimated_corporation_tax'] ?? 0), 2, '.', ''));
+    $harness->assertTrue((array)($summary['steps'] ?? []) !== []);
+    $harness->assertTrue((array)($summary['ct_rate_bands'] ?? []) !== []);
+    $harness->assertTrue((array)($summary['capital_allowance_breakdown']['rows'] ?? []) !== []);
 });
 
 goldenTaxFixtureIntegrityCheck($harness, 'reconciles the completed CT summary to its capital allowance pools', static function () use ($harness): void {
@@ -55,6 +67,41 @@ goldenTaxFixtureIntegrityCheck($harness, 'reconciles the completed CT summary to
         number_format($poolNet, 2, '.', ''),
         number_format((float)($summary['capital_allowances'] ?? 0), 2, '.', '')
     );
+    $harness->assertSame('1348.00', number_format($poolNet, 2, '.', ''));
+
+    $mainPool = InterfaceDB::fetchOne(
+        'SELECT aia_claimed, disposal_value, wda_claimed, balancing_charge, closing_wdv
+         FROM capital_allowance_pool_runs
+         WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id
+           AND ct_period_id = :ct_period_id AND pool_type = :pool_type',
+        [
+            'company_id' => GoldenAccountsFixture::COMPLETE_COMPANY_ID,
+            'accounting_period_id' => 9411,
+            'ct_period_id' => 9540,
+            'pool_type' => 'main_pool',
+        ]
+    );
+    $specialPool = InterfaceDB::fetchOne(
+        'SELECT additions, wda_claimed, closing_wdv
+         FROM capital_allowance_pool_runs
+         WHERE company_id = :company_id AND accounting_period_id = :accounting_period_id
+           AND ct_period_id = :ct_period_id AND pool_type = :pool_type',
+        [
+            'company_id' => GoldenAccountsFixture::COMPLETE_COMPANY_ID,
+            'accounting_period_id' => 9411,
+            'ct_period_id' => 9540,
+            'pool_type' => 'special_rate_pool',
+        ]
+    );
+
+    $harness->assertSame('1700.00', number_format((float)($mainPool['aia_claimed'] ?? 0), 2, '.', ''));
+    $harness->assertSame('400.00', number_format((float)($mainPool['disposal_value'] ?? 0), 2, '.', ''));
+    $harness->assertSame('400.00', number_format((float)($mainPool['balancing_charge'] ?? 0), 2, '.', ''));
+    $harness->assertSame('0.00', number_format((float)($mainPool['wda_claimed'] ?? 0), 2, '.', ''));
+    $harness->assertSame('0.00', number_format((float)($mainPool['closing_wdv'] ?? 0), 2, '.', ''));
+    $harness->assertSame('800.00', number_format((float)($specialPool['additions'] ?? 0), 2, '.', ''));
+    $harness->assertSame('48.00', number_format((float)($specialPool['wda_claimed'] ?? 0), 2, '.', ''));
+    $harness->assertSame('752.00', number_format((float)($specialPool['closing_wdv'] ?? 0), 2, '.', ''));
 });
 
 goldenTaxFixtureIntegrityCheck($harness, 'uses production capital-allowance pool identifiers in completed evidence', static function () use ($harness): void {
@@ -101,10 +148,17 @@ goldenTaxFixtureIntegrityCheck($harness, 'uses a prior CT period as the source o
     );
     $source = InterfaceDB::fetchOne(
         'SELECT origin_period.period_end AS origin_period_end,
-                target_period.period_start AS target_period_start
+                target_period.period_start AS target_period_start,
+                COALESCE(review.is_locked, 0) AS origin_is_locked,
+                origin_summary.summary_json AS origin_summary_json
          FROM tax_loss_carryforwards losses
          INNER JOIN corporation_tax_periods origin_period ON origin_period.id = losses.origin_ct_period_id
          INNER JOIN corporation_tax_periods target_period ON target_period.id = :ct_period_id
+         LEFT JOIN year_end_reviews review
+           ON review.company_id = losses.company_id
+          AND review.accounting_period_id = losses.origin_accounting_period_id
+         LEFT JOIN corporation_tax_computation_runs origin_summary
+           ON origin_summary.id = origin_period.latest_computation_run_id
          WHERE losses.company_id = :company_id
            AND losses.amount_used >= :loss_utilised
          ORDER BY origin_period.period_end ASC
@@ -130,9 +184,13 @@ goldenTaxFixtureIntegrityCheck($harness, 'uses a prior CT period as the source o
             . (string)$source['origin_period_end'] . '.'
         );
     }
+    $originSummary = json_decode((string)($source['origin_summary_json'] ?? ''), true);
+    $harness->assertSame(1, (int)($source['origin_is_locked'] ?? 0));
+    $harness->assertTrue(is_array($originSummary) && !empty($originSummary['available']));
+    $harness->assertSame('100.00', number_format((float)($originSummary['losses_carried_forward'] ?? 0), 2, '.', ''));
 });
 
-goldenTaxFixtureIntegrityCheck($harness, 'routes the completed used high-CO2 car through special-rate WDA', static function () use ($harness): void {
+goldenTaxFixtureIntegrityCheck($harness, 'routes the completed used high-CO2 car into the special-rate pool and applies pool WDA', static function () use ($harness): void {
     (new \eel_accounts\Service\CapitalAllowanceService())
         ->rebuildForCompany(GoldenAccountsFixture::COMPLETE_COMPANY_ID);
     $calculation = InterfaceDB::fetchOne(
@@ -145,29 +203,43 @@ goldenTaxFixtureIntegrityCheck($harness, 'routes the completed used high-CO2 car
     );
 
     $harness->assertSame('special_rate_pool', (string)($calculation['pool_type'] ?? ''));
-    $harness->assertSame('wda', (string)($calculation['allowance_type'] ?? ''));
+    $harness->assertSame('special_rate_pool_addition', (string)($calculation['allowance_type'] ?? ''));
+
+    $specialPool = InterfaceDB::fetchOne(
+        'SELECT additions, wda_claimed, closing_wdv
+         FROM capital_allowance_pool_runs
+         WHERE company_id = :company_id
+           AND accounting_period_id = :accounting_period_id
+           AND ct_period_id = :ct_period_id
+           AND pool_type = :pool_type',
+        [
+            'company_id' => GoldenAccountsFixture::COMPLETE_COMPANY_ID,
+            'accounting_period_id' => 9411,
+            'ct_period_id' => 9540,
+            'pool_type' => 'special_rate_pool',
+        ]
+    );
+    $harness->assertSame('800.00', number_format((float)($specialPool['additions'] ?? 0), 2, '.', ''));
+    $harness->assertSame('48.00', number_format((float)($specialPool['wda_claimed'] ?? 0), 2, '.', ''));
+    $harness->assertSame('752.00', number_format((float)($specialPool['closing_wdv'] ?? 0), 2, '.', ''));
 });
 
 goldenTaxFixtureIntegrityCheck($harness, 'contains an actual vehicle tax-warning state', static function () use ($harness): void {
     $vehicleCount = (int)InterfaceDB::fetchColumn(
-        'SELECT COUNT(*) FROM asset_vehicle_details WHERE company_id IN (:golden_company_id, :complete_company_id)',
-        [
-            'golden_company_id' => GoldenAccountsFixture::GOLDEN_COMPANY_ID,
-            'complete_company_id' => GoldenAccountsFixture::COMPLETE_COMPANY_ID,
-        ]
+        'SELECT COUNT(*) FROM asset_vehicle_details WHERE company_id = :company_id',
+        ['company_id' => GoldenAccountsFixture::WARNING_COMPANY_ID]
     );
     $warningCount = (int)InterfaceDB::fetchColumn(
         'SELECT COUNT(*)
          FROM asset_vehicle_details
-         WHERE company_id IN (:golden_company_id, :complete_company_id)
+         WHERE company_id = :company_id
            AND (
                 COALESCE(tax_review_status, :unreviewed) <> :reviewed
                 OR COALESCE(acquisition_condition, :blank_condition) = :blank_condition_match
                 OR (vehicle_type = :car_type AND co2_emissions_g_km IS NULL)
-           )',
+         )',
         [
-            'golden_company_id' => GoldenAccountsFixture::GOLDEN_COMPANY_ID,
-            'complete_company_id' => GoldenAccountsFixture::COMPLETE_COMPANY_ID,
+            'company_id' => GoldenAccountsFixture::WARNING_COMPANY_ID,
             'unreviewed' => 'unreviewed',
             'reviewed' => 'reviewed',
             'blank_condition' => '',
@@ -182,6 +254,9 @@ goldenTaxFixtureIntegrityCheck($harness, 'contains an actual vehicle tax-warning
             . 'none exercises missing condition, missing CO2, or unreviewed-warning behaviour.'
         );
     }
+
+    $harness->assertSame(1, $vehicleCount);
+    $harness->assertSame(1, $warningCount);
 });
 
 goldenTaxFixtureIntegrityCheck($harness, 'activates Tax and Year End read-only mode for the LIVE VAT warning company', static function () use ($harness): void {
@@ -196,6 +271,7 @@ goldenTaxFixtureIntegrityCheck($harness, 'activates Tax and Year End read-only m
     }
 
     $harness->assertFalse((bool)($scope['supported'] ?? true));
+    $harness->assertSame('hmrc', (string)($scope['validation_source'] ?? ''));
 });
 
 function goldenTaxFixtureIntegrityCheck(

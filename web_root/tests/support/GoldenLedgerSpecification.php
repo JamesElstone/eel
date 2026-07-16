@@ -31,9 +31,9 @@ final class GoldenLedgerSpecification
     public static function yearEndAssetExpectations(): array
     {
         return [
-            9111 => ['depreciation_entries' => 3, 'depreciation' => 2192.05, 'profit_before_tax' => 5032.95, 'capital_allowances' => 6300.00, 'taxable_profit' => 925.00, 'corporation_tax' => 175.75],
-            9112 => ['depreciation_entries' => 4, 'depreciation' => 5031.78, 'profit_before_tax' => 1502.22, 'capital_allowances' => 9000.00, 'taxable_profit' => 0.00, 'corporation_tax' => 0.00],
-            9113 => ['depreciation_entries' => 4, 'depreciation' => 4994.00, 'profit_before_tax' => 1959.00, 'capital_allowances' => 0.00, 'taxable_profit' => 5087.00, 'corporation_tax' => 966.53],
+            9111 => ['depreciation_entries' => 3, 'depreciation' => 2190.05, 'profit_before_tax' => 5034.95, 'capital_allowances' => 6300.00, 'taxable_profit' => 925.00, 'corporation_tax' => 175.75],
+            9112 => ['depreciation_entries' => 4, 'depreciation' => 5027.19, 'profit_before_tax' => 1506.81, 'capital_allowances' => 9000.00, 'taxable_profit' => 0.00, 'corporation_tax' => 0.00],
+            9113 => ['depreciation_entries' => 4, 'depreciation' => 5003.38, 'profit_before_tax' => 1949.62, 'capital_allowances' => 0.00, 'taxable_profit' => 5087.00, 'corporation_tax' => 966.53],
         ];
     }
 
@@ -41,9 +41,9 @@ final class GoldenLedgerSpecification
     public static function hmrcTaxFacts(): array
     {
         return [
-            9111 => ['period_start' => '2022-09-05', 'period_end' => '2023-09-30', 'accounting_profit' => 5032.95, 'disallowable_add_backs' => 0.00, 'depreciation_add_back' => 2192.05, 'capital_allowances' => 6300.00, 'associated_company_count' => 0],
-            9112 => ['period_start' => '2023-10-01', 'period_end' => '2024-09-30', 'accounting_profit' => 1502.22, 'disallowable_add_backs' => 600.00, 'depreciation_add_back' => 5031.78, 'capital_allowances' => 9000.00, 'associated_company_count' => 0],
-            9113 => ['period_start' => '2024-10-01', 'period_end' => '2025-09-30', 'accounting_profit' => 1959.00, 'disallowable_add_backs' => 0.00, 'depreciation_add_back' => 4994.00, 'capital_allowances' => 0.00, 'associated_company_count' => 0, 'hmrc_interest_amount' => 90.00, 'hmrc_interest_type' => 'corporation_tax_late_payment'],
+            9111 => ['period_start' => '2022-09-05', 'period_end' => '2023-09-30', 'accounting_profit' => 5034.95, 'disallowable_add_backs' => 0.00, 'depreciation_add_back' => 2190.05, 'capital_allowances' => 6300.00, 'associated_company_count' => 0],
+            9112 => ['period_start' => '2023-10-01', 'period_end' => '2024-09-30', 'accounting_profit' => 1506.81, 'disallowable_add_backs' => 600.00, 'depreciation_add_back' => 5027.19, 'capital_allowances' => 9000.00, 'associated_company_count' => 0],
+            9113 => ['period_start' => '2024-10-01', 'period_end' => '2025-09-30', 'accounting_profit' => 1949.62, 'disallowable_add_backs' => 0.00, 'depreciation_add_back' => 5003.38, 'capital_allowances' => 0.00, 'associated_company_count' => 0, 'hmrc_interest_amount' => 90.00, 'hmrc_interest_type' => 'corporation_tax_late_payment'],
             9114 => ['period_start' => '2025-10-01', 'period_end' => '2026-09-30', 'accounting_profit' => 7137.00, 'disallowable_add_backs' => 0.00, 'depreciation_add_back' => 0.00, 'capital_allowances' => 0.00, 'associated_company_count' => 0],
         ];
     }
@@ -80,12 +80,20 @@ final class GoldenLedgerSpecification
                 ['date' => '2026-02-15', 'source' => 'hmrc_payment', 'debit' => 'hmrc_payable', 'credit' => 'bank', 'amount' => 690.00],
                 ['date' => '2025-10-01', 'source' => 'prepayment_release', 'debit' => 'prepayment_expense', 'credit' => 'prepaid_expenses', 'amount' => 273.00],
                 ['date' => '2025-10-01', 'source' => 'prepayment_release_long_4', 'debit' => 'prepayment_expense', 'credit' => 'prepaid_expenses', 'amount' => 90.00],
-            ], 0.00, 4),
+            ], 0.00, 4, [], false),
         ];
     }
 
     /** @return array<string, mixed> */
-    private static function period(string $start, string $end, array $extraJournals = [], float $disallowableAddBack = 0.0, int $transactionCount = 3, array $assetPurchases = []): array
+    private static function period(
+        string $start,
+        string $end,
+        array $extraJournals = [],
+        float $disallowableAddBack = 0.0,
+        int $transactionCount = 3,
+        array $assetPurchases = [],
+        bool $auditComplete = true
+    ): array
     {
         $date = (new DateTimeImmutable($start))->modify('+10 days')->format('Y-m-d');
 
@@ -103,6 +111,7 @@ final class GoldenLedgerSpecification
             'tax_rate' => 0.19,
             'disallowable_add_back' => $disallowableAddBack,
             'asset_purchases' => $assetPurchases,
+            'audit_complete' => $auditComplete,
         ];
     }
 }

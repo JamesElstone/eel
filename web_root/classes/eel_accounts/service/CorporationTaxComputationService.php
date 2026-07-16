@@ -12,6 +12,8 @@ namespace eel_accounts\Service;
 
 final class CorporationTaxComputationService
 {
+    public const PREPAYMENT_PREVIEW_WARNING = 'The Corporation Tax estimate omits one or more pending prepayment adjustments because the prepayment preview is unreliable.';
+
     private array $accountingPeriodLossScheduleCache = [];
     private array $activeCtPeriodsCache = [];
     private array $assetAdjustmentsCache = [];
@@ -90,11 +92,16 @@ final class CorporationTaxComputationService
         foreach ((array)($current['ct_rate_warnings'] ?? []) as $warning) {
             $warnings[] = (string)$warning;
         }
+        $warnings = array_values(array_unique(array_merge(
+            $warnings,
+            $this->prepaymentPreviewWarnings($current)
+        )));
 
         return [
             'available' => true,
             'accounting_profit' => round((float)$current['accounting_profit'], 2),
             'disallowable_add_backs' => round((float)$current['disallowable_add_backs'], 2),
+            'capital_add_backs' => round((float)($current['capital_add_backs'] ?? 0), 2),
             'depreciation_add_back' => round((float)$current['depreciation_add_back'], 2),
             'capital_allowances' => round((float)$current['capital_allowances'], 2),
             'taxable_before_losses' => round((float)$current['taxable_before_losses'], 2),
@@ -110,10 +117,16 @@ final class CorporationTaxComputationService
             'losses_carried_forward' => round((float)$current['loss_carried_forward'], 2),
             'other_treatment_count' => (int)$current['other_treatment_count'],
             'unknown_treatment_count' => (int)$current['unknown_treatment_count'],
+            'prepayment_preview_reliable' => $this->prepaymentPreviewReliable($current),
+            'prepayment_preview_warnings' => $this->prepaymentPreviewDetails($current),
             'warnings' => $warnings,
+            'calculation_status' => 'estimate',
+            'confidence_status' => $warnings === [] ? 'ready_for_review' : 'review_required',
+            'confidence_label' => $warnings === [] ? 'Ready for review' : 'Review required',
             'steps' => [
                 ['label' => 'Accounting profit or loss', 'amount' => round((float)$current['accounting_profit'], 2)],
                 ['label' => 'Add back disallowable expenses', 'amount' => round((float)$current['disallowable_add_backs'], 2)],
+                ['label' => 'Add back capital expenditure', 'amount' => round((float)($current['capital_add_backs'] ?? 0), 2)],
                 ['label' => 'Add back depreciation', 'amount' => round((float)$current['depreciation_add_back'], 2)],
                 ['label' => 'Deduct capital allowances', 'amount' => round(0 - (float)$current['capital_allowances'], 2)],
                 ['label' => 'Taxable result before losses', 'amount' => round((float)$current['taxable_before_losses'], 2)],
@@ -129,6 +142,7 @@ final class CorporationTaxComputationService
                     'loss_brought_forward' => round((float)$row['loss_brought_forward'], 2),
                     'loss_utilised' => round((float)$row['loss_utilised'], 2),
                     'loss_carried_forward' => round((float)$row['loss_carried_forward'], 2),
+                    'capital_add_backs' => round((float)($row['capital_add_backs'] ?? 0), 2),
                     'taxable_before_losses' => round((float)$row['taxable_before_losses'], 2),
                     'taxable_profit' => round((float)$row['taxable_profit'], 2),
                 ],
@@ -191,13 +205,7 @@ final class CorporationTaxComputationService
         $accountingAllocation = $this->ctPeriodAccountingAllocation($companyId, $accountingPeriodId, $ctPeriod);
         $pnl = (array)$accountingAllocation['pnl'];
         $assetAdjustments = $this->fetchAssetAdjustmentsForCtPeriod($companyId, $accountingPeriodId, $ctPeriod);
-        $taxableBeforeLosses = round(
-            (float)($pnl['profit_before_tax'] ?? 0)
-            + (float)($pnl['disallowable_add_backs'] ?? 0)
-            + (float)$assetAdjustments['depreciation_add_back']
-            - (float)$assetAdjustments['capital_allowances'],
-            2
-        );
+        $taxableBeforeLosses = $this->taxableBeforeLosses($pnl, $assetAdjustments);
 
         $losses = $this->ctPeriodLossPosition($companyId, $ctPeriodId);
         $lossUsed = min(max(0.0, $taxableBeforeLosses), (float)$losses['brought_forward']);
@@ -219,6 +227,7 @@ final class CorporationTaxComputationService
             'period_end' => (string)$ctPeriod['period_end'],
             'accounting_profit' => (float)($pnl['profit_before_tax'] ?? 0),
             'disallowable' => (float)($pnl['disallowable_add_backs'] ?? 0),
+            'capital_add_backs' => (float)($pnl['capital_add_backs'] ?? 0),
             'depreciation' => (float)$assetAdjustments['depreciation_add_back'],
             'allowances' => (float)$assetAdjustments['capital_allowances'],
             'loss_bf' => (float)$losses['brought_forward'],
@@ -226,6 +235,8 @@ final class CorporationTaxComputationService
             'associated_company_count' => $associatedCompanyCount,
             'rate_liability' => (float)$rateCalculation['liability'],
             'accounting_allocation_basis' => (array)($accountingAllocation['basis'] ?? []),
+            'prepayment_preview_reliable' => $this->prepaymentPreviewReliable($pnl),
+            'prepayment_preview_warnings' => $this->prepaymentPreviewDetails($pnl),
         ], JSON_UNESCAPED_SLASHES));
 
         $row = [
@@ -236,6 +247,7 @@ final class CorporationTaxComputationService
             'period_end' => (string)$ctPeriod['period_end'],
             'accounting_profit' => round((float)($pnl['profit_before_tax'] ?? 0), 2),
             'disallowable_add_backs' => round((float)($pnl['disallowable_add_backs'] ?? 0), 2),
+            'capital_add_backs' => round((float)($pnl['capital_add_backs'] ?? 0), 2),
             'depreciation_add_back' => round((float)$assetAdjustments['depreciation_add_back'], 2),
             'capital_allowances' => round((float)$assetAdjustments['capital_allowances'], 2),
             'taxable_before_losses' => $taxableBeforeLosses,
@@ -251,6 +263,8 @@ final class CorporationTaxComputationService
             'loss_carried_forward' => $lossCarriedForward,
             'other_treatment_count' => (int)($pnl['other_treatment_count'] ?? 0),
             'unknown_treatment_count' => (int)($pnl['unknown_treatment_count'] ?? 0),
+            'prepayment_preview_reliable' => $this->prepaymentPreviewReliable($pnl),
+            'prepayment_preview_warnings' => $this->prepaymentPreviewDetails($pnl),
             'asset_adjustment_warning' => (string)($assetAdjustments['warning'] ?? ''),
             'computation_hash' => $computationHash,
         ];
@@ -437,12 +451,12 @@ final class CorporationTaxComputationService
         $breakdown = $this->capitalAllowanceBreakdown($companyId, $accountingPeriodId, $ctPeriodId);
         $capitalAllowances = $this->capitalAllowanceAmountFromBreakdown($breakdown);
         $depreciationAddBack = round((float)($preTaxProfitLoss['depreciation_expense'] ?? 0), 2);
-        $taxableBeforeLosses = round(
-            (float)($preTaxProfitLoss['profit_before_tax'] ?? 0)
-            + (float)($preTaxProfitLoss['disallowable_add_backs'] ?? 0)
-            + $depreciationAddBack
-            - $capitalAllowances,
-            2
+        $taxableBeforeLosses = $this->taxableBeforeLosses(
+            $preTaxProfitLoss,
+            [
+                'depreciation_add_back' => $depreciationAddBack,
+                'capital_allowances' => $capitalAllowances,
+            ]
         );
 
         $lossCalculation = $this->dividendCapacityLossCalculation(
@@ -464,6 +478,10 @@ final class CorporationTaxComputationService
             'strval',
             (array)($breakdown['warnings'] ?? [])
         )));
+        $warnings = array_values(array_unique(array_merge(
+            $warnings,
+            $this->prepaymentPreviewWarnings($preTaxProfitLoss)
+        )));
         $row = [
             'available' => true,
             'ct_period_id' => $ctPeriodId,
@@ -472,6 +490,7 @@ final class CorporationTaxComputationService
             'period_end' => $periodEnd,
             'accounting_profit' => round((float)($preTaxProfitLoss['profit_before_tax'] ?? 0), 2),
             'disallowable_add_backs' => round((float)($preTaxProfitLoss['disallowable_add_backs'] ?? 0), 2),
+            'capital_add_backs' => round((float)($preTaxProfitLoss['capital_add_backs'] ?? 0), 2),
             'depreciation_add_back' => $depreciationAddBack,
             'capital_allowances' => round($capitalAllowances, 2),
             'taxable_before_losses' => $taxableBeforeLosses,
@@ -482,6 +501,8 @@ final class CorporationTaxComputationService
             'losses_used' => round($lossesUsed, 2),
             'losses_carried_forward' => $lossesCarriedForward,
             'estimated_corporation_tax' => round((float)($rateCalculation['liability'] ?? 0), 2),
+            'prepayment_preview_reliable' => $this->prepaymentPreviewReliable($preTaxProfitLoss),
+            'prepayment_preview_warnings' => $this->prepaymentPreviewDetails($preTaxProfitLoss),
             'warnings' => $warnings,
             'calculation_status' => 'estimate',
             'summary_scope' => 'dividend_capacity',
@@ -561,13 +582,7 @@ final class CorporationTaxComputationService
                     (string)($accountingPeriod['period_end'] ?? '')
                 );
                 $assetAdjustments = $this->fetchAssetAdjustments($companyId, $accountingPeriodId);
-                $taxableBeforeLosses = round(
-                    (float)($pnl['profit_before_tax'] ?? 0)
-                    + (float)($pnl['disallowable_add_backs'] ?? 0)
-                    + (float)$assetAdjustments['depreciation_add_back']
-                    - (float)$assetAdjustments['capital_allowances'],
-                    2
-                );
+                $taxableBeforeLosses = $this->taxableBeforeLosses($pnl, $assetAdjustments);
 
                 $lossBf = round(array_sum(array_column($lossPool, 'amount_remaining')), 2);
                 $lossUsed = 0.0;
@@ -610,12 +625,15 @@ final class CorporationTaxComputationService
                     'accounting_period_id' => $accountingPeriodId,
                     'accounting_profit' => (float)($pnl['profit_before_tax'] ?? 0),
                     'disallowable' => (float)($pnl['disallowable_add_backs'] ?? 0),
+                    'capital_add_backs' => (float)($pnl['capital_add_backs'] ?? 0),
                     'depreciation' => (float)$assetAdjustments['depreciation_add_back'],
                     'allowances' => (float)$assetAdjustments['capital_allowances'],
                     'loss_bf' => $lossBf,
                     'loss_used' => $lossUsed,
                     'associated_company_count' => $associatedCompanyCount,
                     'rate_liability' => (float)$rateCalculation['liability'],
+                    'prepayment_preview_reliable' => $this->prepaymentPreviewReliable($pnl),
+                    'prepayment_preview_warnings' => $this->prepaymentPreviewDetails($pnl),
                 ], JSON_UNESCAPED_SLASHES));
 
                 $schedule[$accountingPeriodId] = [
@@ -623,6 +641,7 @@ final class CorporationTaxComputationService
                     'label' => (string)($accountingPeriod['label'] ?? ''),
                     'accounting_profit' => round((float)($pnl['profit_before_tax'] ?? 0), 2),
                     'disallowable_add_backs' => round((float)($pnl['disallowable_add_backs'] ?? 0), 2),
+                    'capital_add_backs' => round((float)($pnl['capital_add_backs'] ?? 0), 2),
                     'depreciation_add_back' => round((float)$assetAdjustments['depreciation_add_back'], 2),
                     'capital_allowances' => round((float)$assetAdjustments['capital_allowances'], 2),
                     'taxable_before_losses' => $taxableBeforeLosses,
@@ -638,6 +657,8 @@ final class CorporationTaxComputationService
                     'loss_carried_forward' => $lossCf,
                     'other_treatment_count' => (int)($pnl['other_treatment_count'] ?? 0),
                     'unknown_treatment_count' => (int)($pnl['unknown_treatment_count'] ?? 0),
+                    'prepayment_preview_reliable' => $this->prepaymentPreviewReliable($pnl),
+                    'prepayment_preview_warnings' => $this->prepaymentPreviewDetails($pnl),
                     'asset_adjustment_warning' => (string)($assetAdjustments['warning'] ?? ''),
                     'computation_hash' => $computationHash,
                 ];
@@ -763,15 +784,18 @@ final class CorporationTaxComputationService
 
         $profitPence = (int)round((float)($fullPnl['profit_before_tax'] ?? 0) * 100, 0, PHP_ROUND_HALF_UP);
         $disallowablePence = (int)round((float)($fullPnl['disallowable_add_backs'] ?? 0) * 100, 0, PHP_ROUND_HALF_UP);
+        $capitalAddBackPence = (int)round((float)($fullPnl['capital_add_backs'] ?? 0) * 100, 0, PHP_ROUND_HALF_UP);
         $depreciationPence = (int)round((float)($fullAssetAdjustments['depreciation_add_back'] ?? 0) * 100, 0, PHP_ROUND_HALF_UP);
 
         $profitAllocations = $this->allocatePenceByInclusiveDays($profitPence, $periodDays, $accountingDays);
         $disallowableAllocations = $this->allocatePenceByInclusiveDays($disallowablePence, $periodDays, $accountingDays);
+        $capitalAddBackAllocations = $this->allocatePenceByInclusiveDays($capitalAddBackPence, $periodDays, $accountingDays);
         $depreciationAllocations = $this->allocatePenceByInclusiveDays($depreciationPence, $periodDays, $accountingDays);
         $selectedDays = (int)($periodDays[$ctPeriodId] ?? 0);
         $pnl = $fullPnl;
         $pnl['profit_before_tax'] = round((int)$profitAllocations[$ctPeriodId] / 100, 2);
         $pnl['disallowable_add_backs'] = round((int)$disallowableAllocations[$ctPeriodId] / 100, 2);
+        $pnl['capital_add_backs'] = round((int)$capitalAddBackAllocations[$ctPeriodId] / 100, 2);
 
         return $this->ctPeriodAccountingAllocationCache[$cacheKey] = [
             'pnl' => $pnl,
@@ -795,11 +819,13 @@ final class CorporationTaxComputationService
                 'whole_period_values' => [
                     'accounting_profit' => round($profitPence / 100, 2),
                     'disallowable_add_backs' => round($disallowablePence / 100, 2),
+                    'capital_add_backs' => round($capitalAddBackPence / 100, 2),
                     'depreciation_add_back' => round($depreciationPence / 100, 2),
                 ],
                 'allocated_values' => [
                     'accounting_profit' => round((int)$profitAllocations[$ctPeriodId] / 100, 2),
                     'disallowable_add_backs' => round((int)$disallowableAllocations[$ctPeriodId] / 100, 2),
+                    'capital_add_backs' => round((int)$capitalAddBackAllocations[$ctPeriodId] / 100, 2),
                     'depreciation_add_back' => round((int)$depreciationAllocations[$ctPeriodId] / 100, 2),
                 ],
             ],
@@ -833,6 +859,22 @@ final class CorporationTaxComputationService
         }
 
         return $allocations;
+    }
+
+    /**
+     * @param array<string, mixed> $profitAndLoss
+     * @param array<string, mixed> $assetAdjustments
+     */
+    private function taxableBeforeLosses(array $profitAndLoss, array $assetAdjustments): float
+    {
+        return round(
+            (float)($profitAndLoss['profit_before_tax'] ?? 0)
+            + (float)($profitAndLoss['disallowable_add_backs'] ?? 0)
+            + (float)($profitAndLoss['capital_add_backs'] ?? 0)
+            + (float)($assetAdjustments['depreciation_add_back'] ?? 0)
+            - (float)($assetAdjustments['capital_allowances'] ?? 0),
+            2
+        );
     }
 
     private function inclusiveDays(string $start, string $end): int
@@ -1117,13 +1159,7 @@ final class CorporationTaxComputationService
                 $accountingAllocation = $this->ctPeriodAccountingAllocation($companyId, $accountingPeriodId, $ctPeriod);
                 $pnl = (array)$accountingAllocation['pnl'];
                 $assetAdjustments = $this->fetchAssetAdjustmentsForCtPeriod($companyId, $accountingPeriodId, $ctPeriod);
-                $taxableBeforeLosses = round(
-                    (float)($pnl['profit_before_tax'] ?? 0)
-                    + (float)($pnl['disallowable_add_backs'] ?? 0)
-                    + (float)$assetAdjustments['depreciation_add_back']
-                    - (float)$assetAdjustments['capital_allowances'],
-                    2
-                );
+                $taxableBeforeLosses = $this->taxableBeforeLosses($pnl, $assetAdjustments);
 
                 $lossUsed = 0.0;
                 if ($taxableBeforeLosses > 0) {
@@ -1257,11 +1293,16 @@ final class CorporationTaxComputationService
         foreach ((array)($current['ct_rate_warnings'] ?? []) as $warning) {
             $warnings[] = (string)$warning;
         }
+        $warnings = array_values(array_unique(array_merge(
+            $warnings,
+            $this->prepaymentPreviewWarnings($current)
+        )));
 
         return [
             'available' => true,
             'accounting_profit' => round((float)$current['accounting_profit'], 2),
             'disallowable_add_backs' => round((float)$current['disallowable_add_backs'], 2),
+            'capital_add_backs' => round((float)($current['capital_add_backs'] ?? 0), 2),
             'depreciation_add_back' => round((float)$current['depreciation_add_back'], 2),
             'capital_allowances' => round((float)$current['capital_allowances'], 2),
             'taxable_before_losses' => round((float)$current['taxable_before_losses'], 2),
@@ -1277,6 +1318,8 @@ final class CorporationTaxComputationService
             'losses_carried_forward' => round((float)$current['loss_carried_forward'], 2),
             'other_treatment_count' => (int)$current['other_treatment_count'],
             'unknown_treatment_count' => (int)$current['unknown_treatment_count'],
+            'prepayment_preview_reliable' => $this->prepaymentPreviewReliable($current),
+            'prepayment_preview_warnings' => $this->prepaymentPreviewDetails($current),
             'warnings' => $warnings,
             'calculation_status' => 'estimate',
             'confidence_status' => $warnings === [] ? 'ready_for_review' : 'review_required',
@@ -1284,6 +1327,7 @@ final class CorporationTaxComputationService
             'steps' => [
                 ['label' => 'Accounting profit or loss', 'amount' => round((float)$current['accounting_profit'], 2)],
                 ['label' => 'Add back disallowable expenses', 'amount' => round((float)$current['disallowable_add_backs'], 2)],
+                ['label' => 'Add back capital expenditure', 'amount' => round((float)($current['capital_add_backs'] ?? 0), 2)],
                 ['label' => 'Add back depreciation', 'amount' => round((float)$current['depreciation_add_back'], 2)],
                 ['label' => 'Deduct capital allowances', 'amount' => round(0 - (float)$current['capital_allowances'], 2)],
                 ['label' => 'Taxable result before losses', 'amount' => round((float)$current['taxable_before_losses'], 2)],
@@ -1300,6 +1344,7 @@ final class CorporationTaxComputationService
                     'loss_brought_forward' => round((float)$row['loss_brought_forward'], 2),
                     'loss_utilised' => round((float)$row['loss_utilised'], 2),
                     'loss_carried_forward' => round((float)$row['loss_carried_forward'], 2),
+                    'capital_add_backs' => round((float)($row['capital_add_backs'] ?? 0), 2),
                     'taxable_before_losses' => round((float)$row['taxable_before_losses'], 2),
                     'taxable_profit' => round((float)$row['taxable_profit'], 2),
                 ],
@@ -1332,13 +1377,7 @@ final class CorporationTaxComputationService
         $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
         $profitAndLoss ??= $this->profitAndLossSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
         $assetAdjustments = $this->fetchAssetAdjustments($companyId, $accountingPeriodId);
-        $taxableBeforeLosses = round(
-            (float)($profitAndLoss['profit_before_tax'] ?? 0)
-            + (float)($profitAndLoss['disallowable_add_backs'] ?? 0)
-            + (float)$assetAdjustments['depreciation_add_back']
-            - (float)$assetAdjustments['capital_allowances'],
-            2
-        );
+        $taxableBeforeLosses = $this->taxableBeforeLosses($profitAndLoss, $assetAdjustments);
         $lossesBroughtForward = $this->storedLossesBroughtForward($companyId, $accountingPeriodId, $periodStart);
         $lossesUsed = min(max(0.0, $taxableBeforeLosses), $lossesBroughtForward);
         $taxableProfit = max(0.0, round($taxableBeforeLosses - $lossesUsed, 2));
@@ -1365,12 +1404,14 @@ final class CorporationTaxComputationService
         foreach ((array)($rateCalculation['warnings'] ?? []) as $warning) {
             $warnings[] = (string)$warning;
         }
+        $warnings = array_merge($warnings, $this->prepaymentPreviewWarnings($profitAndLoss));
         $warnings = array_values(array_unique(array_filter($warnings, static fn(string $warning): bool => trim($warning) !== '')));
         $confidenceStatus = $warnings === [] ? 'ready_for_review' : 'review_required';
 
         $steps = [
             ['label' => 'Accounting profit or loss', 'amount' => round((float)($profitAndLoss['profit_before_tax'] ?? 0), 2)],
             ['label' => 'Add back disallowable expenses', 'amount' => round((float)($profitAndLoss['disallowable_add_backs'] ?? 0), 2)],
+            ['label' => 'Add back capital expenditure', 'amount' => round((float)($profitAndLoss['capital_add_backs'] ?? 0), 2)],
             ['label' => 'Add back depreciation', 'amount' => round((float)$assetAdjustments['depreciation_add_back'], 2)],
             ['label' => 'Deduct capital allowances', 'amount' => round(0 - (float)$assetAdjustments['capital_allowances'], 2)],
             ['label' => 'Taxable result before losses', 'amount' => $taxableBeforeLosses],
@@ -1383,6 +1424,7 @@ final class CorporationTaxComputationService
             'available' => true,
             'accounting_profit' => round((float)($profitAndLoss['profit_before_tax'] ?? 0), 2),
             'disallowable_add_backs' => round((float)($profitAndLoss['disallowable_add_backs'] ?? 0), 2),
+            'capital_add_backs' => round((float)($profitAndLoss['capital_add_backs'] ?? 0), 2),
             'depreciation_add_back' => round((float)$assetAdjustments['depreciation_add_back'], 2),
             'capital_allowances' => round((float)$assetAdjustments['capital_allowances'], 2),
             'taxable_before_losses' => $taxableBeforeLosses,
@@ -1398,6 +1440,8 @@ final class CorporationTaxComputationService
             'losses_carried_forward' => $lossesCarriedForward,
             'other_treatment_count' => (int)($profitAndLoss['other_treatment_count'] ?? 0),
             'unknown_treatment_count' => (int)($profitAndLoss['unknown_treatment_count'] ?? 0),
+            'prepayment_preview_reliable' => $this->prepaymentPreviewReliable($profitAndLoss),
+            'prepayment_preview_warnings' => $this->prepaymentPreviewDetails($profitAndLoss),
             'warnings' => $warnings,
             'capital_allowance_breakdown' => (array)($assetAdjustments['capital_allowance_breakdown'] ?? []),
             'calculation_status' => 'estimate',
@@ -1412,12 +1456,56 @@ final class CorporationTaxComputationService
                     'loss_brought_forward' => round($lossesBroughtForward, 2),
                     'loss_utilised' => round($lossesUsed, 2),
                     'loss_carried_forward' => $lossesCarriedForward,
+                    'capital_add_backs' => round((float)($profitAndLoss['capital_add_backs'] ?? 0), 2),
                     'taxable_before_losses' => $taxableBeforeLosses,
                     'taxable_profit' => $taxableProfit,
                 ],
             ],
             'summary_scope' => 'current_period_estimate',
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $source
+     * @return list<string>
+     */
+    private function prepaymentPreviewWarnings(array $source): array
+    {
+        if ($this->prepaymentPreviewReliable($source)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_merge(
+            [self::PREPAYMENT_PREVIEW_WARNING],
+            $this->prepaymentPreviewDetails($source)
+        )));
+    }
+
+    /**
+     * Older persisted summaries did not carry this field, so absence remains
+     * reliable for backwards compatibility while an explicit false is not.
+     *
+     * @param array<string, mixed> $source
+     */
+    private function prepaymentPreviewReliable(array $source): bool
+    {
+        return !array_key_exists('prepayment_preview_reliable', $source)
+            || !empty($source['prepayment_preview_reliable']);
+    }
+
+    /**
+     * @param array<string, mixed> $source
+     * @return list<string>
+     */
+    private function prepaymentPreviewDetails(array $source): array
+    {
+        return array_values(array_unique(array_filter(
+            array_map('trim', array_map(
+                'strval',
+                (array)($source['prepayment_preview_warnings'] ?? [])
+            )),
+            static fn(string $warning): bool => $warning !== ''
+        )));
     }
 
     private function insertComputationRun(int $companyId, array $row, array $summary): int {

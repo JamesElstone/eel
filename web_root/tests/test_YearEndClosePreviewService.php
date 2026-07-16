@@ -46,21 +46,21 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     '2024-10-01',
                     '2025-12-31'
                 );
-                $harness->assertSame('455.75', number_format($fullDepreciation, 2, '.', ''));
+                $harness->assertSame('457.00', number_format($fullDepreciation, 2, '.', ''));
 
                 $profitLoss = (new \eel_accounts\Service\ProfitLossService())->getProfitLossSummary(
                     (int)$fixture['company_id'],
                     (int)$fixture['accounting_period_id']
                 );
-                $harness->assertSame('455.75', number_format((float)($profitLoss['expense_total'] ?? 0), 2, '.', ''));
-                $harness->assertSame('544.25', number_format((float)($profitLoss['net_profit'] ?? 0), 2, '.', ''));
+                $harness->assertSame('457.00', number_format((float)($profitLoss['expense_total'] ?? 0), 2, '.', ''));
+                $harness->assertSame('543.00', number_format((float)($profitLoss['net_profit'] ?? 0), 2, '.', ''));
 
                 $monthlyTrend = (new \eel_accounts\Service\ProfitLossService())->getMonthlyProfitLossTrend(
                     (int)$fixture['company_id'],
                     (int)$fixture['accounting_period_id']
                 );
                 $harness->assertSame(
-                    '455.75',
+                    '457.00',
                     number_format(array_sum(array_column($monthlyTrend, 'depreciation_expense')), 2, '.', '')
                 );
                 $harness->assertSame(
@@ -79,7 +79,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 );
                 $harness->assertSame(true, !empty($reserveReview['available']));
                 $harness->assertSame(
-                    '544.25',
+                    '543.00',
                     number_format((float)($reserveReview['summary']['ledger_profit_loss'] ?? 0), 2, '.', '')
                 );
                 $previewRows = array_values(array_filter(
@@ -87,7 +87,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                     static fn(array $row): bool => !empty($row['is_close_preview'])
                 ));
                 $harness->assertSame(1, count($previewRows));
-                $harness->assertSame('-455.75', number_format((float)($previewRows[0]['profit_effect'] ?? 0), 2, '.', ''));
+                $harness->assertSame('-457.00', number_format((float)($previewRows[0]['profit_effect'] ?? 0), 2, '.', ''));
 
                 $snapshot = (new \eel_accounts\Service\CompaniesHouseSnapshotService())->fetchSnapshot(
                     (int)$fixture['company_id'],
@@ -119,10 +119,10 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 $secondSummary = $ctService->calculateSummaryForCtPeriodId((int)$fixture['company_id'], (int)$ctPeriods[1]['id']);
                 $ctService->fetchSummaryForCtPeriodId((int)$fixture['company_id'], (int)$ctPeriods[0]['id']);
 
-                $harness->assertSame('364.00', number_format((float)($firstSummary['depreciation_add_back'] ?? 0), 2, '.', ''));
-                $harness->assertSame('434.69', number_format((float)($firstSummary['accounting_profit'] ?? 0), 2, '.', ''));
-                $harness->assertSame('91.75', number_format((float)($secondSummary['depreciation_add_back'] ?? 0), 2, '.', ''));
-                $harness->assertSame('109.56', number_format((float)($secondSummary['accounting_profit'] ?? 0), 2, '.', ''));
+                $harness->assertSame('365.00', number_format((float)($firstSummary['depreciation_add_back'] ?? 0), 2, '.', ''));
+                $harness->assertSame('433.69', number_format((float)($firstSummary['accounting_profit'] ?? 0), 2, '.', ''));
+                $harness->assertSame('92.00', number_format((float)($secondSummary['depreciation_add_back'] ?? 0), 2, '.', ''));
+                $harness->assertSame('109.31', number_format((float)($secondSummary['accounting_profit'] ?? 0), 2, '.', ''));
                 $harness->assertSame(0, InterfaceDB::countWhere('corporation_tax_computation_runs', [
                     'company_id' => (int)$fixture['company_id'],
                     'accounting_period_id' => (int)$fixture['accounting_period_id'],
@@ -248,6 +248,159 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 'company_id' => $companyId,
                 'accounting_period_id' => $accountingPeriodId,
             ]));
+        });
+
+        $harness->check(\eel_accounts\Service\YearEndClosePreviewService::class, 'previews sequential director loan application and reversal until fresh later-period evidence exists', static function () use ($harness, $service): void {
+            InterfaceDB::beginTransaction();
+            try {
+                yearEndClosePreviewRequireSchema($harness);
+                StandardNominalTestFixture::ensureNominals(['1000', '1200', '2100']);
+                $marker = (string)random_int(100000, 999999);
+                $companyId = (int)('81' . $marker);
+                $firstPeriodId = (int)('82' . $marker);
+                $secondPeriodId = (int)('83' . $marker);
+
+                InterfaceDB::prepareExecute(
+                    'INSERT INTO companies (id, company_name, company_number, is_active)
+                     VALUES (:id, :company_name, :company_number, 1)',
+                    [
+                        'id' => $companyId,
+                        'company_name' => 'Sequential DLA Preview Fixture ' . $marker,
+                        'company_number' => 'SD' . $marker,
+                    ]
+                );
+                $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
+                $settings->set(
+                    'director_loan_asset_nominal_id',
+                    StandardNominalTestFixture::id('1200'),
+                    'int'
+                );
+                $settings->set(
+                    'director_loan_liability_nominal_id',
+                    StandardNominalTestFixture::id('2100'),
+                    'int'
+                );
+                $settings->flush();
+                foreach ([
+                    [$firstPeriodId, '2023-01-01', '2023-12-31'],
+                    [$secondPeriodId, '2024-01-01', '2024-12-31'],
+                ] as [$periodId, $periodStart, $periodEnd]) {
+                    InterfaceDB::prepareExecute(
+                        'INSERT INTO accounting_periods (id, company_id, label, period_start, period_end)
+                         VALUES (:id, :company_id, :label, :period_start, :period_end)',
+                        [
+                            'id' => $periodId,
+                            'company_id' => $companyId,
+                            'label' => 'Sequential DLA ' . $periodEnd,
+                            'period_start' => $periodStart,
+                            'period_end' => $periodEnd,
+                        ]
+                    );
+                }
+                yearEndClosePreviewInsertJournal(
+                    $companyId,
+                    $firstPeriodId,
+                    'sequential-dla-' . $marker,
+                    '2023-12-31',
+                    [
+                        [yearEndClosePreviewNominalId('1200'), 100.00, 0.00],
+                        [yearEndClosePreviewNominalId('2100'), 0.00, 100.00],
+                    ]
+                );
+
+                $dla = new \eel_accounts\Service\DirectorLoanReconciliationService();
+                $acknowledgement = (new \eel_accounts\Service\YearEndChecklistService())
+                    ->saveDirectorLoanClosingAcknowledgement($companyId, $firstPeriodId, true, 'test');
+                $harness->assertTrue(!empty($acknowledgement['success']));
+                $evidence = $dla->saveSetOffEvidence(
+                    $companyId,
+                    $firstPeriodId,
+                    true,
+                    true,
+                    true,
+                    'Legally enforceable net settlement agreement for sequential preview testing.',
+                    'test'
+                );
+                $harness->assertTrue(!empty($evidence['success']));
+
+                $grossLaterPeriodContext = $service->pendingBalanceSheetAdjustmentContext(
+                    $companyId,
+                    $secondPeriodId,
+                    '2024-12-31'
+                );
+                $offsetRows = array_values(array_filter(
+                    (array)($grossLaterPeriodContext['adjustments'] ?? []),
+                    static fn(array $row): bool =>
+                        (string)($row['source'] ?? '') === 'pending_director_loan_offset'
+                ));
+                $harness->assertCount(4, $offsetRows);
+                $assetNetAdjustment = 0.0;
+                foreach ($offsetRows as $row) {
+                    if ((int)($row['nominal_account_id'] ?? 0) === StandardNominalTestFixture::id('1200')) {
+                        $assetNetAdjustment += (float)($row['debit'] ?? 0) - (float)($row['credit'] ?? 0);
+                    }
+                }
+                $harness->assertSame(0.00, round($assetNetAdjustment, 2));
+                $offsetPeriods = array_values(array_filter(
+                    (array)($grossLaterPeriodContext['periods'] ?? []),
+                    static fn(array $period): bool => !empty($period['director_loan_offset_previewed'])
+                ));
+                $harness->assertCount(2, $offsetPeriods);
+                $harness->assertSame($firstPeriodId, (int)($offsetPeriods[0]['accounting_period_id'] ?? 0));
+                $harness->assertSame($secondPeriodId, (int)($offsetPeriods[1]['accounting_period_id'] ?? 0));
+
+                $laterAcknowledgement = (new \eel_accounts\Service\YearEndChecklistService())
+                    ->saveDirectorLoanClosingAcknowledgement($companyId, $secondPeriodId, true, 'test');
+                $harness->assertTrue(!empty($laterAcknowledgement['success']));
+                $laterEvidence = $dla->saveSetOffEvidence(
+                    $companyId,
+                    $secondPeriodId,
+                    true,
+                    true,
+                    true,
+                    'Fresh legally enforceable net settlement evidence for the later accounting period.',
+                    'test'
+                );
+                $harness->assertTrue(!empty($laterEvidence['success']));
+
+                $freshEvidenceContext = $service->pendingBalanceSheetAdjustmentContext(
+                    $companyId,
+                    $secondPeriodId,
+                    '2024-12-31'
+                );
+                $freshOffsetRows = array_values(array_filter(
+                    (array)($freshEvidenceContext['adjustments'] ?? []),
+                    static fn(array $row): bool =>
+                        (string)($row['source'] ?? '') === 'pending_director_loan_offset'
+                ));
+                $harness->assertCount(2, $freshOffsetRows);
+                $freshOffsetPeriods = array_values(array_filter(
+                    (array)($freshEvidenceContext['periods'] ?? []),
+                    static fn(array $period): bool => !empty($period['director_loan_offset_previewed'])
+                ));
+                $harness->assertCount(1, $freshOffsetPeriods);
+                $harness->assertSame($firstPeriodId, (int)($freshOffsetPeriods[0]['accounting_period_id'] ?? 0));
+
+                $targetOnlyContext = $service->pendingBalanceSheetAdjustmentContext(
+                    $companyId,
+                    $secondPeriodId,
+                    '2024-12-31',
+                    null,
+                    null,
+                    null,
+                    false
+                );
+                $targetOnlyPeriods = (array)($targetOnlyContext['periods'] ?? []);
+                $harness->assertCount(1, $targetOnlyPeriods);
+                $harness->assertSame(
+                    $secondPeriodId,
+                    (int)($targetOnlyPeriods[0]['accounting_period_id'] ?? 0)
+                );
+            } finally {
+                if (InterfaceDB::inTransaction()) {
+                    InterfaceDB::rollBack();
+                }
+            }
         });
     }
 );

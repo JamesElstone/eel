@@ -33,6 +33,12 @@ final class _companies_company_settingsCard extends CardBaseFramework
                 'method' => 'fetchCompanyDetails',
                 'params' => ['companyId' => ':company.id'],
             ],
+            [
+                'key' => 'vat_support_scope',
+                'service' => \eel_accounts\Service\VatSupportScopeService::class,
+                'method' => 'fetchForCompany',
+                'params' => ['companyId' => ':company.id'],
+            ],
         ];
     }
 
@@ -90,7 +96,10 @@ final class _companies_company_settingsCard extends CardBaseFramework
         $defaultCurrencySymbol = (new \eel_accounts\Service\CompanySettingsService())->defaultCurrencySymbol($settings);
         $defaultCurrencyLabel = 'GBP - ' . $defaultCurrencySymbol;
         $dateFormat = (string)($context['company']['settings']['date_format'] ?? '');
+        $qualifyingActivityCeasedOn = trim((string)($settings['qualifying_activity_ceased_on'] ?? ''));
         $companyDetail = (array)($context['services']['company_detail'] ?? []);
+        $vatSupportScope = (array)($context['services']['vat_support_scope'] ?? []);
+        $taxYearEndReadOnly = !empty($vatSupportScope['tax_year_end_read_only']);
         $activeDirectorCount = $companyDetail['companies_house_active_director_count'] ?? null;
         $activeDirectorLabel = $activeDirectorCount === null || $activeDirectorCount === ''
             ? 'Not checked yet'
@@ -101,7 +110,7 @@ final class _companies_company_settingsCard extends CardBaseFramework
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Company">
                 <input type="hidden" name="intent" value="save_company">
-                <section data-state-fields="utr,associated_company_count,default_currency,date_format" data-state-target="save_company_settings_button">
+                <section data-state-fields="utr,associated_company_count,qualifying_activity_ceased_on,default_currency,date_format" data-state-target="save_company_settings_button">
                 <div class="form-grid">
                     <div class="form-row">
                         <label for="company_name">Company name</label>
@@ -131,6 +140,21 @@ final class _companies_company_settingsCard extends CardBaseFramework
                         <select class="select" id="associated_company_count" name="associated_company_count" data-state-default="' . HelperFramework::escape((string)$associatedCompanyCount) . '">
                             ' . $this->associatedCompanyCountOptions($associatedCompanyCount) . '
                         </select>
+                    </div>
+                    <div class="form-row">
+                        <label for="qualifying_activity_ceased_on">Qualifying activity ceased on</label>
+                        <input class="input" type="date" id="qualifying_activity_ceased_on" name="qualifying_activity_ceased_on"
+                            value="' . HelperFramework::escape($qualifyingActivityCeasedOn) . '"
+                            data-state-default="' . HelperFramework::escape($qualifyingActivityCeasedOn) . '"'
+                            . ($taxYearEndReadOnly
+                                ? ' disabled title="' . HelperFramework::escape((string)($vatSupportScope['message'] ?? \eel_accounts\Service\VatSupportScopeService::UNSUPPORTED_MESSAGE)) . '"'
+                                : '') . '>
+                        <div class="helper">'
+                            . ($taxYearEndReadOnly
+                                ? HelperFramework::escape((string)($vatSupportScope['message'] ?? \eel_accounts\Service\VatSupportScopeService::UNSUPPORTED_MESSAGE))
+                                : 'Leave blank while the qualifying trade or activity continues. Saving a date rebuilds capital allowances and cannot alter a locked affected period.')
+                            . '
+                        </div>
                     </div>
                     <div class="form-row">
                         <label for="default_currency">Currency</label>

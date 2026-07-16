@@ -12,7 +12,12 @@ namespace eel_accounts\Service;
 
 final class IxbrlBalanceSheetMetricsService
 {
-    public function fetchClosingMetrics(int $companyId, int $accountingPeriodId): array
+    public function fetchClosingMetrics(
+        int $companyId,
+        int $accountingPeriodId,
+        bool $includePriorOpenPeriodPreviews = false,
+        bool $reportPendingPreviewReliability = false
+    ): array
     {
         $period = $this->fetchAccountingPeriod($companyId, $accountingPeriodId);
         if ($period === null) {
@@ -23,7 +28,12 @@ final class IxbrlBalanceSheetMetricsService
             $companyId,
             (string)$period['period_start'],
             (string)$period['period_end'],
-            $accountingPeriodId
+            $accountingPeriodId,
+            null,
+            null,
+            null,
+            $includePriorOpenPeriodPreviews,
+            $reportPendingPreviewReliability
         );
     }
 
@@ -34,7 +44,9 @@ final class IxbrlBalanceSheetMetricsService
         ?int $accountingPeriodId = null,
         ?array $depreciationPreview = null,
         ?array $prepaymentPreview = null,
-        ?float $profitBeforeTax = null
+        ?float $profitBeforeTax = null,
+        bool $includePriorOpenPeriodPreviews = false,
+        bool $reportPendingPreviewReliability = false
     ): array
     {
         if ($companyId <= 0 || !$this->validDate($periodEnd)) {
@@ -62,6 +74,7 @@ final class IxbrlBalanceSheetMetricsService
              ORDER BY na.sort_order, na.code',
             $params
         );
+        $pendingPreviewContext = null;
         $rows = $this->applyPendingClosePreviewAdjustments(
             $rows,
             $companyId,
@@ -69,7 +82,9 @@ final class IxbrlBalanceSheetMetricsService
             $periodEnd,
             $depreciationPreview,
             $prepaymentPreview,
-            $profitBeforeTax
+            $profitBeforeTax,
+            $includePriorOpenPeriodPreviews,
+            $pendingPreviewContext
         );
 
         $buckets = $this->emptyBuckets();
@@ -128,9 +143,17 @@ final class IxbrlBalanceSheetMetricsService
         if (empty($priorPeriodDependency['satisfied'])) {
             $warnings[] = (string)($priorPeriodDependency['detail'] ?? 'The prior accounting period must be locked before these closing balances are final.');
         }
+        if ($reportPendingPreviewReliability) {
+            foreach ((array)($pendingPreviewContext['warnings'] ?? []) as $warning) {
+                $warnings[] = (string)$warning;
+            }
+        }
         if (abs($balanceEquationDifference) >= 0.005) {
             $warnings[] = 'Balance sheet metrics do not agree with explicitly posted capital and reserves.';
         }
+        $pendingPreviewReliable = !$reportPendingPreviewReliability
+            || $pendingPreviewContext === null
+            || !empty($pendingPreviewContext['reliable']);
 
         return [
             'available' => true,
@@ -141,8 +164,21 @@ final class IxbrlBalanceSheetMetricsService
             'row_count' => count($rows),
             'balance_equation_difference' => $balanceEquationDifference,
             'is_balance_sheet_balanced' => abs($balanceEquationDifference) < 0.005,
-            'reliable_closing_balance' => !empty($priorPeriodDependency['satisfied']),
+            'reliable_closing_balance' => !empty($priorPeriodDependency['satisfied']) && $pendingPreviewReliable,
             'prior_period_dependency' => $priorPeriodDependency,
+            'pending_close_preview' => $reportPendingPreviewReliability
+                ? ($pendingPreviewContext ?? [
+                    'adjustments' => [],
+                    'reliable' => true,
+                    'warnings' => [],
+                    'periods' => [],
+                ])
+                : [
+                'adjustments' => [],
+                'reliable' => true,
+                'warnings' => [],
+                'periods' => [],
+                ],
             'warnings' => array_values(array_unique($warnings)),
         ];
     }
@@ -180,22 +216,26 @@ final class IxbrlBalanceSheetMetricsService
         string $periodEnd,
         ?array $depreciationPreview = null,
         ?array $prepaymentPreview = null,
-        ?float $profitBeforeTax = null
+        ?float $profitBeforeTax = null,
+        bool $includePriorOpenPeriodPreviews = false,
+        ?array &$pendingPreviewContext = null
     ): array
     {
         if ($accountingPeriodId === null || $accountingPeriodId <= 0) {
             return $rows;
         }
 
-        $adjustments = (new \eel_accounts\Service\YearEndClosePreviewService())
-            ->pendingBalanceSheetAdjustments(
+        $pendingPreviewContext = (new \eel_accounts\Service\YearEndClosePreviewService())
+            ->pendingBalanceSheetAdjustmentContext(
                 $companyId,
                 $accountingPeriodId,
                 $periodEnd,
                 $depreciationPreview,
                 $prepaymentPreview,
-                $profitBeforeTax
+                $profitBeforeTax,
+                $includePriorOpenPeriodPreviews
             );
+        $adjustments = (array)($pendingPreviewContext['adjustments'] ?? []);
         if ($adjustments === []) {
             return $rows;
         }
@@ -258,6 +298,12 @@ final class IxbrlBalanceSheetMetricsService
                 'satisfied' => false,
                 'prior_accounting_period' => null,
                 'detail' => 'The closing balance dependency could not be determined.',
+            ],
+            'pending_close_preview' => [
+                'adjustments' => [],
+                'reliable' => false,
+                'warnings' => [],
+                'periods' => [],
             ],
             'warnings' => [],
         ];

@@ -110,6 +110,16 @@ final class GoldenCapitalAllowanceMatrixFixture
         ]);
     }
 
+    public static function setCessationDate(int $companyId, string $date): void
+    {
+        self::insert('company_settings', [
+            'company_id' => $companyId,
+            'setting' => 'qualifying_activity_ceased_on',
+            'type' => 'char',
+            'value' => $date,
+        ]);
+    }
+
     public static function addSalesJournal(
         int $id,
         int $companyId,
@@ -163,6 +173,30 @@ final class GoldenCapitalAllowanceMatrixFixture
             'warnings_json' => '[]',
             'run_hash' => $hash,
         ]);
+
+        return $hash;
+    }
+
+    public static function insertLegacyServicePool(int $companyId, int $periodId, int $ctPeriodId): string
+    {
+        $payload = [
+            'company_id' => $companyId,
+            'accounting_period_id' => $periodId,
+            'pool_type' => 'main_pool',
+            'opening_wdv' => 999.0,
+            'additions' => 999.0,
+            'aia_claimed' => 0.0,
+            'fya_claimed' => 0.0,
+            'disposal_value' => 0.0,
+            'wda_claimed' => 0.0,
+            'balancing_charge' => 0.0,
+            'balancing_allowance' => 0.0,
+            'closing_wdv' => 999.0,
+            'warnings_json' => '[]',
+            'ct_period_id' => $ctPeriodId,
+        ];
+        $hash = hash('sha256', json_encode($payload, JSON_UNESCAPED_SLASHES));
+        self::insert('capital_allowance_pool_runs', array_merge($payload, ['run_hash' => $hash]));
 
         return $hash;
     }
@@ -354,6 +388,55 @@ $harness->check($subject, 'distinguishes missing pool state and replaces stale p
     });
 });
 
+$harness->check($subject, 'automatically replaces recognisable legacy service runs without deleting custom hashes', static function () use ($harness): void {
+    GoldenCapitalAllowanceMatrixFixture::rollbackAfter(static function () use ($harness): void {
+    $companyId = 98111;
+    $periodId = 981111;
+    GoldenCapitalAllowanceMatrixFixture::beginScenario($companyId, [
+        ['id' => $periodId, 'start' => '2099-01-01', 'end' => '2099-12-31'],
+    ]);
+    (new \eel_accounts\Service\CorporationTaxPeriodService())->syncForAccountingPeriod($companyId, $periodId);
+    $ctPeriodId = GoldenCapitalAllowanceMatrixFixture::ctPeriodId($companyId, $periodId);
+    $legacyHash = GoldenCapitalAllowanceMatrixFixture::insertLegacyServicePool(
+        $companyId,
+        $periodId,
+        $ctPeriodId
+    );
+
+    $breakdown = (new \eel_accounts\Service\CapitalAllowanceService())
+        ->fetchPeriodBreakdown($companyId, $periodId, $ctPeriodId);
+
+    $harness->assertSame(true, (bool)($breakdown['available'] ?? false));
+    $harness->assertCount(2, (array)($breakdown['rows'] ?? []));
+    foreach ((array)($breakdown['rows'] ?? []) as $row) {
+        $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($row['closing_wdv'] ?? -1));
+    }
+    $harness->assertSame(
+        0,
+        (int)InterfaceDB::fetchColumn(
+            'SELECT COUNT(*)
+             FROM capital_allowance_pool_runs
+             WHERE company_id = :company_id
+               AND run_hash = :run_hash',
+            ['company_id' => $companyId, 'run_hash' => $legacyHash]
+        )
+    );
+    $currentHashes = InterfaceDB::fetchAll(
+        'SELECT run_hash
+         FROM capital_allowance_pool_runs
+         WHERE company_id = :company_id
+         ORDER BY pool_type ASC',
+        ['company_id' => $companyId]
+    ) ?: [];
+    $harness->assertCount(2, $currentHashes);
+    foreach ($currentHashes as $row) {
+        $hash = (string)($row['run_hash'] ?? '');
+        $harness->assertSame(64, strlen($hash));
+        $harness->assertTrue(str_starts_with($hash, 'ca02:'));
+    }
+    });
+});
+
 $harness->check($subject, 'pro-rates and exhausts AIA then reconciles asset rows, pools and CT summary', static function () use ($harness): void {
     GoldenCapitalAllowanceMatrixFixture::rollbackAfter(static function () use ($harness): void {
     $companyId = 98102;
@@ -538,15 +621,13 @@ $harness->check($subject, 'recognises the residual pool as a balancing allowance
     $companyId = 98105;
     $firstPeriodId = 981051;
     $finalPeriodId = 981052;
-    $nominals = GoldenCapitalAllowanceMatrixFixture::beginScenario(
-        $companyId,
-        [
-            ['id' => $firstPeriodId, 'start' => '2099-01-01', 'end' => '2099-12-31'],
-            ['id' => $finalPeriodId, 'start' => '2100-01-01', 'end' => '2100-12-31'],
-        ],
-        'dissolved',
-        false
-    );
+    $laterPeriodId = 981053;
+    $nominals = GoldenCapitalAllowanceMatrixFixture::beginScenario($companyId, [
+        ['id' => $firstPeriodId, 'start' => '2099-01-01', 'end' => '2099-12-31'],
+        ['id' => $finalPeriodId, 'start' => '2100-01-01', 'end' => '2100-12-31'],
+        ['id' => $laterPeriodId, 'start' => '2101-01-01', 'end' => '2101-12-31'],
+    ]);
+    GoldenCapitalAllowanceMatrixFixture::setCessationDate($companyId, '2100-06-30');
     GoldenCapitalAllowanceMatrixFixture::addAsset(
         9810501,
         $companyId,
@@ -560,7 +641,7 @@ $harness->check($subject, 'recognises the residual pool as a balancing allowance
             'status' => 'disposed',
             'disposal_date' => '2100-06-30',
             'disposal_proceeds' => 2000.0,
-            'disposal_event_type' => 'cessation',
+            'disposal_event_type' => 'sale',
             'disposal_reason' => 'GOLDEN-TEST final disposal on cessation',
         ]
     );
@@ -592,5 +673,388 @@ $harness->check($subject, 'recognises the residual pool as a balancing allowance
             . ' but received ' . json_encode($actual, JSON_UNESCAPED_SLASHES) . '.'
         );
     }
+
+    $laterCtPeriodId = GoldenCapitalAllowanceMatrixFixture::ctPeriodId($companyId, $laterPeriodId);
+    $laterPools = GoldenCapitalAllowanceMatrixFixture::pools($companyId, $laterPeriodId, $laterCtPeriodId);
+    foreach (['main_pool', 'special_rate_pool'] as $poolType) {
+        $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($laterPools[$poolType]['opening_wdv'] ?? -1));
+        $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($laterPools[$poolType]['wda_claimed'] ?? -1));
+        $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($laterPools[$poolType]['closing_wdv'] ?? -1));
+    }
+    });
+});
+
+$harness->check($subject, 'recognises a balancing charge on cessation when disposal values exceed the pool', static function () use ($harness): void {
+    GoldenCapitalAllowanceMatrixFixture::rollbackAfter(static function () use ($harness): void {
+    $companyId = 98106;
+    $firstPeriodId = 981061;
+    $finalPeriodId = 981062;
+    $nominals = GoldenCapitalAllowanceMatrixFixture::beginScenario($companyId, [
+        ['id' => $firstPeriodId, 'start' => '2099-01-01', 'end' => '2099-12-31'],
+        ['id' => $finalPeriodId, 'start' => '2100-01-01', 'end' => '2100-12-31'],
+    ]);
+    GoldenCapitalAllowanceMatrixFixture::setCessationDate($companyId, '2100-06-30');
+    GoldenCapitalAllowanceMatrixFixture::addAsset(
+        9810601,
+        $companyId,
+        $nominals['car'],
+        $nominals['accumulated_depreciation'],
+        'GCA-CESSATION-CHARGE',
+        'car',
+        '2099-01-01',
+        10000.0,
+        [
+            'status' => 'disposed',
+            'disposal_date' => '2100-06-30',
+            'disposal_proceeds' => 9000.0,
+            'disposal_event_type' => 'sale',
+        ]
+    );
+    GoldenCapitalAllowanceMatrixFixture::addVehicle(9810601, $companyId, 'used', false, 50);
+
+    $result = (new \eel_accounts\Service\CapitalAllowanceService())->rebuildForCompany($companyId);
+    $finalCtPeriodId = GoldenCapitalAllowanceMatrixFixture::ctPeriodId($companyId, $finalPeriodId);
+    $finalMain = GoldenCapitalAllowanceMatrixFixture::pools($companyId, $finalPeriodId, $finalCtPeriodId)['main_pool'];
+
+    $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($finalMain['wda_claimed']));
+    $harness->assertSame(800.0, GoldenCapitalAllowanceMatrixFixture::money($finalMain['balancing_charge']));
+    $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($finalMain['balancing_allowance']));
+    $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($finalMain['closing_wdv']));
+    $harness->assertSame(-800.0, GoldenCapitalAllowanceMatrixFixture::money($result[$finalPeriodId]['net_capital_allowances'] ?? 0));
+    });
+});
+
+$harness->check($subject, 'requires disposal valuations for every pooled asset before claiming a cessation allowance', static function () use ($harness): void {
+    GoldenCapitalAllowanceMatrixFixture::rollbackAfter(static function () use ($harness): void {
+    $companyId = 98107;
+    $firstPeriodId = 981071;
+    $finalPeriodId = 981072;
+    $laterPeriodId = 981073;
+    $nominals = GoldenCapitalAllowanceMatrixFixture::beginScenario($companyId, [
+        ['id' => $firstPeriodId, 'start' => '2099-01-01', 'end' => '2099-12-31'],
+        ['id' => $finalPeriodId, 'start' => '2100-01-01', 'end' => '2100-12-31'],
+        ['id' => $laterPeriodId, 'start' => '2101-01-01', 'end' => '2101-12-31'],
+    ]);
+    GoldenCapitalAllowanceMatrixFixture::setCessationDate($companyId, '2100-06-30');
+    GoldenCapitalAllowanceMatrixFixture::addAsset(
+        9810701,
+        $companyId,
+        $nominals['car'],
+        $nominals['accumulated_depreciation'],
+        'GCA-CESSATION-MISSING-VALUE',
+        'car',
+        '2099-01-01',
+        10000.0
+    );
+    GoldenCapitalAllowanceMatrixFixture::addVehicle(9810701, $companyId, 'used', false, 50);
+
+    $result = (new \eel_accounts\Service\CapitalAllowanceService())->rebuildForCompany($companyId);
+    $finalCtPeriodId = GoldenCapitalAllowanceMatrixFixture::ctPeriodId($companyId, $finalPeriodId);
+    $finalMain = GoldenCapitalAllowanceMatrixFixture::pools($companyId, $finalPeriodId, $finalCtPeriodId)['main_pool'];
+    $warningText = implode(' ', (array)($result[$finalPeriodId]['warnings'] ?? []));
+
+    $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($finalMain['wda_claimed']));
+    $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($finalMain['balancing_allowance']));
+    $harness->assertSame(8200.0, GoldenCapitalAllowanceMatrixFixture::money($finalMain['closing_wdv']));
+    $harness->assertTrue(str_contains($warningText, 'GCA-CESSATION-MISSING-VALUE'));
+    $harness->assertTrue(str_contains($warningText, 'no disposal value dated on or before cessation'));
+
+    $taxSummary = (new \eel_accounts\Service\CorporationTaxComputationService(
+        null,
+        GoldenCapitalAllowanceMatrixFixture::fixedNineteenPercentRateService()
+    ))->fetchSummaryForCtPeriodId($companyId, $finalCtPeriodId);
+    $harness->assertSame('review_required', (string)($taxSummary['confidence_status'] ?? ''));
+    $harness->assertTrue(str_contains(
+        implode(' ', array_map('strval', (array)($taxSummary['warnings'] ?? []))),
+        'GCA-CESSATION-MISSING-VALUE'
+    ));
+
+    $laterCtPeriodId = GoldenCapitalAllowanceMatrixFixture::ctPeriodId($companyId, $laterPeriodId);
+    $laterMain = GoldenCapitalAllowanceMatrixFixture::pools($companyId, $laterPeriodId, $laterCtPeriodId)['main_pool'];
+    $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($laterMain['opening_wdv']));
+    $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($laterMain['closing_wdv']));
+    });
+});
+
+$harness->check($subject, 'finalises the special-rate pool without a cessation-period WDA', static function () use ($harness): void {
+    GoldenCapitalAllowanceMatrixFixture::rollbackAfter(static function () use ($harness): void {
+    $companyId = 98108;
+    $firstPeriodId = 981081;
+    $finalPeriodId = 981082;
+    $nominals = GoldenCapitalAllowanceMatrixFixture::beginScenario($companyId, [
+        ['id' => $firstPeriodId, 'start' => '2099-01-01', 'end' => '2099-12-31'],
+        ['id' => $finalPeriodId, 'start' => '2100-01-01', 'end' => '2100-12-31'],
+    ]);
+    GoldenCapitalAllowanceMatrixFixture::setCessationDate($companyId, '2100-06-30');
+    GoldenCapitalAllowanceMatrixFixture::addAsset(
+        9810801,
+        $companyId,
+        $nominals['car'],
+        $nominals['accumulated_depreciation'],
+        'GCA-CESSATION-SPECIAL',
+        'car',
+        '2099-01-01',
+        10000.0,
+        [
+            'status' => 'disposed',
+            'disposal_date' => '2100-06-30',
+            'disposal_proceeds' => 2000.0,
+            'disposal_event_type' => 'sale',
+        ]
+    );
+    GoldenCapitalAllowanceMatrixFixture::addVehicle(9810801, $companyId, 'used', false, 51);
+
+    $result = (new \eel_accounts\Service\CapitalAllowanceService())->rebuildForCompany($companyId);
+    $finalCtPeriodId = GoldenCapitalAllowanceMatrixFixture::ctPeriodId($companyId, $finalPeriodId);
+    $special = GoldenCapitalAllowanceMatrixFixture::pools($companyId, $finalPeriodId, $finalCtPeriodId)['special_rate_pool'];
+
+    $harness->assertSame(9400.0, GoldenCapitalAllowanceMatrixFixture::money($special['opening_wdv']));
+    $harness->assertSame(2000.0, GoldenCapitalAllowanceMatrixFixture::money($special['disposal_value']));
+    $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($special['wda_claimed']));
+    $harness->assertSame(7400.0, GoldenCapitalAllowanceMatrixFixture::money($special['balancing_allowance']));
+    $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($special['closing_wdv']));
+    $harness->assertSame(7400.0, GoldenCapitalAllowanceMatrixFixture::money($result[$finalPeriodId]['net_capital_allowances'] ?? 0));
+    });
+});
+
+$harness->check($subject, 'pools final-period additions without AIA or FYA before the cessation balancing adjustment', static function () use ($harness): void {
+    GoldenCapitalAllowanceMatrixFixture::rollbackAfter(static function () use ($harness): void {
+    $companyId = 98109;
+    $finalPeriodId = 981091;
+    $nominals = GoldenCapitalAllowanceMatrixFixture::beginScenario($companyId, [
+        ['id' => $finalPeriodId, 'start' => '2100-01-01', 'end' => '2100-12-31'],
+    ]);
+    GoldenCapitalAllowanceMatrixFixture::setCessationDate($companyId, '2100-06-30');
+    GoldenCapitalAllowanceMatrixFixture::addAsset(
+        9810901,
+        $companyId,
+        $nominals['plant'],
+        $nominals['accumulated_depreciation'],
+        'GCA-CESSATION-AIA-EXCLUDED',
+        'tools_equipment',
+        '2100-03-01',
+        1000.0,
+        [
+            'status' => 'disposed',
+            'disposal_date' => '2100-06-30',
+            'disposal_proceeds' => 400.0,
+            'disposal_event_type' => 'sale',
+        ]
+    );
+    GoldenCapitalAllowanceMatrixFixture::addAsset(
+        9810902,
+        $companyId,
+        $nominals['car'],
+        $nominals['accumulated_depreciation'],
+        'GCA-CESSATION-FYA-EXCLUDED',
+        'car',
+        '2100-03-01',
+        2000.0,
+        [
+            'status' => 'disposed',
+            'disposal_date' => '2100-06-30',
+            'disposal_proceeds' => 800.0,
+            'disposal_event_type' => 'sale',
+        ]
+    );
+    GoldenCapitalAllowanceMatrixFixture::addVehicle(9810902, $companyId, 'new_unused', true, 0, '2100-03-01');
+
+    $result = (new \eel_accounts\Service\CapitalAllowanceService())->rebuildForCompany($companyId);
+    $finalCtPeriodId = GoldenCapitalAllowanceMatrixFixture::ctPeriodId($companyId, $finalPeriodId);
+    $main = GoldenCapitalAllowanceMatrixFixture::pools($companyId, $finalPeriodId, $finalCtPeriodId)['main_pool'];
+
+    $harness->assertSame(3000.0, GoldenCapitalAllowanceMatrixFixture::money($main['additions']));
+    $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($main['aia_claimed']));
+    $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($main['fya_claimed']));
+    $harness->assertSame(1200.0, GoldenCapitalAllowanceMatrixFixture::money($main['disposal_value']));
+    $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($main['wda_claimed']));
+    $harness->assertSame(1800.0, GoldenCapitalAllowanceMatrixFixture::money($main['balancing_allowance']));
+    $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($main['closing_wdv']));
+    $harness->assertSame(1800.0, GoldenCapitalAllowanceMatrixFixture::money($result[$finalPeriodId]['net_capital_allowances'] ?? 0));
+
+    $allowanceTypes = array_map(
+        static fn(array $row): string => (string)($row['allowance_type'] ?? ''),
+        GoldenCapitalAllowanceMatrixFixture::assetCalculations($companyId, $finalPeriodId)
+    );
+    $harness->assertTrue(!in_array('aia', $allowanceTypes, true));
+    $harness->assertTrue(!in_array('fya', $allowanceTypes, true));
+    });
+});
+
+$harness->check($subject, 'brings a fully relieved FYA asset disposal into the main pool as a balancing charge', static function () use ($harness): void {
+    GoldenCapitalAllowanceMatrixFixture::rollbackAfter(static function () use ($harness): void {
+    $companyId = 98110;
+    $firstPeriodId = 981101;
+    $finalPeriodId = 981102;
+    $nominals = GoldenCapitalAllowanceMatrixFixture::beginScenario($companyId, [
+        ['id' => $firstPeriodId, 'start' => '2099-01-01', 'end' => '2099-12-31'],
+        ['id' => $finalPeriodId, 'start' => '2100-01-01', 'end' => '2100-12-31'],
+    ]);
+    GoldenCapitalAllowanceMatrixFixture::setCessationDate($companyId, '2100-06-30');
+    GoldenCapitalAllowanceMatrixFixture::addAsset(
+        9811001,
+        $companyId,
+        $nominals['car'],
+        $nominals['accumulated_depreciation'],
+        'GCA-FYA-CESSATION-DISPOSAL',
+        'car',
+        '2099-01-01',
+        10000.0,
+        [
+            'status' => 'disposed',
+            'disposal_date' => '2100-06-30',
+            'disposal_proceeds' => 4000.0,
+            'disposal_event_type' => 'sale',
+        ]
+    );
+    GoldenCapitalAllowanceMatrixFixture::addVehicle(9811001, $companyId, 'new_unused', true, 0, '2099-01-01');
+
+    $result = (new \eel_accounts\Service\CapitalAllowanceService())->rebuildForCompany($companyId);
+    $firstCtPeriodId = GoldenCapitalAllowanceMatrixFixture::ctPeriodId($companyId, $firstPeriodId);
+    $finalCtPeriodId = GoldenCapitalAllowanceMatrixFixture::ctPeriodId($companyId, $finalPeriodId);
+    $firstMain = GoldenCapitalAllowanceMatrixFixture::pools($companyId, $firstPeriodId, $firstCtPeriodId)['main_pool'];
+    $finalMain = GoldenCapitalAllowanceMatrixFixture::pools($companyId, $finalPeriodId, $finalCtPeriodId)['main_pool'];
+
+    $harness->assertSame(10000.0, GoldenCapitalAllowanceMatrixFixture::money($firstMain['fya_claimed']));
+    $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($firstMain['closing_wdv']));
+    $harness->assertSame(4000.0, GoldenCapitalAllowanceMatrixFixture::money($finalMain['disposal_value']));
+    $harness->assertSame(4000.0, GoldenCapitalAllowanceMatrixFixture::money($finalMain['balancing_charge']));
+    $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($finalMain['wda_claimed']));
+    $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($finalMain['closing_wdv']));
+    $harness->assertSame(-4000.0, GoldenCapitalAllowanceMatrixFixture::money($result[$finalPeriodId]['net_capital_allowances'] ?? 0));
+    });
+});
+
+$harness->check($subject, 'caps ordinary pooled disposal value at qualifying expenditure', static function () use ($harness): void {
+    GoldenCapitalAllowanceMatrixFixture::rollbackAfter(static function () use ($harness): void {
+    $companyId = 98112;
+    $firstPeriodId = 981121;
+    $secondPeriodId = 981122;
+    $nominals = GoldenCapitalAllowanceMatrixFixture::beginScenario($companyId, [
+        ['id' => $firstPeriodId, 'start' => '2099-01-01', 'end' => '2099-12-31'],
+        ['id' => $secondPeriodId, 'start' => '2100-01-01', 'end' => '2100-12-31'],
+    ]);
+    GoldenCapitalAllowanceMatrixFixture::addAsset(
+        9811201,
+        $companyId,
+        $nominals['car'],
+        $nominals['accumulated_depreciation'],
+        'GCA-DISPOSAL-CAP-NORMAL',
+        'car',
+        '2099-01-01',
+        10000.0,
+        [
+            'status' => 'disposed',
+            'disposal_date' => '2100-06-30',
+            'disposal_proceeds' => 15000.0,
+            'disposal_event_type' => 'sale',
+        ]
+    );
+    GoldenCapitalAllowanceMatrixFixture::addVehicle(9811201, $companyId, 'used', false, 50);
+
+    $result = (new \eel_accounts\Service\CapitalAllowanceService())->rebuildForCompany($companyId);
+    $secondCtPeriodId = GoldenCapitalAllowanceMatrixFixture::ctPeriodId($companyId, $secondPeriodId);
+    $main = GoldenCapitalAllowanceMatrixFixture::pools($companyId, $secondPeriodId, $secondCtPeriodId)['main_pool'];
+    $assetRows = GoldenCapitalAllowanceMatrixFixture::assetCalculations($companyId, $secondPeriodId);
+
+    $harness->assertSame(10000.0, GoldenCapitalAllowanceMatrixFixture::money($main['disposal_value']));
+    $harness->assertSame(1800.0, GoldenCapitalAllowanceMatrixFixture::money($main['balancing_charge']));
+    $harness->assertSame(-1800.0, GoldenCapitalAllowanceMatrixFixture::money($result[$secondPeriodId]['net_capital_allowances'] ?? 0));
+    $harness->assertSame(10000.0, GoldenCapitalAllowanceMatrixFixture::money($assetRows[0]['disposal_value'] ?? 0));
+    });
+});
+
+$harness->check($subject, 'caps fully relieved AIA and FYA disposal values at each asset cost', static function () use ($harness): void {
+    GoldenCapitalAllowanceMatrixFixture::rollbackAfter(static function () use ($harness): void {
+    $companyId = 98113;
+    $firstPeriodId = 981131;
+    $secondPeriodId = 981132;
+    $nominals = GoldenCapitalAllowanceMatrixFixture::beginScenario($companyId, [
+        ['id' => $firstPeriodId, 'start' => '2099-01-01', 'end' => '2099-12-31'],
+        ['id' => $secondPeriodId, 'start' => '2100-01-01', 'end' => '2100-12-31'],
+    ]);
+    GoldenCapitalAllowanceMatrixFixture::addAsset(
+        9811301,
+        $companyId,
+        $nominals['plant'],
+        $nominals['accumulated_depreciation'],
+        'GCA-DISPOSAL-CAP-AIA',
+        'tools_equipment',
+        '2099-01-01',
+        1000.0,
+        [
+            'status' => 'disposed',
+            'disposal_date' => '2100-06-30',
+            'disposal_proceeds' => 5000.0,
+            'disposal_event_type' => 'sale',
+        ]
+    );
+    GoldenCapitalAllowanceMatrixFixture::addAsset(
+        9811302,
+        $companyId,
+        $nominals['car'],
+        $nominals['accumulated_depreciation'],
+        'GCA-DISPOSAL-CAP-FYA',
+        'car',
+        '2099-01-01',
+        2000.0,
+        [
+            'status' => 'disposed',
+            'disposal_date' => '2100-06-30',
+            'disposal_proceeds' => 5000.0,
+            'disposal_event_type' => 'sale',
+        ]
+    );
+    GoldenCapitalAllowanceMatrixFixture::addVehicle(9811302, $companyId, 'new_unused', true, 0, '2099-01-01');
+
+    $result = (new \eel_accounts\Service\CapitalAllowanceService())->rebuildForCompany($companyId);
+    $secondCtPeriodId = GoldenCapitalAllowanceMatrixFixture::ctPeriodId($companyId, $secondPeriodId);
+    $main = GoldenCapitalAllowanceMatrixFixture::pools($companyId, $secondPeriodId, $secondCtPeriodId)['main_pool'];
+    $assetRows = GoldenCapitalAllowanceMatrixFixture::assetCalculations($companyId, $secondPeriodId);
+
+    $harness->assertSame(3000.0, GoldenCapitalAllowanceMatrixFixture::money($main['disposal_value']));
+    $harness->assertSame(3000.0, GoldenCapitalAllowanceMatrixFixture::money($main['balancing_charge']));
+    $harness->assertSame(-3000.0, GoldenCapitalAllowanceMatrixFixture::money($result[$secondPeriodId]['net_capital_allowances'] ?? 0));
+    $harness->assertSame(1000.0, GoldenCapitalAllowanceMatrixFixture::money($assetRows[0]['disposal_value'] ?? 0));
+    $harness->assertSame(2000.0, GoldenCapitalAllowanceMatrixFixture::money($assetRows[1]['disposal_value'] ?? 0));
+    });
+});
+
+$harness->check($subject, 'caps disposal value before the final cessation balancing calculation', static function () use ($harness): void {
+    GoldenCapitalAllowanceMatrixFixture::rollbackAfter(static function () use ($harness): void {
+    $companyId = 98114;
+    $firstPeriodId = 981141;
+    $finalPeriodId = 981142;
+    $nominals = GoldenCapitalAllowanceMatrixFixture::beginScenario($companyId, [
+        ['id' => $firstPeriodId, 'start' => '2099-01-01', 'end' => '2099-12-31'],
+        ['id' => $finalPeriodId, 'start' => '2100-01-01', 'end' => '2100-12-31'],
+    ]);
+    GoldenCapitalAllowanceMatrixFixture::setCessationDate($companyId, '2100-06-30');
+    GoldenCapitalAllowanceMatrixFixture::addAsset(
+        9811401,
+        $companyId,
+        $nominals['car'],
+        $nominals['accumulated_depreciation'],
+        'GCA-DISPOSAL-CAP-CESSATION',
+        'car',
+        '2099-01-01',
+        10000.0,
+        [
+            'status' => 'disposed',
+            'disposal_date' => '2100-06-30',
+            'disposal_proceeds' => 15000.0,
+            'disposal_event_type' => 'sale',
+        ]
+    );
+    GoldenCapitalAllowanceMatrixFixture::addVehicle(9811401, $companyId, 'used', false, 50);
+
+    $result = (new \eel_accounts\Service\CapitalAllowanceService())->rebuildForCompany($companyId);
+    $finalCtPeriodId = GoldenCapitalAllowanceMatrixFixture::ctPeriodId($companyId, $finalPeriodId);
+    $main = GoldenCapitalAllowanceMatrixFixture::pools($companyId, $finalPeriodId, $finalCtPeriodId)['main_pool'];
+
+    $harness->assertSame(10000.0, GoldenCapitalAllowanceMatrixFixture::money($main['disposal_value']));
+    $harness->assertSame(1800.0, GoldenCapitalAllowanceMatrixFixture::money($main['balancing_charge']));
+    $harness->assertSame(0.0, GoldenCapitalAllowanceMatrixFixture::money($main['balancing_allowance']));
+    $harness->assertSame(-1800.0, GoldenCapitalAllowanceMatrixFixture::money($result[$finalPeriodId]['net_capital_allowances'] ?? 0));
     });
 });

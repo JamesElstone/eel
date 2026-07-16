@@ -18,19 +18,42 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
         throw new RuntimeException('Unexpected YearEndAction instance.');
     }
 
-    $harness->check('YearEndAction', 'posts one director loan offset and blocks stale reposting', static function () use ($harness, $instance): void {
+    $harness->check('YearEndAction', 'posts director loan offset deltas and remains idempotent', static function () use ($harness, $instance): void {
         yearEndActionDirectorLoanTestWithFixture($harness, static function (array $fixture) use ($harness, $instance): void {
             $instance = yearEndActionTestInstanceWithDirectorCount(1);
             yearEndActionDirectorLoanTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 1000.00, 0.00, 'asset');
             yearEndActionDirectorLoanTestInsertLineJournal($fixture, $fixture['liability_nominal_id'], 0.00, 1500.00, 'liability');
 
+            $closingApproval = $instance->handle(
+                yearEndActionDirectorLoanTestRequest(
+                    (int)$fixture['company_id'],
+                    (int)$fixture['accounting_period_id'],
+                    'save_director_loan_offset_acknowledgement'
+                ),
+                createTestPageServiceFramework()
+            );
+            $setOffEvidence = $instance->handle(
+                yearEndActionDirectorLoanTestRequest(
+                    (int)$fixture['company_id'],
+                    (int)$fixture['accounting_period_id'],
+                    'save_director_loan_set_off_evidence',
+                    [
+                        'director_loan_set_off_evidence' => '1',
+                        'director_loan_legally_enforceable_right' => '1',
+                        'director_loan_net_settlement_intent' => '1',
+                        'director_loan_set_off_evidence_note' => 'Executed agreement clause 4 and simultaneous settlement instruction.',
+                    ]
+                ),
+                createTestPageServiceFramework()
+            );
             $request = yearEndActionDirectorLoanTestRequest((int)$fixture['company_id'], (int)$fixture['accounting_period_id']);
             $first = $instance->handle($request, createTestPageServiceFramework());
             $second = $instance->handle($request, createTestPageServiceFramework());
 
+            $harness->assertSame(true, $closingApproval->isSuccess());
+            $harness->assertSame(true, $setOffEvidence->isSuccess());
             $harness->assertSame(true, $first->isSuccess());
-            $harness->assertSame(false, $second->isSuccess());
-            $harness->assertTrue(str_contains((string)($second->flashMessages()[0]['message'] ?? ''), 'stale director loan offset'));
+            $harness->assertSame(true, $second->isSuccess());
             $harness->assertSame(1, InterfaceDB::countWhere('journal_entry_metadata', [
                 'company_id' => (int)$fixture['company_id'],
                 'accounting_period_id' => (int)$fixture['accounting_period_id'],
@@ -40,17 +63,22 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
 
             yearEndActionDirectorLoanTestInsertLineJournal($fixture, $fixture['asset_nominal_id'], 200.00, 0.00, 'asset-increase');
             $third = $instance->handle($request, createTestPageServiceFramework());
-            $harness->assertSame(false, $third->isSuccess());
-            $harness->assertTrue(str_contains((string)($third->flashMessages()[0]['message'] ?? ''), 'stale director loan offset'));
-            $harness->assertSame(1, InterfaceDB::countWhere('journal_entry_metadata', [
-                'company_id' => (int)$fixture['company_id'],
-                'accounting_period_id' => (int)$fixture['accounting_period_id'],
-                'journal_tag' => \eel_accounts\Service\DirectorLoanReconciliationService::OFFSET_JOURNAL_TAG,
-                'journal_key' => \eel_accounts\Service\DirectorLoanReconciliationService::OFFSET_JOURNAL_KEY,
-            ]));
+            $harness->assertSame(true, $third->isSuccess());
+            $harness->assertSame(2, (int)InterfaceDB::fetchColumn(
+                'SELECT COUNT(*)
+                 FROM journal_entry_metadata
+                 WHERE company_id = :company_id
+                   AND accounting_period_id = :accounting_period_id
+                   AND journal_tag = :journal_tag',
+                [
+                    'company_id' => (int)$fixture['company_id'],
+                    'accounting_period_id' => (int)$fixture['accounting_period_id'],
+                    'journal_tag' => \eel_accounts\Service\DirectorLoanReconciliationService::OFFSET_JOURNAL_TAG,
+                ]
+            ));
 
-            $offsetDebit = (float)InterfaceDB::fetchColumn(
-                'SELECT COALESCE(SUM(jl.debit), 0)
+            $offsetSigned = (float)InterfaceDB::fetchColumn(
+                'SELECT COALESCE(SUM(jl.debit - jl.credit), 0)
                  FROM journal_entry_metadata jem
                  INNER JOIN journal_lines jl ON jl.journal_id = jem.journal_id
                  WHERE jem.company_id = :company_id
@@ -64,7 +92,7 @@ $harness->run(YearEndAction::class, static function (GeneratedServiceClassTestHa
                     'nominal_account_id' => (int)$fixture['liability_nominal_id'],
                 ]
             );
-            $harness->assertSame(1000.00, round($offsetDebit, 2));
+            $harness->assertSame(0.00, round($offsetSigned, 2));
         });
     });
 
@@ -555,6 +583,10 @@ function yearEndActionDirectorLoanTestWithFixture(GeneratedServiceClassTestHarne
             ['company_name' => 'Year End Action DLO Fixture Limited', 'company_number' => 'YEA' . $marker, 'incorporation_date' => '2025-01-01']
         );
         $companyId = (int)InterfaceDB::fetchColumn('SELECT id FROM companies WHERE company_number = :company_number', ['company_number' => 'YEA' . $marker]);
+        $settings = new \eel_accounts\Store\CompanySettingsStore($companyId);
+        $settings->set('director_loan_asset_nominal_id', $assetNominalId, 'int');
+        $settings->set('director_loan_liability_nominal_id', $liabilityNominalId, 'int');
+        $settings->flush();
         InterfaceDB::prepareExecute(
             'INSERT INTO accounting_periods (company_id, label, period_start, period_end)
              VALUES (:company_id, :label, :period_start, :period_end)',

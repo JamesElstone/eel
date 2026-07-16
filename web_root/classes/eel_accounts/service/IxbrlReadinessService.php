@@ -30,7 +30,8 @@ final class IxbrlReadinessService
         $totals = (new \eel_accounts\Service\IxbrlTrialBalanceService())->getTotals($companyId, $accountingPeriodId);
         $this->addCheck($checks, 'trial_balance_balanced', 'Trial balance balanced', !empty($totals['is_balanced']), true, 'Difference: ' . $settingsService->money($settings, $totals['difference'] ?? 0));
 
-        $balanceMetrics = (new \eel_accounts\Service\IxbrlBalanceSheetMetricsService())->fetchClosingMetrics($companyId, $accountingPeriodId);
+        $balanceMetrics = (new \eel_accounts\Service\IxbrlBalanceSheetMetricsService())
+            ->fetchClosingMetrics($companyId, $accountingPeriodId, false, false);
         $balanceDifference = (float)($balanceMetrics['balance_equation_difference'] ?? 0);
         $this->addCheck(
             $checks,

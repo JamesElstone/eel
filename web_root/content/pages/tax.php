@@ -37,6 +37,7 @@ final class _tax extends PageContextFramework
             'tax_taxable_profit_bridge',
             'tax_prepayment_treatment',
             'tax_disallowable_add_backs',
+            'tax_capital_add_backs',
             'tax_depreciation_add_back',
             'tax_capital_allowances_summary',
             'tax_aia_allocation',

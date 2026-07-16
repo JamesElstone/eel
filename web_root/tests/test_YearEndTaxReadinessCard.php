@@ -35,6 +35,7 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
                     'accounting_profit' => 9000,
                     'disallowable_add_backs' => 400,
                     'depreciation_add_back' => 700,
+                    'capital_add_backs' => 250,
                     'capital_allowances' => 100,
                     'taxable_before_losses' => 10000,
                     'taxable_profit' => 10000,
@@ -64,6 +65,7 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
                     'accounting_profit' => 2600,
                     'disallowable_add_backs' => 50,
                     'depreciation_add_back' => 0,
+                    'capital_add_backs' => 0,
                     'capital_allowances' => 150,
                     'taxable_before_losses' => 2500,
                     'taxable_profit' => 2500,
@@ -102,6 +104,7 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame(true, str_contains($html, 'CT Period 2: 05/09/2023 to 30/09/2023'));
         $harness->assertSame(true, str_contains($html, 'Taxable Profit Bridge'));
         $harness->assertSame(true, str_contains($html, 'Accounting profit or loss'));
+        $harness->assertSame(true, str_contains($html, 'Add back capital expenditure'));
         $harness->assertSame(true, str_contains($html, 'Deduct capital allowances'));
         $harness->assertSame(true, str_contains($html, 'Loss Movement'));
         $harness->assertSame(true, str_contains($html, 'Rate Bands'));

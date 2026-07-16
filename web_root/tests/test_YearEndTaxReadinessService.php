@@ -19,6 +19,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             $totals = $method->invoke($service, [
                 [
                     'accounting_profit' => -135.04,
+                    'capital_add_backs' => 10.00,
                     'capital_allowances' => 556.90,
                     'taxable_before_losses' => -691.94,
                     'losses_brought_forward' => 0.00,
@@ -28,6 +29,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
                 ],
                 [
                     'accounting_profit' => -5.64,
+                    'capital_add_backs' => 20.00,
                     'capital_allowances' => 0.00,
                     'taxable_before_losses' => -5.64,
                     'losses_brought_forward' => 691.94,
@@ -38,6 +40,7 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
             ]);
 
             $harness->assertSame(-140.68, $totals['accounting_profit']);
+            $harness->assertSame(30.00, $totals['capital_add_backs']);
             $harness->assertSame(556.90, $totals['capital_allowances']);
             $harness->assertSame(-697.58, $totals['taxable_before_losses']);
             $harness->assertSame(0.00, $totals['losses_brought_forward']);

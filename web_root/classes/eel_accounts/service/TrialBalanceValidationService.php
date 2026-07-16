@@ -183,6 +183,11 @@ final class TrialBalanceValidationService
     }
 
     private function bankLedgerReasonableness(int $companyId, int $accountingPeriodId, int $bankNominalId): array {
+        $readySplitIds = (new \eel_accounts\Service\TransactionSplitService())
+            ->fetchReadySplitTransactionIds($companyId, $accountingPeriodId);
+        $readySplitPredicate = $readySplitIds !== []
+            ? ' OR t.id IN (' . implode(', ', array_map('intval', $readySplitIds)) . ')'
+            : '';
         $txnStmt = \InterfaceDB::prepare(
             'SELECT COALESCE(SUM(t.amount), 0)
              FROM transactions t
@@ -193,6 +198,7 @@ final class TrialBalanceValidationService
                AND (
                     (t.nominal_account_id IS NOT NULL AND t.category_status IN (:auto_status, :manual_status))
                     OR (t.transfer_account_id IS NOT NULL AND t.category_status = :manual_status)
+                    ' . $readySplitPredicate . '
                )'
         );
         $txnStmt->execute([

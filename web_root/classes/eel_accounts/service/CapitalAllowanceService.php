@@ -11,6 +11,9 @@ namespace eel_accounts\Service;
 
 final class CapitalAllowanceService
 {
+    private const RUN_HASH_ALGORITHM_VERSION = 'capital_allowance_pool_v2';
+    private const RUN_HASH_VERSION_PREFIX = 'ca02:';
+
     public function __construct(private readonly ?\eel_accounts\Service\TaxRateRuleService $taxRateRuleService = null)
     {
     }
@@ -39,11 +42,13 @@ final class CapitalAllowanceService
             return [];
         }
 
+        $cessationDate = $this->qualifyingActivityCessationDate($companyId);
         $this->deleteExistingRows($companyId);
 
         $mainWdv = 0.0;
         $specialWdv = 0.0;
         $assetPools = [];
+        $outstandingPooledAssets = [];
         $results = [];
 
         $ctPeriodService = new \eel_accounts\Service\CorporationTaxPeriodService();
@@ -57,128 +62,181 @@ final class CapitalAllowanceService
                 $periodStart = (string)$ctPeriod['period_start'];
                 $periodEnd = (string)$ctPeriod['period_end'];
                 $periodDays = $this->periodDays($periodStart, $periodEnd);
-            $aiaRemaining = $this->aiaLimitForPeriod($periodStart, $periodEnd, $periodDays);
-            $periodRows = [];
-            $warnings = [];
+                $cessationInPeriod = $cessationDate !== ''
+                    && $cessationDate >= $periodStart
+                    && $cessationDate <= $periodEnd;
+                $afterCessation = $cessationDate !== '' && $periodStart > $cessationDate;
+                $activityEnd = $cessationInPeriod ? $cessationDate : $periodEnd;
+                $activityDays = $this->periodDays($periodStart, $activityEnd);
+                $aiaRemaining = $afterCessation || $cessationInPeriod
+                    ? 0.0
+                    : $this->aiaLimitForPeriod($periodStart, $activityEnd, $activityDays);
+                $periodRows = [];
+                $warnings = [];
 
-            $main = $this->emptyPool('main_pool', $mainWdv);
-            $special = $this->emptyPool('special_rate_pool', $specialWdv);
-
-            foreach ($this->fetchAssetAdditions($companyId, $periodStart, $periodEnd) as $asset) {
-                $assetId = (int)$asset['id'];
-                $cost = round((float)$asset['cost'], 2);
-                $treatment = $this->additionTreatment($asset);
-                foreach ($treatment['warnings'] as $warning) {
-                    $warnings[] = $warning;
-                    $periodRows[] = $this->assetRow($companyId, $periodId, $ctPeriodId, $assetId, 'unreviewed', 'warning', $cost, 0.0, 0.0, $warning);
+                if ($afterCessation) {
+                    $mainWdv = 0.0;
+                    $specialWdv = 0.0;
                 }
 
-                if ($treatment['pool'] === 'unreviewed') {
-                    $assetPools[$assetId] = 'unreviewed';
-                    continue;
-                }
+                $main = $this->emptyPool('main_pool', $mainWdv);
+                $special = $this->emptyPool('special_rate_pool', $specialWdv);
 
-                if ($treatment['allowance_type'] === 'aia') {
-                    $aia = round(min($cost, $aiaRemaining), 2);
-                    $aiaRemaining = round($aiaRemaining - $aia, 2);
-                    $remaining = round($cost - $aia, 2);
-                    $main['additions'] += $remaining;
-                    $main['aia_claimed'] += $aia;
-                    $mainWdv += $remaining;
-                    $assetPools[$assetId] = 'main_pool';
-                    $periodRows[] = $this->assetRow($companyId, $periodId, $ctPeriodId, $assetId, 'main_pool', 'aia', $cost, $aia);
-                    if ($remaining > 0) {
-                        $periodRows[] = $this->assetRow($companyId, $periodId, $ctPeriodId, $assetId, 'main_pool', 'main_pool_addition', $remaining);
+                if (!$afterCessation) {
+                    foreach ($this->fetchAssetAdditions($companyId, $periodStart, $activityEnd) as $asset) {
+                        $assetId = (int)$asset['id'];
+                        $cost = round((float)$asset['cost'], 2);
+                        $treatment = $this->additionTreatment($asset);
+                        foreach ($treatment['warnings'] as $warning) {
+                            $warnings[] = $warning;
+                            $periodRows[] = $this->assetRow($companyId, $periodId, $ctPeriodId, $assetId, 'unreviewed', 'warning', $cost, 0.0, 0.0, $warning);
+                        }
+
+                        if ($treatment['pool'] === 'unreviewed') {
+                            $assetPools[$assetId] = 'unreviewed';
+                            continue;
+                        }
+
+                        if ($treatment['allowance_type'] === 'aia' && !$cessationInPeriod) {
+                            $aia = round(min($cost, $aiaRemaining), 2);
+                            $aiaRemaining = round($aiaRemaining - $aia, 2);
+                            $remaining = round($cost - $aia, 2);
+                            $main['additions'] += $remaining;
+                            $main['aia_claimed'] += $aia;
+                            $mainWdv += $remaining;
+                            $assetPools[$assetId] = 'main_pool';
+                            $outstandingPooledAssets[$assetId] = $this->outstandingPooledAsset($asset, 'main_pool');
+                            $periodRows[] = $this->assetRow($companyId, $periodId, $ctPeriodId, $assetId, 'main_pool', 'aia', $cost, $aia);
+                            if ($remaining > 0) {
+                                $periodRows[] = $this->assetRow($companyId, $periodId, $ctPeriodId, $assetId, 'main_pool', 'main_pool_addition', $remaining);
+                            }
+                            continue;
+                        }
+
+                        if ($treatment['allowance_type'] === 'fya' && !$cessationInPeriod) {
+                            $main['fya_claimed'] += $cost;
+                            // The residual qualifying expenditure is nil after a
+                            // 100% FYA, but it still enters the main pool no later
+                            // than disposal so the disposal value creates the
+                            // required balancing adjustment.
+                            $assetPools[$assetId] = 'main_pool';
+                            $outstandingPooledAssets[$assetId] = $this->outstandingPooledAsset($asset, 'main_pool');
+                            $periodRows[] = $this->assetRow($companyId, $periodId, $ctPeriodId, $assetId, 'main_pool', 'fya', $cost, $cost);
+                            continue;
+                        }
+
+                        if ($treatment['pool'] === 'special_rate_pool') {
+                            $special['additions'] += $cost;
+                            $specialWdv += $cost;
+                            $assetPools[$assetId] = 'special_rate_pool';
+                            $outstandingPooledAssets[$assetId] = $this->outstandingPooledAsset($asset, 'special_rate_pool');
+                            $periodRows[] = $this->assetRow($companyId, $periodId, $ctPeriodId, $assetId, 'special_rate_pool', 'special_rate_pool_addition', $cost);
+                            continue;
+                        }
+
+                        $main['additions'] += $cost;
+                        $mainWdv += $cost;
+                        $assetPools[$assetId] = 'main_pool';
+                        $outstandingPooledAssets[$assetId] = $this->outstandingPooledAsset($asset, 'main_pool');
+                        $periodRows[] = $this->assetRow($companyId, $periodId, $ctPeriodId, $assetId, 'main_pool', 'main_pool_addition', $cost);
                     }
-                    continue;
+
+                    foreach ($this->fetchDisposals($companyId, $periodStart, $activityEnd) as $asset) {
+                        $assetId = (int)$asset['id'];
+                        $pool = (string)($assetPools[$assetId] ?? $this->poolForExistingAsset($asset));
+                        $proceeds = $this->qualifyingDisposalValue($asset);
+                        if ($pool === 'special_rate_pool') {
+                            $special['disposal_value'] += $proceeds;
+                            $specialWdv = round($specialWdv - $proceeds, 2);
+                            unset($outstandingPooledAssets[$assetId]);
+                            $periodRows[] = $this->assetRow($companyId, $periodId, $ctPeriodId, $assetId, 'special_rate_pool', 'disposal_value', 0.0, 0.0, $proceeds);
+                        } elseif ($pool === 'main_pool') {
+                            $main['disposal_value'] += $proceeds;
+                            $mainWdv = round($mainWdv - $proceeds, 2);
+                            unset($outstandingPooledAssets[$assetId]);
+                            $periodRows[] = $this->assetRow($companyId, $periodId, $ctPeriodId, $assetId, 'main_pool', 'disposal_value', 0.0, 0.0, $proceeds);
+                        }
+                    }
                 }
 
-                if ($treatment['allowance_type'] === 'fya') {
-                    $main['fya_claimed'] += $cost;
-                    $assetPools[$assetId] = 'fya';
-                    $periodRows[] = $this->assetRow($companyId, $periodId, $ctPeriodId, $assetId, 'main_pool', 'fya', $cost, $cost);
-                    continue;
+                if ($cessationInPeriod) {
+                    $mainMissing = $this->cessationValuationWarnings(
+                        $outstandingPooledAssets,
+                        'main_pool',
+                        $cessationDate
+                    );
+                    $specialMissing = $this->cessationValuationWarnings(
+                        $outstandingPooledAssets,
+                        'special_rate_pool',
+                        $cessationDate
+                    );
+                    $warnings = array_merge($warnings, $mainMissing, $specialMissing);
+
+                    $this->finaliseCessationPool($main, $mainWdv, $mainMissing === []);
+                    $this->finaliseCessationPool($special, $specialWdv, $specialMissing === []);
+                } elseif (!$afterCessation) {
+                    if ($mainWdv < 0) {
+                        $main['balancing_charge'] = round(abs($mainWdv), 2);
+                        $mainWdv = 0.0;
+                    }
+                    if ($specialWdv < 0) {
+                        $special['balancing_charge'] = round(abs($specialWdv), 2);
+                        $specialWdv = 0.0;
+                    }
+
+                    $mainRate = $this->mainRateForPeriod($periodStart, $periodEnd);
+                    $mainWda = round($mainWdv * $mainRate * min(1.0, $periodDays / 365), 2);
+                    $specialRate = $this->specialRateForPeriod($periodStart, $periodEnd);
+                    $specialWda = round($specialWdv * $specialRate * min(1.0, $periodDays / 365), 2);
+                    $main['wda_claimed'] = min($mainWdv, $mainWda);
+                    $special['wda_claimed'] = min($specialWdv, $specialWda);
+                    $mainWdv = round($mainWdv - $main['wda_claimed'], 2);
+                    $specialWdv = round($specialWdv - $special['wda_claimed'], 2);
                 }
 
-                if ($treatment['pool'] === 'special_rate_pool') {
-                    $special['additions'] += $cost;
-                    $specialWdv += $cost;
-                    $assetPools[$assetId] = 'special_rate_pool';
-                    $periodRows[] = $this->assetRow($companyId, $periodId, $ctPeriodId, $assetId, 'special_rate_pool', 'special_rate_pool_addition', $cost);
-                    continue;
+                $main['closing_wdv'] = round($mainWdv, 2);
+                $special['closing_wdv'] = round($specialWdv, 2);
+                $main['warnings'] = $warnings;
+                $special['warnings'] = $warnings;
+
+                $this->insertPoolRun($companyId, $periodId, $ctPeriodId, $main);
+                $this->insertPoolRun($companyId, $periodId, $ctPeriodId, $special);
+                foreach ($periodRows as $row) {
+                    $this->insertAssetCalculation($row);
                 }
 
-                $main['additions'] += $cost;
-                $mainWdv += $cost;
-                $assetPools[$assetId] = 'main_pool';
-                $periodRows[] = $this->assetRow($companyId, $periodId, $ctPeriodId, $assetId, 'main_pool', 'main_pool_addition', $cost);
-            }
+                $allowance = round($main['aia_claimed'] + $main['fya_claimed'] + $main['wda_claimed'] + $special['wda_claimed'] + $main['balancing_allowance'] + $special['balancing_allowance'], 2);
+                $charge = round($main['balancing_charge'] + $special['balancing_charge'], 2);
+                $result = [
+                    'allowance' => $allowance,
+                    'charge' => $charge,
+                    'net_capital_allowances' => round($allowance - $charge, 2),
+                    'warnings' => array_values(array_unique($warnings)),
+                    'pools' => [$main, $special],
+                    'ct_period_id' => $ctPeriodId,
+                    'period_start' => $periodStart,
+                    'period_end' => $periodEnd,
+                    'qualifying_activity_ceased_on' => $cessationDate,
+                ];
 
-            foreach ($this->fetchDisposals($companyId, $periodStart, $periodEnd) as $asset) {
-                $assetId = (int)$asset['id'];
-                $pool = (string)($assetPools[$assetId] ?? $this->poolForExistingAsset($asset));
-                $proceeds = round(max(0.0, (float)($asset['disposal_proceeds'] ?? 0)), 2);
-                if ($pool === 'special_rate_pool') {
-                    $special['disposal_value'] += $proceeds;
-                    $specialWdv = round($specialWdv - $proceeds, 2);
-                    $periodRows[] = $this->assetRow($companyId, $periodId, $ctPeriodId, $assetId, 'special_rate_pool', 'disposal_value', 0.0, 0.0, $proceeds);
-                } elseif ($pool === 'main_pool') {
-                    $main['disposal_value'] += $proceeds;
-                    $mainWdv = round($mainWdv - $proceeds, 2);
-                    $periodRows[] = $this->assetRow($companyId, $periodId, $ctPeriodId, $assetId, 'main_pool', 'disposal_value', 0.0, 0.0, $proceeds);
+                $results['ct_periods'][$ctPeriodId] = $result;
+                if (!isset($results[$periodId])) {
+                    $results[$periodId] = ['allowance' => 0.0, 'charge' => 0.0, 'net_capital_allowances' => 0.0, 'warnings' => [], 'pools' => []];
                 }
-            }
+                $results[$periodId]['allowance'] = round((float)$results[$periodId]['allowance'] + $allowance, 2);
+                $results[$periodId]['charge'] = round((float)$results[$periodId]['charge'] + $charge, 2);
+                $results[$periodId]['net_capital_allowances'] = round((float)$results[$periodId]['allowance'] - (float)$results[$periodId]['charge'], 2);
+                $results[$periodId]['warnings'] = array_values(array_unique(array_merge((array)$results[$periodId]['warnings'], $warnings)));
+                $results[$periodId]['pools'] = array_merge((array)$results[$periodId]['pools'], [$main, $special]);
 
-            if ($mainWdv < 0) {
-                $main['balancing_charge'] = round(abs($mainWdv), 2);
-                $mainWdv = 0.0;
-            }
-            if ($specialWdv < 0) {
-                $special['balancing_charge'] = round(abs($specialWdv), 2);
-                $specialWdv = 0.0;
-            }
-
-            $mainRate = $this->mainRateForPeriod($periodStart, $periodEnd);
-            $mainWda = round($mainWdv * $mainRate * min(1.0, $periodDays / 365), 2);
-            $specialRate = $this->specialRateForPeriod($periodStart, $periodEnd);
-            $specialWda = round($specialWdv * $specialRate * min(1.0, $periodDays / 365), 2);
-            $main['wda_claimed'] = min($mainWdv, $mainWda);
-            $special['wda_claimed'] = min($specialWdv, $specialWda);
-            $mainWdv = round($mainWdv - $main['wda_claimed'], 2);
-            $specialWdv = round($specialWdv - $special['wda_claimed'], 2);
-            $main['closing_wdv'] = $mainWdv;
-            $special['closing_wdv'] = $specialWdv;
-            $main['warnings'] = $warnings;
-            $special['warnings'] = [];
-
-            $this->insertPoolRun($companyId, $periodId, $ctPeriodId, $main);
-            $this->insertPoolRun($companyId, $periodId, $ctPeriodId, $special);
-            foreach ($periodRows as $row) {
-                $this->insertAssetCalculation($row);
-            }
-
-            $allowance = round($main['aia_claimed'] + $main['fya_claimed'] + $main['wda_claimed'] + $special['wda_claimed'] + $main['balancing_allowance'] + $special['balancing_allowance'], 2);
-            $charge = round($main['balancing_charge'] + $special['balancing_charge'], 2);
-            $result = [
-                'allowance' => $allowance,
-                'charge' => $charge,
-                'net_capital_allowances' => round($allowance - $charge, 2),
-                'warnings' => array_values(array_unique($warnings)),
-                'pools' => [$main, $special],
-            ];
-            $result['ct_period_id'] = $ctPeriodId;
-            $result['period_start'] = $periodStart;
-            $result['period_end'] = $periodEnd;
-
-            $results['ct_periods'][$ctPeriodId] = $result;
-            if (!isset($results[$periodId])) {
-                $results[$periodId] = ['allowance' => 0.0, 'charge' => 0.0, 'net_capital_allowances' => 0.0, 'warnings' => [], 'pools' => []];
-            }
-            $results[$periodId]['allowance'] = round((float)$results[$periodId]['allowance'] + $allowance, 2);
-            $results[$periodId]['charge'] = round((float)$results[$periodId]['charge'] + $charge, 2);
-            $results[$periodId]['net_capital_allowances'] = round((float)$results[$periodId]['allowance'] - (float)$results[$periodId]['charge'], 2);
-            $results[$periodId]['warnings'] = array_values(array_unique(array_merge((array)$results[$periodId]['warnings'], $warnings)));
-            $results[$periodId]['pools'] = array_merge((array)$results[$periodId]['pools'], [$main, $special]);
+                if ($cessationInPeriod) {
+                    // A qualifying activity has no pool to carry into a later CT
+                    // period. Incomplete valuations are retained on this period
+                    // only so the warning and unrelieved amount remain visible.
+                    $mainWdv = 0.0;
+                    $specialWdv = 0.0;
+                    $outstandingPooledAssets = [];
+                }
             }
         }
 
@@ -189,6 +247,10 @@ final class CapitalAllowanceService
     {
         if ($companyId <= 0 || $accountingPeriodId <= 0 || !\InterfaceDB::tableExists('capital_allowance_pool_runs')) {
             return ['available' => false, 'rows' => [], 'warnings' => []];
+        }
+
+        if ($this->companyNeedsAlgorithmRebuild($companyId)) {
+            $this->rebuildForCompany($companyId);
         }
 
         $sql = 'SELECT *
@@ -323,6 +385,76 @@ final class CapitalAllowanceService
                AND ar.disposal_proceeds IS NOT NULL',
             ['company_id' => $companyId, 'period_start' => $periodStart, 'period_end' => $periodEnd]
         ) ?: [];
+    }
+
+    private function qualifyingDisposalValue(array $asset): float
+    {
+        $proceeds = max(0.0, (float)($asset['disposal_proceeds'] ?? 0));
+        $qualifyingExpenditure = max(0.0, (float)($asset['cost'] ?? 0));
+
+        return round(min($proceeds, $qualifyingExpenditure), 2);
+    }
+
+    private function qualifyingActivityCessationDate(int $companyId): string
+    {
+        if ($companyId <= 0) {
+            return '';
+        }
+
+        $date = trim((string)(new \eel_accounts\Store\CompanySettingsStore($companyId))
+            ->get('qualifying_activity_ceased_on', ''));
+
+        return $this->isIsoDate($date) ? $date : '';
+    }
+
+    private function outstandingPooledAsset(array $asset, string $pool): array
+    {
+        return [
+            'asset_id' => (int)($asset['id'] ?? 0),
+            'asset_code' => trim((string)($asset['asset_code'] ?? '')),
+            'description' => trim((string)($asset['description'] ?? '')),
+            'pool' => $pool,
+        ];
+    }
+
+    private function cessationValuationWarnings(array $outstandingAssets, string $pool, string $cessationDate): array
+    {
+        $warnings = [];
+        foreach ($outstandingAssets as $asset) {
+            if ((string)($asset['pool'] ?? '') !== $pool) {
+                continue;
+            }
+
+            $label = trim((string)($asset['asset_code'] ?? ''));
+            if ($label === '') {
+                $label = trim((string)($asset['description'] ?? ''));
+            }
+            if ($label === '') {
+                $label = '#' . (int)($asset['asset_id'] ?? 0);
+            }
+
+            $warnings[] = 'Qualifying activity ceased on ' . $cessationDate
+                . ', but pooled asset ' . $label
+                . ' has no disposal value dated on or before cessation. Enter its disposal date and value before relying on the Corporation Tax calculation.';
+        }
+
+        return $warnings;
+    }
+
+    private function finaliseCessationPool(array &$pool, float &$wdv, bool $hasCompleteValuations): void
+    {
+        $pool['wda_claimed'] = 0.0;
+        if (!$hasCompleteValuations) {
+            return;
+        }
+
+        if ($wdv < 0) {
+            $pool['balancing_charge'] = round(abs($wdv), 2);
+        } elseif ($wdv > 0) {
+            $pool['balancing_allowance'] = round($wdv, 2);
+        }
+
+        $wdv = 0.0;
     }
 
     private function additionTreatment(array $asset): array
@@ -466,7 +598,7 @@ final class CapitalAllowanceService
         if ($hasCtPeriodColumn) {
             $payload['ct_period_id'] = $ctPeriodId > 0 ? $ctPeriodId : null;
         }
-        $payload['run_hash'] = hash('sha256', json_encode($payload, JSON_UNESCAPED_SLASHES));
+        $payload['run_hash'] = $this->serviceRunHash($payload);
 
         $columns = $hasCtPeriodColumn
             ? 'company_id, accounting_period_id, ct_period_id, pool_type, opening_wdv, additions, aia_claimed,
@@ -528,6 +660,101 @@ final class CapitalAllowanceService
     {
         \InterfaceDB::prepareExecute('DELETE FROM capital_allowance_asset_calculations WHERE company_id = :company_id', ['company_id' => $companyId]);
         \InterfaceDB::prepareExecute('DELETE FROM capital_allowance_pool_runs WHERE company_id = :company_id', ['company_id' => $companyId]);
+    }
+
+    private function companyNeedsAlgorithmRebuild(int $companyId): bool
+    {
+        $rows = \InterfaceDB::fetchAll(
+            'SELECT *
+             FROM capital_allowance_pool_runs
+             WHERE company_id = :company_id
+             ORDER BY id ASC',
+            ['company_id' => $companyId]
+        ) ?: [];
+        if ($rows === []) {
+            return false;
+        }
+
+        $hasLegacyServiceRun = false;
+        foreach ($rows as $row) {
+            $storedHash = trim((string)($row['run_hash'] ?? ''));
+            if ($storedHash === '') {
+                return false;
+            }
+            if (hash_equals($this->serviceRunHash($row), $storedHash)) {
+                continue;
+            }
+
+            $legacyHashes = $this->legacyServiceRunHashes($row);
+            if (in_array($storedHash, $legacyHashes, true)) {
+                $hasLegacyServiceRun = true;
+                continue;
+            }
+
+            // An unrecognised hash may belong to an intentional fixture or
+            // custom calculation. Do not delete it during an automatic read.
+            return false;
+        }
+
+        return $hasLegacyServiceRun;
+    }
+
+    private function serviceRunHash(array $row): string
+    {
+        $digest = hash('sha256', json_encode([
+            'algorithm_version' => self::RUN_HASH_ALGORITHM_VERSION,
+            'payload' => $this->canonicalRunHashPayload(
+                $row,
+                \InterfaceDB::columnExists('capital_allowance_pool_runs', 'ct_period_id')
+            ),
+        ], JSON_UNESCAPED_SLASHES));
+
+        return self::RUN_HASH_VERSION_PREFIX
+            . substr($digest, 0, 64 - strlen(self::RUN_HASH_VERSION_PREFIX));
+    }
+
+    /** @return list<string> */
+    private function legacyServiceRunHashes(array $row): array
+    {
+        $hashes = [
+            hash('sha256', json_encode(
+                $this->canonicalRunHashPayload($row, false),
+                JSON_UNESCAPED_SLASHES
+            )),
+        ];
+        if (\InterfaceDB::columnExists('capital_allowance_pool_runs', 'ct_period_id')) {
+            $hashes[] = hash('sha256', json_encode(
+                $this->canonicalRunHashPayload($row, true),
+                JSON_UNESCAPED_SLASHES
+            ));
+        }
+
+        return array_values(array_unique($hashes));
+    }
+
+    private function canonicalRunHashPayload(array $row, bool $includeCtPeriodId): array
+    {
+        $payload = [
+            'company_id' => (int)($row['company_id'] ?? 0),
+            'accounting_period_id' => (int)($row['accounting_period_id'] ?? 0),
+            'pool_type' => (string)($row['pool_type'] ?? ''),
+            'opening_wdv' => round((float)($row['opening_wdv'] ?? 0), 2),
+            'additions' => round((float)($row['additions'] ?? 0), 2),
+            'aia_claimed' => round((float)($row['aia_claimed'] ?? 0), 2),
+            'fya_claimed' => round((float)($row['fya_claimed'] ?? 0), 2),
+            'disposal_value' => round((float)($row['disposal_value'] ?? 0), 2),
+            'wda_claimed' => round((float)($row['wda_claimed'] ?? 0), 2),
+            'balancing_charge' => round((float)($row['balancing_charge'] ?? 0), 2),
+            'balancing_allowance' => round((float)($row['balancing_allowance'] ?? 0), 2),
+            'closing_wdv' => round((float)($row['closing_wdv'] ?? 0), 2),
+            'warnings_json' => (string)($row['warnings_json'] ?? '[]'),
+        ];
+        if ($includeCtPeriodId) {
+            $ctPeriodId = $row['ct_period_id'] ?? null;
+            $payload['ct_period_id'] = $ctPeriodId === null ? null : (int)$ctPeriodId;
+        }
+
+        return $payload;
     }
 
     private function periodDays(string $start, string $end): int

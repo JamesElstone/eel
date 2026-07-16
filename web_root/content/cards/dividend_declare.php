@@ -35,6 +35,11 @@ final class _dividend_declareCard extends CardBaseFramework
         ];
     }
 
+    public function handleError(string $serviceKey, array $error, array $context): string
+    {
+        return '';
+    }
+
     protected function additionalInvalidationFacts(): array
     {
         return ['page.context'];

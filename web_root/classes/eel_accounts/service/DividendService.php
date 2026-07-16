@@ -121,7 +121,7 @@ final class DividendService
 
             return [
                 'capacity' => $capacity,
-                'reserve_review' => $this->unavailableReserveReview('Select a company and accounting period before reviewing dividend reserves.'),
+                'reserve_review' => $this->unavailableReserveReview('Select a company and accounting period before reviewing reserves.'),
             ];
         }
 

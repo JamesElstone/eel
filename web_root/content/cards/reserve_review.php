@@ -7,11 +7,11 @@
  */
 declare(strict_types=1);
 
-final class _dividend_reserve_reviewCard extends CardBaseFramework
+final class _reserve_reviewCard extends CardBaseFramework
 {
     public function key(): string
     {
-        return 'dividend_reserve_review';
+        return 'reserve_review';
     }
 
     public function title(): string
@@ -42,7 +42,7 @@ final class _dividend_reserve_reviewCard extends CardBaseFramework
             : (new \eel_accounts\Service\YearEndLockService())->isLocked($companyId, $accountingPeriodId);
 
         if (empty($review['available'])) {
-            return '<div class="settings-stack">' . $this->renderErrors((array)($review['errors'] ?? ['Dividend reserve review is not available.'])) . '</div>';
+            return '<div class="settings-stack">' . $this->renderErrors((array)($review['errors'] ?? ['Reserve review is not available.'])) . '</div>';
         }
 
         $summary = (array)($review['summary'] ?? []);
@@ -90,7 +90,7 @@ final class _dividend_reserve_reviewCard extends CardBaseFramework
             </div>
             <section class="panel-soft settings-stack">
                 <div class="summary-label">What this review is for</div>
-                <div class="helper">This review checks which parts of the company\'s profit can safely support dividends.</div>
+                <div class="helper">This review classifies current-period profit and loss movements so the company\'s reserves are presented correctly.</div>
                 <div class="helper">Most ordinary sales and expenses are classified automatically.</div>
                 <div class="helper">Only unusual or unknown items normally need attention.</div>
                 <div class="helper">If unsure, leave as Unknown and ask your accountant.</div>
@@ -108,9 +108,9 @@ final class _dividend_reserve_reviewCard extends CardBaseFramework
                 ' . $this->summaryCard('Reviewed reductions', $this->money($companySettings, $this->reviewedReductions($summary))) . '
                 ' . $this->summaryCard('Unknown', $this->money($companySettings, $summary['unknown_amount'] ?? 0)) . '
             </div>
-            ' . ($unknownAmount > 0.0 ? '<section class="panel-soft warn settings-stack"><span class="badge warning">Needs review</span><div class="helper">You cannot save this review while Unknown amounts remain.</div></section>' : '') . '
+            ' . ($unknownAmount > 0.0 ? '<section class="panel-soft warn settings-stack"><span class="badge warning">Needs review</span><div class="helper">Classify all Unknown amounts before the reserve review can be marked current.</div></section>' : '') . '
             ' . ($isLocked ? '<div class="helper"><span class="badge warning">Period locked</span> Distributable profit classifications are read only.</div>' : '') . '
-            <form method="post" action="?page=dividends" data-ajax="true" class="settings-stack">
+            <form method="post" action="?page=profit_loss" data-ajax="true" class="settings-stack">
                 ' . HelperFramework::csrfHiddenInput((new SessionAuthenticationService())->csrfToken()) . '
                 <input type="hidden" name="card_action" value="Dividend">
                 <input type="hidden" name="intent" value="save_dividend_reserve_review">
@@ -123,14 +123,7 @@ final class _dividend_reserve_reviewCard extends CardBaseFramework
                         <tbody>' . $rowsHtml . '</tbody>
                     </table>
                 </div>
-                <div class="helper">Unknown amounts and unreviewed snapshots are not treated as distributable for dividend declarations.</div>
-                <div class="actions-row">
-                    <button class="button primary" type="submit"' . ($isLocked ? ' disabled title="Period locked"' : '') . '
-                        data-chicken-check="true"
-                        data-chicken-title="Save dividend reserve review"
-                        data-chicken-message="This records the current distributable profit review used to support dividend capacity. Only save if the classifications look right or have been checked.<br><br>Continue?"
-                        data-chicken-confirm-text="Save Review">Save Review</button>
-                </div>
+                <div class="helper">Changes are recorded automatically. Unknown amounts and unreviewed snapshots are excluded from reviewed reserve totals.</div>
             </form>
         </div>';
     }
@@ -174,13 +167,13 @@ final class _dividend_reserve_reviewCard extends CardBaseFramework
     private function treatmentExplanation(string $treatment): string
     {
         return match ($treatment) {
-            'realised_profit' => 'Normal earned income that can usually support dividends.',
-            'realised_loss' => 'Normal business cost that reduces dividend capacity.',
-            'tax_charge' => 'Tax cost that reduces dividend capacity.',
-            'unrealised_gain' => 'Paper gain, usually not counted for dividends.',
-            'unrealised_loss' => 'Paper loss, treated cautiously and reduces dividend capacity.',
-            'non_distributable' => 'Profit not available for dividends.',
-            'capital' => 'Capital, share, or balance-sheet item, not normal dividend profit.',
+            'realised_profit' => 'Normal earned income that increases realised reserves.',
+            'realised_loss' => 'Normal business cost that reduces realised reserves.',
+            'tax_charge' => 'Tax cost that reduces reserves.',
+            'unrealised_gain' => 'Paper gain kept separate from realised reserves.',
+            'unrealised_loss' => 'Paper loss that reduces the reviewed reserve position.',
+            'non_distributable' => 'Profit excluded from realised reserves.',
+            'capital' => 'Capital, share, or balance-sheet item rather than normal trading profit.',
             'dividend_distribution' => 'Dividend already paid or declared, reduces reserves.',
             default => 'Not safe to rely on until reviewed.',
         };
@@ -204,13 +197,13 @@ final class _dividend_reserve_reviewCard extends CardBaseFramework
     {
         $treatment = (string)($row['treatment'] ?? 'unknown');
         if ($treatment === 'unknown') {
-            return 'Leave as Unknown if you are unsure; this amount cannot support dividends until reviewed.';
+            return 'Leave as Unknown if you are unsure; this amount is excluded from reviewed reserves until classified.';
         }
         if (in_array($treatment, ['unrealised_gain', 'unrealised_loss', 'capital', 'non_distributable'], true)) {
-            return 'Check this carefully before relying on it for dividend capacity.';
+            return 'Check this carefully because it changes how the movement is presented in reserves.';
         }
         if ($treatment !== (string)($row['default_treatment'] ?? $treatment)) {
-            return 'This differs from the automatic classification, so check it before saving.';
+            return 'This differs from the automatic classification, so check that the reserve treatment is correct.';
         }
 
         return 'The system has classified this from the nominal account type; you can change it if it is not right.';

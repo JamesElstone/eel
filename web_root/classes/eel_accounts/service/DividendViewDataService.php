@@ -23,7 +23,7 @@ final class DividendViewDataService
         if ($companyId <= 0 || $accountingPeriodId <= 0) {
             return [
                 'capacity' => ['available' => false, 'errors' => ['Select a company and accounting period before reviewing dividends.']],
-                'reserve_review' => ['available' => false, 'errors' => ['Select a company and accounting period before reviewing dividend reserves.']],
+                'reserve_review' => ['available' => false, 'errors' => ['Select a company and accounting period before reviewing reserves.']],
                 'warnings' => [],
                 'is_locked' => false,
             ];

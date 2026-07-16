@@ -431,6 +431,7 @@ final class TestCardsHarness
         $this->assertPageFinalTabContains(new _transactions(), 'Year End Confirmation', ['year_end_empty_month_confirmations', 'year_end_transaction_tail']);
         $this->assertPageFinalTabContains(new _prepayments(), 'Year End Confirmation', ['year_end_prepayment_approvals']);
         $this->assertPageFinalTabContains(new _journal(), 'Year End Confirmation', ['journal_cut_off_confirmation']);
+        $this->assertPageTabContains(new _profit_loss(), 'Reserve Review', ['reserve_review']);
         $this->assertPageFinalTabContains(new _profit_loss(), 'Year End Confirmation', ['year_end_retained_earnings']);
         $this->assertPageFinalTabContains(new _tax(), 'Year End Review', ['year_end_tax_readiness']);
 

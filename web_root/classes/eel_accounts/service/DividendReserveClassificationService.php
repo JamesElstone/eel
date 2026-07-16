@@ -104,12 +104,12 @@ final class DividendReserveClassificationService
 
     public function saveReview(int $companyId, int $accountingPeriodId, array $treatments, string $reviewedBy = 'web_app', ?string $asAtDate = null): array
     {
-        $scopeBlock = (new VatSupportScopeService())->mutationBlockResult($companyId, 'save a Year End dividend reserve review');
+        $scopeBlock = (new VatSupportScopeService())->mutationBlockResult($companyId, 'update a Year End reserve review');
         if ($scopeBlock !== null) {
             return $scopeBlock;
         }
 
-        (new YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'change the dividend reserve review for this period');
+        (new YearEndLockService())->assertUnlocked($companyId, $accountingPeriodId, 'change the reserve review for this period');
         $context = $this->fetchReviewContext($companyId, $accountingPeriodId, $asAtDate);
         if (empty($context['available'])) {
             return $context + ['success' => false];
@@ -139,7 +139,7 @@ final class DividendReserveClassificationService
         if ((float)($summary['unknown_amount'] ?? 0) > 0.0) {
             return [
                 'success' => false,
-                'errors' => ['Classify all unknown reserve movements before saving the dividend reserve review.'],
+                'errors' => ['Classify all unknown reserve movements before the reserve review can be marked current.'],
                 'context' => $context,
             ];
         }

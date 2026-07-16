@@ -11,8 +11,8 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 
 $harness = new GeneratedServiceClassTestHarness();
 
-$harness->run(_dividend_reserve_reviewCard::class, static function (GeneratedServiceClassTestHarness $harness, _dividend_reserve_reviewCard $card): void {
-    $harness->check(_dividend_reserve_reviewCard::class, 'declares shared focused capacity context service', static function () use ($harness, $card): void {
+$harness->run(_reserve_reviewCard::class, static function (GeneratedServiceClassTestHarness $harness, _reserve_reviewCard $card): void {
+    $harness->check(_reserve_reviewCard::class, 'declares shared focused capacity context service', static function () use ($harness, $card): void {
         $service = (array)($card->services()[0] ?? []);
         $params = (array)($service['params'] ?? []);
 
@@ -23,7 +23,7 @@ $harness->run(_dividend_reserve_reviewCard::class, static function (GeneratedSer
         $harness->assertSame(':company.accounting_period_id', $params['accountingPeriodId'] ?? null);
     });
 
-    $harness->check(_dividend_reserve_reviewCard::class, 'renders director-friendly reserve review guidance', static function () use ($harness, $card): void {
+    $harness->check(_reserve_reviewCard::class, 'renders director-friendly reserve review guidance', static function () use ($harness, $card): void {
         $harness->assertSame('Distributable Profit Review', $card->title());
 
         $html = $card->render([
@@ -94,27 +94,30 @@ $harness->run(_dividend_reserve_reviewCard::class, static function (GeneratedSer
             ],
         ]);
 
-        $harness->assertTrue(str_contains($html, "This review checks which parts of the company's profit can safely support dividends."));
+        $harness->assertSame('reserve_review', $card->key());
+        $harness->assertTrue(str_contains($html, "This review classifies current-period profit and loss movements so the company's reserves are presented correctly."));
         $harness->assertTrue(str_contains($html, 'Most ordinary sales and expenses are classified automatically.'));
         $harness->assertTrue(str_contains($html, 'If unsure, leave as Unknown and ask your accountant.'));
-        $harness->assertTrue(str_contains($html, 'Normal earned income that can usually support dividends.'));
-        $harness->assertTrue(str_contains($html, 'Normal business cost that reduces dividend capacity.'));
-        $harness->assertTrue(str_contains($html, 'Tax cost that reduces dividend capacity.'));
-        $harness->assertTrue(str_contains($html, 'Paper gain, usually not counted for dividends.'));
-        $harness->assertTrue(str_contains($html, 'Paper loss, treated cautiously and reduces dividend capacity.'));
-        $harness->assertTrue(str_contains($html, 'Profit not available for dividends.'));
-        $harness->assertTrue(str_contains($html, 'Capital, share, or balance-sheet item, not normal dividend profit.'));
+        $harness->assertTrue(str_contains($html, 'Normal earned income that increases realised reserves.'));
+        $harness->assertTrue(str_contains($html, 'Normal business cost that reduces realised reserves.'));
+        $harness->assertTrue(str_contains($html, 'Tax cost that reduces reserves.'));
+        $harness->assertTrue(str_contains($html, 'Paper gain kept separate from realised reserves.'));
+        $harness->assertTrue(str_contains($html, 'Paper loss that reduces the reviewed reserve position.'));
+        $harness->assertTrue(str_contains($html, 'Profit excluded from realised reserves.'));
+        $harness->assertTrue(str_contains($html, 'Capital, share, or balance-sheet item rather than normal trading profit.'));
         $harness->assertTrue(str_contains($html, 'Dividend already paid or declared, reduces reserves.'));
         $harness->assertTrue(str_contains($html, 'Not safe to rely on until reviewed.'));
         $harness->assertTrue(str_contains($html, '<span class="badge success">Auto-classified</span>'));
         $harness->assertTrue(str_contains($html, '<span class="badge danger">Ask accountant</span>'));
         $harness->assertTrue(str_contains($html, '<span class="badge warning">Needs review</span>'));
-        $harness->assertTrue(str_contains($html, 'You cannot save this review while Unknown amounts remain.'));
-        $harness->assertTrue(str_contains($html, 'Leave as Unknown if you are unsure; this amount cannot support dividends until reviewed.'));
-        $harness->assertTrue(str_contains($html, 'Check this carefully before relying on it for dividend capacity.'));
+        $harness->assertTrue(str_contains($html, 'Classify all Unknown amounts before the reserve review can be marked current.'));
+        $harness->assertTrue(str_contains($html, 'Leave as Unknown if you are unsure; this amount is excluded from reviewed reserves until classified.'));
+        $harness->assertTrue(str_contains($html, 'Check this carefully because it changes how the movement is presented in reserves.'));
         $harness->assertTrue(str_contains($html, 'name="card_action" value="Dividend"'));
         $harness->assertTrue(str_contains($html, 'name="intent" value="save_dividend_reserve_review"'));
         $harness->assertTrue(str_contains($html, 'name="treatment[101]"'));
-        $harness->assertTrue(str_contains($html, 'This records the current distributable profit review used to support dividend capacity. Only save if the classifications look right or have been checked.'));
+        $harness->assertTrue(str_contains($html, 'action="?page=profit_loss"'));
+        $harness->assertTrue(str_contains($html, 'Changes are recorded automatically.'));
+        $harness->assertTrue(!str_contains($html, '>Save Review</button>'));
     });
 });

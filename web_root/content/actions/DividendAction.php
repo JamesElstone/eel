@@ -21,7 +21,7 @@ final class DividendAction implements ActionInterfaceFramework
                 (new \eel_accounts\Service\YearEndLockService())->assertUnlocked(
                     (int)$request->input('company_id', 0),
                     (int)$request->input('accounting_period_id', 0),
-                    'save the dividend reserve review for this period'
+                    'update the reserve review for this period'
                 );
             }
 
@@ -68,7 +68,7 @@ final class DividendAction implements ActionInterfaceFramework
             $flashMessages[] = [
                 'type' => 'success',
                 'message' => $intent === 'save_dividend_reserve_review'
-                    ? 'Dividend reserve review saved.'
+                    ? 'Reserve review updated.'
                     : ($intent === 'void_dividend'
                         ? 'Dividend declaration voided and reversal recorded.'
                         : (!empty($result['already_exists'])

@@ -38,6 +38,7 @@ final class _profit_loss extends PageContextFramework
             'pl_expense_breakdown',
             'pl_net_profit_bridge',
             'pl_source_coverage',
+            'reserve_review',
             'year_end_retained_earnings',
         ];
     }
@@ -64,6 +65,12 @@ final class _profit_loss extends PageContextFramework
                 'tab' => 'Data Quality',
                 'cards' => [
                     'pl_source_coverage',
+                ],
+            ],
+            [
+                'tab' => 'Reserve Review',
+                'cards' => [
+                    'reserve_review',
                 ],
             ],
             [

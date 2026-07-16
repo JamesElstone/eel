@@ -257,7 +257,11 @@ final class _not_an_assetCard extends CardBaseFramework
             1
         ) ?? $toolbar;
 
-        return $toolbar . $table->renderTable() . $table->renderFooter();
+        return '<div class="panel-soft">'
+            . $toolbar
+            . $table->renderTable()
+            . $table->renderFooter()
+            . '</div>';
     }
 
     private function actionButtons(

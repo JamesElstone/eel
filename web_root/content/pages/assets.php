@@ -51,7 +51,7 @@ final class _assets extends PageContextFramework
                 ],
             ],
             [
-                'tab' => 'Non-Assets',
+                'tab' => 'Year End Actions',
                 'cards' => [
                     'not_an_asset',
                 ],

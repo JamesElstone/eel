@@ -113,6 +113,54 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
         $harness->assertSame(false, str_contains($html, 'Reopen review'));
     });
 
+    $harness->check(_year_end_checklistCard::class, 'keeps Companies House approval in its dedicated workflow while retaining the two generic review actions', static function () use ($harness, $card): void {
+        $html = $card->render([
+            'year_end' => [
+                'checklist' => [
+                    'company_id' => 12,
+                    'accounting_period' => ['id' => 34],
+                    'overall_status' => 'in_progress',
+                    'sections' => [
+                        'director_loan_expenses' => [[
+                            'check_code' => 'director_loan_tax_review',
+                            'title' => 'Director loan tax review',
+                            'status' => 'warning',
+                            'detail_text' => 'Review the director loan tax exposure.',
+                            'metric_value' => '£1,000.00',
+                            'action_url' => '?page=director_loans&show_card=year_end_director_loan_offset',
+                            'review_clearable' => true,
+                        ]],
+                        'year_end_accounts_review' => [[
+                            'check_code' => 'fixed_asset_review_placeholder',
+                            'title' => 'Fixed asset review',
+                            'status' => 'warning',
+                            'detail_text' => 'Review potential fixed assets.',
+                            'metric_value' => '1',
+                            'action_url' => '?page=assets&show_card=not_an_asset',
+                            'review_clearable' => true,
+                        ]],
+                        'companies_house_comparison' => [[
+                            'check_code' => 'companies_house_mismatch_acknowledgement',
+                            'title' => 'Accounts comparison metrics',
+                            'status' => 'warning',
+                            'detail_text' => 'Stored filing values differ from the app figures.',
+                            'metric_value' => '2',
+                            'action_url' => '?page=companies_house&show_card=year_end_companies_house_comparison',
+                            'review_clearable' => true,
+                        ]],
+                    ],
+                ],
+            ],
+        ]);
+
+        $harness->assertSame(2, substr_count($html, '>Mark reviewed</button>'));
+        $harness->assertSame(true, str_contains($html, 'name="check_code" value="fixed_asset_review_placeholder"'));
+        $harness->assertSame(true, str_contains($html, 'name="check_code" value="director_loan_tax_review"'));
+        $harness->assertSame(false, str_contains($html, 'name="check_code" value="companies_house_mismatch_acknowledgement"'));
+        $harness->assertSame(true, str_contains($html, 'Accounts comparison metrics'));
+        $harness->assertSame(true, str_contains($html, '<input type="hidden" name="show_card" value="year_end_companies_house_comparison">'));
+    });
+
     $harness->check(_year_end_checklistCard::class, 'bookkeeping workflow link uses selected site context', static function () use ($harness, $card): void {
         $html = $card->render([
             'year_end' => [

@@ -387,7 +387,12 @@ $harness->run(_pl_income_breakdownCard::class, static function (GeneratedService
 });
 
 $harness->run(_pl_monthly_trendCard::class, static function (GeneratedServiceClassTestHarness $harness, _pl_monthly_trendCard $card): void {
-    $html = $card->render([
+    $context = [
+        'page' => [
+            'page_id' => 'profit_loss',
+            'page_cards' => ['pl_monthly_trend'],
+            'csrf_token' => 'test-token',
+        ],
         'company' => [
             'settings' => [
                 'default_currency_symbol' => '&#36;',
@@ -419,12 +424,19 @@ $harness->run(_pl_monthly_trendCard::class, static function (GeneratedServiceCla
                 ],
             ],
         ],
-    ]);
+    ];
+    $html = $card->render($context);
+    $tables = $card->tables($context);
 
-    $harness->check(_pl_monthly_trendCard::class, 'renders monthly table beside multi-line chart', static function () use ($harness, $html): void {
+    $harness->check(_pl_monthly_trendCard::class, 'renders exportable monthly table and chart inside a soft panel', static function () use ($harness, $html, $tables): void {
+        $harness->assertTrue(str_contains($html, '<section class="panel-soft">'));
         $harness->assertTrue(str_contains($html, 'pl-monthly-trend-layout'));
         $harness->assertTrue(str_contains($html, 'pl-monthly-trend-table'));
         $harness->assertTrue(str_contains($html, 'pl-monthly-trend-chart'));
+        $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="csv"'));
+        $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="xlsx"'));
+        $harness->assertSame(1, count($tables));
+        $harness->assertTrue(str_contains($tables[0]->exportCsv(), '"January 2026",1200.00,300.00,200.00'));
         $harness->assertTrue(str_contains($html, 'chart chart-line'));
         $harness->assertTrue(str_contains($html, '>January 2026</td>'));
         $harness->assertTrue(str_contains($html, '<td>$ 1,200.00</td>'));

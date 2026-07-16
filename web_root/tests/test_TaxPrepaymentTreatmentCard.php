@@ -74,8 +74,20 @@ $harness->run(_tax_prepayment_treatmentCard::class, static function (
         $harness->assertTrue(str_contains($html, 'FRC - FRS 105'));
         $harness->assertSame(false, str_contains($html, 'Accounting and tax guidance:'));
         $harness->assertSame(false, str_contains($html, 'FRS 103'));
-        $harness->assertTrue(str_contains($html, 'class="table-scroll panel-soft"'));
+        $harness->assertTrue(str_contains($html, '<section class="panel-soft">'));
+        $harness->assertTrue(str_contains($html, 'class="table-scroll"'));
+        $harness->assertSame(false, str_contains($html, 'class="table-scroll panel-soft"'));
         $harness->assertTrue(str_contains($html, 'name="_table_export_prepare" value="csv"'));
+        $panelStart = strpos($html, '<section class="panel-soft">');
+        $panelEnd = $panelStart === false ? false : strpos($html, '</section>', $panelStart);
+        $exportPosition = strpos($html, 'name="_table_export_prepare" value="csv"');
+        $tablePosition = strpos($html, '<table');
+        $paginationPosition = strpos($html, 'class="card-toolbar table-footer"');
+        $harness->assertTrue($panelStart !== false);
+        $harness->assertTrue($panelEnd !== false);
+        $harness->assertTrue($exportPosition !== false && $exportPosition > $panelStart && $exportPosition < $panelEnd);
+        $harness->assertTrue($tablePosition !== false && $tablePosition > $panelStart && $tablePosition < $panelEnd);
+        $harness->assertTrue($paginationPosition !== false && $paginationPosition > $tablePosition && $paginationPosition < $panelEnd);
         $harness->assertTrue(strpos($html, 'HMRC - BIM42201') < strpos($html, 'Amounts use cumulative half-up rounding'));
         $harness->assertTrue(strpos($html, 'Amounts use cumulative half-up rounding') < strpos($html, 'Accounting Period Expense'));
         $harness->assertSame(1, count($card->tables([

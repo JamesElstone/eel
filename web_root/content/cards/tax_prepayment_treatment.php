@@ -113,7 +113,11 @@ final class _tax_prepayment_treatmentCard extends CardBaseFramework
             . $this->summary('Accounting Period Expense', $this->moneyPence($settings, (int)($periodContext['total_expense_pence'] ?? 0)))
             . $this->summary('Closing Prepayments asset', $this->moneyPence($settings, (int)($periodContext['total_closing_deferred_pence'] ?? 0)))
             . '</div>'
-            . $table->render($context, ['cards[]' => (array)($context['page']['page_cards'] ?? [])])
+            . '<section class="panel-soft">'
+            . $table->renderToolbar($context, ['cards[]' => (array)($context['page']['page_cards'] ?? [])])
+            . $table->renderTable()
+            . $table->renderFooter()
+            . '</section>'
             . $this->messages(array_values(array_unique(array_filter(array_map('strval', $warnings)))));
     }
 
@@ -176,7 +180,7 @@ final class _tax_prepayment_treatmentCard extends CardBaseFramework
             ->filename('prepayment-accounting-treatment')
             ->exportLimit(5000)
             ->empty('No prepayment schedule overlaps the selected accounting period.')
-            ->classes(wrapperClass: 'table-scroll panel-soft')
+            ->classes(wrapperClass: 'table-scroll')
             ->column('source', 'Source', html: static fn(array $row): string => (string)($row['source_html'] ?? ''), export: true)
             ->column('purchase_pence', 'Purchase', html: static fn(array $row): string => (string)($row['purchase_html'] ?? ''), export: static fn(array $row): string => number_format(((int)($row['purchase_pence'] ?? 0)) / 100, 2, '.', ''), headerClass: 'numeric', cellClass: 'numeric', exportType: 'number')
             ->column('service_period', 'Service period', html: static fn(array $row): string => (string)($row['service_period_html'] ?? ''), export: true)

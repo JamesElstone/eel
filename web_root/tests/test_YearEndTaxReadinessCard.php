@@ -107,7 +107,7 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         ]));
 
         $harness->assertSame(true, str_contains($html, 'save_tax_readiness_acknowledgement'));
-        $harness->assertSame(true, str_contains($html, 'Open Tax Workflow'));
+        $harness->assertSame(false, str_contains($html, 'Open Tax Workflow'));
         $harness->assertSame(true, str_contains($html, 'Overall Tax Position'));
         $harness->assertSame(true, str_contains($html, 'CT Periods In This Accounting Period'));
         $harness->assertSame(true, str_contains($html, 'CT Period 1: 05/09/2022 to 04/09/2023'));
@@ -178,7 +178,7 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame(true, str_contains($html, '$ 1,520.00'));
         $harness->assertSame(true, str_contains($html, '$ 12.50'));
         $harness->assertSame(true, str_contains($html, '01/10/2025 to 30/09/2026'));
-        $harness->assertSame(true, str_contains($html, 'Open Tax Workflow'));
+        $harness->assertSame(false, str_contains($html, 'Open Tax Workflow'));
         $harness->assertSame(true, str_contains($html, 'Overall Tax Position'));
         $harness->assertSame(true, str_contains($html, 'CT Period 1: 01/10/2025 to 30/09/2026'));
         $harness->assertSame(true, str_contains($html, 'summary-grid four'));
@@ -201,7 +201,7 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
 
         $harness->assertSame(true, str_contains($html, '$ 4,000.00'));
         $harness->assertSame(true, str_contains($html, '$ 760.00'));
-        $harness->assertSame(true, str_contains($html, 'Open Tax Workflow'));
+        $harness->assertSame(false, str_contains($html, 'Open Tax Workflow'));
     });
 });
 

@@ -206,7 +206,11 @@ final class _year_end_checklistCard extends CardBaseFramework
         if ($checkCode === '') {
             return '';
         }
-        if (in_array($checkCode, ['cut_off_journals_review', 'prepayment_approvals'], true)) {
+        if (in_array($checkCode, [
+            'cut_off_journals_review',
+            'prepayment_approvals',
+            'companies_house_mismatch_acknowledgement',
+        ], true)) {
             return '';
         }
 

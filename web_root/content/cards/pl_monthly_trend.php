@@ -15,40 +15,132 @@ final class _pl_monthly_trendCard extends CardBaseFramework
 
     protected function additionalInvalidationFacts(): array { return ['page.context']; }
 
+    public function tables(array $context): array
+    {
+        return [$this->monthlyTrendTable($context)];
+    }
+
     public function render(array $context): string
     {
         $rows = (array)($context['profit_loss']['monthly_trend'] ?? []);
-        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
         if ($rows === []) {
             return '<div class="helper">No monthly Profit & Loss data is available for the selected period.</div>';
         }
 
-        $html = '';
+        $table = $this->monthlyTrendTable($context);
+
+        return '<section class="panel-soft">
+            <div class="pl-monthly-trend-layout">
+                <div class="pl-monthly-trend-table">
+                    ' . $table->render($context, [
+                        'cards[]' => (array)($context['page']['page_cards'] ?? []),
+                    ]) . '
+                </div>
+                <div class="pl-monthly-trend-chart">
+                    ' . $this->trendChart($rows) . '
+                </div>
+            </div>
+        </section>';
+    }
+
+    private function monthlyTrendTable(array $context): TableFramework
+    {
+        $companySettings = (array)(($context['company'] ?? [])['settings'] ?? []);
+
+        return TableFramework::make(
+            $this->key(),
+            $this->tableRows((array)($context['profit_loss']['monthly_trend'] ?? []))
+        )
+            ->filename('monthly-profit-loss-trend')
+            ->exportLimit(500)
+            ->empty('No monthly Profit & Loss data is available for the selected period.')
+            ->textColumn('month_label', 'Month')
+            ->column(
+                'income_total',
+                'Income',
+                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['income_total'] ?? 0)),
+                export: fn(array $row): string => $this->numberExport($row['income_total'] ?? 0),
+                exportType: 'number'
+            )
+            ->column(
+                'cost_of_sales_total',
+                'Cost of sales',
+                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['cost_of_sales_total'] ?? 0)),
+                export: fn(array $row): string => $this->numberExport($row['cost_of_sales_total'] ?? 0),
+                exportType: 'number'
+            )
+            ->column(
+                'operating_expense_total',
+                'Operating expenses',
+                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['operating_expense_total'] ?? 0)),
+                export: fn(array $row): string => $this->numberExport($row['operating_expense_total'] ?? 0),
+                exportType: 'number'
+            )
+            ->column(
+                'depreciation_expense',
+                'Depreciation preview',
+                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['depreciation_expense'] ?? 0)),
+                export: fn(array $row): string => $this->numberExport($row['depreciation_expense'] ?? 0),
+                exportType: 'number'
+            )
+            ->column(
+                'posted_corporation_tax_charge',
+                'Posted CT',
+                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['posted_corporation_tax_charge'] ?? 0)),
+                export: fn(array $row): string => $this->numberExport($row['posted_corporation_tax_charge'] ?? 0),
+                exportType: 'number'
+            )
+            ->column(
+                'estimated_corporation_tax_adjustment',
+                'Estimated CT adjustment',
+                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['estimated_corporation_tax_adjustment'] ?? 0)),
+                export: fn(array $row): string => $this->numberExport($row['estimated_corporation_tax_adjustment'] ?? 0),
+                exportType: 'number'
+            )
+            ->column(
+                'corporation_tax_expense_total',
+                'Estimated CT total',
+                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['corporation_tax_expense_total'] ?? 0)),
+                export: fn(array $row): string => $this->numberExport($row['corporation_tax_expense_total'] ?? 0),
+                exportType: 'number'
+            )
+            ->column(
+                'profit_before_tax',
+                'Profit before tax',
+                html: fn(array $row): string => HelperFramework::escape($this->money($companySettings, $row['profit_before_tax'] ?? 0)),
+                export: fn(array $row): string => $this->numberExport($row['profit_before_tax'] ?? 0),
+                exportType: 'number'
+            )
+            ->column(
+                'profit_after_tax',
+                'After estimated tax',
+                html: fn(array $row): string => '<span class="badge '
+                    . ((float)($row['profit_after_tax'] ?? 0) >= 0 ? 'success' : 'danger')
+                    . '">' . HelperFramework::escape($this->money($companySettings, $row['profit_after_tax'] ?? 0)) . '</span>',
+                export: fn(array $row): string => $this->numberExport($row['profit_after_tax'] ?? 0),
+                exportType: 'number'
+            );
+    }
+
+    private function tableRows(array $rows): array
+    {
+        $tableRows = [];
+
         foreach ($rows as $row) {
-            $net = (float)($row['profit_after_tax'] ?? ($row['net_profit'] ?? 0));
-            $html .= '<tr>
-                <td>' . HelperFramework::escape((string)($row['month_label'] ?? '')) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $row['income_total'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $row['cost_of_sales_total'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $row['operating_expense_total'] ?? ($row['expense_total'] ?? 0))) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $row['depreciation_expense'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $row['posted_corporation_tax_charge'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $row['estimated_corporation_tax_adjustment'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $row['corporation_tax_expense_total'] ?? 0)) . '</td>
-                <td>' . HelperFramework::escape($this->money($companySettings, $row['profit_before_tax'] ?? 0)) . '</td>
-                <td><span class="badge ' . ($net >= 0 ? 'success' : 'danger') . '">' . HelperFramework::escape($this->money($companySettings, $net)) . '</span></td>
-            </tr>';
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $row['operating_expense_total'] = (float)($row['operating_expense_total'] ?? ($row['expense_total'] ?? 0));
+            $row['depreciation_expense'] = (float)($row['depreciation_expense'] ?? 0);
+            $row['posted_corporation_tax_charge'] = (float)($row['posted_corporation_tax_charge'] ?? 0);
+            $row['estimated_corporation_tax_adjustment'] = (float)($row['estimated_corporation_tax_adjustment'] ?? 0);
+            $row['corporation_tax_expense_total'] = (float)($row['corporation_tax_expense_total'] ?? 0);
+            $row['profit_after_tax'] = (float)($row['profit_after_tax'] ?? ($row['net_profit'] ?? 0));
+            $tableRows[] = $row;
         }
 
-        return '<div class="pl-monthly-trend-layout">
-            <div class="table-scroll pl-monthly-trend-table"><table>
-                <thead><tr><th>Month</th><th>Income</th><th>Cost of sales</th><th>Operating expenses</th><th>Depreciation preview</th><th>Posted CT</th><th>Estimated CT adjustment</th><th>Estimated CT total</th><th>Profit before tax</th><th>After estimated tax</th></tr></thead>
-                <tbody>' . $html . '</tbody>
-            </table></div>
-            <div class="pl-monthly-trend-chart">
-                ' . $this->trendChart($rows) . '
-            </div>
-        </div>';
+        return $tableRows;
     }
 
     private function trendChart(array $rows): string
@@ -123,5 +215,10 @@ final class _pl_monthly_trendCard extends CardBaseFramework
     private function money(array $companySettings, float|int|string|null $value): string
     {
         return (new \eel_accounts\Service\CompanySettingsService())->money($companySettings, $value);
+    }
+
+    private function numberExport(float|int|string|null $value): string
+    {
+        return number_format((float)$value, 2, '.', '');
     }
 }

@@ -58,16 +58,6 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
         }
 
         $provision = (array)($taxReadiness['provision'] ?? []);
-        $taxWorkflowButton = \eel_accounts\Renderer\WorkflowHandoffRenderer::button(
-            'tax',
-            'Open Tax Workflow',
-            [
-                'company_id' => $companyId,
-                'accounting_period_id' => $accountingPeriodId,
-            ],
-            'button primary'
-        );
-
         $check = $this->check((array)($checklist['checks_flat'] ?? []), 'tax_readiness_acknowledgement');
         $acknowledgement = (array)($check['review_acknowledgement'] ?? $check['previous_acknowledgement'] ?? []);
         $acknowledged = !empty($check['acknowledgement_current']);
@@ -86,7 +76,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             ' . $this->overallTaxPositionHtml($companySettings, $taxReadiness, $provision) . '
             ' . $this->ctPeriodSectionsHtml($companySettings, $taxReadiness, $companyId, $accountingPeriodId) . '
             ' . $this->provisionHtml($companySettings, $provision) . '
-            ' . $this->reviewApprovalHtml($taxWorkflowButton, $acknowledgementForm) . '
+            ' . $this->reviewApprovalHtml($acknowledgementForm) . '
         </section>';
     }
 
@@ -305,11 +295,10 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
         return $html . '</section>';
     }
 
-    private function reviewApprovalHtml(string $taxWorkflowButton, string $acknowledgementForm): string
+    private function reviewApprovalHtml(string $acknowledgementForm): string
     {
         return '<section class="panel-soft stack">
             <h3 class="card-title">Review And Approval</h3>
-            <div class="actions-row">' . $taxWorkflowButton . '</div>
             ' . $acknowledgementForm . '
         </section>';
     }

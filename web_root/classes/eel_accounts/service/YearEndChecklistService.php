@@ -50,11 +50,11 @@ final class YearEndChecklistService
             ? $accountingPeriodId
             : $metrics->resolveLatestOpenAccountingPeriodId($companyId);
 
-        $checklist = $resolvedAccountingPeriodId > 0
-            ? $this->fetchChecklist($companyId, $resolvedAccountingPeriodId)
+        $accountingPeriod = $resolvedAccountingPeriodId > 0
+            ? $metrics->fetchAccountingPeriod($companyId, $resolvedAccountingPeriodId)
             : null;
 
-        if (!is_array($checklist)) {
+        if (!is_array($accountingPeriod)) {
             return [
                 'available' => false,
                 'status' => 'not_started',
@@ -64,14 +64,36 @@ final class YearEndChecklistService
             ];
         }
 
-        $accountingPeriod = (array)($checklist['accounting_period'] ?? []);
+        $review = ($this->lockService ?? new \eel_accounts\Service\YearEndLockService())
+            ->fetchReview($companyId, $resolvedAccountingPeriodId);
+        $dashboard = $this->buildDashboardLiveChecks(
+            $companyId,
+            $resolvedAccountingPeriodId,
+            $accountingPeriod,
+            $metrics
+        );
+        $checks = (array)($dashboard['checks'] ?? []);
+        $hasSourceData = !empty($dashboard['has_source_data']);
+        $isLocked = is_array($review) && (int)($review['is_locked'] ?? 0) === 1;
+
+        if ($hasSourceData && !$isLocked) {
+            $checks[] = $this->makeCheck(
+                'detailed_year_end_review',
+                'Detailed Year End review',
+                'warning',
+                'warning',
+                'Open Year End to run the complete accounts, tax, confirmation, and filing checks before closing this period.',
+                'Review required',
+                '?page=year_end&show_card=year_end_checklist'
+            );
+        }
 
         return [
             'available' => true,
-            'status' => (string)($checklist['overall_status'] ?? 'not_started'),
+            'status' => $this->determineOverallStatus($checks, $hasSourceData, $isLocked),
             'period_label' => (string)($accountingPeriod['label'] ?? ''),
             'accounting_period_id' => (int)($accountingPeriod['id'] ?? $resolvedAccountingPeriodId),
-            'top_issues' => $this->topIssuesFromChecks((array)($checklist['checks_flat'] ?? [])),
+            'top_issues' => $this->topIssuesFromChecks($checks),
             'action_url' => $this->dashboardActionUrl($companyId, $resolvedAccountingPeriodId),
         ];
     }
@@ -79,6 +101,184 @@ final class YearEndChecklistService
     private function dashboardActionUrl(int $companyId, int $accountingPeriodId): string
     {
         return '?page=year_end&show_card=year_end_checklist';
+
+    }
+    private function buildDashboardLiveChecks(
+        int $companyId,
+        int $accountingPeriodId,
+        array $accountingPeriod,
+        \eel_accounts\Service\YearEndMetricsService $metrics
+    ): array {
+        $settings = $metrics->fetchCompanySettings($companyId);
+        $periodStart = (string)($accountingPeriod['period_start'] ?? '');
+        $periodEnd = (string)($accountingPeriod['period_end'] ?? '');
+        $bankNominalId = (int)($settings['default_bank_nominal_id'] ?? 0);
+
+        $monthTiles = $metrics->buildMonthTiles($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $sourceData = $metrics->sourceDataSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $uncategorisedCount = $metrics->uncategorisedTransactionsCount($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $autoDecisionSummary = $metrics->autoCategorisedDecisionSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $autoAttentionCount = (int)($autoDecisionSummary['total_attention_count'] ?? 0);
+        $suspenseSummary = $metrics->suspenseSummary($companyId, $accountingPeriodId, $periodEnd);
+        $trialBalance = $metrics->trialBalanceSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $journalIntegrity = $metrics->journalIntegritySummary($companyId, $accountingPeriodId);
+        $postedSourceWork = $metrics->postedSourceWorkSummary($companyId, $accountingPeriodId, $periodStart, $periodEnd);
+        $statementContinuity = $metrics->statementContinuitySummary($companyId, $accountingPeriodId, $bankNominalId);
+        $statementContinuity = $this->applyAcceptedInitialStatementConfirmations(
+            $statementContinuity,
+            ($this->emptyMonthConfirmationService ?? new \eel_accounts\Service\EmptyMonthConfirmationService())
+                ->acceptedInitialStatementEvidence($companyId, $accountingPeriodId)
+        );
+        $duplicateAudit = $metrics->duplicateImportAudit($companyId, $accountingPeriodId);
+        $strandedRows = $metrics->strandedCommittedSourceRowsCount($companyId, $accountingPeriodId);
+        $hasSourceData = array_sum($sourceData) > 0;
+        $checks = [];
+
+        $checks[] = $this->makeCheck(
+            'source_data_present',
+            'Source data present',
+            'fail',
+            $hasSourceData ? 'pass' : 'fail',
+            $hasSourceData
+                ? 'Transactions or posted journals exist for this period.'
+                : 'No committed bank transactions or posted journals were found in this period.',
+            (string)array_sum($sourceData),
+            '?page=uploads'
+        );
+
+        $missingMonths = count(array_filter(
+            $monthTiles,
+            static fn(array $tile): bool => (string)($tile['status'] ?? '') === 'red'
+        ));
+        $checks[] = $this->makeCheck(
+            'missing_month_warning',
+            'Expected month coverage',
+            'warning',
+            $missingMonths > 0 ? 'warning' : 'pass',
+            $missingMonths > 0
+                ? 'Some months inside the accounting period have no uploads or transactions and should be reviewed.'
+                : 'Every month inside the accounting period has at least some source activity.',
+            $missingMonths > 0 ? $missingMonths . ' missing month' . ($missingMonths === 1 ? '' : 's') : 'All months covered',
+            '?page=transactions&show_card=year_end_empty_month_confirmations'
+        );
+
+        $checks[] = $this->makeCheck(
+            'uncategorised_transactions',
+            'Uncategorised transactions',
+            'fail',
+            $uncategorisedCount > 0 ? 'fail' : 'pass',
+            $uncategorisedCount > 0
+                ? 'Transactions still need a nominal account before the period is ready.'
+                : 'Every transaction in the selected period has a nominal account.',
+            (string)$uncategorisedCount,
+            '?page=transactions&category_filter=uncategorised'
+        );
+        $checks[] = $this->makeCheck(
+            'suspense_balance',
+            'Suspense balance',
+            'fail',
+            abs((float)($suspenseSummary['closing_balance'] ?? 0)) > 0.004
+                ? 'fail'
+                : (!empty($suspenseSummary['has_nominal']) ? 'pass' : 'not_applicable'),
+            !empty($suspenseSummary['has_nominal'])
+                ? 'Suspense should clear to nil before locking the period.'
+                : 'No suspense nominal is configured, so this check is advisory only.',
+            $this->money($settings, $suspenseSummary['closing_balance'] ?? 0),
+            '?page=journal'
+        );
+        $checks[] = $this->makeCheck(
+            'auto_categorisations_pending_review',
+            'Transaction auto categorisations pending review',
+            'warning',
+            $autoAttentionCount > 0 ? 'warning' : 'pass',
+            $this->autoDecisionReviewDetail($autoDecisionSummary),
+            $this->autoDecisionReviewMetric($autoDecisionSummary),
+            $this->autoDecisionReviewActionUrl($autoDecisionSummary)
+        );
+
+        $checks[] = $this->makeCheck(
+            'trial_balance_exists',
+            'Trial balance exists',
+            'fail',
+            !empty($trialBalance['exists']) ? 'pass' : 'fail',
+            !empty($trialBalance['exists'])
+                ? 'A trial balance can be generated from posted journals in this period.'
+                : 'No posted journal data exists to generate a trial balance for this period.',
+            $this->trialBalanceMetric($trialBalance),
+            '?page=journal'
+        );
+        $checks[] = $this->makeCheck(
+            'trial_balance_balances',
+            'Trial balance balances',
+            'fail',
+            !empty($trialBalance['balances']) ? 'pass' : 'fail',
+            !empty($trialBalance['balances'])
+                ? 'Total debits equal total credits.'
+                : 'Total debits and credits do not match for the selected period.',
+            $this->money($settings, $trialBalance['difference'] ?? 0),
+            '?page=journal'
+        );
+
+        $journalIntegrityIssues = (int)($journalIntegrity['line_count_failures'] ?? 0)
+            + (int)($journalIntegrity['unbalanced_journals'] ?? 0)
+            + (int)($journalIntegrity['missing_nominal_lines'] ?? 0);
+        $checks[] = $this->makeCheck(
+            'journal_structural_integrity',
+            'Journal structural integrity',
+            'fail',
+            $journalIntegrityIssues > 0 ? 'fail' : 'pass',
+            $journalIntegrityIssues > 0
+                ? 'Some journals have structural issues that must be resolved before year end is locked.'
+                : 'Journal structures look valid for this accounting period.',
+            (string)$journalIntegrityIssues,
+            '?page=journal'
+        );
+        array_push($checks, ...$this->postedSourceWorkChecks($postedSourceWork));
+
+        $continuityWarningCount = $this->statementContinuityIssueCount($statementContinuity);
+        $acceptedInitialGapCount = (int)($statementContinuity['accepted_initial_gap_count'] ?? 0);
+        $checks[] = $this->makeCheck(
+            'statement_continuity',
+            'Statement continuity',
+            'warning',
+            $continuityWarningCount > 0 ? 'warning' : 'pass',
+            $continuityWarningCount > 0
+                ? $this->statementContinuityDetail($statementContinuity, $settings)
+                : ($acceptedInitialGapCount > 0
+                    ? $acceptedInitialGapCount . ' initial no-activity ' . ($acceptedInitialGapCount === 1 ? 'gap has' : 'gaps have') . ' been confirmed and the remaining statement continuity checks passed.'
+                    : 'Statement continuity checks passed where statement balance data exists.'),
+            $acceptedInitialGapCount > 0 && $continuityWarningCount === 0
+                ? $acceptedInitialGapCount . ' accepted initial ' . ($acceptedInitialGapCount === 1 ? 'gap' : 'gaps')
+                : $this->statementContinuityMetric($continuityWarningCount),
+            '?page=source_accounts'
+        );
+        $checks[] = $this->makeCheck(
+            'duplicate_import_audit',
+            'Duplicate import audit',
+            'warning',
+            ((int)($duplicateAudit['duplicate_rows'] ?? 0) > 0 || (int)($duplicateAudit['duplicate_files'] ?? 0) > 0)
+                ? 'warning'
+                : 'pass',
+            'Duplicate files blocked and duplicate rows skipped are informational checks for import quality.',
+            (int)($duplicateAudit['duplicate_files'] ?? 0) . ' file(s), ' . (int)($duplicateAudit['duplicate_rows'] ?? 0) . ' row(s)',
+            '?page=uploads'
+        );
+        $checks[] = $this->makeCheck(
+            'source_to_ledger_completeness',
+            'Source-to-ledger completeness',
+            'fail',
+            $strandedRows > 0 ? 'fail' : 'pass',
+            $strandedRows > 0
+                ? 'Some committed source rows are missing their downstream transaction or journal output.'
+                : 'Committed source rows can be traced into the current ledger model.',
+            (string)$strandedRows,
+            '?page=uploads'
+        );
+
+        return [
+            'has_source_data' => $hasSourceData,
+            'checks' => $checks,
+        ];
     }
 
     private function topIssuesFromChecks(array $checks): array

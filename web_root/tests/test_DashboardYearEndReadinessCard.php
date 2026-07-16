@@ -19,6 +19,20 @@ $harness->run(_dashboard_year_end_readinessCard::class, static function (Generat
         $harness->assertSame('fetchDashboardSummary', (string)($services[0]['method'] ?? ''));
     });
 
+    $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'dashboard summary stays live without running the full checklist or persisted snapshots', static function () use ($harness): void {
+        $method = new ReflectionMethod(\eel_accounts\Service\YearEndChecklistService::class, 'fetchDashboardSummary');
+        $lines = file((string)$method->getFileName());
+        $source = implode('', array_slice(
+            is_array($lines) ? $lines : [],
+            $method->getStartLine() - 1,
+            $method->getEndLine() - $method->getStartLine() + 1
+        ));
+
+        $harness->assertSame(false, str_contains($source, 'fetchChecklist('));
+        $harness->assertSame(false, str_contains($source, 'year_end_check_results'));
+        $harness->assertSame(true, str_contains($source, 'buildDashboardLiveChecks('));
+    });
+
     $harness->check(\eel_accounts\Service\YearEndChecklistService::class, 'dashboard summary includes only warning and fail checks as top issues', static function () use ($harness): void {
         $method = new ReflectionMethod(\eel_accounts\Service\YearEndChecklistService::class, 'topIssuesFromChecks');
         $method->setAccessible(true);

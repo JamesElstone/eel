@@ -93,7 +93,7 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
                                 'status' => 'info',
                                 'detail_text' => 'Year-end lock finalises the app ledger. Statutory accounts, iXBRL, and tax filing outputs should still be reviewed separately before submission.',
                                 'metric_value' => '',
-                                'action_url' => '?page=year_end&company_id=12&accounting_period_id=34&show_card=year_end_tax_readiness',
+                                'action_url' => '?page=tax&company_id=12&accounting_period_id=34&show_card=year_end_tax_readiness',
                             ],
                         ],
                     ],
@@ -105,7 +105,7 @@ $harness->run(_year_end_checklistCard::class, static function (GeneratedServiceC
         $harness->assertSame(true, str_contains($html, 'Ready to Close and Lock'));
         $harness->assertSame(true, str_contains($html, 'year-end-check-panel-info'));
         $harness->assertSame(true, str_contains($html, 'Year-end lock finalises the app ledger.'));
-        $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=year_end" data-ajax="true"'));
+        $harness->assertSame(true, str_contains($html, '<form method="post" action="?page=tax" data-ajax="true"'));
         $harness->assertSame(true, str_contains($html, '<input type="hidden" name="show_card" value="year_end_tax_readiness">'));
         $harness->assertSame(false, str_contains($html, 'name="intent" value="acknowledge_review_check"'));
         $harness->assertSame(false, str_contains($html, 'name="intent" value="reopen_review_check"'));

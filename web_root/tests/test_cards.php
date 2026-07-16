@@ -408,6 +408,7 @@ final class TestCardsHarness
             'year_end_prepayment_approvals',
             'journal_cut_off_confirmation',
             'year_end_retained_earnings',
+            'year_end_tax_readiness',
         ];
 
         foreach ($movedCards as $cardKey) {
@@ -424,6 +425,7 @@ final class TestCardsHarness
         $this->assertPageFinalTabContains(new _prepayments(), 'Year End Confirmation', ['year_end_prepayment_approvals']);
         $this->assertPageFinalTabContains(new _journal(), 'Year End Confirmation', ['journal_cut_off_confirmation']);
         $this->assertPageFinalTabContains(new _profit_loss(), 'Year End Confirmation', ['year_end_retained_earnings']);
+        $this->assertPageFinalTabContains(new _tax(), 'Year End Review', ['year_end_tax_readiness']);
 
         test_output_line('Cards: year-end confirmation cards live on their related workflow pages.');
     }

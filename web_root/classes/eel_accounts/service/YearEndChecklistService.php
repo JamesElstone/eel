@@ -1217,7 +1217,7 @@ final class YearEndChecklistService
                 ? ''
                 : ('Posted ' . $this->money($settings, $taxProvision['posted_corporation_tax_charge'] ?? 0)
                     . ' / estimate ' . $this->money($settings, $taxProvision['estimated_corporation_tax'] ?? 0)),
-            '?page=year_end&show_card=year_end_tax_readiness#tax-readiness'
+            '?page=tax&show_card=year_end_tax_readiness#tax-readiness'
         );
         $taxConfidenceStatus = (string)($taxReadiness['confidence_status'] ?? 'review_required');
         $taxWarningCount = count((array)($taxReadiness['warnings'] ?? []));
@@ -1252,7 +1252,7 @@ final class YearEndChecklistService
                 ? 'Tax readiness must be available before this review can be acknowledged.'
                 : 'Review the corporation tax workings for every CT period before closing this accounting period.',
             empty($taxReadiness['available']) ? '' : 'Pending',
-            '?page=year_end&show_card=year_end_tax_readiness#tax-readiness',
+            '?page=tax&show_card=year_end_tax_readiness#tax-readiness',
             empty($taxReadiness['available']) ? null : $this->acknowledgementBasis('tax_readiness_acknowledgement', $taxReadiness)
         ), $reviewAcknowledgements);
         $sections['corporation_tax_readiness'][] = $this->applyReviewAcknowledgement($this->makeCheck(
@@ -1262,7 +1262,7 @@ final class YearEndChecklistService
             'info',
             'Year-end lock finalises the app ledger. Statutory accounts, iXBRL, and tax filing outputs should still be reviewed separately before submission.',
             '',
-            '?page=year_end&show_card=year_end_tax_readiness'
+            '?page=tax&show_card=year_end_tax_readiness'
         ), $reviewAcknowledgements);
 
         $comparisonFailures = 0;

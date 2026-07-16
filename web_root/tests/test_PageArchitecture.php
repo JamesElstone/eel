@@ -156,8 +156,41 @@ final class TestPageArchitectureHarness
                 'tax_losses',
                 'tax_rate_bands',
                 'tax_warnings',
+                'year_end_tax_readiness',
             ],
             $page->cards()
+        );
+        $this->assertSame(
+            [
+                [
+                    'tab' => 'Corporation Tax',
+                    'cards' => [
+                        'tax_period_selector',
+                        'tax_corporation_tax_summary',
+                        'tax_taxable_profit_bridge',
+                        'tax_prepayment_treatment',
+                        'tax_disallowable_add_backs',
+                        'tax_capital_add_backs',
+                        'tax_depreciation_add_back',
+                        'tax_capital_allowances_summary',
+                        'tax_aia_allocation',
+                        'tax_main_rate_pool',
+                        'tax_special_rate_pool',
+                        'tax_car_co2_treatment',
+                        'tax_disposals_balancing',
+                        'tax_losses',
+                        'tax_rate_bands',
+                        'tax_warnings',
+                    ],
+                ],
+                [
+                    'tab' => 'Year End Review',
+                    'cards' => [
+                        'year_end_tax_readiness',
+                    ],
+                ],
+            ],
+            $page->cardLayout()
         );
     }
 

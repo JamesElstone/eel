@@ -12,6 +12,16 @@ require_once __DIR__ . DIRECTORY_SEPARATOR . 'support' . DIRECTORY_SEPARATOR . '
 $harness = new GeneratedServiceClassTestHarness();
 
 $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServiceClassTestHarness $harness, _year_end_tax_readinessCard $card): void {
+    $harness->check(_year_end_tax_readinessCard::class, 'declares the year-end checklist service needed on the Tax page', static function () use ($harness, $card): void {
+        $services = $card->services();
+
+        $harness->assertSame('yearEndChecklist', (string)($services[0]['key'] ?? ''));
+        $harness->assertSame(\eel_accounts\Service\YearEndChecklistService::class, (string)($services[0]['service'] ?? ''));
+        $harness->assertSame('fetchChecklist', (string)($services[0]['method'] ?? ''));
+        $harness->assertSame(':company.id', (string)($services[0]['params']['companyId'] ?? ''));
+        $harness->assertSame(':company.accounting_period_id', (string)($services[0]['params']['accountingPeriodId'] ?? ''));
+    });
+
     $harness->check(_year_end_tax_readinessCard::class, 'renders compact tax readiness status and acknowledgement control', static function () use ($harness, $card): void {
         $html = $card->render(yearEndTaxReadinessCardContext([
             'available' => true,
@@ -173,6 +183,25 @@ $harness->run(_year_end_tax_readinessCard::class, static function (GeneratedServ
         $harness->assertSame(true, str_contains($html, 'CT Period 1: 01/10/2025 to 30/09/2026'));
         $harness->assertSame(true, str_contains($html, 'summary-grid four'));
         $harness->assertSame(false, str_contains($html, 'Post / Update CT Provisions'));
+    });
+
+    $harness->check(_year_end_tax_readinessCard::class, 'renders tax readiness from its declared checklist service payload', static function () use ($harness, $card): void {
+        $context = yearEndTaxReadinessChecklistContext([
+            'available' => true,
+            'taxable_profit' => 4000,
+            'estimated_corporation_tax' => 760,
+            'losses_carried_forward' => 0,
+            'periods' => [],
+            'warnings' => [],
+        ]);
+        $context['services']['yearEndChecklist'] = $context['year_end']['checklist'];
+        unset($context['year_end']);
+
+        $html = $card->render($context);
+
+        $harness->assertSame(true, str_contains($html, '$ 4,000.00'));
+        $harness->assertSame(true, str_contains($html, '$ 760.00'));
+        $harness->assertSame(true, str_contains($html, 'Open Tax Workflow'));
     });
 });
 

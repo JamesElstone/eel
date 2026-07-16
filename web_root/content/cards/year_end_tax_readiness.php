@@ -21,7 +21,17 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
 
     public function services(): array
     {
-        return [];
+        return [
+            [
+                'key' => 'yearEndChecklist',
+                'service' => \eel_accounts\Service\YearEndChecklistService::class,
+                'method' => 'fetchChecklist',
+                'params' => [
+                    'companyId' => ':company.id',
+                    'accountingPeriodId' => ':company.accounting_period_id',
+                ],
+            ],
+        ];
     }
 
     protected function additionalInvalidationFacts(): array
@@ -36,7 +46,8 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
 
     public function render(array $context): string
     {
-        $taxReadiness = (array)($context['services']['yearEndTaxReadiness'] ?? (($context['year_end'] ?? [])['checklist'] ?? [])['tax_readiness'] ?? []);
+        $checklist = (array)($context['services']['yearEndChecklist'] ?? (($context['year_end'] ?? [])['checklist'] ?? []));
+        $taxReadiness = (array)($context['services']['yearEndTaxReadiness'] ?? $checklist['tax_readiness'] ?? []);
         $company = (array)($context['company'] ?? []);
         $companySettings = (array)($company['settings'] ?? []);
         $companyId = (int)($company['id'] ?? 0);
@@ -57,7 +68,7 @@ final class _year_end_tax_readinessCard extends CardBaseFramework
             'button primary'
         );
 
-        $check = $this->check((array)((($context['year_end'] ?? [])['checklist'] ?? [])['checks_flat'] ?? []), 'tax_readiness_acknowledgement');
+        $check = $this->check((array)($checklist['checks_flat'] ?? []), 'tax_readiness_acknowledgement');
         $acknowledgement = (array)($check['review_acknowledgement'] ?? $check['previous_acknowledgement'] ?? []);
         $acknowledged = !empty($check['acknowledgement_current']);
         $acknowledgementForm = $this->acknowledgementHtml(

@@ -33,7 +33,6 @@ final class _year_end extends PageContextFramework
     {
         return [
             'year_end_checklist',
-            'year_end_tax_readiness',
             'year_end_notes',
             'year_end_state',
             'year_end_audit_log',
@@ -47,12 +46,6 @@ final class _year_end extends PageContextFramework
                 'tab' => 'Checklist',
                 'cards' => [
                     'year_end_checklist',
-                ],
-            ],
-            [
-                'tab' => 'Tax',
-                'cards' => [
-                    'year_end_tax_readiness',
                 ],
             ],
             [
